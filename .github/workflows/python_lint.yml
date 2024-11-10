@@ -80,7 +80,7 @@ jobs:
     # For now, we run mypy only on modified files
     - name: Get changed Python files
       id: changed-py-files
-      uses: tj-actions/changed-files@v43
+      uses: tj-actions/changed-files@v45
       with:
         files: "airbyte_cdk/**/*.py"
     - name: Run mypy on changed files
