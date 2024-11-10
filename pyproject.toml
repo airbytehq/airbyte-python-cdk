@@ -81,6 +81,8 @@ xmltodict = "^0.13.0"
 freezegun = "*"
 mypy = "*"
 asyncio = "3.4.3"
+ruff = "^0.7.2"
+pdoc = "^15.0.0"
 poethepoet = "^0.24.2"
 pyproject-flake8 = "^6.1.0"
 pytest = "^7"
@@ -89,7 +91,6 @@ pytest-cov = "*"
 pytest-httpserver = "*"
 pytest-mock = "*"
 requests-mock = "*"
-pdoc = "^15.0.0"
 
 [tool.poetry.extras]
 file-based = ["avro", "fastavro", "pyarrow", "unstructured", "pdf2image", "pdfminer.six", "unstructured.pytesseract", "pytesseract", "markdown", "python-calamine", "python-snappy"]
@@ -109,12 +110,43 @@ assemble = {cmd = "bin/generate-component-manifest-dagger.sh", help = "Generate 
 build-package = {cmd = "poetry build", help = "Build the python package: source and wheels archives."}
 build = {sequence = ["assemble", "build-package"], help = "Run all tasks to build the package."}
 
-# Check tasks
-lint =  {cmd = "pflake8 --config ../../pyproject.toml ./", help = "Lint with flake8."}
+# Format check tasks
+_format-check-ruff = {cmd = "ruff format --check .", help = "Check formatting with Ruff."}
+_format-check-prettier = {cmd = "npx prettier . --check", help = "Check formatting with prettier."}
+format-check = {sequence = ["_format-check-ruff", "_format-check-prettier"], help = "Check formatting for all file types.", ignore_fail = "return_non_zero"}
+
+# Format fix tasks
+_format-fix-ruff = {cmd = "ruff format .", help = "Format with Ruff."}
+_format-fix-prettier = {cmd = "npx prettier . --write", help = "Format with prettier."}
+format-fix = {sequence = ["_format-fix-ruff", "_format-fix-prettier"], help = "Format all file types.", ignore_fail = "return_non_zero"}
+
+# Linting/Typing check tasks
+_lint-ruff = {cmd = "poetry run ruff check .", help = "Lint with Ruff."}
 type-check = {cmd = "bin/run-mypy-on-modified-files.sh", help = "Type check modified files with mypy."}
-unit-test-with-cov = {cmd = "pytest -s unit_tests -c pytest.ini --cov=airbyte_cdk --cov-report=term --cov-config ../../pyproject.toml", help = "Run unit tests and create a coverage report."}
-# TODO: find a version of the modified mypy check that works both locally and in CI.
+lint = {sequence = ["_lint-ruff", "type-check"], help = "Lint all code. Includes type checking.", ignore_fail = "return_non_zero"}
+
+# Lockfile check task
 check-lockfile = {cmd = "poetry check", help = "Check the poetry lock file."}
+
+# Linting/Typing fix tasks
+lint-fix = { cmd = "poetry run ruff check --fix ." }
+lint-fix-unsafe = { cmd = "poetry run ruff check --fix --unsafe-fixes .", help = "Lint-fix modified files, including 'unsafe' fixes. It is recommended to first commit any pending changes and then always manually review any unsafe changes applied." }
+
+# Combined Check and Fix tasks
+
+check-all = {sequence = ["lint", "format-check", "type-check", "check-lockfile"], help = "Lint, format, and type-check modified files.", ignore_fail = "return_non_zero"}
+fix-all = {sequence = ["format-fix", "lint-fix"], help = "Lint-fix and format-fix modified files, ignoring unsafe fixes.", ignore_fail = "return_non_zero"}
+fix-and-check = {sequence = ["fix-all", "check-all"], help = "Lint-fix and format-fix, then re-check to see if any issues remain.", ignore_fail = "return_non_zero"}
+
+# PyTest tasks
+
+pytest = {cmd = "poetry run coverage run -m pytest --durations=10", help = "Run all pytest tests."}
+pytest-fast = {cmd = "poetry run coverage run -m pytest --durations=5 --exitfirst -m 'not flaky and not slow and not requires_creds'", help = "Run pytest tests, failing fast and excluding slow tests."}
+unit-test-with-cov = {cmd = "pytest -s unit_tests --cov=airbyte_cdk --cov-report=term --cov-config ./pyproject.toml", help = "Run unit tests and create a coverage report."}
+
+# Combined check tasks (other)
+
+# TODO: find a version of the modified mypy check that works both locally and in CI.
 check-local = {sequence = ["lint", "type-check", "check-lockfile", "unit-test-with-cov"], help = "Lint all code, type-check modified files, and run unit tests."}
 check-ci = {sequence = ["check-lockfile", "build", "lint", "unit-test-with-cov"], help = "Build the package, lint and run unit tests. Does not include type-checking."}
 
@@ -125,6 +157,21 @@ pre-push = {sequence = ["build", "check-local"], help = "Run all build and check
 docs-generate = {env = {PDOC_ALLOW_EXEC = "1"}, cmd = "python -m docs.generate run"}
 docs-preview = {shell = "poe docs-generate && open docs/generated/index.html"}
 
+[tool.check-wheel-contents]
+# Quality control for Python wheel generation. Docs here:
+# - https://github.com/jwodder/check-wheel-contents
+ignore = [
+  "W002"  # Duplicate files. (TODO: Fix the few duplicate files, mostly `__init__.py` files that have only copyright text.)
+]
+
+[tool.pytest.ini_options]
+log_cli = true
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+filterwarnings = [
+    "ignore::airbyte_cdk.sources.source.ExperimentalClassWarning"
+]
 
 [tool.airbyte_ci]
 python_versions = ["3.10", "3.11"]

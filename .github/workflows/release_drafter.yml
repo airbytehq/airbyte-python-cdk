@@ -1,0 +1,29 @@
+name: Release Drafter
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    # Only following types are handled by the action, but one can default to all as well
+    types: [opened, reopened, synchronize]
+  # # pull_request_target event is required for autolabeler to support PRs from forks
+  # pull_request_target:
+  #   types: [opened, reopened, synchronize]
+
+env:
+  AIRBYTE_ANALYTICS_ID: ${{ vars.AIRBYTE_ANALYTICS_ID }}
+
+jobs:
+  update_release_draft:
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    steps:
+      # Drafts the next Release notes as Pull Requests are merged into "main"
+      - uses: release-drafter/release-drafter@v6
+        with:
+          config-name: release-drafter.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

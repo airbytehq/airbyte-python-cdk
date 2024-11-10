@@ -1,0 +1,130 @@
+name: Connectors Tests
+
+concurrency:
+  # This is the name of the concurrency group. It is used to prevent concurrent runs of the same workflow.
+  #
+  # - github.head_ref is only defined on PR runs, it makes sure that the concurrency group is unique for pull requests
+  #  ensuring that only one run per pull request is active at a time.
+  #
+  # - github.run_id is defined on all runs, it makes sure that the concurrency group is unique for workflow dispatches.
+  # This allows us to run multiple workflow dispatches in parallel.
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+jobs:
+  cdk_changes:
+    name: Get Changes
+    runs-on: ubuntu-latest
+    permissions:
+      statuses: write
+      pull-requests: read
+    steps:
+      - name: Checkout Airbyte
+        if: github.event_name != 'pull_request'
+        uses: actions/checkout@v4
+      - id: changes
+        uses: dorny/paths-filter@v3.0.2
+        with:
+          filters: |
+            src:
+              - 'airbyte_cdk/**'
+              - 'bin/**'
+              - 'poetry.lock'
+              - 'pyproject.toml'
+            file-based:
+              - 'airbyte_cdk/sources/file_based/**'
+            vector-db-based:
+              - 'airbyte_cdk/destinations/vector_db_based/**'
+            sql:
+              - 'airbyte_cdk/sql/**'
+    outputs:
+      # Source code modified:
+      src: ${{ steps.changes.outputs.src }}
+      # Extras modified:
+      file-based: ${{ steps.changes.outputs.file-based }}
+      vector-db-based: ${{ steps.changes.outputs.vector-db-based }}
+      sql: ${{ steps.changes.outputs.sql }}
+
+
+    #   # The Connector CI Tests is a status check emitted by airbyte-ci
+    #   # We make it pass once we have determined that there are no changes to the connectors
+    #   - name: "Skip Connectors CI tests"
+    #     if: steps.changes.outputs.src != 'true' && github.event_name == 'pull_request'
+    #     run: |
+    #       curl --request POST \
+    #       --url https://api.github.com/repos/${{ github.repository }}/statuses/${{ github.event.pull_request.head.sha }} \
+    #       --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
+    #       --header 'content-type: application/json' \
+    #       --data '{
+    #         "state": "success",
+    #         "context": "CDK Changes - Connectors Tests",
+    #         "target_url": "${{ github.event.workflow_run.html_url }}"
+    #         }' \
+
+  connectors_ci:
+    needs: cdk_changes
+    # We only run the Connectors CI job if there are changes to the connectors on a non-forked PR
+    # Forked PRs are handled by the community_ci.yml workflow
+    # If the condition is not met the job will be skipped (it will not fail)
+    # runs-on: connector-test-large
+    runs-on: ubuntu-latest
+    timeout-minutes: 360 # 6 hours
+    strategy:
+      fail-fast: true  # Save resources by aborting if one connector fails
+      matrix:
+        include:
+          - connector: source-shopify
+            cdk_extra: n/a
+          - connector: source-zendesk-support
+            cdk_extra: n/a
+          - connector: source-s3
+            cdk_extra: file-based
+          - connector: destination-pinecone
+            cdk_extra: vector-db-based
+          - connector: destination-motherduck
+            cdk_extra: sql
+    if: >
+      ( github.event_name == 'pull_request' && needs.cdk_changes.outputs.src == 'true' && github.event.pull_request.head.repo.fork != true
+      ) || github.event_name == 'workflow_dispatch'
+    name: "Check: '${{matrix.connector}}' (skip=${{needs.cdk_changes.outputs[matrix.cdk_extra] == 'false'}})"
+    steps:
+      - name: Abort if extra not changed (${{matrix.cdk_extra}})
+        id: no_changes
+        if: ${{ matrix.cdk_extra != 'n/a' && needs.cdk_changes.outputs[matrix.cdk_extra] == 'false' }}
+        run: |
+            echo "Aborting job as specified extra not changed: ${{matrix.cdk_extra}} = ${{ needs.cdk_changes.outputs[matrix.cdk_extra] }}"
+            echo "::set-output name=status::cancelled"
+            exit 1
+        continue-on-error: true
+      # Get the monorepo so we can test the connectors
+      - name: Checkout Airbyte Monorepo
+        uses: actions/checkout@v4
+        if: steps.no_changes.outcome != 'failure'
+        with:
+          repository: airbytehq/airbyte
+          ref: master
+      - name: Fetch last commit id from remote branch [PULL REQUESTS]
+        if: github.event_name == 'pull_request' && steps.no_changes.outcome != 'failure'
+        id: fetch_last_commit_id_pr
+        run: echo "commit_id=$(git ls-remote --heads origin refs/heads/${{ github.head_ref }} | cut -f 1)" >> $GITHUB_OUTPUT
+      - name: Fetch last commit id from remote branch [WORKFLOW DISPATCH]
+        if: github.event_name == 'workflow_dispatch' && steps.no_changes.outcome != 'failure'
+        id: fetch_last_commit_id_wd
+        run: echo "commit_id=$(git rev-parse origin/${{ steps.extract_branch.outputs.branch }})" >> $GITHUB_OUTPUT
+      - name: Test Connector
+        if: steps.no_changes.outcome != 'failure'
+        timeout-minutes: 90
+        env:
+          GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
+        run: |
+          make tools.airbyte-ci-binary.install
+          airbyte-ci connectors \
+          --name ${{matrix.connector}} \
+          test
+          --global-status-check-context='Connectors Test: ${{matrix.connector}}'"
