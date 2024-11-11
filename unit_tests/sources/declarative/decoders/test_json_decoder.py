@@ -12,7 +12,7 @@ from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder, JsonlDecoder
 from airbyte_cdk.sources.declarative.models import DeclarativeStream as DeclarativeStreamModel
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import ModelToComponentFactory
-from sources.declarative.decoders import GzipJsonDecoder
+from airbyte_cdk.sources.declarative.decoders import GzipJsonDecoder
 
 
 @pytest.mark.parametrize(
