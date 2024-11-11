@@ -33,11 +33,15 @@ class JsonDecoder(Decoder):
             body_json = response.json()
             yield from self.parse_body_json(body_json)
         except requests.exceptions.JSONDecodeError:
-            logger.warning(f"Response cannot be parsed into json: {response.status_code=}, {response.text=}")
+            logger.warning(
+                f"Response cannot be parsed into json: {response.status_code=}, {response.text=}"
+            )
             yield {}
 
     @staticmethod
-    def parse_body_json(body_json: Mapping[str, Any] | list) -> Generator[Mapping[str, Any], None, None]:
+    def parse_body_json(
+        body_json: Mapping[str, Any] | list,
+    ) -> Generator[Mapping[str, Any], None, None]:
         if not isinstance(body_json, list):
             body_json = [body_json]
         if len(body_json) == 0:
