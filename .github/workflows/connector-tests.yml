@@ -147,7 +147,7 @@ jobs:
           echo "- Test Duration: $(printf "%.0f" $run_duration)s" >> $GITHUB_STEP_SUMMARY
           echo "- Failed Checks: ${failed_jobs}" >> $GITHUB_STEP_SUMMARY
           echo -e "\n[Download Job Output](${{steps.upload_job_output.outputs.artifact-url}})" >> $GITHUB_STEP_SUMMARY
-          if [ "${succes}" != "true" ]; then
+          if [ "${success}" != "true" ]; then
             # Throw failure if tests failed
             exit 1
           fi
