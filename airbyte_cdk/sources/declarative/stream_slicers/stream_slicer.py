@@ -2,18 +2,15 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from abc import abstractmethod
-from dataclasses import dataclass
-from typing import Iterable
+from abc import ABC
 
 from airbyte_cdk.sources.declarative.requesters.request_options.request_options_provider import (
     RequestOptionsProvider,
 )
-from airbyte_cdk.sources.types import StreamSlice
+from airbyte_cdk.sources.streams.concurrent.partitions.stream_slicer import StreamSlicer as ConcurrentStreamSlicer
 
 
-@dataclass
-class StreamSlicer(RequestOptionsProvider):
+class StreamSlicer(ConcurrentStreamSlicer, RequestOptionsProvider, ABC):
     """
     Slices the stream into a subset of records.
     Slices enable state checkpointing and data retrieval parallelization.
@@ -22,11 +19,4 @@ class StreamSlicer(RequestOptionsProvider):
 
     See the stream slicing section of the docs for more information.
     """
-
-    @abstractmethod
-    def stream_slices(self) -> Iterable[StreamSlice]:
-        """
-        Defines stream slices
-
-        :return: List of stream slices
-        """
+    pass

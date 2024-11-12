@@ -12,7 +12,6 @@ from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.message import InMemoryMessageRepository
 from airbyte_cdk.sources.streams.concurrent.adapters import (
     AvailabilityStrategyFacade,
-    CursorPartitionGenerator,
     StreamFacade,
     StreamPartition,
     StreamPartitionGenerator,
@@ -444,43 +443,3 @@ def test_get_error_display_message(exception, expected_display_message):
     display_message = facade.get_error_display_message(exception)
 
     assert display_message == expected_display_message
-
-
-def test_cursor_partition_generator():
-    stream = Mock()
-    cursor = Mock()
-    message_repository = Mock()
-    connector_state_converter = CustomFormatConcurrentStreamStateConverter(
-        datetime_format="%Y-%m-%dT%H:%M:%S"
-    )
-    cursor_field = Mock()
-    slice_boundary_fields = ("start", "end")
-
-    expected_slices = [
-        StreamSlice(
-            partition={},
-            cursor_slice={"start": "2024-01-01T00:00:00", "end": "2024-01-02T00:00:00"},
-        )
-    ]
-    cursor.generate_slices.return_value = [
-        (datetime.datetime(year=2024, month=1, day=1), datetime.datetime(year=2024, month=1, day=2))
-    ]
-
-    partition_generator = CursorPartitionGenerator(
-        stream,
-        message_repository,
-        cursor,
-        connector_state_converter,
-        cursor_field,
-        slice_boundary_fields,
-    )
-
-    partitions = list(partition_generator.generate())
-    generated_slices = [partition.to_slice() for partition in partitions]
-
-    assert all(
-        isinstance(partition, StreamPartition) for partition in partitions
-    ), "Not all partitions are instances of StreamPartition"
-    assert (
-        generated_slices == expected_slices
-    ), f"Expected {expected_slices}, but got {generated_slices}"

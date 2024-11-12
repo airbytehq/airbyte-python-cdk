@@ -94,7 +94,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         return self._source_config
 
     @property
-    def message_repository(self) -> Union[None, MessageRepository]:
+    def message_repository(self) -> MessageRepository:
         return self._message_repository
 
     @property

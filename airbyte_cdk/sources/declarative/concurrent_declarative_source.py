@@ -30,12 +30,15 @@ from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
 )
 from airbyte_cdk.sources.declarative.requesters import HttpRequester
 from airbyte_cdk.sources.declarative.retrievers import SimpleRetriever
+from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
+    DeclarativePartitionFactory,
+    StreamSlicerPartitionGenerator,
+)
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddFields
 from airbyte_cdk.sources.declarative.types import ConnectionDefinition
 from airbyte_cdk.sources.source import TState
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
-from airbyte_cdk.sources.streams.concurrent.adapters import CursorPartitionGenerator
 from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
     AlwaysAvailableAvailabilityStrategy,
 )
@@ -228,13 +231,15 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             )
                         declarative_stream.retriever.cursor = None
 
-                    partition_generator = CursorPartitionGenerator(
-                        stream=declarative_stream,
-                        message_repository=self.message_repository,  # type: ignore  # message_repository is always instantiated with a value by factory
-                        cursor=cursor,
-                        connector_state_converter=connector_state_converter,
-                        cursor_field=[cursor.cursor_field.cursor_field_key],
-                        slice_boundary_fields=cursor.slice_boundary_fields,
+
+                    partition_generator = StreamSlicerPartitionGenerator(
+                        DeclarativePartitionFactory(
+                            declarative_stream.name,
+                            declarative_stream.get_json_schema(),
+                            declarative_stream.retriever,
+                            self.message_repository,
+                        ),
+                        cursor,
                     )
 
                     concurrent_streams.append(
