@@ -1,6 +1,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
 import pytest
+
 from airbyte_cdk.sources.types import StreamSlice
 
 

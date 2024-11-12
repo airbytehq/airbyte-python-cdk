@@ -1,8 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-
-from typing import List, Optional
+from __future__ import annotations
 
 from airbyte_cdk.models import (
     AirbyteCatalog,
@@ -15,11 +14,11 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.embedded.tools import get_first
 
 
-def get_stream(catalog: AirbyteCatalog, stream_name: str) -> Optional[AirbyteStream]:
+def get_stream(catalog: AirbyteCatalog, stream_name: str) -> AirbyteStream | None:
     return get_first(catalog.streams, lambda s: s.name == stream_name)
 
 
-def get_stream_names(catalog: AirbyteCatalog) -> List[str]:
+def get_stream_names(catalog: AirbyteCatalog) -> list[str]:
     return [stream.name for stream in catalog.streams]
 
 
@@ -27,8 +26,8 @@ def to_configured_stream(
     stream: AirbyteStream,
     sync_mode: SyncMode = SyncMode.full_refresh,
     destination_sync_mode: DestinationSyncMode = DestinationSyncMode.append,
-    cursor_field: Optional[List[str]] = None,
-    primary_key: Optional[List[List[str]]] = None,
+    cursor_field: list[str] | None = None,
+    primary_key: list[list[str]] | None = None,
 ) -> ConfiguredAirbyteStream:
     return ConfiguredAirbyteStream(
         stream=stream,
@@ -40,7 +39,7 @@ def to_configured_stream(
 
 
 def to_configured_catalog(
-    configured_streams: List[ConfiguredAirbyteStream],
+    configured_streams: list[ConfiguredAirbyteStream],
 ) -> ConfiguredAirbyteCatalog:
     return ConfiguredAirbyteCatalog(streams=configured_streams)
 

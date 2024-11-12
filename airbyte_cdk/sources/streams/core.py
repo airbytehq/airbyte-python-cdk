@@ -1,16 +1,20 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
+
 import copy
 import inspect
 import itertools
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Iterable, Iterator, Mapping, MutableMapping
 from dataclasses import dataclass
-from functools import cached_property, lru_cache
-from typing import Any, Dict, Iterable, Iterator, List, Mapping, MutableMapping, Optional, Union
+from functools import cache, cached_property
+from typing import Any, Union
 
-import airbyte_cdk.sources.utils.casing as casing
+from deprecated import deprecated
+
 from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteStream,
@@ -19,6 +23,7 @@ from airbyte_cdk.models import (
     SyncMode,
 )
 from airbyte_cdk.models import Type as MessageType
+from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.streams.checkpoint import (
     CheckpointMode,
     CheckpointReader,
@@ -30,17 +35,18 @@ from airbyte_cdk.sources.streams.checkpoint import (
     ResumableFullRefreshCheckpointReader,
 )
 from airbyte_cdk.sources.types import StreamSlice
+from airbyte_cdk.sources.utils import casing
 
 # list of all possible HTTP methods which can be used for sending of request bodies
 from airbyte_cdk.sources.utils.schema_helpers import InternalConfig, ResourceSchemaLoader
 from airbyte_cdk.sources.utils.slice_logger import DebugSliceLogger, SliceLogger
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
-from deprecated import deprecated
+
 
 # A stream's read method can return one of the following types:
 # Mapping[str, Any]: The content of an AirbyteRecordMessage
 # AirbyteMessage: An AirbyteMessage. Could be of any type
-StreamData = Union[Mapping[str, Any], AirbyteMessage]
+StreamData = Union[Mapping[str, Any], AirbyteMessage]  # noqa: UP007
 
 JsonSchema = Mapping[str, Any]
 
@@ -52,8 +58,7 @@ def package_name_from_class(cls: object) -> str:
     module = inspect.getmodule(cls)
     if module is not None:
         return module.__name__.split(".")[0]
-    else:
-        raise ValueError(f"Could not find package name for class {cls}")
+    raise ValueError(f"Could not find package name for class {cls}")
 
 
 class CheckpointMixin(ABC):
@@ -115,17 +120,15 @@ class StreamClassification:
 
 
 # Moved to class declaration since get_updated_state is called on every record for incremental syncs, and thus the @deprecated decorator as well.
-@deprecated(
+@deprecated(  # noqa: PLR0904
     version="0.1.49",
     reason="Deprecated method get_updated_state, You should use explicit state property instead, see IncrementalMixin docs.",
     action="ignore",
 )
 class Stream(ABC):
-    """
-    Base abstract class for an Airbyte Stream. Makes no assumption of the Stream's underlying transport protocol.
-    """
+    """Base abstract class for an Airbyte Stream. Makes no assumption of the Stream's underlying transport protocol."""
 
-    _configured_json_schema: Optional[Dict[str, Any]] = None
+    _configured_json_schema: dict[str, Any] | None = None
     _exit_on_rate_limit: bool = False
 
     # Use self.logger in subclasses to log any messages
@@ -136,20 +139,17 @@ class Stream(ABC):
     # TypeTransformer object to perform output data transformation
     transformer: TypeTransformer = TypeTransformer(TransformConfig.NoTransform)
 
-    cursor: Optional[Cursor] = None
+    cursor: Cursor | None = None
 
     has_multiple_slices = False
 
     @cached_property
     def name(self) -> str:
-        """
-        :return: Stream name. By default this is the implementing class name, but it can be overridden as needed.
-        """
+        """:return: Stream name. By default this is the implementing class name, but it can be overridden as needed."""
         return casing.camel_to_snake(self.__class__.__name__)
 
-    def get_error_display_message(self, exception: BaseException) -> Optional[str]:
-        """
-        Retrieves the user-friendly display message that corresponds to an exception.
+    def get_error_display_message(self, exception: BaseException) -> str | None:  # noqa: ARG002  (unused)
+        """Retrieves the user-friendly display message that corresponds to an exception.
         This will be called when encountering an exception while reading records from the stream, and used to build the AirbyteTraceMessage.
 
         The default implementation of this method does not return user-friendly messages for any exception type, but it should be overriden as needed.
@@ -165,7 +165,7 @@ class Stream(ABC):
         logger: logging.Logger,
         slice_logger: SliceLogger,
         stream_state: MutableMapping[str, Any],
-        state_manager,
+        state_manager,  # noqa: ANN001
         internal_config: InternalConfig,
     ) -> Iterable[StreamData]:
         sync_mode = configured_stream.sync_mode
@@ -176,7 +176,7 @@ class Stream(ABC):
         # opposed to the incoming stream_state value. Because some connectors like ones using the file-based CDK modify
         # state before setting the value on the Stream attribute, the most up-to-date state is derived from Stream.state
         # instead of the stream_state parameter. This does not apply to legacy connectors using get_updated_state().
-        try:
+        try:  # noqa: SIM105  (suppressible exception)
             stream_state = self.state  # type: ignore # we know the field might not exist...
         except AttributeError:
             pass
@@ -193,7 +193,7 @@ class Stream(ABC):
             if slice_logger.should_log_slice_message(logger):
                 yield slice_logger.create_slice_log_message(next_slice)
             records = self.read_records(
-                sync_mode=sync_mode,  # todo: change this interface to no longer rely on sync_mode for behavior
+                sync_mode=sync_mode,  # TODO: change this interface to no longer rely on sync_mode for behavior
                 stream_slice=next_slice,
                 stream_state=stream_state,
                 cursor_field=cursor_field or None,
@@ -256,13 +256,11 @@ class Stream(ABC):
             airbyte_state_message = self._checkpoint_state(checkpoint, state_manager=state_manager)
             yield airbyte_state_message
 
-    def read_only_records(self, state: Optional[Mapping[str, Any]] = None) -> Iterable[StreamData]:
-        """
-        Helper method that performs a read on a stream with an optional state and emits records. If the parent stream supports
+    def read_only_records(self, state: Mapping[str, Any] | None = None) -> Iterable[StreamData]:
+        """Helper method that performs a read on a stream with an optional state and emits records. If the parent stream supports
         incremental, this operation does not update the stream's internal state (if it uses the modern state setter/getter)
         or emit state messages.
         """
-
         configured_stream = ConfiguredAirbyteStream(
             stream=AirbyteStream(
                 name=self.name,
@@ -288,23 +286,20 @@ class Stream(ABC):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
-        """
-        This method should be overridden by subclasses to read records based on the inputs
-        """
+        """This method should be overridden by subclasses to read records based on the inputs"""
 
-    @lru_cache(maxsize=None)
+    @cache  # noqa: B019  (cached class methods can cause memory leaks)
     def get_json_schema(self) -> Mapping[str, Any]:
-        """
-        :return: A dict of the JSON schema representing this stream.
+        """:return: A dict of the JSON schema representing this stream.
 
         The default implementation of this method looks for a JSONSchema file with the same name as this stream's "name" property.
         Override as needed.
         """
-        # TODO show an example of using pydantic to define the JSON schema, or reading an OpenAPI spec
+        # TODO: show an example of using pydantic to define the JSON schema, or reading an OpenAPI spec
         return ResourceSchemaLoader(package_name_from_class(self.__class__)).get_schema(self.name)
 
     def as_airbyte_stream(self) -> AirbyteStream:
@@ -332,15 +327,12 @@ class Stream(ABC):
 
     @property
     def supports_incremental(self) -> bool:
-        """
-        :return: True if this stream supports incrementally reading data
-        """
+        """:return: True if this stream supports incrementally reading data"""
         return len(self._wrapped_cursor_field()) > 0
 
     @property
     def is_resumable(self) -> bool:
-        """
-        :return: True if this stream allows the checkpointing of sync progress and can resume from it on subsequent attempts.
+        """:return: True if this stream allows the checkpointing of sync progress and can resume from it on subsequent attempts.
         This differs from supports_incremental because certain kinds of streams like those supporting resumable full refresh
         can checkpoint progress in between attempts for improved fault tolerance. However, they will start from the beginning
         on the next sync job.
@@ -352,38 +344,33 @@ class Stream(ABC):
             # to structure stream state in a very specific way. We also can't check for issubclass(HttpSubStream) because
             # not all substreams implement the interface and it would be a circular dependency so we use parent as a surrogate
             return False
-        elif hasattr(type(self), "state") and getattr(type(self), "state").fset is not None:
+        if hasattr(type(self), "state") and type(self).state.fset is not None:
             # Modern case where a stream manages state using getter/setter
             return True
-        else:
-            # Legacy case where the CDK manages state via the get_updated_state() method. This is determined by checking if
-            # the stream's get_updated_state() differs from the Stream class and therefore has been overridden
-            return type(self).get_updated_state != Stream.get_updated_state
+        # Legacy case where the CDK manages state via the get_updated_state() method. This is determined by checking if
+        # the stream's get_updated_state() differs from the Stream class and therefore has been overridden
+        return type(self).get_updated_state != Stream.get_updated_state
 
-    def _wrapped_cursor_field(self) -> List[str]:
+    def _wrapped_cursor_field(self) -> list[str]:
         return [self.cursor_field] if isinstance(self.cursor_field, str) else self.cursor_field
 
     @property
-    def cursor_field(self) -> Union[str, List[str]]:
-        """
-        Override to return the default cursor field used by this stream e.g: an API entity might always use created_at as the cursor field.
+    def cursor_field(self) -> str | list[str]:
+        """Override to return the default cursor field used by this stream e.g: an API entity might always use created_at as the cursor field.
         :return: The name of the field used as a cursor. If the cursor is nested, return an array consisting of the path to the cursor.
         """
         return []
 
     @property
-    def namespace(self) -> Optional[str]:
-        """
-        Override to return the namespace of this stream, e.g. the Postgres schema which this stream will emit records for.
+    def namespace(self) -> str | None:
+        """Override to return the namespace of this stream, e.g. the Postgres schema which this stream will emit records for.
         :return: A string containing the name of the namespace.
         """
         return None
 
     @property
     def source_defined_cursor(self) -> bool:
-        """
-        Return False if the cursor can be configured by the user.
-        """
+        """Return False if the cursor can be configured by the user."""
         return True
 
     @property
@@ -398,21 +385,19 @@ class Stream(ABC):
 
     @property
     @abstractmethod
-    def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
-        """
-        :return: string if single primary key, list of strings if composite primary key, list of list of strings if composite primary key consisting of nested fields.
-          If the stream has no primary keys, return None.
+    def primary_key(self) -> str | list[str] | list[list[str]] | None:
+        """:return: string if single primary key, list of strings if composite primary key, list of list of strings if composite primary key consisting of nested fields.
+        If the stream has no primary keys, return None.
         """
 
     def stream_slices(
         self,
         *,
-        sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
-    ) -> Iterable[Optional[Mapping[str, Any]]]:
-        """
-        Override to define the slices for this stream. See the stream slicing section of the docs for more information.
+        sync_mode: SyncMode,  # noqa: ARG002  (unused)
+        cursor_field: list[str] | None = None,  # noqa: ARG002  (unused)
+        stream_state: Mapping[str, Any] | None = None,  # noqa: ARG002  (unused)
+    ) -> Iterable[Mapping[str, Any] | None]:
+        """Override to define the slices for this stream. See the stream slicing section of the docs for more information.
 
         :param sync_mode:
         :param cursor_field:
@@ -422,9 +407,8 @@ class Stream(ABC):
         yield StreamSlice(partition={}, cursor_slice={})
 
     @property
-    def state_checkpoint_interval(self) -> Optional[int]:
-        """
-        Decides how often to checkpoint state (i.e: emit a STATE message). E.g: if this returns a value of 100, then state is persisted after reading
+    def state_checkpoint_interval(self) -> int | None:
+        """Decides how often to checkpoint state (i.e: emit a STATE message). E.g: if this returns a value of 100, then state is persisted after reading
         100 records, then 200, 300, etc.. A good default value is 1000 although your mileage may vary depending on the underlying data source.
 
         Checkpointing a stream avoids re-reading records in the case a sync is failed or cancelled.
@@ -436,7 +420,9 @@ class Stream(ABC):
         return None
 
     def get_updated_state(
-        self, current_stream_state: MutableMapping[str, Any], latest_record: Mapping[str, Any]
+        self,
+        current_stream_state: MutableMapping[str, Any],  # noqa: ARG002  (unused)
+        latest_record: Mapping[str, Any],  # noqa: ARG002  (unused)
     ) -> MutableMapping[str, Any]:
         """Override to extract state from the latest record. Needed to implement incremental sync.
 
@@ -451,9 +437,8 @@ class Stream(ABC):
         """
         return {}
 
-    def get_cursor(self) -> Optional[Cursor]:
-        """
-        A Cursor is an interface that a stream can implement to manage how its internal state is read and updated while
+    def get_cursor(self) -> Cursor | None:
+        """A Cursor is an interface that a stream can implement to manage how its internal state is read and updated while
         reading records. Historically, Python connectors had no concept of a cursor to manage state. Python streams need
         to define a cursor implementation and override this method to manage state through a Cursor.
         """
@@ -461,14 +446,14 @@ class Stream(ABC):
 
     def _get_checkpoint_reader(
         self,
-        logger: logging.Logger,
-        cursor_field: Optional[List[str]],
+        logger: logging.Logger,  # noqa: ARG002  (unused)
+        cursor_field: list[str] | None,
         sync_mode: SyncMode,
         stream_state: MutableMapping[str, Any],
     ) -> CheckpointReader:
         mappings_or_slices = self.stream_slices(
             cursor_field=cursor_field,
-            sync_mode=sync_mode,  # todo: change this interface to no longer rely on sync_mode for behavior
+            sync_mode=sync_mode,  # TODO: change this interface to no longer rely on sync_mode for behavior
             stream_state=stream_state,
         )
 
@@ -501,38 +486,35 @@ class Stream(ABC):
             return LegacyCursorBasedCheckpointReader(
                 stream_slices=slices_iterable_copy, cursor=cursor, read_state_from_cursor=True
             )
-        elif cursor:
+        if cursor:
             return CursorBasedCheckpointReader(
                 stream_slices=slices_iterable_copy,
                 cursor=cursor,
                 read_state_from_cursor=checkpoint_mode == CheckpointMode.RESUMABLE_FULL_REFRESH,
             )
-        elif checkpoint_mode == CheckpointMode.RESUMABLE_FULL_REFRESH:
+        if checkpoint_mode == CheckpointMode.RESUMABLE_FULL_REFRESH:
             # Resumable full refresh readers rely on the stream state dynamically being updated during pagination and does
             # not iterate over a static set of slices.
             return ResumableFullRefreshCheckpointReader(stream_state=stream_state)
-        elif checkpoint_mode == CheckpointMode.INCREMENTAL:
+        if checkpoint_mode == CheckpointMode.INCREMENTAL:
             return IncrementalCheckpointReader(
                 stream_slices=slices_iterable_copy, stream_state=stream_state
             )
-        else:
-            return FullRefreshCheckpointReader(stream_slices=slices_iterable_copy)
+        return FullRefreshCheckpointReader(stream_slices=slices_iterable_copy)
 
     @property
     def _checkpoint_mode(self) -> CheckpointMode:
         if self.is_resumable and len(self._wrapped_cursor_field()) > 0:
             return CheckpointMode.INCREMENTAL
-        elif self.is_resumable:
+        if self.is_resumable:
             return CheckpointMode.RESUMABLE_FULL_REFRESH
-        else:
-            return CheckpointMode.FULL_REFRESH
+        return CheckpointMode.FULL_REFRESH
 
     @staticmethod
     def _classify_stream(
-        mappings_or_slices: Iterator[Optional[Union[Mapping[str, Any], StreamSlice]]],
+        mappings_or_slices: Iterator[Mapping[str, Any] | StreamSlice | None],
     ) -> StreamClassification:
-        """
-        This is a bit of a crazy solution, but also the only way we can detect certain attributes about the stream since Python
+        """This is a bit of a crazy solution, but also the only way we can detect certain attributes about the stream since Python
         streams do not follow consistent implementation patterns. We care about the following two attributes:
         - is_substream: Helps to incrementally release changes since substreams w/ parents are much more complicated. Also
           helps de-risk the release of changes that might impact all connectors
@@ -584,9 +566,7 @@ class Stream(ABC):
             )
 
     def log_stream_sync_configuration(self) -> None:
-        """
-        Logs the configuration of this stream.
-        """
+        """Logs the configuration of this stream."""
         self.logger.debug(
             f"Syncing stream instance: {self.name}",
             extra={
@@ -597,17 +577,15 @@ class Stream(ABC):
 
     @staticmethod
     def _wrapped_primary_key(
-        keys: Optional[Union[str, List[str], List[List[str]]]],
-    ) -> Optional[List[List[str]]]:
-        """
-        :return: wrap the primary_key property in a list of list of strings required by the Airbyte Stream object.
-        """
+        keys: str | list[str] | list[list[str]] | None,
+    ) -> list[list[str]] | None:
+        """:return: wrap the primary_key property in a list of list of strings required by the Airbyte Stream object."""
         if not keys:
             return None
 
         if isinstance(keys, str):
             return [[keys]]
-        elif isinstance(keys, list):
+        if isinstance(keys, list):
             wrapped_keys = []
             for component in keys:
                 if isinstance(component, str):
@@ -615,20 +593,17 @@ class Stream(ABC):
                 elif isinstance(component, list):
                     wrapped_keys.append(component)
                 else:
-                    raise ValueError(f"Element must be either list or str. Got: {type(component)}")
+                    raise ValueError(f"Element must be either list or str. Got: {type(component)}")  # noqa: TRY004  (should raise TypeError)
             return wrapped_keys
-        else:
-            raise ValueError(f"Element must be either list or str. Got: {type(keys)}")
+        raise ValueError(f"Element must be either list or str. Got: {type(keys)}")
 
     def _observe_state(
-        self, checkpoint_reader: CheckpointReader, stream_state: Optional[Mapping[str, Any]] = None
+        self, checkpoint_reader: CheckpointReader, stream_state: Mapping[str, Any] | None = None
     ) -> None:
-        """
-        Convenience method that attempts to read the Stream's state using the recommended way of connector's managing their
+        """Convenience method that attempts to read the Stream's state using the recommended way of connector's managing their
         own state via state setter/getter. But if we get back an AttributeError, then the legacy Stream.get_updated_state()
         method is used as a fallback method.
         """
-
         # This is an inversion of the original logic that used to try state getter/setters first. As part of the work to
         # automatically apply resumable full refresh to all streams, all HttpStream classes implement default state
         # getter/setter methods, we should default to only using the incoming stream_state parameter value is {} which
@@ -648,31 +623,29 @@ class Stream(ABC):
     def _checkpoint_state(  # type: ignore  # ignoring typing for ConnectorStateManager because of circular dependencies
         self,
         stream_state: Mapping[str, Any],
-        state_manager,
+        state_manager: ConnectorStateManager,
     ) -> AirbyteMessage:
-        # todo: This can be consolidated into one ConnectorStateManager.update_and_create_state_message() method, but I want
+        # TODO: This can be consolidated into one ConnectorStateManager.update_and_create_state_message() method, but I want
         #  to reduce changes right now and this would span concurrent as well
         state_manager.update_state_for_stream(self.name, self.namespace, stream_state)
         return state_manager.create_state_message(self.name, self.namespace)
 
     @property
-    def configured_json_schema(self) -> Optional[Dict[str, Any]]:
-        """
-        This property is set from the read method.
+    def configured_json_schema(self) -> dict[str, Any] | None:
+        """This property is set from the read method.
 
         :return Optional[Dict]: JSON schema from configured catalog if provided, otherwise None.
         """
         return self._configured_json_schema
 
     @configured_json_schema.setter
-    def configured_json_schema(self, json_schema: Dict[str, Any]) -> None:
+    def configured_json_schema(self, json_schema: dict[str, Any]) -> None:
         self._configured_json_schema = self._filter_schema_invalid_properties(json_schema)
 
     def _filter_schema_invalid_properties(
-        self, configured_catalog_json_schema: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        """
-        Filters the properties in json_schema that are not present in the stream schema.
+        self, configured_catalog_json_schema: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Filters the properties in json_schema that are not present in the stream schema.
         Configured Schemas can have very old fields, so we need to housekeeping ourselves.
         """
         configured_schema: Any = configured_catalog_json_schema.get("properties", {})

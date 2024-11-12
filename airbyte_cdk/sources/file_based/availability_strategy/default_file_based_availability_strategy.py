@@ -1,13 +1,12 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
-import logging
 import traceback
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING
 
 from airbyte_cdk import AirbyteTracedException
-from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.file_based.availability_strategy import (
     AbstractFileBasedAvailabilityStrategy,
 )
@@ -16,23 +15,31 @@ from airbyte_cdk.sources.file_based.exceptions import (
     CustomFileBasedException,
     FileBasedSourceError,
 )
-from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
-from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.schema_helpers import conforms_to_schema
 
+
 if TYPE_CHECKING:
+    import logging
+
+    from airbyte_cdk.sources import Source
+    from airbyte_cdk.sources.file_based.file_based_stream_reader import (
+        AbstractFileBasedStreamReader,
+    )
+    from airbyte_cdk.sources.file_based.remote_file import RemoteFile
     from airbyte_cdk.sources.file_based.stream import AbstractFileBasedStream
 
 
 class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy):
-    def __init__(self, stream_reader: AbstractFileBasedStreamReader):
+    def __init__(self, stream_reader: AbstractFileBasedStreamReader) -> None:
         self.stream_reader = stream_reader
 
     def check_availability(
-        self, stream: "AbstractFileBasedStream", logger: logging.Logger, _: Optional[Source]
-    ) -> Tuple[bool, Optional[str]]:  # type: ignore[override]
-        """
-        Perform a connection check for the stream (verify that we can list files from the stream).
+        self,
+        stream: AbstractFileBasedStream,
+        logger: logging.Logger,  # noqa: ARG002  (unused)
+        source: Source | None,  # noqa: ARG002  (unused)
+    ) -> tuple[bool, str | None]:  # type: ignore[override]
+        """Perform a connection check for the stream (verify that we can list files from the stream).
 
         Returns (True, None) if successful, otherwise (False, <error message>).
         """
@@ -44,10 +51,9 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
         return True, None
 
     def check_availability_and_parsability(
-        self, stream: "AbstractFileBasedStream", logger: logging.Logger, _: Optional[Source]
-    ) -> Tuple[bool, Optional[str]]:
-        """
-        Perform a connection check for the stream.
+        self, stream: AbstractFileBasedStream, logger: logging.Logger, _: Source | None
+    ) -> tuple[bool, str | None]:
+        """Perform a connection check for the stream.
 
         Returns (True, None) if successful, otherwise (False, <error message>).
 
@@ -69,29 +75,30 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
             return False, config_check_error_message
         try:
             file = self._check_list_files(stream)
-            if not parser.parser_max_n_files_for_parsability == 0:
+            if parser.parser_max_n_files_for_parsability != 0:
                 self._check_parse_record(stream, file, logger)
             else:
                 # If the parser is set to not check parsability, we still want to check that we can open the file.
                 handle = stream.stream_reader.open_file(file, parser.file_read_mode, None, logger)
                 handle.close()
-        except AirbyteTracedException as ate:
-            raise ate
+        except AirbyteTracedException:
+            raise
         except CheckAvailabilityError:
             return False, "".join(traceback.format_exc())
 
         return True, None
 
-    def _check_list_files(self, stream: "AbstractFileBasedStream") -> RemoteFile:
-        """
-        Check that we can list files from the stream.
+    def _check_list_files(self, stream: AbstractFileBasedStream) -> RemoteFile:
+        """Check that we can list files from the stream.
 
         Returns the first file if successful, otherwise raises a CheckAvailabilityError.
         """
         try:
             file = next(iter(stream.get_files()))
         except StopIteration:
-            raise CheckAvailabilityError(FileBasedSourceError.EMPTY_STREAM, stream=stream.name)
+            raise CheckAvailabilityError(
+                FileBasedSourceError.EMPTY_STREAM, stream=stream.name
+            ) from None
         except CustomFileBasedException as exc:
             raise CheckAvailabilityError(str(exc), stream=stream.name) from exc
         except Exception as exc:
@@ -102,7 +109,7 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
         return file
 
     def _check_parse_record(
-        self, stream: "AbstractFileBasedStream", file: RemoteFile, logger: logging.Logger
+        self, stream: AbstractFileBasedStream, file: RemoteFile, logger: logging.Logger
     ) -> None:
         parser = stream.get_parser()
 
@@ -119,15 +126,15 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
             # consider the connection check successful even though it means
             # we skip the schema validation check.
             return
-        except AirbyteTracedException as ate:
-            raise ate
+        except AirbyteTracedException:
+            raise
         except Exception as exc:
             raise CheckAvailabilityError(
                 FileBasedSourceError.ERROR_READING_FILE, stream=stream.name, file=file.uri
             ) from exc
 
         schema = stream.catalog_schema or stream.config.input_schema
-        if schema and stream.validation_policy.validate_schema_before_sync:
+        if schema and stream.validation_policy.validate_schema_before_sync:  # noqa: SIM102  (collapsible-if)
             if not conforms_to_schema(record, schema):  # type: ignore
                 raise CheckAvailabilityError(
                     FileBasedSourceError.ERROR_VALIDATING_RECORD,
@@ -135,4 +142,4 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
                     file=file.uri,
                 )
 
-        return None
+        return

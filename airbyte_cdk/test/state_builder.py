@@ -1,6 +1,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
-from typing import Any, List
+from typing import Any
 
 from airbyte_cdk.models import (
     AirbyteStateBlob,
@@ -13,9 +14,9 @@ from airbyte_cdk.models import (
 
 class StateBuilder:
     def __init__(self) -> None:
-        self._state: List[AirbyteStateMessage] = []
+        self._state: list[AirbyteStateMessage] = []
 
-    def with_stream_state(self, stream_name: str, state: Any) -> "StateBuilder":
+    def with_stream_state(self, stream_name: str, state: Any) -> StateBuilder:  # noqa: ANN401  (any-type)
         self._state.append(
             AirbyteStateMessage(
                 type=AirbyteStateType.STREAM,
@@ -23,11 +24,11 @@ class StateBuilder:
                     stream_state=state
                     if isinstance(state, AirbyteStateBlob)
                     else AirbyteStateBlob(state),
-                    stream_descriptor=StreamDescriptor(**{"name": stream_name}),
+                    stream_descriptor=StreamDescriptor(name=stream_name),
                 ),
             )
         )
         return self
 
-    def build(self) -> List[AirbyteStateMessage]:
+    def build(self) -> list[AirbyteStateMessage]:
         return self._state

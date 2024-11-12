@@ -1,15 +1,18 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
 from unittest import TestCase
 
 import requests
 import requests_mock
+
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
     ResponseAction,
     create_fallback_error_resolution,
 )
 from airbyte_cdk.utils.airbyte_secrets_utils import update_secrets
+
 
 _A_SECRET = "a-secret"
 _A_URL = "https://a-url.com"

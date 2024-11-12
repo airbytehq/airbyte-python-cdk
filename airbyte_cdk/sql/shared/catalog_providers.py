@@ -10,12 +10,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast, final
 
-from airbyte_cdk.models import ConfiguredAirbyteCatalog
 from airbyte_cdk.sql import exceptions as exc
 from airbyte_cdk.sql._util.name_normalizers import LowerCaseNormalizer
 
+
 if TYPE_CHECKING:
-    from airbyte_cdk.models import ConfiguredAirbyteStream
+    from airbyte_cdk.models import ConfiguredAirbyteCatalog, ConfiguredAirbyteStream
 
 
 class CatalogProvider:
@@ -40,7 +40,7 @@ class CatalogProvider:
         self._catalog: ConfiguredAirbyteCatalog = self.validate_catalog(configured_catalog)
 
     @staticmethod
-    def validate_catalog(catalog: ConfiguredAirbyteCatalog) -> Any:
+    def validate_catalog(catalog: ConfiguredAirbyteCatalog) -> Any:  # noqa: ANN401  (any-type)
         """Validate the catalog to ensure it is valid.
 
         This requires ensuring that `generationId` and `minGenerationId` are both set. If

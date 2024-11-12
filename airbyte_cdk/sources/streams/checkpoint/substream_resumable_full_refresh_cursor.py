@@ -1,15 +1,22 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping, MutableMapping, Optional
+from typing import TYPE_CHECKING, Any
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.streams.checkpoint import Cursor
 from airbyte_cdk.sources.streams.checkpoint.per_partition_key_serializer import (
     PerPartitionKeySerializer,
 )
-from airbyte_cdk.sources.types import Record, StreamSlice, StreamState
 from airbyte_cdk.utils import AirbyteTracedException
+
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, MutableMapping
+
+    from airbyte_cdk.sources.types import Record, StreamSlice, StreamState
+
 
 FULL_REFRESH_COMPLETE_STATE: Mapping[str, Any] = {"__ab_full_refresh_sync_complete": True}
 
@@ -24,8 +31,7 @@ class SubstreamResumableFullRefreshCursor(Cursor):
         return {"states": list(self._per_partition_state.values())}
 
     def set_initial_state(self, stream_state: StreamState) -> None:
-        """
-        Set the initial state for the cursors.
+        """Set the initial state for the cursors.
 
         This method initializes the state for each partition cursor using the provided stream state.
         If a partition state is provided in the stream state, it will update the corresponding partition cursor with this state.
@@ -71,31 +77,26 @@ class SubstreamResumableFullRefreshCursor(Cursor):
             self._per_partition_state[self._to_partition_key(state["partition"])] = state
 
     def observe(self, stream_slice: StreamSlice, record: Record) -> None:
-        """
-        Substream resumable full refresh manages state by closing the slice after syncing a parent so observe is not used.
-        """
+        """Substream resumable full refresh manages state by closing the slice after syncing a parent so observe is not used."""
         pass
 
-    def close_slice(self, stream_slice: StreamSlice, *args: Any) -> None:
+    def close_slice(self, stream_slice: StreamSlice, *args: Any) -> None:  # noqa: ANN401, ARG002  (any-type, unused)
         self._per_partition_state[self._to_partition_key(stream_slice.partition)] = {
             "partition": stream_slice.partition,
             "cursor": FULL_REFRESH_COMPLETE_STATE,
         }
 
-    def should_be_synced(self, record: Record) -> bool:
-        """
-        Unlike date-based cursors which filter out records outside slice boundaries, resumable full refresh records exist within pages
+    def should_be_synced(self, record: Record) -> bool:  # noqa: ARG002  (unused)
+        """Unlike date-based cursors which filter out records outside slice boundaries, resumable full refresh records exist within pages
         that don't have filterable bounds. We should always return them.
         """
         return True
 
-    def is_greater_than_or_equal(self, first: Record, second: Record) -> bool:
-        """
-        RFR record don't have ordering to be compared between one another.
-        """
+    def is_greater_than_or_equal(self, first: Record, second: Record) -> bool:  # noqa: ARG002  (unused)
+        """RFR record don't have ordering to be compared between one another."""
         return False
 
-    def select_state(self, stream_slice: Optional[StreamSlice] = None) -> Optional[StreamState]:
+    def select_state(self, stream_slice: StreamSlice | None = None) -> StreamState | None:
         if not stream_slice:
             raise ValueError("A partition needs to be provided in order to extract a state")
 

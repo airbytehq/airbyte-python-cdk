@@ -1,21 +1,27 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from dataclasses import InitVar, dataclass
-from typing import Any, Dict, List, Mapping, Optional
+from typing import TYPE_CHECKING, Any
 
 import dpath
 import dpath.exceptions
+
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
-from airbyte_cdk.sources.types import Config, FieldPointer, StreamSlice, StreamState
+
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from airbyte_cdk.sources.types import Config, FieldPointer, StreamSlice, StreamState
 
 
 @dataclass
 class RemoveFields(RecordTransformation):
-    """
-    A transformation which removes fields from a record. The fields removed are designated using FieldPointers.
+    """A transformation which removes fields from a record. The fields removed are designated using FieldPointers.
     During transformation, if a field or any of its parents does not exist in the record, no error is thrown.
 
     If an input field pointer references an item in a list (e.g: ["k", 0] in the object {"k": ["a", "b", "c"]}) then
@@ -39,7 +45,7 @@ class RemoveFields(RecordTransformation):
         field_pointers (List[FieldPointer]): pointers to the fields that should be removed
     """
 
-    field_pointers: List[FieldPointer]
+    field_pointers: list[FieldPointer]
     parameters: InitVar[Mapping[str, Any]]
     condition: str = ""
 
@@ -50,18 +56,17 @@ class RemoveFields(RecordTransformation):
 
     def transform(
         self,
-        record: Dict[str, Any],
-        config: Optional[Config] = None,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
+        record: dict[str, Any],
+        config: Config | None = None,
+        stream_state: StreamState | None = None,  # noqa: ARG002  (unused)
+        stream_slice: StreamSlice | None = None,  # noqa: ARG002  (unused)
     ) -> None:
-        """
-        :param record: The record to be transformed
+        """:param record: The record to be transformed
         :return: the input record with the requested fields removed
         """
         for pointer in self.field_pointers:
             # the dpath library by default doesn't delete fields from arrays
-            try:
+            try:  # noqa: SIM105  (suppressible exception)
                 dpath.delete(
                     record,
                     pointer,

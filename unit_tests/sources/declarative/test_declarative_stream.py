@@ -1,10 +1,12 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from unittest.mock import MagicMock
 
 import pytest
+
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
@@ -16,6 +18,7 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.types import StreamSlice
+
 
 SLICE_NOT_CONSIDERED_FOR_EQUALITY = {}
 
@@ -81,9 +84,7 @@ def test_declarative_stream():
 
 
 def test_declarative_stream_using_empty_slice():
-    """
-    Tests that a declarative_stream
-    """
+    """Tests that a declarative_stream"""
     schema_loader = _schema_loader()
 
     records = [

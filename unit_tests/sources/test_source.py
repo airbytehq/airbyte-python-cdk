@@ -1,14 +1,19 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import json
 import logging
 import tempfile
+from collections.abc import Mapping, MutableMapping
 from contextlib import nullcontext as does_not_raise
-from typing import Any, List, Mapping, MutableMapping, Optional, Tuple, Union
+from typing import Any
 
 import pytest
+import orjson
+from serpyco_rs import SchemaValidationError
+
 from airbyte_cdk.models import (
     AirbyteGlobalState,
     AirbyteStateBlob,
@@ -26,8 +31,6 @@ from airbyte_cdk.sources import AbstractSource, Source
 from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.streams.http.http import HttpStream
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
-from orjson import orjson
-from serpyco_rs import SchemaValidationError
 
 
 class MockSource(Source):
@@ -48,13 +51,13 @@ class MockSource(Source):
 
 
 class MockAbstractSource(AbstractSource):
-    def __init__(self, streams: Optional[List[Stream]] = None):
+    def __init__(self, streams: list[Stream] | None = None):
         self._streams = streams
 
-    def check_connection(self, *args, **kwargs) -> Tuple[bool, Optional[Any]]:
+    def check_connection(self, *args, **kwargs) -> tuple[bool, Any | None]:
         return True, ""
 
-    def streams(self, *args, **kwargs) -> List[Stream]:
+    def streams(self, *args, **kwargs) -> list[Stream]:
         if self._streams:
             return self._streams
         return []
@@ -104,7 +107,7 @@ def abstract_source(mocker):
         _state = {}
 
         @property
-        def cursor_field(self) -> Union[str, List[str]]:
+        def cursor_field(self) -> str | list[str]:
             return ["updated_at"]
 
         def get_backoff_strategy(self):

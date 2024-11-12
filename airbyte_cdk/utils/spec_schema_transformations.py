@@ -1,6 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import json
 import re
@@ -9,8 +10,7 @@ from jsonschema import RefResolver
 
 
 def resolve_refs(schema: dict) -> dict:
-    """
-    For spec schemas generated using Pydantic models, the resulting JSON schema can contain refs between object
+    """For spec schemas generated using Pydantic models, the resulting JSON schema can contain refs between object
     relationships.
     """
     json_schema_ref_resolver = RefResolver.from_schema(schema)

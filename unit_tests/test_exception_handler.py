@@ -1,13 +1,14 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-
+from __future__ import annotations
 
 import json
 import subprocess
 import sys
 
 import pytest
+
 from airbyte_cdk.exception_handler import assemble_uncaught_exception
 from airbyte_cdk.models import (
     AirbyteErrorTraceMessage,

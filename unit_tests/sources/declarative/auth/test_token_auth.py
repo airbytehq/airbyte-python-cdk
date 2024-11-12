@@ -1,11 +1,14 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import logging
 
 import pytest
 import requests
+from requests import Response
+
 from airbyte_cdk.sources.declarative.auth.token import (
     ApiKeyAuthenticator,
     BasicHttpAuthenticator,
@@ -16,7 +19,7 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
     RequestOptionType,
 )
-from requests import Response
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -34,9 +37,7 @@ parameters = {"username": "user", "password": "password", "header": "header"}
     ],
 )
 def test_bearer_token_authenticator(test_name, token, expected_header_value):
-    """
-    Should match passed in token, no matter how many times token is retrieved.
-    """
+    """Should match passed in token, no matter how many times token is retrieved."""
     token_provider = InterpolatedStringTokenProvider(
         config=config, api_token=token, parameters=parameters
     )
@@ -48,9 +49,9 @@ def test_bearer_token_authenticator(test_name, token, expected_header_value):
     prepared_request.headers = {}
     token_auth(prepared_request)
 
-    assert {"Authorization": expected_header_value} == prepared_request.headers
-    assert {"Authorization": expected_header_value} == header1
-    assert {"Authorization": expected_header_value} == header2
+    assert prepared_request.headers == {"Authorization": expected_header_value}
+    assert header1 == {"Authorization": expected_header_value}
+    assert header2 == {"Authorization": expected_header_value}
 
 
 @pytest.mark.parametrize(
@@ -72,9 +73,7 @@ def test_bearer_token_authenticator(test_name, token, expected_header_value):
     ],
 )
 def test_basic_authenticator(test_name, username, password, expected_header_value):
-    """
-    Should match passed in token, no matter how many times token is retrieved.
-    """
+    """Should match passed in token, no matter how many times token is retrieved."""
     token_auth = BasicHttpAuthenticator(
         username=username, password=password, config=config, parameters=parameters
     )
@@ -85,9 +84,9 @@ def test_basic_authenticator(test_name, username, password, expected_header_valu
     prepared_request.headers = {}
     token_auth(prepared_request)
 
-    assert {"Authorization": expected_header_value} == prepared_request.headers
-    assert {"Authorization": expected_header_value} == header1
-    assert {"Authorization": expected_header_value} == header2
+    assert prepared_request.headers == {"Authorization": expected_header_value}
+    assert header1 == {"Authorization": expected_header_value}
+    assert header2 == {"Authorization": expected_header_value}
 
 
 @pytest.mark.parametrize(
@@ -111,9 +110,7 @@ def test_basic_authenticator(test_name, username, password, expected_header_valu
     ],
 )
 def test_api_key_authenticator(test_name, header, token, expected_header, expected_header_value):
-    """
-    Should match passed in token, no matter how many times token is retrieved.
-    """
+    """Should match passed in token, no matter how many times token is retrieved."""
     token_provider = InterpolatedStringTokenProvider(
         config=config, api_token=token, parameters=parameters
     )
@@ -132,9 +129,9 @@ def test_api_key_authenticator(test_name, header, token, expected_header, expect
     prepared_request.headers = {}
     token_auth(prepared_request)
 
-    assert {expected_header: expected_header_value} == prepared_request.headers
-    assert {expected_header: expected_header_value} == header1
-    assert {expected_header: expected_header_value} == header2
+    assert prepared_request.headers == {expected_header: expected_header_value}
+    assert header1 == {expected_header: expected_header_value}
+    assert header2 == {expected_header: expected_header_value}
 
 
 @pytest.mark.parametrize(
@@ -232,9 +229,7 @@ def test_api_key_authenticator_inject(
     inject_type,
     validation_fn,
 ):
-    """
-    Should match passed in token, no matter how many times token is retrieved.
-    """
+    """Should match passed in token, no matter how many times token is retrieved."""
     token_provider = InterpolatedStringTokenProvider(
         config=config, api_token=token, parameters=parameters
     )
@@ -246,4 +241,4 @@ def test_api_key_authenticator_inject(
         config=config,
         parameters=parameters,
     )
-    assert {expected_field_name: expected_field_value} == getattr(token_auth, validation_fn)()
+    assert getattr(token_auth, validation_fn)() == {expected_field_name: expected_field_value}

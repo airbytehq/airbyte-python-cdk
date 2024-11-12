@@ -1,9 +1,12 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-from typing import List, Mapping, Optional
+from __future__ import annotations
+
+from collections.abc import Mapping
 
 import pytest
+
 from airbyte_cdk.sources.declarative.datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
@@ -23,6 +26,7 @@ from airbyte_cdk.sources.declarative.models import (
 )
 from airbyte_cdk.sources.declarative.partition_routers import SubstreamPartitionRouter
 from airbyte_cdk.sources.declarative.types import StreamSlice
+
 
 DATE_FORMAT = "%Y-%m-%d"
 RECORDS_TO_FILTER_DATE_FORMAT = [
@@ -110,7 +114,7 @@ RECORDS_TO_FILTER_DATE_TIME_WITHOUT_TZ_FORMAT = [
     ],
 )
 def test_record_filter(
-    filter_template: str, records: List[Mapping], expected_records: List[Mapping]
+    filter_template: str, records: list[Mapping], expected_records: list[Mapping]
 ):
     config = {"response_override": "stop_if_you_see_me"}
     parameters = {"created_at": "06-07-21"}
@@ -264,11 +268,11 @@ def test_record_filter(
 )
 def test_client_side_record_filter_decorator_no_parent_stream(
     datetime_format: str,
-    stream_state: Optional[Mapping],
+    stream_state: Mapping | None,
     record_filter_expression: str,
-    end_datetime: Optional[str],
-    records_to_filter: List[Mapping],
-    expected_record_ids: List[int],
+    end_datetime: str | None,
+    records_to_filter: list[Mapping],
+    expected_record_ids: list[int],
 ):
     date_time_based_cursor = DatetimeBasedCursor(
         start_datetime=MinMaxDatetime(
@@ -367,7 +371,7 @@ def test_client_side_record_filter_decorator_no_parent_stream(
     ],
 )
 def test_client_side_record_filter_decorator_with_cursor_types(
-    stream_state: Optional[Mapping], cursor_type: str, expected_record_ids: List[int]
+    stream_state: Mapping | None, cursor_type: str, expected_record_ids: list[int]
 ):
     def date_time_based_cursor_factory() -> DatetimeBasedCursor:
         return DatetimeBasedCursor(

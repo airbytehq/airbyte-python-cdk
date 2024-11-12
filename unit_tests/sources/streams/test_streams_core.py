@@ -1,13 +1,16 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import logging
-from typing import Any, Iterable, List, Mapping, MutableMapping, Optional
+from collections.abc import Iterable, Mapping, MutableMapping
+from typing import Any
 from unittest import mock
 
 import pytest
 import requests
+
 from airbyte_cdk.models import AirbyteStream, SyncMode
 from airbyte_cdk.sources.streams import CheckpointMixin, Stream
 from airbyte_cdk.sources.streams.checkpoint import (
@@ -22,18 +25,17 @@ from airbyte_cdk.sources.streams.checkpoint import (
 from airbyte_cdk.sources.streams.http import HttpStream, HttpSubStream
 from airbyte_cdk.sources.types import StreamSlice
 
+
 logger = logging.getLogger("airbyte")
 
 
 class StreamStubFullRefresh(Stream):
-    """
-    Stub full refresh class to assist with testing.
-    """
+    """Stub full refresh class to assist with testing."""
 
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: List[str] = None,
+        cursor_field: list[str] = None,
         stream_slice: Mapping[str, Any] = None,
         stream_state: Mapping[str, Any] = None,
     ) -> Iterable[Mapping[str, Any]]:
@@ -43,16 +45,14 @@ class StreamStubFullRefresh(Stream):
 
 
 class StreamStubIncremental(Stream, CheckpointMixin):
-    """
-    Stub full incremental class to assist with testing.
-    """
+    """Stub full incremental class to assist with testing."""
 
     _state = {}
 
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: List[str] = None,
+        cursor_field: list[str] = None,
         stream_slice: Mapping[str, Any] = None,
         stream_state: Mapping[str, Any] = None,
     ) -> Iterable[Mapping[str, Any]]:
@@ -72,16 +72,14 @@ class StreamStubIncremental(Stream, CheckpointMixin):
 
 
 class StreamStubResumableFullRefresh(Stream, CheckpointMixin):
-    """
-    Stub full incremental class to assist with testing.
-    """
+    """Stub full incremental class to assist with testing."""
 
     _state = {}
 
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: List[str] = None,
+        cursor_field: list[str] = None,
         stream_slice: Mapping[str, Any] = None,
         stream_state: Mapping[str, Any] = None,
     ) -> Iterable[Mapping[str, Any]]:
@@ -99,16 +97,14 @@ class StreamStubResumableFullRefresh(Stream, CheckpointMixin):
 
 
 class StreamStubLegacyStateInterface(Stream):
-    """
-    Stub full incremental class to assist with testing.
-    """
+    """Stub full incremental class to assist with testing."""
 
     _state = {}
 
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: List[str] = None,
+        cursor_field: list[str] = None,
         stream_slice: Mapping[str, Any] = None,
         stream_state: Mapping[str, Any] = None,
     ) -> Iterable[Mapping[str, Any]]:
@@ -125,14 +121,12 @@ class StreamStubLegacyStateInterface(Stream):
 
 
 class StreamStubIncrementalEmptyNamespace(Stream):
-    """
-    Stub full incremental class, with empty namespace, to assist with testing.
-    """
+    """Stub full incremental class, with empty namespace, to assist with testing."""
 
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: List[str] = None,
+        cursor_field: list[str] = None,
         stream_slice: Mapping[str, Any] = None,
         stream_state: Mapping[str, Any] = None,
     ) -> Iterable[Mapping[str, Any]]:
@@ -144,9 +138,7 @@ class StreamStubIncrementalEmptyNamespace(Stream):
 
 
 class HttpSubStreamStubFullRefreshLegacySlices(HttpSubStream):
-    """
-    Stub substream full refresh class to assist with testing.
-    """
+    """Stub substream full refresh class to assist with testing."""
 
     primary_key = "primary_key"
 
@@ -154,15 +146,15 @@ class HttpSubStreamStubFullRefreshLegacySlices(HttpSubStream):
     def url_base(self) -> str:
         return "https://airbyte.io/api/v1"
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         pass
 
     def path(
         self,
         *,
-        stream_state: Optional[Mapping[str, Any]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Mapping[str, Any] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> str:
         return "/stub"
 
@@ -171,14 +163,14 @@ class HttpSubStreamStubFullRefreshLegacySlices(HttpSubStream):
         response: requests.Response,
         *,
         stream_state: Mapping[str, Any],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         return []
 
 
 class CursorBasedStreamStubFullRefresh(StreamStubFullRefresh):
-    def get_cursor(self) -> Optional[Cursor]:
+    def get_cursor(self) -> Cursor | None:
         return ResumableFullRefreshCursor()
 
 
@@ -187,16 +179,14 @@ class LegacyCursorBasedStreamStubFullRefresh(CursorBasedStreamStubFullRefresh):
         self,
         *,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
-    ) -> Iterable[Optional[Mapping[str, Any]]]:
+        cursor_field: list[str] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
+    ) -> Iterable[Mapping[str, Any] | None]:
         yield from [{}]
 
 
 class MultipleSlicesStreamStub(HttpStream):
-    """
-    Stub full refresh class that returns multiple StreamSlice instances to assist with testing.
-    """
+    """Stub full refresh class that returns multiple StreamSlice instances to assist with testing."""
 
     primary_key = "primary_key"
 
@@ -208,23 +198,23 @@ class MultipleSlicesStreamStub(HttpStream):
         self,
         *,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
-    ) -> Iterable[Optional[Mapping[str, Any]]]:
+        cursor_field: list[str] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
+    ) -> Iterable[Mapping[str, Any] | None]:
         yield from [
             StreamSlice(partition={"parent_id": "korra"}, cursor_slice={}),
             StreamSlice(partition={"parent_id": "asami"}, cursor_slice={}),
         ]
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         pass
 
     def path(
         self,
         *,
-        stream_state: Optional[Mapping[str, Any]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Mapping[str, Any] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> str:
         return "/stub"
 
@@ -233,8 +223,8 @@ class MultipleSlicesStreamStub(HttpStream):
         response: requests.Response,
         *,
         stream_state: Mapping[str, Any],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         return []
 
@@ -246,21 +236,21 @@ class ParentHttpStreamStub(HttpStream):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: List[str] = None,
+        cursor_field: list[str] = None,
         stream_slice: Mapping[str, Any] = None,
         stream_state: Mapping[str, Any] = None,
     ) -> Iterable[Mapping[str, Any]]:
         return [{"id": 400, "name": "a_parent_record"}]
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         return None
 
     def path(
         self,
         *,
-        stream_state: Optional[Mapping[str, Any]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Mapping[str, Any] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> str:
         return "/parent"
 
@@ -269,15 +259,14 @@ class ParentHttpStreamStub(HttpStream):
         response: requests.Response,
         *,
         stream_state: Mapping[str, Any],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         return []
 
 
 def test_as_airbyte_stream_full_refresh(mocker):
-    """
-    Should return an full refresh AirbyteStream with information matching the
+    """Should return an full refresh AirbyteStream with information matching the
     provided Stream interface.
     """
     test_stream = StreamStubFullRefresh()
@@ -295,8 +284,7 @@ def test_as_airbyte_stream_full_refresh(mocker):
 
 
 def test_as_airbyte_stream_incremental(mocker):
-    """
-    Should return an incremental refresh AirbyteStream with information matching
+    """Should return an incremental refresh AirbyteStream with information matching
     the provided Stream interface.
     """
     test_stream = StreamStubIncremental()
@@ -318,9 +306,7 @@ def test_as_airbyte_stream_incremental(mocker):
 
 
 def test_supports_incremental_cursor_set():
-    """
-    Should return true if cursor is set.
-    """
+    """Should return true if cursor is set."""
     test_stream = StreamStubIncremental()
     test_stream.cursor_field = "test_cursor"
 
@@ -328,27 +314,21 @@ def test_supports_incremental_cursor_set():
 
 
 def test_supports_incremental_cursor_not_set():
-    """
-    Should return false if cursor is not.
-    """
+    """Should return false if cursor is not."""
     test_stream = StreamStubFullRefresh()
 
     assert not test_stream.supports_incremental
 
 
 def test_namespace_set():
-    """
-    Should allow namespace property to be set.
-    """
+    """Should allow namespace property to be set."""
     test_stream = StreamStubIncremental()
 
     assert test_stream.namespace == "test_namespace"
 
 
 def test_namespace_set_to_empty_string(mocker):
-    """
-    Should not set namespace property if equal to empty string.
-    """
+    """Should not set namespace property if equal to empty string."""
     test_stream = StreamStubIncremental()
 
     mocker.patch.object(StreamStubIncremental, "get_json_schema", return_value={})
@@ -370,9 +350,7 @@ def test_namespace_set_to_empty_string(mocker):
 
 
 def test_namespace_not_set():
-    """
-    Should be equal to unset value of None.
-    """
+    """Should be equal to unset value of None."""
     test_stream = StreamStubFullRefresh()
 
     assert test_stream.namespace is None
@@ -387,10 +365,7 @@ def test_namespace_not_set():
     ],
 )
 def test_wrapped_primary_key_various_argument(test_input, expected):
-    """
-    Should always wrap primary key into list of lists.
-    """
-
+    """Should always wrap primary key into list of lists."""
     wrapped = Stream._wrapped_primary_key(test_input)
 
     assert wrapped == expected
@@ -464,8 +439,7 @@ def test_get_checkpoint_reader(stream: Stream, stream_state, expected_checkpoint
 
 
 def test_checkpoint_reader_with_no_partitions():
-    """
-    Tests the edge case where an incremental stream might not generate any partitions, but should still attempt at least
+    """Tests the edge case where an incremental stream might not generate any partitions, but should still attempt at least
     one iteration of calling read_records()
     """
     stream = StreamStubIncremental()

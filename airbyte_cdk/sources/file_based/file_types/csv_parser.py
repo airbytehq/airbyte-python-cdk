@@ -1,16 +1,17 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import csv
 import json
-import logging
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from functools import partial
-from io import IOBase
-from typing import Any, Callable, Dict, Generator, Iterable, List, Mapping, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
+
+import orjson
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.file_based.config.csv_format import (
@@ -19,17 +20,24 @@ from airbyte_cdk.sources.file_based.config.csv_format import (
     CsvHeaderUserProvided,
     InferenceType,
 )
-from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.exceptions import FileBasedSourceError, RecordParseError
 from airbyte_cdk.sources.file_based.file_based_stream_reader import (
     AbstractFileBasedStreamReader,
     FileReadMode,
 )
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
-from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.schema_helpers import TYPE_PYTHON_MAPPING, SchemaType
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from orjson import orjson
+
+
+if TYPE_CHECKING:
+    import logging
+    from collections.abc import Callable, Generator, Iterable, Mapping
+    from io import IOBase
+
+    from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
+    from airbyte_cdk.sources.file_based.remote_file import RemoteFile
+
 
 DIALECT_NAME = "_config_dialect"
 
@@ -42,7 +50,7 @@ class _CsvReader:
         stream_reader: AbstractFileBasedStreamReader,
         logger: logging.Logger,
         file_read_mode: FileReadMode,
-    ) -> Generator[Dict[str, Any], None, None]:
+    ) -> Generator[dict[str, Any], None, None]:
         config_format = _extract_format(config)
         lineno = 0
 
@@ -51,7 +59,7 @@ class _CsvReader:
         # Give each stream's dialect a unique name; otherwise, when we are doing a concurrent sync we can end up
         # with a race condition where a thread attempts to use a dialect before a separate thread has finished
         # registering it.
-        dialect_name = f"{config.name}_{str(uuid4())}_{DIALECT_NAME}"
+        dialect_name = f"{config.name}_{uuid4()!s}_{DIALECT_NAME}"
         csv.register_dialect(
             dialect_name,
             delimiter=config_format.delimiter,
@@ -66,7 +74,7 @@ class _CsvReader:
             except UnicodeError:
                 raise AirbyteTracedException(
                     message=f"{FileBasedSourceError.ENCODING_ERROR.value} Expected encoding: {config_format.encoding}",
-                )
+                ) from None
 
             rows_to_skip = (
                 config_format.skip_rows_before_header
@@ -110,10 +118,8 @@ class _CsvReader:
                 # due to RecordParseError or GeneratorExit
                 csv.unregister_dialect(dialect_name)
 
-    def _get_headers(self, fp: IOBase, config_format: CsvFormat, dialect_name: str) -> List[str]:
-        """
-        Assumes the fp is pointing to the beginning of the files and will reset it as such
-        """
+    def _get_headers(self, fp: IOBase, config_format: CsvFormat, dialect_name: str) -> list[str]:
+        """Assumes the fp is pointing to the beginning of the files and will reset it as such"""
         # Note that this method assumes the dialect has already been registered if we're parsing the headers
         if isinstance(config_format.header_definition, CsvHeaderUserProvided):
             return config_format.header_definition.column_names  # type: ignore  # should be CsvHeaderUserProvided given the type
@@ -132,9 +138,8 @@ class _CsvReader:
         fp.seek(0)
         return headers
 
-    def _auto_generate_headers(self, fp: IOBase, dialect_name: str) -> List[str]:
-        """
-        Generates field names as [f0, f1, ...] in the same way as pyarrow's csv reader with autogenerate_column_names=True.
+    def _auto_generate_headers(self, fp: IOBase, dialect_name: str) -> list[str]:
+        """Generates field names as [f0, f1, ...] in the same way as pyarrow's csv reader with autogenerate_column_names=True.
         See https://arrow.apache.org/docs/python/generated/pyarrow.csv.ReadOptions.html
         """
         reader = csv.reader(fp, dialect=dialect_name)  # type: ignore
@@ -143,9 +148,7 @@ class _CsvReader:
 
     @staticmethod
     def _skip_rows(fp: IOBase, rows_to_skip: int) -> None:
-        """
-        Skip rows before the header. This has to be done on the file object itself, not the reader
-        """
+        """Skip rows before the header. This has to be done on the file object itself, not the reader"""
         for _ in range(rows_to_skip):
             fp.readline()
 
@@ -153,17 +156,19 @@ class _CsvReader:
 class CsvParser(FileTypeParser):
     _MAX_BYTES_PER_FILE_FOR_SCHEMA_INFERENCE = 1_000_000
 
-    def __init__(self, csv_reader: Optional[_CsvReader] = None, csv_field_max_bytes: int = 2**31):
+    def __init__(
+        self,
+        csv_reader: _CsvReader | None = None,
+        csv_field_max_bytes: int = 2**31,
+    ) -> None:
         # Increase the maximum length of data that can be parsed in a single CSV field. The default is 128k, which is typically sufficient
         # but given the use of Airbyte in loading a large variety of data it is best to allow for a larger maximum field size to avoid
         # skipping data on load. https://stackoverflow.com/questions/15063936/csv-error-field-larger-than-field-limit-131072
         csv.field_size_limit(csv_field_max_bytes)
-        self._csv_reader = csv_reader if csv_reader else _CsvReader()
+        self._csv_reader = csv_reader or _CsvReader()
 
-    def check_config(self, config: FileBasedStreamConfig) -> Tuple[bool, Optional[str]]:
-        """
-        CsvParser does not require config checks, implicit pydantic validation is enough.
-        """
+    def check_config(self, config: FileBasedStreamConfig) -> tuple[bool, str | None]:  # noqa: ARG002  (unused)
+        """CsvParser does not require config checks, implicit pydantic validation is enough."""
         return True, None
 
     async def infer_schema(
@@ -177,10 +182,10 @@ class CsvParser(FileTypeParser):
         if input_schema:
             return input_schema
 
-        # todo: the existing InMemoryFilesSource.open_file() test source doesn't currently require an encoding, but actual
+        # TODO: the existing InMemoryFilesSource.open_file() test source doesn't currently require an encoding, but actual
         #  sources will likely require one. Rather than modify the interface now we can wait until the real use case
         config_format = _extract_format(config)
-        type_inferrer_by_field: Dict[str, _TypeInferrer] = defaultdict(
+        type_inferrer_by_field: dict[str, _TypeInferrer] = defaultdict(
             lambda: _JsonTypeInferrer(
                 config_format.true_values, config_format.false_values, config_format.null_values
             )
@@ -220,8 +225,8 @@ class CsvParser(FileTypeParser):
         file: RemoteFile,
         stream_reader: AbstractFileBasedStreamReader,
         logger: logging.Logger,
-        discovered_schema: Optional[Mapping[str, SchemaType]],
-    ) -> Iterable[Dict[str, Any]]:
+        discovered_schema: Mapping[str, SchemaType] | None,
+    ) -> Iterable[dict[str, Any]]:
         line_no = 0
         try:
             config_format = _extract_format(config)
@@ -233,7 +238,10 @@ class CsvParser(FileTypeParser):
             else:
                 deduped_property_types = {}
             cast_fn = CsvParser._get_cast_function(
-                deduped_property_types, config_format, logger, config.schemaless
+                deduped_property_types,
+                config_format,
+                logger,
+                schemaless=config.schemaless,
             )
             data_generator = self._csv_reader.read_data(
                 config, file, stream_reader, logger, self.file_read_mode
@@ -244,7 +252,7 @@ class CsvParser(FileTypeParser):
                     cast_fn(row),
                     deduped_property_types,
                     config_format.null_values,
-                    config_format.strings_can_be_null,
+                    strings_can_be_null=config_format.strings_can_be_null,
                 )
         except RecordParseError as parse_err:
             raise RecordParseError(
@@ -262,7 +270,7 @@ class CsvParser(FileTypeParser):
         deduped_property_types: Mapping[str, str],
         config_format: CsvFormat,
         logger: logging.Logger,
-        schemaless: bool,
+        schemaless: bool,  # noqa: FBT001  (positional bool)
     ) -> Callable[[Mapping[str, str]], Mapping[str, str]]:
         # Only cast values if the schema is provided
         if deduped_property_types and not schemaless:
@@ -272,40 +280,40 @@ class CsvParser(FileTypeParser):
                 config_format=config_format,
                 logger=logger,
             )
-        else:
-            # If no schema is provided, yield the rows as they are
-            return _no_cast
+        # If no schema is provided, yield the rows as they are
+        return _no_cast
 
     @staticmethod
     def _to_nullable(
         row: Mapping[str, str],
         deduped_property_types: Mapping[str, str],
-        null_values: Set[str],
-        strings_can_be_null: bool,
-    ) -> Dict[str, Optional[str]]:
-        nullable = {
+        null_values: set[str],
+        strings_can_be_null: bool,  # noqa: FBT001  (positional bool)
+    ) -> dict[str, str | None]:
+        return {
             k: None
             if CsvParser._value_is_none(
-                v, deduped_property_types.get(k), null_values, strings_can_be_null
+                v,
+                deduped_property_types.get(k),
+                null_values,
+                strings_can_be_null=strings_can_be_null,
             )
             else v
             for k, v in row.items()
         }
-        return nullable
 
     @staticmethod
     def _value_is_none(
-        value: Any,
-        deduped_property_type: Optional[str],
-        null_values: Set[str],
-        strings_can_be_null: bool,
+        value: Any,  # noqa: ANN401  (any-type)
+        deduped_property_type: str | None,
+        null_values: set[str],
+        strings_can_be_null: bool,  # noqa: FBT001  (positional bool)
     ) -> bool:
         return value in null_values and (strings_can_be_null or deduped_property_type != "string")
 
     @staticmethod
-    def _pre_propcess_property_types(property_types: Dict[str, Any]) -> Mapping[str, str]:
-        """
-        Transform the property types to be non-nullable and remove duplicate types if any.
+    def _pre_propcess_property_types(property_types: dict[str, Any]) -> Mapping[str, str]:
+        """Transform the property types to be non-nullable and remove duplicate types if any.
         Sample input:
         {
         "col1": ["string", "null"],
@@ -334,13 +342,12 @@ class CsvParser(FileTypeParser):
 
     @staticmethod
     def _cast_types(
-        row: Dict[str, str],
+        row: dict[str, str],
         deduped_property_types: Mapping[str, str],
         config_format: CsvFormat,
         logger: logging.Logger,
-    ) -> Dict[str, Any]:
-        """
-        Casts the values in the input 'row' dictionary according to the types defined in the JSON schema.
+    ) -> dict[str, Any]:
+        """Casts the values in the input 'row' dictionary according to the types defined in the JSON schema.
 
         Array and object types are only handled if they can be deserialized as JSON.
 
@@ -357,7 +364,7 @@ class CsvParser(FileTypeParser):
                 _, python_type = TYPE_PYTHON_MAPPING[prop_type]
 
                 if python_type is None:
-                    if value == "":
+                    if value == "":  # noqa: PLC1901  (compare to empty string)
                         cast_value = None
                     else:
                         warnings.append(_format_warning(key, value, prop_type))
@@ -393,14 +400,14 @@ class CsvParser(FileTypeParser):
 
         if warnings:
             logger.warning(
-                f"{FileBasedSourceError.ERROR_CASTING_VALUE.value}: {','.join([w for w in warnings])}",
+                f"{FileBasedSourceError.ERROR_CASTING_VALUE.value}: {','.join(list(warnings))}",
             )
         return result
 
 
 class _TypeInferrer(ABC):
     @abstractmethod
-    def add_value(self, value: Any) -> None:
+    def add_value(self, value: Any) -> None:  # noqa: ANN401  (any-type)
         pass
 
     @abstractmethod
@@ -409,7 +416,7 @@ class _TypeInferrer(ABC):
 
 
 class _DisabledTypeInferrer(_TypeInferrer):
-    def add_value(self, value: Any) -> None:
+    def add_value(self, value: Any) -> None:  # noqa: ANN401  (any-type)
         pass
 
     def infer(self) -> str:
@@ -424,14 +431,14 @@ class _JsonTypeInferrer(_TypeInferrer):
     _STRING_TYPE = "string"
 
     def __init__(
-        self, boolean_trues: Set[str], boolean_falses: Set[str], null_values: Set[str]
+        self, boolean_trues: set[str], boolean_falses: set[str], null_values: set[str]
     ) -> None:
         self._boolean_trues = boolean_trues
         self._boolean_falses = boolean_falses
         self._null_values = null_values
-        self._values: Set[str] = set()
+        self._values: set[str] = set()
 
-    def add_value(self, value: Any) -> None:
+    def add_value(self, value: Any) -> None:  # noqa: ANN401  (any-type)
         self._values.add(value)
 
     def infer(self) -> str:
@@ -446,13 +453,13 @@ class _JsonTypeInferrer(_TypeInferrer):
         types = set.intersection(*types_excluding_null_values)
         if self._BOOLEAN_TYPE in types:
             return self._BOOLEAN_TYPE
-        elif self._INTEGER_TYPE in types:
+        if self._INTEGER_TYPE in types:
             return self._INTEGER_TYPE
-        elif self._NUMBER_TYPE in types:
+        if self._NUMBER_TYPE in types:
             return self._NUMBER_TYPE
         return self._STRING_TYPE
 
-    def _infer_type(self, value: str) -> Set[str]:
+    def _infer_type(self, value: str) -> set[str]:
         inferred_types = set()
 
         if value in self._null_values:
@@ -471,7 +478,7 @@ class _JsonTypeInferrer(_TypeInferrer):
     def _is_boolean(self, value: str) -> bool:
         try:
             _value_to_bool(value, self._boolean_trues, self._boolean_falses)
-            return True
+            return True  # noqa: TRY300
         except ValueError:
             return False
 
@@ -479,7 +486,7 @@ class _JsonTypeInferrer(_TypeInferrer):
     def _is_integer(value: str) -> bool:
         try:
             _value_to_python_type(value, int)
-            return True
+            return True  # noqa: TRY300
         except ValueError:
             return False
 
@@ -487,12 +494,12 @@ class _JsonTypeInferrer(_TypeInferrer):
     def _is_number(value: str) -> bool:
         try:
             _value_to_python_type(value, float)
-            return True
+            return True  # noqa: TRY300
         except ValueError:
             return False
 
 
-def _value_to_bool(value: str, true_values: Set[str], false_values: Set[str]) -> bool:
+def _value_to_bool(value: str, true_values: set[str], false_values: set[str]) -> bool:
     if value in true_values:
         return True
     if value in false_values:
@@ -500,18 +507,18 @@ def _value_to_bool(value: str, true_values: Set[str], false_values: Set[str]) ->
     raise ValueError(f"Value {value} is not a valid boolean value")
 
 
-def _value_to_list(value: str) -> List[Any]:
+def _value_to_list(value: str) -> list[Any]:
     parsed_value = json.loads(value)
     if isinstance(parsed_value, list):
         return parsed_value
     raise ValueError(f"Value {parsed_value} is not a valid list value")
 
 
-def _value_to_python_type(value: str, python_type: type) -> Any:
+def _value_to_python_type(value: str, python_type: type) -> Any:  # noqa: ANN401  (any-type)
     return python_type(value)
 
 
-def _format_warning(key: str, value: str, expected_type: Optional[Any]) -> str:
+def _format_warning(key: str, value: str, expected_type: Any | None) -> str:  # noqa: ANN401  (any-type)
     return f"{key}: value={value},expected_type={expected_type}"
 
 
@@ -522,5 +529,5 @@ def _no_cast(row: Mapping[str, str]) -> Mapping[str, str]:
 def _extract_format(config: FileBasedStreamConfig) -> CsvFormat:
     config_format = config.format
     if not isinstance(config_format, CsvFormat):
-        raise ValueError(f"Invalid format config: {config_format}")
+        raise ValueError(f"Invalid format config: {config_format}")  # noqa: TRY004  (expected TypeError)
     return config_format

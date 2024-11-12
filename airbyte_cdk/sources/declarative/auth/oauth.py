@@ -1,11 +1,14 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, List, Mapping, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 import pendulum
+
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
@@ -20,8 +23,7 @@ from airbyte_cdk.sources.streams.http.requests_native_auth.oauth import (
 
 @dataclass
 class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAuthenticator):
-    """
-    Generates OAuth2.0 access tokens from an OAuth2.0 refresh token and client credentials based on
+    """Generates OAuth2.0 access tokens from an OAuth2.0 refresh token and client credentials based on
     a declarative connector configuration file. Credentials can be defined explicitly or via interpolation
     at runtime. The generated access token is attached to each request via the Authorization header.
 
@@ -42,22 +44,22 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         message_repository (MessageRepository): the message repository used to emit logs on HTTP requests
     """
 
-    token_refresh_endpoint: Union[InterpolatedString, str]
-    client_id: Union[InterpolatedString, str]
-    client_secret: Union[InterpolatedString, str]
+    token_refresh_endpoint: InterpolatedString | str
+    client_id: InterpolatedString | str
+    client_secret: InterpolatedString | str
     config: Mapping[str, Any]
     parameters: InitVar[Mapping[str, Any]]
-    refresh_token: Optional[Union[InterpolatedString, str]] = None
-    scopes: Optional[List[str]] = None
-    token_expiry_date: Optional[Union[InterpolatedString, str]] = None
-    _token_expiry_date: Optional[pendulum.DateTime] = field(init=False, repr=False, default=None)
-    token_expiry_date_format: Optional[str] = None
+    refresh_token: InterpolatedString | str | None = None
+    scopes: list[str] | None = None
+    token_expiry_date: InterpolatedString | str | None = None
+    _token_expiry_date: pendulum.DateTime | None = field(init=False, repr=False, default=None)
+    token_expiry_date_format: str | None = None
     token_expiry_is_time_of_expiration: bool = False
-    access_token_name: Union[InterpolatedString, str] = "access_token"
-    expires_in_name: Union[InterpolatedString, str] = "expires_in"
-    refresh_request_body: Optional[Mapping[str, Any]] = None
-    grant_type: Union[InterpolatedString, str] = "refresh_token"
-    message_repository: MessageRepository = NoopMessageRepository()
+    access_token_name: InterpolatedString | str = "access_token"
+    expires_in_name: InterpolatedString | str = "expires_in"
+    refresh_request_body: Mapping[str, Any] | None = None
+    grant_type: InterpolatedString | str = "refresh_token"
+    message_repository: MessageRepository = NoopMessageRepository()  # noqa: RUF009  (func call in default arg)
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         super().__init__()
@@ -67,7 +69,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         self._client_id = InterpolatedString.create(self.client_id, parameters=parameters)
         self._client_secret = InterpolatedString.create(self.client_secret, parameters=parameters)
         if self.refresh_token is not None:
-            self._refresh_token: Optional[InterpolatedString] = InterpolatedString.create(
+            self._refresh_token: InterpolatedString | None = InterpolatedString.create(
                 self.refresh_token, parameters=parameters
             )
         else:
@@ -91,7 +93,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
             if self.token_expiry_date
             else pendulum.now().subtract(days=1)  # type: ignore # substract does not have type hints
         )
-        self._access_token: Optional[str] = None  # access_token is initialized by a setter
+        self._access_token: str | None = None  # access_token is initialized by a setter
 
         if self.get_grant_type() == "refresh_token" and self._refresh_token is None:
             raise ValueError(
@@ -118,10 +120,10 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
             raise ValueError("OAuthAuthenticator was unable to evaluate client_secret parameter")
         return client_secret
 
-    def get_refresh_token(self) -> Optional[str]:
+    def get_refresh_token(self) -> str | None:
         return None if self._refresh_token is None else str(self._refresh_token.eval(self.config))
 
-    def get_scopes(self) -> List[str]:
+    def get_scopes(self) -> list[str]:
         return self.scopes or []
 
     def get_access_token_name(self) -> str:
@@ -139,7 +141,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     def get_token_expiry_date(self) -> pendulum.DateTime:
         return self._token_expiry_date  # type: ignore # _token_expiry_date is a pendulum.DateTime. It is never None despite what mypy thinks
 
-    def set_token_expiry_date(self, value: Union[str, int]) -> None:
+    def set_token_expiry_date(self, value: str | int) -> None:
         self._token_expiry_date = self._parse_token_expiration_date(value)
 
     @property
@@ -154,9 +156,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
 
     @property
     def _message_repository(self) -> MessageRepository:
-        """
-        Overriding AbstractOauth2Authenticator._message_repository to allow for HTTP request logs
-        """
+        """Overriding AbstractOauth2Authenticator._message_repository to allow for HTTP request logs"""
         return self.message_repository
 
 
@@ -164,9 +164,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
 class DeclarativeSingleUseRefreshTokenOauth2Authenticator(
     SingleUseRefreshTokenOauth2Authenticator, DeclarativeAuthenticator
 ):
-    """
-    Declarative version of SingleUseRefreshTokenOauth2Authenticator which can be used in declarative connectors.
-    """
+    """Declarative version of SingleUseRefreshTokenOauth2Authenticator which can be used in declarative connectors."""
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:  # noqa: ANN401  (any-type)
         super().__init__(*args, **kwargs)

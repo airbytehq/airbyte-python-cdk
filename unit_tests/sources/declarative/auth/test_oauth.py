@@ -1,6 +1,8 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
+
 import base64
 import logging
 from unittest.mock import Mock
@@ -9,9 +11,11 @@ import freezegun
 import pendulum
 import pytest
 import requests
+from requests import Response
+
 from airbyte_cdk.sources.declarative.auth import DeclarativeOauth2Authenticator
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
-from requests import Response
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -30,14 +34,10 @@ parameters = {"refresh_token": "some_refresh_token"}
 
 
 class TestOauth2Authenticator:
-    """
-    Test class for OAuth2Authenticator.
-    """
+    """Test class for OAuth2Authenticator."""
 
     def test_refresh_request_body(self):
-        """
-        Request body should match given configuration.
-        """
+        """Request body should match given configuration."""
         scopes = ["scope1", "scope2"]
         oauth = DeclarativeOauth2Authenticator(
             token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
@@ -108,9 +108,7 @@ class TestOauth2Authenticator:
         assert body == expected
 
     def test_refresh_without_refresh_token(self):
-        """
-        Should work fine for grant_type client_credentials.
-        """
+        """Should work fine for grant_type client_credentials."""
         oauth = DeclarativeOauth2Authenticator(
             token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
             client_id="{{ config['client_id'] }}",
@@ -129,9 +127,7 @@ class TestOauth2Authenticator:
         assert body == expected
 
     def test_error_on_refresh_token_grant_without_refresh_token(self):
-        """
-        Should throw an error if grant_type refresh_token is configured without refresh_token.
-        """
+        """Should throw an error if grant_type refresh_token is configured without refresh_token."""
         with pytest.raises(ValueError):
             DeclarativeOauth2Authenticator(
                 token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
@@ -166,7 +162,7 @@ class TestOauth2Authenticator:
         mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
         token = oauth.refresh_access_token()
 
-        assert ("access_token", 1000) == token
+        assert token == ("access_token", 1000)
 
         filtered = filter_secrets("access_token")
         assert filtered == "****"
@@ -270,7 +266,7 @@ class TestOauth2Authenticator:
         )
         mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
         token = oauth.get_access_token()
-        assert "access_token" == token
+        assert token == "access_token"
         assert oauth.get_token_expiry_date() == pendulum.parse(next_day)
         assert message_repository.log_message.call_count == 1
 
@@ -323,7 +319,7 @@ class TestOauth2Authenticator:
                 oauth.get_access_token()
         else:
             token = oauth.get_access_token()
-            assert "access_token" == token
+            assert token == "access_token"
             assert oauth.get_token_expiry_date() == pendulum.parse(next_day)
 
     def test_error_handling(self, mocker):

@@ -1,10 +1,12 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import datetime
 
 import pytest
+
 from airbyte_cdk.sources.declarative.interpolation.macros import macros
 
 
@@ -114,7 +116,5 @@ def test_timestamp(test_name, input_value, expected_output):
 
 
 def test_utc_datetime_to_local_timestamp_conversion():
-    """
-    This test ensures correct timezone handling independent of the timezone of the system on which the sync is running.
-    """
+    """This test ensures correct timezone handling independent of the timezone of the system on which the sync is running."""
     assert macros["format_datetime"](dt="2020-10-01T00:00:00Z", format="%s") == "1601510400"

@@ -1,6 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import unittest
 from datetime import datetime
@@ -16,6 +17,7 @@ from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFile
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.stream import AbstractFileBasedStream
+
 
 _FILE_WITH_UNKNOWN_EXTENSION = RemoteFile(
     uri="a.unknown_extension", last_modified=datetime.now(), file_type="csv"
@@ -45,8 +47,7 @@ class DefaultFileBasedAvailabilityStrategyTest(unittest.TestCase):
     def test_given_file_extension_does_not_match_when_check_availability_and_parsability_then_stream_is_still_available(
         self,
     ) -> None:
-        """
-        Before, we had a validation on the file extension but it turns out that in production, users sometimes have mismatch there. The
+        """Before, we had a validation on the file extension but it turns out that in production, users sometimes have mismatch there. The
         example we've seen was for JSONL parser but the file extension was just `.json`. Note that there we more than one record extracted
         from this stream so it's not just that the file is one JSON object
         """
@@ -60,9 +61,7 @@ class DefaultFileBasedAvailabilityStrategyTest(unittest.TestCase):
         assert is_available
 
     def test_not_available_given_no_files(self) -> None:
-        """
-        If no files are returned, then the stream is not available.
-        """
+        """If no files are returned, then the stream is not available."""
         self._stream.get_files.return_value = []
 
         is_available, reason = self._strategy.check_availability_and_parsability(
@@ -73,9 +72,7 @@ class DefaultFileBasedAvailabilityStrategyTest(unittest.TestCase):
         assert "No files were identified in the stream" in reason
 
     def test_parse_records_is_not_called_with_parser_max_n_files_for_parsability_set(self) -> None:
-        """
-        If the stream parser sets parser_max_n_files_for_parsability to 0, then we should not call parse_records on it
-        """
+        """If the stream parser sets parser_max_n_files_for_parsability to 0, then we should not call parse_records on it"""
         self._parser.parser_max_n_files_for_parsability = 0
         self._stream.get_files.return_value = [_FILE_WITH_UNKNOWN_EXTENSION]
 
@@ -88,9 +85,7 @@ class DefaultFileBasedAvailabilityStrategyTest(unittest.TestCase):
         assert self._stream_reader.open_file.called
 
     def test_passing_config_check(self) -> None:
-        """
-        Test if the DefaultFileBasedAvailabilityStrategy correctly handles the check_config method defined on the parser.
-        """
+        """Test if the DefaultFileBasedAvailabilityStrategy correctly handles the check_config method defined on the parser."""
         self._parser.check_config.return_value = (False, "Ran into error")
         is_available, error_message = self._strategy.check_availability_and_parsability(
             self._stream, Mock(), Mock()
@@ -99,8 +94,7 @@ class DefaultFileBasedAvailabilityStrategyTest(unittest.TestCase):
         assert "Ran into error" in error_message
 
     def test_catching_and_raising_custom_file_based_exception(self) -> None:
-        """
-        Test if the DefaultFileBasedAvailabilityStrategy correctly handles the CustomFileBasedException
+        """Test if the DefaultFileBasedAvailabilityStrategy correctly handles the CustomFileBasedException
         by raising a CheckAvailabilityError when the get_files method is called.
         """
         # Mock the get_files method to raise CustomFileBasedException when called

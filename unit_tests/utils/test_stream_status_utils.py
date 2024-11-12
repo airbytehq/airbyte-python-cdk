@@ -1,6 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from airbyte_cdk.models import (
     AirbyteMessage,
@@ -13,6 +14,7 @@ from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.utils.stream_status_utils import (
     as_airbyte_message as stream_status_as_airbyte_message,
 )
+
 
 stream = AirbyteStream(
     name="name", namespace="namespace", json_schema={}, supported_sync_modes=[SyncMode.full_refresh]

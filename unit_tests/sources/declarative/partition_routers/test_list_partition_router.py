@@ -1,8 +1,10 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import pytest as pytest
+
 from airbyte_cdk.sources.declarative.partition_routers.list_partition_router import (
     ListPartitionRouter,
 )
@@ -11,6 +13,7 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOptionType,
 )
 from airbyte_cdk.sources.types import StreamSlice
+
 
 partition_values = ["customer", "store", "subscription"]
 cursor_field = "owner_resource"
@@ -152,7 +155,7 @@ def test_request_option_is_empty_if_no_stream_slice(stream_slice):
         request_option=request_option,
         parameters={},
     )
-    assert {} == partition_router.get_request_body_data(stream_slice=stream_slice)
+    assert partition_router.get_request_body_data(stream_slice=stream_slice) == {}
 
 
 @pytest.mark.parametrize(
@@ -201,7 +204,7 @@ def test_request_option_before_updating_cursor():
     )
     stream_slice = {cursor_field: "customer"}
 
-    assert {} == partition_router.get_request_params(stream_slice)
-    assert {} == partition_router.get_request_headers()
-    assert {} == partition_router.get_request_body_json()
-    assert {} == partition_router.get_request_body_data()
+    assert partition_router.get_request_params(stream_slice) == {}
+    assert partition_router.get_request_headers() == {}
+    assert partition_router.get_request_body_json() == {}
+    assert partition_router.get_request_body_data() == {}

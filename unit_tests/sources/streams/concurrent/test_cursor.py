@@ -1,15 +1,19 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from functools import partial
-from typing import Any, Mapping, Optional
+from typing import Any
 from unittest import TestCase
 from unittest.mock import Mock
 
 import freezegun
 import pytest
+from isodate import parse_duration
+
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
@@ -28,7 +32,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_sta
     EpochValueConcurrentStreamStateConverter,
     IsoMillisConcurrentStreamStateConverter,
 )
-from isodate import parse_duration
+
 
 _A_STREAM_NAME = "a stream name"
 _A_STREAM_NAMESPACE = "a stream namespace"
@@ -44,9 +48,7 @@ _A_VERY_HIGH_CURSOR_VALUE = 1000000000
 _NO_LOOKBACK_WINDOW = timedelta(seconds=0)
 
 
-def _partition(
-    _slice: Optional[Mapping[str, Any]], _stream_name: Optional[str] = Mock()
-) -> Partition:
+def _partition(_slice: Mapping[str, Any] | None, _stream_name: str | None = Mock()) -> Partition:
     partition = Mock(spec=Partition)
     partition.to_slice.return_value = _slice
     partition.stream_name.return_value = _stream_name
@@ -54,7 +56,7 @@ def _partition(
 
 
 def _record(
-    cursor_value: CursorValueType, partition: Optional[Partition] = Mock(spec=Partition)
+    cursor_value: CursorValueType, partition: Partition | None = Mock(spec=Partition)
 ) -> Record:
     return Record(data={_A_CURSOR_FIELD_KEY: cursor_value}, partition=partition)
 
@@ -650,9 +652,7 @@ class ConcurrentCursorStateTest(TestCase):
     def test_most_recent_cursor_value_outside_of_boundaries_when_close_then_most_recent_cursor_value_still_considered(
         self,
     ) -> None:
-        """
-        Not sure what is the value of this behavior but I'm simply documenting how it is today
-        """
+        """Not sure what is the value of this behavior but I'm simply documenting how it is today"""
         cursor = self._cursor_with_slice_boundary_fields(is_sequential_state=False)
         partition = _partition({_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10})
         cursor.observe(_record(15, partition=partition))

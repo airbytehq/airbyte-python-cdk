@@ -1,4 +1,5 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
 from airbyte_cdk.models import AirbyteMessage, Type
 from airbyte_cdk.sources.connector_state_manager import HashableStreamDescriptor

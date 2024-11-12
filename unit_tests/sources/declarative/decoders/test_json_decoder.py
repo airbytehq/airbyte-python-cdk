@@ -1,11 +1,14 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
+
 import json
 import os
 
 import pytest
 import requests
+
 from airbyte_cdk import YamlDeclarativeSource
 from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder, JsonlDecoder

@@ -1,8 +1,11 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from unittest.mock import Mock, call
+
+from pytest import fixture
 
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
@@ -14,7 +17,7 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies.stop_condi
     StopConditionPaginationStrategyDecorator,
 )
 from airbyte_cdk.sources.types import Record
-from pytest import fixture
+
 
 ANY_RECORD = Mock()
 NO_RECORD = None

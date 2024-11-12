@@ -1,21 +1,25 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-
+from __future__ import annotations
 
 from collections import defaultdict
-from typing import Dict, Iterable, List, Tuple
+from typing import TYPE_CHECKING
 
-from airbyte_cdk.destinations.vector_db_based.config import ProcessingConfigModel
 from airbyte_cdk.destinations.vector_db_based.document_processor import Chunk, DocumentProcessor
 from airbyte_cdk.destinations.vector_db_based.embedder import Document, Embedder
-from airbyte_cdk.destinations.vector_db_based.indexer import Indexer
 from airbyte_cdk.models import AirbyteMessage, ConfiguredAirbyteCatalog, Type
 
 
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from airbyte_cdk.destinations.vector_db_based.config import ProcessingConfigModel
+    from airbyte_cdk.destinations.vector_db_based.indexer import Indexer
+
+
 class Writer:
-    """
-    The Writer class is orchestrating the document processor, the embedder and the indexer:
+    """The Writer class is orchestrating the document processor, the embedder and the indexer:
     * Incoming records are passed through the document processor to generate chunks
     * One the configured batch size is reached, the chunks are passed to the embedder to generate embeddings
     * The embedder embeds the chunks
@@ -32,6 +36,7 @@ class Writer:
         indexer: Indexer,
         embedder: Embedder,
         batch_size: int,
+        *,
         omit_raw_text: bool,
     ) -> None:
         self.processing_config = processing_config
@@ -42,14 +47,12 @@ class Writer:
         self._init_batch()
 
     def _init_batch(self) -> None:
-        self.chunks: Dict[Tuple[str, str], List[Chunk]] = defaultdict(list)
-        self.ids_to_delete: Dict[Tuple[str, str], List[str]] = defaultdict(list)
+        self.chunks: dict[tuple[str, str], list[Chunk]] = defaultdict(list)
+        self.ids_to_delete: dict[tuple[str, str], list[str]] = defaultdict(list)
         self.number_of_chunks = 0
 
     def _convert_to_document(self, chunk: Chunk) -> Document:
-        """
-        Convert a chunk to a document for the embedder.
-        """
+        """Convert a chunk to a document for the embedder."""
         if chunk.page_content is None:
             raise ValueError("Cannot embed a chunk without page content")
         return Document(page_content=chunk.page_content, record=chunk.record)
@@ -83,9 +86,9 @@ class Writer:
                 yield message
             elif message.type == Type.RECORD:
                 record_chunks, record_id_to_delete = self.processor.process(message.record)
-                self.chunks[(message.record.namespace, message.record.stream)].extend(record_chunks)
+                self.chunks[message.record.namespace, message.record.stream].extend(record_chunks)
                 if record_id_to_delete is not None:
-                    self.ids_to_delete[(message.record.namespace, message.record.stream)].append(
+                    self.ids_to_delete[message.record.namespace, message.record.stream].append(
                         record_id_to_delete
                     )
                 self.number_of_chunks += len(record_chunks)

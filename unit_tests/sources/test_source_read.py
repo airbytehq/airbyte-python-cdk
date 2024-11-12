@@ -1,11 +1,18 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
+
 import logging
-from typing import Any, Iterable, List, Mapping, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any
 from unittest.mock import Mock
 
 import freezegun
+
+from unit_tests.sources.streams.concurrent.scenarios.thread_based_concurrent_stream_source_builder import (
+    NeverLogSliceLogger,
+)
+
 from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteRecordMessage,
@@ -28,15 +35,21 @@ from airbyte_cdk.sources.message import InMemoryMessageRepository
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.concurrent.adapters import StreamFacade
 from airbyte_cdk.sources.streams.concurrent.cursor import FinalStateCursor
-from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.utils import AirbyteTracedException
-from unit_tests.sources.streams.concurrent.scenarios.thread_based_concurrent_stream_source_builder import (
-    NeverLogSliceLogger,
-)
+
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+
+    from airbyte_cdk.sources.streams.core import StreamData
 
 
 class _MockStream(Stream):
-    def __init__(self, slice_to_records: Mapping[str, List[Mapping[str, Any]]], name: str):
+    def __init__(
+        self,
+        slice_to_records: Mapping[str, list[Mapping[str, Any]]],
+        name: str,
+    ) -> None:
         self._slice_to_records = slice_to_records
         self._name = name
 
@@ -45,25 +58,25 @@ class _MockStream(Stream):
         return self._name
 
     @property
-    def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
+    def primary_key(self) -> str | list[str] | list[list[str]] | None:
         return None
 
     def stream_slices(
         self,
         *,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
-    ) -> Iterable[Optional[Mapping[str, Any]]]:
+        cursor_field: list[str] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
+    ) -> Iterable[Mapping[str, Any] | None]:
         for partition in self._slice_to_records.keys():
             yield {"partition": partition}
 
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
         for record_or_exception in self._slice_to_records[stream_slice["partition"]]:
             if isinstance(record_or_exception, Exception):
@@ -80,20 +93,20 @@ class _MockSource(AbstractSource):
 
     def check_connection(
         self, logger: logging.Logger, config: Mapping[str, Any]
-    ) -> Tuple[bool, Optional[Any]]:
+    ) -> tuple[bool, Any | None]:
         pass
 
     def set_streams(self, streams):
         self._streams = streams
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> list[Stream]:
         return self._streams
 
 
 class _MockConcurrentSource(ConcurrentSourceAdapter):
     message_repository = InMemoryMessageRepository()
 
-    def __init__(self, logger):
+    def __init__(self, logger: logging.Logger) -> None:
         concurrent_source = ConcurrentSource.create(
             1, 1, logger, NeverLogSliceLogger(), self.message_repository
         )
@@ -101,18 +114,20 @@ class _MockConcurrentSource(ConcurrentSourceAdapter):
 
     def check_connection(
         self, logger: logging.Logger, config: Mapping[str, Any]
-    ) -> Tuple[bool, Optional[Any]]:
+    ) -> tuple[bool, Any | None]:
         pass
 
-    def set_streams(self, streams):
+    def set_streams(self, streams: Any) -> None:  # noqa: ANN401  (any-type)
         self._streams = streams
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> list[Stream]:
         return self._streams
 
 
 @freezegun.freeze_time("2020-01-01T00:00:00")
-def test_concurrent_source_yields_the_same_messages_as_abstract_source_when_no_exceptions_are_raised():
+def test_concurrent_source_yields_the_same_messages_as_abstract_source_when_no_exceptions_are_raised() -> (
+    None
+):
     records_stream_1_partition_1 = [
         {"id": 1, "partition": "1"},
         {"id": 2, "partition": "1"},
@@ -152,7 +167,7 @@ def test_concurrent_source_yields_the_same_messages_as_abstract_source_when_no_e
         concurrent_source, logger, config, catalog, state, None
     )
 
-    expected_messages = [
+    expected_messages: list[AirbyteMessage] = [
         AirbyteMessage(
             type=MessageType.TRACE,
             trace=AirbyteTraceMessage(
@@ -296,11 +311,16 @@ def test_concurrent_source_yields_the_same_messages_as_abstract_source_when_no_e
             ),
         ),
     ]
-    _verify_messages(expected_messages, messages_from_concurrent_source)
+    _verify_messages(
+        expected_messages=expected_messages,
+        messages_from_concurrent_source=messages_from_concurrent_source,
+    )
 
 
-@freezegun.freeze_time("2020-01-01T00:00:00")
-def test_concurrent_source_yields_the_same_messages_as_abstract_source_when_a_traced_exception_is_raised():
+@freezegun.freeze_time(time_to_freeze="2020-01-01T00:00:00")
+def test_concurrent_source_yields_the_same_messages_as_abstract_source_when_a_traced_exception_is_raised() -> (
+    None
+):
     records = [{"id": 1, "partition": "1"}, AirbyteTracedException()]
     stream_slice_to_partition = {"1": records}
 
@@ -322,7 +342,9 @@ def test_concurrent_source_yields_the_same_messages_as_abstract_source_when_a_tr
 
 
 @freezegun.freeze_time("2020-01-01T00:00:00")
-def test_concurrent_source_yields_the_same_messages_as_abstract_source_when_an_exception_is_raised():
+def test_concurrent_source_yields_the_same_messages_as_abstract_source_when_an_exception_is_raised() -> (
+    None
+):
     records = [{"id": 1, "partition": "1"}, RuntimeError()]
     stream_slice_to_partition = {"1": records}
     logger = _init_logger()
@@ -344,7 +366,7 @@ def test_concurrent_source_yields_the_same_messages_as_abstract_source_when_an_e
     _assert_errors(messages_from_abstract_source, messages_from_concurrent_source)
 
 
-def _assert_status_messages(messages_from_abstract_source, messages_from_concurrent_source):
+def _assert_status_messages(messages_from_abstract_source, messages_from_concurrent_source) -> None:
     status_from_concurrent_source = [
         message
         for message in messages_from_concurrent_source
@@ -362,7 +384,10 @@ def _assert_status_messages(messages_from_abstract_source, messages_from_concurr
     )
 
 
-def _assert_record_messages(messages_from_abstract_source, messages_from_concurrent_source):
+def _assert_record_messages(
+    messages_from_abstract_source,
+    messages_from_concurrent_source,
+) -> None:
     records_from_concurrent_source = [
         message for message in messages_from_concurrent_source if message.type == MessageType.RECORD
     ]
@@ -378,7 +403,10 @@ def _assert_record_messages(messages_from_abstract_source, messages_from_concurr
     )
 
 
-def _assert_errors(messages_from_abstract_source, messages_from_concurrent_source):
+def _assert_errors(
+    messages_from_abstract_source,
+    messages_from_concurrent_source,
+) -> None:
     errors_from_concurrent_source = [
         message
         for message in messages_from_concurrent_source
@@ -395,14 +423,18 @@ def _assert_errors(messages_from_abstract_source, messages_from_concurrent_sourc
     assert len(errors_from_concurrent_source) == len(errors_from_abstract_source)
 
 
-def _init_logger():
+def _init_logger() -> Mock:
     logger = Mock()
     logger.level = logging.INFO
     logger.isEnabledFor.return_value = False
     return logger
 
 
-def _init_sources(stream_slice_to_partitions, state, logger):
+def _init_sources(
+    stream_slice_to_partitions,
+    state,
+    logger,
+) -> tuple[_MockSource, _MockConcurrentSource]:
     source = _init_source(stream_slice_to_partitions, state, logger, _MockSource())
     concurrent_source = _init_source(
         stream_slice_to_partitions, state, logger, _MockConcurrentSource(logger)
@@ -410,7 +442,12 @@ def _init_sources(stream_slice_to_partitions, state, logger):
     return source, concurrent_source
 
 
-def _init_source(stream_slice_to_partitions, state, logger, source):
+def _init_source(
+    stream_slice_to_partitions,
+    state,
+    logger,
+    source,
+) -> Any:
     streams = [
         StreamFacade.create_from_stream(
             _MockStream(stream_slices, f"stream{i}"),
@@ -429,7 +466,7 @@ def _init_source(stream_slice_to_partitions, state, logger, source):
     return source
 
 
-def _create_configured_catalog(streams):
+def _create_configured_catalog(streams) -> ConfiguredAirbyteCatalog:
     return ConfiguredAirbyteCatalog(
         streams=[
             ConfiguredAirbyteStream(
@@ -445,7 +482,7 @@ def _create_configured_catalog(streams):
     )
 
 
-def _read_from_source(source, logger, config, catalog, state, expected_exception):
+def _read_from_source(source, logger, config, catalog, state, expected_exception) -> list:
     messages = []
     try:
         for m in source.read(logger, config, catalog, state):
@@ -456,11 +493,11 @@ def _read_from_source(source, logger, config, catalog, state, expected_exception
     return messages
 
 
-def _verify_messages(expected_messages, messages_from_concurrent_source):
+def _verify_messages(expected_messages, messages_from_concurrent_source) -> None:
     assert _compare(expected_messages, messages_from_concurrent_source)
 
 
-def _compare(s, t):
+def _compare(s, t) -> bool:
     # Use a compare method that does not require ordering or hashing the elements
     # We can't rely on the ordering because of the multithreading
     # AirbyteMessage does not implement __eq__ and __hash__

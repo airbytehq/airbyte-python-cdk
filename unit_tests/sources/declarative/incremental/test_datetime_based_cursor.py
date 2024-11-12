@@ -1,11 +1,13 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import datetime
 import unittest
 
 import pytest
+
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.incremental import DatetimeBasedCursor
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
@@ -14,6 +16,7 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOptionType,
 )
 from airbyte_cdk.sources.types import Record, StreamSlice
+
 
 datetime_format = "%Y-%m-%dT%H:%M:%S.%f%z"
 cursor_granularity = "PT0.000001S"
@@ -33,7 +36,7 @@ class MockedNowDatetime(datetime.datetime):
         return FAKE_NOW
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_datetime_now(monkeypatch):
     monkeypatch.setattr(datetime, "datetime", MockedNowDatetime)
 
@@ -897,7 +900,7 @@ def test_request_option_with_empty_stream_slice(stream_slice):
         config=config,
         parameters={},
     )
-    assert {} == slicer.get_request_params(stream_slice=stream_slice)
+    assert slicer.get_request_params(stream_slice=stream_slice) == {}
 
 
 @pytest.mark.parametrize(

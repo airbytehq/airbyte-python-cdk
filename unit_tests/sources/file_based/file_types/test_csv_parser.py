@@ -1,18 +1,21 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import asyncio
 import csv
 import io
 import logging
 import unittest
+from collections.abc import Generator
 from datetime import datetime
-from typing import Any, Dict, Generator, List, Set
+from typing import Any
 from unittest import TestCase, mock
 from unittest.mock import Mock
 
 import pytest
+
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.file_based.config.csv_format import (
     DEFAULT_FALSE_VALUES,
@@ -31,6 +34,7 @@ from airbyte_cdk.sources.file_based.file_based_stream_reader import (
 from airbyte_cdk.sources.file_based.file_types.csv_parser import CsvParser, _CsvReader
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
+
 
 PROPERTY_TYPES = {
     "col1": "null",
@@ -188,10 +192,10 @@ logger = logging.getLogger()
     ],
 )
 def test_cast_to_python_type(
-    row: Dict[str, str],
-    true_values: Set[str],
-    false_values: Set[str],
-    expected_output: Dict[str, Any],
+    row: dict[str, str],
+    true_values: set[str],
+    false_values: set[str],
+    expected_output: dict[str, Any],
 ) -> None:
     csv_format = CsvFormat(true_values=true_values, false_values=false_values)
     assert CsvParser._cast_types(row, PROPERTY_TYPES, csv_format, logger) == expected_output
@@ -226,10 +230,19 @@ def test_cast_to_python_type(
         ),
     ],
 )
-def test_to_nullable(row, strings_can_be_null, expected_output):
+def test_to_nullable(
+    row,
+    strings_can_be_null,
+    expected_output,
+) -> None:
     property_types = {"id": "string", "name": "string", "age": "integer", "is_cool": "boolean"}
     null_values = {"null"}
-    nulled_row = CsvParser._to_nullable(row, property_types, null_values, strings_can_be_null)
+    nulled_row = CsvParser._to_nullable(
+        row,
+        property_types,
+        null_values,
+        strings_can_be_null=strings_can_be_null,
+    )
     assert nulled_row == expected_output
 
 
@@ -320,7 +333,7 @@ class SchemaInferenceTestCase(TestCase):
             self._infer_schema()
         assert exception.value.failure_type == FailureType.config_error
 
-    def _test_infer_schema(self, rows: List[str], expected_type: str) -> None:
+    def _test_infer_schema(self, rows: list[str], expected_type: str) -> None:
         self._csv_reader.read_data.return_value = ({self._HEADER_NAME: row} for row in rows)
         inferred_schema = self._infer_schema()
         assert inferred_schema == {self._HEADER_NAME: {"type": expected_type}}
@@ -336,14 +349,14 @@ class SchemaInferenceTestCase(TestCase):
 
 class CsvFileBuilder:
     def __init__(self) -> None:
-        self._prefixed_rows: List[str] = []
-        self._data: List[str] = []
+        self._prefixed_rows: list[str] = []
+        self._data: list[str] = []
 
-    def with_prefixed_rows(self, rows: List[str]) -> "CsvFileBuilder":
+    def with_prefixed_rows(self, rows: list[str]) -> CsvFileBuilder:
         self._prefixed_rows = rows
         return self
 
-    def with_data(self, data: List[str]) -> "CsvFileBuilder":
+    def with_data(self, data: list[str]) -> CsvFileBuilder:
         self._data = data
         return self
 
@@ -657,7 +670,7 @@ class CsvReaderTest(unittest.TestCase):
         assert "encoding" in ate.value.message
         assert self._csv_reader._get_headers.called
 
-    def _read_data(self) -> Generator[Dict[str, str], None, None]:
+    def _read_data(self) -> Generator[dict[str, str], None, None]:
         data_generator = self._csv_reader.read_data(
             self._config,
             self._file,

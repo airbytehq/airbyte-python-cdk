@@ -1,15 +1,20 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import datetime
 import decimal
+import math
 
 import pyarrow as pa
-from airbyte_cdk.utils.traced_exception import AirbyteTracedException
+
 from unit_tests.sources.file_based.in_memory_files_source import TemporaryParquetFilesStreamReader
 from unit_tests.sources.file_based.scenarios.file_based_source_builder import FileBasedSourceBuilder
 from unit_tests.sources.file_based.scenarios.scenario_builder import TestScenarioBuilder
+
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
+
 
 _single_parquet_file = {
     "a.parquet": {
@@ -103,7 +108,7 @@ _parquet_file_with_various_types = {
                 3,
                 4,
                 5,
-                3.14,
+                math.pi,
                 5.0,
                 "2020-01-01",
                 datetime.date(2021, 1, 1),
@@ -506,7 +511,7 @@ parquet_various_types_scenario = (
                     "col_uint16": 3,
                     "col_uint32": 4,
                     "col_uint64": 5,
-                    "col_float32": 3.14,
+                    "col_float32": math.pi,
                     "col_float64": 5.0,
                     "col_string": "2020-01-01",
                     "col_date32": "2021-01-01",

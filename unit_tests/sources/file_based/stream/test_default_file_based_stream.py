@@ -1,15 +1,18 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import traceback
 import unittest
+from collections.abc import Iterable, Iterator, Mapping
 from datetime import datetime, timezone
-from typing import Any, Iterable, Iterator, Mapping
+from typing import Any
 from unittest import mock
 from unittest.mock import Mock
 
 import pytest
+
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.file_based.availability_strategy import (
@@ -122,8 +125,7 @@ class DefaultFileBasedStreamTest(unittest.TestCase):
     def test_given_exception_when_read_records_from_slice_then_do_process_other_files(
         self,
     ) -> None:
-        """
-        The current behavior for source-s3 v3 does not fail sync on some errors and hence, we will keep this behaviour for now. One example
+        """The current behavior for source-s3 v3 does not fail sync on some errors and hence, we will keep this behaviour for now. One example
         we can easily reproduce this is by having a file with gzip extension that is not actually a gzip file. The reader will fail to open
         the file but the sync won't fail.
         Ticket: https://github.com/airbytehq/airbyte/issues/29680
@@ -150,9 +152,7 @@ class DefaultFileBasedStreamTest(unittest.TestCase):
     def test_given_traced_exception_when_read_records_from_slice_then_fail(
         self,
     ) -> None:
-        """
-        When a traced exception is raised, the stream shouldn't try to handle but pass it on to the caller.
-        """
+        """When a traced exception is raised, the stream shouldn't try to handle but pass it on to the caller."""
         self._parser.parse_records.side_effect = [AirbyteTracedException("An error")]
 
         with pytest.raises(AirbyteTracedException):

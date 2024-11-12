@@ -1,34 +1,42 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
-from functools import lru_cache
-from logging import Logger
-from typing import Any, Iterable, List, Mapping, Optional
+from functools import cache
+from typing import TYPE_CHECKING, Any
 
 from airbyte_cdk.models import AirbyteStream, SyncMode
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
-from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
-    AbstractAvailabilityStrategy,
-    StreamAvailability,
-)
-from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
-from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
-from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
+
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+    from logging import Logger
+
+    from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
+        AbstractAvailabilityStrategy,
+        StreamAvailability,
+    )
+    from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
+    from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
+    from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import (
+        PartitionGenerator,
+    )
 
 
 class DefaultStream(AbstractStream):
-    def __init__(
+    def __init__(  # noqa: PLR0913, PLR0917  (too complex)
         self,
         partition_generator: PartitionGenerator,
         name: str,
         json_schema: Mapping[str, Any],
         availability_strategy: AbstractAvailabilityStrategy,
-        primary_key: List[str],
-        cursor_field: Optional[str],
+        primary_key: list[str],
+        cursor_field: str | None,
         logger: Logger,
         cursor: Cursor,
-        namespace: Optional[str] = None,
+        namespace: str | None = None,
     ) -> None:
         self._stream_partition_generator = partition_generator
         self._name = name
@@ -48,17 +56,17 @@ class DefaultStream(AbstractStream):
         return self._name
 
     @property
-    def namespace(self) -> Optional[str]:
+    def namespace(self) -> str | None:
         return self._namespace
 
     def check_availability(self) -> StreamAvailability:
         return self._availability_strategy.check_availability(self._logger)
 
     @property
-    def cursor_field(self) -> Optional[str]:
+    def cursor_field(self) -> str | None:
         return self._cursor_field
 
-    @lru_cache(maxsize=None)
+    @cache  # noqa: B019  (cached class methods can cause memory leaks)
     def get_json_schema(self) -> Mapping[str, Any]:
         return self._json_schema
 

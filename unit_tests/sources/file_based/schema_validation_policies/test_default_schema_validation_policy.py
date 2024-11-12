@@ -1,15 +1,19 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 import pytest
+
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import ValidationPolicy
 from airbyte_cdk.sources.file_based.exceptions import StopSyncPerValidationPolicy
 from airbyte_cdk.sources.file_based.schema_validation_policies import (
     DEFAULT_SCHEMA_VALIDATION_POLICIES,
 )
+
 
 CONFORMING_RECORD = {
     "col1": "val1",

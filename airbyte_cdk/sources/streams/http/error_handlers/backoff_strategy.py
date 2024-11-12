@@ -1,22 +1,24 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Optional, Union
+from typing import TYPE_CHECKING
 
-import requests
+
+if TYPE_CHECKING:
+    import requests
 
 
 class BackoffStrategy(ABC):
     @abstractmethod
     def backoff_time(
         self,
-        response_or_exception: Optional[Union[requests.Response, requests.RequestException]],
+        response_or_exception: requests.Response | requests.RequestException | None,
         attempt_count: int,
-    ) -> Optional[float]:
-        """
-        Override this method to dynamically determine backoff time e.g: by reading the X-Retry-After header.
+    ) -> float | None:
+        """Override this method to dynamically determine backoff time e.g: by reading the X-Retry-After header.
 
         This method is called only if should_backoff() returns True for the input request.
 

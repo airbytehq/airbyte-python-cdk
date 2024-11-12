@@ -1,12 +1,19 @@
 #
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
 from unittest import TestCase
 
 import freezegun
+
+from unit_tests.sources.mock_server_tests.mock_source_fixture import SourceFixture
+from unit_tests.sources.mock_server_tests.test_helpers import (
+    emits_successful_sync_status_messages,
+    validate_message_order,
+)
+
 from airbyte_cdk.models import AirbyteStateBlob, ConfiguredAirbyteCatalog, SyncMode, Type
 from airbyte_cdk.test.catalog_builder import CatalogBuilder
 from airbyte_cdk.test.entrypoint_wrapper import read
@@ -20,56 +27,52 @@ from airbyte_cdk.test.mock_http.response_builder import (
     create_response_builder,
 )
 from airbyte_cdk.test.state_builder import StateBuilder
-from unit_tests.sources.mock_server_tests.mock_source_fixture import SourceFixture
-from unit_tests.sources.mock_server_tests.test_helpers import (
-    emits_successful_sync_status_messages,
-    validate_message_order,
-)
+
 
 _NOW = datetime.now(timezone.utc)
 
 
 class RequestBuilder:
     @classmethod
-    def dividers_endpoint(cls) -> "RequestBuilder":
+    def dividers_endpoint(cls) -> RequestBuilder:
         return cls("dividers")
 
     @classmethod
-    def justice_songs_endpoint(cls) -> "RequestBuilder":
+    def justice_songs_endpoint(cls) -> RequestBuilder:
         return cls("justice_songs")
 
     @classmethod
-    def legacies_endpoint(cls) -> "RequestBuilder":
+    def legacies_endpoint(cls) -> RequestBuilder:
         return cls("legacies")
 
     @classmethod
-    def planets_endpoint(cls) -> "RequestBuilder":
+    def planets_endpoint(cls) -> RequestBuilder:
         return cls("planets")
 
     @classmethod
-    def users_endpoint(cls) -> "RequestBuilder":
+    def users_endpoint(cls) -> RequestBuilder:
         return cls("users")
 
     def __init__(self, resource: str) -> None:
         self._resource = resource
-        self._start_date: Optional[datetime] = None
-        self._end_date: Optional[datetime] = None
-        self._category: Optional[str] = None
-        self._page: Optional[int] = None
+        self._start_date: datetime | None = None
+        self._end_date: datetime | None = None
+        self._category: str | None = None
+        self._page: int | None = None
 
-    def with_start_date(self, start_date: datetime) -> "RequestBuilder":
+    def with_start_date(self, start_date: datetime) -> RequestBuilder:
         self._start_date = start_date
         return self
 
-    def with_end_date(self, end_date: datetime) -> "RequestBuilder":
+    def with_end_date(self, end_date: datetime) -> RequestBuilder:
         self._end_date = end_date
         return self
 
-    def with_category(self, category: str) -> "RequestBuilder":
+    def with_category(self, category: str) -> RequestBuilder:
         self._category = category
         return self
 
-    def with_page(self, page: int) -> "RequestBuilder":
+    def with_page(self, page: int) -> RequestBuilder:
         self._page = page
         return self
 
@@ -90,7 +93,7 @@ class RequestBuilder:
         )
 
 
-def _create_catalog(names_and_sync_modes: List[tuple[str, SyncMode]]) -> ConfiguredAirbyteCatalog:
+def _create_catalog(names_and_sync_modes: list[tuple[str, SyncMode]]) -> ConfiguredAirbyteCatalog:
     catalog_builder = CatalogBuilder()
     for stream_name, sync_mode in names_and_sync_modes:
         catalog_builder.with_stream(name=stream_name, sync_mode=sync_mode)

@@ -1,19 +1,23 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+# ruff: noqa: A005  # Shadows built-in 'http' module
+
+from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
 from datetime import timedelta
-from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urljoin
 
 import requests
+from deprecated import deprecated
+
 from airbyte_cdk.models import AirbyteMessage, FailureType, SyncMode
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.message.repository import InMemoryMessageRepository
 from airbyte_cdk.sources.streams.call_rate import APIBudget
-from airbyte_cdk.sources.streams.checkpoint.cursor import Cursor
 from airbyte_cdk.sources.streams.checkpoint.resumable_full_refresh_cursor import (
     ResumableFullRefreshCursor,
 )
@@ -32,27 +36,32 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
 )
 from airbyte_cdk.sources.streams.http.http_client import HttpClient
 from airbyte_cdk.sources.types import Record, StreamSlice
-from airbyte_cdk.sources.utils.types import JsonType
-from deprecated import deprecated
-from requests.auth import AuthBase
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Mapping, MutableMapping
+
+    from requests.auth import AuthBase
+
+    from airbyte_cdk.sources.streams.checkpoint.cursor import Cursor
+    from airbyte_cdk.sources.utils.types import JsonType
+
 
 # list of all possible HTTP methods which can be used for sending of request bodies
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
 
 
-class HttpStream(Stream, CheckpointMixin, ABC):
-    """
-    Base abstract class for an Airbyte Stream using the HTTP protocol. Basic building block for users building an Airbyte source for a HTTP API.
-    """
+class HttpStream(Stream, CheckpointMixin, ABC):  # noqa: PLR0904  # Too many public methods
+    """Base abstract class for an Airbyte Stream using the HTTP protocol. Basic building block for users building an Airbyte source for a HTTP API."""
 
     source_defined_cursor = True  # Most HTTP streams use a source defined cursor (i.e: the user can't configure it like on a SQL table)
-    page_size: Optional[int] = (
+    page_size: int | None = (
         None  # Use this variable to define page size for API http requests with pagination support
     )
 
     def __init__(
-        self, authenticator: Optional[AuthBase] = None, api_budget: Optional[APIBudget] = None
-    ):
+        self, authenticator: AuthBase | None = None, api_budget: APIBudget | None = None
+    ) -> None:
         self._exit_on_rate_limit: bool = False
         self._http_client = HttpClient(
             name=self.name,
@@ -79,9 +88,7 @@ class HttpStream(Stream, CheckpointMixin, ABC):
 
     @property
     def exit_on_rate_limit(self) -> bool:
-        """
-        :return: False if the stream will retry endlessly when rate limited
-        """
+        """:return: False if the stream will retry endlessly when rate limited"""
         return self._exit_on_rate_limit
 
     @exit_on_rate_limit.setter
@@ -90,16 +97,14 @@ class HttpStream(Stream, CheckpointMixin, ABC):
 
     @property
     def cache_filename(self) -> str:
-        """
-        Override if needed. Return the name of cache file
+        """Override if needed. Return the name of cache file
         Note that if the environment variable REQUEST_CACHE_PATH is not set, the cache will be in-memory only.
         """
         return f"{self.name}.sqlite"
 
     @property
     def use_cache(self) -> bool:
-        """
-        Override if needed. If True, all records will be cached.
+        """Override if needed. If True, all records will be cached.
         Note that if the environment variable REQUEST_CACHE_PATH is not set, the cache will be in-memory only.
         """
         return False
@@ -107,15 +112,11 @@ class HttpStream(Stream, CheckpointMixin, ABC):
     @property
     @abstractmethod
     def url_base(self) -> str:
-        """
-        :return: URL base for the  API endpoint e.g: if you wanted to hit https://myapi.com/v1/some_entity then this should return "https://myapi.com/v1/"
-        """
+        """:return: URL base for the  API endpoint e.g: if you wanted to hit https://myapi.com/v1/some_entity then this should return "https://myapi.com/v1/" """
 
     @property
     def http_method(self) -> str:
-        """
-        Override if needed. See get_request_data/get_request_json if using POST/PUT/PATCH.
-        """
+        """Override if needed. See get_request_data/get_request_json if using POST/PUT/PATCH."""
         return "GET"
 
     @property
@@ -124,9 +125,7 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         reason="You should set error_handler explicitly in HttpStream.get_error_handler() instead.",
     )
     def raise_on_http_errors(self) -> bool:
-        """
-        Override if needed. If set to False, allows opting-out of raising HTTP code exception.
-        """
+        """Override if needed. If set to False, allows opting-out of raising HTTP code exception."""
         return True
 
     @property
@@ -134,10 +133,8 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         version="3.0.0",
         reason="You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead.",
     )
-    def max_retries(self) -> Union[int, None]:
-        """
-        Override if needed. Specifies maximum amount of retries for backoff policy. Return None for no limit.
-        """
+    def max_retries(self) -> int | None:
+        """Override if needed. Specifies maximum amount of retries for backoff policy. Return None for no limit."""
         return 5
 
     @property
@@ -145,10 +142,8 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         version="3.0.0",
         reason="You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead.",
     )
-    def max_time(self) -> Union[int, None]:
-        """
-        Override if needed. Specifies maximum total waiting time (in seconds) for backoff policy. Return None for no limit.
-        """
+    def max_time(self) -> int | None:
+        """Override if needed. Specifies maximum total waiting time (in seconds) for backoff policy. Return None for no limit."""
         return 60 * 10
 
     @property
@@ -157,15 +152,12 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         reason="You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead.",
     )
     def retry_factor(self) -> float:
-        """
-        Override if needed. Specifies factor for backoff policy.
-        """
+        """Override if needed. Specifies factor for backoff policy."""
         return 5
 
     @abstractmethod
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
-        """
-        Override this method to define a pagination strategy.
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
+        """Override this method to define a pagination strategy.
 
         The value returned from this method is passed to most other methods in this class. Use it to form a request e.g: set headers or query params.
 
@@ -176,22 +168,19 @@ class HttpStream(Stream, CheckpointMixin, ABC):
     def path(
         self,
         *,
-        stream_state: Optional[Mapping[str, Any]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Mapping[str, Any] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> str:
-        """
-        Returns the URL path for the API endpoint e.g: if you wanted to hit https://myapi.com/v1/some_entity then this should return "some_entity"
-        """
+        """Returns the URL path for the API endpoint e.g: if you wanted to hit https://myapi.com/v1/some_entity then this should return "some_entity" """
 
     def request_params(
         self,
-        stream_state: Optional[Mapping[str, Any]],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Mapping[str, Any] | None,  # noqa: ARG002  (unused)
+        stream_slice: Mapping[str, Any] | None = None,  # noqa: ARG002  (unused)
+        next_page_token: Mapping[str, Any] | None = None,  # noqa: ARG002  (unused)
     ) -> MutableMapping[str, Any]:
-        """
-        Override this method to define the query parameters that should be set on an outgoing HTTP request given the inputs.
+        """Override this method to define the query parameters that should be set on an outgoing HTTP request given the inputs.
 
         E.g: you might want to define query parameters for paging if next_page_token is not None.
         """
@@ -199,23 +188,20 @@ class HttpStream(Stream, CheckpointMixin, ABC):
 
     def request_headers(
         self,
-        stream_state: Optional[Mapping[str, Any]],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Mapping[str, Any] | None,  # noqa: ARG002  (unused)
+        stream_slice: Mapping[str, Any] | None = None,  # noqa: ARG002  (unused)
+        next_page_token: Mapping[str, Any] | None = None,  # noqa: ARG002  (unused)
     ) -> Mapping[str, Any]:
-        """
-        Override to return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.
-        """
+        """Override to return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method."""
         return {}
 
     def request_body_data(
         self,
-        stream_state: Optional[Mapping[str, Any]],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Optional[Union[Mapping[str, Any], str]]:
-        """
-        Override when creating POST/PUT/PATCH requests to populate the body of the request with a non-JSON payload.
+        stream_state: Mapping[str, Any] | None,  # noqa: ARG002  (unused)
+        stream_slice: Mapping[str, Any] | None = None,  # noqa: ARG002  (unused)
+        next_page_token: Mapping[str, Any] | None = None,  # noqa: ARG002  (unused)
+    ) -> Mapping[str, Any] | str | None:
+        """Override when creating POST/PUT/PATCH requests to populate the body of the request with a non-JSON payload.
 
         If returns a ready text that it will be sent as is.
         If returns a dict that it will be converted to a urlencoded form.
@@ -227,12 +213,11 @@ class HttpStream(Stream, CheckpointMixin, ABC):
 
     def request_body_json(
         self,
-        stream_state: Optional[Mapping[str, Any]],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Optional[Mapping[str, Any]]:
-        """
-        Override when creating POST/PUT/PATCH requests to populate the body of the request with a JSON payload.
+        stream_state: Mapping[str, Any] | None,  # noqa: ARG002  (unused)
+        stream_slice: Mapping[str, Any] | None = None,  # noqa: ARG002  (unused)
+        next_page_token: Mapping[str, Any] | None = None,  # noqa: ARG002  (unused)
+    ) -> Mapping[str, Any] | None:
+        """Override when creating POST/PUT/PATCH requests to populate the body of the request with a JSON payload.
 
         At the same time only one of the 'request_body_data' and 'request_body_json' functions can be overridden.
         """
@@ -240,12 +225,11 @@ class HttpStream(Stream, CheckpointMixin, ABC):
 
     def request_kwargs(
         self,
-        stream_state: Optional[Mapping[str, Any]],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Mapping[str, Any] | None,  # noqa: ARG002  (unused)
+        stream_slice: Mapping[str, Any] | None = None,  # noqa: ARG002  (unused)
+        next_page_token: Mapping[str, Any] | None = None,  # noqa: ARG002  (unused)
     ) -> Mapping[str, Any]:
-        """
-        Override to return a mapping of keyword arguments to be used when creating the HTTP request.
+        """Override to return a mapping of keyword arguments to be used when creating the HTTP request.
         Any option listed in https://docs.python-requests.org/en/latest/api/#requests.adapters.BaseAdapter.send for can be returned from
         this method. Note that these options do not conflict with request-level options such as headers, request params, etc..
         """
@@ -257,11 +241,10 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         response: requests.Response,
         *,
         stream_state: Mapping[str, Any],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
-        """
-        Parses the raw response object into a list of records.
+        """Parses the raw response object into a list of records.
         By default, this returns an iterable containing the input. Override to parse differently.
         :param response:
         :param stream_state:
@@ -270,9 +253,8 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         :return: An iterable containing the parsed response
         """
 
-    def get_backoff_strategy(self) -> Optional[Union[BackoffStrategy, List[BackoffStrategy]]]:
-        """
-        Used to initialize Adapter to avoid breaking changes.
+    def get_backoff_strategy(self) -> BackoffStrategy | list[BackoffStrategy] | None:
+        """Used to initialize Adapter to avoid breaking changes.
         If Stream has a `backoff_time` method implementation, we know this stream uses old (pre-HTTPClient) backoff handlers and thus an adapter is needed.
 
         Override to provide custom BackoffStrategy
@@ -280,12 +262,10 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         """
         if hasattr(self, "backoff_time"):
             return HttpStreamAdapterBackoffStrategy(self)
-        else:
-            return None
+        return None
 
-    def get_error_handler(self) -> Optional[ErrorHandler]:
-        """
-        Used to initialize Adapter to avoid breaking changes.
+    def get_error_handler(self) -> ErrorHandler | None:
+        """Used to initialize Adapter to avoid breaking changes.
         If Stream has a `should_retry` method implementation, we know this stream uses old (pre-HTTPClient) error handlers and thus an adapter is needed.
 
         Override to provide custom ErrorHandler
@@ -299,17 +279,15 @@ class HttpStream(Stream, CheckpointMixin, ABC):
                 max_time=timedelta(seconds=self.max_time or 0),
             )
             return error_handler
-        else:
-            return None
+        return None
 
     @classmethod
     def _join_url(cls, url_base: str, path: str) -> str:
         return urljoin(url_base, path)
 
     @classmethod
-    def parse_response_error_message(cls, response: requests.Response) -> Optional[str]:
-        """
-        Parses the raw response object from a failed request into a user-friendly error message.
+    def parse_response_error_message(cls, response: requests.Response) -> str | None:
+        """Parses the raw response object from a failed request into a user-friendly error message.
         By default, this method tries to grab the error message from JSON responses by following common API patterns. Override to parse differently.
 
         :param response:
@@ -317,13 +295,13 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         """
 
         # default logic to grab error from common fields
-        def _try_get_error(value: Optional[JsonType]) -> Optional[str]:
+        def _try_get_error(value: JsonType | None) -> str | None:
             if isinstance(value, str):
                 return value
-            elif isinstance(value, list):
+            if isinstance(value, list):
                 errors_in_value = [_try_get_error(v) for v in value]
                 return ", ".join(v for v in errors_in_value if v is not None)
-            elif isinstance(value, dict):
+            if isinstance(value, dict):
                 new_value = (
                     value.get("message")
                     or value.get("messages")
@@ -342,9 +320,8 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         except requests.exceptions.JSONDecodeError:
             return None
 
-    def get_error_display_message(self, exception: BaseException) -> Optional[str]:
-        """
-        Retrieves the user-friendly display message that corresponds to an exception.
+    def get_error_display_message(self, exception: BaseException) -> str | None:
+        """Retrieves the user-friendly display message that corresponds to an exception.
         This will be called when encountering an exception while reading records from the stream, and used to build the AirbyteTraceMessage.
 
         The default implementation of this method only handles HTTPErrors by passing the response to self.parse_response_error_message().
@@ -359,15 +336,15 @@ class HttpStream(Stream, CheckpointMixin, ABC):
 
     def read_records(
         self,
-        sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        sync_mode: SyncMode,  # noqa: ARG002  (unused)
+        cursor_field: list[str] | None = None,  # noqa: ARG002  (unused)
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
         # A cursor_field indicates this is an incremental stream which offers better checkpointing than RFR enabled via the cursor
         if self.cursor_field or not isinstance(self.get_cursor(), ResumableFullRefreshCursor):
             yield from self._read_pages(
-                lambda req, res, state, _slice: self.parse_response(
+                lambda req, res, state, _slice: self.parse_response(  # noqa: ARG005  (unused)
                     res, stream_slice=_slice, stream_state=state
                 ),
                 stream_slice,
@@ -375,7 +352,7 @@ class HttpStream(Stream, CheckpointMixin, ABC):
             )
         else:
             yield from self._read_single_page(
-                lambda req, res, state, _slice: self.parse_response(
+                lambda req, res, state, _slice: self.parse_response(  # noqa: ARG005  (unused)
                     res, stream_slice=_slice, stream_state=state
                 ),
                 stream_slice,
@@ -396,7 +373,7 @@ class HttpStream(Stream, CheckpointMixin, ABC):
             cursor.set_initial_state(value)
         self._state = value
 
-    def get_cursor(self) -> Optional[Cursor]:
+    def get_cursor(self) -> Cursor | None:
         # I don't love that this is semi-stateful but not sure what else to do. We don't know exactly what type of cursor to
         # instantiate when creating the class. We can make a few assumptions like if there is a cursor_field which implies
         # incremental, but we don't know until runtime if this is a substream. Ideally, a stream should explicitly define
@@ -405,8 +382,7 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         if self.has_multiple_slices and isinstance(self.cursor, ResumableFullRefreshCursor):
             self.cursor = SubstreamResumableFullRefreshCursor()
             return self.cursor
-        else:
-            return self.cursor
+        return self.cursor
 
     def _read_pages(
         self,
@@ -415,12 +391,12 @@ class HttpStream(Stream, CheckpointMixin, ABC):
                 requests.PreparedRequest,
                 requests.Response,
                 Mapping[str, Any],
-                Optional[Mapping[str, Any]],
+                Mapping[str, Any] | None,
             ],
             Iterable[StreamData],
         ],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
         partition, _, _ = self._extract_slice_fields(stream_slice=stream_slice)
 
@@ -451,12 +427,12 @@ class HttpStream(Stream, CheckpointMixin, ABC):
                 requests.PreparedRequest,
                 requests.Response,
                 Mapping[str, Any],
-                Optional[Mapping[str, Any]],
+                Mapping[str, Any] | None,
             ],
             Iterable[StreamData],
         ],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
         partition, cursor_slice, remaining_slice = self._extract_slice_fields(
             stream_slice=stream_slice
@@ -480,7 +456,7 @@ class HttpStream(Stream, CheckpointMixin, ABC):
 
     @staticmethod
     def _extract_slice_fields(
-        stream_slice: Optional[Mapping[str, Any]],
+        stream_slice: Mapping[str, Any] | None,
     ) -> tuple[Mapping[str, Any], Mapping[str, Any], Mapping[str, Any]]:
         if not stream_slice:
             return {}, {}, {}
@@ -488,7 +464,7 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         if isinstance(stream_slice, StreamSlice):
             partition = stream_slice.partition
             cursor_slice = stream_slice.cursor_slice
-            remaining = {k: v for k, v in stream_slice.items()}
+            remaining = dict(stream_slice.items())
         else:
             # RFR streams that implement stream_slices() to generate stream slices in the legacy mapping format are converted into a
             # structured stream slice mapping by the LegacyCursorBasedCheckpointReader. The structured mapping object has separate
@@ -498,16 +474,16 @@ class HttpStream(Stream, CheckpointMixin, ABC):
             remaining = {
                 key: val
                 for key, val in stream_slice.items()
-                if key != "partition" and key != "cursor_slice"
+                if key not in {"partition", "cursor_slice"}
             }
         return partition, cursor_slice, remaining
 
     def _fetch_next_page(
         self,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Tuple[requests.PreparedRequest, requests.Response]:
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
+    ) -> tuple[requests.PreparedRequest, requests.Response]:
         request, response = self._http_client.send_request(
             http_method=self.http_method,
             url=self._join_url(
@@ -550,19 +526,14 @@ class HttpStream(Stream, CheckpointMixin, ABC):
 
         return request, response
 
-    def get_log_formatter(self) -> Optional[Callable[[requests.Response], Any]]:
-        """
-
-        :return Optional[Callable[[requests.Response], Any]]: Function that will be used in logging inside HttpClient
-        """
+    def get_log_formatter(self) -> Callable[[requests.Response], Any] | None:
+        """:return Optional[Callable[[requests.Response], Any]]: Function that will be used in logging inside HttpClient"""
         return None
 
 
 class HttpSubStream(HttpStream, ABC):
-    def __init__(self, parent: HttpStream, **kwargs: Any):
-        """
-        :param parent: should be the instance of HttpStream class
-        """
+    def __init__(self, parent: HttpStream, **kwargs: Any) -> None:  # noqa: ANN401  (any-type)
+        """:param parent: should be the instance of HttpStream class"""
         super().__init__(**kwargs)
         self.parent = parent
         self.has_multiple_slices = (
@@ -583,21 +554,21 @@ class HttpSubStream(HttpStream, ABC):
 
     def stream_slices(
         self,
-        sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
-    ) -> Iterable[Optional[Mapping[str, Any]]]:
+        sync_mode: SyncMode,  # noqa: ARG002  (unused)
+        cursor_field: list[str] | None = None,  # noqa: ARG002  (unused)
+        stream_state: Mapping[str, Any] | None = None,
+    ) -> Iterable[Mapping[str, Any] | None]:
         # read_stateless() assumes the parent is not concurrent. This is currently okay since the concurrent CDK does
         # not support either substreams or RFR, but something that needs to be considered once we do
         for parent_record in self.parent.read_only_records(stream_state):
             # Skip non-records (eg AirbyteLogMessage)
             if isinstance(parent_record, AirbyteMessage):
                 if parent_record.type == MessageType.RECORD:
-                    parent_record = parent_record.record.data
+                    parent_record = parent_record.record.data  # noqa: PLW2901  (redefined loop name)
                 else:
                     continue
             elif isinstance(parent_record, Record):
-                parent_record = parent_record.data
+                parent_record = parent_record.data  # noqa: PLW2901  (redefined loop name)
             yield {"parent": parent_record}
 
 
@@ -606,15 +577,15 @@ class HttpSubStream(HttpStream, ABC):
     reason="You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead.",
 )
 class HttpStreamAdapterBackoffStrategy(BackoffStrategy):
-    def __init__(self, stream: HttpStream):
+    def __init__(self, stream: HttpStream) -> None:
         self.stream = stream
 
     def backoff_time(
         self,
-        response_or_exception: Optional[Union[requests.Response, requests.RequestException]],
-        attempt_count: int,
-    ) -> Optional[float]:
-        return self.stream.backoff_time(response_or_exception)  # type: ignore # noqa  # HttpStream.backoff_time has been deprecated
+        response_or_exception: requests.Response | requests.RequestException | None,
+        attempt_count: int,  # noqa: ARG002  (unused)
+    ) -> float | None:
+        return self.stream.backoff_time(response_or_exception)  # type: ignore # HttpStream.backoff_time has been deprecated
 
 
 @deprecated(
@@ -622,19 +593,23 @@ class HttpStreamAdapterBackoffStrategy(BackoffStrategy):
     reason="You should set error_handler explicitly in HttpStream.get_error_handler() instead.",
 )
 class HttpStreamAdapterHttpStatusErrorHandler(HttpStatusErrorHandler):
-    def __init__(self, stream: HttpStream, **kwargs):  # type: ignore # noqa
+    def __init__(
+        self,
+        stream: HttpStream,
+        **kwargs: Any,  # noqa: ANN401  (any-type)
+    ) -> None:
         self.stream = stream
         super().__init__(**kwargs)
 
-    def interpret_response(
-        self, response_or_exception: Optional[Union[requests.Response, Exception]] = None
+    def interpret_response(  # noqa: PLR0911  (too-many-return-statements)
+        self, response_or_exception: requests.Response | Exception | None = None
     ) -> ErrorResolution:
         if isinstance(response_or_exception, Exception):
             return super().interpret_response(response_or_exception)
-        elif isinstance(response_or_exception, requests.Response):
-            should_retry = self.stream.should_retry(response_or_exception)  # type: ignore # noqa
+        if isinstance(response_or_exception, requests.Response):
+            should_retry = self.stream.should_retry(response_or_exception)  # type: ignore
             if should_retry:
-                if response_or_exception.status_code == 429:
+                if response_or_exception.status_code == 429:  # noqa: PLR2004  (magic number)
                     return ErrorResolution(
                         response_action=ResponseAction.RATE_LIMITED,
                         failure_type=FailureType.transient_error,
@@ -645,29 +620,26 @@ class HttpStreamAdapterHttpStatusErrorHandler(HttpStatusErrorHandler):
                     failure_type=FailureType.transient_error,
                     error_message=f"Response status code: {response_or_exception.status_code}. Retrying...",  # type: ignore[union-attr]
                 )
-            else:
-                if response_or_exception.ok:  # type: ignore # noqa
-                    return ErrorResolution(
-                        response_action=ResponseAction.SUCCESS,
-                        failure_type=None,
-                        error_message=None,
-                    )
-                if self.stream.raise_on_http_errors:
-                    return ErrorResolution(
-                        response_action=ResponseAction.FAIL,
-                        failure_type=FailureType.transient_error,
-                        error_message=f"Response status code: {response_or_exception.status_code}. Unexpected error. Failed.",  # type: ignore[union-attr]
-                    )
-                else:
-                    return ErrorResolution(
-                        response_action=ResponseAction.IGNORE,
-                        failure_type=FailureType.transient_error,
-                        error_message=f"Response status code: {response_or_exception.status_code}. Ignoring...",  # type: ignore[union-attr]
-                    )
-        else:
-            self._logger.error(f"Received unexpected response type: {type(response_or_exception)}")
+            if response_or_exception.ok:  # type: ignore
+                return ErrorResolution(
+                    response_action=ResponseAction.SUCCESS,
+                    failure_type=None,
+                    error_message=None,
+                )
+            if self.stream.raise_on_http_errors:
+                return ErrorResolution(
+                    response_action=ResponseAction.FAIL,
+                    failure_type=FailureType.transient_error,
+                    error_message=f"Response status code: {response_or_exception.status_code}. Unexpected error. Failed.",  # type: ignore[union-attr]
+                )
             return ErrorResolution(
-                response_action=ResponseAction.FAIL,
-                failure_type=FailureType.system_error,
-                error_message=f"Received unexpected response type: {type(response_or_exception)}",
+                response_action=ResponseAction.IGNORE,
+                failure_type=FailureType.transient_error,
+                error_message=f"Response status code: {response_or_exception.status_code}. Ignoring...",  # type: ignore[union-attr]
             )
+        self._logger.error(f"Received unexpected response type: {type(response_or_exception)}")
+        return ErrorResolution(
+            response_action=ResponseAction.FAIL,
+            failure_type=FailureType.system_error,
+            error_message=f"Received unexpected response type: {type(response_or_exception)}",
+        )

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from airbyte_cdk.sql import exceptions as exc
 
+
 if TYPE_CHECKING:
     from collections.abc import Iterable
 

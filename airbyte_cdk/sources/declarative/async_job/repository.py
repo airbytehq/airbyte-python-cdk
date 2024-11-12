@@ -1,10 +1,15 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Any, Iterable, Mapping, Set
+from typing import TYPE_CHECKING, Any
 
-from airbyte_cdk.sources.declarative.async_job.job import AsyncJob
-from airbyte_cdk.sources.types import StreamSlice
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+
+    from airbyte_cdk.sources.declarative.async_job.job import AsyncJob
+    from airbyte_cdk.sources.types import StreamSlice
 
 
 class AsyncJobRepository:
@@ -13,7 +18,7 @@ class AsyncJobRepository:
         pass
 
     @abstractmethod
-    def update_jobs_status(self, jobs: Set[AsyncJob]) -> None:
+    def update_jobs_status(self, jobs: set[AsyncJob]) -> None:
         pass
 
     @abstractmethod
@@ -22,8 +27,7 @@ class AsyncJobRepository:
 
     @abstractmethod
     def abort(self, job: AsyncJob) -> None:
-        """
-        Called when we need to stop on the API side. This method can raise NotImplementedError as not all the APIs will support aborting
+        """Called when we need to stop on the API side. This method can raise NotImplementedError as not all the APIs will support aborting
         jobs.
         """
         raise NotImplementedError(

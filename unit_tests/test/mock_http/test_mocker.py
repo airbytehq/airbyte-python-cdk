@@ -1,10 +1,13 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
 from unittest import TestCase
 
 import pytest
 import requests
+
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
+
 
 # Ensure that the scheme is HTTP as requests only partially supports other schemes
 # see https://github.com/psf/requests/blob/0b4d494192de489701d3a2e32acef8fb5d3f042e/src/requests/models.py#L424-L429

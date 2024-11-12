@@ -1,13 +1,19 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
 import contextlib
 import functools
 from enum import Enum
-from types import TracebackType
-from typing import Callable, List, Optional, Union
+from typing import TYPE_CHECKING
 
 import requests_mock
+
 from airbyte_cdk.test.mock_http import HttpRequest, HttpRequestMatcher, HttpResponse
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+    from types import TracebackType
 
 
 class SupportedHttpMethods(str, Enum):
@@ -18,8 +24,7 @@ class SupportedHttpMethods(str, Enum):
 
 
 class HttpMocker(contextlib.ContextDecorator):
-    """
-    WARNING 1: This implementation only works if the lib used to perform HTTP requests is `requests`.
+    """WARNING 1: This implementation only works if the lib used to perform HTTP requests is `requests`.
 
     WARNING 2: Given multiple requests that are not mutually exclusive, the request will match the first one. This can happen in scenarios
     where the same request is added twice (in which case there will always be an exception because we will never match the second
@@ -36,17 +41,17 @@ class HttpMocker(contextlib.ContextDecorator):
 
     def __init__(self) -> None:
         self._mocker = requests_mock.Mocker()
-        self._matchers: List[HttpRequestMatcher] = []
+        self._matchers: list[HttpRequestMatcher] = []
 
-    def __enter__(self) -> "HttpMocker":
+    def __enter__(self) -> HttpMocker:  # noqa: PYI034  (unexpected return type)
         self._mocker.__enter__()
         return self
 
     def __exit__(
         self,
-        exc_type: Optional[BaseException],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: BaseException | None,  # noqa: PYI036  (unexpected return type)
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         self._mocker.__exit__(exc_type, exc_val, exc_tb)
 
@@ -59,7 +64,7 @@ class HttpMocker(contextlib.ContextDecorator):
         self,
         method: SupportedHttpMethods,
         request: HttpRequest,
-        responses: Union[HttpResponse, List[HttpResponse]],
+        responses: HttpResponse | list[HttpResponse],
     ) -> None:
         if isinstance(responses, HttpResponse):
             responses = [responses]
@@ -82,22 +87,16 @@ class HttpMocker(contextlib.ContextDecorator):
             ],
         )
 
-    def get(self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]) -> None:
+    def get(self, request: HttpRequest, responses: HttpResponse | list[HttpResponse]) -> None:
         self._mock_request_method(SupportedHttpMethods.GET, request, responses)
 
-    def patch(
-        self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]
-    ) -> None:
+    def patch(self, request: HttpRequest, responses: HttpResponse | list[HttpResponse]) -> None:
         self._mock_request_method(SupportedHttpMethods.PATCH, request, responses)
 
-    def post(
-        self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]
-    ) -> None:
+    def post(self, request: HttpRequest, responses: HttpResponse | list[HttpResponse]) -> None:
         self._mock_request_method(SupportedHttpMethods.POST, request, responses)
 
-    def delete(
-        self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]
-    ) -> None:
+    def delete(self, request: HttpRequest, responses: HttpResponse | list[HttpResponse]) -> None:
         self._mock_request_method(SupportedHttpMethods.DELETE, request, responses)
 
     @staticmethod
@@ -128,9 +127,9 @@ class HttpMocker(contextlib.ContextDecorator):
         assert corresponding_matchers[0].actual_number_of_matches == number_of_calls
 
     # trying to type that using callables provides the error `incompatible with return type "_F" in supertype "ContextDecorator"`
-    def __call__(self, f):  # type: ignore
+    def __call__(self, f):  # type: ignore  # noqa: ANN001, ANN204  (missing types)
         @functools.wraps(f)
-        def wrapper(*args, **kwargs):  # type: ignore  # this is a very generic wrapper that does not need to be typed
+        def wrapper(*args, **kwargs):  # type: ignore  # this is a very generic wrapper that does not need to be typed  # noqa: ANN002, ANN202
             with self:
                 assertion_error = None
 
@@ -139,7 +138,7 @@ class HttpMocker(contextlib.ContextDecorator):
                     result = f(*args, **kwargs)
                 except requests_mock.NoMockAddress as no_mock_exception:
                     matchers_as_string = "\n\t".join(
-                        map(lambda matcher: str(matcher.request), self._matchers)
+                        str(matcher.request) for matcher in self._matchers
                     )
                     raise ValueError(
                         f"No matcher matches {no_mock_exception.args[0]} with headers `{no_mock_exception.request.headers}` "

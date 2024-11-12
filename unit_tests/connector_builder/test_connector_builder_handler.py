@@ -1,17 +1,24 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import copy
 import dataclasses
 import json
 import logging
 import os
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Literal
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
+import orjson
 import pytest
 import requests
+
+from unit_tests.connector_builder.utils import create_configured_catalog
+
 from airbyte_cdk import connector_builder
 from airbyte_cdk.connector_builder.connector_builder_handler import (
     DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE,
@@ -49,16 +56,19 @@ from airbyte_cdk.models import (
     Level,
     StreamDescriptor,
     SyncMode,
+    Type,
 )
-from airbyte_cdk.models import Type
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.declarative.retrievers import SimpleRetrieverTestReadDecorator
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets, update_secrets
-from orjson import orjson
-from unit_tests.connector_builder.utils import create_configured_catalog
+
+
+if TYPE_CHECKING:
+    from airbyte_cdk.sources.streams.core import Stream
+
 
 _stream_name = "stream_with_custom_requester"
 _stream_primary_key = "id"
@@ -97,7 +107,7 @@ _A_PER_PARTITION_STATE = [
     )
 ]
 
-MANIFEST = {
+MANIFEST: dict[str, str | dict] = {
     "version": "0.30.3",
     "definitions": {
         "retriever": {
@@ -148,7 +158,7 @@ MANIFEST = {
     },
 }
 
-OAUTH_MANIFEST = {
+OAUTH_MANIFEST: dict[str, str | dict] = {
     "version": "0.30.3",
     "definitions": {
         "retriever": {
@@ -255,35 +265,35 @@ MOCK_RESPONSE = {
 
 
 @pytest.fixture
-def valid_resolve_manifest_config_file(tmp_path):
+def valid_resolve_manifest_config_file(tmp_path: Path) -> Path:
     config_file = tmp_path / "config.json"
     config_file.write_text(json.dumps(RESOLVE_MANIFEST_CONFIG))
     return config_file
 
 
 @pytest.fixture
-def valid_read_config_file(tmp_path):
+def valid_read_config_file(tmp_path: Path) -> Path:
     config_file = tmp_path / "config.json"
     config_file.write_text(json.dumps(TEST_READ_CONFIG))
     return config_file
 
 
 @pytest.fixture
-def dummy_catalog(tmp_path):
+def dummy_catalog(tmp_path: Path) -> Path:
     config_file = tmp_path / "catalog.json"
     config_file.write_text(json.dumps(DUMMY_CATALOG))
     return config_file
 
 
 @pytest.fixture
-def configured_catalog(tmp_path):
+def configured_catalog(tmp_path: Path) -> Path:
     config_file = tmp_path / "catalog.json"
     config_file.write_text(json.dumps(CONFIGURED_CATALOG))
     return config_file
 
 
 @pytest.fixture
-def invalid_config_file(tmp_path):
+def invalid_config_file(tmp_path: Path) -> Path:
     invalid_config = copy.deepcopy(RESOLVE_MANIFEST_CONFIG)
     invalid_config["__command"] = "bad_command"
     config_file = tmp_path / "config.json"
@@ -291,20 +301,27 @@ def invalid_config_file(tmp_path):
     return config_file
 
 
-def _mocked_send(self, request, **kwargs) -> requests.Response:
-    """
-    Mocks the outbound send operation to provide faster and more reliable responses compared to actual API requests
-    """
+def _mocked_send(
+    self,
+    request: requests.Request,
+    **kwargs: Any,
+) -> requests.Response:
+    """Mocks the outbound send operation to provide faster and more reliable responses compared to actual API requests"""
     response = requests.Response()
     response.request = request
     response.status_code = 200
     response.headers = {"header": "value"}
     response_body = MOCK_RESPONSE
-    response._content = json.dumps(response_body).encode("utf-8")
+    response._content = json.dumps(  # noqa: SLF001  (private member accessed)
+        response_body,
+    ).encode("utf-8")
     return response
 
 
-def test_handle_resolve_manifest(valid_resolve_manifest_config_file, dummy_catalog):
+def test_handle_resolve_manifest(
+    valid_resolve_manifest_config_file: Path,
+    dummy_catalog: Path,
+) -> None:
     with mock.patch.object(
         connector_builder.main,
         "handle_connector_builder_request",
@@ -322,7 +339,10 @@ def test_handle_resolve_manifest(valid_resolve_manifest_config_file, dummy_catal
         assert patched_handle.call_count == 1
 
 
-def test_handle_test_read(valid_read_config_file, configured_catalog):
+def test_handle_test_read(
+    valid_read_config_file: Path,
+    configured_catalog: Path,
+) -> None:
     with mock.patch.object(
         connector_builder.main,
         "handle_connector_builder_request",
@@ -334,7 +354,9 @@ def test_handle_test_read(valid_read_config_file, configured_catalog):
         assert patch.call_count == 1
 
 
-def test_resolve_manifest(valid_resolve_manifest_config_file):
+def test_resolve_manifest(
+    valid_resolve_manifest_config_file: Path,
+) -> None:
     config = copy.deepcopy(RESOLVE_MANIFEST_CONFIG)
     command = "resolve_manifest"
     config["__command"] = command
@@ -482,14 +504,16 @@ def test_resolve_manifest(valid_resolve_manifest_config_file):
             "type": "Spec",
         },
     }
+    assert resolved_manifest
+    assert resolved_manifest.record
     assert resolved_manifest.record.data["manifest"] == expected_resolved_manifest
     assert resolved_manifest.record.stream == "resolve_manifest"
 
 
-def test_resolve_manifest_error_returns_error_response():
+def test_resolve_manifest_error_returns_error_response() -> None:
     class MockManifestDeclarativeSource:
         @property
-        def resolved_manifest(self):
+        def resolved_manifest(self) -> os.NoReturn:
             raise ValueError
 
     source = MockManifestDeclarativeSource()
@@ -497,7 +521,7 @@ def test_resolve_manifest_error_returns_error_response():
     assert "Error resolving manifest" in response.trace.error.message
 
 
-def test_read():
+def test_read() -> None:
     config = TEST_READ_CONFIG
     source = ManifestDeclarativeSource(MANIFEST)
 
@@ -546,22 +570,29 @@ def test_read():
     with patch(
         "airbyte_cdk.connector_builder.message_grouper.MessageGrouper.get_message_groups",
         return_value=stream_read,
-    ) as mock:
-        output_record = handle_connector_builder_request(
-            source,
-            "test_read",
-            config,
-            ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG),
-            _A_STATE,
-            limits,
+    ) as get_message_groups_mock:
+        output_record: AirbyteMessage = handle_connector_builder_request(
+            source=source,
+            command="test_read",
+            config=config,
+            catalog=ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG),
+            state=_A_STATE,
+            limits=limits,
         )
-        mock.assert_called_with(
-            source,
-            config,
-            ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG),
-            _A_STATE,
-            limits.max_records,
+        #         source: DeclarativeSource,
+        # config: Mapping[str, Any],
+        # configured_catalog: ConfiguredAirbyteCatalog,
+        # state: list[AirbyteStateMessage],
+        # record_limit: int | None = None,
+
+        get_message_groups_mock.assert_called_with(
+            source=source,
+            config=config,
+            configured_catalog=ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG),
+            state=_A_STATE,
+            record_limit=limits.max_records,
         )
+        assert output_record.record
         output_record.record.emitted_at = 1
         assert (
             orjson.dumps(AirbyteMessageSerializer.dump(output_record)).decode()
@@ -569,7 +600,7 @@ def test_read():
         )
 
 
-def test_config_update():
+def test_config_update() -> None:
     manifest = copy.deepcopy(MANIFEST)
     manifest["definitions"]["retriever"]["requester"]["authenticator"] = {
         "type": "OAuthAuthenticator",
@@ -598,32 +629,34 @@ def test_config_update():
         return_value=refresh_request_response,
     ):
         output = handle_connector_builder_request(
-            source,
-            "test_read",
-            config,
-            ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG),
-            _A_PER_PARTITION_STATE,
-            TestReadLimits(),
+            source=source,
+            command="test_read",
+            config=config,
+            catalog=ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG),
+            state=_A_PER_PARTITION_STATE,
+            limits=TestReadLimits(),
         )
         assert output.record.data["latest_config_update"]
 
 
 @patch("traceback.TracebackException.from_exception")
-def test_read_returns_error_response(mock_from_exception):
+def test_read_returns_error_response(
+    mock_from_exception: Any,  # noqa: ANN401  (any-type)
+) -> None:
     class MockDeclarativeStream:
         @property
-        def primary_key(self):
+        def primary_key(self) -> list[list]:
             return [[]]
 
         @property
-        def cursor_field(self):
+        def cursor_field(self) -> list:
             return []
 
     class MockManifestDeclarativeSource:
-        def streams(self, config):
+        def streams(self, config) -> list[MockDeclarativeStream]:
             return [MockDeclarativeStream()]
 
-        def read(self, logger, config, catalog, state):
+        def read(self, logger, config, catalog, state) -> os.NoReturn:
             raise ValueError("error_message")
 
         def spec(self, logger: logging.Logger) -> ConnectorSpecification:
@@ -632,7 +665,7 @@ def test_read_returns_error_response(mock_from_exception):
             return connector_specification
 
         @property
-        def check_config_against_spec(self):
+        def check_config_against_spec(self) -> Literal[False]:
             return False
 
     stack_trace = "a stack trace"
@@ -668,7 +701,7 @@ def test_read_returns_error_response(mock_from_exception):
     assert response == expected_message
 
 
-def test_handle_429_response():
+def test_handle_429_response() -> None:
     response = _create_429_page_response(
         {"result": [{"error": "too many requests"}], "_metadata": {"next": "next"}}
     )
@@ -683,13 +716,13 @@ def test_handle_429_response():
     source = create_source(config, limits)
 
     with patch("requests.Session.send", return_value=response) as mock_send:
-        response = handle_connector_builder_request(
-            source,
-            "test_read",
-            config,
-            ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG),
-            _A_PER_PARTITION_STATE,
-            limits,
+        response: AirbyteMessage = handle_connector_builder_request(
+            source=source,
+            command="test_read",
+            config=config,
+            catalog=ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG),
+            state=_A_PER_PARTITION_STATE,
+            limits=limits,
         )
 
         mock_send.assert_called_once()
@@ -705,7 +738,10 @@ def test_handle_429_response():
         pytest.param("", id="test_command_is_empty_error"),
     ],
 )
-def test_invalid_protocol_command(command, valid_resolve_manifest_config_file):
+def test_invalid_protocol_command(
+    command: Literal["check", "spec", "discover", ""] | None,
+    valid_resolve_manifest_config_file: Path,
+) -> None:
     config = copy.deepcopy(RESOLVE_MANIFEST_CONFIG)
     config["__command"] = "resolve_manifest"
     with pytest.raises(SystemExit):
@@ -714,22 +750,25 @@ def test_invalid_protocol_command(command, valid_resolve_manifest_config_file):
         )
 
 
-def test_missing_command(valid_resolve_manifest_config_file):
+def test_missing_command(valid_resolve_manifest_config_file: Path) -> None:
     with pytest.raises(SystemExit):
         handle_request(["--config", str(valid_resolve_manifest_config_file), "--catalog", ""])
 
 
-def test_missing_catalog(valid_resolve_manifest_config_file):
+def test_missing_catalog(valid_resolve_manifest_config_file: Path) -> None:
     with pytest.raises(SystemExit):
         handle_request(["read", "--config", str(valid_resolve_manifest_config_file)])
 
 
-def test_missing_config(valid_resolve_manifest_config_file):
+def test_missing_config(valid_resolve_manifest_config_file: Path) -> None:
     with pytest.raises(SystemExit):
         handle_request(["read", "--catalog", str(valid_resolve_manifest_config_file)])
 
 
-def test_invalid_config_command(invalid_config_file, dummy_catalog):
+def test_invalid_config_command(
+    invalid_config_file: Path,
+    dummy_catalog: Path,
+) -> None:
     with pytest.raises(ValueError):
         handle_request(
             ["read", "--config", str(invalid_config_file), "--catalog", str(dummy_catalog)]
@@ -737,11 +776,11 @@ def test_invalid_config_command(invalid_config_file, dummy_catalog):
 
 
 @pytest.fixture
-def manifest_declarative_source():
+def manifest_declarative_source() -> mock.Mock:
     return mock.Mock(spec=ManifestDeclarativeSource, autospec=True)
 
 
-def create_mock_retriever(name, url_base, path):
+def create_mock_retriever(name: str, url_base: str, path: Path) -> mock.Mock:
     http_stream = mock.Mock(spec=SimpleRetriever, autospec=True)
     http_stream.name = name
     http_stream.requester = MagicMock()
@@ -751,7 +790,7 @@ def create_mock_retriever(name, url_base, path):
     return http_stream
 
 
-def create_mock_declarative_stream(http_stream):
+def create_mock_declarative_stream(http_stream) -> mock.Mock:
     declarative_stream = mock.Mock(spec=DeclarativeStream, autospec=True)
     declarative_stream.retriever = http_stream
     return declarative_stream
@@ -784,15 +823,19 @@ def create_mock_declarative_stream(http_stream):
     ],
 )
 def test_get_limits(
-    test_name, config, expected_max_records, expected_max_slices, expected_max_pages_per_slice
-):
+    test_name: Literal["test_no_test_read_config", "test_no_values_set", "test_values_are_set"],
+    config: dict[str, dict[Any, Any]] | dict[str, dict[str, int]],
+    expected_max_records: Literal[100] | Literal[3],
+    expected_max_slices: Literal[5] | Literal[1],
+    expected_max_pages_per_slice: Literal[5] | Literal[2],
+) -> None:
     limits = get_limits(config)
     assert limits.max_records == expected_max_records
     assert limits.max_pages_per_slice == expected_max_pages_per_slice
     assert limits.max_slices == expected_max_slices
 
 
-def test_create_source():
+def test_create_source() -> None:
     max_records = 3
     max_pages_per_slice = 2
     max_slices = 1
@@ -822,36 +865,49 @@ def response_log_message(response: dict) -> AirbyteMessage:
     )
 
 
-def _create_request():
+def _create_request() -> requests.PreparedRequest:
     url = "https://example.com/api"
     headers = {"Content-Type": "application/json"}
     return requests.Request("POST", url, headers=headers, json={"key": "value"}).prepare()
 
 
-def _create_response(body, request):
+def _create_response(
+    body,
+    request,
+) -> requests.Response:
     response = requests.Response()
     response.status_code = 200
-    response._content = bytes(json.dumps(body), "utf-8")
+    response._content = bytes(json.dumps(body), "utf-8")  # noqa: SLF001  (private member)
     response.headers["Content-Type"] = "application/json"
     response.request = request
     return response
 
 
-def _create_429_response(body, request):
+def _create_429_response(
+    body,
+    request,
+) -> requests.Response:
     response = requests.Response()
     response.status_code = 429
-    response._content = bytes(json.dumps(body), "utf-8")
+    response._content = bytes(  # noqa: SLF001  (private member)
+        json.dumps(body),
+        encoding="utf-8",
+    )
     response.headers["Content-Type"] = "application/json"
     response.request = request
     return response
 
 
-def _create_page_response(response_body):
+def _create_page_response(
+    response_body,
+) -> requests.Response:
     request = _create_request()
     return _create_response(response_body, request)
 
 
-def _create_429_page_response(response_body):
+def _create_429_page_response(
+    response_body,
+) -> requests.Response:
     request = _create_request()
     return _create_429_response(response_body, request)
 
@@ -860,14 +916,19 @@ def _create_429_page_response(response_body):
     requests.Session,
     "send",
     side_effect=(
-        _create_page_response({"result": [{"id": 0}, {"id": 1}], "_metadata": {"next": "next"}}),
-        _create_page_response({"result": [{"id": 2}], "_metadata": {"next": "next"}}),
+        _create_page_response(
+            {"result": [{"id": 0}, {"id": 1}], "_metadata": {"next": "next"}},
+        ),
+        _create_page_response(
+            {"result": [{"id": 2}], "_metadata": {"next": "next"}},
+        ),
     )
     * 10,
 )
-def test_read_source(mock_http_stream):
-    """
-    This test sort of acts as an integration test for the connector builder.
+def test_read_source(
+    mock_http_stream,
+) -> None:
+    """This test sort of acts as an integration test for the connector builder.
 
     Each slice has two pages
     The first page has two records
@@ -878,7 +939,11 @@ def test_read_source(mock_http_stream):
     max_records = 100
     max_pages_per_slice = 2
     max_slices = 3
-    limits = TestReadLimits(max_records, max_pages_per_slice, max_slices)
+    limits = TestReadLimits(
+        max_records=max_records,
+        max_pages_per_slice=max_pages_per_slice,
+        max_slices=max_slices,
+    )
 
     catalog = ConfiguredAirbyteCatalog(
         streams=[
@@ -908,24 +973,30 @@ def test_read_source(mock_http_stream):
         assert len(first_page["records"]) == _page_size
         assert len(second_page["records"]) == 1
 
-    streams = source.streams(config)
+    streams: list[Stream] = source.streams(config)
     for s in streams:
         assert isinstance(s.retriever, SimpleRetrieverTestReadDecorator)
 
 
 @patch.object(
-    requests.Session,
-    "send",
+    target=requests.Session,
+    attribute="send",
     side_effect=(
         _create_page_response({"result": [{"id": 0}, {"id": 1}], "_metadata": {"next": "next"}}),
         _create_page_response({"result": [{"id": 2}], "_metadata": {"next": "next"}}),
     ),
 )
-def test_read_source_single_page_single_slice(mock_http_stream):
+def test_read_source_single_page_single_slice(
+    mock_http_stream: Any,  # noqa: ANN401, ARG001  (any-type, unused-argument)
+) -> None:
     max_records = 100
     max_pages_per_slice = 1
     max_slices = 1
-    limits = TestReadLimits(max_records, max_pages_per_slice, max_slices)
+    limits = TestReadLimits(
+        max_records=max_records,
+        max_pages_per_slice=max_pages_per_slice,
+        max_slices=max_slices,
+    )
 
     catalog = ConfiguredAirbyteCatalog(
         streams=[
@@ -943,7 +1014,13 @@ def test_read_source_single_page_single_slice(mock_http_stream):
 
     source = create_source(config, limits)
 
-    output_data = read_stream(source, config, catalog, _A_PER_PARTITION_STATE, limits).record.data
+    output_data = read_stream(
+        source=source,
+        config=config,
+        configured_catalog=catalog,
+        state=_A_PER_PARTITION_STATE,
+        limits=limits,
+    ).record.data
     slices = output_data["slices"]
 
     assert len(slices) == max_slices
@@ -1000,15 +1077,17 @@ def test_read_source_single_page_single_slice(mock_http_stream):
         ),
     ],
 )
-@patch.object(requests.Session, "send", _mocked_send)
-def test_handle_read_external_requests(deployment_mode, url_base, expected_error):
-    """
-    This test acts like an integration test for the connector builder when it receives Test Read requests.
+@patch.object(target=requests.Session, attribute="send", new=_mocked_send)
+def test_handle_read_external_requests(
+    deployment_mode: str,
+    url_base: str,
+    expected_error: str,
+) -> None:
+    """This test acts like an integration test for the connector builder when it receives Test Read requests.
 
     The scenario being tested is whether requests should be denied if they are done on an unsecure channel or are made to internal
     endpoints when running on Cloud or OSS deployments
     """
-
     limits = TestReadLimits(max_records=100, max_pages_per_slice=1, max_slices=1)
 
     catalog = ConfiguredAirbyteCatalog(
@@ -1086,15 +1165,21 @@ def test_handle_read_external_requests(deployment_mode, url_base, expected_error
         ),
     ],
 )
-@patch.object(requests.Session, "send", _mocked_send)
-def test_handle_read_external_oauth_request(deployment_mode, token_url, expected_error):
-    """
-    This test acts like an integration test for the connector builder when it receives Test Read requests.
+@patch.object(
+    target=requests.Session,
+    attribute="send",
+    new=_mocked_send,
+)
+def test_handle_read_external_oauth_request(
+    deployment_mode: str,
+    token_url: str,
+    expected_error: str,
+) -> None:
+    """This test acts like an integration test for the connector builder when it receives Test Read requests.
 
     The scenario being tested is whether requests should be denied if they are done on an unsecure channel or are made to internal
     endpoints when running on Cloud or OSS deployments
     """
-
     limits = TestReadLimits(max_records=100, max_pages_per_slice=1, max_slices=1)
 
     catalog = ConfiguredAirbyteCatalog(
@@ -1138,7 +1223,7 @@ def test_handle_read_external_oauth_request(deployment_mode, token_url, expected
             assert expected_error in error_message["stacktrace"]
 
 
-def test_read_stream_exception_with_secrets():
+def test_read_stream_exception_with_secrets() -> None:
     # Define the test parameters
     config = {"__injected_declarative_manifest": "test_manifest", "api_key": "super_secret_key"}
     catalog = ConfiguredAirbyteCatalog(

@@ -1,13 +1,16 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 """Base classes and methods for working with secrets in Airbyte."""
+# ruff: noqa: A005  # Shadows built-in 'secrets' module
 
 from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING, Any
 
-from airbyte_cdk.sql import exceptions as exc
 from pydantic_core import CoreSchema, core_schema
+
+from airbyte_cdk.sql import exceptions as exc
+
 
 if TYPE_CHECKING:
     from pydantic import GetCoreSchemaHandler, GetJsonSchemaHandler, ValidationInfo
@@ -64,7 +67,7 @@ class SecretString(str):
         """
         return True
 
-    def parse_json(self) -> Any:
+    def parse_json(self) -> Any:  # noqa: ANN401  (any-type)
         """Parse the secret string as JSON."""
         try:
             return json.loads(self)
@@ -95,7 +98,7 @@ class SecretString(str):
         return cls(v)
 
     @classmethod
-    def __get_pydantic_core_schema__(  # noqa: PLW3201  # Pydantic dunder
+    def __get_pydantic_core_schema__(  # Pydantic dunder  # noqa: PLW3201
         cls,
         source_type: Any,  # noqa: ANN401  # Must allow `Any` to match Pydantic signature
         handler: GetCoreSchemaHandler,
@@ -106,7 +109,7 @@ class SecretString(str):
         )
 
     @classmethod
-    def __get_pydantic_json_schema__(  # noqa: PLW3201  # Pydantic dunder method
+    def __get_pydantic_json_schema__(  # Pydantic dunder method  # noqa: PLW3201
         cls, _core_schema: core_schema.CoreSchema, handler: GetJsonSchemaHandler
     ) -> JsonSchemaValue:
         """Return a modified JSON schema for the secret string.

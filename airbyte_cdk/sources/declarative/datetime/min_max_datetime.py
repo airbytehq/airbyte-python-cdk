@@ -1,10 +1,12 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import datetime as dt
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Mapping, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
@@ -12,8 +14,7 @@ from airbyte_cdk.sources.declarative.interpolation.interpolated_string import In
 
 @dataclass
 class MinMaxDatetime:
-    """
-    Compares the provided date against optional minimum or maximum times. If date is earlier than
+    """Compares the provided date against optional minimum or maximum times. If date is earlier than
     min_date, then min_date is returned. If date is greater than max_date, then max_date is returned.
     If neither, the input date is returned.
 
@@ -28,14 +29,14 @@ class MinMaxDatetime:
         max_datetime (Union[InterpolatedString, str]): Represents the maximum allowed datetime value.
     """
 
-    datetime: Union[InterpolatedString, str]
+    datetime: InterpolatedString | str
     parameters: InitVar[Mapping[str, Any]]
     # datetime_format is a unique case where we inherit it from the parent if it is not specified before using the default value
     # which is why we need dedicated getter/setter methods and private dataclass field
     datetime_format: str
     _datetime_format: str = field(init=False, repr=False, default="")
-    min_datetime: Union[InterpolatedString, str] = ""
-    max_datetime: Union[InterpolatedString, str] = ""
+    min_datetime: InterpolatedString | str = ""
+    max_datetime: InterpolatedString | str = ""
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.datetime = InterpolatedString.create(self.datetime, parameters=parameters or {})
@@ -54,8 +55,7 @@ class MinMaxDatetime:
     def get_datetime(
         self, config: Mapping[str, Any], **additional_parameters: Mapping[str, Any]
     ) -> dt.datetime:
-        """
-        Evaluates and returns the datetime
+        """Evaluates and returns the datetime
         :param config: The user-provided configuration as specified by the source's spec
         :param additional_parameters: Additional arguments to be passed to the strings for interpolation
         :return: The evaluated datetime
@@ -97,16 +97,13 @@ class MinMaxDatetime:
     @classmethod
     def create(
         cls,
-        interpolated_string_or_min_max_datetime: Union[InterpolatedString, str, "MinMaxDatetime"],
-        parameters: Optional[Mapping[str, Any]] = None,
-    ) -> "MinMaxDatetime":
+        interpolated_string_or_min_max_datetime: InterpolatedString | str | MinMaxDatetime,
+        parameters: Mapping[str, Any] | None = None,
+    ) -> MinMaxDatetime:
         if parameters is None:
             parameters = {}
-        if isinstance(interpolated_string_or_min_max_datetime, InterpolatedString) or isinstance(
-            interpolated_string_or_min_max_datetime, str
-        ):
+        if isinstance(interpolated_string_or_min_max_datetime, InterpolatedString | str):
             return MinMaxDatetime(
                 datetime=interpolated_string_or_min_max_datetime, parameters=parameters
             )
-        else:
-            return interpolated_string_or_min_max_datetime
+        return interpolated_string_or_min_max_datetime

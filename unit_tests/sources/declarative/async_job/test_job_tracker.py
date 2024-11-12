@@ -1,13 +1,15 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
-from typing import List
 from unittest import TestCase
 
 import pytest
+
 from airbyte_cdk.sources.declarative.async_job.job_tracker import (
     ConcurrentJobLimitReached,
     JobTracker,
 )
+
 
 _LIMIT = 3
 
@@ -36,5 +38,5 @@ class JobTrackerTest(TestCase):
         with pytest.raises(ConcurrentJobLimitReached):
             self._tracker.try_to_get_intent()
 
-    def _reach_limit(self) -> List[str]:
+    def _reach_limit(self) -> list[str]:
         return [self._tracker.try_to_get_intent() for i in range(_LIMIT)]

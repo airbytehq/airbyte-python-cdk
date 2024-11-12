@@ -1,27 +1,31 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
 import functools
 import json
 from abc import ABC, abstractmethod
-from pathlib import Path as FilePath
-from typing import Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 from airbyte_cdk.test.mock_http import HttpResponse
 from airbyte_cdk.test.utils.data import get_unit_test_folder
 
 
-def _extract(path: List[str], response_template: Dict[str, Any]) -> Any:
+if TYPE_CHECKING:
+    from pathlib import Path as FilePath
+
+
+def _extract(path: list[str], response_template: dict[str, Any]) -> Any:  # noqa: ANN401  (any-type)
     return functools.reduce(lambda a, b: a[b], path, response_template)
 
 
-def _replace_value(dictionary: Dict[str, Any], path: List[str], value: Any) -> None:
+def _replace_value(dictionary: dict[str, Any], path: list[str], value: Any) -> None:  # noqa: ANN401  (any-type)
     current = dictionary
     for key in path[:-1]:
         current = current[key]
     current[path[-1]] = value
 
 
-def _write(dictionary: Dict[str, Any], path: List[str], value: Any) -> None:
+def _write(dictionary: dict[str, Any], path: list[str], value: Any) -> None:  # noqa: ANN401  (any-type)
     current = dictionary
     for key in path[:-1]:
         current = current.setdefault(key, {})
@@ -30,28 +34,28 @@ def _write(dictionary: Dict[str, Any], path: List[str], value: Any) -> None:
 
 class Path(ABC):
     @abstractmethod
-    def write(self, template: Dict[str, Any], value: Any) -> None:
+    def write(self, template: dict[str, Any], value: Any) -> None:  # noqa: ANN401  (any-type)
         pass
 
     @abstractmethod
-    def update(self, template: Dict[str, Any], value: Any) -> None:
+    def update(self, template: dict[str, Any], value: Any) -> None:  # noqa: ANN401  (any-type)
         pass
 
-    def extract(self, template: Dict[str, Any]) -> Any:
+    def extract(self, template: dict[str, Any]) -> Any:  # noqa: ANN401, B027  (any-type, intentionally empty)
         pass
 
 
 class FieldPath(Path):
-    def __init__(self, field: str):
+    def __init__(self, field: str) -> None:
         self._path = [field]
 
-    def write(self, template: Dict[str, Any], value: Any) -> None:
+    def write(self, template: dict[str, Any], value: Any) -> None:  # noqa: ANN401  (any-type)
         _write(template, self._path, value)
 
-    def update(self, template: Dict[str, Any], value: Any) -> None:
+    def update(self, template: dict[str, Any], value: Any) -> None:  # noqa: ANN401  (any-type)
         _replace_value(template, self._path, value)
 
-    def extract(self, template: Dict[str, Any]) -> Any:
+    def extract(self, template: dict[str, Any]) -> Any:  # noqa: ANN401  (any-type)
         return _extract(self._path, template)
 
     def __str__(self) -> str:
@@ -59,16 +63,16 @@ class FieldPath(Path):
 
 
 class NestedPath(Path):
-    def __init__(self, path: List[str]):
+    def __init__(self, path: list[str]) -> None:
         self._path = path
 
-    def write(self, template: Dict[str, Any], value: Any) -> None:
+    def write(self, template: dict[str, Any], value: Any) -> None:  # noqa: ANN401  (any-type)
         _write(template, self._path, value)
 
-    def update(self, template: Dict[str, Any], value: Any) -> None:
+    def update(self, template: dict[str, Any], value: Any) -> None:  # noqa: ANN401  (any-type)
         _replace_value(template, self._path, value)
 
-    def extract(self, template: Dict[str, Any]) -> Any:
+    def extract(self, template: dict[str, Any]) -> Any:  # noqa: ANN401  (any-type)
         return _extract(self._path, template)
 
     def __str__(self) -> str:
@@ -77,26 +81,26 @@ class NestedPath(Path):
 
 class PaginationStrategy(ABC):
     @abstractmethod
-    def update(self, response: Dict[str, Any]) -> None:
+    def update(self, response: dict[str, Any]) -> None:
         pass
 
 
 class FieldUpdatePaginationStrategy(PaginationStrategy):
-    def __init__(self, path: Path, value: Any):
+    def __init__(self, path: Path, value: Any) -> None:  # noqa: ANN401  (any-type)
         self._path = path
         self._value = value
 
-    def update(self, response: Dict[str, Any]) -> None:
+    def update(self, response: dict[str, Any]) -> None:
         self._path.update(response, self._value)
 
 
 class RecordBuilder:
     def __init__(
         self,
-        template: Dict[str, Any],
-        id_path: Optional[Path],
-        cursor_path: Optional[Union[FieldPath, NestedPath]],
-    ):
+        template: dict[str, Any],
+        id_path: Path | None,
+        cursor_path: FieldPath | NestedPath | None,
+    ) -> None:
         self._record = template
         self._id_path = id_path
         self._cursor_path = cursor_path
@@ -111,7 +115,7 @@ class RecordBuilder:
         for field_name, field_path in paths_to_validate:
             self._validate_field(field_name, field_path)
 
-    def _validate_field(self, field_name: str, path: Optional[Path]) -> None:
+    def _validate_field(self, field_name: str, path: Path | None) -> None:
         try:
             if path and not path.extract(self._record):
                 raise ValueError(
@@ -122,19 +126,19 @@ class RecordBuilder:
                 f"{field_name} `{path}` was provided but it is not part of the template `{self._record}`"
             ) from exception
 
-    def with_id(self, identifier: Any) -> "RecordBuilder":
+    def with_id(self, identifier: Any) -> RecordBuilder:  # noqa: ANN401  (any-type)
         self._set_field("id", self._id_path, identifier)
         return self
 
-    def with_cursor(self, cursor_value: Any) -> "RecordBuilder":
+    def with_cursor(self, cursor_value: Any) -> RecordBuilder:  # noqa: ANN401  (any-type)
         self._set_field("cursor", self._cursor_path, cursor_value)
         return self
 
-    def with_field(self, path: Path, value: Any) -> "RecordBuilder":
+    def with_field(self, path: Path, value: Any) -> RecordBuilder:  # noqa: ANN401  (any-type)
         path.write(self._record, value)
         return self
 
-    def _set_field(self, field_name: str, path: Optional[Path], value: Any) -> None:
+    def _set_field(self, field_name: str, path: Path | None, value: Any) -> None:  # noqa: ANN401  (any-type)
         if not path:
             raise ValueError(
                 f"{field_name}_path was not provided and hence, the record {field_name} can't be modified. Please provide `id_field` while "
@@ -142,28 +146,28 @@ class RecordBuilder:
             )
         path.update(self._record, value)
 
-    def build(self) -> Dict[str, Any]:
+    def build(self) -> dict[str, Any]:
         return self._record
 
 
 class HttpResponseBuilder:
     def __init__(
         self,
-        template: Dict[str, Any],
-        records_path: Union[FieldPath, NestedPath],
-        pagination_strategy: Optional[PaginationStrategy],
-    ):
+        template: dict[str, Any],
+        records_path: FieldPath | NestedPath,
+        pagination_strategy: PaginationStrategy | None,
+    ) -> None:
         self._response = template
-        self._records: List[RecordBuilder] = []
+        self._records: list[RecordBuilder] = []
         self._records_path = records_path
         self._pagination_strategy = pagination_strategy
         self._status_code = 200
 
-    def with_record(self, record: RecordBuilder) -> "HttpResponseBuilder":
+    def with_record(self, record: RecordBuilder) -> HttpResponseBuilder:
         self._records.append(record)
         return self
 
-    def with_pagination(self) -> "HttpResponseBuilder":
+    def with_pagination(self) -> HttpResponseBuilder:
         if not self._pagination_strategy:
             raise ValueError(
                 "`pagination_strategy` was not provided and hence, fields related to the pagination can't be modified. Please provide "
@@ -172,7 +176,7 @@ class HttpResponseBuilder:
         self._pagination_strategy.update(self._response)
         return self
 
-    def with_status_code(self, status_code: int) -> "HttpResponseBuilder":
+    def with_status_code(self, status_code: int) -> HttpResponseBuilder:
         self._status_code = status_code
         return self
 
@@ -182,11 +186,11 @@ class HttpResponseBuilder:
 
 
 def _get_unit_test_folder(execution_folder: str) -> FilePath:
-    # FIXME: This function should be removed after the next CDK release to avoid breaking amazon-seller-partner test code.
+    # FIXME: This function should be removed after the next CDK release to avoid breaking amazon-seller-partner test code.  # noqa: FIX001, TD001
     return get_unit_test_folder(execution_folder)  # type: ignore # get_unit_test_folder is known to return a FilePath
 
 
-def find_template(resource: str, execution_folder: str) -> Dict[str, Any]:
+def find_template(resource: str, execution_folder: str) -> dict[str, Any]:
     response_template_filepath = str(
         get_unit_test_folder(execution_folder)
         / "resource"
@@ -194,19 +198,17 @@ def find_template(resource: str, execution_folder: str) -> Dict[str, Any]:
         / "response"
         / f"{resource}.json"
     )
-    with open(response_template_filepath, "r") as template_file:
+    with open(response_template_filepath, encoding="utf-8") as template_file:  # noqa: PTH123  (prefer pathlib)
         return json.load(template_file)  # type: ignore  # we assume the dev correctly set up the resource file
 
 
 def create_record_builder(
-    response_template: Dict[str, Any],
-    records_path: Union[FieldPath, NestedPath],
-    record_id_path: Optional[Path] = None,
-    record_cursor_path: Optional[Union[FieldPath, NestedPath]] = None,
+    response_template: dict[str, Any],
+    records_path: FieldPath | NestedPath,
+    record_id_path: Path | None = None,
+    record_cursor_path: FieldPath | NestedPath | None = None,
 ) -> RecordBuilder:
-    """
-    This will use the first record define at `records_path` as a template for the records. If more records are defined, they will be ignored
-    """
+    """This will use the first record define at `records_path` as a template for the records. If more records are defined, they will be ignored"""
     try:
         record_template = records_path.extract(response_template)[0]
         if not record_template:
@@ -218,12 +220,12 @@ def create_record_builder(
     except (IndexError, KeyError):
         raise ValueError(
             f"Error while extracting records at path `{records_path}` from response template `{response_template}`"
-        )
+        ) from None
 
 
 def create_response_builder(
-    response_template: Dict[str, Any],
-    records_path: Union[FieldPath, NestedPath],
-    pagination_strategy: Optional[PaginationStrategy] = None,
+    response_template: dict[str, Any],
+    records_path: FieldPath | NestedPath,
+    pagination_strategy: PaginationStrategy | None = None,
 ) -> HttpResponseBuilder:
     return HttpResponseBuilder(response_template, records_path, pagination_strategy)

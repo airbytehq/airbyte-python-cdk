@@ -1,12 +1,14 @@
 #
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import datetime
 
 from unit_tests.sources.file_based.in_memory_files_source import TemporaryExcelFilesStreamReader
 from unit_tests.sources.file_based.scenarios.file_based_source_builder import FileBasedSourceBuilder
 from unit_tests.sources.file_based.scenarios.scenario_builder import TestScenarioBuilder
+
 
 _single_excel_file = {
     "a.xlsx": {

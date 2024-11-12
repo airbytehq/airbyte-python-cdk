@@ -1,4 +1,6 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
+
 import csv
 import os
 from io import BytesIO
@@ -8,6 +10,7 @@ from unittest import TestCase
 import pytest
 import requests
 import requests_mock
+
 from airbyte_cdk.sources.declarative.extractors import ResponseToFileExtractor
 
 

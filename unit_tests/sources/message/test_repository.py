@@ -1,10 +1,12 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from unittest.mock import Mock
 
 import pytest
+
 from airbyte_cdk.models import (
     AirbyteControlConnectorConfigMessage,
     AirbyteControlMessage,
@@ -19,6 +21,7 @@ from airbyte_cdk.sources.message import (
     MessageRepository,
     NoopMessageRepository,
 )
+
 
 A_CONTROL = AirbyteControlMessage(
     type=OrchestratorType.CONNECTOR_CONFIG,
@@ -119,7 +122,7 @@ class TestNoopMessageRepository:
 class TestLogAppenderMessageRepositoryDecorator:
     _DICT_TO_APPEND = {"airbyte_cdk": {"stream": {"is_substream": False}}}
 
-    @pytest.fixture()
+    @pytest.fixture
     def decorated(self):
         return Mock(spec=MessageRepository)
 
@@ -148,14 +151,14 @@ class TestLogAppenderMessageRepositoryDecorator:
         self, decorated
     ):
         repo = LogAppenderMessageRepositoryDecorator(self._DICT_TO_APPEND, decorated, Level.DEBUG)
-        repo.log_message(Level.INFO, lambda: {})
+        repo.log_message(Level.INFO, dict)
         assert decorated.log_message.call_count == 1
 
     def test_given_log_level_not_severe_enough_when_log_message_then_do_not_allow_message_to_be_consumed(
         self, decorated
     ):
         repo = LogAppenderMessageRepositoryDecorator(self._DICT_TO_APPEND, decorated, Level.ERROR)
-        repo.log_message(Level.INFO, lambda: {})
+        repo.log_message(Level.INFO, dict)
         assert decorated.log_message.call_count == 0
 
     def test_when_consume_queue_then_return_delegate_queue(self, decorated):

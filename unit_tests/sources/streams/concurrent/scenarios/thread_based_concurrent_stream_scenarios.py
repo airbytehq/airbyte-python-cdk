@@ -1,8 +1,16 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import logging
+
+from unit_tests.sources.file_based.scenarios.scenario_builder import TestScenarioBuilder
+from unit_tests.sources.streams.concurrent.scenarios.thread_based_concurrent_stream_source_builder import (
+    ConcurrentSourceBuilder,
+    InMemoryPartition,
+    InMemoryPartitionGenerator,
+)
 
 from airbyte_cdk.sources.message import InMemoryMessageRepository
 from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
@@ -12,12 +20,7 @@ from airbyte_cdk.sources.streams.concurrent.cursor import FinalStateCursor
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from unit_tests.sources.file_based.scenarios.scenario_builder import TestScenarioBuilder
-from unit_tests.sources.streams.concurrent.scenarios.thread_based_concurrent_stream_source_builder import (
-    ConcurrentSourceBuilder,
-    InMemoryPartition,
-    InMemoryPartitionGenerator,
-)
+
 
 _message_repository = InMemoryMessageRepository()
 

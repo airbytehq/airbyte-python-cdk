@@ -1,11 +1,13 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
-from typing import Optional
+from typing import Any
 from unittest.mock import ANY, MagicMock, call
 
 import pytest
+
 from airbyte_cdk.destinations.vector_db_based import ProcessingConfigModel, Writer
 from airbyte_cdk.models import (
     AirbyteLogMessage,
@@ -20,8 +22,8 @@ from airbyte_cdk.models import (
 
 
 def _generate_record_message(
-    index: int, stream: str = "example_stream", namespace: Optional[str] = None
-):
+    index: int, stream: str = "example_stream", namespace: str | None = None
+) -> AirbyteMessage:
     return AirbyteMessage(
         type=Type.RECORD,
         record=AirbyteRecordMessage(
@@ -36,7 +38,10 @@ def _generate_record_message(
 BATCH_SIZE = 32
 
 
-def generate_stream(name: str = "example_stream", namespace: Optional[str] = None):
+def generate_stream(
+    name: str = "example_stream",
+    namespace: str | None = None,
+) -> dict[str, Any]:
     return {
         "stream": {
             "name": name,
@@ -56,7 +61,7 @@ def generate_stream(name: str = "example_stream", namespace: Optional[str] = Non
     }
 
 
-def generate_mock_embedder():
+def generate_mock_embedder() -> MagicMock:
     mock_embedder = MagicMock()
     mock_embedder.embed_documents.return_value = [[0] * 1536] * (BATCH_SIZE + 5 + 5)
     mock_embedder.embed_documents.side_effect = lambda chunks: [[0] * 1536] * len(chunks)
@@ -65,10 +70,8 @@ def generate_mock_embedder():
 
 
 @pytest.mark.parametrize("omit_raw_text", [True, False])
-def test_write(omit_raw_text: bool):
-    """
-    Basic test for the write method, batcher and document processor.
-    """
+def test_write(*, omit_raw_text: bool) -> None:
+    """Basic test for the write method, batcher and document processor."""
     config_model = ProcessingConfigModel(
         chunk_overlap=0, chunk_size=1000, metadata_fields=None, text_fields=["column_name"]
     )
@@ -92,7 +95,13 @@ def test_write(omit_raw_text: bool):
     mock_indexer.post_sync.return_value = [post_sync_log_message]
 
     # Create the DestinationLangchain instance
-    writer = Writer(config_model, mock_indexer, mock_embedder, BATCH_SIZE, omit_raw_text)
+    writer = Writer(
+        config_model,
+        mock_indexer,
+        mock_embedder,
+        BATCH_SIZE,
+        omit_raw_text=omit_raw_text,
+    )
 
     output_messages = writer.write(configured_catalog, input_messages)
     output_message = next(output_messages)
@@ -131,9 +140,8 @@ def test_write(omit_raw_text: bool):
     mock_indexer.post_sync.assert_called()
 
 
-def test_write_stream_namespace_split():
-    """
-    Test separate handling of streams and namespaces in the writer
+def test_write_stream_namespace_split() -> None:
+    """Test separate handling of streams and namespaces in the writer
 
     generate BATCH_SIZE - 10 records for example_stream, 5 records for example_stream with namespace abc and 10 records for example_stream2
     messages are flushed after 32 records or after a state message, so this will trigger 4 calls to the indexer:
@@ -154,7 +162,7 @@ def test_write_stream_namespace_split():
         }
     )
 
-    input_messages = [
+    input_messages: list[AirbyteMessage] = [
         _generate_record_message(i, "example_stream", None) for i in range(BATCH_SIZE - 10)
     ]
     input_messages.extend([_generate_record_message(i, "example_stream", "abc") for i in range(5)])
@@ -168,7 +176,13 @@ def test_write_stream_namespace_split():
     mock_indexer.post_sync.return_value = []
 
     # Create the DestinationLangchain instance
-    writer = Writer(config_model, mock_indexer, mock_embedder, BATCH_SIZE, False)
+    writer = Writer(
+        config_model,
+        mock_indexer,
+        mock_embedder,
+        BATCH_SIZE,
+        omit_raw_text=False,
+    )
 
     output_messages = writer.write(configured_catalog, input_messages)
     next(output_messages)

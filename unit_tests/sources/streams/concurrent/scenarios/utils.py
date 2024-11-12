@@ -1,7 +1,10 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-from typing import Any, Iterable, List, Mapping, Optional, Tuple, Union
+from __future__ import annotations
+
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.streams import Stream
@@ -12,7 +15,7 @@ class MockStream(Stream):
     def __init__(
         self,
         slices_and_records_or_exception: Iterable[
-            Tuple[Optional[Mapping[str, Any]], Iterable[Union[Exception, Mapping[str, Any]]]]
+            tuple[Mapping[str, Any] | None, Iterable[Exception | Mapping[str, Any]]]
         ],
         name,
         json_schema,
@@ -28,9 +31,9 @@ class MockStream(Stream):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
         for _slice, records_or_exception in self._slices_and_records_or_exception:
             if stream_slice == _slice:
@@ -40,7 +43,7 @@ class MockStream(Stream):
                     yield item
 
     @property
-    def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
+    def primary_key(self) -> str | list[str] | list[list[str]] | None:
         return self._primary_key
 
     @property
@@ -48,7 +51,7 @@ class MockStream(Stream):
         return self._name
 
     @property
-    def cursor_field(self) -> Union[str, List[str]]:
+    def cursor_field(self) -> str | list[str]:
         return self._cursor_field or []
 
     def get_json_schema(self) -> Mapping[str, Any]:
@@ -58,9 +61,9 @@ class MockStream(Stream):
         self,
         *,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
-    ) -> Iterable[Optional[Mapping[str, Any]]]:
+        cursor_field: list[str] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
+    ) -> Iterable[Mapping[str, Any] | None]:
         if self._slices_and_records_or_exception:
             yield from [
                 _slice for _slice, records_or_exception in self._slices_and_records_or_exception

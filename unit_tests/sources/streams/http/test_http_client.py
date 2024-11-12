@@ -1,4 +1,5 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
 import logging
 from datetime import timedelta
@@ -6,6 +7,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from requests_cache import CachedRequest
+
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.streams.call_rate import CachedLimiterSession, LimiterSession
 from airbyte_cdk.sources.streams.http import HttpClient
@@ -22,7 +25,6 @@ from airbyte_cdk.sources.streams.http.exceptions import (
 )
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from requests_cache import CachedRequest
 
 
 def test_http_client():
@@ -343,12 +345,11 @@ def test_send_request_given_retry_response_action_retries_and_returns_valid_resp
     def update_response(*args, **kwargs):
         if http_client._session.send.call_count == call_count:
             return valid_response
-        else:
-            retry_response = MagicMock(spec=requests.Response)
-            retry_response.ok = False
-            retry_response.status_code = 408
-            retry_response.headers = {}
-            return retry_response
+        retry_response = MagicMock(spec=requests.Response)
+        retry_response.ok = False
+        retry_response.status_code = 408
+        retry_response.headers = {}
+        return retry_response
 
     mocked_session.send.side_effect = update_response
 
@@ -449,8 +450,7 @@ def test_send_request_given_request_exception_and_retry_response_action_retries_
     def update_response(*args, **kwargs):
         if mocked_session.send.call_count == call_count:
             return valid_response
-        else:
-            raise requests.RequestException()
+        raise requests.RequestException()
 
     mocked_session.send.side_effect = update_response
 

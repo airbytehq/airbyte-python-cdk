@@ -1,11 +1,15 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
 import copy
-from typing import Any, List, Mapping, MutableMapping, Optional, Union
+from collections.abc import Mapping, MutableMapping
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 import requests_mock
+import orjson
+
 from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteStateBlob,
@@ -20,7 +24,7 @@ from airbyte_cdk.models import (
     SyncMode,
 )
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
-from orjson import orjson
+
 
 SUBSTREAM_MANIFEST: MutableMapping[str, Any] = {
     "version": "0.51.42",
@@ -237,8 +241,8 @@ def _run_read(
     manifest: Mapping[str, Any],
     config: Mapping[str, Any],
     stream_name: str,
-    state: Optional[Union[List[AirbyteStateMessage], MutableMapping[str, Any]]] = None,
-) -> List[AirbyteMessage]:
+    state: list[AirbyteStateMessage] | MutableMapping[str, Any] | None = None,
+) -> list[AirbyteMessage]:
     source = ManifestDeclarativeSource(source_config=manifest)
     catalog = ConfiguredAirbyteCatalog(
         streams=[
@@ -260,8 +264,7 @@ def _run_read(
 def run_incremental_parent_state_test(
     manifest, mock_requests, expected_records, initial_state, expected_states
 ):
-    """
-    Run an incremental parent state test for the specified stream.
+    """Run an incremental parent state test for the specified stream.
 
     This function performs the following steps:
     1. Mocks the API requests as defined in mock_requests.
@@ -849,9 +852,7 @@ def test_incremental_parent_state(
 def test_incremental_parent_state_migration(
     test_name, manifest, mock_requests, expected_records, initial_state, expected_state
 ):
-    """
-    Test incremental partition router with parent state migration
-    """
+    """Test incremental partition router with parent state migration"""
     _stream_name = "post_comment_votes"
     config = {
         "start_date": "2024-01-01T00:00:01Z",
@@ -1047,9 +1048,7 @@ def test_incremental_parent_state_migration(
 def test_incremental_parent_state_no_slices(
     test_name, manifest, mock_requests, expected_records, initial_state, expected_state
 ):
-    """
-    Test incremental partition router with no parent records
-    """
+    """Test incremental partition router with no parent records"""
     _stream_name = "post_comment_votes"
     config = {
         "start_date": "2024-01-01T00:00:01Z",
@@ -1254,9 +1253,7 @@ def test_incremental_parent_state_no_slices(
 def test_incremental_parent_state_no_records(
     test_name, manifest, mock_requests, expected_records, initial_state, expected_state
 ):
-    """
-    Test incremental partition router with no child records
-    """
+    """Test incremental partition router with no child records"""
     _stream_name = "post_comment_votes"
     config = {
         "start_date": "2024-01-01T00:00:01Z",
@@ -1489,8 +1486,7 @@ def test_incremental_parent_state_no_records(
 def test_incremental_parent_state_no_incremental_dependency(
     test_name, manifest, mock_requests, expected_records, initial_state, expected_state
 ):
-    """
-    This is a pretty complicated test that syncs a low-code connector stream with three levels of substreams
+    """This is a pretty complicated test that syncs a low-code connector stream with three levels of substreams
     - posts: (ids: 1, 2, 3)
     - post comments: (parent post 1 with ids: 9, 10, 11, 12; parent post 2 with ids: 20, 21; parent post 3 with id: 30)
     - post comment votes: (parent comment 10 with ids: 100, 101; parent comment 11 with id: 102;
@@ -1501,7 +1497,6 @@ def test_incremental_parent_state_no_incremental_dependency(
     parent stream requests use the incoming config as query parameters and the substream state messages does not
     contain parent stream state.
     """
-
     _stream_name = "post_comment_votes"
     config = {
         "start_date": "2024-01-01T00:00:01Z",

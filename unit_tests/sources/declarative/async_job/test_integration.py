@@ -1,8 +1,9 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
-
+from __future__ import annotations
 
 import logging
-from typing import Any, Iterable, List, Mapping, Optional, Set, Tuple
+from collections.abc import Iterable, Mapping
+from typing import Any
 from unittest import TestCase, mock
 
 from airbyte_cdk import (
@@ -28,6 +29,7 @@ from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 from airbyte_cdk.test.catalog_builder import CatalogBuilder, ConfiguredAirbyteStreamBuilder
 from airbyte_cdk.test.entrypoint_wrapper import read
 
+
 _A_STREAM_NAME = "a_stream_name"
 _EXTRACTOR_NOT_USED: RecordExtractor = None  # type: ignore  # the extractor should not be used. If it is the case, there is an issue that needs fixing
 _NO_LIMIT = 10000
@@ -37,7 +39,7 @@ class MockAsyncJobRepository(AsyncJobRepository):
     def start(self, stream_slice: StreamSlice) -> AsyncJob:
         return AsyncJob("a_job_id", StreamSlice(partition={}, cursor_slice={}))
 
-    def update_jobs_status(self, jobs: Set[AsyncJob]) -> None:
+    def update_jobs_status(self, jobs: set[AsyncJob]) -> None:
         for job in jobs:
             job.update_status(AsyncJobStatus.COMPLETED)
 
@@ -52,19 +54,19 @@ class MockAsyncJobRepository(AsyncJobRepository):
 
 
 class MockSource(AbstractSource):
-    def __init__(self, stream_slicer: Optional[StreamSlicer] = None) -> None:
+    def __init__(self, stream_slicer: StreamSlicer | None = None) -> None:
         self._stream_slicer = SinglePartitionRouter({}) if stream_slicer is None else stream_slicer
         self._message_repository = NoopMessageRepository()
 
     def check_connection(
         self, logger: logging.Logger, config: Mapping[str, Any]
-    ) -> Tuple[bool, Optional[Any]]:
+    ) -> tuple[bool, Any | None]:
         return True, None
 
     def spec(self, logger: logging.Logger) -> ConnectorSpecification:
         return ConnectorSpecification(connectionSpecification={})
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> list[Stream]:
         noop_record_selector = RecordSelector(
             extractor=_EXTRACTOR_NOT_USED,
             config={},
@@ -119,9 +121,7 @@ class JobDeclarativeStreamTest(TestCase):
         assert len(output.records) == 1
 
     def test_when_read_then_call_stream_slices_only_once(self) -> None:
-        """
-        As generating stream slices is very expensive, we want to ensure that during a read, it is only called once.
-        """
+        """As generating stream slices is very expensive, we want to ensure that during a read, it is only called once."""
         output = read(
             self._source,
             self._CONFIG,

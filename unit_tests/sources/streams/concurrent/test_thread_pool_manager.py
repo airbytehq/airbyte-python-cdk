@@ -1,6 +1,8 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
+
 from concurrent.futures import Future, ThreadPoolExecutor
 from unittest import TestCase
 from unittest.mock import Mock

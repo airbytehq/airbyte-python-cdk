@@ -1,24 +1,27 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
-
+from collections.abc import MutableMapping
 from datetime import datetime
-from typing import Any, Dict, List, MutableMapping, Optional, Tuple
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from freezegun import freeze_time
+
 from airbyte_cdk.models import AirbyteStateMessage, SyncMode
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.stream.concurrent.adapters import FileBasedStreamPartition
 from airbyte_cdk.sources.file_based.stream.concurrent.cursor import FileBasedConcurrentCursor
 from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
-from freezegun import freeze_time
+
 
 DATE_TIME_FORMAT = FileBasedConcurrentCursor.DATE_TIME_FORMAT
 MOCK_DAYS_TO_SYNC_IF_HISTORY_IS_FULL = 3
 
 
-def _make_cursor(input_state: Optional[MutableMapping[str, Any]]) -> FileBasedConcurrentCursor:
+def _make_cursor(input_state: MutableMapping[str, Any] | None) -> FileBasedConcurrentCursor:
     stream = MagicMock()
     stream.name = "test"
     stream.namespace = None
@@ -100,7 +103,7 @@ def _make_cursor(input_state: Optional[MutableMapping[str, Any]]) -> FileBasedCo
     ],
 )
 def test_compute_prev_sync_cursor(
-    input_state: MutableMapping[str, Any], expected_cursor_value: Tuple[datetime, str]
+    input_state: MutableMapping[str, Any], expected_cursor_value: tuple[datetime, str]
 ):
     cursor = _make_cursor(input_state)
     assert cursor._compute_prev_sync_cursor(input_state) == expected_cursor_value
@@ -188,10 +191,10 @@ def test_compute_prev_sync_cursor(
 )
 def test_add_file(
     initial_state: MutableMapping[str, Any],
-    pending_files: List[Tuple[str, str]],
-    file_to_add: Tuple[str, str],
-    expected_history: Dict[str, Any],
-    expected_pending_files: List[Tuple[str, str]],
+    pending_files: list[tuple[str, str]],
+    file_to_add: tuple[str, str],
+    expected_history: dict[str, Any],
+    expected_pending_files: list[tuple[str, str]],
     expected_cursor_value: str,
 ):
     cursor = _make_cursor(initial_state)
@@ -262,10 +265,10 @@ def test_add_file(
 )
 def test_add_file_invalid(
     initial_state: MutableMapping[str, Any],
-    pending_files: List[Tuple[str, str]],
-    file_to_add: Tuple[str, str],
-    expected_history: Dict[str, Any],
-    expected_pending_files: List[Tuple[str, str]],
+    pending_files: list[tuple[str, str]],
+    file_to_add: tuple[str, str],
+    expected_history: dict[str, Any],
+    expected_pending_files: list[tuple[str, str]],
     expected_cursor_value: str,
 ):
     cursor = _make_cursor(initial_state)
@@ -328,7 +331,7 @@ def test_add_file_invalid(
 )
 def test_get_new_cursor_value(
     input_state: MutableMapping[str, Any],
-    pending_files: List[Tuple[str, str]],
+    pending_files: list[tuple[str, str]],
     expected_cursor_value: str,
 ):
     cursor = _make_cursor(input_state)
@@ -534,9 +537,9 @@ def test_get_files_to_sync(
 )
 def test_should_sync_file(
     file_to_check: RemoteFile,
-    history: Dict[str, Any],
+    history: dict[str, Any],
     is_history_full: bool,
-    prev_cursor_value: Tuple[datetime, str],
+    prev_cursor_value: tuple[datetime, str],
     sync_start: datetime,
     expected_should_sync: bool,
 ):

@@ -1,11 +1,13 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
+
+from pydantic.v1 import BaseModel
 
 from airbyte_cdk.sources.utils.schema_helpers import expand_refs, rename_key
-from pydantic.v1 import BaseModel
 
 
 class BaseConfig(BaseModel):
@@ -17,7 +19,7 @@ class BaseConfig(BaseModel):
     """
 
     @classmethod
-    def schema(cls, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+    def schema(cls, *args: Any, **kwargs: Any) -> dict[str, Any]:  # noqa: ANN401  (any-type)
         """We're overriding the schema classmethod to enable some post-processing"""
         schema = super().schema(*args, **kwargs)
         rename_key(schema, old_key="anyOf", new_key="oneOf")  # UI supports only oneOf

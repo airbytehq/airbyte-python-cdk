@@ -1,8 +1,10 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import pytest
+
 from airbyte_cdk.utils.mapping_helpers import combine_mappings
 
 

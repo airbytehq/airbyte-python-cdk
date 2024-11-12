@@ -1,18 +1,14 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
-import logging
 from abc import ABC
 from datetime import timedelta
-from typing import Any, Callable, Iterator, List, Mapping, MutableMapping, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
 from airbyte_cdk.models import AirbyteMessage, AirbyteStateMessage, ConfiguredAirbyteCatalog
 from airbyte_cdk.sources import AbstractSource
-from airbyte_cdk.sources.concurrent_source.concurrent_source import ConcurrentSource
-from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
-from airbyte_cdk.sources.streams import Stream
-from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 from airbyte_cdk.sources.streams.concurrent.abstract_stream_facade import AbstractStreamFacade
 from airbyte_cdk.sources.streams.concurrent.adapters import StreamFacade
 from airbyte_cdk.sources.streams.concurrent.cursor import (
@@ -23,17 +19,27 @@ from airbyte_cdk.sources.streams.concurrent.cursor import (
     FinalStateCursor,
     GapType,
 )
-from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
-    AbstractStreamStateConverter,
-)
+
+
+if TYPE_CHECKING:
+    import logging
+    from collections.abc import Callable, Iterator, Mapping, MutableMapping
+
+    from airbyte_cdk.sources.concurrent_source.concurrent_source import ConcurrentSource
+    from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
+    from airbyte_cdk.sources.streams import Stream
+    from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
+    from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
+        AbstractStreamStateConverter,
+    )
+
 
 DEFAULT_LOOKBACK_SECONDS = 0
 
 
 class ConcurrentSourceAdapter(AbstractSource, ABC):
-    def __init__(self, concurrent_source: ConcurrentSource, **kwargs: Any) -> None:
-        """
-        ConcurrentSourceAdapter is a Source that wraps a concurrent source and exposes it as a regular source.
+    def __init__(self, concurrent_source: ConcurrentSource, **kwargs: Any) -> None:  # noqa: ANN401  (any-type)
+        """ConcurrentSourceAdapter is a Source that wraps a concurrent source and exposes it as a regular source.
 
         The source's streams are still defined through the streams() method.
         Streams wrapped in a StreamFacade will be processed concurrently.
@@ -47,7 +53,7 @@ class ConcurrentSourceAdapter(AbstractSource, ABC):
         logger: logging.Logger,
         config: Mapping[str, Any],
         catalog: ConfiguredAirbyteCatalog,
-        state: Optional[List[AirbyteStateMessage]] = None,
+        state: list[AirbyteStateMessage] | None = None,
     ) -> Iterator[AirbyteMessage]:
         abstract_streams = self._select_abstract_streams(config, catalog)
         concurrent_stream_names = {stream.name for stream in abstract_streams}
@@ -65,13 +71,11 @@ class ConcurrentSourceAdapter(AbstractSource, ABC):
 
     def _select_abstract_streams(
         self, config: Mapping[str, Any], configured_catalog: ConfiguredAirbyteCatalog
-    ) -> List[AbstractStream]:
-        """
-        Selects streams that can be processed concurrently and returns their abstract representations.
-        """
+    ) -> list[AbstractStream]:
+        """Selects streams that can be processed concurrently and returns their abstract representations."""
         all_streams = self.streams(config)
         stream_name_to_instance: Mapping[str, Stream] = {s.name: s for s in all_streams}
-        abstract_streams: List[AbstractStream] = []
+        abstract_streams: list[AbstractStream] = []
         for configured_stream in configured_catalog.streams:
             stream_instance = stream_name_to_instance.get(configured_stream.stream.name)
             if not stream_instance:
@@ -86,10 +90,9 @@ class ConcurrentSourceAdapter(AbstractSource, ABC):
         logger: logging.Logger,
         stream: Stream,
         state_manager: ConnectorStateManager,
-        cursor: Optional[Cursor] = None,
+        cursor: Cursor | None = None,
     ) -> Stream:
-        """
-        Prepares a stream for concurrent processing by initializing or assigning a cursor,
+        """Prepares a stream for concurrent processing by initializing or assigning a cursor,
         managing the stream's state, and returning an updated Stream instance.
         """
         state: MutableMapping[str, Any] = {}
@@ -113,12 +116,12 @@ class ConcurrentSourceAdapter(AbstractSource, ABC):
         stream: Stream,
         state_manager: ConnectorStateManager,
         converter: AbstractStreamStateConverter,
-        slice_boundary_fields: Optional[Tuple[str, str]],
-        start: Optional[CursorValueType],
+        slice_boundary_fields: tuple[str, str] | None,
+        start: CursorValueType | None,
         end_provider: Callable[[], CursorValueType],
-        lookback_window: Optional[GapType] = None,
-        slice_range: Optional[GapType] = None,
-    ) -> Optional[ConcurrentCursor]:
+        lookback_window: GapType | None = None,
+        slice_range: GapType | None = None,
+    ) -> ConcurrentCursor | None:
         lookback_window = lookback_window or timedelta(seconds=DEFAULT_LOOKBACK_SECONDS)
 
         cursor_field_name = stream.cursor_field

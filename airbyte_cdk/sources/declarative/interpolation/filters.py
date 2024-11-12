@@ -1,16 +1,17 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
+
 import base64
 import hashlib
 import json
 import re
-from typing import Any, Optional
+from typing import Any
 
 
-def hash(value: Any, hash_type: str = "md5", salt: Optional[str] = None) -> str:
-    """
-      Implementation of a custom Jinja2 hash filter
+def hash(value: Any, hash_type: str = "md5", salt: str | None = None) -> str:  # noqa: ANN401, A001  (any-type, shadowed-builtin)
+    """Implementation of a custom Jinja2 hash filter
       Hash type defaults to 'md5' if one is not specified.
 
       If you are using this has function for GDPR compliance, then
@@ -49,14 +50,13 @@ def hash(value: Any, hash_type: str = "md5", salt: Optional[str] = None) -> str:
             hash_obj.update(str(salt).encode("utf-8"))
         computed_hash: str = hash_obj.hexdigest()
     else:
-        raise AttributeError("No hashing function named {hname}".format(hname=hash_type))
+        raise AttributeError(f"No hashing function named {hash_type}")
 
     return computed_hash
 
 
 def base64encode(value: str) -> str:
-    """
-    Implementation of a custom Jinja2 base64encode filter
+    """Implementation of a custom Jinja2 base64encode filter
 
     For example:
 
@@ -69,13 +69,11 @@ def base64encode(value: str) -> str:
     :param value: value to be encoded in base64
     :return: base64 encoded string
     """
-
     return base64.b64encode(value.encode("utf-8")).decode()
 
 
 def base64decode(value: str) -> str:
-    """
-    Implementation of a custom Jinja2 base64decode filter
+    """Implementation of a custom Jinja2 base64decode filter
 
     For example:
 
@@ -88,13 +86,11 @@ def base64decode(value: str) -> str:
     :param value: value to be decoded from base64
     :return: base64 decoded string
     """
-
     return base64.b64decode(value.encode("utf-8")).decode()
 
 
-def string(value: Any) -> str:
-    """
-    Converts the input value to a string.
+def string(value: Any) -> str:  # noqa: ANN401  (any-type)
+    """Converts the input value to a string.
     If the value is already a string, it is returned as is.
     Otherwise, the value is interpreted as a json object and wrapped in triple-quotes so it's evalued as a string by the JinjaInterpolation
     :param value: the value to convert to a string
@@ -107,9 +103,7 @@ def string(value: Any) -> str:
 
 
 def regex_search(value: str, regex: str) -> str:
-    """
-    Match a regular expression against a string and return the first match group if it exists.
-    """
+    """Match a regular expression against a string and return the first match group if it exists."""
     match = re.search(regex, value)
     if match and len(match.groups()) > 0:
         return match.group(1)

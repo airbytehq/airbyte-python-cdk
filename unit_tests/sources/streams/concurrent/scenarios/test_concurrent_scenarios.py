@@ -1,12 +1,14 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from pathlib import PosixPath
 
 import pytest
 from _pytest.capture import CaptureFixture
 from freezegun import freeze_time
+
 from unit_tests.sources.file_based.scenarios.scenario_builder import TestScenario
 from unit_tests.sources.file_based.test_scenarios import verify_discover, verify_read
 from unit_tests.sources.streams.concurrent.scenarios.incremental_scenarios import (
@@ -37,6 +39,7 @@ from unit_tests.sources.streams.concurrent.scenarios.thread_based_concurrent_str
     test_concurrent_cdk_single_stream_multiple_partitions_concurrency_level_two,
     test_concurrent_cdk_single_stream_with_primary_key,
 )
+
 
 scenarios = [
     test_concurrent_cdk_single_stream,

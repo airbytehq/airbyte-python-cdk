@@ -1,9 +1,10 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
-
-from typing import Optional, Union
+from __future__ import annotations
 
 import requests
+
 from airbyte_cdk.sources.streams.http.error_handlers import BackoffStrategy, DefaultBackoffStrategy
+
 
 _ANY_ATTEMPT_COUNT = 123
 
@@ -17,9 +18,9 @@ def test_given_no_arguments_default_backoff_strategy_returns_default_values():
 class CustomBackoffStrategy(BackoffStrategy):
     def backoff_time(
         self,
-        response_or_exception: Optional[Union[requests.Response, requests.RequestException]],
+        response_or_exception: requests.Response | requests.RequestException | None,
         attempt_count: int,
-    ) -> Optional[float]:
+    ) -> float | None:
         return response_or_exception.headers["Retry-After"]
 
 

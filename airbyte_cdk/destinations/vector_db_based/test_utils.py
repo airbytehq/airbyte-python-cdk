@@ -1,10 +1,11 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import json
 import unittest
-from typing import Any, Dict
+from typing import Any
 
 from airbyte_cdk.models import (
     AirbyteMessage,
@@ -20,8 +21,7 @@ from airbyte_cdk.models import (
 
 
 class BaseIntegrationTest(unittest.TestCase):
-    """
-    BaseIntegrationTest is a base class for integration tests for vector db destinations.
+    """BaseIntegrationTest is a base class for integration tests for vector db destinations.
 
     It provides helper methods to create Airbyte catalogs, records and state messages.
     """
@@ -47,7 +47,7 @@ class BaseIntegrationTest(unittest.TestCase):
 
         return ConfiguredAirbyteCatalog(streams=[overwrite_stream])
 
-    def _state(self, data: Dict[str, Any]) -> AirbyteMessage:
+    def _state(self, data: dict[str, Any]) -> AirbyteMessage:
         return AirbyteMessage(type=Type.STATE, state=AirbyteStateMessage(data=data))
 
     def _record(self, stream: str, str_value: str, int_value: int) -> AirbyteMessage:
@@ -59,5 +59,5 @@ class BaseIntegrationTest(unittest.TestCase):
         )
 
     def setUp(self) -> None:
-        with open("secrets/config.json", "r") as f:
+        with open("secrets/config.json", encoding="utf-8") as f:  # noqa: PTH123, FURB101  # Should use pathlib
             self.config = json.loads(f.read())

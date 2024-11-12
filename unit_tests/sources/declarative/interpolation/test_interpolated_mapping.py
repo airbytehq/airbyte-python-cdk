@@ -1,8 +1,10 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import pytest
+
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
 
 
@@ -42,6 +44,6 @@ def test(test_name, key, expected_value):
     kwargs = {"a": "VALUE_FROM_KWARGS"}
     mapping = InterpolatedMapping(mapping=d, parameters={"b": "VALUE_FROM_PARAMETERS", "k": "key"})
 
-    interpolated = mapping.eval(config, **{"kwargs": kwargs})
+    interpolated = mapping.eval(config, kwargs=kwargs)
 
     assert interpolated[key] == expected_value

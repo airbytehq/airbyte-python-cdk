@@ -1,45 +1,50 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
+
 import logging
-from typing import Dict, Iterable, List, Optional, Set
+from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 from airbyte_cdk.exception_handler import generate_failed_streams_error_message
 from airbyte_cdk.models import AirbyteMessage, AirbyteStreamStatus, FailureType, StreamDescriptor
 from airbyte_cdk.models import Type as MessageType
-from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentinel import (
-    PartitionGenerationCompletedSentinel,
-)
-from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
-from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPoolManager
-from airbyte_cdk.sources.message import MessageRepository
-from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
-from airbyte_cdk.sources.streams.concurrent.partition_enqueuer import PartitionEnqueuer
-from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionReader
-from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
-from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
-from airbyte_cdk.sources.streams.concurrent.partitions.types import PartitionCompleteSentinel
 from airbyte_cdk.sources.utils.record_helper import stream_data_to_airbyte_message
-from airbyte_cdk.sources.utils.slice_logger import SliceLogger
 from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.stream_status_utils import (
     as_airbyte_message as stream_status_as_airbyte_message,
 )
 
 
+if TYPE_CHECKING:
+    from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentinel import (
+        PartitionGenerationCompletedSentinel,
+    )
+    from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
+    from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPoolManager
+    from airbyte_cdk.sources.message import MessageRepository
+    from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
+    from airbyte_cdk.sources.streams.concurrent.partition_enqueuer import PartitionEnqueuer
+    from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionReader
+    from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
+    from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
+    from airbyte_cdk.sources.streams.concurrent.partitions.types import PartitionCompleteSentinel
+    from airbyte_cdk.sources.utils.slice_logger import SliceLogger
+
+
 class ConcurrentReadProcessor:
     def __init__(
         self,
-        stream_instances_to_read_from: List[AbstractStream],
+        stream_instances_to_read_from: list[AbstractStream],
         partition_enqueuer: PartitionEnqueuer,
         thread_pool_manager: ThreadPoolManager,
         logger: logging.Logger,
         slice_logger: SliceLogger,
         message_repository: MessageRepository,
         partition_reader: PartitionReader,
-    ):
-        """
-        This class is responsible for handling items from a concurrent stream read process.
+    ) -> None:
+        """This class is responsible for handling items from a concurrent stream read process.
         :param stream_instances_to_read_from: List of streams to read from
         :param partition_enqueuer: PartitionEnqueuer instance
         :param thread_pool_manager: ThreadPoolManager instance
@@ -50,26 +55,25 @@ class ConcurrentReadProcessor:
         """
         self._stream_name_to_instance = {s.name: s for s in stream_instances_to_read_from}
         self._record_counter = {}
-        self._streams_to_running_partitions: Dict[str, Set[Partition]] = {}
+        self._streams_to_running_partitions: dict[str, set[Partition]] = {}
         for stream in stream_instances_to_read_from:
             self._streams_to_running_partitions[stream.name] = set()
             self._record_counter[stream.name] = 0
         self._thread_pool_manager = thread_pool_manager
         self._partition_enqueuer = partition_enqueuer
         self._stream_instances_to_start_partition_generation = stream_instances_to_read_from
-        self._streams_currently_generating_partitions: List[str] = []
+        self._streams_currently_generating_partitions: list[str] = []
         self._logger = logger
         self._slice_logger = slice_logger
         self._message_repository = message_repository
         self._partition_reader = partition_reader
-        self._streams_done: Set[str] = set()
-        self._exceptions_per_stream_name: dict[str, List[Exception]] = {}
+        self._streams_done: set[str] = set()
+        self._exceptions_per_stream_name: dict[str, list[Exception]] = {}
 
     def on_partition_generation_completed(
         self, sentinel: PartitionGenerationCompletedSentinel
     ) -> Iterable[AirbyteMessage]:
-        """
-        This method is called when a partition generation is completed.
+        """This method is called when a partition generation is completed.
         1. Remove the stream from the list of streams currently generating partitions
         2. If the stream is done, mark it as such and return a stream status message
         3. If there are more streams to read from, start the next partition generator
@@ -87,8 +91,7 @@ class ConcurrentReadProcessor:
             yield self.start_next_partition_generator()  # type:ignore # None may be yielded
 
     def on_partition(self, partition: Partition) -> None:
-        """
-        This method is called when a partition is generated.
+        """This method is called when a partition is generated.
         1. Add the partition to the set of partitions for the stream
         2. Log the slice if necessary
         3. Submit the partition to the thread pool manager
@@ -104,8 +107,7 @@ class ConcurrentReadProcessor:
     def on_partition_complete_sentinel(
         self, sentinel: PartitionCompleteSentinel
     ) -> Iterable[AirbyteMessage]:
-        """
-        This method is called when a partition is completed.
+        """This method is called when a partition is completed.
         1. Close the partition
         2. If the stream is done, mark it as such and return a stream status message
         3. Emit messages that were added to the message repository
@@ -133,8 +135,7 @@ class ConcurrentReadProcessor:
             yield from self._message_repository.consume_queue()
 
     def on_record(self, record: Record) -> Iterable[AirbyteMessage]:
-        """
-        This method is called when a record is read from a partition.
+        """This method is called when a record is read from a partition.
         1. Convert the record to an AirbyteMessage
         2. If this is the first record for the stream, mark the stream as RUNNING
         3. Increment the record counter for the stream
@@ -164,8 +165,7 @@ class ConcurrentReadProcessor:
         yield from self._message_repository.consume_queue()
 
     def on_exception(self, exception: StreamThreadException) -> Iterable[AirbyteMessage]:
-        """
-        This method is called when an exception is raised.
+        """This method is called when an exception is raised.
         1. Stop all running streams
         2. Raise the exception
         """
@@ -185,9 +185,8 @@ class ConcurrentReadProcessor:
     def _flag_exception(self, stream_name: str, exception: Exception) -> None:
         self._exceptions_per_stream_name.setdefault(stream_name, []).append(exception)
 
-    def start_next_partition_generator(self) -> Optional[AirbyteMessage]:
-        """
-        Start the next partition generator.
+    def start_next_partition_generator(self) -> AirbyteMessage | None:
+        """Start the next partition generator.
         1. Pop the next stream to read from
         2. Submit the partition generator to the thread pool manager
         3. Add the stream to the list of streams currently generating partitions
@@ -203,22 +202,17 @@ class ConcurrentReadProcessor:
                 stream.as_airbyte_stream(),
                 AirbyteStreamStatus.STARTED,
             )
-        else:
-            return None
+        return None
 
     def is_done(self) -> bool:
-        """
-        This method is called to check if the sync is done.
+        """This method is called to check if the sync is done.
         The sync is done when:
         1. There are no more streams generating partitions
         2. There are no more streams to read from
         3. All partitions for all streams are closed
         """
         is_done = all(
-            [
-                self._is_stream_done(stream_name)
-                for stream_name in self._stream_name_to_instance.keys()
-            ]
+            self._is_stream_done(stream_name) for stream_name in self._stream_name_to_instance
         )
         if is_done and self._exceptions_per_stream_name:
             error_message = generate_failed_streams_error_message(self._exceptions_per_stream_name)

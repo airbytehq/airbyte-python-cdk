@@ -1,6 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import argparse
 import importlib
@@ -11,12 +12,15 @@ import socket
 import sys
 import tempfile
 from collections import defaultdict
+from collections.abc import Iterable, Mapping
 from functools import wraps
-from typing import Any, DefaultDict, Iterable, List, Mapping, Optional
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
+import orjson
 import requests
-from airbyte_cdk.connector import TConfig
+from requests import PreparedRequest, Response, Session
+
 from airbyte_cdk.exception_handler import init_uncaught_exception_handler
 from airbyte_cdk.logger import init_logger
 from airbyte_cdk.models import (  # type: ignore [attr-defined]
@@ -38,8 +42,11 @@ from airbyte_cdk.utils import is_cloud_environment, message_utils
 from airbyte_cdk.utils.airbyte_secrets_utils import get_secrets, update_secrets
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from orjson import orjson
-from requests import PreparedRequest, Response, Session
+
+
+if TYPE_CHECKING:
+    from airbyte_cdk.connector import TConfig
+
 
 logger = init_logger("airbyte")
 
@@ -47,8 +54,8 @@ VALID_URL_SCHEMES = ["https"]
 CLOUD_DEPLOYMENT_MODE = "cloud"
 
 
-class AirbyteEntrypoint(object):
-    def __init__(self, source: Source):
+class AirbyteEntrypoint:
+    def __init__(self, source: Source) -> None:
         init_uncaught_exception_handler(logger)
 
         # Deployment mode is read when instantiating the entrypoint because it is the common path shared by syncs and connector builder test requests
@@ -59,7 +66,7 @@ class AirbyteEntrypoint(object):
         self.logger = logging.getLogger(f"airbyte.{getattr(source, 'name', '')}")
 
     @staticmethod
-    def parse_args(args: List[str]) -> argparse.Namespace:
+    def parse_args(args: list[str]) -> argparse.Namespace:
         # set up parent parsers
         parent_parser = argparse.ArgumentParser(add_help=False)
         parent_parser.add_argument(
@@ -117,7 +124,7 @@ class AirbyteEntrypoint(object):
     def run(self, parsed_args: argparse.Namespace) -> Iterable[str]:
         cmd = parsed_args.command
         if not cmd:
-            raise Exception("No command passed")
+            raise Exception("No command passed")  # noqa: TRY002  (vanilla exception)
 
         if hasattr(parsed_args, "debug") and parsed_args.debug:
             self.logger.setLevel(logging.DEBUG)
@@ -166,7 +173,7 @@ class AirbyteEntrypoint(object):
                             self.read(source_spec, config, config_catalog, state),
                         )
                     else:
-                        raise Exception("Unexpected command " + cmd)
+                        raise Exception("Unexpected command " + cmd)  # noqa: TRY002  (vanilla exception)
         finally:
             yield from [
                 self.airbyte_message_to_string(queued_message)
@@ -184,7 +191,7 @@ class AirbyteEntrypoint(object):
             # The platform uses the exit code to surface unexpected failures so we raise the exception if the failure type not a config error
             # If the failure is not exceptional, we'll emit a failed connection status message and return
             if traced_exc.failure_type != FailureType.config_error:
-                raise traced_exc
+                raise
             if connection_status:
                 yield from self._emit_queued_messages(self.source)
                 yield connection_status
@@ -197,7 +204,7 @@ class AirbyteEntrypoint(object):
             # The platform uses the exit code to surface unexpected failures so we raise the exception if the failure type not a config error
             # If the failure is not exceptional, we'll emit a failed connection status message and return
             if traced_exc.failure_type != FailureType.config_error:
-                raise traced_exc
+                raise
             else:
                 yield AirbyteMessage(
                     type=Type.CONNECTION_STATUS,
@@ -226,14 +233,18 @@ class AirbyteEntrypoint(object):
         yield AirbyteMessage(type=Type.CATALOG, catalog=catalog)
 
     def read(
-        self, source_spec: ConnectorSpecification, config: TConfig, catalog: Any, state: list[Any]
+        self,
+        source_spec: ConnectorSpecification,
+        config: TConfig,
+        catalog: Any,  # noqa: ANN401  (any-type)
+        state: list[Any],
     ) -> Iterable[AirbyteMessage]:
         self.set_up_secret_filter(config, source_spec.connectionSpecification)
         if self.source.check_config_against_spec:
             self.validate_connection(source_spec, config)
 
         # The Airbyte protocol dictates that counts be expressed as float/double to better protect against integer overflows
-        stream_message_counter: DefaultDict[HashableStreamDescriptor, float] = defaultdict(float)
+        stream_message_counter: defaultdict[HashableStreamDescriptor, float] = defaultdict(float)
         for message in self.source.read(self.logger, config, catalog, state):
             yield self.handle_record_counts(message, stream_message_counter)
         for message in self._emit_queued_messages(self.source):
@@ -241,7 +252,7 @@ class AirbyteEntrypoint(object):
 
     @staticmethod
     def handle_record_counts(
-        message: AirbyteMessage, stream_message_count: DefaultDict[HashableStreamDescriptor, float]
+        message: AirbyteMessage, stream_message_count: defaultdict[HashableStreamDescriptor, float]
     ) -> AirbyteMessage:
         match message.type:
             case Type.RECORD:
@@ -282,21 +293,21 @@ class AirbyteEntrypoint(object):
         return orjson.dumps(AirbyteMessageSerializer.dump(airbyte_message)).decode()  # type: ignore[no-any-return] # orjson.dumps(message).decode() always returns string
 
     @classmethod
-    def extract_state(cls, args: List[str]) -> Optional[Any]:
+    def extract_state(cls, args: list[str]) -> Any | None:  # noqa: ANN401  (any-type)
         parsed_args = cls.parse_args(args)
         if hasattr(parsed_args, "state"):
             return parsed_args.state
         return None
 
     @classmethod
-    def extract_catalog(cls, args: List[str]) -> Optional[Any]:
+    def extract_catalog(cls, args: list[str]) -> Any | None:  # noqa: ANN401  (any-type)
         parsed_args = cls.parse_args(args)
         if hasattr(parsed_args, "catalog"):
             return parsed_args.catalog
         return None
 
     @classmethod
-    def extract_config(cls, args: List[str]) -> Optional[Any]:
+    def extract_config(cls, args: list[str]) -> Any | None:  # noqa: ANN401  (any-type)
         parsed_args = cls.parse_args(args)
         if hasattr(parsed_args, "config"):
             return parsed_args.config
@@ -308,7 +319,7 @@ class AirbyteEntrypoint(object):
         return
 
 
-def launch(source: Source, args: List[str]) -> None:
+def launch(source: Source, args: list[str]) -> None:
     source_entrypoint = AirbyteEntrypoint(source)
     parsed_args = source_entrypoint.parse_args(args)
     # temporarily removes the PrintBuffer because we're seeing weird print behavior for concurrent syncs
@@ -321,19 +332,17 @@ def launch(source: Source, args: List[str]) -> None:
 
 
 def _init_internal_request_filter() -> None:
-    """
-    Wraps the Python requests library to prevent sending requests to internal URL endpoints.
-    """
+    """Wraps the Python requests library to prevent sending requests to internal URL endpoints."""
     wrapped_fn = Session.send
 
     @wraps(wrapped_fn)
-    def filtered_send(self: Any, request: PreparedRequest, **kwargs: Any) -> Response:
+    def filtered_send(self: Any, request: PreparedRequest, **kwargs: Any) -> Response:  # noqa: ANN401  (any-type)
         parsed_url = urlparse(request.url)
 
         if parsed_url.scheme not in VALID_URL_SCHEMES:
             raise requests.exceptions.InvalidSchema(
                 "Invalid Protocol Scheme: The endpoint that data is being requested from is using an invalid or insecure "
-                + f"protocol {parsed_url.scheme!r}. Valid protocol schemes: {','.join(VALID_URL_SCHEMES)}"
+                f"protocol {parsed_url.scheme!r}. Valid protocol schemes: {','.join(VALID_URL_SCHEMES)}"
             )
 
         if not parsed_url.hostname:
@@ -353,7 +362,7 @@ def _init_internal_request_filter() -> None:
             # This is a special case where the developer specifies an IP address string that is not formatted correctly like trailing
             # whitespace which will fail the socket IP lookup. This only happens when using IP addresses and not text hostnames.
             # Knowing that this is a request using the requests library, we will mock the exception without calling the lib
-            raise requests.exceptions.InvalidURL(f"Invalid URL {parsed_url}: {exception}")
+            raise requests.exceptions.InvalidURL(f"Invalid URL {parsed_url}: {exception}") from None
 
         return wrapped_fn(self, request, **kwargs)
 
@@ -361,9 +370,7 @@ def _init_internal_request_filter() -> None:
 
 
 def _is_private_url(hostname: str, port: int) -> bool:
-    """
-    Helper method that checks if any of the IP addresses associated with a hostname belong to a private network.
-    """
+    """Helper method that checks if any of the IP addresses associated with a hostname belong to a private network."""
     address_info_entries = socket.getaddrinfo(hostname, port)
     for entry in address_info_entries:
         # getaddrinfo() returns entries in the form of a 5-tuple where the IP is stored as the sockaddr. For IPv4 this
@@ -385,6 +392,6 @@ def main() -> None:
     source = impl()
 
     if not isinstance(source, Source):
-        raise Exception("Source implementation provided does not implement Source class!")
+        raise Exception("Source implementation provided does not implement Source class!")  # noqa: TRY002, TRY004  (should raise TypeError)
 
     launch(source, sys.argv[1:])

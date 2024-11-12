@@ -1,11 +1,12 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
-
+from __future__ import annotations
 
 import json
 from unittest import TestCase
 from unittest.mock import Mock
 
 import pytest
+
 from airbyte_cdk.sources.declarative.async_job.status import AsyncJobStatus
 from airbyte_cdk.sources.declarative.decoders import NoopDecoder
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder
@@ -30,6 +31,7 @@ from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRe
 from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
+
 
 _ANY_CONFIG = {}
 _ANY_SLICE = StreamSlice(partition={}, cursor_slice={})

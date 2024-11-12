@@ -1,11 +1,12 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
 import logging
 import threading
 import uuid
-from typing import Set
 
 from airbyte_cdk.logger import lazy_log
+
 
 LOGGER = logging.getLogger("airbyte")
 
@@ -15,8 +16,8 @@ class ConcurrentJobLimitReached(Exception):
 
 
 class JobTracker:
-    def __init__(self, limit: int):
-        self._jobs: Set[str] = set()
+    def __init__(self, limit: int) -> None:
+        self._jobs: set[str] = set()
         self._limit = limit
         self._lock = threading.Lock()
 
@@ -31,7 +32,7 @@ class JobTracker:
                 raise ConcurrentJobLimitReached(
                     "Can't allocate more jobs right now: limit already reached"
                 )
-            intent = f"intent_{str(uuid.uuid4())}"
+            intent = f"intent_{uuid.uuid4()!s}"
             lazy_log(
                 LOGGER,
                 logging.DEBUG,
@@ -60,9 +61,7 @@ class JobTracker:
             self._jobs.remove(intent_or_job_id)
 
     def remove_job(self, job_id: str) -> None:
-        """
-        If the job is not allocated as a running job, this method does nothing and it won't raise.
-        """
+        """If the job is not allocated as a running job, this method does nothing and it won't raise."""
         lazy_log(
             LOGGER,
             logging.DEBUG,

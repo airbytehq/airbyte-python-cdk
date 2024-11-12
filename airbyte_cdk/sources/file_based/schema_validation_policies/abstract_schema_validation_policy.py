@@ -1,9 +1,14 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Mapping, Optional
+from typing import TYPE_CHECKING, Any
+
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 class AbstractSchemaValidationPolicy(ABC):
@@ -12,9 +17,7 @@ class AbstractSchemaValidationPolicy(ABC):
 
     @abstractmethod
     def record_passes_validation_policy(
-        self, record: Mapping[str, Any], schema: Optional[Mapping[str, Any]]
+        self, record: Mapping[str, Any], schema: Mapping[str, Any] | None
     ) -> bool:
-        """
-        Return True if the record passes the user's validation policy.
-        """
-        raise NotImplementedError()
+        """Return True if the record passes the user's validation policy."""
+        raise NotImplementedError

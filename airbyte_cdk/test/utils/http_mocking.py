@@ -1,9 +1,14 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
 import re
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any
 
-from requests_mock import Mocker
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from requests_mock import Mocker
 
 
 def register_mock_responses(

@@ -1,5 +1,5 @@
-# noqa: A005  # Allow shadowing the built-in 'types' module
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# ruff: noqa: A005  # Shadows built-in 'types' module
 
 """Type conversion methods for SQL Caches."""
 
@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 import sqlalchemy
+
 
 # Compare to documentation here: https://docs.airbyte.com/understanding-airbyte/supported-data-types
 CONVERSION_MAP = {
@@ -122,7 +123,7 @@ class SQLTypeConverter:
     def to_sql_type(  # noqa: PLR0911  # Too many return statements
         self,
         json_schema_property_def: dict[str, str | dict[str, Any] | list[Any]],
-    ) -> Any:
+    ) -> Any:  # noqa: ANN401  (any-type)
         """Convert a value to a SQL type."""
         try:
             airbyte_type, _ = _get_airbyte_type(json_schema_property_def)

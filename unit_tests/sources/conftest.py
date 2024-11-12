@@ -1,10 +1,12 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import datetime
 
 import pytest
+
 from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteStreamStatus,
@@ -19,9 +21,7 @@ from airbyte_cdk.models import Type as MessageType
 @pytest.fixture
 def remove_stack_trace():
     def _remove_stack_trace(message: AirbyteMessage) -> AirbyteMessage:
-        """
-        Helper method that removes the stack trace from Airbyte trace messages to make asserting against expected records easier
-        """
+        """Helper method that removes the stack trace from Airbyte trace messages to make asserting against expected records easier"""
         if message.trace and message.trace.error and message.trace.error.stack_trace:
             message.trace.error.stack_trace = None
         return message

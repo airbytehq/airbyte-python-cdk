@@ -1,12 +1,13 @@
 #
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
-import logging
 from datetime import timedelta
-from typing import Mapping, Optional, Union
+from typing import TYPE_CHECKING
 
 import requests
+
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.streams.http.error_handlers.default_error_mapping import (
     DEFAULT_ERROR_MAPPING,
@@ -18,16 +19,20 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
 )
 
 
+if TYPE_CHECKING:
+    import logging
+    from collections.abc import Mapping
+
+
 class HttpStatusErrorHandler(ErrorHandler):
     def __init__(
         self,
         logger: logging.Logger,
-        error_mapping: Optional[Mapping[Union[int, str, type[Exception]], ErrorResolution]] = None,
+        error_mapping: Mapping[int | str | type[Exception], ErrorResolution] | None = None,
         max_retries: int = 5,
         max_time: timedelta = timedelta(seconds=600),
     ) -> None:
-        """
-        Initialize the HttpStatusErrorHandler.
+        """Initialize the HttpStatusErrorHandler.
 
         :param error_mapping: Custom error mappings to extend or override the default mappings.
         """
@@ -37,41 +42,36 @@ class HttpStatusErrorHandler(ErrorHandler):
         self._max_time = int(max_time.total_seconds())
 
     @property
-    def max_retries(self) -> Optional[int]:
+    def max_retries(self) -> int | None:
         return self._max_retries
 
     @property
-    def max_time(self) -> Optional[int]:
+    def max_time(self) -> int | None:
         return self._max_time
 
-    def interpret_response(
-        self, response_or_exception: Optional[Union[requests.Response, Exception]] = None
+    def interpret_response(  # noqa: PLR0911  (too many returns)
+        self, response_or_exception: requests.Response | Exception | None = None
     ) -> ErrorResolution:
-        """
-        Interpret the response and return the corresponding response action, failure type, and error message.
+        """Interpret the response and return the corresponding response action, failure type, and error message.
 
         :param response: The HTTP response object.
         :return: A tuple containing the response action, failure type, and error message.
         """
-
         if isinstance(response_or_exception, Exception):
-            mapped_error: Optional[ErrorResolution] = self._error_mapping.get(
+            mapped_error: ErrorResolution | None = self._error_mapping.get(
                 response_or_exception.__class__
             )
 
             if mapped_error is not None:
                 return mapped_error
-            else:
-                self._logger.error(
-                    f"Unexpected exception in error handler: {response_or_exception}"
-                )
-                return ErrorResolution(
-                    response_action=ResponseAction.RETRY,
-                    failure_type=FailureType.system_error,
-                    error_message=f"Unexpected exception in error handler: {response_or_exception}",
-                )
+            self._logger.error(f"Unexpected exception in error handler: {response_or_exception}")
+            return ErrorResolution(
+                response_action=ResponseAction.RETRY,
+                failure_type=FailureType.system_error,
+                error_message=f"Unexpected exception in error handler: {response_or_exception}",
+            )
 
-        elif isinstance(response_or_exception, requests.Response):
+        if isinstance(response_or_exception, requests.Response):
             if response_or_exception.status_code is None:
                 self._logger.error("Response does not include an HTTP status code.")
                 return ErrorResolution(
@@ -93,17 +93,15 @@ class HttpStatusErrorHandler(ErrorHandler):
 
             if mapped_error is not None:
                 return mapped_error
-            else:
-                self._logger.warning(f"Unexpected HTTP Status Code in error handler: '{error_key}'")
-                return ErrorResolution(
-                    response_action=ResponseAction.RETRY,
-                    failure_type=FailureType.system_error,
-                    error_message=f"Unexpected HTTP Status Code in error handler: {error_key}",
-                )
-        else:
-            self._logger.error(f"Received unexpected response type: {type(response_or_exception)}")
+            self._logger.warning(f"Unexpected HTTP Status Code in error handler: '{error_key}'")
             return ErrorResolution(
-                response_action=ResponseAction.FAIL,
+                response_action=ResponseAction.RETRY,
                 failure_type=FailureType.system_error,
-                error_message=f"Received unexpected response type: {type(response_or_exception)}",
+                error_message=f"Unexpected HTTP Status Code in error handler: {error_key}",
             )
+        self._logger.error(f"Received unexpected response type: {type(response_or_exception)}")
+        return ErrorResolution(
+            response_action=ResponseAction.FAIL,
+            failure_type=FailureType.system_error,
+            error_message=f"Received unexpected response type: {type(response_or_exception)}",
+        )

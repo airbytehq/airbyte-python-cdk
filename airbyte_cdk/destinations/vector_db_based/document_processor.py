@@ -1,13 +1,18 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
 import dpath
+from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
+from langchain.utils import stringify_dict
+from langchain_core.documents.base import Document
+
 from airbyte_cdk.destinations.vector_db_based.config import (
     ProcessingConfigModel,
     SeparatorSplitterConfigModel,
@@ -21,9 +26,11 @@ from airbyte_cdk.models import (
     DestinationSyncMode,
 )
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException, FailureType
-from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
-from langchain.utils import stringify_dict
-from langchain_core.documents.base import Document
+
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
 
 METADATA_STREAM_FIELD = "_ab_stream"
 METADATA_RECORD_ID_FIELD = "_ab_record_id"
@@ -33,10 +40,10 @@ CDC_DELETED_FIELD = "_ab_cdc_deleted_at"
 
 @dataclass
 class Chunk:
-    page_content: Optional[str]
-    metadata: Dict[str, Any]
+    page_content: str | None
+    metadata: dict[str, Any]
     record: AirbyteRecordMessage
-    embedding: Optional[List[float]] = None
+    embedding: list[float] | None = None
 
 
 headers_to_split_on = [
@@ -50,8 +57,7 @@ headers_to_split_on = [
 
 
 class DocumentProcessor:
-    """
-    DocumentProcessor is a helper class that generates documents from Airbyte records.
+    """DocumentProcessor is a helper class that generates documents from Airbyte records.
 
     It is used to generate documents from records before writing them to the destination:
     * The text fields are extracted from the record and concatenated to a single string.
@@ -68,7 +74,7 @@ class DocumentProcessor:
     streams: Mapping[str, ConfiguredAirbyteStream]
 
     @staticmethod
-    def check_config(config: ProcessingConfigModel) -> Optional[str]:
+    def check_config(config: ProcessingConfigModel) -> str | None:
         if config.text_splitter is not None and config.text_splitter.mode == "separator":
             for s in config.text_splitter.separators:
                 try:
@@ -83,7 +89,7 @@ class DocumentProcessor:
         self,
         chunk_size: int,
         chunk_overlap: int,
-        splitter_config: Optional[TextSplitterConfigModel],
+        splitter_config: TextSplitterConfigModel | None,
     ) -> RecursiveCharacterTextSplitter:
         if splitter_config is None:
             splitter_config = SeparatorSplitterConfigModel(mode="separator")
@@ -113,8 +119,13 @@ class DocumentProcessor:
                 ),
                 disallowed_special=(),
             )
+        return None
 
-    def __init__(self, config: ProcessingConfigModel, catalog: ConfiguredAirbyteCatalog):
+    def __init__(
+        self,
+        config: ProcessingConfigModel,
+        catalog: ConfiguredAirbyteCatalog,
+    ) -> None:
         self.streams = {
             create_stream_identifier(stream.stream): stream for stream in catalog.streams
         }
@@ -127,13 +138,12 @@ class DocumentProcessor:
         self.field_name_mappings = config.field_name_mappings
         self.logger = logging.getLogger("airbyte.document_processor")
 
-    def process(self, record: AirbyteRecordMessage) -> Tuple[List[Chunk], Optional[str]]:
-        """
-        Generate documents from records.
+    def process(self, record: AirbyteRecordMessage) -> tuple[list[Chunk], str | None]:
+        """Generate documents from records.
         :param records: List of AirbyteRecordMessages
         :return: Tuple of (List of document chunks, record id to delete if a stream is in dedup mode to avoid stale documents in the vector store)
         """
-        if CDC_DELETED_FIELD in record.data and record.data[CDC_DELETED_FIELD]:
+        if record.data.get(CDC_DELETED_FIELD):
             return [], self._extract_primary_key(record)
         doc = self._generate_document(record)
         if doc is None:
@@ -151,14 +161,10 @@ class DocumentProcessor:
             )
             for chunk_document in self._split_document(doc)
         ]
-        id_to_delete = (
-            doc.metadata[METADATA_RECORD_ID_FIELD]
-            if METADATA_RECORD_ID_FIELD in doc.metadata
-            else None
-        )
+        id_to_delete = doc.metadata.get(METADATA_RECORD_ID_FIELD, None)
         return chunks, id_to_delete
 
-    def _generate_document(self, record: AirbyteRecordMessage) -> Optional[Document]:
+    def _generate_document(self, record: AirbyteRecordMessage) -> Document | None:
         relevant_fields = self._extract_relevant_fields(record, self.text_fields)
         if len(relevant_fields) == 0:
             return None
@@ -167,8 +173,8 @@ class DocumentProcessor:
         return Document(page_content=text, metadata=metadata)
 
     def _extract_relevant_fields(
-        self, record: AirbyteRecordMessage, fields: Optional[List[str]]
-    ) -> Dict[str, Any]:
+        self, record: AirbyteRecordMessage, fields: list[str] | None
+    ) -> dict[str, Any]:
         relevant_fields = {}
         if fields and len(fields) > 0:
             for field in fields:
@@ -179,7 +185,7 @@ class DocumentProcessor:
             relevant_fields = record.data
         return self._remap_field_names(relevant_fields)
 
-    def _extract_metadata(self, record: AirbyteRecordMessage) -> Dict[str, Any]:
+    def _extract_metadata(self, record: AirbyteRecordMessage) -> dict[str, Any]:
         metadata = self._extract_relevant_fields(record, self.metadata_fields)
         metadata[METADATA_STREAM_FIELD] = create_stream_identifier(record)
         primary_key = self._extract_primary_key(record)
@@ -187,7 +193,7 @@ class DocumentProcessor:
             metadata[METADATA_RECORD_ID_FIELD] = primary_key
         return metadata
 
-    def _extract_primary_key(self, record: AirbyteRecordMessage) -> Optional[str]:
+    def _extract_primary_key(self, record: AirbyteRecordMessage) -> str | None:
         stream_identifier = create_stream_identifier(record)
         current_stream: ConfiguredAirbyteStream = self.streams[stream_identifier]
         # if the sync mode is deduping, use the primary key to upsert existing records instead of appending new ones
@@ -206,11 +212,11 @@ class DocumentProcessor:
         stringified_primary_key = "_".join(primary_key)
         return f"{stream_identifier}_{stringified_primary_key}"
 
-    def _split_document(self, doc: Document) -> List[Document]:
-        chunks: List[Document] = self.splitter.split_documents([doc])
+    def _split_document(self, doc: Document) -> list[Document]:
+        chunks: list[Document] = self.splitter.split_documents([doc])
         return chunks
 
-    def _remap_field_names(self, fields: Dict[str, Any]) -> Dict[str, Any]:
+    def _remap_field_names(self, fields: dict[str, Any]) -> dict[str, Any]:
         if not self.field_name_mappings:
             return fields
 

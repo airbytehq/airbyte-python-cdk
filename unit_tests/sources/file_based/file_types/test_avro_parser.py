@@ -1,13 +1,17 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import datetime
+import math
 import uuid
 
 import pytest
+
 from airbyte_cdk.sources.file_based.config.avro_format import AvroFormat
 from airbyte_cdk.sources.file_based.file_types import AvroParser
+
 
 _default_avro_format = AvroFormat()
 _double_as_string_avro_format = AvroFormat(double_as_string=True)
@@ -338,7 +342,7 @@ def test_convert_primitive_avro_type_to_json(
             _default_avro_format, "string", "hello world", "hello world", id="test_string"
         ),
         pytest.param(
-            _default_avro_format, {"logicalType": "decimal"}, 3.1415, "3.1415", id="test_decimal"
+            _default_avro_format, {"logicalType": "decimal"}, math.pi, "3.1415", id="test_decimal"
         ),
         pytest.param(
             _default_avro_format,

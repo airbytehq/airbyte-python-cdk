@@ -1,10 +1,12 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from unittest.mock import MagicMock
 
 import pytest
+
 from airbyte_cdk.sources.declarative.schema import DefaultSchemaLoader
 
 

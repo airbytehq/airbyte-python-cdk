@@ -1,12 +1,16 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime, timedelta
-from typing import Any, List, Mapping
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
+from freezegun import freeze_time
+
 from airbyte_cdk.sources.file_based.config.csv_format import CsvFormat
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
     FileBasedStreamConfig,
@@ -16,7 +20,6 @@ from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.stream.cursor.default_file_based_cursor import (
     DefaultFileBasedCursor,
 )
-from freezegun import freeze_time
 
 
 @pytest.mark.parametrize(
@@ -162,8 +165,8 @@ from freezegun import freeze_time
     ],
 )
 def test_add_file(
-    files_to_add: List[RemoteFile],
-    expected_start_time: List[datetime],
+    files_to_add: list[RemoteFile],
+    expected_start_time: list[datetime],
     expected_state_dict: Mapping[str, Any],
 ) -> None:
     cursor = get_cursor(max_history_size=3, days_to_sync_if_history_is_full=3)
@@ -283,8 +286,8 @@ def test_add_file(
     ],
 )
 def test_get_files_to_sync(
-    files: List[RemoteFile],
-    expected_files_to_sync: List[RemoteFile],
+    files: list[RemoteFile],
+    expected_files_to_sync: list[RemoteFile],
     max_history_size: int,
     history_is_partial: bool,
 ) -> None:

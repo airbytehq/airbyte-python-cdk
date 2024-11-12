@@ -1,11 +1,12 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from contextlib import nullcontext as does_not_raise
-from typing import List
 
 import pytest
+
 from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteStateBlob,
@@ -157,8 +158,12 @@ from airbyte_cdk.sources.connector_state_manager import (
         ),
     ),
 )
-def test_initialize_state_manager(input_stream_state, expected_stream_state, expected_error):
-    if isinstance(input_stream_state, List):
+def test_initialize_state_manager(
+    input_stream_state,
+    expected_stream_state,
+    expected_error,
+) -> None:
+    if isinstance(input_stream_state, list):
         input_stream_state = [
             AirbyteStateMessageSerializer.load(state_obj) for state_obj in list(input_stream_state)
         ]

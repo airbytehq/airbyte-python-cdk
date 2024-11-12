@@ -1,11 +1,13 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
-from typing import Any, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, Any
 
 import dpath
 import pendulum
+
 from airbyte_cdk.config_observation import (
     create_connector_config_control_message,
     emit_configuration_as_airbyte_control_message,
@@ -16,31 +18,35 @@ from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_oauth import
 )
 
 
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
+
 class Oauth2Authenticator(AbstractOauth2Authenticator):
-    """
-    Generates OAuth2.0 access tokens from an OAuth2.0 refresh token and client credentials.
+    """Generates OAuth2.0 access tokens from an OAuth2.0 refresh token and client credentials.
     The generated access token is attached to each request via the Authorization header.
     If a connector_config is provided any mutation of it's value in the scope of this class will emit AirbyteControlConnectorConfigMessage.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913, PLR0917  (too many arguments)
         self,
         token_refresh_endpoint: str,
         client_id: str,
         client_secret: str,
         refresh_token: str,
-        scopes: List[str] = None,
-        token_expiry_date: pendulum.DateTime = None,
-        token_expiry_date_format: str = None,
+        scopes: list[str] | None = None,
+        token_expiry_date: pendulum.DateTime | None = None,
+        token_expiry_date_format: str | None = None,
         access_token_name: str = "access_token",
         expires_in_name: str = "expires_in",
-        refresh_request_body: Mapping[str, Any] = None,
+        refresh_request_body: Mapping[str, Any] | None = None,
         grant_type: str = "refresh_token",
+        *,
         token_expiry_is_time_of_expiration: bool = False,
-        refresh_token_error_status_codes: Tuple[int, ...] = (),
+        refresh_token_error_status_codes: tuple[int, ...] = (),
         refresh_token_error_key: str = "",
-        refresh_token_error_values: Tuple[str, ...] = (),
-    ):
+        refresh_token_error_values: tuple[str, ...] = (),
+    ) -> None:
         self._token_refresh_endpoint = token_refresh_endpoint
         self._client_secret = client_secret
         self._client_id = client_id
@@ -89,7 +95,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
     def get_token_expiry_date(self) -> pendulum.DateTime:
         return self._token_expiry_date
 
-    def set_token_expiry_date(self, value: Union[str, int]):
+    def set_token_expiry_date(self, value: str | int) -> None:
         self._token_expiry_date = self._parse_token_expiration_date(value)
 
     @property
@@ -97,7 +103,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         return self._token_expiry_is_time_of_expiration
 
     @property
-    def token_expiry_date_format(self) -> Optional[str]:
+    def token_expiry_date_format(self) -> str | None:
         return self._token_expiry_date_format
 
     @property
@@ -105,13 +111,12 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         return self._access_token
 
     @access_token.setter
-    def access_token(self, value: str):
+    def access_token(self, value: str) -> None:
         self._access_token = value
 
 
 class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
-    """
-    Authenticator that should be used for API implementing single use refresh tokens:
+    """Authenticator that should be used for API implementing single use refresh tokens:
     when refreshing access token some API returns a new refresh token that needs to used in the next refresh flow.
     This authenticator updates the configuration with new refresh token by emitting Airbyte control message from an observed mutation.
     By default, this authenticator expects a connector config with a "credentials" field with the following nested fields: client_id,
@@ -119,46 +124,46 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
     client_secret_config_path, refresh_token_config_path constructor arguments.
     """
 
-    def __init__(
+    def __init__(  # noqa: PLR0913, PLR0917  (too many arguments)
         self,
         connector_config: Mapping[str, Any],
         token_refresh_endpoint: str,
-        scopes: List[str] = None,
+        scopes: list[str] | None = None,
         access_token_name: str = "access_token",
         expires_in_name: str = "expires_in",
         refresh_token_name: str = "refresh_token",
-        refresh_request_body: Mapping[str, Any] = None,
+        refresh_request_body: Mapping[str, Any] | None = None,
         grant_type: str = "refresh_token",
-        client_id: Optional[str] = None,
-        client_secret: Optional[str] = None,
+        client_id: str | None = None,
+        client_secret: str | None = None,
         access_token_config_path: Sequence[str] = ("credentials", "access_token"),
         refresh_token_config_path: Sequence[str] = ("credentials", "refresh_token"),
         token_expiry_date_config_path: Sequence[str] = ("credentials", "token_expiry_date"),
-        token_expiry_date_format: Optional[str] = None,
-        message_repository: MessageRepository = NoopMessageRepository(),
+        token_expiry_date_format: str | None = None,
+        message_repository: MessageRepository = NoopMessageRepository(),  # noqa: B008  (function call in default)
+        *,
         token_expiry_is_time_of_expiration: bool = False,
-        refresh_token_error_status_codes: Tuple[int, ...] = (),
+        refresh_token_error_status_codes: tuple[int, ...] = (),
         refresh_token_error_key: str = "",
-        refresh_token_error_values: Tuple[str, ...] = (),
-    ):
-        """
-        Args:
-            connector_config (Mapping[str, Any]): The full connector configuration
-            token_refresh_endpoint (str): Full URL to the token refresh endpoint
-            scopes (List[str], optional): List of OAuth scopes to pass in the refresh token request body. Defaults to None.
-            access_token_name (str, optional): Name of the access token field, used to parse the refresh token response. Defaults to "access_token".
-            expires_in_name (str, optional): Name of the name of the field that characterizes when the current access token will expire, used to parse the refresh token response. Defaults to "expires_in".
-            refresh_token_name (str, optional): Name of the name of the refresh token field, used to parse the refresh token response. Defaults to "refresh_token".
-            refresh_request_body (Mapping[str, Any], optional): Custom key value pair that will be added to the refresh token request body. Defaults to None.
-            grant_type (str, optional): OAuth grant type. Defaults to "refresh_token".
-            client_id (Optional[str]): The client id to authenticate. If not specified, defaults to credentials.client_id in the config object.
-            client_secret (Optional[str]): The client secret to authenticate. If not specified, defaults to credentials.client_secret in the config object.
-            access_token_config_path (Sequence[str]): Dpath to the access_token field in the connector configuration. Defaults to ("credentials", "access_token").
-            refresh_token_config_path (Sequence[str]): Dpath to the refresh_token field in the connector configuration. Defaults to ("credentials", "refresh_token").
-            token_expiry_date_config_path (Sequence[str]): Dpath to the token_expiry_date field in the connector configuration. Defaults to ("credentials", "token_expiry_date").
-            token_expiry_date_format (Optional[str]): Date format of the token expiry date field (set by expires_in_name). If not specified the token expiry date is interpreted as number of seconds until expiration.
-            token_expiry_is_time_of_expiration bool: set True it if expires_in is returned as time of expiration instead of the number seconds until expiration
-            message_repository (MessageRepository): the message repository used to emit logs on HTTP requests and control message on config update
+        refresh_token_error_values: tuple[str, ...] = (),
+    ) -> None:
+        """Args:
+        connector_config (Mapping[str, Any]): The full connector configuration
+        token_refresh_endpoint (str): Full URL to the token refresh endpoint
+        scopes (List[str], optional): List of OAuth scopes to pass in the refresh token request body. Defaults to None.
+        access_token_name (str, optional): Name of the access token field, used to parse the refresh token response. Defaults to "access_token".
+        expires_in_name (str, optional): Name of the name of the field that characterizes when the current access token will expire, used to parse the refresh token response. Defaults to "expires_in".
+        refresh_token_name (str, optional): Name of the name of the refresh token field, used to parse the refresh token response. Defaults to "refresh_token".
+        refresh_request_body (Mapping[str, Any], optional): Custom key value pair that will be added to the refresh token request body. Defaults to None.
+        grant_type (str, optional): OAuth grant type. Defaults to "refresh_token".
+        client_id (Optional[str]): The client id to authenticate. If not specified, defaults to credentials.client_id in the config object.
+        client_secret (Optional[str]): The client secret to authenticate. If not specified, defaults to credentials.client_secret in the config object.
+        access_token_config_path (Sequence[str]): Dpath to the access_token field in the connector configuration. Defaults to ("credentials", "access_token").
+        refresh_token_config_path (Sequence[str]): Dpath to the refresh_token field in the connector configuration. Defaults to ("credentials", "refresh_token").
+        token_expiry_date_config_path (Sequence[str]): Dpath to the token_expiry_date field in the connector configuration. Defaults to ("credentials", "token_expiry_date").
+        token_expiry_date_format (Optional[str]): Date format of the token expiry date field (set by expires_in_name). If not specified the token expiry date is interpreted as number of seconds until expiration.
+        token_expiry_is_time_of_expiration bool: set True it if expires_in is returned as time of expiration instead of the number seconds until expiration
+        message_repository (MessageRepository): the message repository used to emit logs on HTTP requests and control message on config update
         """
         self._client_id = (
             client_id
@@ -209,24 +214,30 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         return dpath.get(self._connector_config, self._access_token_config_path, default="")
 
     @access_token.setter
-    def access_token(self, new_access_token: str):
+    def access_token(self, new_access_token: str) -> None:
         dpath.new(self._connector_config, self._access_token_config_path, new_access_token)
 
     def get_refresh_token(self) -> str:
         return dpath.get(self._connector_config, self._refresh_token_config_path, default="")
 
-    def set_refresh_token(self, new_refresh_token: str):
+    def set_refresh_token(self, new_refresh_token: str) -> None:
         dpath.new(self._connector_config, self._refresh_token_config_path, new_refresh_token)
 
     def get_token_expiry_date(self) -> pendulum.DateTime:
         expiry_date = dpath.get(
             self._connector_config, self._token_expiry_date_config_path, default=""
         )
-        return pendulum.now().subtract(days=1) if expiry_date == "" else pendulum.parse(expiry_date)
+        return (
+            pendulum.now().subtract(days=1)
+            if expiry_date == ""  # noqa: PLC1901  (comparison to empty string)
+            else pendulum.parse(expiry_date)
+        )
 
-    def set_token_expiry_date(self, new_token_expiry_date):
+    def set_token_expiry_date(self, new_token_expiry_date) -> None:  # noqa: ANN001
         dpath.new(
-            self._connector_config, self._token_expiry_date_config_path, str(new_token_expiry_date)
+            self._connector_config,
+            self._token_expiry_date_config_path,
+            str(new_token_expiry_date),
         )
 
     def token_has_expired(self) -> bool:
@@ -235,12 +246,11 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
 
     @staticmethod
     def get_new_token_expiry_date(
-        access_token_expires_in: str, token_expiry_date_format: str = None
+        access_token_expires_in: str, token_expiry_date_format: str | None = None
     ) -> pendulum.DateTime:
         if token_expiry_date_format:
             return pendulum.from_format(access_token_expires_in, token_expiry_date_format)
-        else:
-            return pendulum.now("UTC").add(seconds=int(access_token_expires_in))
+        return pendulum.now("UTC").add(seconds=int(access_token_expires_in))
 
     def get_access_token(self) -> str:
         """Retrieve new access and refresh token if the access token has expired.
@@ -258,7 +268,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             self.access_token = new_access_token
             self.set_refresh_token(new_refresh_token)
             self.set_token_expiry_date(new_token_expiry_date)
-            # FIXME emit_configuration_as_airbyte_control_message as been deprecated in favor of package airbyte_cdk.sources.message
+            # TODO: emit_configuration_as_airbyte_control_message as been deprecated in favor of package airbyte_cdk.sources.message
             #  Usually, a class shouldn't care about the implementation details but to keep backward compatibility where we print the
             #  message directly in the console, this is needed
             if not isinstance(self._message_repository, NoopMessageRepository):
@@ -269,7 +279,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
                 emit_configuration_as_airbyte_control_message(self._connector_config)
         return self.access_token
 
-    def refresh_access_token(self) -> Tuple[str, str, str]:
+    def refresh_access_token(self) -> tuple[str, str, str]:
         response_json = self._get_refresh_access_token_response()
         return (
             response_json[self.get_access_token_name()],
@@ -279,7 +289,5 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
 
     @property
     def _message_repository(self) -> MessageRepository:
-        """
-        Overriding AbstractOauth2Authenticator._message_repository to allow for HTTP request logs
-        """
+        """Overriding AbstractOauth2Authenticator._message_repository to allow for HTTP request logs"""
         return self.__message_repository

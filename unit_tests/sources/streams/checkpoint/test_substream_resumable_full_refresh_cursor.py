@@ -1,6 +1,8 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
 import pytest
+
 from airbyte_cdk.sources.streams.checkpoint.substream_resumable_full_refresh_cursor import (
     SubstreamResumableFullRefreshCursor,
 )
@@ -9,9 +11,7 @@ from airbyte_cdk.utils import AirbyteTracedException
 
 
 def test_substream_resumable_full_refresh_cursor():
-    """
-    Test scenario where a set of parent record partitions are iterated over by the cursor resulting in a completed sync
-    """
+    """Test scenario where a set of parent record partitions are iterated over by the cursor resulting in a completed sync"""
     expected_starting_state = {"states": []}
 
     expected_ending_state = {
@@ -47,9 +47,7 @@ def test_substream_resumable_full_refresh_cursor():
 
 
 def test_substream_resumable_full_refresh_cursor_with_state():
-    """
-    Test scenario where a set of parent record partitions are iterated over and previously completed parents are skipped
-    """
+    """Test scenario where a set of parent record partitions are iterated over and previously completed parents are skipped"""
     initial_state = {
         "states": [
             {

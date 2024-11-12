@@ -1,28 +1,30 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Any, Iterable, Mapping, Optional
+from typing import TYPE_CHECKING, Any
 
-from airbyte_cdk.sources.declarative.incremental.per_partition_cursor import StreamSlice
-from airbyte_cdk.sources.streams.core import StreamData
-from airbyte_cdk.sources.types import StreamState
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+
+    from airbyte_cdk.sources.declarative.incremental.per_partition_cursor import StreamSlice
+    from airbyte_cdk.sources.streams.core import StreamData
+    from airbyte_cdk.sources.types import StreamState
 
 
 class Retriever:
-    """
-    Responsible for fetching a stream's records from an HTTP API source.
-    """
+    """Responsible for fetching a stream's records from an HTTP API source."""
 
     @abstractmethod
     def read_records(
         self,
         records_schema: Mapping[str, Any],
-        stream_slice: Optional[StreamSlice] = None,
+        stream_slice: StreamSlice | None = None,
     ) -> Iterable[StreamData]:
-        """
-        Fetch a stream's records from an HTTP API source
+        """Fetch a stream's records from an HTTP API source
 
         :param records_schema: json schema to describe record
         :param stream_slice: The stream slice to read data for
@@ -30,7 +32,7 @@ class Retriever:
         """
 
     @abstractmethod
-    def stream_slices(self) -> Iterable[Optional[StreamSlice]]:
+    def stream_slices(self) -> Iterable[StreamSlice | None]:
         """Returns the stream slices"""
 
     @property

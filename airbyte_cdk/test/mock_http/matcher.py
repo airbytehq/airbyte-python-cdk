@@ -1,11 +1,15 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
-from typing import Any
+from __future__ import annotations
 
-from airbyte_cdk.test.mock_http.request import HttpRequest
+from typing import TYPE_CHECKING
 
 
-class HttpRequestMatcher:
-    def __init__(self, request: HttpRequest, minimum_number_of_expected_match: int):
+if TYPE_CHECKING:
+    from airbyte_cdk.test.mock_http.request import HttpRequest
+
+
+class HttpRequestMatcher:  # noqa: PLW1641  # missing __hash__ method
+    def __init__(self, request: HttpRequest, minimum_number_of_expected_match: int) -> None:
         self._request_to_match = request
         self._minimum_number_of_expected_match = minimum_number_of_expected_match
         self._actual_number_of_matches = 0
@@ -35,7 +39,7 @@ class HttpRequestMatcher:
             f"actual_number_of_matches={self._actual_number_of_matches})"
         )
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, HttpRequestMatcher):
             return self._request_to_match == other._request_to_match
         return False

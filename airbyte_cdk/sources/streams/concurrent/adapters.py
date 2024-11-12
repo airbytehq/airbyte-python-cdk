@@ -1,12 +1,15 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import copy
 import json
-import logging
-from functools import lru_cache
-from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Tuple, Union
+from collections.abc import Iterable, Mapping, MutableMapping
+from functools import cache
+from typing import TYPE_CHECKING, Any
+
+from deprecated.classic import deprecated
 
 from airbyte_cdk.models import (
     AirbyteLogMessage,
@@ -17,9 +20,6 @@ from airbyte_cdk.models import (
     SyncMode,
     Type,
 )
-from airbyte_cdk.sources import AbstractSource, Source
-from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
-from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.availability_strategy import AvailabilityStrategy
@@ -38,14 +38,22 @@ from airbyte_cdk.sources.streams.concurrent.helpers import (
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
 from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
-from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
-    DateTimeStreamStateConverter,
-)
-from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import StreamSlice
-from airbyte_cdk.sources.utils.schema_helpers import InternalConfig
-from airbyte_cdk.sources.utils.slice_logger import SliceLogger
-from deprecated.classic import deprecated
+
+
+if TYPE_CHECKING:
+    import logging
+
+    from airbyte_cdk.sources import AbstractSource, Source
+    from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
+    from airbyte_cdk.sources.message import MessageRepository
+    from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
+        DateTimeStreamStateConverter,
+    )
+    from airbyte_cdk.sources.streams.core import StreamData
+    from airbyte_cdk.sources.utils.schema_helpers import InternalConfig
+    from airbyte_cdk.sources.utils.slice_logger import SliceLogger
+
 
 """
 This module contains adapters to help enabling concurrency on Stream objects without needing to migrate to AbstractStream
@@ -54,8 +62,7 @@ This module contains adapters to help enabling concurrency on Stream objects wit
 
 @deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)
 class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
-    """
-    The StreamFacade is a Stream that wraps an AbstractStream and exposes it as a Stream.
+    """The StreamFacade is a Stream that wraps an AbstractStream and exposes it as a Stream.
 
     All methods either delegate to the wrapped AbstractStream or provide a default implementation.
     The default implementations define restrictions imposed on Streams migrated to the new interface. For instance, only source-defined cursors are supported.
@@ -67,11 +74,10 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
         stream: Stream,
         source: AbstractSource,
         logger: logging.Logger,
-        state: Optional[MutableMapping[str, Any]],
+        state: MutableMapping[str, Any] | None,
         cursor: Cursor,
     ) -> Stream:
-        """
-        Create a ConcurrentStream from a Stream object.
+        """Create a ConcurrentStream from a Stream object.
         :param source: The source
         :param stream: The stream
         :param max_workers: The maximum number of worker thread to use
@@ -109,7 +115,7 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
             ),
             stream,
             cursor,
-            slice_logger=source._slice_logger,
+            slice_logger=source._slice_logger,  # noqa: SLF001  (private member)
             logger=logger,
         )
 
@@ -131,10 +137,8 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
         cursor: Cursor,
         slice_logger: SliceLogger,
         logger: logging.Logger,
-    ):
-        """
-        :param stream: The underlying AbstractStream
-        """
+    ) -> None:
+        """:param stream: The underlying AbstractStream"""
         self._abstract_stream = stream
         self._legacy_stream = legacy_stream
         self._cursor = cursor
@@ -143,25 +147,25 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
 
     def read(
         self,
-        configured_stream: ConfiguredAirbyteStream,
-        logger: logging.Logger,
-        slice_logger: SliceLogger,
-        stream_state: MutableMapping[str, Any],
-        state_manager: ConnectorStateManager,
-        internal_config: InternalConfig,
+        configured_stream: ConfiguredAirbyteStream,  # noqa: ARG002  (unused)
+        logger: logging.Logger,  # noqa: ARG002  (unused)
+        slice_logger: SliceLogger,  # noqa: ARG002  (unused)
+        stream_state: MutableMapping[str, Any],  # noqa: ARG002  (unused)
+        state_manager: ConnectorStateManager,  # noqa: ARG002  (unused)
+        internal_config: InternalConfig,  # noqa: ARG002  (unused)
     ) -> Iterable[StreamData]:
         yield from self._read_records()
 
     def read_records(
         self,
-        sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        sync_mode: SyncMode,  # noqa: ARG002  (unused)
+        cursor_field: list[str] | None = None,  # noqa: ARG002  (unused)
+        stream_slice: Mapping[str, Any] | None = None,  # noqa: ARG002  (unused)
+        stream_state: Mapping[str, Any] | None = None,  # noqa: ARG002  (unused)
     ) -> Iterable[StreamData]:
         try:
             yield from self._read_records()
-        except Exception as exc:
+        except Exception:
             if hasattr(self._cursor, "state"):
                 state = str(self._cursor.state)
             else:
@@ -173,7 +177,7 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
                     level=Level.ERROR, message=f"Cursor State at time of exception: {state}"
                 ),
             )
-            raise exc
+            raise
 
     def _read_records(self) -> Iterable[StreamData]:
         for partition in self._abstract_stream.generate_partitions():
@@ -187,22 +191,21 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
         return self._abstract_stream.name
 
     @property
-    def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
+    def primary_key(self) -> str | list[str] | list[list[str]] | None:
         # This method is not expected to be called directly. It is only implemented for backward compatibility with the old interface
         return self.as_airbyte_stream().source_defined_primary_key  # type: ignore # source_defined_primary_key is known to be an Optional[List[List[str]]]
 
     @property
-    def cursor_field(self) -> Union[str, List[str]]:
+    def cursor_field(self) -> str | list[str]:
         if self._abstract_stream.cursor_field is None:
             return []
-        else:
-            return self._abstract_stream.cursor_field
+        return self._abstract_stream.cursor_field
 
     @property
-    def cursor(self) -> Optional[Cursor]:  # type: ignore[override] # StreamFaced expects to use only airbyte_cdk.sources.streams.concurrent.cursor.Cursor
+    def cursor(self) -> Cursor | None:  # type: ignore[override] # StreamFaced expects to use only airbyte_cdk.sources.streams.concurrent.cursor.Cursor
         return self._cursor
 
-    @lru_cache(maxsize=None)
+    @cache  # noqa: B019  (cached class methods can cause memory leaks)
     def get_json_schema(self) -> Mapping[str, Any]:
         return self._abstract_stream.get_json_schema()
 
@@ -211,10 +214,11 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
         return self._legacy_stream.supports_incremental
 
     def check_availability(
-        self, logger: logging.Logger, source: Optional["Source"] = None
-    ) -> Tuple[bool, Optional[str]]:
-        """
-        Verifies the stream is available. Delegates to the underlying AbstractStream and ignores the parameters
+        self,
+        logger: logging.Logger,  # noqa: ARG002  (unused)
+        source: Source | None = None,  # noqa: ARG002  (unused)
+    ) -> tuple[bool, str | None]:
+        """Verifies the stream is available. Delegates to the underlying AbstractStream and ignores the parameters
         :param logger: (ignored)
         :param source:  (ignored)
         :return:
@@ -233,7 +237,7 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
 
 
 class SliceEncoder(json.JSONEncoder):
-    def default(self, obj: Any) -> Any:
+    def default(self, obj: Any) -> Any:  # noqa: ANN401  (any-type)
         if hasattr(obj, "__json_serializable__"):
             return obj.__json_serializable__()
 
@@ -242,8 +246,7 @@ class SliceEncoder(json.JSONEncoder):
 
 
 class StreamPartition(Partition):
-    """
-    This class acts as an adapter between the new Partition interface and the Stream's stream_slice interface
+    """This class acts as an adapter between the new Partition interface and the Stream's stream_slice interface
 
     StreamPartitions are instantiated from a Stream and a stream_slice.
 
@@ -254,15 +257,14 @@ class StreamPartition(Partition):
     def __init__(
         self,
         stream: Stream,
-        _slice: Optional[Mapping[str, Any]],
+        _slice: Mapping[str, Any] | None,
         message_repository: MessageRepository,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]],
-        state: Optional[MutableMapping[str, Any]],
+        cursor_field: list[str] | None,
+        state: MutableMapping[str, Any] | None,
         cursor: Cursor,
-    ):
-        """
-        :param stream: The stream to delegate to
+    ) -> None:
+        """:param stream: The stream to delegate to
         :param _slice: The partition's stream_slice
         :param message_repository: The message repository to use to emit non-record messages
         """
@@ -276,8 +278,7 @@ class StreamPartition(Partition):
         self._is_closed = False
 
     def read(self) -> Iterable[Record]:
-        """
-        Read messages from the stream.
+        """Read messages from the stream.
         If the StreamData is a Mapping, it will be converted to a Record.
         Otherwise, the message will be emitted on the message repository.
         """
@@ -307,9 +308,9 @@ class StreamPartition(Partition):
             if display_message:
                 raise ExceptionWithDisplayMessage(display_message) from e
             else:
-                raise e
+                raise
 
-    def to_slice(self) -> Optional[Mapping[str, Any]]:
+    def to_slice(self) -> Mapping[str, Any] | None:
         return self._slice
 
     def __hash__(self) -> int:
@@ -317,8 +318,7 @@ class StreamPartition(Partition):
             # Convert the slice to a string so that it can be hashed
             s = json.dumps(self._slice, sort_keys=True, cls=SliceEncoder)
             return hash((self._stream.name, s))
-        else:
-            return hash(self._stream.name)
+        return hash(self._stream.name)
 
     def stream_name(self) -> str:
         return self._stream.name
@@ -335,8 +335,7 @@ class StreamPartition(Partition):
 
 
 class StreamPartitionGenerator(PartitionGenerator):
-    """
-    This class acts as an adapter between the new PartitionGenerator and Stream.stream_slices
+    """This class acts as an adapter between the new PartitionGenerator and Stream.stream_slices
 
     This class can be used to help enable concurrency on existing connectors without having to rewrite everything as AbstractStream.
     In the long-run, it would be preferable to update the connectors, but we don't have the tooling or need to justify the effort at this time.
@@ -347,12 +346,11 @@ class StreamPartitionGenerator(PartitionGenerator):
         stream: Stream,
         message_repository: MessageRepository,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]],
-        state: Optional[MutableMapping[str, Any]],
+        cursor_field: list[str] | None,
+        state: MutableMapping[str, Any] | None,
         cursor: Cursor,
-    ):
-        """
-        :param stream: The stream to delegate to
+    ) -> None:
+        """:param stream: The stream to delegate to
         :param message_repository: The message repository to use to emit non-record messages
         """
         self.message_repository = message_repository
@@ -378,8 +376,7 @@ class StreamPartitionGenerator(PartitionGenerator):
 
 
 class CursorPartitionGenerator(PartitionGenerator):
-    """
-    This class generates partitions using the concurrent cursor and iterates through state slices to generate partitions.
+    """This class generates partitions using the concurrent cursor and iterates through state slices to generate partitions.
 
     It is used when synchronizing a stream in incremental or full-refresh mode where state information is maintained
     across partitions. Each partition represents a subset of the stream's data and is determined by the cursor's state.
@@ -394,11 +391,10 @@ class CursorPartitionGenerator(PartitionGenerator):
         message_repository: MessageRepository,
         cursor: Cursor,
         connector_state_converter: DateTimeStreamStateConverter,
-        cursor_field: Optional[List[str]],
-        slice_boundary_fields: Optional[Tuple[str, str]],
-    ):
-        """
-        Initialize the CursorPartitionGenerator with a stream, sync mode, and cursor.
+        cursor_field: list[str] | None,
+        slice_boundary_fields: tuple[str, str] | None,
+    ) -> None:
+        """Initialize the CursorPartitionGenerator with a stream, sync mode, and cursor.
 
         :param stream: The stream to delegate to for partition generation.
         :param message_repository: The message repository to use to emit non-record messages.
@@ -415,15 +411,13 @@ class CursorPartitionGenerator(PartitionGenerator):
         self._connector_state_converter = connector_state_converter
 
     def generate(self) -> Iterable[Partition]:
-        """
-        Generate partitions based on the slices in the cursor's state.
+        """Generate partitions based on the slices in the cursor's state.
 
         This method iterates through the list of slices found in the cursor's state, and for each slice, it generates
         a `StreamPartition` object.
 
         :return: An iterable of StreamPartition objects.
         """
-
         start_boundary = (
             self._slice_boundary_fields[self._START_BOUNDARY]
             if self._slice_boundary_fields
@@ -460,14 +454,19 @@ class CursorPartitionGenerator(PartitionGenerator):
     category=ExperimentalClassWarning,
 )
 class AvailabilityStrategyFacade(AvailabilityStrategy):
-    def __init__(self, abstract_availability_strategy: AbstractAvailabilityStrategy):
+    def __init__(
+        self,
+        abstract_availability_strategy: AbstractAvailabilityStrategy,
+    ) -> None:
         self._abstract_availability_strategy = abstract_availability_strategy
 
     def check_availability(
-        self, stream: Stream, logger: logging.Logger, source: Optional["Source"] = None
-    ) -> Tuple[bool, Optional[str]]:
-        """
-        Checks stream availability.
+        self,
+        stream: Stream,  # noqa: ARG002  (unused)
+        logger: logging.Logger,
+        source: Source | None = None,  # noqa: ARG002  (unused)
+    ) -> tuple[bool, str | None]:
+        """Checks stream availability.
 
         Important to note that the stream and source parameters are not used by the underlying AbstractAvailabilityStrategy.
 

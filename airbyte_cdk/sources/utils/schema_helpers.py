@@ -1,46 +1,45 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-
+from __future__ import annotations
 
 import importlib
 import json
 import os
 import pkgutil
-from typing import Any, ClassVar, Dict, List, Mapping, MutableMapping, Optional, Tuple
+from collections.abc import Mapping, MutableMapping
+from typing import Any, ClassVar
 
 import jsonref
-from airbyte_cdk.models import ConnectorSpecification, FailureType
-from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 from jsonschema import RefResolver, validate
 from jsonschema.exceptions import ValidationError
 from pydantic.v1 import BaseModel, Field
 
+from airbyte_cdk.models import ConnectorSpecification, FailureType
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
+
 
 class JsonFileLoader:
-    """
-    Custom json file loader to resolve references to resources located in "shared" directory.
+    """Custom json file loader to resolve references to resources located in "shared" directory.
     We need this for compatability with existing schemas cause all of them have references
     pointing to shared_schema.json file instead of shared/shared_schema.json
     """
 
-    def __init__(self, uri_base: str, shared: str):
+    def __init__(self, uri_base: str, shared: str) -> None:
         self.shared = shared
         self.uri_base = uri_base
 
-    def __call__(self, uri: str) -> Dict[str, Any]:
+    def __call__(self, uri: str) -> dict[str, Any]:
         uri = uri.replace(self.uri_base, f"{self.uri_base}/{self.shared}/")
-        with open(uri) as f:
+        with open(uri, encoding="utf-8") as f:  # noqa: PTH123  (prefer pathlib)
             data = json.load(f)
             if isinstance(data, dict):
                 return data
-            else:
-                raise ValueError(f"Expected to read a dictionary from {uri}. Got: {data}")
+            raise ValueError(f"Expected to read a dictionary from {uri}. Got: {data}")
 
 
-def resolve_ref_links(obj: Any) -> Any:
-    """
-    Scan resolved schema and convert jsonref.JsonRef object to JSON serializable dict.
+def resolve_ref_links(obj: Any) -> Any:  # noqa: ANN401  (any-type)
+    """Scan resolved schema and convert jsonref.JsonRef object to JSON serializable dict.
 
     :param obj - jsonschema object with ref field resolved.
     :return JSON serializable object with references without external dependencies.
@@ -52,17 +51,15 @@ def resolve_ref_links(obj: Any) -> Any:
         if isinstance(obj, dict):
             obj.pop("definitions", None)
             return obj
-        else:
-            raise ValueError(f"Expected obj to be a dict. Got {obj}")
-    elif isinstance(obj, dict):
+        raise ValueError(f"Expected obj to be a dict. Got {obj}")
+    if isinstance(obj, dict):
         return {k: resolve_ref_links(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
+    if isinstance(obj, list):
         return [resolve_ref_links(item) for item in obj]
-    else:
-        return obj
+    return obj
 
 
-def _expand_refs(schema: Any, ref_resolver: Optional[RefResolver] = None) -> None:
+def _expand_refs(schema: Any, ref_resolver: RefResolver | None = None) -> None:  # noqa: ANN401  (any-type)
     """Internal function to iterate over schema and replace all occurrences of $ref with their definitions. Recursive.
 
     :param schema: schema that will be patched
@@ -79,14 +76,14 @@ def _expand_refs(schema: Any, ref_resolver: Optional[RefResolver] = None) -> Non
             )  # expand refs in definitions as well
             schema.update(definition)
         else:
-            for key, value in schema.items():
+            for value in schema.values():
                 _expand_refs(value, ref_resolver=ref_resolver)
-    elif isinstance(schema, List):
+    elif isinstance(schema, list):
         for value in schema:
             _expand_refs(value, ref_resolver=ref_resolver)
 
 
-def expand_refs(schema: Any) -> None:
+def expand_refs(schema: Any) -> None:  # noqa: ANN401  (any-type)
     """Iterate over schema and replace all occurrences of $ref with their definitions.
 
     :param schema: schema that will be patched
@@ -95,8 +92,10 @@ def expand_refs(schema: Any) -> None:
     schema.pop("definitions", None)  # remove definitions created by $ref
 
 
-def rename_key(schema: Any, old_key: str, new_key: str) -> None:
-    """Iterate over nested dictionary and replace one key with another. Used to replace anyOf with oneOf. Recursive."
+def rename_key(schema: Any, old_key: str, new_key: str) -> None:  # noqa: ANN401  (any-type)
+    """Iterate over nested dictionary and replace one key with another.
+
+    Used to replace anyOf with oneOf. Recursive.
 
     :param schema: schema that will be patched
     :param old_key: name of the key to replace
@@ -105,7 +104,7 @@ def rename_key(schema: Any, old_key: str, new_key: str) -> None:
     if not isinstance(schema, MutableMapping):
         return
 
-    for key, value in schema.items():
+    for value in schema.values():
         rename_key(value, old_key, new_key)
         if old_key in schema:
             schema[new_key] = schema.pop(old_key)
@@ -114,13 +113,11 @@ def rename_key(schema: Any, old_key: str, new_key: str) -> None:
 class ResourceSchemaLoader:
     """JSONSchema loader from package resources"""
 
-    def __init__(self, package_name: str):
+    def __init__(self, package_name: str) -> None:
         self.package_name = package_name
 
     def get_schema(self, name: str) -> dict[str, Any]:
-        """
-        This method retrieves a JSON schema from the schemas/ folder.
-
+        """This method retrieves a JSON schema from the schemas/ folder.
 
         The expected file structure is to have all top-level schemas (corresponding to streams) in the "schemas/" folder, with any shared $refs
         living inside the "schemas/shared/" folder. For example:
@@ -129,11 +126,10 @@ class ResourceSchemaLoader:
         schemas/<name>.json # contains a $ref to shared_definition
         schemas/<name2>.json # contains a $ref to shared_definition
         """
-
         schema_filename = f"schemas/{name}.json"
         raw_file = pkgutil.get_data(self.package_name, schema_filename)
         if not raw_file:
-            raise IOError(f"Cannot find file {schema_filename}")
+            raise OSError(f"Cannot find file {schema_filename}")
         try:
             raw_schema = json.loads(raw_file)
         except ValueError as err:
@@ -142,16 +138,14 @@ class ResourceSchemaLoader:
         return self._resolve_schema_references(raw_schema)
 
     def _resolve_schema_references(self, raw_schema: dict[str, Any]) -> dict[str, Any]:
-        """
-        Resolve links to external references and move it to local "definitions" map.
+        """Resolve links to external references and move it to local "definitions" map.
 
         :param raw_schema jsonschema to lookup for external links.
         :return JSON serializable object with references without external dependencies.
         """
-
         package = importlib.import_module(self.package_name)
         if package.__file__:
-            base = os.path.dirname(package.__file__) + "/"
+            base = os.path.dirname(package.__file__) + "/"  # noqa: PTH120  (prefer pathlib)
         else:
             raise ValueError(f"Package {package} does not have a valid __file__ field")
         resolved = jsonref.JsonRef.replace_refs(
@@ -160,15 +154,13 @@ class ResourceSchemaLoader:
         resolved = resolve_ref_links(resolved)
         if isinstance(resolved, dict):
             return resolved
-        else:
-            raise ValueError(f"Expected resolved to be a dict. Got {resolved}")
+        raise ValueError(f"Expected resolved to be a dict. Got {resolved}")
 
 
 def check_config_against_spec_or_exit(
     config: Mapping[str, Any], spec: ConnectorSpecification
 ) -> None:
-    """
-    Check config object against spec. In case of spec is invalid, throws
+    """Check config object against spec. In case of spec is invalid, throws
     an exception with validation error description.
 
     :param config - config loaded from file specified over command line
@@ -190,26 +182,21 @@ class InternalConfig(BaseModel):
     limit: int = Field(None, alias="_limit")
     page_size: int = Field(None, alias="_page_size")
 
-    def dict(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+    def dict(self, *args: Any, **kwargs: Any) -> dict[str, Any]:  # noqa: ANN401  (any-type)
         kwargs["by_alias"] = True
         kwargs["exclude_unset"] = True
         return super().dict(*args, **kwargs)  # type: ignore[no-any-return]
 
     def is_limit_reached(self, records_counter: int) -> bool:
-        """
-        Check if record count reached limit set by internal config.
+        """Check if record count reached limit set by internal config.
         :param records_counter - number of records already red
         :return True if limit reached, False otherwise
         """
-        if self.limit:
-            if records_counter >= self.limit:
-                return True
-        return False
+        return bool(self.limit and records_counter >= self.limit)
 
 
-def split_config(config: Mapping[str, Any]) -> Tuple[dict[str, Any], InternalConfig]:
-    """
-    Break config map object into 2 instances: first is a dict with user defined
+def split_config(config: Mapping[str, Any]) -> tuple[dict[str, Any], InternalConfig]:
+    """Break config map object into 2 instances: first is a dict with user defined
     configuration and second is internal config that contains private keys for
     acceptance test configuration.
 

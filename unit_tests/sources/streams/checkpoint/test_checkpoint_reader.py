@@ -1,8 +1,10 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
 from unittest.mock import Mock
 
 import pytest
+
 from airbyte_cdk.sources.streams.checkpoint import (
     CursorBasedCheckpointReader,
     FullRefreshCheckpointReader,

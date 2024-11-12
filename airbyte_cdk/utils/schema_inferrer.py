@@ -1,14 +1,21 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any, Dict, List, Mapping, Optional
+from typing import TYPE_CHECKING, Any
 
-from airbyte_cdk.models import AirbyteRecordMessage
 from genson import SchemaBuilder, SchemaNode
 from genson.schema.strategies.object import Object
 from genson.schema.strategies.scalar import Number
+
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from airbyte_cdk.models import AirbyteRecordMessage
+
 
 # schema keywords
 _TYPE = "type"
@@ -21,8 +28,7 @@ _REQUIRED = "required"
 
 
 class NoRequiredObj(Object):
-    """
-    This class has Object behaviour, but it does not generate "required[]" fields
+    """This class has Object behaviour, but it does not generate "required[]" fields
     every time it parses object. So we don't add unnecessary extra field.
 
     The logic is that even reading all the data from a source, it does not mean that there can be another record added with those fields as
@@ -30,17 +36,15 @@ class NoRequiredObj(Object):
     """
 
     def to_schema(self) -> Mapping[str, Any]:
-        schema: Dict[str, Any] = super(NoRequiredObj, self).to_schema()
+        schema: dict[str, Any] = super().to_schema()
         schema.pop("required", None)
         return schema
 
 
 class IntegerToNumber(Number):
-    """
-    This class has the regular Number behaviour, but it will never emit an integer type.
-    """
+    """This class has the regular Number behaviour, but it will never emit an integer type."""
 
-    def __init__(self, node_class: SchemaNode):
+    def __init__(self, node_class: SchemaNode) -> None:
         super().__init__(node_class)
         self._type = "number"
 
@@ -50,21 +54,29 @@ class NoRequiredSchemaBuilder(SchemaBuilder):
 
 
 # This type is inferred from the genson lib, but there is no alias provided for it - creating it here for type safety
-InferredSchema = Dict[str, Any]
+InferredSchema = dict[str, Any]
 
 
 class SchemaValidationException(Exception):
     @classmethod
     def merge_exceptions(
-        cls, exceptions: List["SchemaValidationException"]
-    ) -> "SchemaValidationException":
+        cls, exceptions: list[SchemaValidationException]
+    ) -> SchemaValidationException:
         # We assume the schema is the same for all SchemaValidationException
         return SchemaValidationException(
             exceptions[0].schema,
-            [x for exception in exceptions for x in exception._validation_errors],
+            [
+                x
+                for exception in exceptions
+                for x in exception._validation_errors  # noqa: SLF001  (private member)
+            ],
         )
 
-    def __init__(self, schema: InferredSchema, validation_errors: List[Exception]):
+    def __init__(
+        self,
+        schema: InferredSchema,
+        validation_errors: list[Exception],
+    ) -> None:
         self._schema = schema
         self._validation_errors = validation_errors
 
@@ -73,13 +85,12 @@ class SchemaValidationException(Exception):
         return self._schema
 
     @property
-    def validation_errors(self) -> List[str]:
-        return list(map(lambda error: str(error), self._validation_errors))
+    def validation_errors(self) -> list[str]:
+        return [str(error) for error in self._validation_errors]
 
 
 class SchemaInferrer:
-    """
-    This class is used to infer a JSON schema which fits all the records passed into it
+    """This class is used to infer a JSON schema which fits all the records passed into it
     throughout its lifecycle via the accumulate method.
 
     Instances of this class are stateful, meaning they build their inferred schemas
@@ -87,10 +98,10 @@ class SchemaInferrer:
 
     """
 
-    stream_to_builder: Dict[str, SchemaBuilder]
+    stream_to_builder: dict[str, SchemaBuilder]
 
     def __init__(
-        self, pk: Optional[List[List[str]]] = None, cursor_field: Optional[List[List[str]]] = None
+        self, pk: list[list[str]] | None = None, cursor_field: list[list[str]] | None = None
     ) -> None:
         self.stream_to_builder = defaultdict(NoRequiredSchemaBuilder)
         self._pk = [] if pk is None else pk
@@ -103,15 +114,14 @@ class SchemaInferrer:
     def _null_type_in_any_of(self, node: InferredSchema) -> bool:
         if _ANY_OF in node:
             return {_TYPE: _NULL_TYPE} in node[_ANY_OF]
-        else:
-            return False
+        return False
 
     def _remove_type_from_any_of(self, node: InferredSchema) -> None:
         if _ANY_OF in node:
             node.pop(_TYPE, None)
 
     def _clean_any_of(self, node: InferredSchema) -> None:
-        if len(node[_ANY_OF]) == 2 and self._null_type_in_any_of(node):
+        if len(node[_ANY_OF]) == 2 and self._null_type_in_any_of(node):  # noqa: PLR2004  (magic number)
             real_type = (
                 node[_ANY_OF][1] if node[_ANY_OF][0][_TYPE] == _NULL_TYPE else node[_ANY_OF][0]
             )
@@ -119,7 +129,7 @@ class SchemaInferrer:
             node[_TYPE] = [node[_TYPE], _NULL_TYPE]
             node.pop(_ANY_OF)
         # populate `type` for `anyOf` if it's not present to pass all other checks
-        elif len(node[_ANY_OF]) == 2 and not self._null_type_in_any_of(node):
+        elif len(node[_ANY_OF]) == 2 and not self._null_type_in_any_of(node):  # noqa: PLR2004  (magic number)
             node[_TYPE] = [_NULL_TYPE]
 
     def _clean_properties(self, node: InferredSchema) -> None:
@@ -139,12 +149,10 @@ class SchemaInferrer:
             node[_TYPE] = [node[_TYPE], _NULL_TYPE]
 
     def _clean(self, node: InferredSchema) -> InferredSchema:
-        """
-        Recursively cleans up a produced schema:
+        """Recursively cleans up a produced schema:
         - remove anyOf if one of them is just a null value
         - remove properties of type "null"
         """
-
         if isinstance(node, dict):
             if _ANY_OF in node:
                 self._clean_any_of(node)
@@ -164,8 +172,7 @@ class SchemaInferrer:
         return node
 
     def _add_required_properties(self, node: InferredSchema) -> InferredSchema:
-        """
-        This method takes properties that should be marked as required (self._pk and self._cursor_field) and travel the schema to mark every
+        """This method takes properties that should be marked as required (self._pk and self._cursor_field) and travel the schema to mark every
         node as required.
         """
         # Removing nullable for the root as when we call `_clean`, we make everything nullable
@@ -183,11 +190,9 @@ class SchemaInferrer:
 
         return node
 
-    def _add_fields_as_required(self, node: InferredSchema, composite_key: List[List[str]]) -> None:
-        """
-        Take a list of nested keys (this list represents a composite key) and travel the schema to mark every node as required.
-        """
-        errors: List[Exception] = []
+    def _add_fields_as_required(self, node: InferredSchema, composite_key: list[list[str]]) -> None:
+        """Take a list of nested keys (this list represents a composite key) and travel the schema to mark every node as required."""
+        errors: list[Exception] = []
 
         for path in composite_key:
             try:
@@ -199,11 +204,9 @@ class SchemaInferrer:
             raise SchemaValidationException(node, errors)
 
     def _add_field_as_required(
-        self, node: InferredSchema, path: List[str], traveled_path: Optional[List[str]] = None
+        self, node: InferredSchema, path: list[str], traveled_path: list[str] | None = None
     ) -> None:
-        """
-        Take a nested key and travel the schema to mark every node as required.
-        """
+        """Take a nested key and travel the schema to mark every node as required."""
         self._remove_null_from_type(node)
         if self._is_leaf(path):
             return
@@ -246,7 +249,7 @@ class SchemaInferrer:
         traveled_path.append(next_node)
         self._add_field_as_required(node[_PROPERTIES][next_node], path[1:], traveled_path)
 
-    def _is_leaf(self, path: List[str]) -> bool:
+    def _is_leaf(self, path: list[str]) -> bool:
         return len(path) == 0
 
     def _remove_null_from_type(self, node: InferredSchema) -> None:
@@ -256,10 +259,8 @@ class SchemaInferrer:
             if len(node[_TYPE]) == 1:
                 node[_TYPE] = node[_TYPE][0]
 
-    def get_stream_schema(self, stream_name: str) -> Optional[InferredSchema]:
-        """
-        Returns the inferred JSON schema for the specified stream. Might be `None` if there were no records for the given stream name.
-        """
+    def get_stream_schema(self, stream_name: str) -> InferredSchema | None:
+        """Returns the inferred JSON schema for the specified stream. Might be `None` if there were no records for the given stream name."""
         return (
             self._add_required_properties(
                 self._clean(self.stream_to_builder[stream_name].to_schema())

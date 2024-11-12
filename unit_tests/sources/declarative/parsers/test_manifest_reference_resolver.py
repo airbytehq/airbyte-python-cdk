@@ -1,8 +1,10 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import pytest
+
 from airbyte_cdk.sources.declarative.parsers.custom_exceptions import (
     CircularReferenceException,
     UndefinedReferenceException,
@@ -11,6 +13,7 @@ from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import 
     ManifestReferenceResolver,
     _parse_path,
 )
+
 
 resolver = ManifestReferenceResolver()
 

@@ -1,12 +1,14 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import json
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 import requests
+
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.offset_increment import (
     OffsetIncrement,
 )
@@ -55,7 +57,7 @@ def test_offset_increment_paginator_strategy(
     assert expected_offset == paginator_strategy._offset
 
     paginator_strategy.reset()
-    assert 0 == paginator_strategy._offset
+    assert paginator_strategy._offset == 0
 
 
 def test_offset_increment_paginator_strategy_rises():
@@ -77,7 +79,7 @@ def test_offset_increment_paginator_strategy_rises():
     ],
 )
 def test_offset_increment_paginator_strategy_initial_token(
-    inject_on_first_request: bool, expected_initial_token: Optional[Any]
+    inject_on_first_request: bool, expected_initial_token: Any | None
 ):
     paginator_strategy = OffsetIncrement(
         page_size=20, parameters={}, config={}, inject_on_first_request=inject_on_first_request

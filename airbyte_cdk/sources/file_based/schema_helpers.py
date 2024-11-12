@@ -1,12 +1,14 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from copy import deepcopy
 from enum import Enum
 from functools import total_ordering
-from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple, Type, Union
+from typing import Any, Literal, Union
 
 from airbyte_cdk.sources.file_based.exceptions import (
     ConfigValidationError,
@@ -14,7 +16,8 @@ from airbyte_cdk.sources.file_based.exceptions import (
     SchemaInferenceError,
 )
 
-JsonSchemaSupportedType = Union[List[str], Literal["string"], str]
+
+JsonSchemaSupportedType = Union[list[str], Literal["string"], str]  # noqa: PYI051, UP007  (deprecated Union type, redundant Union)
 SchemaType = Mapping[str, Mapping[str, JsonSchemaSupportedType]]
 
 schemaless_schema = {"type": "object", "properties": {"data": {"type": "object"}}}
@@ -33,14 +36,13 @@ class ComparableType(Enum):
     STRING = 4
     OBJECT = 5
 
-    def __lt__(self, other: Any) -> bool:
+    def __lt__(self, other: Any) -> bool:  # noqa: ANN401  (any-type)
         if self.__class__ is other.__class__:
             return self.value < other.value  # type: ignore
-        else:
-            return NotImplemented
+        return NotImplemented
 
 
-TYPE_PYTHON_MAPPING: Mapping[str, Tuple[str, Optional[Type[Any]]]] = {
+TYPE_PYTHON_MAPPING: Mapping[str, tuple[str, type[Any] | None]] = {
     "null": ("null", None),
     "array": ("array", list),
     "boolean": ("boolean", bool),
@@ -53,7 +55,7 @@ TYPE_PYTHON_MAPPING: Mapping[str, Tuple[str, Optional[Type[Any]]]] = {
 PYTHON_TYPE_MAPPING = {t: k for k, (_, t) in TYPE_PYTHON_MAPPING.items()}
 
 
-def get_comparable_type(value: Any) -> Optional[ComparableType]:
+def get_comparable_type(value: Any) -> ComparableType | None:  # noqa: ANN401, PLR0911  (any-type, too many returns)
     if value == "null":
         return ComparableType.NULL
     if value == "boolean":
@@ -66,11 +68,10 @@ def get_comparable_type(value: Any) -> Optional[ComparableType]:
         return ComparableType.STRING
     if value == "object":
         return ComparableType.OBJECT
-    else:
-        return None
+    return None
 
 
-def get_inferred_type(value: Any) -> Optional[ComparableType]:
+def get_inferred_type(value: Any) -> ComparableType | None:  # noqa: ANN401, PLR0911  (any-type, too many returns)
     if value is None:
         return ComparableType.NULL
     if isinstance(value, bool):
@@ -83,13 +84,11 @@ def get_inferred_type(value: Any) -> Optional[ComparableType]:
         return ComparableType.STRING
     if isinstance(value, dict):
         return ComparableType.OBJECT
-    else:
-        return None
+    return None
 
 
 def merge_schemas(schema1: SchemaType, schema2: SchemaType) -> SchemaType:
-    """
-    Returns a new dictionary that contains schema1 and schema2.
+    """Returns a new dictionary that contains schema1 and schema2.
 
     Schemas are merged as follows
     - If a key is in one schema but not the other, add it to the base schema with its existing type.
@@ -107,7 +106,7 @@ def merge_schemas(schema1: SchemaType, schema2: SchemaType) -> SchemaType:
         if not isinstance(t, dict) or "type" not in t or not _is_valid_type(t["type"]):
             raise SchemaInferenceError(FileBasedSourceError.UNRECOGNIZED_TYPE, key=k, type=t)
 
-    merged_schema: Dict[str, Any] = deepcopy(schema1)  # type: ignore  # as of 2023-08-08, deepcopy can copy Mapping
+    merged_schema: dict[str, Any] = deepcopy(schema1)  # type: ignore  # as of 2023-08-08, deepcopy can copy Mapping
     for k2, t2 in schema2.items():
         t1 = merged_schema.get(k2)
         if t1 is None:
@@ -136,7 +135,7 @@ def _choose_wider_type(key: str, t1: Mapping[str, Any], t2: Mapping[str, Any]) -
             detected_types=f"{t1},{t2}",
         )
     # Schemas can still be merged if a key contains a null value in either t1 or t2, but it is still an object
-    elif (
+    if (
         (t1_type == "object" or t2_type == "object")
         and t1_type != "null"
         and t2_type != "null"
@@ -148,24 +147,23 @@ def _choose_wider_type(key: str, t1: Mapping[str, Any], t2: Mapping[str, Any]) -
             key=key,
             detected_types=f"{t1},{t2}",
         )
-    else:
-        comparable_t1 = get_comparable_type(
-            TYPE_PYTHON_MAPPING[t1_type][0]
-        )  # accessing the type_mapping value
-        comparable_t2 = get_comparable_type(
-            TYPE_PYTHON_MAPPING[t2_type][0]
-        )  # accessing the type_mapping value
-        if not comparable_t1 and comparable_t2:
-            raise SchemaInferenceError(
-                FileBasedSourceError.UNRECOGNIZED_TYPE, key=key, detected_types=f"{t1},{t2}"
-            )
-        return max(
-            [t1, t2],
-            key=lambda x: ComparableType(get_comparable_type(TYPE_PYTHON_MAPPING[x["type"]][0])),
-        )  # accessing the type_mapping value
+    comparable_t1 = get_comparable_type(
+        TYPE_PYTHON_MAPPING[t1_type][0]
+    )  # accessing the type_mapping value
+    comparable_t2 = get_comparable_type(
+        TYPE_PYTHON_MAPPING[t2_type][0]
+    )  # accessing the type_mapping value
+    if not comparable_t1 and comparable_t2:
+        raise SchemaInferenceError(
+            FileBasedSourceError.UNRECOGNIZED_TYPE, key=key, detected_types=f"{t1},{t2}"
+        )
+    return max(
+        [t1, t2],
+        key=lambda x: ComparableType(get_comparable_type(TYPE_PYTHON_MAPPING[x["type"]][0])),
+    )  # accessing the type_mapping value
 
 
-def is_equal_or_narrower_type(value: Any, expected_type: str) -> bool:
+def is_equal_or_narrower_type(value: Any, expected_type: str) -> bool:  # noqa: ANN401  (any-type)
     if isinstance(value, list):
         # We do not compare lists directly; the individual items are compared.
         # If we hit this condition, it means that the expected type is not
@@ -180,9 +178,8 @@ def is_equal_or_narrower_type(value: Any, expected_type: str) -> bool:
     return ComparableType(inferred_type) <= ComparableType(get_comparable_type(expected_type))
 
 
-def conforms_to_schema(record: Mapping[str, Any], schema: Mapping[str, Any]) -> bool:
-    """
-    Return true iff the record conforms to the supplied schema.
+def conforms_to_schema(record: Mapping[str, Any], schema: Mapping[str, Any]) -> bool:  # noqa: PLR0911  (too many returns)
+    """Return true iff the record conforms to the supplied schema.
 
     The record conforms to the supplied schema iff:
     - All columns in the record are in the schema.
@@ -202,9 +199,9 @@ def conforms_to_schema(record: Mapping[str, Any], schema: Mapping[str, Any]) -> 
         if value is not None:
             if isinstance(expected_type, list):
                 return any(is_equal_or_narrower_type(value, e) for e in expected_type)
-            elif expected_type == "object":
+            if expected_type == "object":
                 return isinstance(value, dict)
-            elif expected_type == "array":
+            if expected_type == "array":
                 if not isinstance(value, list):
                     return False
                 array_type = definition.get("items", {}).get("type")
@@ -216,7 +213,7 @@ def conforms_to_schema(record: Mapping[str, Any], schema: Mapping[str, Any]) -> 
     return True
 
 
-def _parse_json_input(input_schema: Union[str, Mapping[str, str]]) -> Optional[Mapping[str, str]]:
+def _parse_json_input(input_schema: str | Mapping[str, str]) -> Mapping[str, str] | None:
     try:
         if isinstance(input_schema, str):
             schema: Mapping[str, str] = json.loads(input_schema)
@@ -235,10 +232,9 @@ def _parse_json_input(input_schema: Union[str, Mapping[str, str]]) -> Optional[M
 
 
 def type_mapping_to_jsonschema(
-    input_schema: Optional[Union[str, Mapping[str, str]]],
-) -> Optional[Mapping[str, Any]]:
-    """
-    Return the user input schema (type mapping), transformed to JSON Schema format.
+    input_schema: str | Mapping[str, str] | None,
+) -> Mapping[str, Any] | None:
+    """Return the user input schema (type mapping), transformed to JSON Schema format.
 
     Verify that the input schema:
         - is a key:value map
@@ -252,7 +248,7 @@ def type_mapping_to_jsonschema(
     json_mapping = _parse_json_input(input_schema) or {}
 
     for col_name, type_name in json_mapping.items():
-        col_name, type_name = col_name.strip(), type_name.strip()
+        col_name, type_name = col_name.strip(), type_name.strip()  # noqa: PLW2901  (redefined loop var)
         if not (col_name and type_name):
             raise ConfigValidationError(
                 FileBasedSourceError.ERROR_PARSING_USER_PROVIDED_SCHEMA,

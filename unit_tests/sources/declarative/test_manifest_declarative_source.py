@@ -1,19 +1,23 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import json
 import logging
 import os
 import sys
+from collections.abc import Generator, Mapping
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, List, Mapping
+from typing import Any
 from unittest.mock import call, patch
 
 import pytest
 import requests
 import yaml
+from jsonschema.exceptions import ValidationError
+
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
@@ -28,7 +32,7 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
-from jsonschema.exceptions import ValidationError
+
 
 logger = logging.getLogger("airbyte")
 
@@ -41,8 +45,7 @@ EXTERNAL_CONNECTION_SPECIFICATION = {
 
 
 class MockManifestDeclarativeSource(ManifestDeclarativeSource):
-    """
-    Mock test class that is needed to monkey patch how we read from various files that make up a declarative source because of how our
+    """Mock test class that is needed to monkey patch how we read from various files that make up a declarative source because of how our
     tests write configuration files during testing. It is also used to properly namespace where files get written in specific
     cases like when we temporarily write files like spec.yaml to the package unit_tests, which is the directory where it will
     be read in during the tests.
@@ -51,7 +54,7 @@ class MockManifestDeclarativeSource(ManifestDeclarativeSource):
 
 class TestManifestDeclarativeSource:
     @pytest.fixture
-    def use_external_yaml_spec(self):
+    def use_external_yaml_spec(self) -> Generator[None, Any, None]:
         # Our way of resolving the absolute path to root of the airbyte-cdk unit test directory where spec.yaml files should
         # be written to (i.e. ~/airbyte/airbyte-cdk/python/unit-tests) because that is where they are read from during testing.
         module = sys.modules[__name__]
@@ -70,7 +73,7 @@ class TestManifestDeclarativeSource:
         yield
         os.remove(yaml_path)
 
-    def test_valid_manifest(self):
+    def test_valid_manifest(self) -> None:
         manifest = {
             "version": "3.8.2",
             "definitions": {},
@@ -167,7 +170,7 @@ class TestManifestDeclarativeSource:
             == "This is a sample source connector that is very valid."
         )
 
-    def test_manifest_with_spec(self):
+    def test_manifest_with_spec(self) -> None:
         manifest = {
             "version": "0.29.3",
             "definitions": {
@@ -276,7 +279,10 @@ class TestManifestDeclarativeSource:
             "order": 0,
         }
 
-    def test_manifest_with_external_spec(self, use_external_yaml_spec):
+    def test_manifest_with_external_spec(
+        self,
+        use_external_yaml_spec,
+    ) -> None:
         manifest = {
             "version": "0.29.3",
             "definitions": {
@@ -515,7 +521,7 @@ class TestManifestDeclarativeSource:
         with pytest.raises(ValidationError):
             ManifestDeclarativeSource(source_config=manifest)
 
-    def test_source_with_missing_streams_fails(self):
+    def test_source_with_missing_streams_fails(self) -> None:
         manifest = {
             "version": "0.29.3",
             "definitions": None,
@@ -524,7 +530,7 @@ class TestManifestDeclarativeSource:
         with pytest.raises(ValidationError):
             ManifestDeclarativeSource(source_config=manifest)
 
-    def test_source_with_missing_version_fails(self):
+    def test_source_with_missing_version_fails(self) -> None:
         manifest = {
             "definitions": {
                 "schema_loader": {
@@ -1689,7 +1695,7 @@ def test_only_parent_streams_use_cache():
     assert not streams[2].retriever.requester.use_cache
 
 
-def _run_read(manifest: Mapping[str, Any], stream_name: str) -> List[AirbyteMessage]:
+def _run_read(manifest: Mapping[str, Any], stream_name: str) -> list[AirbyteMessage]:
     source = ManifestDeclarativeSource(source_config=manifest)
     catalog = ConfiguredAirbyteCatalog(
         streams=[
@@ -1707,10 +1713,10 @@ def _run_read(manifest: Mapping[str, Any], stream_name: str) -> List[AirbyteMess
 
 def test_declarative_component_schema_valid_ref_links():
     def load_yaml(file_path) -> Mapping[str, Any]:
-        with open(file_path, "r") as file:
+        with open(file_path) as file:
             return yaml.safe_load(file)
 
-    def extract_refs(data, base_path="#") -> List[str]:
+    def extract_refs(data, base_path="#") -> list[str]:
         refs = []
         if isinstance(data, dict):
             for key, value in data.items():
@@ -1735,7 +1741,7 @@ def test_declarative_component_schema_valid_ref_links():
         except (KeyError, TypeError):
             return False
 
-    def validate_refs(yaml_file: str) -> List[str]:
+    def validate_refs(yaml_file: str) -> list[str]:
         data = load_yaml(yaml_file)
         refs = extract_refs(data)
         invalid_refs = [ref for ref in refs if not resolve_pointer(data, ref.replace("#", ""))]

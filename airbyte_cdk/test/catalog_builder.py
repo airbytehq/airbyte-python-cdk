@@ -1,6 +1,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
-from typing import Any, Dict, List, Union, overload
+from typing import Any, overload
 
 from airbyte_cdk.models import (
     ConfiguredAirbyteCatalog,
@@ -12,7 +13,7 @@ from airbyte_cdk.models import (
 
 class ConfiguredAirbyteStreamBuilder:
     def __init__(self) -> None:
-        self._stream: Dict[str, Any] = {
+        self._stream: dict[str, Any] = {
             "stream": {
                 "name": "any name",
                 "json_schema": {},
@@ -24,20 +25,20 @@ class ConfiguredAirbyteStreamBuilder:
             "destination_sync_mode": "overwrite",
         }
 
-    def with_name(self, name: str) -> "ConfiguredAirbyteStreamBuilder":
+    def with_name(self, name: str) -> ConfiguredAirbyteStreamBuilder:
         self._stream["stream"]["name"] = name  # type: ignore  # we assume that self._stream["stream"] is a Dict[str, Any]
         return self
 
-    def with_sync_mode(self, sync_mode: SyncMode) -> "ConfiguredAirbyteStreamBuilder":
+    def with_sync_mode(self, sync_mode: SyncMode) -> ConfiguredAirbyteStreamBuilder:
         self._stream["sync_mode"] = sync_mode.name
         return self
 
-    def with_primary_key(self, pk: List[List[str]]) -> "ConfiguredAirbyteStreamBuilder":
+    def with_primary_key(self, pk: list[list[str]]) -> ConfiguredAirbyteStreamBuilder:
         self._stream["primary_key"] = pk
         self._stream["stream"]["source_defined_primary_key"] = pk  # type: ignore  # we assume that self._stream["stream"] is a Dict[str, Any]
         return self
 
-    def with_json_schema(self, json_schema: Dict[str, Any]) -> "ConfiguredAirbyteStreamBuilder":
+    def with_json_schema(self, json_schema: dict[str, Any]) -> ConfiguredAirbyteStreamBuilder:
         self._stream["stream"]["json_schema"] = json_schema
         return self
 
@@ -47,19 +48,19 @@ class ConfiguredAirbyteStreamBuilder:
 
 class CatalogBuilder:
     def __init__(self) -> None:
-        self._streams: List[ConfiguredAirbyteStreamBuilder] = []
+        self._streams: list[ConfiguredAirbyteStreamBuilder] = []
 
     @overload
-    def with_stream(self, name: ConfiguredAirbyteStreamBuilder) -> "CatalogBuilder": ...
+    def with_stream(self, name: ConfiguredAirbyteStreamBuilder) -> CatalogBuilder: ...
 
     @overload
-    def with_stream(self, name: str, sync_mode: SyncMode) -> "CatalogBuilder": ...
+    def with_stream(self, name: str, sync_mode: SyncMode) -> CatalogBuilder: ...
 
     def with_stream(
         self,
-        name: Union[str, ConfiguredAirbyteStreamBuilder],
-        sync_mode: Union[SyncMode, None] = None,
-    ) -> "CatalogBuilder":
+        name: str | ConfiguredAirbyteStreamBuilder,
+        sync_mode: SyncMode | None = None,
+    ) -> CatalogBuilder:
         # As we are introducing a fully fledge ConfiguredAirbyteStreamBuilder, we would like to deprecate the previous interface
         # with_stream(str, SyncMode)
 
@@ -77,5 +78,5 @@ class CatalogBuilder:
 
     def build(self) -> ConfiguredAirbyteCatalog:
         return ConfiguredAirbyteCatalog(
-            streams=list(map(lambda builder: builder.build(), self._streams))
+            streams=[builder.build() for builder in self._streams],
         )

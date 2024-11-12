@@ -1,8 +1,10 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import requests
+
 from airbyte_cdk.sources.declarative.requesters.paginators.no_pagination import NoPagination
 
 

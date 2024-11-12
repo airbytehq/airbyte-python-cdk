@@ -1,16 +1,20 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import io
 import json
 import logging
-from typing import Any, Iterable, Mapping, Optional
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 import pytest
 import requests
+
 from airbyte_cdk.sources.streams.http.availability_strategy import HttpAvailabilityStrategy
 from airbyte_cdk.sources.streams.http.http import HttpStream
+
 
 logger = logging.getLogger("airbyte")
 
@@ -23,7 +27,7 @@ class MockHttpStream(HttpStream):
         super().__init__(**kwargs)
         self.resp_counter = 1
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         return None
 
     def path(self, **kwargs) -> str:
@@ -77,8 +81,7 @@ def test_default_http_availability_strategy(
         def read_records(self, *args, **kvargs):
             if records_as_list:
                 return list(super().read_records(*args, **kvargs))
-            else:
-                return super().read_records(*args, **kvargs)
+            return super().read_records(*args, **kvargs)
 
     http_stream = MockListHttpStream()
     response = requests.Response()
@@ -104,10 +107,10 @@ def test_http_availability_raises_unhandled_error(mocker):
     req.status_code = 404
     mocker.patch.object(requests.Session, "send", return_value=req)
 
-    assert (
+    assert HttpAvailabilityStrategy().check_availability(http_stream, logger) == (
         False,
         "Not found. The requested resource was not found on the server.",
-    ) == HttpAvailabilityStrategy().check_availability(http_stream, logger)
+    )
 
 
 def test_send_handles_retries_when_checking_availability(mocker, caplog):

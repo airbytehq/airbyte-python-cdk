@@ -1,23 +1,29 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
-
+from __future__ import annotations
 
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Callable, Iterable, Mapping, Optional
+from typing import TYPE_CHECKING, Any
+
+from deprecated.classic import deprecated
 
 from airbyte_cdk.models import FailureType
-from airbyte_cdk.sources.declarative.async_job.job_orchestrator import (
-    AsyncJobOrchestrator,
-    AsyncPartition,
-)
-from airbyte_cdk.sources.declarative.extractors.record_selector import RecordSelector
 from airbyte_cdk.sources.declarative.partition_routers import SinglePartitionRouter
 from airbyte_cdk.sources.declarative.retrievers import Retriever
-from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicer
 from airbyte_cdk.sources.source import ExperimentalClassWarning
-from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from deprecated.classic import deprecated
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Mapping
+
+    from airbyte_cdk.sources.declarative.async_job.job_orchestrator import (
+        AsyncJobOrchestrator,
+        AsyncPartition,
+    )
+    from airbyte_cdk.sources.declarative.extractors.record_selector import RecordSelector
+    from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicer
+    from airbyte_cdk.sources.streams.core import StreamData
 
 
 @deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)
@@ -33,21 +39,17 @@ class AsyncRetriever(Retriever):
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._job_orchestrator_factory = self.job_orchestrator_factory
-        self.__job_orchestrator: Optional[AsyncJobOrchestrator] = None
+        self.__job_orchestrator: AsyncJobOrchestrator | None = None
         self._parameters = parameters
 
     @property
     def state(self) -> StreamState:
-        """
-        As a first iteration for sendgrid, there is no state to be managed
-        """
+        """As a first iteration for sendgrid, there is no state to be managed"""
         return {}
 
     @state.setter
     def state(self, value: StreamState) -> None:
-        """
-        As a first iteration for sendgrid, there is no state to be managed
-        """
+        """As a first iteration for sendgrid, there is no state to be managed"""
         pass
 
     @property
@@ -62,20 +64,17 @@ class AsyncRetriever(Retriever):
         return self.__job_orchestrator
 
     def _get_stream_state(self) -> StreamState:
-        """
-        Gets the current state of the stream.
+        """Gets the current state of the stream.
 
         Returns:
             StreamState: Mapping[str, Any]
         """
-
         return self.state
 
     def _validate_and_get_stream_slice_partition(
-        self, stream_slice: Optional[StreamSlice] = None
+        self, stream_slice: StreamSlice | None = None
     ) -> AsyncPartition:
-        """
-        Validates the stream_slice argument and returns the partition from it.
+        """Validates the stream_slice argument and returns the partition from it.
 
         Args:
             stream_slice (Optional[StreamSlice]): The stream slice to validate and extract the partition from.
@@ -94,7 +93,7 @@ class AsyncRetriever(Retriever):
             )
         return stream_slice["partition"]  # type: ignore  # stream_slice["partition"] has been added as an AsyncPartition as part of stream_slices
 
-    def stream_slices(self) -> Iterable[Optional[StreamSlice]]:
+    def stream_slices(self) -> Iterable[StreamSlice | None]:
         slices = self.stream_slicer.stream_slices()
         self.__job_orchestrator = self._job_orchestrator_factory(slices)
 
@@ -108,7 +107,7 @@ class AsyncRetriever(Retriever):
     def read_records(
         self,
         records_schema: Mapping[str, Any],
-        stream_slice: Optional[StreamSlice] = None,
+        stream_slice: StreamSlice | None = None,
     ) -> Iterable[StreamData]:
         stream_state: StreamState = self._get_stream_state()
         partition: AsyncPartition = self._validate_and_get_stream_slice_partition(stream_slice)

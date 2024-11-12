@@ -1,19 +1,25 @@
 #
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Mapping, Optional
+from typing import TYPE_CHECKING
 
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
-from airbyte_cdk.sources.types import StreamState
+
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from airbyte_cdk.sources.types import StreamState
 
 
 @dataclass
 class PartitionRouter(StreamSlicer):
-    """
-    Base class for partition routers.
+    """Base class for partition routers.
+
     Methods:
         set_parent_state(stream_state): Set the state of the parent streams.
         get_parent_state(): Get the state of the parent streams.
@@ -21,8 +27,7 @@ class PartitionRouter(StreamSlicer):
 
     @abstractmethod
     def set_initial_state(self, stream_state: StreamState) -> None:
-        """
-        Set the state of the parent streams.
+        """Set the state of the parent streams.
 
         This method should only be implemented if the slicer is based on some parent stream and needs to read this stream
         incrementally using the state.
@@ -30,7 +35,8 @@ class PartitionRouter(StreamSlicer):
         Args:
             stream_state (StreamState): The state of the streams to be set. The expected format is a dictionary that includes
                                         'parent_state' which is a dictionary of parent state names to their corresponding state.
-                Example:
+
+        Example:
                 {
                     "parent_state": {
                         "parent_stream_name_1": { ... },
@@ -41,9 +47,8 @@ class PartitionRouter(StreamSlicer):
         """
 
     @abstractmethod
-    def get_stream_state(self) -> Optional[Mapping[str, StreamState]]:
-        """
-        Get the state of the parent streams.
+    def get_stream_state(self) -> Mapping[str, StreamState] | None:
+        """Get the state of the parent streams.
 
         This method should only be implemented if the slicer is based on some parent stream and needs to read this stream
         incrementally using the state.

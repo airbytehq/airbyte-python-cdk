@@ -1,11 +1,13 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from collections import OrderedDict
 from unittest.mock import Mock
 
 import pytest
+
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.sources.declarative.incremental.per_partition_cursor import (
     PerPartitionCursor,
@@ -14,6 +16,7 @@ from airbyte_cdk.sources.declarative.incremental.per_partition_cursor import (
 )
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
 from airbyte_cdk.sources.types import Record
+
 
 PARTITION = {
     "partition_key string": "partition value",
@@ -72,8 +75,7 @@ def test_partition_with_different_key_orders():
 
 
 def test_given_tuples_in_json_then_deserialization_convert_to_list():
-    """
-    This is a known issue with the current implementation. However, the assumption is that this wouldn't be a problem as we only use the
+    """This is a known issue with the current implementation. However, the assumption is that this wouldn't be a problem as we only use the
     immutability and we expect stream slices to be immutable anyway
     """
     serializer = PerPartitionKeySerializer()
@@ -119,12 +121,12 @@ class MockedCursorBuilder:
         return cursor
 
 
-@pytest.fixture()
+@pytest.fixture
 def mocked_partition_router():
     return Mock(spec=PartitionRouter)
 
 
-@pytest.fixture()
+@pytest.fixture
 def mocked_cursor_factory():
     cursor_factory = Mock()
     cursor_factory.create.return_value = MockedCursorBuilder().build()

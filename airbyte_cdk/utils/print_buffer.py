@@ -1,16 +1,19 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
 import sys
 import time
 from io import StringIO
 from threading import RLock
-from types import TracebackType
-from typing import Optional
+from typing import TYPE_CHECKING
+
+
+if TYPE_CHECKING:
+    from types import TracebackType
 
 
 class PrintBuffer:
-    """
-    A class to buffer print statements and flush them at a specified interval.
+    """A class to buffer print statements and flush them at a specified interval.
 
     The PrintBuffer class is designed to capture and buffer output that would
     normally be printed to the standard output (stdout). This can be useful for
@@ -37,7 +40,7 @@ class PrintBuffer:
             Exits the runtime context and restores the original stdout and stderr.
     """
 
-    def __init__(self, flush_interval: float = 0.1):
+    def __init__(self, flush_interval: float = 0.1) -> None:
         self.buffer = StringIO()
         self.flush_interval = flush_interval
         self.last_flush_time = time.monotonic()
@@ -57,7 +60,7 @@ class PrintBuffer:
             sys.__stdout__.write(combined_message)  # type: ignore[union-attr]
             self.buffer = StringIO()
 
-    def __enter__(self) -> "PrintBuffer":
+    def __enter__(self) -> PrintBuffer:  # noqa: PYI034  (unexpected type)
         self.old_stdout, self.old_stderr = sys.stdout, sys.stderr
         # Used to disable buffering during the pytest session, because it is not compatible with capsys
         if "pytest" not in str(type(sys.stdout)).lower():
@@ -67,9 +70,9 @@ class PrintBuffer:
 
     def __exit__(
         self,
-        exc_type: Optional[BaseException],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: BaseException | None,  # noqa: PYI036  (unexpected type)
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         self.flush()
         sys.stdout, sys.stderr = self.old_stdout, self.old_stderr

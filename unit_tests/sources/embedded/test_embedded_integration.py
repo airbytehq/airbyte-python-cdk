@@ -1,9 +1,11 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import unittest
-from typing import Any, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any
 from unittest.mock import MagicMock
 
 from airbyte_cdk.models import (
@@ -26,7 +28,7 @@ from airbyte_cdk.utils import AirbyteTracedException
 
 
 class TestIntegration(BaseEmbeddedIntegration):
-    def _handle_record(self, record: AirbyteRecordMessage, id: Optional[str]) -> Mapping[str, Any]:
+    def _handle_record(self, record: AirbyteRecordMessage, id: str | None) -> Mapping[str, Any]:
         return {"data": record.data, "id": id}
 
 

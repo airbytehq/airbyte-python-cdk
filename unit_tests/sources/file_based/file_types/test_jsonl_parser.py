@@ -1,17 +1,20 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import asyncio
 import io
 import json
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import MagicMock, Mock
 
 import pytest
+
 from airbyte_cdk.sources.file_based.exceptions import RecordParseError
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
 from airbyte_cdk.sources.file_based.file_types import JsonlParser
+
 
 JSONL_CONTENT_WITHOUT_MULTILINE_JSON_OBJECTS = [
     b'{"a": 1, "b": "1"}',
@@ -43,7 +46,7 @@ def stream_reader() -> MagicMock:
     return MagicMock(spec=AbstractFileBasedStreamReader)
 
 
-def _infer_schema(stream_reader: MagicMock) -> Dict[str, Any]:
+def _infer_schema(stream_reader: MagicMock) -> dict[str, Any]:
     loop = asyncio.new_event_loop()
     task = loop.create_task(JsonlParser().infer_schema(Mock(), Mock(), stream_reader, Mock()))
     loop.run_until_complete(task)
@@ -86,13 +89,13 @@ def test_given_str_io_when_infer_then_return_proper_types(stream_reader: MagicMo
 
 
 def test_given_empty_record_when_infer_then_return_empty_schema(stream_reader: MagicMock) -> None:
-    stream_reader.open_file.return_value.__enter__.return_value = io.BytesIO("{}".encode("utf-8"))
+    stream_reader.open_file.return_value.__enter__.return_value = io.BytesIO(b"{}")
     schema = _infer_schema(stream_reader)
     assert schema == {}
 
 
 def test_given_no_records_when_infer_then_return_empty_schema(stream_reader: MagicMock) -> None:
-    stream_reader.open_file.return_value.__enter__.return_value = io.BytesIO("".encode("utf-8"))
+    stream_reader.open_file.return_value.__enter__.return_value = io.BytesIO(b"")
     schema = _infer_schema(stream_reader)
     assert schema == {}
 
@@ -139,7 +142,7 @@ def test_given_multiline_json_objects_and_hits_read_limit_when_infer_then_return
 
 def test_given_multiple_records_then_merge_types(stream_reader: MagicMock) -> None:
     stream_reader.open_file.return_value.__enter__.return_value = io.BytesIO(
-        '{"col1": 1}\n{"col1": 2.3}'.encode("utf-8")
+        b'{"col1": 1}\n{"col1": 2.3}'
     )
     schema = _infer_schema(stream_reader)
     assert schema == {"col1": {"type": "number"}}

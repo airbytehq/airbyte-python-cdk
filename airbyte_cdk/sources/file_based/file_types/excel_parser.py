@@ -1,13 +1,16 @@
 #
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
-import logging
-from io import IOBase
-from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Union
+from collections.abc import Iterable, Mapping
+from typing import TYPE_CHECKING, Any
 
+import orjson
 import pandas as pd
+from numpy import datetime64, issubdtype
+from numpy import dtype as dtype_
+
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
     ExcelFormat,
     FileBasedStreamConfig,
@@ -22,22 +25,24 @@ from airbyte_cdk.sources.file_based.file_based_stream_reader import (
     FileReadMode,
 )
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
-from airbyte_cdk.sources.file_based.remote_file import RemoteFile
-from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
-from numpy import datetime64
-from numpy import dtype as dtype_
-from numpy import issubdtype
-from orjson import orjson
-from pydantic.v1 import BaseModel
+
+
+if TYPE_CHECKING:
+    import logging
+    from io import IOBase
+    from pathlib import Path
+
+    from pydantic.v1 import BaseModel
+
+    from airbyte_cdk.sources.file_based.remote_file import RemoteFile
+    from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
 
 
 class ExcelParser(FileTypeParser):
     ENCODING = None
 
-    def check_config(self, config: FileBasedStreamConfig) -> Tuple[bool, Optional[str]]:
-        """
-        ExcelParser does not require config checks, implicit pydantic validation is enough.
-        """
+    def check_config(self, config: FileBasedStreamConfig) -> tuple[bool, str | None]:  # noqa: ARG002  (unused)
+        """ExcelParser does not require config checks, implicit pydantic validation is enough."""
         return True, None
 
     async def infer_schema(
@@ -47,8 +52,7 @@ class ExcelParser(FileTypeParser):
         stream_reader: AbstractFileBasedStreamReader,
         logger: logging.Logger,
     ) -> SchemaType:
-        """
-        Infers the schema of the Excel file by examining its contents.
+        """Infers the schema of the Excel file by examining its contents.
 
         Args:
             config (FileBasedStreamConfig): Configuration for the file-based stream.
@@ -59,11 +63,10 @@ class ExcelParser(FileTypeParser):
         Returns:
             SchemaType: Inferred schema of the Excel file.
         """
-
         # Validate the format of the config
         self.validate_format(config.format, logger)
 
-        fields: Dict[str, str] = {}
+        fields: dict[str, str] = {}
 
         with stream_reader.open_file(file, self.file_read_mode, self.ENCODING, logger) as fp:
             df = self.open_and_parse_file(fp)
@@ -72,7 +75,7 @@ class ExcelParser(FileTypeParser):
                 prev_frame_column_type = fields.get(column)
                 fields[column] = self.dtype_to_json_type(prev_frame_column_type, df_type)
 
-        schema = {
+        return {
             field: (
                 {"type": "string", "format": "date-time"}
                 if fields[field] == "date-time"
@@ -80,7 +83,6 @@ class ExcelParser(FileTypeParser):
             )
             for field in fields
         }
-        return schema
 
     def parse_records(
         self,
@@ -88,10 +90,9 @@ class ExcelParser(FileTypeParser):
         file: RemoteFile,
         stream_reader: AbstractFileBasedStreamReader,
         logger: logging.Logger,
-        discovered_schema: Optional[Mapping[str, SchemaType]] = None,
-    ) -> Iterable[Dict[str, Any]]:
-        """
-        Parses records from an Excel file based on the provided configuration.
+        discovered_schema: Mapping[str, SchemaType] | None = None,  # noqa: ARG002  (unused)
+    ) -> Iterable[dict[str, Any]]:
+        """Parses records from an Excel file based on the provided configuration.
 
         Args:
             config (FileBasedStreamConfig): Configuration for the file-based stream.
@@ -103,7 +104,6 @@ class ExcelParser(FileTypeParser):
         Yields:
             Iterable[Dict[str, Any]]: Parsed records from the Excel file.
         """
-
         # Validate the format of the config
         self.validate_format(config.format, logger)
 
@@ -127,8 +127,7 @@ class ExcelParser(FileTypeParser):
 
     @property
     def file_read_mode(self) -> FileReadMode:
-        """
-        Returns the file read mode for the Excel file.
+        """Returns the file read mode for the Excel file.
 
         Returns:
             FileReadMode: The file read mode (binary).
@@ -136,9 +135,8 @@ class ExcelParser(FileTypeParser):
         return FileReadMode.READ_BINARY
 
     @staticmethod
-    def dtype_to_json_type(current_type: Optional[str], dtype: dtype_) -> str:
-        """
-        Convert Pandas DataFrame types to Airbyte Types.
+    def dtype_to_json_type(current_type: str | None, dtype: dtype_) -> str:
+        """Convert Pandas DataFrame types to Airbyte Types.
 
         Args:
             current_type (Optional[str]): One of the previous types based on earlier dataframes.
@@ -163,8 +161,7 @@ class ExcelParser(FileTypeParser):
 
     @staticmethod
     def validate_format(excel_format: BaseModel, logger: logging.Logger) -> None:
-        """
-        Validates if the given format is of type ExcelFormat.
+        """Validates if the given format is of type ExcelFormat.
 
         Args:
             excel_format (Any): The format to be validated.
@@ -177,9 +174,8 @@ class ExcelParser(FileTypeParser):
             raise ConfigValidationError(FileBasedSourceError.CONFIG_VALIDATION_ERROR)
 
     @staticmethod
-    def open_and_parse_file(fp: Union[IOBase, str, Path]) -> pd.DataFrame:
-        """
-        Opens and parses the Excel file.
+    def open_and_parse_file(fp: IOBase | str | Path) -> pd.DataFrame:
+        """Opens and parses the Excel file.
 
         Args:
             fp: File pointer to the Excel file.

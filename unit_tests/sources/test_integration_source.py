@@ -1,23 +1,27 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import json
 import os
-from typing import Any, List, Mapping
+from collections.abc import Mapping
+from typing import Any
 from unittest import mock
 from unittest.mock import patch
 
 import pytest
 import requests
-from airbyte_cdk.entrypoint import launch
-from airbyte_cdk.utils import AirbyteTracedException
+
 from unit_tests.sources.fixtures.source_test_fixture import (
     HttpTestStream,
     SourceFixtureOauthAuthenticator,
     SourceTestFixture,
     fixture_mock_send,
 )
+
+from airbyte_cdk.entrypoint import launch
+from airbyte_cdk.utils import AirbyteTracedException
 
 
 @pytest.mark.parametrize(
@@ -144,12 +148,10 @@ def test_external_oauth_request_source(
             launch(source, args)
 
 
-def contains_error_trace_message(messages: List[Mapping[str, Any]], expected_error: str) -> bool:
+def contains_error_trace_message(messages: list[Mapping[str, Any]], expected_error: str) -> bool:
     for message in messages:
-        if message.get("type") != "TRACE":
+        if message.get("type") != "TRACE" or message.get("trace").get("type") != "ERROR":
             continue
-        elif message.get("trace").get("type") != "ERROR":
-            continue
-        elif message.get("trace").get("error").get("failure_type") == expected_error:
+        if message.get("trace").get("error").get("failure_type") == expected_error:
             return True
     return False

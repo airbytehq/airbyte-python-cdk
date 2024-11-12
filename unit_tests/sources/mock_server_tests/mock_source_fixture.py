@@ -1,32 +1,33 @@
 #
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import logging
 from abc import ABC
+from collections.abc import Iterable, Mapping, MutableMapping
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Tuple
+from typing import Any
 
 import pendulum
 import requests
+from requests import HTTPError
+
 from airbyte_cdk.models import ConnectorSpecification, SyncMode
 from airbyte_cdk.sources import AbstractSource, Source
 from airbyte_cdk.sources.streams import CheckpointMixin, IncrementalMixin, Stream
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.streams.http import HttpStream
 from airbyte_cdk.sources.streams.http.availability_strategy import HttpAvailabilityStrategy
-from requests import HTTPError
 
 
 class FixtureAvailabilityStrategy(HttpAvailabilityStrategy):
-    """
-    Inherit from HttpAvailabilityStrategy with slight modification to 403 error message.
-    """
+    """Inherit from HttpAvailabilityStrategy with slight modification to 403 error message."""
 
     def reasons_for_unavailable_status_codes(
         self, stream: Stream, logger: logging.Logger, source: Source, error: HTTPError
-    ) -> Dict[int, str]:
-        reasons_for_codes: Dict[int, str] = {
+    ) -> dict[int, str]:
+        reasons_for_codes: dict[int, str] = {
             requests.codes.FORBIDDEN: "This is likely due to insufficient permissions for your Notion integration. "
             "Please make sure your integration has read access for the resources you are trying to sync"
         }
@@ -52,13 +53,12 @@ class IntegrationStream(HttpStream, ABC):
         data = response.json().get("data", [])
         yield from data
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         has_more = response.json().get("has_more")
         if has_more:
             self.current_page += 1
             return {"page": self.current_page}
-        else:
-            return None
+        return None
 
 
 class IncrementalIntegrationStream(IntegrationStream, IncrementalMixin, ABC):
@@ -76,9 +76,9 @@ class IncrementalIntegrationStream(IntegrationStream, IncrementalMixin, ABC):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
         for record in super().read_records(sync_mode, cursor_field, stream_slice, stream_state):
             self.state = {self.cursor_field: record.get(self.cursor_field)}
@@ -127,9 +127,9 @@ class Planets(IncrementalIntegrationStream):
 
     def request_params(
         self,
-        stream_state: Optional[Mapping[str, Any]],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Mapping[str, Any] | None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> MutableMapping[str, Any]:
         return {
             "start_date": stream_slice.get("start_date"),
@@ -140,9 +140,9 @@ class Planets(IncrementalIntegrationStream):
         self,
         *,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
-    ) -> Iterable[Optional[Mapping[str, Any]]]:
+        cursor_field: list[str] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
+    ) -> Iterable[Mapping[str, Any] | None]:
         start_date = pendulum.parse(self.start_date)
 
         if stream_state:
@@ -166,8 +166,7 @@ class Planets(IncrementalIntegrationStream):
 
 
 class Legacies(IntegrationStream):
-    """
-    Incremental stream that uses the legacy method get_updated_state() to manage stream state. New connectors use the state
+    """Incremental stream that uses the legacy method get_updated_state() to manage stream state. New connectors use the state
     property and setter methods.
     """
 
@@ -201,17 +200,17 @@ class Legacies(IntegrationStream):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
         yield from super().read_records(sync_mode, cursor_field, stream_slice, stream_state)
 
     def request_params(
         self,
-        stream_state: Optional[Mapping[str, Any]],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Mapping[str, Any] | None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> MutableMapping[str, Any]:
         return {
             "start_date": stream_slice.get("start_date"),
@@ -222,9 +221,9 @@ class Legacies(IntegrationStream):
         self,
         *,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
-    ) -> Iterable[Optional[Mapping[str, Any]]]:
+        cursor_field: list[str] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
+    ) -> Iterable[Mapping[str, Any] | None]:
         start_date = pendulum.parse(self.start_date)
 
         if stream_state:
@@ -268,16 +267,16 @@ class Dividers(IntegrationStream):
         self,
         *,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
-    ) -> Iterable[Optional[Mapping[str, Any]]]:
+        cursor_field: list[str] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
+    ) -> Iterable[Mapping[str, Any] | None]:
         return [{"divide_category": "dukes"}, {"divide_category": "mentats"}]
 
     def request_params(
         self,
-        stream_state: Optional[Mapping[str, Any]],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Mapping[str, Any] | None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> MutableMapping[str, Any]:
         return {"category": stream_slice.get("divide_category")}
 
@@ -325,26 +324,26 @@ class JusticeSongs(HttpStream, CheckpointMixin, ABC):
 
     def request_params(
         self,
-        stream_state: Optional[Mapping[str, Any]],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Mapping[str, Any] | None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> MutableMapping[str, Any]:
         return {"page": next_page_token.get("page")}
 
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
         yield from self._read_single_page(cursor_field, stream_slice, stream_state)
 
     def _read_single_page(
         self,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
         next_page_token = stream_slice
         request_headers = self.request_headers(
@@ -387,7 +386,7 @@ class JusticeSongs(HttpStream, CheckpointMixin, ABC):
 
         self.next_page_token(response)
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         current_page = self._state.get("page") or 0
         has_more = response.json().get("has_more")
         if has_more:
@@ -399,10 +398,10 @@ class JusticeSongs(HttpStream, CheckpointMixin, ABC):
 class SourceFixture(AbstractSource):
     def check_connection(
         self, logger: logging.Logger, config: Mapping[str, Any]
-    ) -> Tuple[bool, any]:
+    ) -> tuple[bool, any]:
         return True, None
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> list[Stream]:
         return [
             Dividers(config=config),
             JusticeSongs(config=config),

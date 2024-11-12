@@ -1,11 +1,14 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
+from collections.abc import Mapping, MutableMapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Mapping, MutableMapping, Optional, Union
+from typing import TYPE_CHECKING, Any
 
-from airbyte_cdk.sources.declarative.interpolation.interpolated_nested_mapping import NestedMapping
+from deprecated import deprecated
+
 from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_nested_request_input_provider import (
     InterpolatedNestedRequestInputProvider,
 )
@@ -16,17 +19,22 @@ from airbyte_cdk.sources.declarative.requesters.request_options.request_options_
     RequestOptionsProvider,
 )
 from airbyte_cdk.sources.source import ExperimentalClassWarning
-from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
-from deprecated import deprecated
 
-RequestInput = Union[str, Mapping[str, str]]
+
+if TYPE_CHECKING:
+    from airbyte_cdk.sources.declarative.interpolation.interpolated_nested_mapping import (
+        NestedMapping,
+    )
+    from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
+
+
+RequestInput = str | Mapping[str, str]
 ValidRequestTypes = (str, list)
 
 
 @dataclass
 class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
-    """
-    Defines the request options to set on an outgoing HTTP request by evaluating `InterpolatedMapping`s
+    """Defines the request options to set on an outgoing HTTP request by evaluating `InterpolatedMapping`s
 
     Attributes:
         config (Config): The user-provided configuration as specified by the source's spec
@@ -38,10 +46,10 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
 
     parameters: InitVar[Mapping[str, Any]]
     config: Config = field(default_factory=dict)
-    request_parameters: Optional[RequestInput] = None
-    request_headers: Optional[RequestInput] = None
-    request_body_data: Optional[RequestInput] = None
-    request_body_json: Optional[NestedMapping] = None
+    request_parameters: RequestInput | None = None
+    request_headers: RequestInput | None = None
+    request_body_data: RequestInput | None = None
+    request_body_json: NestedMapping | None = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if self.request_parameters is None:
@@ -74,9 +82,9 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
     def get_request_params(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> MutableMapping[str, Any]:
         interpolated_value = self._parameter_interpolator.eval_request_inputs(
             stream_state,
@@ -92,9 +100,9 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
     def get_request_headers(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return self._headers_interpolator.eval_request_inputs(
             stream_state, stream_slice, next_page_token
@@ -103,10 +111,10 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
     def get_request_body_data(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Union[Mapping[str, Any], str]:
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any] | str:
         return self._body_data_interpolator.eval_request_inputs(
             stream_state,
             stream_slice,
@@ -118,9 +126,9 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
     def get_request_body_json(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return self._body_json_interpolator.eval_request_inputs(
             stream_state, stream_slice, next_page_token
@@ -131,12 +139,10 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
         category=ExperimentalClassWarning,
     )
     def request_options_contain_stream_state(self) -> bool:
-        """
-        Temporary helper method used as we move low-code streams to the concurrent framework. This method determines if
+        """Temporary helper method used as we move low-code streams to the concurrent framework. This method determines if
         the InterpolatedRequestOptionsProvider has is a dependency on a non-thread safe interpolation context such as
         stream_state.
         """
-
         return (
             self._check_if_interpolation_uses_stream_state(self.request_parameters)
             or self._check_if_interpolation_uses_stream_state(self.request_headers)
@@ -146,18 +152,17 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
 
     @staticmethod
     def _check_if_interpolation_uses_stream_state(
-        request_input: Optional[Union[RequestInput, NestedMapping]],
+        request_input: RequestInput | NestedMapping | None,
     ) -> bool:
         if not request_input:
             return False
-        elif isinstance(request_input, str):
+        if isinstance(request_input, str):
             return "stream_state" in request_input
-        else:
-            for key, val in request_input.items():
-                # Covers the case of RequestInput in the form of a string or Mapping[str, str]. It also covers the case
-                # of a NestedMapping where the value is a string.
-                # Note: Doesn't account for nested mappings for request_body_json, but I don't see stream_state used in that way
-                # in our code
-                if "stream_state" in key or (isinstance(val, str) and "stream_state" in val):
-                    return True
+        for key, val in request_input.items():
+            # Covers the case of RequestInput in the form of a string or Mapping[str, str]. It also covers the case
+            # of a NestedMapping where the value is a string.
+            # Note: Doesn't account for nested mappings for request_body_json, but I don't see stream_state used in that way
+            # in our code
+            if "stream_state" in key or (isinstance(val, str) and "stream_state" in val):
+                return True
         return False

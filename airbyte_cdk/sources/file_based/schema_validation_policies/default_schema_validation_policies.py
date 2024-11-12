@@ -1,8 +1,9 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
-from typing import Any, Mapping, Optional
+from typing import TYPE_CHECKING, Any
 
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import ValidationPolicy
 from airbyte_cdk.sources.file_based.exceptions import (
@@ -13,11 +14,17 @@ from airbyte_cdk.sources.file_based.schema_helpers import conforms_to_schema
 from airbyte_cdk.sources.file_based.schema_validation_policies import AbstractSchemaValidationPolicy
 
 
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+
 class EmitRecordPolicy(AbstractSchemaValidationPolicy):
     name = "emit_record"
 
     def record_passes_validation_policy(
-        self, record: Mapping[str, Any], schema: Optional[Mapping[str, Any]]
+        self,
+        record: Mapping[str, Any],  # noqa: ARG002  (unused)
+        schema: Mapping[str, Any] | None,  # noqa: ARG002  (unused)
     ) -> bool:
         return True
 
@@ -26,7 +33,7 @@ class SkipRecordPolicy(AbstractSchemaValidationPolicy):
     name = "skip_record"
 
     def record_passes_validation_policy(
-        self, record: Mapping[str, Any], schema: Optional[Mapping[str, Any]]
+        self, record: Mapping[str, Any], schema: Mapping[str, Any] | None
     ) -> bool:
         return schema is not None and conforms_to_schema(record, schema)
 
@@ -36,7 +43,7 @@ class WaitForDiscoverPolicy(AbstractSchemaValidationPolicy):
     validate_schema_before_sync = True
 
     def record_passes_validation_policy(
-        self, record: Mapping[str, Any], schema: Optional[Mapping[str, Any]]
+        self, record: Mapping[str, Any], schema: Mapping[str, Any] | None
     ) -> bool:
         if schema is None or not conforms_to_schema(record, schema):
             raise StopSyncPerValidationPolicy(

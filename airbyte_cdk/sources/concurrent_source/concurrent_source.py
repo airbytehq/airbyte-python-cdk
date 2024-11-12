@@ -1,12 +1,14 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
+
 import concurrent
 import logging
+from collections.abc import Iterable, Iterator
 from queue import Queue
-from typing import Iterable, Iterator, List
+from typing import TYPE_CHECKING
 
-from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.sources.concurrent_source.concurrent_read_processor import ConcurrentReadProcessor
 from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentinel import (
     PartitionGenerationCompletedSentinel,
@@ -14,7 +16,6 @@ from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentin
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
 from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPoolManager
 from airbyte_cdk.sources.message import InMemoryMessageRepository, MessageRepository
-from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 from airbyte_cdk.sources.streams.concurrent.partition_enqueuer import PartitionEnqueuer
 from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionReader
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
@@ -26,9 +27,13 @@ from airbyte_cdk.sources.streams.concurrent.partitions.types import (
 from airbyte_cdk.sources.utils.slice_logger import DebugSliceLogger, SliceLogger
 
 
+if TYPE_CHECKING:
+    from airbyte_cdk.models import AirbyteMessage
+    from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
+
+
 class ConcurrentSource:
-    """
-    A Source that reads data from multiple AbstractStreams concurrently.
+    """A Source that reads data from multiple AbstractStreams concurrently.
     It does so by submitting partition generation, and partition read tasks to a thread pool.
     The tasks asynchronously add their output to a shared queue.
     The read is done when all partitions for all streams w ere generated and read.
@@ -44,7 +49,7 @@ class ConcurrentSource:
         slice_logger: SliceLogger,
         message_repository: MessageRepository,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
-    ) -> "ConcurrentSource":
+    ) -> ConcurrentSource:
         is_single_threaded = initial_number_of_partitions_to_generate == 1 and num_workers == 1
         too_many_generator = (
             not is_single_threaded and initial_number_of_partitions_to_generate >= num_workers
@@ -71,13 +76,12 @@ class ConcurrentSource:
         self,
         threadpool: ThreadPoolManager,
         logger: logging.Logger,
-        slice_logger: SliceLogger = DebugSliceLogger(),
-        message_repository: MessageRepository = InMemoryMessageRepository(),
+        slice_logger: SliceLogger = DebugSliceLogger(),  # noqa: B008  (func call in default arg)
+        message_repository: MessageRepository = InMemoryMessageRepository(),  # noqa: B008  (func call in default arg)
         initial_number_partitions_to_generate: int = 1,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     ) -> None:
-        """
-        :param threadpool: The threadpool to submit tasks to
+        """:param threadpool: The threadpool to submit tasks to
         :param logger: The logger to log to
         :param slice_logger: The slice logger used to create messages on new slices
         :param message_repository: The repository to emit messages to
@@ -93,7 +97,7 @@ class ConcurrentSource:
 
     def read(
         self,
-        streams: List[AbstractStream],
+        streams: list[AbstractStream],
     ) -> Iterator[AirbyteMessage]:
         self._logger.info("Starting syncing")
 
@@ -162,4 +166,4 @@ class ConcurrentSource:
         elif isinstance(queue_item, Record):
             yield from concurrent_stream_processor.on_record(queue_item)
         else:
-            raise ValueError(f"Unknown queue item type: {type(queue_item)}")
+            raise ValueError(f"Unknown queue item type: {type(queue_item)}")  # noqa: TRY004 (should raise TypeError)

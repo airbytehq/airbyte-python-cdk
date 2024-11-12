@@ -1,17 +1,22 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import logging
+from collections.abc import Iterable, Mapping
 from io import IOBase
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Set
+from typing import Any
 
 import pytest
+from pydantic.v1 import AnyUrl
+
+from unit_tests.sources.file_based.helpers import make_remote_files
+
 from airbyte_cdk.sources.file_based.config.abstract_file_based_spec import AbstractFileBasedSpec
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
-from pydantic.v1 import AnyUrl
-from unit_tests.sources.file_based.helpers import make_remote_files
+
 
 reader = AbstractFileBasedStreamReader
 
@@ -61,14 +66,14 @@ DEFAULT_CONFIG = {
 
 class TestStreamReader(AbstractFileBasedStreamReader):
     @property
-    def config(self) -> Optional[AbstractFileBasedSpec]:
+    def config(self) -> AbstractFileBasedSpec | None:
         return self._config
 
     @config.setter
     def config(self, value: AbstractFileBasedSpec) -> None:
         self._config = value
 
-    def get_matching_files(self, globs: List[str]) -> Iterable[RemoteFile]:
+    def get_matching_files(self, globs: list[str]) -> Iterable[RemoteFile]:
         pass
 
     def open_file(self, file: RemoteFile) -> IOBase:
@@ -79,7 +84,7 @@ class TestStreamReader(AbstractFileBasedStreamReader):
 
     def get_file(
         self, file: RemoteFile, local_directory: str, logger: logging.Logger
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return {}
 
 
@@ -352,10 +357,10 @@ class TestSpec(AbstractFileBasedSpec):
     ],
 )
 def test_globs_and_prefixes_from_globs(
-    globs: List[str],
+    globs: list[str],
     config: Mapping[str, Any],
-    expected_matches: Set[str],
-    expected_path_prefixes: Set[str],
+    expected_matches: set[str],
+    expected_path_prefixes: set[str],
 ) -> None:
     reader = TestStreamReader()
     reader.config = TestSpec(**config)

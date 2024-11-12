@@ -1,23 +1,25 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import logging
+from collections.abc import Generator, Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Generator, Mapping
+from typing import TYPE_CHECKING, Any
 
+import orjson
 import requests
+
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
-from orjson import orjson
+
 
 logger = logging.getLogger("airbyte")
 
 
 @dataclass
 class JsonDecoder(Decoder):
-    """
-    Decoder strategy that returns the json-encoded content of a response, if any.
-    """
+    """Decoder strategy that returns the json-encoded content of a response, if any."""
 
     parameters: InitVar[Mapping[str, Any]]
 
@@ -25,9 +27,7 @@ class JsonDecoder(Decoder):
         return False
 
     def decode(self, response: requests.Response) -> Generator[Mapping[str, Any], None, None]:
-        """
-        Given the response is an empty string or an emtpy list, the function will return a generator with an empty mapping.
-        """
+        """Given the response is an empty string or an emtpy list, the function will return a generator with an empty mapping."""
         try:
             body_json = response.json()
             if not isinstance(body_json, list):
@@ -45,9 +45,7 @@ class JsonDecoder(Decoder):
 
 @dataclass
 class IterableDecoder(Decoder):
-    """
-    Decoder strategy that returns the string content of the response, if any.
-    """
+    """Decoder strategy that returns the string content of the response, if any."""
 
     parameters: InitVar[Mapping[str, Any]]
 
@@ -61,17 +59,18 @@ class IterableDecoder(Decoder):
 
 @dataclass
 class JsonlDecoder(Decoder):
-    """
-    Decoder strategy that returns the json-encoded content of the response, if any.
-    """
+    """Decoder strategy that returns the json-encoded content of the response, if any."""
 
     parameters: InitVar[Mapping[str, Any]]
 
     def is_stream_response(self) -> bool:
         return True
 
-    def decode(self, response: requests.Response) -> Generator[Mapping[str, Any], None, None]:
-        # TODO???: set delimiter? usually it is `\n` but maybe it would be useful to set optional?
+    def decode(  # type: ignore[override]  # Base class returns MutableMapping
+        self,
+        response: requests.Response,
+    ) -> Generator[Mapping[str, Any], None, None]:
+        # TODO: (?) set delimiter? usually it is `\n` but maybe it would be useful to set optional?
         #  https://github.com/airbytehq/airbyte-internal-issues/issues/8436
         for record in response.iter_lines():
             yield orjson.loads(record)

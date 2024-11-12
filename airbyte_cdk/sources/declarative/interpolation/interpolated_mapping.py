@@ -1,10 +1,11 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
-
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Dict, Mapping, Optional
+from typing import TYPE_CHECKING, Any
 
 from airbyte_cdk.sources.declarative.interpolation.jinja import JinjaInterpolation
 from airbyte_cdk.sources.types import Config
@@ -12,8 +13,7 @@ from airbyte_cdk.sources.types import Config
 
 @dataclass
 class InterpolatedMapping:
-    """
-    Wrapper around a Mapping[str, str] where both the keys and values are to be interpolated.
+    """Wrapper around a Mapping[str, str] where both the keys and values are to be interpolated.
 
     Attributes:
         mapping (Mapping[str, str]): to be evaluated
@@ -22,13 +22,12 @@ class InterpolatedMapping:
     mapping: Mapping[str, str]
     parameters: InitVar[Mapping[str, Any]]
 
-    def __post_init__(self, parameters: Optional[Mapping[str, Any]]) -> None:
+    def __post_init__(self, parameters: Mapping[str, Any] | None) -> None:
         self._interpolation = JinjaInterpolation()
         self._parameters = parameters
 
-    def eval(self, config: Config, **additional_parameters: Any) -> Dict[str, Any]:
-        """
-        Wrapper around a Mapping[str, str] that allows for both keys and values to be interpolated.
+    def eval(self, config: Config, **additional_parameters: Any) -> dict[str, Any]:  # noqa: ANN401  (any-type)
+        """Wrapper around a Mapping[str, str] that allows for both keys and values to be interpolated.
 
         :param config: The user-provided configuration as specified by the source's spec
         :param additional_parameters: Optional parameters used for interpolation
@@ -47,10 +46,9 @@ class InterpolatedMapping:
             for name, value in self.mapping.items()
         }
 
-    def _eval(self, value: str, config: Config, **kwargs: Any) -> Any:
+    def _eval(self, value: str, config: Config, **kwargs: Any) -> Any:  # noqa: ANN401  (any-type)
         # The values in self._mapping can be of Any type
         # We only want to interpolate them if they are strings
         if isinstance(value, str):
             return self._interpolation.eval(value, config, parameters=self._parameters, **kwargs)
-        else:
-            return value
+        return value

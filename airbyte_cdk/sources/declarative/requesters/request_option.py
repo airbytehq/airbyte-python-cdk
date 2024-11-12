@@ -1,18 +1,18 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
 from enum import Enum
-from typing import Any, Mapping, Union
+from typing import TYPE_CHECKING, Any
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 
 
 class RequestOptionType(Enum):
-    """
-    Describes where to set a value on a request
-    """
+    """Describes where to set a value on a request"""
 
     request_parameter = "request_parameter"
     header = "header"
@@ -22,15 +22,14 @@ class RequestOptionType(Enum):
 
 @dataclass
 class RequestOption:
-    """
-    Describes an option to set on a request
+    """Describes an option to set on a request
 
     Attributes:
         field_name (str): Describes the name of the parameter to inject
         inject_into (RequestOptionType): Describes where in the HTTP request to inject the parameter
     """
 
-    field_name: Union[InterpolatedString, str]
+    field_name: InterpolatedString | str
     inject_into: RequestOptionType
     parameters: InitVar[Mapping[str, Any]]
 

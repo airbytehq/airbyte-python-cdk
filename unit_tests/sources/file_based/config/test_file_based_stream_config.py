@@ -1,15 +1,18 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
-from typing import Any, Mapping, Type
+from collections.abc import Mapping
+from typing import Any
 
 import pytest as pytest
+from pydantic.v1.error_wrappers import ValidationError
+
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
     CsvFormat,
     FileBasedStreamConfig,
 )
-from pydantic.v1.error_wrappers import ValidationError
 
 
 @pytest.mark.parametrize(
@@ -90,7 +93,7 @@ def test_csv_config(
     file_type: str,
     input_format: Mapping[str, Any],
     expected_format: Mapping[str, Any],
-    expected_error: Type[Exception],
+    expected_error: type[Exception],
 ) -> None:
     stream_config = {
         "name": "stream1",

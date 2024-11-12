@@ -1,11 +1,15 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
+
 import base64
 import hashlib
 
 import pytest
+
 from airbyte_cdk.sources.declarative.interpolation.jinja import JinjaInterpolation
+
 
 interpolation = JinjaInterpolation()
 

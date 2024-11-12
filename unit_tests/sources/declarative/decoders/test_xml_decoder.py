@@ -1,8 +1,11 @@
 #
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
+
 import pytest
 import requests
+
 from airbyte_cdk.sources.declarative.decoders import XmlDecoder
 
 

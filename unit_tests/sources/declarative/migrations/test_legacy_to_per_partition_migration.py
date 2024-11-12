@@ -1,10 +1,12 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from unittest.mock import MagicMock
 
 import pytest
+
 from airbyte_cdk.sources.declarative.migrations.legacy_to_per_partition_state_migration import (
     LegacyToPerPartitionStateMigration,
 )
@@ -13,14 +15,12 @@ from airbyte_cdk.sources.declarative.models import (
     CustomRetriever,
     DatetimeBasedCursor,
     DeclarativeStream,
-)
-from airbyte_cdk.sources.declarative.models import (
-    LegacyToPerPartitionStateMigration as LegacyToPerPartitionStateMigrationModel,
-)
-from airbyte_cdk.sources.declarative.models import (
     ParentStreamConfig,
     SimpleRetriever,
     SubstreamPartitionRouter,
+)
+from airbyte_cdk.sources.declarative.models import (
+    LegacyToPerPartitionStateMigration as LegacyToPerPartitionStateMigrationModel,
 )
 from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer import (
     ManifestComponentTransformer,
@@ -32,6 +32,7 @@ from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
+
 
 factory = ModelToComponentFactory()
 

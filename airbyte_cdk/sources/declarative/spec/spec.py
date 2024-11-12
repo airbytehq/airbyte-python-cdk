@@ -1,22 +1,27 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional
+from typing import TYPE_CHECKING, Any
 
 from airbyte_cdk.models import (
     AdvancedAuth,
     ConnectorSpecification,
     ConnectorSpecificationSerializer,
 )  # type: ignore [attr-defined]
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import AuthFlow
+
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from airbyte_cdk.sources.declarative.models.declarative_component_schema import AuthFlow
 
 
 @dataclass
 class Spec:
-    """
-    Returns a connection specification made up of information about the connector and how it can be configured
+    """Returns a connection specification made up of information about the connector and how it can be configured
 
     Attributes:
         connection_specification (Mapping[str, Any]): information related to how a connector can be configured
@@ -25,14 +30,11 @@ class Spec:
 
     connection_specification: Mapping[str, Any]
     parameters: InitVar[Mapping[str, Any]]
-    documentation_url: Optional[str] = None
-    advanced_auth: Optional[AuthFlow] = None
+    documentation_url: str | None = None
+    advanced_auth: AuthFlow | None = None
 
     def generate_spec(self) -> ConnectorSpecification:
-        """
-        Returns the connector specification according the spec block defined in the low code connector manifest.
-        """
-
+        """Returns the connector specification according the spec block defined in the low code connector manifest."""
         obj: dict[str, Mapping[str, Any] | str | AdvancedAuth] = {
             "connectionSpecification": self.connection_specification
         }

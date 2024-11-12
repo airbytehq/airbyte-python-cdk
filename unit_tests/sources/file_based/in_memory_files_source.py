@@ -1,21 +1,26 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import csv
 import io
 import json
 import logging
 import tempfile
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from io import IOBase
-from typing import Any, Dict, Iterable, List, Mapping, Optional
+from typing import Any
 
 import avro.io as ai
 import avro.schema as avro_schema
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+from avro import datafile
+from pydantic.v1 import AnyUrl
+
 from airbyte_cdk.models import ConfiguredAirbyteCatalog, ConfiguredAirbyteCatalogSerializer
 from airbyte_cdk.sources.file_based.availability_strategy import (
     AbstractFileBasedAvailabilityStrategy,
@@ -42,8 +47,6 @@ from airbyte_cdk.sources.file_based.stream.cursor import (
     DefaultFileBasedCursor,
 )
 from airbyte_cdk.sources.source import TState
-from avro import datafile
-from pydantic.v1 import AnyUrl
 
 
 class InMemoryFilesSource(FileBasedSource):
@@ -53,16 +56,16 @@ class InMemoryFilesSource(FileBasedSource):
         self,
         files: Mapping[str, Any],
         file_type: str,
-        availability_strategy: Optional[AbstractFileBasedAvailabilityStrategy],
-        discovery_policy: Optional[AbstractDiscoveryPolicy],
+        availability_strategy: AbstractFileBasedAvailabilityStrategy | None,
+        discovery_policy: AbstractDiscoveryPolicy | None,
         validation_policies: Mapping[str, AbstractSchemaValidationPolicy],
         parsers: Mapping[str, FileTypeParser],
-        stream_reader: Optional[AbstractFileBasedStreamReader],
-        catalog: Optional[Mapping[str, Any]],
-        config: Optional[Mapping[str, Any]],
-        state: Optional[TState],
+        stream_reader: AbstractFileBasedStreamReader | None,
+        catalog: Mapping[str, Any] | None,
+        config: Mapping[str, Any] | None,
+        state: TState | None,
         file_write_options: Mapping[str, Any],
-        cursor_cls: Optional[AbstractFileBasedCursor],
+        cursor_cls: AbstractFileBasedCursor | None,
     ):
         # Attributes required for test purposes
         self.files = files
@@ -103,7 +106,7 @@ class InMemoryFilesStreamReader(AbstractFileBasedStreamReader):
         self,
         files: Mapping[str, Mapping[str, Any]],
         file_type: str,
-        file_write_options: Optional[Mapping[str, Any]] = None,
+        file_write_options: Mapping[str, Any] | None = None,
     ):
         self.files = files
         self.file_type = file_type
@@ -111,7 +114,7 @@ class InMemoryFilesStreamReader(AbstractFileBasedStreamReader):
         super().__init__()
 
     @property
-    def config(self) -> Optional[AbstractFileBasedSpec]:
+    def config(self) -> AbstractFileBasedSpec | None:
         return self._config
 
     @config.setter
@@ -120,8 +123,8 @@ class InMemoryFilesStreamReader(AbstractFileBasedStreamReader):
 
     def get_matching_files(
         self,
-        globs: List[str],
-        prefix: Optional[str],
+        globs: list[str],
+        prefix: str | None,
         logger: logging.Logger,
     ) -> Iterable[RemoteFile]:
         yield from self.filter_files_by_globs_and_start_date(
@@ -141,20 +144,19 @@ class InMemoryFilesStreamReader(AbstractFileBasedStreamReader):
 
     def get_file(
         self, file: RemoteFile, local_directory: str, logger: logging.Logger
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return {}
 
     def open_file(
-        self, file: RemoteFile, mode: FileReadMode, encoding: Optional[str], logger: logging.Logger
+        self, file: RemoteFile, mode: FileReadMode, encoding: str | None, logger: logging.Logger
     ) -> IOBase:
         if self.file_type == "csv":
             return self._make_csv_file_contents(file.uri)
-        elif self.file_type == "jsonl":
+        if self.file_type == "jsonl":
             return self._make_jsonl_file_contents(file.uri)
-        elif self.file_type == "unstructured":
+        if self.file_type == "unstructured":
             return self._make_binary_file_contents(file.uri)
-        else:
-            raise NotImplementedError(f"No implementation for file type: {self.file_type}")
+        raise NotImplementedError(f"No implementation for file type: {self.file_type}")
 
     def _make_csv_file_contents(self, file_name: str) -> IOBase:
         # Some tests define the csv as an array of strings to make it easier to validate the handling
@@ -204,12 +206,10 @@ class InMemorySpec(AbstractFileBasedSpec):
 
 
 class TemporaryParquetFilesStreamReader(InMemoryFilesStreamReader):
-    """
-    A file reader that writes RemoteFiles to a temporary file and then reads them back.
-    """
+    """A file reader that writes RemoteFiles to a temporary file and then reads them back."""
 
     def open_file(
-        self, file: RemoteFile, mode: FileReadMode, encoding: Optional[str], logger: logging.Logger
+        self, file: RemoteFile, mode: FileReadMode, encoding: str | None, logger: logging.Logger
     ) -> IOBase:
         return io.BytesIO(self._create_file(file.uri))
 
@@ -227,12 +227,10 @@ class TemporaryParquetFilesStreamReader(InMemoryFilesStreamReader):
 
 
 class TemporaryAvroFilesStreamReader(InMemoryFilesStreamReader):
-    """
-    A file reader that writes RemoteFiles to a temporary file and then reads them back.
-    """
+    """A file reader that writes RemoteFiles to a temporary file and then reads them back."""
 
     def open_file(
-        self, file: RemoteFile, mode: FileReadMode, encoding: Optional[str], logger: logging.Logger
+        self, file: RemoteFile, mode: FileReadMode, encoding: str | None, logger: logging.Logger
     ) -> IOBase:
         return io.BytesIO(self._make_file_contents(file.uri))
 
@@ -253,12 +251,10 @@ class TemporaryAvroFilesStreamReader(InMemoryFilesStreamReader):
 
 
 class TemporaryExcelFilesStreamReader(InMemoryFilesStreamReader):
-    """
-    A file reader that writes RemoteFiles to a temporary file and then reads them back.
-    """
+    """A file reader that writes RemoteFiles to a temporary file and then reads them back."""
 
     def open_file(
-        self, file: RemoteFile, mode: FileReadMode, encoding: Optional[str], logger: logging.Logger
+        self, file: RemoteFile, mode: FileReadMode, encoding: str | None, logger: logging.Logger
     ) -> IOBase:
         return io.BytesIO(self._make_file_contents(file.uri))
 

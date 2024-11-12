@@ -7,12 +7,16 @@ import abc
 from collections import defaultdict
 from contextlib import contextmanager
 from functools import cached_property
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, final
 
 import pandas as pd
 import sqlalchemy
 import ulid
+from pandas import Index
+from pydantic import BaseModel, Field
+from sqlalchemy import Column, Table, and_, create_engine, insert, null, select, text, update
+from sqlalchemy.exc import ProgrammingError, SQLAlchemyError
+
 from airbyte_cdk.sql import exceptions as exc
 from airbyte_cdk.sql._util.hashing import one_way_hash
 from airbyte_cdk.sql._util.name_normalizers import LowerCaseNormalizer
@@ -24,22 +28,22 @@ from airbyte_cdk.sql.constants import (
 )
 from airbyte_cdk.sql.secrets import SecretString
 from airbyte_cdk.sql.types import SQLTypeConverter
-from airbyte_protocol_dataclasses.models import AirbyteStateMessage
-from pandas import Index
-from pydantic import BaseModel, Field
-from sqlalchemy import Column, Table, and_, create_engine, insert, null, select, text, update
-from sqlalchemy.exc import ProgrammingError, SQLAlchemyError
+
 
 if TYPE_CHECKING:
     from collections.abc import Generator
+    from pathlib import Path
 
-    from airbyte_cdk.sql.shared.catalog_providers import CatalogProvider
     from sqlalchemy.engine import Connection, Engine
     from sqlalchemy.engine.cursor import CursorResult
     from sqlalchemy.engine.reflection import Inspector
     from sqlalchemy.sql.base import Executable
     from sqlalchemy.sql.elements import TextClause
     from sqlalchemy.sql.type_api import TypeEngine
+
+    from airbyte_protocol_dataclasses.models import AirbyteStateMessage
+
+    from airbyte_cdk.sql.shared.catalog_providers import CatalogProvider
 
 
 class SQLRuntimeError(Exception):
@@ -110,7 +114,7 @@ class SqlConfig(BaseModel, abc.ABC):
         )
 
 
-class SqlProcessorBase(abc.ABC):
+class SqlProcessorBase(abc.ABC):  # noqa: B024  (no abstract methods)
     """A base class to be used for SQL Caches."""
 
     type_converter_class: type[SQLTypeConverter] = SQLTypeConverter

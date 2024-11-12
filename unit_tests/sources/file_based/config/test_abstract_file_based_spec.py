@@ -1,17 +1,17 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-
-from typing import Type
+from __future__ import annotations
 
 import pytest
+from jsonschema import ValidationError, validate
+from pydantic.v1 import BaseModel
+
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
     AvroFormat,
     CsvFormat,
     ParquetFormat,
 )
-from jsonschema import ValidationError, validate
-from pydantic.v1 import BaseModel
 
 
 @pytest.mark.parametrize(
@@ -30,7 +30,7 @@ from pydantic.v1 import BaseModel
     ],
 )
 def test_parquet_file_type_is_not_a_valid_csv_file_type(
-    file_format: BaseModel, file_type: str, expected_error: Type[Exception]
+    file_format: BaseModel, file_type: str, expected_error: type[Exception]
 ) -> None:
     format_config = {file_type: {"filetype": file_type, "decimal_as_float": True}}
 

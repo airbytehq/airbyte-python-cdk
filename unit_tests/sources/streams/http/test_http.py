@@ -1,16 +1,18 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-
+from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from http import HTTPStatus
-from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optional, Tuple, Union
+from typing import Any
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 import requests
+
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, SyncMode, Type
 from airbyte_cdk.sources.streams import CheckpointMixin
 from airbyte_cdk.sources.streams.checkpoint import ResumableFullRefreshCursor
@@ -39,7 +41,7 @@ class StubBasicReadHttpStream(HttpStream):
         self.resp_counter = 1
         self._deduplicate_query_params = deduplicate_query_params
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         return None
 
     def path(self, **kwargs) -> str:
@@ -54,7 +56,7 @@ class StubBasicReadHttpStream(HttpStream):
         return self._deduplicate_query_params
 
     @property
-    def cursor_field(self) -> Union[str, List[str]]:
+    def cursor_field(self) -> str | list[str]:
         return ["updated_at"]
 
 
@@ -90,7 +92,7 @@ def test_stub_basic_read_http_stream_read_records(mocker):
 
     records = list(stream.read_records(SyncMode.full_refresh))
 
-    assert [{"data": 1}] == records
+    assert records == [{"data": 1}]
 
 
 class StubNextPageTokenHttpStream(StubBasicReadHttpStream):
@@ -100,7 +102,7 @@ class StubNextPageTokenHttpStream(StubBasicReadHttpStream):
         super().__init__()
         self._pages = pages
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         while self.current_page < self._pages:
             page_token = {"page": self.current_page}
             self.current_page += 1
@@ -152,7 +154,7 @@ def test_stub_bad_url_http_stream_read_records(mocker):
 
 
 class StubCustomBackoffHttpStream(StubBasicReadHttpStream):
-    def backoff_time(self, response: requests.Response) -> Optional[float]:
+    def backoff_time(self, response: requests.Response) -> float | None:
         return 0.5
 
 
@@ -180,7 +182,7 @@ def test_stub_custom_backoff_http_stream_retries(mocker, retries):
         def max_retries(self):
             return retries
 
-        def get_error_handler(self) -> Optional[ErrorHandler]:
+        def get_error_handler(self) -> ErrorHandler | None:
             return HttpStatusErrorHandler(logging.Logger, max_retries=retries)
 
     stream = StubCustomBackoffHttpStreamRetries()
@@ -202,7 +204,7 @@ def test_stub_custom_backoff_http_stream_endless_retries(mocker):
     mocker.patch("time.sleep", lambda x: None)
 
     class StubCustomBackoffHttpStreamRetries(StubCustomBackoffHttpStream):
-        def get_error_handler(self) -> Optional[ErrorHandler]:
+        def get_error_handler(self) -> ErrorHandler | None:
             return HttpStatusErrorHandler(logging.Logger, max_retries=99999)
 
     infinite_number = 20
@@ -233,7 +235,7 @@ class AutoFailFalseHttpStream(StubBasicReadHttpStream):
     raise_on_http_errors = False
     max_retries = 3
 
-    def get_error_handler(self) -> Optional[ErrorHandler]:
+    def get_error_handler(self) -> ErrorHandler | None:
         return HttpStatusErrorHandler(logging.getLogger(), max_retries=3)
 
 
@@ -345,7 +347,7 @@ class TestRequestBody:
         assert response["body"] == self.urlencoded_form_body
 
     def test_text_json_body(self, mocker, requests_mock):
-        """checks a exception if both functions were overridden"""
+        """Checks a exception if both functions were overridden"""
         stream = PostHttpStream()
         mocker.patch.object(stream, "request_body_data", return_value=self.data_body)
         mocker.patch.object(stream, "request_body_json", return_value=self.json_body)
@@ -392,7 +394,7 @@ class CacheHttpSubStream(HttpSubStream):
     def parse_response(self, response: requests.Response, **kwargs) -> Iterable[Mapping]:
         return []
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         return None
 
     def path(self, **kwargs) -> str:
@@ -452,7 +454,7 @@ class CacheHttpStreamWithSlices(CacheHttpStream):
     def path(self, stream_slice: Mapping[str, Any] = None, **kwargs) -> str:
         return f'{stream_slice["path"]}' if stream_slice else ""
 
-    def stream_slices(self, **kwargs) -> Iterable[Optional[Mapping[str, Any]]]:
+    def stream_slices(self, **kwargs) -> Iterable[Mapping[str, Any] | None]:
         for path in self.paths:
             yield {"path": path}
 
@@ -569,7 +571,7 @@ def test_send_raise_on_http_errors_logs(mocker, status_code):
         ({}, None),
     ],
 )
-def test_default_parse_response_error_message(api_response: dict, expected_message: Optional[str]):
+def test_default_parse_response_error_message(api_response: dict, expected_message: str | None):
     stream = StubBasicReadHttpStream()
     response = MagicMock()
     response.json.return_value = api_response
@@ -753,7 +755,7 @@ class StubParentHttpStream(HttpStream, CheckpointMixin):
 
     counter = 0
 
-    def __init__(self, records: List[Mapping[str, Any]]):
+    def __init__(self, records: list[Mapping[str, Any]]):
         super().__init__()
         self._records = records
         self._state: MutableMapping[str, Any] = {}
@@ -765,13 +767,13 @@ class StubParentHttpStream(HttpStream, CheckpointMixin):
     def path(
         self,
         *,
-        stream_state: Optional[Mapping[str, Any]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Mapping[str, Any] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> str:
         return "/stub"
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         return {"__ab_full_refresh_sync_complete": True}
 
     def _read_single_page(
@@ -781,12 +783,12 @@ class StubParentHttpStream(HttpStream, CheckpointMixin):
                 requests.PreparedRequest,
                 requests.Response,
                 Mapping[str, Any],
-                Optional[Mapping[str, Any]],
+                Mapping[str, Any] | None,
             ],
             Iterable[StreamData],
         ],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
         yield from self._records
 
@@ -797,8 +799,8 @@ class StubParentHttpStream(HttpStream, CheckpointMixin):
         response: requests.Response,
         *,
         stream_state: Mapping[str, Any],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         return []
 
@@ -811,7 +813,7 @@ class StubParentResumableFullRefreshStream(HttpStream, CheckpointMixin):
 
     counter = 0
 
-    def __init__(self, record_pages: List[List[Mapping[str, Any]]]):
+    def __init__(self, record_pages: list[list[Mapping[str, Any]]]):
         super().__init__()
         self._record_pages = record_pages
         self._state: MutableMapping[str, Any] = {}
@@ -823,21 +825,21 @@ class StubParentResumableFullRefreshStream(HttpStream, CheckpointMixin):
     def path(
         self,
         *,
-        stream_state: Optional[Mapping[str, Any]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Mapping[str, Any] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> str:
         return "/stub"
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         return {"__ab_full_refresh_sync_complete": True}
 
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
         page_number = self.state.get("page") or 1
         yield from self._record_pages[page_number - 1]
@@ -852,8 +854,8 @@ class StubParentResumableFullRefreshStream(HttpStream, CheckpointMixin):
         response: requests.Response,
         *,
         stream_state: Mapping[str, Any],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         return []
 
@@ -871,13 +873,13 @@ class StubHttpSubstream(HttpSubStream):
     def path(
         self,
         *,
-        stream_state: Optional[Mapping[str, Any]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Mapping[str, Any] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> str:
         return "/stub"
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         return None
 
     def _read_pages(
@@ -887,12 +889,12 @@ class StubHttpSubstream(HttpSubStream):
                 requests.PreparedRequest,
                 requests.Response,
                 Mapping[str, Any],
-                Optional[Mapping[str, Any]],
+                Mapping[str, Any] | None,
             ],
             Iterable[StreamData],
         ],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
         return [
             {"id": "abc", "parent": stream_slice.get("id")},
@@ -904,8 +906,8 @@ class StubHttpSubstream(HttpSubStream):
         response: requests.Response,
         *,
         stream_state: Mapping[str, Any],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         return []
 
@@ -996,7 +998,7 @@ class StubFullRefreshHttpStream(HttpStream):
         self._deduplicate_query_params = deduplicate_query_params
         self._pages = pages
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         current_page = self.cursor.get_stream_state().get("page", 1)
         if current_page < self._pages:
             current_page += 1
@@ -1021,15 +1023,14 @@ class StubFullRefreshLegacySliceHttpStream(StubFullRefreshHttpStream):
         self,
         *,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
-    ) -> Iterable[Optional[Mapping[str, Any]]]:
+        cursor_field: list[str] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
+    ) -> Iterable[Mapping[str, Any] | None]:
         yield from [{}]
 
 
 def test_resumable_full_refresh_read_from_start(mocker):
-    """
-    Validates the default behavior of a stream that supports resumable full refresh by using read_records() which gets one
+    """Validates the default behavior of a stream that supports resumable full refresh by using read_records() which gets one
     page per invocation and emits state afterward.
     parses over
     """
@@ -1039,7 +1040,7 @@ def test_resumable_full_refresh_read_from_start(mocker):
     mocker.patch.object(stream._http_client, "send_request", return_value=(None, blank_response))
 
     # Wrap all methods we're interested in testing with mocked objects to spy on their input args and verify they were what we expect
-    mocker.patch.object(stream, "_read_single_page", wraps=getattr(stream, "_read_single_page"))
+    mocker.patch.object(stream, "_read_single_page", wraps=stream._read_single_page)
     methods = ["request_params", "request_headers", "request_body_json"]
     for method in methods:
         mocker.patch.object(stream, method, wraps=getattr(stream, method))
@@ -1071,7 +1072,7 @@ def test_resumable_full_refresh_read_from_start(mocker):
         next_stream_slice = checkpoint_reader.next()
         i += 1
 
-    assert getattr(stream, "_read_single_page").call_count == 5
+    assert stream._read_single_page.call_count == 5
 
     # Since we have 5 pages, and we don't pass in the first page, we expect 4 tokens starting at {"page":2}, {"page":3}, etc...
     expected_next_page_tokens = expected_checkpoints[:4]
@@ -1092,8 +1093,7 @@ def test_resumable_full_refresh_read_from_start(mocker):
 
 
 def test_resumable_full_refresh_read_from_state(mocker):
-    """
-    Validates the default behavior of a stream that supports resumable full refresh with an incoming state by using
+    """Validates the default behavior of a stream that supports resumable full refresh with an incoming state by using
     read_records() which gets one page per invocation and emits state afterward.
     parses over
     """
@@ -1103,7 +1103,7 @@ def test_resumable_full_refresh_read_from_state(mocker):
     mocker.patch.object(stream._http_client, "send_request", return_value=(None, blank_response))
 
     # Wrap all methods we're interested in testing with mocked objects to spy on their input args and verify they were what we expect
-    mocker.patch.object(stream, "_read_single_page", wraps=getattr(stream, "_read_single_page"))
+    mocker.patch.object(stream, "_read_single_page", wraps=stream._read_single_page)
     methods = ["request_params", "request_headers", "request_body_json"]
     for method in methods:
         mocker.patch.object(stream, method, wraps=getattr(stream, method))
@@ -1129,7 +1129,7 @@ def test_resumable_full_refresh_read_from_state(mocker):
         next_stream_slice = checkpoint_reader.next()
         i += 1
 
-    assert getattr(stream, "_read_single_page").call_count == 3
+    assert stream._read_single_page.call_count == 3
 
     # Since we start at page 3, we expect 3 tokens starting at {"page":3}, {"page":4}, etc...
     expected_next_page_tokens = [{"page": 3}, {"page": 4}, {"page": 5}]
@@ -1146,8 +1146,7 @@ def test_resumable_full_refresh_read_from_state(mocker):
 
 
 def test_resumable_full_refresh_legacy_stream_slice(mocker):
-    """
-    Validates the default behavior of a stream that supports resumable full refresh where incoming stream slices use the
+    """Validates the default behavior of a stream that supports resumable full refresh where incoming stream slices use the
     legacy Mapping format
     """
     pages = 5
@@ -1156,7 +1155,7 @@ def test_resumable_full_refresh_legacy_stream_slice(mocker):
     mocker.patch.object(stream._http_client, "send_request", return_value=(None, blank_response))
 
     # Wrap all methods we're interested in testing with mocked objects to spy on their input args and verify they were what we expect
-    mocker.patch.object(stream, "_read_single_page", wraps=getattr(stream, "_read_single_page"))
+    mocker.patch.object(stream, "_read_single_page", wraps=stream._read_single_page)
     methods = ["request_params", "request_headers", "request_body_json"]
     for method in methods:
         mocker.patch.object(stream, method, wraps=getattr(stream, method))
@@ -1187,7 +1186,7 @@ def test_resumable_full_refresh_legacy_stream_slice(mocker):
         next_stream_slice = checkpoint_reader.next()
         i += 1
 
-    assert getattr(stream, "_read_single_page").call_count == 4
+    assert stream._read_single_page.call_count == 4
 
     # Since we start at page 3, we expect 3 tokens starting at {"page":3}, {"page":4}, etc...
     expected_next_page_tokens = [{"page": 2}, {"page": 3}, {"page": 4}, {"page": 5}]
@@ -1211,7 +1210,7 @@ class StubSubstreamResumableFullRefreshStream(HttpSubStream, CheckpointMixin):
     def __init__(
         self,
         parent: HttpStream,
-        partition_id_to_child_records: Mapping[str, List[Mapping[str, Any]]],
+        partition_id_to_child_records: Mapping[str, list[Mapping[str, Any]]],
     ):
         super().__init__(parent=parent)
         self._partition_id_to_child_records = partition_id_to_child_records
@@ -1224,13 +1223,13 @@ class StubSubstreamResumableFullRefreshStream(HttpSubStream, CheckpointMixin):
     def path(
         self,
         *,
-        stream_state: Optional[Mapping[str, Any]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Mapping[str, Any] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> str:
         return f"/parents/{stream_slice.get('parent_id')}/children"
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         return None
 
     # def read_records(
@@ -1250,10 +1249,10 @@ class StubSubstreamResumableFullRefreshStream(HttpSubStream, CheckpointMixin):
 
     def _fetch_next_page(
         self,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Tuple[requests.PreparedRequest, requests.Response]:
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
+    ) -> tuple[requests.PreparedRequest, requests.Response]:
         return requests.PreparedRequest(), requests.Response()
 
     def parse_response(
@@ -1261,8 +1260,8 @@ class StubSubstreamResumableFullRefreshStream(HttpSubStream, CheckpointMixin):
         response: requests.Response,
         *,
         stream_state: Mapping[str, Any],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         partition_id = stream_slice.get("parent").get("parent_id")
         if partition_id in self._partition_id_to_child_records:
@@ -1275,12 +1274,10 @@ class StubSubstreamResumableFullRefreshStream(HttpSubStream, CheckpointMixin):
 
 
 def test_substream_resumable_full_refresh_read_from_start(mocker):
-    """
-    Validates the default behavior of a stream that supports resumable full refresh by using read_records() which gets one
+    """Validates the default behavior of a stream that supports resumable full refresh by using read_records() which gets one
     page per invocation and emits state afterward.
     parses over
     """
-
     parent_records = [
         {"parent_id": "100", "name": "christopher_nolan"},
         {"parent_id": "101", "name": "celine_song"},
@@ -1312,7 +1309,7 @@ def test_substream_resumable_full_refresh_read_from_start(mocker):
     mocker.patch.object(stream._http_client, "send_request", return_value=(None, blank_response))
 
     # Wrap all methods we're interested in testing with mocked objects to spy on their input args and verify they were what we expect
-    mocker.patch.object(stream, "_read_pages", wraps=getattr(stream, "_read_pages"))
+    mocker.patch.object(stream, "_read_pages", wraps=stream._read_pages)
 
     checkpoint_reader = stream._get_checkpoint_reader(
         cursor_field=[],
@@ -1373,7 +1370,7 @@ def test_substream_resumable_full_refresh_read_from_start(mocker):
         next_stream_slice = checkpoint_reader.next()
         i += 1
 
-    assert getattr(stream, "_read_pages").call_count == 3
+    assert stream._read_pages.call_count == 3
 
     expected = [
         {"film": "interstellar", "id": "a200", "parent_id": "100"},
@@ -1390,12 +1387,10 @@ def test_substream_resumable_full_refresh_read_from_start(mocker):
 
 
 def test_substream_resumable_full_refresh_read_from_state(mocker):
-    """
-    Validates the default behavior of a stream that supports resumable full refresh by using read_records() which gets one
+    """Validates the default behavior of a stream that supports resumable full refresh by using read_records() which gets one
     page per invocation and emits state afterward.
     parses over
     """
-
     parent_records = [
         {"parent_id": "100", "name": "christopher_nolan"},
         {"parent_id": "101", "name": "celine_song"},
@@ -1421,7 +1416,7 @@ def test_substream_resumable_full_refresh_read_from_state(mocker):
     mocker.patch.object(stream._http_client, "send_request", return_value=(None, blank_response))
 
     # Wrap all methods we're interested in testing with mocked objects to spy on their input args and verify they were what we expect
-    mocker.patch.object(stream, "_read_pages", wraps=getattr(stream, "_read_pages"))
+    mocker.patch.object(stream, "_read_pages", wraps=stream._read_pages)
 
     checkpoint_reader = stream._get_checkpoint_reader(
         cursor_field=[],
@@ -1465,7 +1460,7 @@ def test_substream_resumable_full_refresh_read_from_state(mocker):
         next_stream_slice = checkpoint_reader.next()
         i += 1
 
-    assert getattr(stream, "_read_pages").call_count == 1
+    assert stream._read_pages.call_count == 1
 
     expected = [
         {"film": "past_lives", "id": "b200", "parent_id": "101"},
@@ -1479,7 +1474,7 @@ class StubWithCursorFields(StubBasicReadHttpStream):
     def __init__(
         self,
         has_multiple_slices: bool,
-        set_cursor_field: List[str],
+        set_cursor_field: list[str],
         deduplicate_query_params: bool = False,
         **kwargs,
     ):
@@ -1488,7 +1483,7 @@ class StubWithCursorFields(StubBasicReadHttpStream):
         super().__init__()
 
     @property
-    def cursor_field(self) -> Union[str, List[str]]:
+    def cursor_field(self) -> str | list[str]:
         return self._cursor_field
 
 

@@ -1,15 +1,19 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import asyncio
 import datetime
 import math
-from typing import Any, Mapping, Union
+from collections.abc import Mapping
+from typing import Any
 from unittest.mock import Mock
 
 import pyarrow as pa
 import pytest
+from pyarrow import Scalar
+
 from airbyte_cdk.sources.file_based.config.csv_format import CsvFormat
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
     FileBasedStreamConfig,
@@ -19,7 +23,7 @@ from airbyte_cdk.sources.file_based.config.jsonl_format import JsonlFormat
 from airbyte_cdk.sources.file_based.config.parquet_format import ParquetFormat
 from airbyte_cdk.sources.file_based.file_types import ParquetParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
-from pyarrow import Scalar
+
 
 _default_parquet_format = ParquetFormat()
 _decimal_as_float_parquet_format = ParquetFormat(decimal_as_float=True)
@@ -220,7 +224,9 @@ def test_type_mapping(
         pytest.param(pa.uint32(), _default_parquet_format, 6, 6, id="test_parquet_uint32"),
         pytest.param(pa.uint64(), _default_parquet_format, 6, 6, id="test_parquet_uint64"),
         pytest.param(pa.float32(), _default_parquet_format, 2.7, 2.7, id="test_parquet_float32"),
-        pytest.param(pa.float64(), _default_parquet_format, 3.14, 3.14, id="test_parquet_float64"),
+        pytest.param(
+            pa.float64(), _default_parquet_format, math.pi, math.pi, id="test_parquet_float64"
+        ),
         pytest.param(
             pa.time32("s"),
             _default_parquet_format,
@@ -325,9 +331,7 @@ def test_type_mapping(
             "this is a string",
             id="test_parquet_string",
         ),
-        pytest.param(
-            pa.utf8(), _default_parquet_format, "utf8".encode("utf8"), "utf8", id="test_utf8"
-        ),
+        pytest.param(pa.utf8(), _default_parquet_format, b"utf8", "utf8", id="test_utf8"),
         pytest.param(
             pa.large_binary(),
             _default_parquet_format,
@@ -501,7 +505,7 @@ def test_null_value_does_not_throw(parquet_type, parquet_format) -> None:
         pytest.param(JsonlFormat(), id="test_jsonl_format"),
     ],
 )
-def test_wrong_file_format(file_format: Union[CsvFormat, JsonlFormat]) -> None:
+def test_wrong_file_format(file_format: CsvFormat | JsonlFormat) -> None:
     parser = ParquetParser()
     config = FileBasedStreamConfig(
         name="test.parquet",

@@ -1,10 +1,12 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import datetime
 
 import pytest
+
 from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser
 
 

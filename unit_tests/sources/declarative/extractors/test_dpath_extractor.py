@@ -1,12 +1,14 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
+
 import io
 import json
-from typing import Dict, List, Union
 
 import pytest
 import requests
+
 from airbyte_cdk import Decoder
 from airbyte_cdk.sources.declarative.decoders.json_decoder import (
     IterableDecoder,
@@ -14,6 +16,7 @@ from airbyte_cdk.sources.declarative.decoders.json_decoder import (
     JsonlDecoder,
 )
 from airbyte_cdk.sources.declarative.extractors.dpath_extractor import DpathExtractor
+
 
 config = {"field": "record_array"}
 parameters = {"parameters_field": "record_array"}
@@ -23,7 +26,7 @@ decoder_jsonl = JsonlDecoder(parameters={})
 decoder_iterable = IterableDecoder(parameters={})
 
 
-def create_response(body: Union[Dict, bytes]):
+def create_response(body: dict | bytes):
     response = requests.Response()
     response.raw = io.BytesIO(body if isinstance(body, bytes) else json.dumps(body).encode("utf-8"))
     return response
@@ -111,7 +114,7 @@ def create_response(body: Union[Dict, bytes]):
         "test_extract_from_string_per_line_iterable",
     ],
 )
-def test_dpath_extractor(field_path: List, decoder: Decoder, body, expected_records: List):
+def test_dpath_extractor(field_path: list, decoder: Decoder, body, expected_records: list):
     extractor = DpathExtractor(
         field_path=field_path, config=config, decoder=decoder, parameters=parameters
     )

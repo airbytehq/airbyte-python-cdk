@@ -1,9 +1,11 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Iterable, List, Mapping, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
@@ -16,8 +18,7 @@ from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 
 @dataclass
 class ListPartitionRouter(PartitionRouter):
-    """
-    Partition router that iterates over the values of a list
+    """Partition router that iterates over the values of a list
     If values is a string, then evaluate it as literal and assert the resulting literal is a list
 
     Attributes:
@@ -27,11 +28,11 @@ class ListPartitionRouter(PartitionRouter):
         request_option (Optional[RequestOption]): The request option to configure the HTTP request
     """
 
-    values: Union[str, List[str]]
-    cursor_field: Union[InterpolatedString, str]
+    values: str | list[str]
+    cursor_field: InterpolatedString | str
     config: Config
     parameters: InitVar[Mapping[str, Any]]
-    request_option: Optional[RequestOption] = None
+    request_option: RequestOption | None = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if isinstance(self.values, str):
@@ -48,36 +49,36 @@ class ListPartitionRouter(PartitionRouter):
 
     def get_request_params(
         self,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,  # noqa: ARG002  (unused)
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,  # noqa: ARG002  (unused)
     ) -> Mapping[str, Any]:
         # Pass the stream_slice from the argument, not the cursor because the cursor is updated after processing the response
         return self._get_request_option(RequestOptionType.request_parameter, stream_slice)
 
     def get_request_headers(
         self,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,  # noqa: ARG002  (unused)
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,  # noqa: ARG002  (unused)
     ) -> Mapping[str, Any]:
         # Pass the stream_slice from the argument, not the cursor because the cursor is updated after processing the response
         return self._get_request_option(RequestOptionType.header, stream_slice)
 
     def get_request_body_data(
         self,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,  # noqa: ARG002  (unused)
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,  # noqa: ARG002  (unused)
     ) -> Mapping[str, Any]:
         # Pass the stream_slice from the argument, not the cursor because the cursor is updated after processing the response
         return self._get_request_option(RequestOptionType.body_data, stream_slice)
 
     def get_request_body_json(
         self,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,  # noqa: ARG002  (unused)
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,  # noqa: ARG002  (unused)
     ) -> Mapping[str, Any]:
         # Pass the stream_slice from the argument, not the cursor because the cursor is updated after processing the response
         return self._get_request_option(RequestOptionType.body_json, stream_slice)
@@ -91,7 +92,7 @@ class ListPartitionRouter(PartitionRouter):
         ]
 
     def _get_request_option(
-        self, request_option_type: RequestOptionType, stream_slice: Optional[StreamSlice]
+        self, request_option_type: RequestOptionType, stream_slice: StreamSlice | None
     ) -> Mapping[str, Any]:
         if (
             self.request_option
@@ -101,19 +102,13 @@ class ListPartitionRouter(PartitionRouter):
             slice_value = stream_slice.get(self._cursor_field.eval(self.config))
             if slice_value:
                 return {self.request_option.field_name.eval(self.config): slice_value}  # type: ignore # field_name is always casted to InterpolatedString
-            else:
-                return {}
-        else:
             return {}
+        return {}
 
     def set_initial_state(self, stream_state: StreamState) -> None:
-        """
-        ListPartitionRouter doesn't have parent streams
-        """
+        """ListPartitionRouter doesn't have parent streams"""
         pass
 
-    def get_stream_state(self) -> Optional[Mapping[str, StreamState]]:
-        """
-        ListPartitionRouter doesn't have parent streams
-        """
+    def get_stream_state(self) -> Mapping[str, StreamState] | None:
+        """ListPartitionRouter doesn't have parent streams"""
         pass

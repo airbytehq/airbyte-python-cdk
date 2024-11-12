@@ -1,14 +1,16 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
 import logging
 import sys
 import threading
 import time
-from typing import Callable, List, Mapping, Optional, Set, Tuple
+from collections.abc import Callable, Mapping
 from unittest import TestCase, mock
 from unittest.mock import MagicMock, Mock, call
 
 import pytest
+
 from airbyte_cdk import AirbyteTracedException, StreamSlice
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.async_job.job import AsyncJob, AsyncJobStatus
@@ -20,6 +22,7 @@ from airbyte_cdk.sources.declarative.async_job.job_tracker import JobTracker
 from airbyte_cdk.sources.declarative.async_job.repository import AsyncJobRepository
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.http.http_client import MessageRepresentationAirbyteTracedErrors
+
 
 _ANY_STREAM_SLICE = Mock()
 _A_STREAM_SLICE = Mock()
@@ -62,11 +65,11 @@ class AsyncPartitionTest(TestCase):
 
 
 def _status_update_per_jobs(
-    status_update_per_jobs: Mapping[AsyncJob, List[AsyncJobStatus]],
+    status_update_per_jobs: Mapping[AsyncJob, list[AsyncJobStatus]],
 ) -> Callable[[set[AsyncJob]], None]:
-    status_index_by_job = {job: 0 for job in status_update_per_jobs.keys()}
+    status_index_by_job = dict.fromkeys(status_update_per_jobs.keys(), 0)
 
-    def _update_status(jobs: Set[AsyncJob]) -> None:
+    def _update_status(jobs: set[AsyncJob]) -> None:
         for job in jobs:
             status_index = status_index_by_job[job]
             job.update_status(status_update_per_jobs[job][status_index])
@@ -182,9 +185,9 @@ class AsyncJobOrchestratorTest(TestCase):
         assert self._job_repository.delete.mock_calls == [call(first_job), call(second_job)]
 
     def _orchestrator(
-        self, slices: List[StreamSlice], job_tracker: Optional[JobTracker] = None
+        self, slices: list[StreamSlice], job_tracker: JobTracker | None = None
     ) -> AsyncJobOrchestrator:
-        job_tracker = job_tracker if job_tracker else JobTracker(_NO_JOB_LIMIT)
+        job_tracker = job_tracker or JobTracker(_NO_JOB_LIMIT)
         return AsyncJobOrchestrator(
             self._job_repository, slices, job_tracker, self._message_repository
         )
@@ -238,9 +241,7 @@ class AsyncJobOrchestratorTest(TestCase):
     def test_given_traced_config_error_when_start_job_and_raise_this_exception_and_abort_jobs(
         self,
     ) -> None:
-        """
-        Since this is a config error, we assume the other jobs will fail for the same reasons.
-        """
+        """Since this is a config error, we assume the other jobs will fail for the same reasons."""
         job_tracker = JobTracker(1)
         self._job_repository.start.side_effect = MessageRepresentationAirbyteTracedErrors(
             "Can't create job", failure_type=FailureType.config_error
@@ -263,9 +264,7 @@ class AsyncJobOrchestratorTest(TestCase):
     def test_given_exception_on_single_job_when_create_and_get_completed_partitions_then_return(
         self, mock_sleep: MagicMock
     ) -> None:
-        """
-        We added this test because the initial logic of breaking the main loop we implemented (when `self._has_started_a_job and self._running_partitions`) was not enough in the case where there was only one slice and it would fail to start.
-        """
+        """We added this test because the initial logic of breaking the main loop we implemented (when `self._has_started_a_job and self._running_partitions`) was not enough in the case where there was only one slice and it would fail to start."""
         orchestrator = self._orchestrator([_A_STREAM_SLICE])
         self._job_repository.start.side_effect = ValueError
 
@@ -365,7 +364,7 @@ class AsyncJobOrchestratorTest(TestCase):
 
     def _accumulate_create_and_get_completed_partitions(
         self, orchestrator: AsyncJobOrchestrator
-    ) -> Tuple[List[AsyncPartition], Optional[Exception]]:
+    ) -> tuple[list[AsyncPartition], Exception | None]:
         result = []
         try:
             for i in orchestrator.create_and_get_completed_partitions():

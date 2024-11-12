@@ -1,11 +1,15 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from datetime import datetime
 from io import IOBase
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any
+
+from unit_tests.sources.file_based.in_memory_files_source import InMemoryFilesStreamReader
 
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.discovery_policy import DefaultDiscoveryPolicy
@@ -20,7 +24,6 @@ from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.schema_validation_policies import AbstractSchemaValidationPolicy
 from airbyte_cdk.sources.file_based.stream.concurrent.cursor import FileBasedConcurrentCursor
 from airbyte_cdk.sources.file_based.stream.cursor import DefaultFileBasedCursor
-from unit_tests.sources.file_based.in_memory_files_source import InMemoryFilesStreamReader
 
 
 class EmptySchemaParser(CsvParser):
@@ -30,7 +33,7 @@ class EmptySchemaParser(CsvParser):
         file: RemoteFile,
         stream_reader: AbstractFileBasedStreamReader,
         logger: logging.Logger,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return {}
 
 
@@ -46,9 +49,9 @@ class LowInferenceBytesJsonlParser(JsonlParser):
 class TestErrorListMatchingFilesInMemoryFilesStreamReader(InMemoryFilesStreamReader):
     def get_matching_files(
         self,
-        globs: List[str],
-        from_date: Optional[datetime] = None,
-    ) -> List[RemoteFile]:
+        globs: list[str],
+        from_date: datetime | None = None,
+    ) -> list[RemoteFile]:
         raise Exception("Error listing files")
 
 
@@ -57,7 +60,7 @@ class TestErrorOpenFileInMemoryFilesStreamReader(InMemoryFilesStreamReader):
         self,
         file: RemoteFile,
         file_read_mode: FileReadMode,
-        encoding: Optional[str],
+        encoding: str | None,
         logger: logging.Logger,
     ) -> IOBase:
         raise Exception("Error opening file")
@@ -68,7 +71,7 @@ class FailingSchemaValidationPolicy(AbstractSchemaValidationPolicy):
     validate_schema_before_sync = True
 
     def record_passes_validation_policy(
-        self, record: Mapping[str, Any], schema: Optional[Mapping[str, Any]]
+        self, record: Mapping[str, Any], schema: Mapping[str, Any] | None
     ) -> bool:
         return False
 
@@ -81,7 +84,7 @@ class LowHistoryLimitConcurrentCursor(FileBasedConcurrentCursor):
     DEFAULT_MAX_HISTORY_SIZE = 3
 
 
-def make_remote_files(files: List[str]) -> List[RemoteFile]:
+def make_remote_files(files: list[str]) -> list[RemoteFile]:
     return [
         RemoteFile(
             uri=f,

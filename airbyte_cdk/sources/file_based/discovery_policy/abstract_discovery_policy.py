@@ -1,15 +1,18 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING
 
-from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
+
+if TYPE_CHECKING:
+    from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
 
 
 class AbstractDiscoveryPolicy(ABC):
-    """
-    Used during discovery; allows the developer to configure the number of concurrent
+    """Used during discovery; allows the developer to configure the number of concurrent
     requests to send to the source, and the number of files to use for schema discovery.
     """
 

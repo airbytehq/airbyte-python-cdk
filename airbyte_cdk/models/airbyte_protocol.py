@@ -2,21 +2,35 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from dataclasses import InitVar, dataclass
-from typing import Annotated, Any, Dict, List, Mapping, Optional, Union
+# Serpyco uses type definitions at runtime during SerDes operations.
+# For this reason we have some exceptions to normal linting rules.
+# ruff: noqa: TCH001, TCH002, TCH003  # Don't auto-move imports to `TYPE_CHECKING` block.
+# ruff: noqa: F403    # Allow '*' import to shadow everything from protocols package.
 
-from airbyte_cdk.models.file_transfer_record_message import AirbyteFileTransferRecordMessage
-from airbyte_protocol_dataclasses.models import *  # noqa: F403  # Allow '*'
+# Allow camelCase names (imported from java library)
+# ruff: noqa: N815
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import InitVar, dataclass
+
+# Serpyco does not support the 3.10-style "|" operator.
+# ruff: noqa: UP007  # Allow deprecated `Union` and `Optional`
+from typing import Annotated, Any, Optional, Union
+
 from serpyco_rs.metadata import Alias
 
-# ruff: noqa: F405  # ignore fuzzy import issues with 'import *'
+from airbyte_protocol_dataclasses import models
+from airbyte_protocol_dataclasses.models import *
+
+from airbyte_cdk.models.file_transfer_record_message import AirbyteFileTransferRecordMessage
 
 
 @dataclass
-class AirbyteStateBlob:
-    """
-    A dataclass that dynamically sets attributes based on provided keyword arguments and positional arguments.
-    Used to "mimic" pydantic Basemodel with ConfigDict(extra='allow') option.
+class AirbyteStateBlob:  # noqa: PLW1641  # Should implement __hash__
+    """A dataclass that dynamically sets attributes based on provided keyword arguments and positional arguments.
+    Used to "mimic" pydantic BaseModel with ConfigDict(extra='allow') option.
 
     The `AirbyteStateBlob` class allows for flexible instantiation by accepting any number of keyword arguments
     and positional arguments. These are used to dynamically update the instance's attributes. This class is useful
@@ -36,7 +50,7 @@ class AirbyteStateBlob:
 
     kwargs: InitVar[Mapping[str, Any]]
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:  # noqa: ANN401 (any-type)
         # Set any attribute passed in through kwargs
         for arg in args:
             self.__dict__.update(arg)
@@ -54,36 +68,42 @@ class AirbyteStateBlob:
 # The following dataclasses have been redeclared to include the new version of AirbyteStateBlob
 @dataclass
 class AirbyteStreamState:
-    stream_descriptor: StreamDescriptor  # type: ignore [name-defined]
+    stream_descriptor: models.StreamDescriptor
     stream_state: Optional[AirbyteStateBlob] = None
 
 
 @dataclass
 class AirbyteGlobalState:
-    stream_states: List[AirbyteStreamState]
+    stream_states: list[AirbyteStreamState]
     shared_state: Optional[AirbyteStateBlob] = None
 
 
 @dataclass
 class AirbyteStateMessage:
-    type: Optional[AirbyteStateType] = None  # type: ignore [name-defined]
+    type: Optional[models.AirbyteStateType] = None
+
+    # These two use custom classes defined above
     stream: Optional[AirbyteStreamState] = None
-    global_: Annotated[AirbyteGlobalState | None, Alias("global")] = (
+    global_: Annotated[Optional[AirbyteGlobalState], Alias("global")] = (
         None  # "global" is a reserved keyword in python ⇒ Alias is used for (de-)serialization
     )
-    data: Optional[Dict[str, Any]] = None
-    sourceStats: Optional[AirbyteStateStats] = None  # type: ignore [name-defined]
-    destinationStats: Optional[AirbyteStateStats] = None  # type: ignore [name-defined]
+
+    data: Optional[dict[str, Any]] = None
+    sourceStats: Optional[models.AirbyteStateStats] = None
+    destinationStats: Optional[models.AirbyteStateStats] = None
 
 
 @dataclass
 class AirbyteMessage:
-    type: Type  # type: ignore [name-defined]
-    log: Optional[AirbyteLogMessage] = None  # type: ignore [name-defined]
-    spec: Optional[ConnectorSpecification] = None  # type: ignore [name-defined]
-    connectionStatus: Optional[AirbyteConnectionStatus] = None  # type: ignore [name-defined]
-    catalog: Optional[AirbyteCatalog] = None  # type: ignore [name-defined]
-    record: Optional[Union[AirbyteFileTransferRecordMessage, AirbyteRecordMessage]] = None  # type: ignore [name-defined]
+    type: models.Type
+    log: Optional[models.AirbyteLogMessage] = None
+    spec: Optional[models.ConnectorSpecification] = None
+    connectionStatus: Optional[models.AirbyteConnectionStatus] = None
+    catalog: Optional[models.AirbyteCatalog] = None
+
+    # These two differ from the original dataclasses:
+    record: Optional[Union[AirbyteFileTransferRecordMessage, models.AirbyteRecordMessage]] = None
     state: Optional[AirbyteStateMessage] = None
-    trace: Optional[AirbyteTraceMessage] = None  # type: ignore [name-defined]
-    control: Optional[AirbyteControlMessage] = None  # type: ignore [name-defined]
+
+    trace: Optional[models.AirbyteTraceMessage] = None
+    control: Optional[models.AirbyteControlMessage] = None

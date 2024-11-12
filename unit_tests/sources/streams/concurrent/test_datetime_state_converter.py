@@ -1,10 +1,12 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from datetime import datetime, timezone
 
 import pytest
+
 from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
     ConcurrencyCompatibleStateType,
@@ -231,7 +233,9 @@ def test_convert_from_sequential_state(converter, start, sequential_state, expec
         )
         assert conversion["state_type"] == expected_output_state["state_type"]
         assert conversion["legacy"] == expected_output_state["legacy"]
-        for actual, expected in zip(conversion["slices"], expected_output_state["slices"]):
+        for actual, expected in zip(
+            conversion["slices"], expected_output_state["slices"], strict=False
+        ):
             assert actual["start"].strftime(comparison_format) == expected["start"].strftime(
                 comparison_format
             )

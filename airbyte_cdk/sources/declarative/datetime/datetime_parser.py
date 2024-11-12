@@ -1,14 +1,13 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import datetime
-from typing import Union
 
 
 class DatetimeParser:
-    """
-    Parses and formats datetime objects according to a specified format.
+    """Parses and formats datetime objects according to a specified format.
 
     This class mainly acts as a wrapper to properly handling timestamp formatting through the "%s" directive.
 
@@ -18,7 +17,7 @@ class DatetimeParser:
 
     _UNIX_EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
 
-    def parse(self, date: Union[str, int], format: str) -> datetime.datetime:
+    def parse(self, date: str | int, format: str) -> datetime.datetime:  # noqa: A002  (shadowed built-in)
         # "%s" is a valid (but unreliable) directive for formatting, but not for parsing
         # It is defined as
         # The number of seconds since the Epoch, 1970-01-01 00:00:00+0000 (UTC). https://man7.org/linux/man-pages/man3/strptime.3.html
@@ -27,9 +26,9 @@ class DatetimeParser:
         # See https://stackoverflow.com/a/4974930
         if format == "%s":
             return datetime.datetime.fromtimestamp(int(date), tz=datetime.timezone.utc)
-        elif format == "%s_as_float":
+        if format == "%s_as_float":
             return datetime.datetime.fromtimestamp(float(date), tz=datetime.timezone.utc)
-        elif format == "%ms":
+        if format == "%ms":
             return self._UNIX_EPOCH + datetime.timedelta(milliseconds=int(date))
 
         parsed_datetime = datetime.datetime.strptime(str(date), format)
@@ -37,7 +36,7 @@ class DatetimeParser:
             return parsed_datetime.replace(tzinfo=datetime.timezone.utc)
         return parsed_datetime
 
-    def format(self, dt: datetime.datetime, format: str) -> str:
+    def format(self, dt: datetime.datetime, format: str) -> str:  # noqa: A002  (shadowed built-in)
         # strftime("%s") is unreliable because it ignores the time zone information and assumes the time zone of the system it's running on
         # It's safer to use the timestamp() method than the %s directive
         # See https://stackoverflow.com/a/4974930
@@ -48,8 +47,7 @@ class DatetimeParser:
         if format == "%ms":
             # timstamp() returns a float representing the number of seconds since the unix epoch
             return str(int(dt.timestamp() * 1000))
-        else:
-            return dt.strftime(format)
+        return dt.strftime(format)
 
     def _is_naive(self, dt: datetime.datetime) -> bool:
         return dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None

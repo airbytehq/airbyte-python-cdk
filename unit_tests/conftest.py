@@ -1,6 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import datetime
 
@@ -8,7 +9,7 @@ import freezegun
 import pytest
 
 
-@pytest.fixture()
+@pytest.fixture
 def mock_sleep(monkeypatch):
     with freezegun.freeze_time(
         datetime.datetime.now(), ignore=["_pytest.runner", "_pytest.terminal"]

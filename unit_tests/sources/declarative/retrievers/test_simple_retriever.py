@@ -1,12 +1,14 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import json
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 import requests
+
 from airbyte_cdk import YamlDeclarativeSource
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, SyncMode, Type
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import NoAuth
@@ -29,6 +31,7 @@ from airbyte_cdk.sources.declarative.retrievers.simple_retriever import (
     SimpleRetrieverTestReadDecorator,
 )
 from airbyte_cdk.sources.types import Record, StreamSlice
+
 
 A_SLICE_STATE = {"slice_state": "slice state value"}
 A_STREAM_SLICE = StreamSlice(cursor_slice={"stream slice": "slice value"}, partition={})

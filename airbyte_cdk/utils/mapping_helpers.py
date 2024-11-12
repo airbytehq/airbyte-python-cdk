@@ -1,22 +1,25 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 
 
-from typing import Any, List, Mapping, Optional, Set, Union
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 def combine_mappings(
-    mappings: List[Optional[Union[Mapping[str, Any], str]]],
-) -> Union[Mapping[str, Any], str]:
-    """
-    Combine multiple mappings into a single mapping. If any of the mappings are a string, return
+    mappings: list[Mapping[str, Any] | str | None],
+) -> Mapping[str, Any] | str:
+    """Combine multiple mappings into a single mapping. If any of the mappings are a string, return
     that string. Raise errors in the following cases:
     * If there are duplicate keys across mappings
     * If there are multiple string mappings
     * If there are multiple mappings containing keys and one of them is a string
     """
-    all_keys: List[Set[str]] = []
+    all_keys: list[set[str]] = []
     for part in mappings:
         if part is None:
             continue

@@ -1,14 +1,19 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
-import logging
 import sys
-from types import TracebackType
-from typing import Any, List, Mapping, Optional
+from typing import TYPE_CHECKING, Any
 
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
+
+
+if TYPE_CHECKING:
+    import logging
+    from collections.abc import Mapping
+    from types import TracebackType
 
 
 def assemble_uncaught_exception(
@@ -20,16 +25,15 @@ def assemble_uncaught_exception(
 
 
 def init_uncaught_exception_handler(logger: logging.Logger) -> None:
-    """
-    Handles uncaught exceptions by emitting an AirbyteTraceMessage and making sure they are not
+    """Handles uncaught exceptions by emitting an AirbyteTraceMessage and making sure they are not
     printed to the console without having secrets removed.
     """
 
     def hook_fn(
         exception_type: type[BaseException],
         exception_value: BaseException,
-        traceback_: Optional[TracebackType],
-    ) -> Any:
+        traceback_: TracebackType | None,
+    ) -> Any:  # noqa: ANN401  (any-type)
         # For developer ergonomics, we want to see the stack trace in the logs when we do a ctrl-c
         if issubclass(exception_type, KeyboardInterrupt):
             sys.__excepthook__(exception_type, exception_value, traceback_)
@@ -45,10 +49,10 @@ def init_uncaught_exception_handler(logger: logging.Logger) -> None:
     sys.excepthook = hook_fn
 
 
-def generate_failed_streams_error_message(stream_failures: Mapping[str, List[Exception]]) -> str:
+def generate_failed_streams_error_message(stream_failures: Mapping[str, list[Exception]]) -> str:
     failures = "\n".join(
         [
-            f"{stream}: {filter_secrets(exception.__repr__())}"
+            f"{stream}: {filter_secrets(repr(exception))}"
             for stream, exceptions in stream_failures.items()
             for exception in exceptions
         ]

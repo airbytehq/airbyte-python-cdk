@@ -1,14 +1,17 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import datetime
 
 import pytest
-from airbyte_cdk import StreamSlice
-from airbyte_cdk.sources.declarative.interpolation.jinja import JinjaInterpolation
 from freezegun import freeze_time
 from jinja2.exceptions import TemplateSyntaxError
+
+from airbyte_cdk import StreamSlice
+from airbyte_cdk.sources.declarative.interpolation.jinja import JinjaInterpolation
+
 
 interpolation = JinjaInterpolation()
 
@@ -45,7 +48,7 @@ def test_get_value_from_stream_slice():
     s = "{{ stream_slice['date'] }}"
     config = {"date": "2022-01-01"}
     stream_slice = {"date": "2020-09-09"}
-    val = interpolation.eval(s, config, **{"stream_slice": stream_slice})
+    val = interpolation.eval(s, config, stream_slice=stream_slice)
     assert val == "2020-09-09"
 
 
@@ -53,7 +56,7 @@ def test_get_missing_value_from_stream_slice():
     s = "{{ stream_slice['date'] }}"
     config = {"date": "2022-01-01"}
     stream_slice = {}
-    val = interpolation.eval(s, config, **{"stream_slice": stream_slice})
+    val = interpolation.eval(s, config, stream_slice=stream_slice)
     assert val is None
 
 
@@ -61,7 +64,7 @@ def test_get_value_from_a_list_of_mappings():
     s = "{{ records[0]['date'] }}"
     config = {"date": "2022-01-01"}
     records = [{"date": "2020-09-09"}]
-    val = interpolation.eval(s, config, **{"records": records})
+    val = interpolation.eval(s, config, records=records)
     assert val == "2020-09-09"
 
 
@@ -249,10 +252,10 @@ def test_undeclared_variables(template_string, expected_error, expected_value):
 
     if expected_error:
         with pytest.raises(expected_error):
-            interpolation.eval(template_string, config=config, **{"to_be": "that_is_the_question"})
+            interpolation.eval(template_string, config=config, to_be="that_is_the_question")
     else:
         actual_value = interpolation.eval(
-            template_string, config=config, **{"to_be": "that_is_the_question"}
+            template_string, config=config, to_be="that_is_the_question"
         )
         assert actual_value == expected_value
 
@@ -340,10 +343,10 @@ def test_macros_timezone(template_string: str, expected_value: str):
 def test_interpolation_private_partition_attribute():
     inner_partition = StreamSlice(partition={}, cursor_slice={})
     expected_output = "value"
-    setattr(inner_partition, "parent_stream_fields", expected_output)
+    inner_partition.parent_stream_fields = expected_output
     stream_slice = StreamSlice(partition=inner_partition, cursor_slice={})
     template = "{{ stream_slice._partition.parent_stream_fields }}"
 
-    actual_output = JinjaInterpolation().eval(template, {}, **{"stream_slice": stream_slice})
+    actual_output = JinjaInterpolation().eval(template, {}, stream_slice=stream_slice)
 
     assert actual_output == expected_output

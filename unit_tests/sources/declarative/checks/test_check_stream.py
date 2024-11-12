@@ -1,15 +1,19 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import logging
-from typing import Any, Iterable, Mapping, Optional
+from collections.abc import Iterable, Mapping
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 import requests
+
 from airbyte_cdk.sources.declarative.checks.check_stream import CheckStream
 from airbyte_cdk.sources.streams.http import HttpStream
+
 
 logger = logging.getLogger("test")
 config = dict()
@@ -125,7 +129,7 @@ def test_check_http_stream_via_availability_strategy(
             super().__init__(**kwargs)
             self.resp_counter = 1
 
-        def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+        def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
             return None
 
         def path(self, **kwargs) -> str:

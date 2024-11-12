@@ -1,12 +1,15 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import datetime
 
 import pytest
+
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
+
 
 date_format = "%Y-%m-%dT%H:%M:%S.%f%z"
 
@@ -91,7 +94,7 @@ def test_min_max_datetime(test_name, date, min_date, max_date, expected_date):
     min_max_date = MinMaxDatetime(
         datetime=date, min_datetime=min_date, max_datetime=max_date, parameters=parameters
     )
-    actual_date = min_max_date.get_datetime(config, **{"stream_state": stream_state})
+    actual_date = min_max_date.get_datetime(config, stream_state=stream_state)
 
     assert actual_date == datetime.datetime.strptime(expected_date, date_format)
 
@@ -107,7 +110,7 @@ def test_custom_datetime_format():
         max_datetime="{{ stream_state['newer'] }}",
         parameters={},
     )
-    actual_date = min_max_date.get_datetime(config, **{"stream_state": stream_state})
+    actual_date = min_max_date.get_datetime(config, stream_state=stream_state)
 
     assert actual_date == datetime.datetime.strptime(
         "2022-01-01T20:12:19", "%Y-%m-%dT%H:%M:%S"
@@ -125,7 +128,7 @@ def test_format_is_a_number():
         max_datetime="{{ stream_state['newer'] }}",
         parameters={},
     )
-    actual_date = min_max_date.get_datetime(config, **{"stream_state": stream_state})
+    actual_date = min_max_date.get_datetime(config, stream_state=stream_state)
 
     assert actual_date == datetime.datetime.strptime("20220101", "%Y%m%d").replace(
         tzinfo=datetime.timezone.utc

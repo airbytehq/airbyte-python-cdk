@@ -1,8 +1,10 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import pytest as pytest
+
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
@@ -319,7 +321,7 @@ def test_request_option_before_updating_cursor():
         ],
         parameters={},
     )
-    assert {} == slicer.get_request_params()
-    assert {} == slicer.get_request_headers()
-    assert {} == slicer.get_request_body_json()
-    assert {} == slicer.get_request_body_data()
+    assert slicer.get_request_params() == {}
+    assert slicer.get_request_headers() == {}
+    assert slicer.get_request_body_json() == {}
+    assert slicer.get_request_body_data() == {}

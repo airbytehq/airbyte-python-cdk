@@ -1,9 +1,13 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import logging
 from unittest.mock import MagicMock, patch
+
+import orjson
+from pytest import LogCaptureFixture
 
 from airbyte_cdk.models import (
     AirbyteStateBlob,
@@ -24,14 +28,14 @@ from airbyte_cdk.sources.declarative.incremental.per_partition_cursor import (
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.types import Record
-from orjson import orjson
+
 
 CURSOR_FIELD = "cursor_field"
 SYNC_MODE = SyncMode.incremental
 
 
 class ManifestBuilder:
-    def __init__(self):
+    def __init__(self) -> None:
         self._incremental_sync = {}
         self._partition_router = {}
         self._substream_partition_router = {}
@@ -201,7 +205,7 @@ def test_given_state_for_only_some_partition_when_stream_slices_then_create_slic
     ]
 
 
-def test_given_record_for_partition_when_read_then_update_state():
+def test_given_record_for_partition_when_read_then_update_state() -> None:
     source = ManifestDeclarativeSource(
         source_config=ManifestBuilder()
         .with_list_partition_router("Rates", "partition_field", ["1", "2"])
@@ -251,7 +255,7 @@ def test_given_record_for_partition_when_read_then_update_state():
     }
 
 
-def test_substream_without_input_state():
+def test_substream_without_input_state() -> None:
     test_source = ManifestDeclarativeSource(
         source_config=ManifestBuilder()
         .with_substream_partition_router("AnotherStream")
@@ -324,9 +328,8 @@ def test_substream_without_input_state():
         ]
 
 
-def test_partition_limitation(caplog):
-    """
-    Test that when the number of partitions exceeds the maximum allowed limit in PerPartitionCursor,
+def test_partition_limitation(caplog: LogCaptureFixture) -> None:
+    """Test that when the number of partitions exceeds the maximum allowed limit in PerPartitionCursor,
     the oldest partitions are dropped, and the state is updated accordingly.
 
     In this test, we set the maximum number of partitions to 2 and provide 3 partitions.
@@ -453,9 +456,8 @@ def test_partition_limitation(caplog):
     }
 
 
-def test_perpartition_with_fallback(caplog):
-    """
-    Test that when the number of partitions exceeds the limit in PerPartitionCursor,
+def test_perpartition_with_fallback(caplog: LogCaptureFixture) -> None:
+    """Test that when the number of partitions exceeds the limit in PerPartitionCursor,
     the cursor falls back to using the global cursor for state management.
 
     This test also checks that the appropriate warning logs are emitted when the partition limit is exceeded.
@@ -603,9 +605,8 @@ def test_perpartition_with_fallback(caplog):
     }
 
 
-def test_per_partition_cursor_within_limit(caplog):
-    """
-    Test that the PerPartitionCursor correctly updates the state for each partition
+def test_per_partition_cursor_within_limit(caplog: LogCaptureFixture) -> None:
+    """Test that the PerPartitionCursor correctly updates the state for each partition
     when the number of partitions is within the allowed limit.
 
     This test also checks that no warning logs are emitted when the partition limit is not exceeded.

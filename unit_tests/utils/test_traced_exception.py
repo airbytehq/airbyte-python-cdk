@@ -1,9 +1,11 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-
+from __future__ import annotations
 
 import pytest
+import orjson
+
 from airbyte_cdk.models import (
     AirbyteErrorTraceMessage,
     AirbyteMessage,
@@ -16,7 +18,7 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from orjson import orjson
+
 
 _AN_EXCEPTION = ValueError("An exception")
 _A_STREAM_DESCRIPTOR = StreamDescriptor(name="a_stream")
@@ -157,7 +159,7 @@ def test_given_both_from_exception_and_as_message_with_stream_descriptor_when_as
     assert message.trace.error.stream_descriptor == _A_STREAM_DESCRIPTOR
 
 
-def test_given_both_from_exception_and_as_sanitized_airbyte_message_with_stream_descriptor_when_as_airbyte_message_use_init_stream_descriptor() -> (
+def test_given_both_from_exception_and_as_sanitized_airbyte_message_with_stream_descriptor_when_as_airbyte_message_use_init_stream_descriptor() -> (  # Line too long
     None
 ):
     traced_exc = AirbyteTracedException.from_exception(

@@ -1,14 +1,19 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
+
 import os
 import tempfile
 import time
+from collections.abc import Iterable, Mapping
 from datetime import datetime, timedelta
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any
 
 import pytest
 import requests
+from requests import Request
+
 from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.streams.call_rate import (
     APIBudget,
@@ -22,14 +27,13 @@ from airbyte_cdk.sources.streams.call_rate import (
 from airbyte_cdk.sources.streams.http import HttpStream
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
-from requests import Request
 
 
 class StubDummyHttpStream(HttpStream):
     url_base = "https://test_base_url.com"
     primary_key = "some_key"
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         return {"next_page_token": True}  # endless pages
 
     def path(self, **kwargs) -> str:
@@ -243,7 +247,7 @@ class TestFixedWindowCallRatePolicy:
 
 class TestMovingWindowCallRatePolicy:
     def test_no_rates(self):
-        """should raise a ValueError when no rates provided"""
+        """Should raise a ValueError when no rates provided"""
         with pytest.raises(ValueError, match="The list of rates can not be empty"):
             MovingWindowCallRatePolicy(rates=[], matchers=[])
 

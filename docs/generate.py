@@ -24,7 +24,6 @@ import pdoc
 
 def run() -> None:
     """Generate docs for all public modules in the Airbyte CDK and save them to docs/generated."""
-
     public_modules = [
         "airbyte_cdk",
     ]
@@ -49,7 +48,7 @@ def run() -> None:
         for file_name in files:
             if not file_name.endswith(".py"):
                 continue
-            if file_name in ["py.typed"]:
+            if file_name == "py.typed":
                 continue
             if file_name.startswith((".", "_")):
                 continue

@@ -1,10 +1,12 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import logging
 
 import pytest
+
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.utils.slice_logger import AlwaysLogSliceLogger, DebugSliceLogger
@@ -24,7 +26,7 @@ from airbyte_cdk.sources.utils.slice_logger import AlwaysLogSliceLogger, DebugSl
         ),
         pytest.param(
             DebugSliceLogger(),
-            logging.WARN,
+            logging.WARNING,
             False,
             id="debug_logger_should_not_log_if_level_is_warn",
         ),
@@ -60,7 +62,7 @@ from airbyte_cdk.sources.utils.slice_logger import AlwaysLogSliceLogger, DebugSl
         ),
         pytest.param(
             AlwaysLogSliceLogger(),
-            logging.WARN,
+            logging.WARNING,
             True,
             id="always_log_logger_should_log_if_level_is_warn",
         ),

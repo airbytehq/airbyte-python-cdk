@@ -1,45 +1,46 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
-import logging
 from abc import ABC, abstractmethod
-from typing import Optional
+from typing import TYPE_CHECKING
+
+from deprecated.classic import deprecated
 
 from airbyte_cdk.sources.source import ExperimentalClassWarning
-from deprecated.classic import deprecated
+
+
+if TYPE_CHECKING:
+    import logging
 
 
 class StreamAvailability(ABC):
     @abstractmethod
     def is_available(self) -> bool:
-        """
-        :return: True if the stream is available. False if the stream is not
-        """
+        """:return: True if the stream is available. False if the stream is not"""
 
     @abstractmethod
-    def message(self) -> Optional[str]:
-        """
-        :return: A message describing why the stream is not available. If the stream is available, this should return None.
-        """
+    def message(self) -> str | None:
+        """:return: A message describing why the stream is not available. If the stream is available, this should return None."""
 
 
 class StreamAvailable(StreamAvailability):
     def is_available(self) -> bool:
         return True
 
-    def message(self) -> Optional[str]:
+    def message(self) -> str | None:
         return None
 
 
 class StreamUnavailable(StreamAvailability):
-    def __init__(self, message: str):
+    def __init__(self, message: str) -> None:
         self._message = message
 
     def is_available(self) -> bool:
         return False
 
-    def message(self) -> Optional[str]:
+    def message(self) -> str | None:
         return self._message
 
 
@@ -49,8 +50,7 @@ STREAM_AVAILABLE = StreamAvailable()
 
 @deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)
 class AbstractAvailabilityStrategy(ABC):
-    """
-    AbstractAvailabilityStrategy is an experimental interface developed as part of the Concurrent CDK.
+    """AbstractAvailabilityStrategy is an experimental interface developed as part of the Concurrent CDK.
     This interface is not yet stable and may change in the future. Use at your own risk.
 
     Why create a new interface instead of using the existing AvailabilityStrategy?
@@ -59,8 +59,7 @@ class AbstractAvailabilityStrategy(ABC):
 
     @abstractmethod
     def check_availability(self, logger: logging.Logger) -> StreamAvailability:
-        """
-        Checks stream availability.
+        """Checks stream availability.
 
         :param logger: logger object to use
         :return: A StreamAvailability object describing the stream's availability
@@ -69,17 +68,15 @@ class AbstractAvailabilityStrategy(ABC):
 
 @deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)
 class AlwaysAvailableAvailabilityStrategy(AbstractAvailabilityStrategy):
-    """
-    An availability strategy that always indicates a stream is available.
+    """An availability strategy that always indicates a stream is available.
 
     This strategy is used to avoid breaking changes and serves as a soft
     deprecation of the availability strategy, allowing a smoother transition
     without disrupting existing functionality.
     """
 
-    def check_availability(self, logger: logging.Logger) -> StreamAvailability:
-        """
-        Checks stream availability.
+    def check_availability(self, logger: logging.Logger) -> StreamAvailability:  # noqa: ARG002  (unused)
+        """Checks stream availability.
 
         :param logger: logger object to use
         :return: A StreamAvailability object describing the stream's availability

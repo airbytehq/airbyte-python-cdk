@@ -1,10 +1,12 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from unittest.mock import MagicMock, call
 
 import pytest
+
 from airbyte_cdk.destinations.vector_db_based.config import (
     AzureOpenAIEmbeddingConfigModel,
     CohereEmbeddingConfigModel,
@@ -33,25 +35,23 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
     (
         (
             OpenAIEmbedder,
-            [OpenAIEmbeddingConfigModel(**{"mode": "openai", "openai_key": "abc"}), 1000],
+            [OpenAIEmbeddingConfigModel(mode="openai", openai_key="abc"), 1000],
             OPEN_AI_VECTOR_SIZE,
         ),
         (
             CohereEmbedder,
-            [CohereEmbeddingConfigModel(**{"mode": "cohere", "cohere_key": "abc"})],
+            [CohereEmbeddingConfigModel(mode="cohere", cohere_key="abc")],
             COHERE_VECTOR_SIZE,
         ),
-        (FakeEmbedder, [FakeEmbeddingConfigModel(**{"mode": "fake"})], OPEN_AI_VECTOR_SIZE),
+        (FakeEmbedder, [FakeEmbeddingConfigModel(mode="fake")], OPEN_AI_VECTOR_SIZE),
         (
             AzureOpenAIEmbedder,
             [
                 AzureOpenAIEmbeddingConfigModel(
-                    **{
-                        "mode": "azure_openai",
-                        "openai_key": "abc",
-                        "api_base": "https://my-resource.openai.azure.com",
-                        "deployment": "my-deployment",
-                    }
+                    mode="azure_openai",
+                    openai_key="abc",
+                    api_base="https://my-resource.openai.azure.com",
+                    deployment="my-deployment",
                 ),
                 1000,
             ],
@@ -61,13 +61,11 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
             OpenAICompatibleEmbedder,
             [
                 OpenAICompatibleEmbeddingConfigModel(
-                    **{
-                        "mode": "openai_compatible",
-                        "api_key": "abc",
-                        "base_url": "https://my-service.com",
-                        "model_name": "text-embedding-ada-002",
-                        "dimensions": 50,
-                    }
+                    mode="openai_compatible",
+                    api_key="abc",
+                    base_url="https://my-service.com",
+                    model_name="text-embedding-ada-002",
+                    dimensions=50,
                 )
             ],
             50,
@@ -132,7 +130,7 @@ def test_from_field_embedder(field_name, dimensions, metadata, expected_embeddin
 
 
 def test_openai_chunking():
-    config = OpenAIEmbeddingConfigModel(**{"mode": "openai", "openai_key": "abc"})
+    config = OpenAIEmbeddingConfigModel(mode="openai", openai_key="abc")
     embedder = OpenAIEmbedder(config, 150)
     mock_embedding_instance = MagicMock()
     embedder.embeddings = mock_embedding_instance

@@ -1,13 +1,14 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from pathlib import PosixPath
 
 import pytest
 from _pytest.capture import CaptureFixture
-from airbyte_cdk.sources.abstract_source import AbstractSource
 from freezegun import freeze_time
+
 from unit_tests.sources.file_based.scenarios.avro_scenarios import (
     avro_all_types_scenario,
     avro_file_with_double_as_number_scenario,
@@ -165,6 +166,9 @@ from unit_tests.sources.file_based.test_scenarios import (
     verify_read,
     verify_spec,
 )
+
+from airbyte_cdk.sources.abstract_source import AbstractSource
+
 
 discover_failure_scenarios = [
     empty_schema_inference_scenario,

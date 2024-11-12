@@ -1,12 +1,20 @@
 #
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 from unittest import TestCase
 
 import freezegun
+
+from unit_tests.sources.mock_server_tests.mock_source_fixture import SourceFixture
+from unit_tests.sources.mock_server_tests.test_helpers import (
+    emits_successful_sync_status_messages,
+    validate_message_order,
+)
+
 from airbyte_cdk.models import (
     AirbyteStateBlob,
     AirbyteStreamStatus,
@@ -27,25 +35,21 @@ from airbyte_cdk.test.mock_http.response_builder import (
     create_response_builder,
 )
 from airbyte_cdk.test.state_builder import StateBuilder
-from unit_tests.sources.mock_server_tests.mock_source_fixture import SourceFixture
-from unit_tests.sources.mock_server_tests.test_helpers import (
-    emits_successful_sync_status_messages,
-    validate_message_order,
-)
+
 
 _NOW = datetime.now(timezone.utc)
 
 
 class RequestBuilder:
     @classmethod
-    def justice_songs_endpoint(cls) -> "RequestBuilder":
+    def justice_songs_endpoint(cls) -> RequestBuilder:
         return cls("justice_songs")
 
     def __init__(self, resource: str) -> None:
         self._resource = resource
-        self._page: Optional[int] = None
+        self._page: int | None = None
 
-    def with_page(self, page: int) -> "RequestBuilder":
+    def with_page(self, page: int) -> RequestBuilder:
         self._page = page
         return self
 
@@ -61,7 +65,7 @@ class RequestBuilder:
 
 
 def _create_catalog(
-    names_and_sync_modes: List[tuple[str, SyncMode, Dict[str, Any]]],
+    names_and_sync_modes: list[tuple[str, SyncMode, dict[str, Any]]],
 ) -> ConfiguredAirbyteCatalog:
     stream_builder = ConfiguredAirbyteStreamBuilder()
     streams = []

@@ -1,23 +1,30 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from abc import abstractmethod
 from enum import Enum
-from typing import Any, Callable, Mapping, MutableMapping, Optional, Union
+from typing import TYPE_CHECKING, Any
 
-import requests
-from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.requesters.request_options.request_options_provider import (
     RequestOptionsProvider,
 )
-from airbyte_cdk.sources.types import StreamSlice, StreamState
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping, MutableMapping
+
+    import requests
+
+    from airbyte_cdk.sources.declarative.auth.declarative_authenticator import (
+        DeclarativeAuthenticator,
+    )
+    from airbyte_cdk.sources.types import StreamSlice, StreamState
 
 
 class HttpMethod(Enum):
-    """
-    Http Method to use when submitting an outgoing HTTP request
-    """
+    """Http Method to use when submitting an outgoing HTTP request"""
 
     DELETE = "DELETE"
     GET = "GET"
@@ -28,45 +35,36 @@ class HttpMethod(Enum):
 class Requester(RequestOptionsProvider):
     @abstractmethod
     def get_authenticator(self) -> DeclarativeAuthenticator:
-        """
-        Specifies the authenticator to use when submitting requests
-        """
+        """Specifies the authenticator to use when submitting requests"""
         pass
 
     @abstractmethod
     def get_url_base(self) -> str:
-        """
-        :return: URL base for the  API endpoint e.g: if you wanted to hit https://myapi.com/v1/some_entity then this should return "https://myapi.com/v1/"
-        """
+        """:return: URL base for the  API endpoint e.g: if you wanted to hit https://myapi.com/v1/some_entity then this should return "https://myapi.com/v1/" """
 
     @abstractmethod
     def get_path(
         self,
         *,
-        stream_state: Optional[StreamState],
-        stream_slice: Optional[StreamSlice],
-        next_page_token: Optional[Mapping[str, Any]],
+        stream_state: StreamState | None,
+        stream_slice: StreamSlice | None,
+        next_page_token: Mapping[str, Any] | None,
     ) -> str:
-        """
-        Returns the URL path for the API endpoint e.g: if you wanted to hit https://myapi.com/v1/some_entity then this should return "some_entity"
-        """
+        """Returns the URL path for the API endpoint e.g: if you wanted to hit https://myapi.com/v1/some_entity then this should return "some_entity" """
 
     @abstractmethod
     def get_method(self) -> HttpMethod:
-        """
-        Specifies the HTTP method to use
-        """
+        """Specifies the HTTP method to use"""
 
     @abstractmethod
     def get_request_params(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> MutableMapping[str, Any]:
-        """
-        Specifies the query parameters that should be set on an outgoing HTTP request given the inputs.
+        """Specifies the query parameters that should be set on an outgoing HTTP request given the inputs.
 
         E.g: you might want to define query parameters for paging if next_page_token is not None.
         """
@@ -75,24 +73,21 @@ class Requester(RequestOptionsProvider):
     def get_request_headers(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
-        """
-        Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.
-        """
+        """Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method."""
 
     @abstractmethod
     def get_request_body_data(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Union[Mapping[str, Any], str]:
-        """
-        Specifies how to populate the body of the request with a non-JSON payload.
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any] | str:
+        """Specifies how to populate the body of the request with a non-JSON payload.
 
         If returns a ready text that it will be sent as is.
         If returns a dict that it will be converted to a urlencoded form.
@@ -105,31 +100,29 @@ class Requester(RequestOptionsProvider):
     def get_request_body_json(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
-        """
-        Specifies how to populate the body of the request with a JSON payload.
+        """Specifies how to populate the body of the request with a JSON payload.
 
         At the same time only one of the 'request_body_data' and 'request_body_json' functions can be overridden.
         """
 
     @abstractmethod
-    def send_request(
+    def send_request(  # noqa: PLR0913, PLR0917  (too many args)
         self,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-        path: Optional[str] = None,
-        request_headers: Optional[Mapping[str, Any]] = None,
-        request_params: Optional[Mapping[str, Any]] = None,
-        request_body_data: Optional[Union[Mapping[str, Any], str]] = None,
-        request_body_json: Optional[Mapping[str, Any]] = None,
-        log_formatter: Optional[Callable[[requests.Response], Any]] = None,
-    ) -> Optional[requests.Response]:
-        """
-        Sends a request and returns the response. Might return no response if the error handler chooses to ignore the response or throw an exception in case of an error.
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
+        path: str | None = None,
+        request_headers: Mapping[str, Any] | None = None,
+        request_params: Mapping[str, Any] | None = None,
+        request_body_data: Mapping[str, Any] | str | None = None,
+        request_body_json: Mapping[str, Any] | None = None,
+        log_formatter: Callable[[requests.Response], Any] | None = None,
+    ) -> requests.Response | None:
+        """Sends a request and returns the response. Might return no response if the error handler chooses to ignore the response or throw an exception in case of an error.
         If path is set, the path configured on the requester itself is ignored.
         If header, params and body are set, they are merged with the ones configured on the requester itself.
 

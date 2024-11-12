@@ -1,18 +1,22 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import os
 from argparse import Namespace
 from collections import defaultdict
+from collections.abc import Mapping, MutableMapping
 from copy import deepcopy
-from typing import Any, List, Mapping, MutableMapping, Union
+from typing import Any
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
 import freezegun
+import orjson
 import pytest
 import requests
+
 from airbyte_cdk import AirbyteEntrypoint
 from airbyte_cdk import entrypoint as entrypoint_module
 from airbyte_cdk.models import (
@@ -44,7 +48,6 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.connector_state_manager import HashableStreamDescriptor
 from airbyte_cdk.utils import AirbyteTracedException
-from orjson import orjson
 
 
 class MockSource(Source):
@@ -62,7 +65,7 @@ class MockSource(Source):
         pass
 
 
-def _as_arglist(cmd: str, named_args: Mapping[str, Any]) -> List[str]:
+def _as_arglist(cmd: str, named_args: Mapping[str, Any]) -> list[str]:
     out = [cmd]
     for k, v in named_args.items():
         out.append(f"--{k}")
@@ -187,9 +190,10 @@ def test_parse_missing_required_args(
 
 
 def _wrap_message(
-    submessage: Union[
-        AirbyteConnectionStatus, ConnectorSpecification, AirbyteRecordMessage, AirbyteCatalog
-    ],
+    submessage: AirbyteConnectionStatus
+    | ConnectorSpecification
+    | AirbyteRecordMessage
+    | AirbyteCatalog,
 ) -> str:
     if isinstance(submessage, AirbyteConnectionStatus):
         message = AirbyteMessage(type=Type.CONNECTION_STATUS, connectionStatus=submessage)

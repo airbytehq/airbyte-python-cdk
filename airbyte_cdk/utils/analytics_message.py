@@ -1,7 +1,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
 import time
-from typing import Any, Optional
+from typing import Any
 
 from airbyte_cdk.models import (
     AirbyteAnalyticsTraceMessage,
@@ -12,7 +13,7 @@ from airbyte_cdk.models import (
 )
 
 
-def create_analytics_message(type: str, value: Optional[Any]) -> AirbyteMessage:
+def create_analytics_message(type: str, value: Any | None) -> AirbyteMessage:  # noqa: ANN401, A002  (any type, shadows built-in name)
     return AirbyteMessage(
         type=Type.TRACE,
         trace=AirbyteTraceMessage(

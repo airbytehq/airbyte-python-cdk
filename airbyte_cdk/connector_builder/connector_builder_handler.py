@@ -1,10 +1,12 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import dataclasses
+from collections.abc import Mapping
 from datetime import datetime
-from typing import Any, List, Mapping
+from typing import TYPE_CHECKING, Any
 
 from airbyte_cdk.connector_builder.message_grouper import MessageGrouper
 from airbyte_cdk.models import (
@@ -12,8 +14,8 @@ from airbyte_cdk.models import (
     AirbyteRecordMessage,
     AirbyteStateMessage,
     ConfiguredAirbyteCatalog,
+    Type,
 )
-from airbyte_cdk.models import Type
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
@@ -22,6 +24,11 @@ from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
 )
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
+
+
+if TYPE_CHECKING:
+    from airbyte_cdk.connector_builder.models import StreamRead
+
 
 DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE = 5
 DEFAULT_MAXIMUM_NUMBER_OF_SLICES = 5
@@ -68,28 +75,38 @@ def read_stream(
     source: DeclarativeSource,
     config: Mapping[str, Any],
     configured_catalog: ConfiguredAirbyteCatalog,
-    state: List[AirbyteStateMessage],
+    state: list[AirbyteStateMessage],
     limits: TestReadLimits,
 ) -> AirbyteMessage:
     try:
-        handler = MessageGrouper(limits.max_pages_per_slice, limits.max_slices, limits.max_records)
-        stream_name = configured_catalog.streams[
+        handler = MessageGrouper(
+            max_pages_per_slice=limits.max_pages_per_slice,
+            max_slices=limits.max_slices,
+            max_record_limit=limits.max_records,
+        )
+        stream_name: str = configured_catalog.streams[
             0
         ].stream.name  # The connector builder only supports a single stream
-        stream_read = handler.get_message_groups(
-            source, config, configured_catalog, state, limits.max_records
+        stream_read: StreamRead = handler.get_message_groups(
+            source=source,
+            config=config,
+            configured_catalog=configured_catalog,
+            state=state,
+            record_limit=limits.max_records,
         )
         return AirbyteMessage(
             type=MessageType.RECORD,
             record=AirbyteRecordMessage(
-                data=dataclasses.asdict(stream_read), stream=stream_name, emitted_at=_emitted_at()
+                data=dataclasses.asdict(stream_read),
+                stream=stream_name,
+                emitted_at=_emitted_at(),
             ),
         )
     except Exception as exc:
-        error = AirbyteTracedException.from_exception(
+        error: AirbyteTracedException = AirbyteTracedException.from_exception(
             exc,
             message=filter_secrets(
-                f"Error reading stream with config={config} and catalog={configured_catalog}: {str(exc)}"
+                f"Error reading stream with config={config} and catalog={configured_catalog}: {exc!s}"
             ),
         )
         return error.as_airbyte_message()
@@ -106,8 +123,8 @@ def resolve_manifest(source: ManifestDeclarativeSource) -> AirbyteMessage:
             ),
         )
     except Exception as exc:
-        error = AirbyteTracedException.from_exception(
-            exc, message=f"Error resolving manifest: {str(exc)}"
+        error: AirbyteTracedException = AirbyteTracedException.from_exception(
+            exc, message=f"Error resolving manifest: {exc!s}"
         )
         return error.as_airbyte_message()
 

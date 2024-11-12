@@ -1,14 +1,17 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import numbers
 import re
 import time
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 import requests
+
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.header_helper import (
     get_numeric_value_from_header,
@@ -21,8 +24,7 @@ from airbyte_cdk.sources.types import Config
 
 @dataclass
 class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
-    """
-    Extract time at which we can retry the request from response header
+    """Extract time at which we can retry the request from response header
     and wait for the difference between now and that time
 
     Attributes:
@@ -31,11 +33,11 @@ class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
         regex (Optional[str]): optional regex to apply on the header to extract its value
     """
 
-    header: Union[InterpolatedString, str]
+    header: InterpolatedString | str
     parameters: InitVar[Mapping[str, Any]]
     config: Config
-    min_wait: Optional[Union[float, InterpolatedString, str]] = None
-    regex: Optional[Union[InterpolatedString, str]] = None
+    min_wait: float | InterpolatedString | str | None = None
+    regex: InterpolatedString | str | None = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.header = InterpolatedString.create(self.header, parameters=parameters)
@@ -47,9 +49,9 @@ class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
 
     def backoff_time(
         self,
-        response_or_exception: Optional[Union[requests.Response, requests.RequestException]],
-        attempt_count: int,
-    ) -> Optional[float]:
+        response_or_exception: requests.Response | requests.RequestException | None,
+        attempt_count: int,  # noqa: ARG002  (unused)
+    ) -> float | None:
         now = time.time()
         header = self.header.eval(self.config)  # type: ignore # header is always cast to an interpolated string
         if self.regex:
@@ -71,6 +73,6 @@ class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
             return float(min_wait)
         if min_wait:
             return float(max(wait_time, min_wait))
-        elif wait_time < 0:
+        if wait_time < 0:
             return None
         return wait_time

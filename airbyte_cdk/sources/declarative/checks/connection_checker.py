@@ -1,25 +1,27 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
-import logging
 from abc import ABC, abstractmethod
-from typing import Any, Mapping, Tuple
+from typing import TYPE_CHECKING, Any
 
-from airbyte_cdk import AbstractSource
+
+if TYPE_CHECKING:
+    import logging
+    from collections.abc import Mapping
+
+    from airbyte_cdk import AbstractSource
 
 
 class ConnectionChecker(ABC):
-    """
-    Abstract base class for checking a connection
-    """
+    """Abstract base class for checking a connection"""
 
     @abstractmethod
     def check_connection(
         self, source: AbstractSource, logger: logging.Logger, config: Mapping[str, Any]
-    ) -> Tuple[bool, Any]:
-        """
-        Tests if the input configuration can be used to successfully connect to the integration e.g: if a provided Stripe API token can be used to connect
+    ) -> tuple[bool, Any]:
+        """Tests if the input configuration can be used to successfully connect to the integration e.g: if a provided Stripe API token can be used to connect
         to the Stripe API.
 
         :param source: source

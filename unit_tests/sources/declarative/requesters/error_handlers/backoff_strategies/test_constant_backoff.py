@@ -1,13 +1,16 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from unittest.mock import MagicMock
 
 import pytest
+
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.constant_backoff_strategy import (
     ConstantBackoffStrategy,
 )
+
 
 BACKOFF_TIME = 10
 PARAMETERS_BACKOFF_TIME = 20

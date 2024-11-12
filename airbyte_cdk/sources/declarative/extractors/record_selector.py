@@ -1,18 +1,25 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Iterable, List, Mapping, Optional
+from typing import TYPE_CHECKING, Any
 
-import requests
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
-from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
-from airbyte_cdk.sources.declarative.extractors.record_filter import RecordFilter
 from airbyte_cdk.sources.declarative.models import SchemaNormalization
-from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
+
+
+if TYPE_CHECKING:
+    import requests
+
+    from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
+    from airbyte_cdk.sources.declarative.extractors.record_filter import RecordFilter
+    from airbyte_cdk.sources.declarative.transformations import RecordTransformation
+
 
 SCHEMA_TRANSFORMER_TYPE_MAPPING = {
     SchemaNormalization.None_: TransformConfig.NoTransform,
@@ -22,8 +29,7 @@ SCHEMA_TRANSFORMER_TYPE_MAPPING = {
 
 @dataclass
 class RecordSelector(HttpSelector):
-    """
-    Responsible for translating an HTTP response into a list of records by extracting records from the response and optionally filtering
+    """Responsible for translating an HTTP response into a list of records by extracting records from the response and optionally filtering
     records based on a heuristic.
 
     Attributes:
@@ -37,8 +43,8 @@ class RecordSelector(HttpSelector):
     config: Config
     parameters: InitVar[Mapping[str, Any]]
     schema_normalization: TypeTransformer
-    record_filter: Optional[RecordFilter] = None
-    transformations: List[RecordTransformation] = field(default_factory=lambda: [])
+    record_filter: RecordFilter | None = None
+    transformations: list[RecordTransformation] = field(default_factory=list)
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._parameters = parameters
@@ -48,11 +54,10 @@ class RecordSelector(HttpSelector):
         response: requests.Response,
         stream_state: StreamState,
         records_schema: Mapping[str, Any],
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Record]:
-        """
-        Selects records from the response
+        """Selects records from the response
         :param response: The response to select the records from
         :param stream_state: The stream state
         :param records_schema: json schema of records to return
@@ -70,11 +75,10 @@ class RecordSelector(HttpSelector):
         all_data: Iterable[Mapping[str, Any]],
         stream_state: StreamState,
         records_schema: Mapping[str, Any],
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Record]:
-        """
-        There is an issue with the selector as of 2024-08-30: it does technology-agnostic processing like filtering, transformation and
+        """There is an issue with the selector as of 2024-08-30: it does technology-agnostic processing like filtering, transformation and
         normalization with an API that is technology-specific (as requests.Response is only for HTTP communication using the requests
         library).
 
@@ -88,7 +92,7 @@ class RecordSelector(HttpSelector):
             yield Record(data, stream_slice)
 
     def _normalize_by_schema(
-        self, records: Iterable[Mapping[str, Any]], schema: Optional[Mapping[str, Any]]
+        self, records: Iterable[Mapping[str, Any]], schema: Mapping[str, Any] | None
     ) -> Iterable[Mapping[str, Any]]:
         if schema:
             # record has type Mapping[str, Any], but dict[str, Any] expected
@@ -103,8 +107,8 @@ class RecordSelector(HttpSelector):
         self,
         records: Iterable[Mapping[str, Any]],
         stream_state: StreamState,
-        stream_slice: Optional[StreamSlice],
-        next_page_token: Optional[Mapping[str, Any]],
+        stream_slice: StreamSlice | None,
+        next_page_token: Mapping[str, Any] | None,
     ) -> Iterable[Mapping[str, Any]]:
         if self.record_filter:
             yield from self.record_filter.filter_records(
@@ -120,7 +124,7 @@ class RecordSelector(HttpSelector):
         self,
         records: Iterable[Mapping[str, Any]],
         stream_state: StreamState,
-        stream_slice: Optional[StreamSlice] = None,
+        stream_slice: StreamSlice | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         for record in records:
             for transformation in self.transformations:

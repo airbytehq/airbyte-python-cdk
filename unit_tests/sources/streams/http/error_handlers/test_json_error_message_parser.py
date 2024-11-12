@@ -1,9 +1,11 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import pytest
 import requests
+
 from airbyte_cdk.sources.streams.http.error_handlers import JsonErrorMessageParser
 
 

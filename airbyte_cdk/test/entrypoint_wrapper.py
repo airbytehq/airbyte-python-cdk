@@ -1,7 +1,6 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 
-"""
-The AirbyteEntrypoint is important because it is a service layer that orchestrate how we execute commands from the
+"""The AirbyteEntrypoint is important because it is a service layer that orchestrate how we execute commands from the
 [common interface](https://docs.airbyte.com/understanding-airbyte/airbyte-protocol#common-interface) through the source Python
 implementation. There is some logic about which message we send to the platform and when which is relevant for integration testing. Other
 than that, there are integrations point that are annoying to integrate with using Python code:
@@ -14,6 +13,8 @@ than that, there are integrations point that are annoying to integrate with usin
 * The entrypoint interface relies on file being written on the file system
 """
 
+from __future__ import annotations
+
 import json
 import logging
 import re
@@ -21,7 +22,11 @@ import tempfile
 import traceback
 from io import StringIO
 from pathlib import Path
-from typing import Any, List, Mapping, Optional, Union
+from typing import TYPE_CHECKING, Any
+
+import orjson
+from pydantic import ValidationError as V2ValidationError
+from serpyco_rs import SchemaValidationError
 
 from airbyte_cdk.entrypoint import AirbyteEntrypoint
 from airbyte_cdk.exception_handler import assemble_uncaught_exception
@@ -39,14 +44,20 @@ from airbyte_cdk.models import (
     TraceType,
     Type,
 )
-from airbyte_cdk.sources import Source
-from orjson import orjson
-from pydantic import ValidationError as V2ValidationError
-from serpyco_rs import SchemaValidationError
+
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from airbyte_cdk.sources import Source
 
 
 class EntrypointOutput:
-    def __init__(self, messages: List[str], uncaught_exception: Optional[BaseException] = None):
+    def __init__(
+        self,
+        messages: list[str],
+        uncaught_exception: BaseException | None = None,
+    ) -> None:
         try:
             self._messages = [self._parse_message(message) for message in messages]
         except V2ValidationError as exception:
@@ -70,38 +81,38 @@ class EntrypointOutput:
             )
 
     @property
-    def records_and_state_messages(self) -> List[AirbyteMessage]:
+    def records_and_state_messages(self) -> list[AirbyteMessage]:
         return self._get_message_by_types([Type.RECORD, Type.STATE])
 
     @property
-    def records(self) -> List[AirbyteMessage]:
+    def records(self) -> list[AirbyteMessage]:
         return self._get_message_by_types([Type.RECORD])
 
     @property
-    def state_messages(self) -> List[AirbyteMessage]:
+    def state_messages(self) -> list[AirbyteMessage]:
         return self._get_message_by_types([Type.STATE])
 
     @property
-    def most_recent_state(self) -> Any:
+    def most_recent_state(self) -> Any:  # noqa: ANN401  (any-type)
         state_messages = self._get_message_by_types([Type.STATE])
         if not state_messages:
             raise ValueError("Can't provide most recent state as there are no state messages")
         return state_messages[-1].state.stream  # type: ignore[union-attr] # state has `stream`
 
     @property
-    def logs(self) -> List[AirbyteMessage]:
+    def logs(self) -> list[AirbyteMessage]:
         return self._get_message_by_types([Type.LOG])
 
     @property
-    def trace_messages(self) -> List[AirbyteMessage]:
+    def trace_messages(self) -> list[AirbyteMessage]:
         return self._get_message_by_types([Type.TRACE])
 
     @property
-    def analytics_messages(self) -> List[AirbyteMessage]:
+    def analytics_messages(self) -> list[AirbyteMessage]:
         return self._get_trace_message_by_trace_type(TraceType.ANALYTICS)
 
     @property
-    def errors(self) -> List[AirbyteMessage]:
+    def errors(self) -> list[AirbyteMessage]:
         return self._get_trace_message_by_trace_type(TraceType.ERROR)
 
     @property
@@ -111,20 +122,20 @@ class EntrypointOutput:
             raise ValueError(f"Expected exactly one catalog but got {len(catalog)}")
         return catalog[0]
 
-    def get_stream_statuses(self, stream_name: str) -> List[AirbyteStreamStatus]:
-        status_messages = map(
-            lambda message: message.trace.stream_status.status,  # type: ignore
-            filter(
+    def get_stream_statuses(self, stream_name: str) -> list[AirbyteStreamStatus]:
+        status_messages = (
+            message.trace.stream_status.status
+            for message in filter(
                 lambda message: message.trace.stream_status.stream_descriptor.name == stream_name,  # type: ignore # callable; trace has `stream_status`
                 self._get_trace_message_by_trace_type(TraceType.STREAM_STATUS),
-            ),
+            )
         )
         return list(status_messages)
 
-    def _get_message_by_types(self, message_types: List[Type]) -> List[AirbyteMessage]:
+    def _get_message_by_types(self, message_types: list[Type]) -> list[AirbyteMessage]:
         return [message for message in self._messages if message.type in message_types]
 
-    def _get_trace_message_by_trace_type(self, trace_type: TraceType) -> List[AirbyteMessage]:
+    def _get_trace_message_by_trace_type(self, trace_type: TraceType) -> list[AirbyteMessage]:
         return [
             message
             for message in self._get_message_by_types([Type.TRACE])
@@ -143,7 +154,10 @@ class EntrypointOutput:
 
 
 def _run_command(
-    source: Source, args: List[str], expecting_exception: bool = False
+    source: Source,
+    args: list[str],
+    *,
+    expecting_exception: bool = False,
 ) -> EntrypointOutput:
     log_capture_buffer = StringIO()
     stream_handler = logging.StreamHandler(log_capture_buffer)
@@ -159,7 +173,7 @@ def _run_command(
     uncaught_exception = None
     try:
         for message in source_entrypoint.run(parsed_args):
-            messages.append(message)
+            messages.append(message)  # noqa: PERF402
     except Exception as exception:
         if not expecting_exception:
             print("Printing unexpected error from entrypoint_wrapper")
@@ -176,20 +190,21 @@ def _run_command(
 def discover(
     source: Source,
     config: Mapping[str, Any],
+    *,
     expecting_exception: bool = False,
 ) -> EntrypointOutput:
-    """
-    config must be json serializable
+    """Config must be json serializable
     :param expecting_exception: By default if there is an uncaught exception, the exception will be printed out. If this is expected, please
         provide expecting_exception=True so that the test output logs are cleaner
     """
-
     with tempfile.TemporaryDirectory() as tmp_directory:
         tmp_directory_path = Path(tmp_directory)
         config_file = make_file(tmp_directory_path / "config.json", config)
 
         return _run_command(
-            source, ["discover", "--config", config_file, "--debug"], expecting_exception
+            source,
+            ["discover", "--config", config_file, "--debug"],
+            expecting_exception=expecting_exception,
         )
 
 
@@ -197,11 +212,11 @@ def read(
     source: Source,
     config: Mapping[str, Any],
     catalog: ConfiguredAirbyteCatalog,
-    state: Optional[List[AirbyteStateMessage]] = None,
+    state: list[AirbyteStateMessage] | None = None,
+    *,
     expecting_exception: bool = False,
 ) -> EntrypointOutput:
-    """
-    config and state must be json serializable
+    """Config and state must be json serializable
 
     :param expecting_exception: By default if there is an uncaught exception, the exception will be printed out. If this is expected, please
         provide expecting_exception=True so that the test output logs are cleaner
@@ -231,11 +246,15 @@ def read(
                 ]
             )
 
-        return _run_command(source, args, expecting_exception)
+        return _run_command(
+            source,
+            args,
+            expecting_exception=expecting_exception,
+        )
 
 
 def make_file(
-    path: Path, file_contents: Optional[Union[str, Mapping[str, Any], List[Mapping[str, Any]]]]
+    path: Path, file_contents: str | Mapping[str, Any] | list[Mapping[str, Any]] | None
 ) -> str:
     if isinstance(file_contents, str):
         path.write_text(file_contents)

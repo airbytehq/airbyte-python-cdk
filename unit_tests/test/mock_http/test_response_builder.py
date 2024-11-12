@@ -1,12 +1,15 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
+
 import json
 from copy import deepcopy
 from pathlib import Path as FilePath
-from typing import Any, Dict, Optional, Union
+from typing import Any
 from unittest import TestCase
 from unittest.mock import Mock
 
 import pytest
+
 from airbyte_cdk.test.mock_http.response import HttpResponse
 from airbyte_cdk.test.mock_http.response_builder import (
     FieldPath,
@@ -21,6 +24,7 @@ from airbyte_cdk.test.mock_http.response_builder import (
     find_template,
 )
 
+
 _RECORDS_FIELD = "records_field"
 _ID_FIELD = "record_id"
 _CURSOR_FIELD = "record_cursor"
@@ -33,10 +37,10 @@ _RESPONSE_BUILDER = 1
 
 
 def _record_builder(
-    response_template: Dict[str, Any],
-    records_path: Union[FieldPath, NestedPath],
-    record_id_path: Optional[Path] = None,
-    record_cursor_path: Optional[Union[FieldPath, NestedPath]] = None,
+    response_template: dict[str, Any],
+    records_path: FieldPath | NestedPath,
+    record_id_path: Path | None = None,
+    record_cursor_path: FieldPath | NestedPath | None = None,
 ) -> RecordBuilder:
     return create_record_builder(
         deepcopy(response_template), records_path, record_id_path, record_cursor_path
@@ -50,16 +54,16 @@ def _any_record_builder() -> RecordBuilder:
 
 
 def _response_builder(
-    response_template: Dict[str, Any],
-    records_path: Union[FieldPath, NestedPath],
-    pagination_strategy: Optional[PaginationStrategy] = None,
+    response_template: dict[str, Any],
+    records_path: FieldPath | NestedPath,
+    pagination_strategy: PaginationStrategy | None = None,
 ) -> HttpResponseBuilder:
     return create_response_builder(
         deepcopy(response_template), records_path, pagination_strategy=pagination_strategy
     )
 
 
-def _body(response: HttpResponse) -> Dict[str, Any]:
+def _body(response: HttpResponse) -> dict[str, Any]:
     return json.loads(response.body)
 
 

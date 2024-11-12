@@ -1,11 +1,15 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
 import json
 import logging
 import os
-from typing import Any, Iterator, List, Mapping, Optional
+from collections.abc import Iterator, Mapping
+from typing import Any
 from unittest import TestCase
 from unittest.mock import Mock, patch
+
+import orjson
 
 from airbyte_cdk.models import (
     AirbyteAnalyticsTraceMessage,
@@ -31,7 +35,6 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.abstract_source import AbstractSource
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput, discover, read
 from airbyte_cdk.test.state_builder import StateBuilder
-from orjson import orjson
 
 
 def _a_state_message(stream_name: str, stream_state: Mapping[str, Any]) -> AirbyteMessage:
@@ -112,7 +115,7 @@ _A_STATE = StateBuilder().with_stream_state(_A_STREAM_NAME, {"state_key": "state
 _A_LOG_MESSAGE = "a log message"
 
 
-def _to_entrypoint_output(messages: List[AirbyteMessage]) -> Iterator[str]:
+def _to_entrypoint_output(messages: list[AirbyteMessage]) -> Iterator[str]:
     return (orjson.dumps(AirbyteMessageSerializer.dump(message)).decode() for message in messages)
 
 
@@ -134,8 +137,8 @@ def _validate_tmp_catalog(expected, file_path) -> None:
 def _create_tmp_file_validation(
     entrypoint,
     expected_config,
-    expected_catalog: Optional[Any] = None,
-    expected_state: Optional[Any] = None,
+    expected_catalog: Any | None = None,
+    expected_state: Any | None = None,
 ):
     def _validate_tmp_files(self):
         _validate_tmp_json_file(expected_config, entrypoint.parse_args.call_args.args[0][2])

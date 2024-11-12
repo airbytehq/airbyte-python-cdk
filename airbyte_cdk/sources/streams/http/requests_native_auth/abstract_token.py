@@ -1,17 +1,22 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from abc import abstractmethod
-from typing import Any, Mapping
+from typing import TYPE_CHECKING, Any
 
 from requests.auth import AuthBase
+
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
 
 
 class AbstractHeaderAuthenticator(AuthBase):
     """Abstract class for an header-based authenticators that add a header to outgoing HTTP requests."""
 
-    def __call__(self, request):
+    def __call__(self, request: Any) -> Any:  # noqa: ANN401  (any-type)
         """Attach the HTTP headers required to authenticate on the HTTP request"""
         request.headers.update(self.get_auth_header())
         return request

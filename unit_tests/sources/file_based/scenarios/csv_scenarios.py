@@ -1,12 +1,8 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
-from airbyte_cdk.models import AirbyteAnalyticsTraceMessage, SyncMode
-from airbyte_cdk.sources.file_based.config.csv_format import CsvFormat
-from airbyte_cdk.sources.file_based.exceptions import ConfigValidationError, FileBasedSourceError
-from airbyte_cdk.test.catalog_builder import CatalogBuilder
-from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 from unit_tests.sources.file_based.helpers import (
     EmptySchemaParser,
     LowInferenceLimitDiscoveryPolicy,
@@ -17,6 +13,13 @@ from unit_tests.sources.file_based.scenarios.scenario_builder import (
     TestScenario,
     TestScenarioBuilder,
 )
+
+from airbyte_cdk.models import AirbyteAnalyticsTraceMessage, SyncMode
+from airbyte_cdk.sources.file_based.config.csv_format import CsvFormat
+from airbyte_cdk.sources.file_based.exceptions import ConfigValidationError, FileBasedSourceError
+from airbyte_cdk.test.catalog_builder import CatalogBuilder
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
+
 
 single_csv_scenario: TestScenario[InMemoryFilesSource] = (
     TestScenarioBuilder[InMemoryFilesSource]()

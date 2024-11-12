@@ -1,13 +1,16 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import logging
 import sys
 from argparse import Namespace
-from typing import Any, Iterable, Mapping, MutableMapping
+from collections.abc import Iterable, Mapping, MutableMapping
+from typing import Any
 
 import pytest
+
 from airbyte_cdk import AirbyteEntrypoint
 from airbyte_cdk.logger import AirbyteLogFormatter
 from airbyte_cdk.models import (
@@ -18,6 +21,7 @@ from airbyte_cdk.models import (
     Type,
 )
 from airbyte_cdk.sources import Source
+
 
 SECRET_PROPERTY = "api_token"
 ANOTHER_SECRET_PROPERTY = "another_api_token"
@@ -111,7 +115,7 @@ spec_with_airbyte_secrets_not_string_config = {
 
 @pytest.fixture
 def simple_config():
-    yield {
+    return {
         SECRET_PROPERTY: I_AM_A_SECRET_VALUE,
         ANOTHER_SECRET_PROPERTY: ANOTHER_SECRET_VALUE,
     }

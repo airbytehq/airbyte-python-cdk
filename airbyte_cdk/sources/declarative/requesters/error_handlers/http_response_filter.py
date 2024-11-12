@@ -1,11 +1,14 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional, Set, Union
+from typing import TYPE_CHECKING, Any
 
 import requests
+
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
@@ -22,8 +25,7 @@ from airbyte_cdk.sources.types import Config
 
 @dataclass
 class HttpResponseFilter:
-    """
-    Filter to select a response based on its HTTP status code, error message or a predicate.
+    """Filter to select a response based on its HTTP status code, error message or a predicate.
     If a response matches the filter, the response action, failure_type, and error message are returned as an ErrorResolution object.
     For http_codes declared in the filter, the failure_type will default to `system_error`.
     To override default failure_type use configured failure_type with ResponseAction.FAIL.
@@ -39,12 +41,12 @@ class HttpResponseFilter:
 
     config: Config
     parameters: InitVar[Mapping[str, Any]]
-    action: Optional[Union[ResponseAction, str]] = None
-    failure_type: Optional[Union[FailureType, str]] = None
-    http_codes: Optional[Set[int]] = None
-    error_message_contains: Optional[str] = None
-    predicate: Union[InterpolatedBoolean, str] = ""
-    error_message: Union[InterpolatedString, str] = ""
+    action: ResponseAction | str | None = None
+    failure_type: FailureType | str | None = None
+    http_codes: set[int] | None = None
+    error_message_contains: str | None = None
+    predicate: InterpolatedBoolean | str = ""
+    error_message: InterpolatedString | str = ""
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if self.action is not None:
@@ -56,7 +58,7 @@ class HttpResponseFilter:
                 raise ValueError(
                     "HttpResponseFilter requires a filter condition if an action is specified"
                 )
-            elif isinstance(self.action, str):
+            if isinstance(self.action, str):
                 self.action = ResponseAction[self.action]
         self.http_codes = self.http_codes or set()
         if isinstance(self.predicate, str):
@@ -69,8 +71,8 @@ class HttpResponseFilter:
             self.failure_type = FailureType[self.failure_type]
 
     def matches(
-        self, response_or_exception: Optional[Union[requests.Response, Exception]]
-    ) -> Optional[ErrorResolution]:
+        self, response_or_exception: requests.Response | Exception | None
+    ) -> ErrorResolution | None:
         filter_action = self._matches_filter(response_or_exception)
         mapped_key = (
             response_or_exception.status_code
@@ -78,7 +80,7 @@ class HttpResponseFilter:
             else response_or_exception.__class__
         )
 
-        if isinstance(mapped_key, (int, Exception)):
+        if isinstance(mapped_key, int | Exception):
             default_mapped_error_resolution = self._match_default_error_mapping(mapped_key)
         else:
             default_mapped_error_resolution = None
@@ -117,15 +119,14 @@ class HttpResponseFilter:
         return None
 
     def _match_default_error_mapping(
-        self, mapped_key: Union[int, type[Exception]]
-    ) -> Optional[ErrorResolution]:
+        self, mapped_key: int | type[Exception]
+    ) -> ErrorResolution | None:
         return DEFAULT_ERROR_MAPPING.get(mapped_key)
 
     def _matches_filter(
-        self, response_or_exception: Optional[Union[requests.Response, Exception]]
-    ) -> Optional[ResponseAction]:
-        """
-        Apply the HTTP filter on the response and return the action to execute if it matches
+        self, response_or_exception: requests.Response | Exception | None
+    ) -> ResponseAction | None:
+        """Apply the HTTP filter on the response and return the action to execute if it matches
         :param response: The HTTP response to evaluate
         :return: The action to execute. None if the response does not match the filter
         """
@@ -144,9 +145,8 @@ class HttpResponseFilter:
         except requests.exceptions.JSONDecodeError:
             return {}
 
-    def _create_error_message(self, response: requests.Response) -> Optional[str]:
-        """
-        Construct an error message based on the specified message template of the filter.
+    def _create_error_message(self, response: requests.Response) -> str | None:
+        """Construct an error message based on the specified message template of the filter.
         :param response: The HTTP response which can be used during interpolation
         :return: The evaluated error message string to be emitted
         """
@@ -169,8 +169,5 @@ class HttpResponseFilter:
     def _response_contains_error_message(self, response: requests.Response) -> bool:
         if not self.error_message_contains:
             return False
-        else:
-            error_message = self._error_message_parser.parse_response_error_message(
-                response=response
-            )
-            return bool(error_message and self.error_message_contains in error_message)
+        error_message = self._error_message_parser.parse_response_error_message(response=response)
+        return bool(error_message and self.error_message_contains in error_message)

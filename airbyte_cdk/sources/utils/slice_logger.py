@@ -1,27 +1,30 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import json
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Mapping, Optional
+from typing import TYPE_CHECKING, Any
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level
 from airbyte_cdk.models import Type as MessageType
 
 
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+
 class SliceLogger(ABC):
-    """
-    SliceLogger is an interface that allows us to log slices of data in a uniform way.
+    """SliceLogger is an interface that allows us to log slices of data in a uniform way.
     It is responsible for determining whether or not a slice should be logged and for creating the log message.
     """
 
     SLICE_LOG_PREFIX = "slice:"
 
-    def create_slice_log_message(self, _slice: Optional[Mapping[str, Any]]) -> AirbyteMessage:
-        """
-        Mapping is an interface that can be implemented in various ways. However, json.dumps will just do a `str(<object>)` if
+    def create_slice_log_message(self, _slice: Mapping[str, Any] | None) -> AirbyteMessage:
+        """Mapping is an interface that can be implemented in various ways. However, json.dumps will just do a `str(<object>)` if
         the slice is a class implementing Mapping. Therefore, we want to cast this as a dict before passing this to json.dump
         """
         printable_slice = dict(_slice) if _slice else _slice
@@ -35,18 +38,14 @@ class SliceLogger(ABC):
 
     @abstractmethod
     def should_log_slice_message(self, logger: logging.Logger) -> bool:
-        """
-
-        :param logger:
+        """:param logger:
         :return:
         """
 
 
 class DebugSliceLogger(SliceLogger):
     def should_log_slice_message(self, logger: logging.Logger) -> bool:
-        """
-
-        :param logger:
+        """:param logger:
         :return:
         """
         return logger.isEnabledFor(logging.DEBUG)
@@ -54,4 +53,5 @@ class DebugSliceLogger(SliceLogger):
 
 class AlwaysLogSliceLogger(SliceLogger):
     def should_log_slice_message(self, logger: logging.Logger) -> bool:
+        _ = logger
         return True

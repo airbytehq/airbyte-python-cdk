@@ -1,4 +1,5 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
 import sys
 from glob import glob
@@ -6,6 +7,7 @@ from pathlib import Path
 
 import anyio
 import dagger
+
 
 PYTHON_IMAGE = "python:3.10"
 LOCAL_YAML_DIR_PATH = "airbyte_cdk/sources/declarative"

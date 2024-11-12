@@ -1,15 +1,20 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import argparse
 import io
 import json
+from collections.abc import Iterable, Mapping
 from os import PathLike
-from typing import Any, Dict, Iterable, List, Mapping, Union
+from pathlib import Path
+from typing import Any
 from unittest.mock import ANY
 
+import orjson
 import pytest
+
 from airbyte_cdk.destinations import Destination
 from airbyte_cdk.destinations import destination as destination_module
 from airbyte_cdk.models import (
@@ -29,7 +34,6 @@ from airbyte_cdk.models import (
     SyncMode,
     Type,
 )
-from orjson import orjson
 
 
 @pytest.fixture(name="destination")
@@ -53,8 +57,11 @@ class TestArgParsing:
         ],
     )
     def test_successful_parse(
-        self, arg_list: List[str], expected_output: Mapping[str, Any], destination: Destination
-    ):
+        self,
+        arg_list: list[str],
+        expected_output: Mapping[str, Any],
+        destination: Destination,
+    ) -> None:
         parsed_args = vars(destination.parse_args(arg_list))
         assert (
             parsed_args == expected_output
@@ -74,57 +81,53 @@ class TestArgParsing:
             (["check", "path"]),
         ],
     )
-    def test_failed_parse(self, arg_list: List[str], destination: Destination):
+    def test_failed_parse(self, arg_list: list[str], destination: Destination):
         # We use BaseException because it encompasses SystemExit (raised by failed parsing) and other exceptions (raised by additional semantic
         # checks)
         with pytest.raises(BaseException):
             destination.parse_args(arg_list)
 
 
-def _state(state: Dict[str, Any]) -> AirbyteStateMessage:
+def _state(state: dict[str, Any]) -> AirbyteStateMessage:
     return AirbyteStateMessage(data=state)
 
 
-def _record(stream: str, data: Dict[str, Any]) -> AirbyteRecordMessage:
+def _record(stream: str, data: dict[str, Any]) -> AirbyteRecordMessage:
     return AirbyteRecordMessage(stream=stream, data=data, emitted_at=0)
 
 
-def _spec(schema: Dict[str, Any]) -> ConnectorSpecification:
+def _spec(schema: dict[str, Any]) -> ConnectorSpecification:
     return ConnectorSpecification(connectionSpecification=schema)
 
 
-def write_file(path: PathLike, content: Union[str, Mapping]):
+def write_file(path: PathLike, content: str | Mapping) -> None:
     content = json.dumps(content) if isinstance(content, Mapping) else content
     with open(path, "w") as f:
         f.write(content)
 
 
 def _wrapped(
-    msg: Union[
-        AirbyteRecordMessage,
-        AirbyteStateMessage,
-        AirbyteCatalog,
-        ConnectorSpecification,
-        AirbyteConnectionStatus,
-    ],
+    msg: AirbyteRecordMessage
+    | AirbyteStateMessage
+    | AirbyteCatalog
+    | ConnectorSpecification
+    | AirbyteConnectionStatus,
 ) -> AirbyteMessage:
     if isinstance(msg, AirbyteRecordMessage):
         return AirbyteMessage(type=Type.RECORD, record=msg)
-    elif isinstance(msg, AirbyteStateMessage):
+    if isinstance(msg, AirbyteStateMessage):
         return AirbyteMessage(type=Type.STATE, state=msg)
-    elif isinstance(msg, AirbyteCatalog):
+    if isinstance(msg, AirbyteCatalog):
         return AirbyteMessage(type=Type.CATALOG, catalog=msg)
-    elif isinstance(msg, AirbyteConnectionStatus):
+    if isinstance(msg, AirbyteConnectionStatus):
         return AirbyteMessage(type=Type.CONNECTION_STATUS, connectionStatus=msg)
-    elif isinstance(msg, ConnectorSpecification):
+    if isinstance(msg, ConnectorSpecification):
         return AirbyteMessage(type=Type.SPEC, spec=msg)
-    else:
-        raise Exception(f"Invalid Airbyte Message: {msg}")
+    raise Exception(f"Invalid Airbyte Message: {msg}")
 
 
 class OrderedIterableMatcher(Iterable):
-    """
-    A class whose purpose is to verify equality of one iterable object against another
+    """A class whose purpose is to verify equality of one iterable object against another
     in an ordered fashion
     """
 
@@ -137,10 +140,10 @@ class OrderedIterableMatcher(Iterable):
     def __iter__(self):
         return iter(self.iterable)
 
-    def __init__(self, iterable: Iterable):
+    def __init__(self, iterable: Iterable) -> None:
         self.iterable = iterable
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         if not isinstance(other, Iterable):
             return False
 
@@ -148,7 +151,11 @@ class OrderedIterableMatcher(Iterable):
 
 
 class TestRun:
-    def test_run_initializes_exception_handler(self, mocker, destination: Destination):
+    def test_run_initializes_exception_handler(
+        self,
+        mocker,
+        destination: Destination,
+    ) -> None:
         mocker.patch.object(destination_module, "init_uncaught_exception_handler")
         mocker.patch.object(destination, "parse_args")
         mocker.patch.object(destination, "run_cmd")
@@ -174,7 +181,12 @@ class TestRun:
         # verify the output of spec was returned
         assert spec_message == _wrapped(expected_spec)
 
-    def test_run_check(self, mocker, destination: Destination, tmp_path):
+    def test_run_check(
+        self,
+        mocker,
+        destination: Destination,
+        tmp_path: Path,
+    ) -> None:
         file_path = tmp_path / "config.json"
         dummy_config = {"user": "sherif"}
         write_file(file_path, dummy_config)
@@ -202,7 +214,12 @@ class TestRun:
         # verify output was correct
         assert returned_check_result == _wrapped(expected_check_result)
 
-    def test_run_check_with_invalid_config(self, mocker, destination: Destination, tmp_path):
+    def test_run_check_with_invalid_config(
+        self,
+        mocker,
+        destination: Destination,
+        tmp_path: Path,
+    ) -> None:
         file_path = tmp_path / "config.json"
         invalid_config = {"not": "valid"}
         write_file(file_path, invalid_config)
@@ -233,7 +250,13 @@ class TestRun:
         # the specific phrasing is not relevant, so only check for the keywords
         assert "validation error" in returned_check_result.connectionStatus.message
 
-    def test_run_write(self, mocker, destination: Destination, tmp_path, monkeypatch):
+    def test_run_write(
+        self,
+        mocker,
+        destination: Destination,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         config_path, dummy_config = tmp_path / "config.json", {"user": "sherif"}
         write_file(config_path, dummy_config)
 
@@ -269,7 +292,7 @@ class TestRun:
             "airbyte_cdk.destinations.destination.check_config_against_spec_or_exit"
         )
         # mock input is a record followed by some state messages
-        mocked_input: List[AirbyteMessage] = [
+        mocked_input: list[AirbyteMessage] = [
             _wrapped(_record("s1", {"k1": "v1"})),
             *expected_write_result,
         ]
@@ -303,6 +326,10 @@ class TestRun:
         assert returned_write_result == expected_write_result
 
     @pytest.mark.parametrize("args", [{}, {"command": "fake"}])
-    def test_run_cmd_with_incorrect_args_fails(self, args, destination: Destination):
+    def test_run_cmd_with_incorrect_args_fails(
+        self,
+        args,
+        destination: Destination,
+    ) -> None:
         with pytest.raises(Exception):
             list(destination.run_cmd(parsed_args=argparse.Namespace(**args)))

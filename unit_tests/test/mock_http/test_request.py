@@ -1,8 +1,10 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
 from unittest import TestCase
 
 import pytest
+
 from airbyte_cdk.test.mock_http.request import ANY_QUERY_PARAMS, HttpRequest
 
 

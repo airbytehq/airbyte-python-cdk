@@ -1,14 +1,21 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Type, Union
+from typing import TYPE_CHECKING, Any
 
 import dpath
+
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
-from airbyte_cdk.sources.types import Config, FieldPointer, StreamSlice, StreamState
+
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from airbyte_cdk.sources.types import Config, FieldPointer, StreamSlice, StreamState
 
 
 @dataclass(frozen=True)
@@ -16,8 +23,8 @@ class AddedFieldDefinition:
     """Defines the field to add on a record"""
 
     path: FieldPointer
-    value: Union[InterpolatedString, str]
-    value_type: Optional[Type[Any]]
+    value: InterpolatedString | str
+    value_type: type[Any] | None
     parameters: InitVar[Mapping[str, Any]]
 
 
@@ -27,14 +34,13 @@ class ParsedAddFieldDefinition:
 
     path: FieldPointer
     value: InterpolatedString
-    value_type: Optional[Type[Any]]
+    value_type: type[Any] | None
     parameters: InitVar[Mapping[str, Any]]
 
 
 @dataclass
-class AddFields(RecordTransformation):
-    """
-    Transformation which adds field to an output record. The path of the added field can be nested. Adding nested fields will create all
+class AddFields(RecordTransformation):  # noqa: PLW1641  # missing __hash__ method
+    """Transformation which adds field to an output record. The path of the added field can be nested. Adding nested fields will create all
     necessary parent objects (like mkdir -p). Adding fields to an array will extend the array to that index (filling intermediate
     indices with null values). So if you add a field at index 5 to the array ["value"], it will become ["value", null, null, null, null,
     "new_value"].
@@ -83,9 +89,9 @@ class AddFields(RecordTransformation):
         fields (List[AddedFieldDefinition]): A list of transformations (path and corresponding value) that will be added to the record
     """
 
-    fields: List[AddedFieldDefinition]
+    fields: list[AddedFieldDefinition]
     parameters: InitVar[Mapping[str, Any]]
-    _parsed_fields: List[ParsedAddFieldDefinition] = field(
+    _parsed_fields: list[ParsedAddFieldDefinition] = field(
         init=False, repr=False, default_factory=list
     )
 
@@ -99,15 +105,14 @@ class AddFields(RecordTransformation):
             if not isinstance(add_field.value, InterpolatedString):
                 if not isinstance(add_field.value, str):
                     raise f"Expected a string value for the AddFields transformation: {add_field}"
-                else:
-                    self._parsed_fields.append(
-                        ParsedAddFieldDefinition(
-                            add_field.path,
-                            InterpolatedString.create(add_field.value, parameters=parameters),
-                            value_type=add_field.value_type,
-                            parameters=parameters,
-                        )
+                self._parsed_fields.append(
+                    ParsedAddFieldDefinition(
+                        add_field.path,
+                        InterpolatedString.create(add_field.value, parameters=parameters),
+                        value_type=add_field.value_type,
+                        parameters=parameters,
                     )
+                )
             else:
                 self._parsed_fields.append(
                     ParsedAddFieldDefinition(
@@ -120,10 +125,10 @@ class AddFields(RecordTransformation):
 
     def transform(
         self,
-        record: Dict[str, Any],
-        config: Optional[Config] = None,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
+        record: dict[str, Any],
+        config: Config | None = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
     ) -> None:
         if config is None:
             config = {}
@@ -133,5 +138,5 @@ class AddFields(RecordTransformation):
             value = parsed_field.value.eval(config, valid_types=valid_types, **kwargs)
             dpath.new(record, parsed_field.path, value)
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         return bool(self.__dict__ == other.__dict__)

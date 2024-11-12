@@ -1,8 +1,11 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
-from typing import Any, Mapping, Optional, Type, Union
+from collections.abc import Mapping
+from typing import Any
 
 import pytest
+
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
 
 
@@ -32,7 +35,7 @@ from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
     ],
 )
 def test_stream_slices(
-    default_concurrency: Union[int, str], max_concurrency: int, expected_concurrency: int
+    default_concurrency: int | str, max_concurrency: int, expected_concurrency: int
 ) -> None:
     config = {"num_workers": 50}
     concurrency_level = ConcurrencyLevel(
@@ -62,8 +65,8 @@ def test_stream_slices(
 )
 def test_default_concurrency_input_types_and_errors(
     config: Mapping[str, Any],
-    expected_concurrency: Optional[int],
-    expected_error: Optional[Type[Exception]],
+    expected_concurrency: int | None,
+    expected_error: type[Exception] | None,
 ) -> None:
     concurrency_level = ConcurrencyLevel(
         default_concurrency="{{ config['num_workers'] or 30 }}",

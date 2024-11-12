@@ -1,8 +1,10 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import pytest
+
 from airbyte_cdk.utils.airbyte_secrets_utils import (
     add_to_secrets,
     filter_secrets,
@@ -10,6 +12,7 @@ from airbyte_cdk.utils.airbyte_secrets_utils import (
     get_secrets,
     update_secrets,
 )
+
 
 SECRET_STRING_KEY = "secret_key1"
 SECRET_STRING_VALUE = "secret_value"

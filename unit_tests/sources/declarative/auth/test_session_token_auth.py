@@ -1,13 +1,16 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import pytest
+from requests.exceptions import HTTPError
+
 from airbyte_cdk.sources.declarative.auth.token import (
     LegacySessionTokenAuthenticator,
     get_new_session_token,
 )
-from requests.exceptions import HTTPError
+
 
 parameters = {"hello": "world"}
 instance_api_url = "https://airbyte.metabaseapp.com/api/"

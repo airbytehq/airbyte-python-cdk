@@ -1,24 +1,32 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import threading
 import time
-from typing import Any, Callable, Iterable, Mapping, Optional, TypeVar, Union
+from typing import TYPE_CHECKING, Any, TypeVar
 
-from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
-from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
 from airbyte_cdk.sources.types import Record, StreamSlice, StreamState
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable, Mapping
+
+    from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import (
+        DatetimeBasedCursor,
+    )
+    from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
+
 
 T = TypeVar("T")
 
 
 def iterate_with_last_flag_and_state(
-    generator: Iterable[T], get_stream_state_func: Callable[[], Optional[Mapping[str, StreamState]]]
+    generator: Iterable[T], get_stream_state_func: Callable[[], Mapping[str, StreamState] | None]
 ) -> Iterable[tuple[T, bool, Any]]:
-    """
-    Iterates over the given generator, yielding tuples containing the element, a flag
+    """Iterates over the given generator, yielding tuples containing the element, a flag
     indicating whether it's the last element in the generator, and the result of
     `get_stream_state_func` applied to the element.
 
@@ -30,7 +38,6 @@ def iterate_with_last_flag_and_state(
     Returns:
         An iterator that yields tuples of the form (element, is_last, state).
     """
-
     iterator = iter(generator)
 
     try:
@@ -48,26 +55,22 @@ def iterate_with_last_flag_and_state(
 
 
 class Timer:
-    """
-    A simple timer class that measures elapsed time in seconds using a high-resolution performance counter.
-    """
+    """A simple timer class that measures elapsed time in seconds using a high-resolution performance counter."""
 
     def __init__(self) -> None:
-        self._start: Optional[int] = None
+        self._start: int | None = None
 
     def start(self) -> None:
         self._start = time.perf_counter_ns()
 
     def finish(self) -> int:
         if self._start:
-            return ((time.perf_counter_ns() - self._start) / 1e9).__ceil__()
-        else:
-            raise RuntimeError("Global substream cursor timer not started")
+            return ((time.perf_counter_ns() - self._start) / 1e9).__ceil__()  # noqa: PLC2801  (unnecessary dunder?)
+        raise RuntimeError("Global substream cursor timer not started")
 
 
 class GlobalSubstreamCursor(DeclarativeCursor):
-    """
-    The GlobalSubstreamCursor is designed to track the state of substreams using a single global cursor.
+    """The GlobalSubstreamCursor is designed to track the state of substreams using a single global cursor.
     This class is beneficial for streams with many partitions, as it allows the state to be managed globally
     instead of per partition, simplifying state management and reducing the size of state messages.
 
@@ -79,7 +82,11 @@ class GlobalSubstreamCursor(DeclarativeCursor):
     - When using the `incremental_dependency` option, the sync will progress through parent records, preventing the sync from getting infinitely stuck. However, it is crucial to understand the requirements for both the `global_substream_cursor` and `incremental_dependency` options to avoid data loss.
     """
 
-    def __init__(self, stream_cursor: DatetimeBasedCursor, partition_router: PartitionRouter):
+    def __init__(
+        self,
+        stream_cursor: DatetimeBasedCursor,
+        partition_router: PartitionRouter,
+    ) -> None:
         self._stream_cursor = stream_cursor
         self._partition_router = partition_router
         self._timer = Timer()
@@ -88,17 +95,16 @@ class GlobalSubstreamCursor(DeclarativeCursor):
             0
         )  # Start with 0, indicating no slices being tracked
         self._all_slices_yielded = False
-        self._lookback_window: Optional[int] = None
-        self._current_partition: Optional[Mapping[str, Any]] = None
+        self._lookback_window: int | None = None
+        self._current_partition: Mapping[str, Any] | None = None
         self._last_slice: bool = False
-        self._parent_state: Optional[Mapping[str, Any]] = None
+        self._parent_state: Mapping[str, Any] | None = None
 
     def start_slices_generation(self) -> None:
         self._timer.start()
 
     def stream_slices(self) -> Iterable[StreamSlice]:
-        """
-        Generates stream slices, ensuring the last slice is properly flagged and processed.
+        """Generates stream slices, ensuring the last slice is properly flagged and processed.
 
         This method creates a sequence of stream slices by iterating over partitions and cursor slices.
         It holds onto one slice in memory to set `_all_slices_yielded` to `True` before yielding the
@@ -118,7 +124,7 @@ class GlobalSubstreamCursor(DeclarativeCursor):
         )
 
         self.start_slices_generation()
-        for slice, last, state in iterate_with_last_flag_and_state(
+        for slice, last, state in iterate_with_last_flag_and_state(  # noqa: A001  (shadowed built-in)
             slice_generator, self._partition_router.get_stream_state
         ):
             self._parent_state = state
@@ -134,9 +140,8 @@ class GlobalSubstreamCursor(DeclarativeCursor):
 
         yield from slice_generator
 
-    def register_slice(self, last: bool) -> None:
-        """
-        Tracks the processing of a stream slice.
+    def register_slice(self, last: bool) -> None:  # noqa: FBT001  (positional bool)
+        """Tracks the processing of a stream slice.
 
         Releases the semaphore for each slice. If it's the last slice (`last=True`),
         sets `_all_slices_yielded` to `True` to indicate no more slices will be processed.
@@ -149,8 +154,7 @@ class GlobalSubstreamCursor(DeclarativeCursor):
             self._all_slices_yielded = True
 
     def set_initial_state(self, stream_state: StreamState) -> None:
-        """
-        Set the initial state for the cursors.
+        """Set the initial state for the cursors.
 
         This method initializes the state for the global cursor using the provided stream state.
 
@@ -189,8 +193,7 @@ class GlobalSubstreamCursor(DeclarativeCursor):
         self._partition_router.set_initial_state(stream_state)
 
     def _inject_lookback_into_stream_cursor(self, lookback_window: int) -> None:
-        """
-        Modifies the stream cursor's lookback window based on the duration of the previous sync.
+        """Modifies the stream cursor's lookback window based on the duration of the previous sync.
         This adjustment ensures the cursor is set to the minimal lookback window necessary for
         avoiding missing data.
 
@@ -213,9 +216,8 @@ class GlobalSubstreamCursor(DeclarativeCursor):
             StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice), record
         )
 
-    def close_slice(self, stream_slice: StreamSlice, *args: Any) -> None:
-        """
-        Close the current stream slice.
+    def close_slice(self, stream_slice: StreamSlice, *args: Any) -> None:  # noqa: ANN401  (any-type)
+        """Close the current stream slice.
 
         This method is called when a stream slice is completed. For the global parent cursor, we close the child cursor
         only after reading all slices. This ensures that we do not miss any child records from a later parent record
@@ -227,7 +229,7 @@ class GlobalSubstreamCursor(DeclarativeCursor):
         """
         with self._lock:
             self._slice_semaphore.acquire()
-            if self._all_slices_yielded and self._slice_semaphore._value == 0:
+            if self._all_slices_yielded and self._slice_semaphore._value == 0:  # noqa: SLF001  (private member)
                 self._lookback_window = self._timer.finish()
                 self._stream_cursor.close_slice(
                     StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice), *args
@@ -244,16 +246,16 @@ class GlobalSubstreamCursor(DeclarativeCursor):
 
         return state
 
-    def select_state(self, stream_slice: Optional[StreamSlice] = None) -> Optional[StreamState]:
+    def select_state(self, stream_slice: StreamSlice | None = None) -> StreamState | None:  # noqa: ARG002  (unused)
         # stream_slice is ignored as cursor is global
         return self._stream_cursor.get_stream_state()
 
     def get_request_params(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         if stream_slice:
             return self._partition_router.get_request_params(  # type: ignore # this always returns a mapping
@@ -265,15 +267,14 @@ class GlobalSubstreamCursor(DeclarativeCursor):
                 stream_slice=StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice),
                 next_page_token=next_page_token,
             )
-        else:
-            raise ValueError("A partition needs to be provided in order to get request params")
+        raise ValueError("A partition needs to be provided in order to get request params")
 
     def get_request_headers(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         if stream_slice:
             return self._partition_router.get_request_headers(  # type: ignore # this always returns a mapping
@@ -285,16 +286,15 @@ class GlobalSubstreamCursor(DeclarativeCursor):
                 stream_slice=StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice),
                 next_page_token=next_page_token,
             )
-        else:
-            raise ValueError("A partition needs to be provided in order to get request headers")
+        raise ValueError("A partition needs to be provided in order to get request headers")
 
     def get_request_body_data(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Union[Mapping[str, Any], str]:
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any] | str:
         if stream_slice:
             return self._partition_router.get_request_body_data(  # type: ignore # this always returns a mapping
                 stream_state=stream_state,
@@ -305,15 +305,14 @@ class GlobalSubstreamCursor(DeclarativeCursor):
                 stream_slice=StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice),
                 next_page_token=next_page_token,
             )
-        else:
-            raise ValueError("A partition needs to be provided in order to get request body data")
+        raise ValueError("A partition needs to be provided in order to get request body data")
 
     def get_request_body_json(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         if stream_slice:
             return self._partition_router.get_request_body_json(  # type: ignore # this always returns a mapping
@@ -325,8 +324,7 @@ class GlobalSubstreamCursor(DeclarativeCursor):
                 stream_slice=StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice),
                 next_page_token=next_page_token,
             )
-        else:
-            raise ValueError("A partition needs to be provided in order to get request body json")
+        raise ValueError("A partition needs to be provided in order to get request body json")
 
     def should_be_synced(self, record: Record) -> bool:
         return self._stream_cursor.should_be_synced(self._convert_record_to_cursor_record(record))

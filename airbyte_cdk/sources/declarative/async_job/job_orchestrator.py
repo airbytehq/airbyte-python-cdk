@@ -1,4 +1,5 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+from __future__ import annotations
 
 import logging
 import threading
@@ -7,20 +8,13 @@ import traceback
 import uuid
 from datetime import timedelta
 from typing import (
+    TYPE_CHECKING,
     Any,
-    Generator,
+    ClassVar,
     Generic,
-    Iterable,
-    List,
-    Mapping,
-    Optional,
-    Set,
-    Tuple,
-    Type,
     TypeVar,
 )
 
-from airbyte_cdk import StreamSlice
 from airbyte_cdk.logger import lazy_log
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.async_job.job import AsyncJob
@@ -28,11 +22,17 @@ from airbyte_cdk.sources.declarative.async_job.job_tracker import (
     ConcurrentJobLimitReached,
     JobTracker,
 )
-from airbyte_cdk.sources.declarative.async_job.repository import AsyncJobRepository
 from airbyte_cdk.sources.declarative.async_job.status import AsyncJobStatus
-from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
+
+from collections.abc import Generator, Iterable, Mapping
+
+if TYPE_CHECKING:
+    from airbyte_cdk import StreamSlice
+    from airbyte_cdk.sources.declarative.async_job.repository import AsyncJobRepository
+    from airbyte_cdk.sources.message import MessageRepository
+
 
 LOGGER = logging.getLogger("airbyte")
 _NO_TIMEOUT = timedelta.max
@@ -40,29 +40,25 @@ _API_SIDE_RUNNING_STATUS = {AsyncJobStatus.RUNNING, AsyncJobStatus.TIMED_OUT}
 
 
 class AsyncPartition:
-    """
-    This bucket of api_jobs is a bit useless for this iteration but should become interesting when we will be able to split jobs
-    """
+    """This bucket of api_jobs is a bit useless for this iteration but should become interesting when we will be able to split jobs"""
 
     _MAX_NUMBER_OF_ATTEMPTS = 3
 
-    def __init__(self, jobs: List[AsyncJob], stream_slice: StreamSlice) -> None:
-        self._attempts_per_job = {job: 1 for job in jobs}
+    def __init__(self, jobs: list[AsyncJob], stream_slice: StreamSlice) -> None:
+        self._attempts_per_job = dict.fromkeys(jobs, 1)
         self._stream_slice = stream_slice
 
     def has_reached_max_attempt(self) -> bool:
         return any(
-            map(
-                lambda attempt_count: attempt_count >= self._MAX_NUMBER_OF_ATTEMPTS,
-                self._attempts_per_job.values(),
-            )
+            attempt_count >= self._MAX_NUMBER_OF_ATTEMPTS
+            for attempt_count in self._attempts_per_job.values()
         )
 
-    def replace_job(self, job_to_replace: AsyncJob, new_jobs: List[AsyncJob]) -> None:
+    def replace_job(self, job_to_replace: AsyncJob, new_jobs: list[AsyncJob]) -> None:
         current_attempt_count = self._attempts_per_job.pop(job_to_replace, None)
         if current_attempt_count is None:
             raise ValueError("Could not find job to replace")
-        elif current_attempt_count >= self._MAX_NUMBER_OF_ATTEMPTS:
+        if current_attempt_count >= self._MAX_NUMBER_OF_ATTEMPTS:
             raise ValueError(f"Max attempt reached for job in partition {self._stream_slice}")
 
         new_attempt_count = current_attempt_count + 1
@@ -70,9 +66,8 @@ class AsyncPartition:
             self._attempts_per_job[job] = new_attempt_count
 
     def should_split(self, job: AsyncJob) -> bool:
-        """
-        Not used right now but once we support job split, we should split based on the number of attempts
-        """
+        """Not used right now but once we support job split, we should split based on the number of attempts"""
+        _ = job
         return False
 
     @property
@@ -85,23 +80,20 @@ class AsyncPartition:
 
     @property
     def status(self) -> AsyncJobStatus:
-        """
-        Given different job statuses, the priority is: FAILED, TIMED_OUT, RUNNING. Else, it means everything is completed.
-        """
-        statuses = set(map(lambda job: job.status(), self.jobs))
+        """Given different job statuses, the priority is: FAILED, TIMED_OUT, RUNNING. Else, it means everything is completed."""
+        statuses = {job.status() for job in self.jobs}
         if statuses == {AsyncJobStatus.COMPLETED}:
             return AsyncJobStatus.COMPLETED
-        elif AsyncJobStatus.FAILED in statuses:
+        if AsyncJobStatus.FAILED in statuses:
             return AsyncJobStatus.FAILED
-        elif AsyncJobStatus.TIMED_OUT in statuses:
+        if AsyncJobStatus.TIMED_OUT in statuses:
             return AsyncJobStatus.TIMED_OUT
-        else:
-            return AsyncJobStatus.RUNNING
+        return AsyncJobStatus.RUNNING
 
     def __repr__(self) -> str:
         return f"AsyncPartition(stream_slice={self._stream_slice}, attempt_per_job={self._attempts_per_job})"
 
-    def __json_serializable__(self) -> Any:
+    def __json_serializable__(self) -> Any:  # noqa: ANN401, PLW3201  (any-type, unrecognized-dunder)
         return self._stream_slice
 
 
@@ -111,16 +103,15 @@ T = TypeVar("T")
 class LookaheadIterator(Generic[T]):
     def __init__(self, iterable: Iterable[T]) -> None:
         self._iterator = iter(iterable)
-        self._buffer: List[T] = []
+        self._buffer: list[T] = []
 
-    def __iter__(self) -> "LookaheadIterator[T]":
+    def __iter__(self) -> LookaheadIterator[T]:
         return self
 
     def __next__(self) -> T:
         if self._buffer:
             return self._buffer.pop()
-        else:
-            return next(self._iterator)
+        return next(self._iterator)
 
     def has_next(self) -> bool:
         if self._buffer:
@@ -134,18 +125,21 @@ class LookaheadIterator(Generic[T]):
             return True
 
     def add_at_the_beginning(self, item: T) -> None:
-        self._buffer = [item] + self._buffer
+        self._buffer = [item, *self._buffer]
 
 
 class AsyncJobOrchestrator:
     _WAIT_TIME_BETWEEN_STATUS_UPDATE_IN_SECONDS = 5
-    _KNOWN_JOB_STATUSES = {
+    _KNOWN_JOB_STATUSES: ClassVar[set[AsyncJobStatus]] = {
         AsyncJobStatus.COMPLETED,
         AsyncJobStatus.FAILED,
         AsyncJobStatus.RUNNING,
         AsyncJobStatus.TIMED_OUT,
     }
-    _RUNNING_ON_API_SIDE_STATUS = {AsyncJobStatus.RUNNING, AsyncJobStatus.TIMED_OUT}
+    _RUNNING_ON_API_SIDE_STATUS: ClassVar[set[AsyncJobStatus]] = {
+        AsyncJobStatus.RUNNING,
+        AsyncJobStatus.TIMED_OUT,
+    }
 
     def __init__(
         self,
@@ -153,11 +147,11 @@ class AsyncJobOrchestrator:
         slices: Iterable[StreamSlice],
         job_tracker: JobTracker,
         message_repository: MessageRepository,
-        exceptions_to_break_on: Iterable[Type[Exception]] = tuple(),
+        exceptions_to_break_on: Iterable[type[Exception]] = (),
+        *,
         has_bulk_parent: bool = False,
     ) -> None:
-        """
-        If the stream slices provided as a parameters relies on a async job streams that relies on the same JobTracker, `has_bulk_parent`
+        """If the stream slices provided as a parameters relies on a async job streams that relies on the same JobTracker, `has_bulk_parent`
         needs to be set to True as jobs creation needs to be prioritized on the parent level. Doing otherwise could lead to a situation
         where the child has taken up all the job budget without room to the parent to create more which would lead to an infinite loop of
         "trying to start a parent job" and "ConcurrentJobLimitReached".
@@ -170,13 +164,13 @@ class AsyncJobOrchestrator:
 
         self._job_repository: AsyncJobRepository = job_repository
         self._slice_iterator = LookaheadIterator(slices)
-        self._running_partitions: List[AsyncPartition] = []
+        self._running_partitions: list[AsyncPartition] = []
         self._job_tracker = job_tracker
         self._message_repository = message_repository
-        self._exceptions_to_break_on: Tuple[Type[Exception], ...] = tuple(exceptions_to_break_on)
+        self._exceptions_to_break_on: tuple[type[Exception], ...] = tuple(exceptions_to_break_on)
         self._has_bulk_parent = has_bulk_parent
 
-        self._non_breaking_exceptions: List[Exception] = []
+        self._non_breaking_exceptions: list[Exception] = []
 
     def _replace_failed_jobs(self, partition: AsyncPartition) -> None:
         failed_status_jobs = (AsyncJobStatus.FAILED, AsyncJobStatus.TIMED_OUT)
@@ -186,10 +180,10 @@ class AsyncJobOrchestrator:
             partition.replace_job(job, [new_job])
 
     def _start_jobs(self) -> None:
-        """
-        Retry failed jobs and start jobs for each slice in the slice iterator.
+        """Retry failed jobs and start jobs for each slice in the slice iterator.
         This method iterates over the running jobs and slice iterator and starts a job for each slice.
         The started jobs are added to the running partitions.
+
         Returns:
             None
 
@@ -225,7 +219,7 @@ class AsyncJobOrchestrator:
                 "Waiting before creating more jobs as the limit of concurrent jobs has been reached. Will try again later..."
             )
 
-    def _start_job(self, _slice: StreamSlice, previous_job_id: Optional[str] = None) -> AsyncJob:
+    def _start_job(self, _slice: StreamSlice, previous_job_id: str | None = None) -> AsyncJob:
         if previous_job_id:
             id_to_replace = previous_job_id
             lazy_log(LOGGER, logging.DEBUG, lambda: f"Attempting to replace job {id_to_replace}...")
@@ -235,19 +229,18 @@ class AsyncJobOrchestrator:
         try:
             job = self._job_repository.start(_slice)
             self._job_tracker.add_job(id_to_replace, job.api_job_id())
-            return job
+            return job  # noqa: TRY300  (consider 'else')
         except Exception as exception:
             LOGGER.warning(f"Exception has occurred during job creation: {exception}")
             if self._is_breaking_exception(exception):
                 self._job_tracker.remove_job(id_to_replace)
-                raise exception
+                raise
             return self._keep_api_budget_with_failed_job(_slice, exception, id_to_replace)
 
     def _keep_api_budget_with_failed_job(
         self, _slice: StreamSlice, exception: Exception, intent: str
     ) -> AsyncJob:
-        """
-        We have a mechanism to retry job. It is used when a job status is FAILED or TIMED_OUT. The easiest way to retry is to have this job
+        """We have a mechanism to retry job. It is used when a job status is FAILED or TIMED_OUT. The easiest way to retry is to have this job
         as created in a failed state and leverage the retry for failed/timed out jobs. This way, we don't have to have another process for
         retrying jobs that couldn't be started.
         """
@@ -271,9 +264,8 @@ class AsyncJobOrchestrator:
         job.update_status(AsyncJobStatus.FAILED)
         return job
 
-    def _get_running_jobs(self) -> Set[AsyncJob]:
-        """
-        Returns a set of running AsyncJob objects.
+    def _get_running_jobs(self) -> set[AsyncJob]:
+        """Returns a set of running AsyncJob objects.
 
         Returns:
             Set[AsyncJob]: A set of AsyncJob objects that are currently running.
@@ -286,18 +278,14 @@ class AsyncJobOrchestrator:
         }
 
     def _update_jobs_status(self) -> None:
-        """
-        Update the status of all running jobs in the repository.
-        """
+        """Update the status of all running jobs in the repository."""
         running_jobs = self._get_running_jobs()
         if running_jobs:
             # update the status only if there are RUNNING jobs
             self._job_repository.update_jobs_status(running_jobs)
 
     def _wait_on_status_update(self) -> None:
-        """
-        Waits for a specified amount of time between status updates.
-
+        """Waits for a specified amount of time between status updates.
 
         This method is used to introduce a delay between status updates in order to avoid excessive polling.
         The duration of the delay is determined by the value of `_WAIT_TIME_BETWEEN_STATUS_UPDATE_IN_SECONDS`.
@@ -319,12 +307,12 @@ class AsyncJobOrchestrator:
         time.sleep(self._WAIT_TIME_BETWEEN_STATUS_UPDATE_IN_SECONDS)
 
     def _process_completed_partition(self, partition: AsyncPartition) -> None:
-        """
-        Process a completed partition.
+        """Process a completed partition.
+
         Args:
             partition (AsyncPartition): The completed partition to process.
         """
-        job_ids = list(map(lambda job: job.api_job_id(), {job for job in partition.jobs}))
+        job_ids = [job.api_job_id() for job in set(partition.jobs)]
         LOGGER.info(
             f"The following jobs for stream slice {partition.stream_slice} have been completed: {job_ids}."
         )
@@ -337,8 +325,7 @@ class AsyncJobOrchestrator:
     def _process_running_partitions_and_yield_completed_ones(
         self,
     ) -> Generator[AsyncPartition, Any, None]:
-        """
-        Process the running partitions.
+        """Process the running partitions.
 
         Yields:
             AsyncPartition: The processed partition.
@@ -346,7 +333,7 @@ class AsyncJobOrchestrator:
         Raises:
             Any: Any exception raised during processing.
         """
-        current_running_partitions: List[AsyncPartition] = []
+        current_running_partitions: list[AsyncPartition] = []
         for partition in self._running_partitions:
             match partition.status:
                 case AsyncJobStatus.COMPLETED:
@@ -384,7 +371,12 @@ class AsyncJobOrchestrator:
                 # we don't free allocation here because it is expected to retry the job
                 self._abort_job(job, free_job_allocation=False)
 
-    def _abort_job(self, job: AsyncJob, free_job_allocation: bool = True) -> None:
+    def _abort_job(
+        self,
+        job: AsyncJob,
+        *,
+        free_job_allocation: bool = True,
+    ) -> None:
         try:
             self._job_repository.abort(job)
             if free_job_allocation:
@@ -393,13 +385,14 @@ class AsyncJobOrchestrator:
             LOGGER.warning(f"Could not free budget for job {job.api_job_id()}: {exception}")
 
     def _process_partitions_with_errors(self, partition: AsyncPartition) -> None:
-        """
-        Process a partition with status errors (FAILED and TIMEOUT).
+        """Process a partition with status errors (FAILED and TIMEOUT).
 
         Args:
             partition (AsyncPartition): The partition to process.
+
         Returns:
             AirbyteTracedException: An exception indicating that at least one job could not be completed.
+
         Raises:
             AirbyteTracedException: If at least one job could not be completed.
         """
@@ -412,8 +405,7 @@ class AsyncJobOrchestrator:
         )
 
     def create_and_get_completed_partitions(self) -> Iterable[AsyncPartition]:
-        """
-        Creates and retrieves completed partitions.
+        """Creates and retrieves completed partitions.
         This method continuously starts jobs, updates job status, processes running partitions,
         logs polling partitions, and waits for status updates. It yields completed partitions
         as they become available.
@@ -442,7 +434,7 @@ class AsyncJobOrchestrator:
                         f"Caught exception that stops the processing of the jobs: {exception}"
                     )
                     self._abort_all_running_jobs()
-                    raise exception
+                    raise
 
                 self._non_breaking_exceptions.append(exception)
 
@@ -455,10 +447,7 @@ class AsyncJobOrchestrator:
             raise AirbyteTracedException(
                 message="",
                 internal_message="\n".join(
-                    [
-                        filter_secrets(exception.__repr__())
-                        for exception in self._non_breaking_exceptions
-                    ]
+                    [filter_secrets(repr(exception)) for exception in self._non_breaking_exceptions]
                 ),
                 failure_type=FailureType.config_error,
             )
@@ -483,8 +472,7 @@ class AsyncJobOrchestrator:
         )
 
     def fetch_records(self, partition: AsyncPartition) -> Iterable[Mapping[str, Any]]:
-        """
-        Fetches records from the given partition's jobs.
+        """Fetches records from the given partition's jobs.
 
         Args:
             partition (AsyncPartition): The partition containing the jobs.

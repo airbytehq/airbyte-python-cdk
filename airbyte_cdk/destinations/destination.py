@@ -1,13 +1,16 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import argparse
 import io
 import logging
 import sys
 from abc import ABC, abstractmethod
-from typing import Any, Iterable, List, Mapping
+from typing import TYPE_CHECKING, Any, ClassVar
+
+import orjson
 
 from airbyte_cdk.connector import Connector
 from airbyte_cdk.exception_handler import init_uncaught_exception_handler
@@ -20,13 +23,17 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.sources.utils.schema_helpers import check_config_against_spec_or_exit
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from orjson import orjson
+
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping
+
 
 logger = logging.getLogger("airbyte")
 
 
 class Destination(Connector, ABC):
-    VALID_CMDS = {"spec", "check", "write"}
+    VALID_CMDS: ClassVar[set[str]] = {"spec", "check", "write"}
 
     @abstractmethod
     def write(
@@ -58,7 +65,9 @@ class Destination(Connector, ABC):
         input_stream: io.TextIOWrapper,
     ) -> Iterable[AirbyteMessage]:
         catalog = ConfiguredAirbyteCatalogSerializer.load(
-            orjson.loads(open(configured_catalog_path).read())
+            orjson.loads(
+                open(configured_catalog_path, encoding="utf-8").read(),  # noqa: SIM115, PTH123  (Should use pathlib)
+            )
         )
         input_messages = self._parse_input_stream(input_stream)
         logger.info("Begin writing to the destination...")
@@ -67,12 +76,10 @@ class Destination(Connector, ABC):
         )
         logger.info("Writing complete.")
 
-    def parse_args(self, args: List[str]) -> argparse.Namespace:
-        """
-        :param args: commandline arguments
+    def parse_args(self, args: list[str]) -> argparse.Namespace:
+        """:param args: commandline arguments
         :return:
         """
-
         parent_parser = argparse.ArgumentParser(add_help=False)
         main_parser = argparse.ArgumentParser()
         subparsers = main_parser.add_subparsers(title="commands", dest="command")
@@ -106,18 +113,18 @@ class Destination(Connector, ABC):
         parsed_args = main_parser.parse_args(args)
         cmd = parsed_args.command
         if not cmd:
-            raise Exception("No command entered. ")
-        elif cmd not in ["spec", "check", "write"]:
+            raise Exception("No command entered. ")  # noqa: TRY002  # Don't use vanilla Exception
+        if cmd not in {"spec", "check", "write"}:
             # This is technically dead code since parse_args() would fail if this was the case
             # But it's non-obvious enough to warrant placing it here anyways
-            raise Exception(f"Unknown command entered: {cmd}")
+            raise Exception(f"Unknown command entered: {cmd}")  # noqa: TRY002  # Don't use vanilla Exception
 
         return parsed_args
 
     def run_cmd(self, parsed_args: argparse.Namespace) -> Iterable[AirbyteMessage]:
         cmd = parsed_args.command
         if cmd not in self.VALID_CMDS:
-            raise Exception(f"Unrecognized command: {cmd}")
+            raise Exception(f"Unrecognized command: {cmd}")  # noqa: TRY002  # Don't use vanilla Exception
 
         spec = self.spec(logger)
         if cmd == "spec":
@@ -132,7 +139,7 @@ class Destination(Connector, ABC):
                 if connection_status and cmd == "check":
                     yield connection_status
                     return
-                raise traced_exc
+                raise
 
         if cmd == "check":
             yield self._run_check(config=config)
@@ -145,7 +152,7 @@ class Destination(Connector, ABC):
                 input_stream=wrapped_stdin,
             )
 
-    def run(self, args: List[str]) -> None:
+    def run(self, args: list[str]) -> None:
         init_uncaught_exception_handler(logger)
         parsed_args = self.parse_args(args)
         output_messages = self.run_cmd(parsed_args)

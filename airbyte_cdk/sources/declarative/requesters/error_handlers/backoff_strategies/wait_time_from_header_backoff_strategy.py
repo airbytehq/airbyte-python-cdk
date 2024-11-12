@@ -1,12 +1,15 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 import requests
+
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.header_helper import (
@@ -21,8 +24,7 @@ from airbyte_cdk.utils import AirbyteTracedException
 
 @dataclass
 class WaitTimeFromHeaderBackoffStrategy(BackoffStrategy):
-    """
-    Extract wait time from http header
+    """Extract wait time from http header
 
     Attributes:
         header (str): header to read wait time from
@@ -30,11 +32,11 @@ class WaitTimeFromHeaderBackoffStrategy(BackoffStrategy):
         max_waiting_time_in_seconds: (Optional[float]): given the value extracted from the header is greater than this value, stop the stream
     """
 
-    header: Union[InterpolatedString, str]
+    header: InterpolatedString | str
     parameters: InitVar[Mapping[str, Any]]
     config: Config
-    regex: Optional[Union[InterpolatedString, str]] = None
-    max_waiting_time_in_seconds: Optional[float] = None
+    regex: InterpolatedString | str | None = None
+    max_waiting_time_in_seconds: float | None = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.regex = (
@@ -44,9 +46,9 @@ class WaitTimeFromHeaderBackoffStrategy(BackoffStrategy):
 
     def backoff_time(
         self,
-        response_or_exception: Optional[Union[requests.Response, requests.RequestException]],
-        attempt_count: int,
-    ) -> Optional[float]:
+        response_or_exception: requests.Response | requests.RequestException | None,
+        attempt_count: int,  # noqa: ARG002  (unused)
+    ) -> float | None:
         header = self.header.eval(config=self.config)  # type: ignore  # header is always cast to an interpolated stream
         if self.regex:
             evaled_regex = self.regex.eval(self.config)  # type: ignore # header is always cast to an interpolated string

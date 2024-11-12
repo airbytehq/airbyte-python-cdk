@@ -1,12 +1,15 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import logging
+from collections.abc import Iterable, Mapping, MutableMapping
 from functools import partial
-from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Union
+from typing import Any
 
 import pytest as pytest
+
 from airbyte_cdk.models import AirbyteMessage, AirbyteRecordMessage, SyncMode, Type
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.incremental import (
@@ -34,6 +37,7 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
 from airbyte_cdk.sources.streams.checkpoint import Cursor
 from airbyte_cdk.sources.types import Record
 from airbyte_cdk.utils import AirbyteTracedException
+
 
 parent_records = [{"id": 1, "data": "data1"}, {"id": 2, "data": "data2"}]
 more_records = [
@@ -82,7 +86,7 @@ class MockStream(DeclarativeStream):
         return self._name
 
     @property
-    def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
+    def primary_key(self) -> str | list[str] | list[list[str]] | None:
         return "id"
 
     @property
@@ -97,16 +101,16 @@ class MockStream(DeclarativeStream):
     def is_resumable(self) -> bool:
         return bool(self._cursor)
 
-    def get_cursor(self) -> Optional[Cursor]:
+    def get_cursor(self) -> Cursor | None:
         return self._cursor
 
     def stream_slices(
         self,
         *,
         sync_mode: SyncMode,
-        cursor_field: List[str] = None,
+        cursor_field: list[str] = None,
         stream_state: Mapping[str, Any] = None,
-    ) -> Iterable[Optional[StreamSlice]]:
+    ) -> Iterable[StreamSlice | None]:
         for s in self._slices:
             if isinstance(s, StreamSlice):
                 yield s
@@ -116,7 +120,7 @@ class MockStream(DeclarativeStream):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: List[str] = None,
+        cursor_field: list[str] = None,
         stream_slice: Mapping[str, Any] = None,
         stream_state: Mapping[str, Any] = None,
     ) -> Iterable[Mapping[str, Any]]:
@@ -156,7 +160,7 @@ class MockIncrementalStream(MockStream):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: List[str] = None,
+        cursor_field: list[str] = None,
         stream_slice: Mapping[str, Any] = None,
         stream_state: Mapping[str, Any] = None,
     ) -> Iterable[Mapping[str, Any]]:
@@ -178,7 +182,7 @@ class MockResumableFullRefreshStream(MockStream):
         name,
         cursor_field="",
         cursor=None,
-        record_pages: Optional[List[List[Mapping[str, Any]]]] = None,
+        record_pages: list[list[Mapping[str, Any]]] | None = None,
     ):
         super().__init__(slices, [], name, cursor_field, cursor)
         if record_pages:
@@ -190,7 +194,7 @@ class MockResumableFullRefreshStream(MockStream):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: List[str] = None,
+        cursor_field: list[str] = None,
         stream_slice: Mapping[str, Any] = None,
         stream_state: Mapping[str, Any] = None,
     ) -> Iterable[Mapping[str, Any]]:
@@ -750,8 +754,7 @@ def test_substream_using_incremental_parent_stream():
 
 
 def test_substream_checkpoints_after_each_parent_partition():
-    """
-    This test validates the specific behavior that when getting all parent records for a substream,
+    """This test validates the specific behavior that when getting all parent records for a substream,
     we are still updating state so that the parent stream's state is updated after we finish getting all
     parent records for the parent slice (not just the substream)
     """

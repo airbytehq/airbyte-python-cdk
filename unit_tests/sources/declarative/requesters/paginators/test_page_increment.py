@@ -1,12 +1,14 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import json
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 import requests
+
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.page_increment import (
     PageIncrement,
 )
@@ -70,7 +72,7 @@ def test_page_increment_paginator_strategy_malformed_page_size(page_size):
     ],
 )
 def test_page_increment_paginator_strategy_initial_token(
-    inject_on_first_request: bool, start_from_page: int, expected_initial_token: Optional[Any]
+    inject_on_first_request: bool, start_from_page: int, expected_initial_token: Any | None
 ):
     paginator_strategy = PageIncrement(
         page_size=20,

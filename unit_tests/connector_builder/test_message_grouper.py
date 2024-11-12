@@ -1,12 +1,18 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import json
-from typing import Any, Iterator, List, Mapping
+from collections.abc import Iterator, Mapping
+from typing import Any
 from unittest.mock import MagicMock, Mock, patch
 
+import orjson
 import pytest
+
+from unit_tests.connector_builder.utils import create_configured_catalog
+
 from airbyte_cdk.connector_builder.message_grouper import MessageGrouper
 from airbyte_cdk.connector_builder.models import (
     HttpRequest,
@@ -29,8 +35,7 @@ from airbyte_cdk.models import (
     StreamDescriptor,
 )
 from airbyte_cdk.models import Type as MessageType
-from orjson import orjson
-from unit_tests.connector_builder.utils import create_configured_catalog
+
 
 _NO_PK = [[]]
 _NO_CURSOR_FIELD = []
@@ -253,9 +258,9 @@ def test_get_grouped_messages_with_logs(mock_entrypoint_read: Mock) -> None:
         ),
     ]
     expected_logs = [
-        LogMessage(**{"message": "log message before the request", "level": "INFO"}),
-        LogMessage(**{"message": "log message during the page", "level": "INFO"}),
-        LogMessage(**{"message": "log message after the response", "level": "INFO"}),
+        LogMessage(message="log message before the request", level="INFO"),
+        LogMessage(message="log message during the page", level="INFO"),
+        LogMessage(message="log message after the response", level="INFO"),
     ]
 
     mock_source = make_mock_source(
@@ -704,7 +709,7 @@ def test_read_stream_returns_error_if_stream_does_not_exist() -> None:
     mock_source.read.side_effect = ValueError("error")
     mock_source.streams.return_value = [make_mock_stream()]
 
-    full_config: Mapping[str, Any] = {**CONFIG, **{"__injected_declarative_manifest": MANIFEST}}
+    full_config: Mapping[str, Any] = {**CONFIG, "__injected_declarative_manifest": MANIFEST}
 
     message_grouper = MessageGrouper(MAX_PAGES_PER_SLICE, MAX_SLICES)
     actual_response = message_grouper.get_message_groups(
@@ -999,7 +1004,7 @@ def request_response_log_message(
     )
 
 
-def any_request_and_response_with_a_record() -> List[AirbyteMessage]:
+def any_request_and_response_with_a_record() -> list[AirbyteMessage]:
     return [
         request_response_log_message({"request": 1}, {"response": 2}, "http://any_url.com"),
         record_message("hashiras", {"name": "Shinobu Kocho"}),

@@ -1,12 +1,16 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
+
 import logging
 import unittest
 from datetime import datetime
 from unittest.mock import MagicMock, Mock
 
 import pytest
+from freezegun import freeze_time
+
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, AirbyteStream, Level, SyncMode
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.file_based.availability_strategy import (
@@ -32,7 +36,7 @@ from airbyte_cdk.sources.streams.concurrent.exceptions import ExceptionWithDispl
 from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
 from airbyte_cdk.sources.utils.slice_logger import SliceLogger
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
-from freezegun import freeze_time
+
 
 _ANY_SYNC_MODE = SyncMode.full_refresh
 _ANY_STATE = {"state_key": "state_value"}

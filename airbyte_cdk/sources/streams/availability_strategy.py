@@ -1,30 +1,31 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
-import logging
 import typing
 from abc import ABC, abstractmethod
-from typing import Any, Mapping, Optional, Tuple
+from typing import Any
 
 from airbyte_cdk.models import SyncMode
-from airbyte_cdk.sources.streams.core import Stream, StreamData
+
 
 if typing.TYPE_CHECKING:
+    import logging
+    from collections.abc import Mapping
+
     from airbyte_cdk.sources import Source
+    from airbyte_cdk.sources.streams.core import Stream, StreamData
 
 
 class AvailabilityStrategy(ABC):
-    """
-    Abstract base class for checking stream availability.
-    """
+    """Abstract base class for checking stream availability."""
 
     @abstractmethod
     def check_availability(
-        self, stream: Stream, logger: logging.Logger, source: Optional["Source"] = None
-    ) -> Tuple[bool, Optional[str]]:
-        """
-        Checks stream availability.
+        self, stream: Stream, logger: logging.Logger, source: Source | None = None
+    ) -> tuple[bool, str | None]:
+        """Checks stream availability.
 
         :param stream: stream
         :param logger: source logger
@@ -36,9 +37,8 @@ class AvailabilityStrategy(ABC):
         """
 
     @staticmethod
-    def get_first_stream_slice(stream: Stream) -> Optional[Mapping[str, Any]]:
-        """
-        Gets the first stream_slice from a given stream's stream_slices.
+    def get_first_stream_slice(stream: Stream) -> Mapping[str, Any] | None:
+        """Gets the first stream_slice from a given stream's stream_slices.
         :param stream: stream
         :raises StopIteration: if there is no first slice to return (the stream_slices generator is empty)
         :return: first stream slice from 'stream_slices' generator (`None` is a valid stream slice)
@@ -55,10 +55,9 @@ class AvailabilityStrategy(ABC):
 
     @staticmethod
     def get_first_record_for_slice(
-        stream: Stream, stream_slice: Optional[Mapping[str, Any]]
+        stream: Stream, stream_slice: Mapping[str, Any] | None
     ) -> StreamData:
-        """
-        Gets the first record for a stream_slice of a stream.
+        """Gets the first record for a stream_slice of a stream.
 
         :param stream: stream instance from which to read records
         :param stream_slice: stream_slice parameters for slicing the stream

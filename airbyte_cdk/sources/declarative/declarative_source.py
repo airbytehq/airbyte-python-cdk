@@ -1,19 +1,23 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
-import logging
 from abc import abstractmethod
-from typing import Any, Mapping, Tuple
+from typing import TYPE_CHECKING, Any
 
 from airbyte_cdk.sources.abstract_source import AbstractSource
-from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
+
+
+if TYPE_CHECKING:
+    import logging
+    from collections.abc import Mapping
+
+    from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 
 
 class DeclarativeSource(AbstractSource):
-    """
-    Base class for declarative Source. Concrete sources need to define the connection_checker to use
-    """
+    """Base class for declarative Source. Concrete sources need to define the connection_checker to use"""
 
     @property
     @abstractmethod
@@ -22,9 +26,8 @@ class DeclarativeSource(AbstractSource):
 
     def check_connection(
         self, logger: logging.Logger, config: Mapping[str, Any]
-    ) -> Tuple[bool, Any]:
-        """
-        :param logger: The source logger
+    ) -> tuple[bool, Any]:
+        """:param logger: The source logger
         :param config: The user-provided configuration as specified by the source's spec.
           This usually contains information required to check connection e.g. tokens, secrets and keys etc.
         :return: A tuple of (boolean, error). If boolean is true, then the connection check is successful

@@ -1,25 +1,20 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import copy
 import datetime
 import logging
+from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from typing import (
     Any,
-    Callable,
-    Dict,
-    Iterable,
-    List,
-    Mapping,
-    MutableMapping,
-    Optional,
-    Tuple,
-    Union,
 )
 from unittest.mock import Mock
 
 import pytest
+from pytest import fixture
+
 from airbyte_cdk.models import (
     AirbyteCatalog,
     AirbyteConnectionStatus,
@@ -44,8 +39,8 @@ from airbyte_cdk.models import (
     StreamDescriptor,
     SyncMode,
     TraceType,
+    Type,
 )
-from airbyte_cdk.models import Type
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources import AbstractSource
 from airbyte_cdk.sources.message import MessageRepository
@@ -53,7 +48,7 @@ from airbyte_cdk.sources.streams import IncrementalMixin, Stream
 from airbyte_cdk.sources.utils.record_helper import stream_data_to_airbyte_message
 from airbyte_cdk.utils.airbyte_secrets_utils import update_secrets
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from pytest import fixture
+
 
 logger = logging.getLogger("airbyte")
 
@@ -61,8 +56,8 @@ logger = logging.getLogger("airbyte")
 class MockSource(AbstractSource):
     def __init__(
         self,
-        check_lambda: Callable[[], Tuple[bool, Optional[Any]]] = None,
-        streams: List[Stream] = None,
+        check_lambda: Callable[[], tuple[bool, Any | None]] = None,
+        streams: list[Stream] = None,
         message_repository: MessageRepository = None,
         exception_on_missing_stream: bool = True,
         stop_sync_on_stream_failure: bool = False,
@@ -75,12 +70,12 @@ class MockSource(AbstractSource):
 
     def check_connection(
         self, logger: logging.Logger, config: Mapping[str, Any]
-    ) -> Tuple[bool, Optional[Any]]:
+    ) -> tuple[bool, Any | None]:
         if self.check_lambda:
             return self.check_lambda()
         return False, "Missing callable."
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> list[Stream]:
         if not self._streams:
             raise Exception("Stream is not set")
         return self._streams
@@ -176,8 +171,8 @@ def test_raising_check(mocker):
 class MockStream(Stream):
     def __init__(
         self,
-        inputs_and_mocked_outputs: List[
-            Tuple[Mapping[str, Any], Iterable[Mapping[str, Any]]]
+        inputs_and_mocked_outputs: list[
+            tuple[Mapping[str, Any], Iterable[Mapping[str, Any]]]
         ] = None,
         name: str = None,
     ):
@@ -201,11 +196,11 @@ class MockStream(Stream):
         )
 
     @property
-    def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
+    def primary_key(self) -> str | list[str] | list[list[str]] | None:
         return "pk"
 
     @property
-    def cursor_field(self) -> Union[str, List[str]]:
+    def cursor_field(self) -> str | list[str]:
         return ["updated_at"]
 
 
@@ -214,7 +209,7 @@ class MockStreamWithCursor(MockStream):
 
     def __init__(
         self,
-        inputs_and_mocked_outputs: List[Tuple[Mapping[str, Any], Iterable[Mapping[str, Any]]]],
+        inputs_and_mocked_outputs: list[tuple[Mapping[str, Any], Iterable[Mapping[str, Any]]]],
         name: str,
     ):
         super().__init__(inputs_and_mocked_outputs, name)
@@ -223,7 +218,7 @@ class MockStreamWithCursor(MockStream):
 class MockStreamWithState(MockStreamWithCursor):
     def __init__(
         self,
-        inputs_and_mocked_outputs: List[Tuple[Mapping[str, Any], Iterable[Mapping[str, Any]]]],
+        inputs_and_mocked_outputs: list[tuple[Mapping[str, Any], Iterable[Mapping[str, Any]]]],
         name: str,
         state=None,
     ):
@@ -242,7 +237,7 @@ class MockStreamWithState(MockStreamWithCursor):
 class MockStreamEmittingAirbyteMessages(MockStreamWithState):
     def __init__(
         self,
-        inputs_and_mocked_outputs: List[Tuple[Mapping[str, Any], Iterable[AirbyteMessage]]] = None,
+        inputs_and_mocked_outputs: list[tuple[Mapping[str, Any], Iterable[AirbyteMessage]]] = None,
         name: str = None,
         state=None,
     ):
@@ -255,7 +250,7 @@ class MockStreamEmittingAirbyteMessages(MockStreamWithState):
         return self._name
 
     @property
-    def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
+    def primary_key(self) -> str | list[str] | list[list[str]] | None:
         return "pk"
 
     @property
@@ -270,7 +265,7 @@ class MockStreamEmittingAirbyteMessages(MockStreamWithState):
 class MockResumableFullRefreshStream(Stream):
     def __init__(
         self,
-        inputs_and_mocked_outputs: List[Tuple[Mapping[str, Any], Mapping[str, Any]]] = None,
+        inputs_and_mocked_outputs: list[tuple[Mapping[str, Any], Mapping[str, Any]]] = None,
         name: str = None,
     ):
         self._inputs_and_mocked_outputs = inputs_and_mocked_outputs
@@ -303,7 +298,7 @@ class MockResumableFullRefreshStream(Stream):
         yield from output
 
     @property
-    def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
+    def primary_key(self) -> str | list[str] | list[list[str]] | None:
         return "id"
 
     @property
@@ -454,14 +449,14 @@ def test_read_stream_with_error_gets_display_message(mocker):
 GLOBAL_EMITTED_AT = 1
 
 
-def _as_record(stream: str, data: Dict[str, Any]) -> AirbyteMessage:
+def _as_record(stream: str, data: dict[str, Any]) -> AirbyteMessage:
     return AirbyteMessage(
         type=Type.RECORD,
         record=AirbyteRecordMessage(stream=stream, data=data, emitted_at=GLOBAL_EMITTED_AT),
     )
 
 
-def _as_records(stream: str, data: List[Dict[str, Any]]) -> List[AirbyteMessage]:
+def _as_records(stream: str, data: list[dict[str, Any]]) -> list[AirbyteMessage]:
     return [_as_record(stream, datum) for datum in data]
 
 
@@ -479,7 +474,7 @@ def _as_stream_status(stream: str, status: AirbyteStreamStatus) -> AirbyteMessag
     return AirbyteMessage(type=MessageType.TRACE, trace=trace_message)
 
 
-def _as_state(stream_name: str = "", per_stream_state: Dict[str, Any] = None):
+def _as_state(stream_name: str = "", per_stream_state: dict[str, Any] = None):
     return AirbyteMessage(
         type=Type.STATE,
         state=AirbyteStateMessage(
@@ -495,9 +490,9 @@ def _as_state(stream_name: str = "", per_stream_state: Dict[str, Any] = None):
 def _as_error_trace(
     stream: str,
     error_message: str,
-    internal_message: Optional[str],
-    failure_type: Optional[FailureType],
-    stack_trace: Optional[str],
+    internal_message: str | None,
+    failure_type: FailureType | None,
+    stack_trace: str | None,
 ) -> AirbyteMessage:
     trace_message = AirbyteTraceMessage(
         emitted_at=datetime.datetime.now().timestamp() * 1000.0,
@@ -522,7 +517,7 @@ def _configured_stream(stream: Stream, sync_mode: SyncMode):
     )
 
 
-def _fix_emitted_at(messages: List[AirbyteMessage]) -> List[AirbyteMessage]:
+def _fix_emitted_at(messages: list[AirbyteMessage]) -> list[AirbyteMessage]:
     for msg in messages:
         if msg.type == Type.RECORD and msg.record:
             msg.record.emitted_at = GLOBAL_EMITTED_AT
@@ -668,12 +663,16 @@ def test_read_full_refresh_with_slices_sends_slice_messages(mocker, slices):
 
     messages = src.read(debug_logger, {}, catalog)
 
-    assert 2 == len(
-        list(
-            filter(
-                lambda message: message.log and message.log.message.startswith("slice:"), messages
+    assert (
+        len(
+            list(
+                filter(
+                    lambda message: message.log and message.log.message.startswith("slice:"),
+                    messages,
+                )
             )
         )
+        == 2
     )
 
 
@@ -703,12 +702,16 @@ def test_read_incremental_with_slices_sends_slice_messages(mocker):
 
     messages = src.read(debug_logger, {}, catalog)
 
-    assert 2 == len(
-        list(
-            filter(
-                lambda message: message.log and message.log.message.startswith("slice:"), messages
+    assert (
+        len(
+            list(
+                filter(
+                    lambda message: message.log and message.log.message.startswith("slice:"),
+                    messages,
+                )
             )
         )
+        == 2
     )
 
 
@@ -1012,9 +1015,8 @@ class TestIncrementalRead:
         ],
     )
     def test_no_slices(self, mocker, slices):
-        """
-        Tests that an incremental read returns at least one state messages even if no records were read:
-            1. outputs a state message after reading the entire stream
+        """Tests that an incremental read returns at least one state messages even if no records were read:
+        1. outputs a state message after reading the entire stream
         """
         state = {"cursor": "value"}
         input_state = [
@@ -1100,11 +1102,10 @@ class TestIncrementalRead:
         assert messages == expected
 
     def test_with_slices_and_interval(self, mocker):
-        """
-        Tests that an incremental read which uses slices and a checkpoint interval:
-            1. outputs all records
-            2. outputs a state message every N records (N=checkpoint_interval)
-            3. outputs a state message after reading the entire slice
+        """Tests that an incremental read which uses slices and a checkpoint interval:
+        1. outputs all records
+        2. outputs a state message every N records (N=checkpoint_interval)
+        3. outputs a state message after reading the entire slice
         """
         input_state = []
         slices = [{"1": "1"}, {"2": "2"}]
@@ -1199,13 +1200,11 @@ class TestIncrementalRead:
         assert messages == expected
 
     def test_emit_non_records(self, mocker):
+        """Tests that an incremental read which uses slices and a checkpoint interval:
+        1. outputs all records
+        2. outputs a state message every N records (N=checkpoint_interval)
+        3. outputs a state message after reading the entire slice
         """
-        Tests that an incremental read which uses slices and a checkpoint interval:
-            1. outputs all records
-            2. outputs a state message every N records (N=checkpoint_interval)
-            3. outputs a state message after reading the entire slice
-        """
-
         input_state = []
         slices = [{"1": "1"}, {"2": "2"}]
         stream_output = [
@@ -1319,8 +1318,7 @@ class TestIncrementalRead:
         assert messages == expected
 
     def test_without_state_attribute_for_stream_with_desc_records(self, mocker):
-        """
-        This test will check that the state resolved by get_updated_state is used and returned in the state message.
+        """This test will check that the state resolved by get_updated_state is used and returned in the state message.
         In this scenario records are returned in descending order, but we keep the "highest" cursor in the state.
         """
         stream_cursor = MockStreamWithCursor.cursor_field
@@ -1611,8 +1609,7 @@ class TestResumableFullRefreshRead:
         assert exc.value.failure_type == FailureType.config_error
 
     def test_resumable_full_refresh_skip_prior_successful_streams(self, mocker):
-        """
-        Tests that running a resumable full refresh sync from the second attempt where one stream was successful
+        """Tests that running a resumable full refresh sync from the second attempt where one stream was successful
         and should not be synced. The other should sync beginning at the partial state passed in.
         """
         responses = [
@@ -1773,8 +1770,7 @@ class TestResumableFullRefreshRead:
 def test_continue_sync_with_failed_streams(
     mocker, exception_to_raise, expected_error_message, expected_internal_message
 ):
-    """
-    Tests that running a sync for a connector with multiple streams will continue syncing when one stream fails
+    """Tests that running a sync for a connector with multiple streams will continue syncing when one stream fails
     with an error. This source does not override the default behavior defined in the AbstractSource class.
     """
     stream_output = [{"k1": "v1"}, {"k2": "v2"}]
@@ -1827,8 +1823,7 @@ def test_continue_sync_with_failed_streams(
 
 
 def test_continue_sync_source_override_false(mocker):
-    """
-    Tests that running a sync for a connector explicitly overriding the default AbstractSource.stop_sync_on_stream_failure
+    """Tests that running a sync for a connector explicitly overriding the default AbstractSource.stop_sync_on_stream_failure
     property to be False which will continue syncing stream even if one encountered an exception.
     """
     update_secrets(["API_KEY_VALUE"])
@@ -1885,9 +1880,7 @@ def test_continue_sync_source_override_false(mocker):
 
 
 def test_sync_error_trace_messages_obfuscate_secrets(mocker):
-    """
-    Tests that exceptions emitted as trace messages by a source have secrets properly sanitized
-    """
+    """Tests that exceptions emitted as trace messages by a source have secrets properly sanitized"""
     update_secrets(["API_KEY_VALUE"])
 
     stream_output = [{"k1": "v1"}, {"k2": "v2"}]
@@ -1944,8 +1937,7 @@ def test_sync_error_trace_messages_obfuscate_secrets(mocker):
 
 
 def test_continue_sync_with_failed_streams_with_override_false(mocker):
-    """
-    Tests that running a sync for a connector with multiple streams and stop_sync_on_stream_failure enabled stops
+    """Tests that running a sync for a connector with multiple streams and stop_sync_on_stream_failure enabled stops
     the sync when one stream fails with an error.
     """
     stream_output = [{"k1": "v1"}, {"k2": "v2"}]
@@ -2014,9 +2006,7 @@ def test_continue_sync_with_failed_streams_with_override_false(mocker):
 
 # TODO: Replace call of this function to fixture in the tests
 def _remove_stack_trace(message: AirbyteMessage) -> AirbyteMessage:
-    """
-    Helper method that removes the stack trace from Airbyte trace messages to make asserting against expected records easier
-    """
+    """Helper method that removes the stack trace from Airbyte trace messages to make asserting against expected records easier"""
     if message.trace and message.trace.error and message.trace.error.stack_trace:
         message.trace.error.stack_trace = None
     return message
@@ -2025,9 +2015,7 @@ def _remove_stack_trace(message: AirbyteMessage) -> AirbyteMessage:
 def test_read_nonexistent_stream_emit_incomplete_stream_status(
     mocker, remove_stack_trace, as_stream_status
 ):
-    """
-    Tests that attempting to sync a stream which the source does not return from the `streams` method emit incomplete stream status
-    """
+    """Tests that attempting to sync a stream which the source does not return from the `streams` method emit incomplete stream status"""
     s1 = MockStream(name="s1")
     s2 = MockStream(name="this_stream_doesnt_exist_in_the_source")
 

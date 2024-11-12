@@ -1,9 +1,12 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
+
 import datetime
+from collections.abc import Iterable, Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Iterable, Mapping, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 from airbyte_cdk.sources.declarative.incremental import (
     DatetimeBasedCursor,
@@ -16,8 +19,7 @@ from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 
 @dataclass
 class RecordFilter:
-    """
-    Filter applied on a list of Records
+    """Filter applied on a list of Records
 
     config (Config): The user-provided configuration as specified by the source's spec
     condition (str): The string representing the predicate to filter a record. Records will be removed if evaluated to False
@@ -36,8 +38,8 @@ class RecordFilter:
         self,
         records: Iterable[Mapping[str, Any]],
         stream_state: StreamState,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         kwargs = {
             "stream_state": stream_state,
@@ -51,8 +53,7 @@ class RecordFilter:
 
 
 class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
-    """
-    Applies a filter to a list of records to exclude those that are older than the stream_state/start_date.
+    """Applies a filter to a list of records to exclude those that are older than the stream_state/start_date.
 
     :param DatetimeBasedCursor date_time_based_cursor: Cursor used to extract datetime values
     :param PerPartitionCursor per_partition_cursor: Optional Cursor used for mapping cursor value in nested stream_state
@@ -61,9 +62,9 @@ class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
     def __init__(
         self,
         date_time_based_cursor: DatetimeBasedCursor,
-        substream_cursor: Optional[Union[PerPartitionWithGlobalCursor, GlobalSubstreamCursor]],
-        **kwargs: Any,
-    ):
+        substream_cursor: PerPartitionWithGlobalCursor | GlobalSubstreamCursor | None,
+        **kwargs: Any,  # noqa: ANN401  (any-type)
+    ) -> None:
         super().__init__(**kwargs)
         self._date_time_based_cursor = date_time_based_cursor
         self._substream_cursor = substream_cursor
@@ -74,7 +75,7 @@ class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
 
     @property
     def _start_date_from_config(self) -> datetime.datetime:
-        return self._date_time_based_cursor._start_datetime.get_datetime(
+        return self._date_time_based_cursor._start_datetime.get_datetime(  # noqa: SLF001  (private member)
             self._date_time_based_cursor.config
         )
 
@@ -86,8 +87,8 @@ class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
         self,
         records: Iterable[Mapping[str, Any]],
         stream_state: StreamState,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         state_value = self._get_state_value(
             stream_state, stream_slice or StreamSlice(partition={}, cursor_slice={})
@@ -109,11 +110,8 @@ class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
             )
         yield from records
 
-    def _get_state_value(
-        self, stream_state: StreamState, stream_slice: StreamSlice
-    ) -> Optional[str]:
-        """
-        Return cursor_value or None in case it was not found.
+    def _get_state_value(self, stream_state: StreamState, stream_slice: StreamSlice) -> str | None:  # noqa: ARG002  (unused)
+        """Return cursor_value or None in case it was not found.
         Cursor_value may be empty if:
             1. It is an initial sync => no stream_state exist at all.
             2. In Parent-child stream, and we already make initial sync, so stream_state is present.
@@ -127,9 +125,8 @@ class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
 
         return state.get(self._cursor_field) if state else None
 
-    def _get_filter_date(self, state_value: Optional[str]) -> datetime.datetime:
+    def _get_filter_date(self, state_value: str | None) -> datetime.datetime:
         start_date_parsed = self._start_date_from_config
         if state_value:
             return max(start_date_parsed, self._date_time_based_cursor.parse_date(state_value))
-        else:
-            return start_date_parsed
+        return start_date_parsed

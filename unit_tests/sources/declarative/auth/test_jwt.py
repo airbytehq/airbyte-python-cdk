@@ -1,6 +1,8 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
+
 import base64
 import logging
 from datetime import datetime
@@ -8,15 +10,15 @@ from datetime import datetime
 import freezegun
 import jwt
 import pytest
+
 from airbyte_cdk.sources.declarative.auth.jwt import JwtAuthenticator
+
 
 LOGGER = logging.getLogger(__name__)
 
 
 class TestJwtAuthenticator:
-    """
-    Test class for JWT Authenticator.
-    """
+    """Test class for JWT Authenticator."""
 
     @pytest.mark.parametrize(
         "algorithm, kid, typ, cty, additional_jwt_headers, expected",
@@ -110,7 +112,7 @@ class TestJwtAuthenticator:
     @pytest.mark.parametrize(
         "base64_encode_secret_key, secret_key, expected",
         [
-            (True, "test", base64.b64encode("test".encode()).decode()),
+            (True, "test", base64.b64encode(b"test").decode()),
             (False, "test", "test"),
         ],
     )

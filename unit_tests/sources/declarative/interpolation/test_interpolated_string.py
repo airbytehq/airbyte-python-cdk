@@ -1,9 +1,12 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import pytest
+
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
+
 
 config = {"field": "value"}
 parameters = {"hello": "world"}
@@ -22,4 +25,4 @@ kwargs = {"c": "airbyte"}
 )
 def test_interpolated_string(test_name, input_string, expected_value):
     s = InterpolatedString.create(input_string, parameters=parameters)
-    assert s.eval(config, **{"kwargs": kwargs}) == expected_value
+    assert s.eval(config, kwargs=kwargs) == expected_value

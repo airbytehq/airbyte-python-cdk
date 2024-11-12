@@ -1,13 +1,14 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import itertools
 import logging
 from collections import ChainMap
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Iterable, List, Mapping, Optional
+from typing import Any
 
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
 from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
@@ -19,8 +20,7 @@ from airbyte_cdk.sources.types import StreamSlice, StreamState
 def check_for_substream_in_slicers(
     slicers: Iterable[PartitionRouter], log_warning: Callable[[str], None]
 ) -> None:
-    """
-    Recursively checks for the presence of SubstreamPartitionRouter within slicers.
+    """Recursively checks for the presence of SubstreamPartitionRouter within slicers.
     Logs a warning if a SubstreamPartitionRouter is found within a CartesianProductStreamSlicer.
 
     Args:
@@ -31,15 +31,14 @@ def check_for_substream_in_slicers(
         if isinstance(slicer, SubstreamPartitionRouter):
             log_warning("Parent state handling is not supported for CartesianProductStreamSlicer.")
             return
-        elif isinstance(slicer, CartesianProductStreamSlicer):
+        if isinstance(slicer, CartesianProductStreamSlicer):
             # Recursively check sub-slicers within CartesianProductStreamSlicer
             check_for_substream_in_slicers(slicer.stream_slicers, log_warning)
 
 
 @dataclass
 class CartesianProductStreamSlicer(PartitionRouter):
-    """
-    Stream slicers that iterates over the cartesian product of input stream slicers
+    """Stream slicers that iterates over the cartesian product of input stream slicers
     Given 2 stream slicers with the following slices:
     A: [{"i": 0}, {"i": 1}, {"i": 2}]
     B: [{"s": "hello"}, {"s": "world"}]
@@ -57,7 +56,7 @@ class CartesianProductStreamSlicer(PartitionRouter):
         stream_slicers (List[PartitionRouter]): Underlying stream slicers. The RequestOptions (e.g: Request headers, parameters, etc..) returned by this slicer are the combination of the RequestOptions of its input slicers. If there are conflicts e.g: two slicers define the same header or request param, the conflict is resolved by taking the value from the first slicer, where ordering is determined by the order in which slicers were input to this composite slicer.
     """
 
-    stream_slicers: List[PartitionRouter]
+    stream_slicers: list[PartitionRouter]
     parameters: InitVar[Mapping[str, Any]]
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
@@ -66,9 +65,9 @@ class CartesianProductStreamSlicer(PartitionRouter):
     def get_request_params(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return dict(
             ChainMap(
@@ -86,9 +85,9 @@ class CartesianProductStreamSlicer(PartitionRouter):
     def get_request_headers(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return dict(
             ChainMap(
@@ -106,9 +105,9 @@ class CartesianProductStreamSlicer(PartitionRouter):
     def get_request_body_data(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return dict(
             ChainMap(
@@ -126,9 +125,9 @@ class CartesianProductStreamSlicer(PartitionRouter):
     def get_request_body_json(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return dict(
             ChainMap(
@@ -153,22 +152,15 @@ class CartesianProductStreamSlicer(PartitionRouter):
                 raise ValueError(
                     f"There should only be a single cursor slice. Found {cursor_slices}"
                 )
-            if cursor_slices:
-                cursor_slice = cursor_slices[0]
-            else:
-                cursor_slice = {}
+            cursor_slice = cursor_slices[0] if cursor_slices else {}
             yield StreamSlice(partition=partition, cursor_slice=cursor_slice)
 
     def set_initial_state(self, stream_state: StreamState) -> None:
-        """
-        Parent stream states are not supported for cartesian product stream slicer
-        """
+        """Parent stream states are not supported for cartesian product stream slicer"""
         pass
 
-    def get_stream_state(self) -> Optional[Mapping[str, StreamState]]:
-        """
-        Parent stream states are not supported for cartesian product stream slicer
-        """
+    def get_stream_state(self) -> Mapping[str, StreamState] | None:
+        """Parent stream states are not supported for cartesian product stream slicer"""
         pass
 
     @property

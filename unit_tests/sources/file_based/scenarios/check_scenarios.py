@@ -1,8 +1,8 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
-from airbyte_cdk.sources.file_based.exceptions import FileBasedSourceError
 from unit_tests.sources.file_based.helpers import (
     FailingSchemaValidationPolicy,
     TestErrorListMatchingFilesInMemoryFilesStreamReader,
@@ -10,6 +10,9 @@ from unit_tests.sources.file_based.helpers import (
 )
 from unit_tests.sources.file_based.scenarios.file_based_source_builder import FileBasedSourceBuilder
 from unit_tests.sources.file_based.scenarios.scenario_builder import TestScenarioBuilder
+
+from airbyte_cdk.sources.file_based.exceptions import FileBasedSourceError
+
 
 _base_success_scenario = (
     TestScenarioBuilder()

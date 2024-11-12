@@ -1,7 +1,7 @@
 #
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
-
+from __future__ import annotations
 
 import datetime
 from io import BytesIO
@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, Mock, mock_open, patch
 
 import pandas as pd
 import pytest
+
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
     ExcelFormat,
     FileBasedStreamConfig,

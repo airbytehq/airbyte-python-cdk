@@ -1,11 +1,14 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Dict, Mapping, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 import requests
+
 from airbyte_cdk.sources.declarative.decoders import (
     Decoder,
     JsonDecoder,
@@ -21,8 +24,7 @@ from airbyte_cdk.sources.types import Config, Record
 
 @dataclass
 class CursorPaginationStrategy(PaginationStrategy):
-    """
-    Pagination strategy that evaluates an interpolated string to define the next page token
+    """Pagination strategy that evaluates an interpolated string to define the next page token
 
     Attributes:
         page_size (Optional[int]): the number of records to request
@@ -32,11 +34,11 @@ class CursorPaginationStrategy(PaginationStrategy):
         decoder (Decoder): decoder to decode the response
     """
 
-    cursor_value: Union[InterpolatedString, str]
+    cursor_value: InterpolatedString | str
     config: Config
     parameters: InitVar[Mapping[str, Any]]
-    page_size: Optional[int] = None
-    stop_condition: Optional[Union[InterpolatedBoolean, str]] = None
+    page_size: int | None = None
+    stop_condition: InterpolatedBoolean | str | None = None
     decoder: Decoder = field(
         default_factory=lambda: PaginationDecoderDecorator(decoder=JsonDecoder(parameters={}))
     )
@@ -48,24 +50,24 @@ class CursorPaginationStrategy(PaginationStrategy):
         else:
             self._cursor_value = self.cursor_value
         if isinstance(self.stop_condition, str):
-            self._stop_condition: Optional[InterpolatedBoolean] = InterpolatedBoolean(
+            self._stop_condition: InterpolatedBoolean | None = InterpolatedBoolean(
                 condition=self.stop_condition, parameters=parameters
             )
         else:
             self._stop_condition = self.stop_condition
 
     @property
-    def initial_token(self) -> Optional[Any]:
+    def initial_token(self) -> Any | None:  # noqa: ANN401  (any-type)
         return self._initial_cursor
 
     def next_page_token(
-        self, response: requests.Response, last_page_size: int, last_record: Optional[Record]
-    ) -> Optional[Any]:
+        self, response: requests.Response, last_page_size: int, last_record: Record | None
+    ) -> Any | None:  # noqa: ANN401  (any-type)
         decoded_response = next(self.decoder.decode(response))
 
         # The default way that link is presented in requests.Response is a string of various links (last, next, etc). This
         # is not indexable or useful for parsing the cursor, so we replace it with the link dictionary from response.links
-        headers: Dict[str, Any] = dict(response.headers)
+        headers: dict[str, Any] = dict(response.headers)
         headers["link"] = response.links
         if self._stop_condition:
             should_stop = self._stop_condition.eval(
@@ -84,10 +86,10 @@ class CursorPaginationStrategy(PaginationStrategy):
             last_record=last_record,
             last_page_size=last_page_size,
         )
-        return token if token else None
+        return token or None
 
-    def reset(self, reset_value: Optional[Any] = None) -> None:
+    def reset(self, reset_value: Any | None = None) -> None:  # noqa: ANN401  (any-type)
         self._initial_cursor = reset_value
 
-    def get_page_size(self) -> Optional[int]:
+    def get_page_size(self) -> int | None:
         return self.page_size

@@ -1,23 +1,26 @@
 #
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import logging
+from collections.abc import Generator, Mapping, MutableMapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Generator, Mapping, MutableMapping
+from typing import TYPE_CHECKING, Any
 from xml.parsers.expat import ExpatError
 
 import requests
 import xmltodict
+
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
+
 
 logger = logging.getLogger("airbyte")
 
 
 @dataclass
 class XmlDecoder(Decoder):
-    """
-    XmlDecoder is a decoder strategy that parses the XML content of the resopnse, and converts it to a dict.
+    """XmlDecoder is a decoder strategy that parses the XML content of the resopnse, and converts it to a dict.
 
     This class handles XML attributes by prefixing them with an '@' symbol and represents XML text content by using the '#text' key if the element has attributes or the element name/tag. It does not currently support XML namespace declarations.
 

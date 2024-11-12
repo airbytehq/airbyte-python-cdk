@@ -61,10 +61,10 @@ from .well_known_types import (
 )
 
 from .airbyte_protocol_serializers import (
-AirbyteStreamStateSerializer,
-AirbyteStateMessageSerializer,
-AirbyteMessageSerializer,
-ConfiguredAirbyteCatalogSerializer,
-ConfiguredAirbyteStreamSerializer,
-ConnectorSpecificationSerializer,
+    AirbyteStreamStateSerializer,
+    AirbyteStateMessageSerializer,
+    AirbyteMessageSerializer,
+    ConfiguredAirbyteCatalogSerializer,
+    ConfiguredAirbyteStreamSerializer,
+    ConnectorSpecificationSerializer,
 )

@@ -1,9 +1,11 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Union
+from typing import Any
 
 from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_token import (
     AbstractHeaderAuthenticator,
@@ -12,15 +14,13 @@ from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_token import
 
 @dataclass
 class DeclarativeAuthenticator(AbstractHeaderAuthenticator):
-    """
-    Interface used to associate which authenticators can be used as part of the declarative framework
-    """
+    """Interface used to associate which authenticators can be used as part of the declarative framework."""
 
     def get_request_params(self) -> Mapping[str, Any]:
         """HTTP request parameter to add to the requests"""
         return {}
 
-    def get_request_body_data(self) -> Union[Mapping[str, Any], str]:
+    def get_request_body_data(self) -> Mapping[str, Any] | str:
         """Form-encoded body data to set on the requests"""
         return {}
 

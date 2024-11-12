@@ -1,18 +1,19 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 from airbyte_cdk.sources.declarative.interpolation.jinja import JinjaInterpolation
 from airbyte_cdk.sources.types import Config
 
 
 @dataclass
-class InterpolatedString:
-    """
-    Wrapper around a raw string to be interpolated with the Jinja2 templating engine
+class InterpolatedString:  # noqa: PLW1641  # Ignore missing __hash__()
+    """Wrapper around a raw string to be interpolated with the Jinja2 templating engine
 
     Attributes:
         string (str): The string to evalute
@@ -22,7 +23,7 @@ class InterpolatedString:
 
     string: str
     parameters: InitVar[Mapping[str, Any]]
-    default: Optional[str] = None
+    default: str | None = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.default = self.default or self.string
@@ -32,9 +33,8 @@ class InterpolatedString:
         # This allows for optimization, but we do not know it yet at this stage
         self._is_plain_string = None
 
-    def eval(self, config: Config, **kwargs: Any) -> Any:
-        """
-        Interpolates the input string using the config and other optional arguments passed as parameter.
+    def eval(self, config: Config, **kwargs: Any) -> Any:  # noqa: ANN401  (any-type)
+        """Interpolates the input string using the config and other optional arguments passed as parameter.
 
         :param config: The user-provided configuration as specified by the source's spec
         :param kwargs: Optional parameters used for interpolation
@@ -54,7 +54,7 @@ class InterpolatedString:
             self.string, config, self.default, parameters=self._parameters, **kwargs
         )
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, InterpolatedString):
             return False
         return self.string == other.string and self.default == other.default
@@ -62,12 +62,11 @@ class InterpolatedString:
     @classmethod
     def create(
         cls,
-        string_or_interpolated: Union["InterpolatedString", str],
+        string_or_interpolated: InterpolatedString | str,
         *,
         parameters: Mapping[str, Any],
-    ) -> "InterpolatedString":
-        """
-        Helper function to obtain an InterpolatedString from either a raw string or an InterpolatedString.
+    ) -> InterpolatedString:
+        """Helper function to obtain an InterpolatedString from either a raw string or an InterpolatedString.
 
         :param string_or_interpolated: either a raw string or an InterpolatedString.
         :param parameters: parameters propagated from parent component
@@ -75,5 +74,4 @@ class InterpolatedString:
         """
         if isinstance(string_or_interpolated, str):
             return InterpolatedString(string=string_or_interpolated, parameters=parameters)
-        else:
-            return string_or_interpolated
+        return string_or_interpolated

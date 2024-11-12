@@ -1,16 +1,19 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import json
 import logging
-from typing import Optional, Union
 from unittest.mock import Mock
 
 import freezegun
 import pendulum
 import pytest
 import requests
+from requests import Response
+from requests.exceptions import RequestException
+
 from airbyte_cdk.models import FailureType, OrchestratorType, Type
 from airbyte_cdk.sources.streams.http.requests_native_auth import (
     BasicHttpAuthenticator,
@@ -20,8 +23,7 @@ from airbyte_cdk.sources.streams.http.requests_native_auth import (
     TokenAuthenticator,
 )
 from airbyte_cdk.utils import AirbyteTracedException
-from requests import Response
-from requests.exceptions import RequestException
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -29,9 +31,7 @@ resp = Response()
 
 
 def test_token_authenticator():
-    """
-    Should match passed in token, no matter how many times token is retrieved.
-    """
+    """Should match passed in token, no matter how many times token is retrieved."""
     token_auth = TokenAuthenticator(token="test-token")
     header1 = token_auth.get_auth_header()
     header2 = token_auth.get_auth_header()
@@ -40,15 +40,13 @@ def test_token_authenticator():
     prepared_request.headers = {}
     token_auth(prepared_request)
 
-    assert {"Authorization": "Bearer test-token"} == prepared_request.headers
-    assert {"Authorization": "Bearer test-token"} == header1
-    assert {"Authorization": "Bearer test-token"} == header2
+    assert prepared_request.headers == {"Authorization": "Bearer test-token"}
+    assert header1 == {"Authorization": "Bearer test-token"}
+    assert header2 == {"Authorization": "Bearer test-token"}
 
 
 def test_basic_http_authenticator():
-    """
-    Should match passed in token, no matter how many times token is retrieved.
-    """
+    """Should match passed in token, no matter how many times token is retrieved."""
     token_auth = BasicHttpAuthenticator(username="user", password="password")
     header1 = token_auth.get_auth_header()
     header2 = token_auth.get_auth_header()
@@ -57,9 +55,9 @@ def test_basic_http_authenticator():
     prepared_request.headers = {}
     token_auth(prepared_request)
 
-    assert {"Authorization": "Basic dXNlcjpwYXNzd29yZA=="} == prepared_request.headers
-    assert {"Authorization": "Basic dXNlcjpwYXNzd29yZA=="} == header1
-    assert {"Authorization": "Basic dXNlcjpwYXNzd29yZA=="} == header2
+    assert prepared_request.headers == {"Authorization": "Basic dXNlcjpwYXNzd29yZA=="}
+    assert header1 == {"Authorization": "Basic dXNlcjpwYXNzd29yZA=="}
+    assert header2 == {"Authorization": "Basic dXNlcjpwYXNzd29yZA=="}
 
 
 def test_multiple_token_authenticator():
@@ -72,16 +70,14 @@ def test_multiple_token_authenticator():
     prepared_request.headers = {}
     multiple_token_auth(prepared_request)
 
-    assert {"Authorization": "Bearer token2"} == prepared_request.headers
-    assert {"Authorization": "Bearer token1"} == header1
-    assert {"Authorization": "Bearer token2"} == header2
-    assert {"Authorization": "Bearer token1"} == header3
+    assert prepared_request.headers == {"Authorization": "Bearer token2"}
+    assert header1 == {"Authorization": "Bearer token1"}
+    assert header2 == {"Authorization": "Bearer token2"}
+    assert header3 == {"Authorization": "Bearer token1"}
 
 
 class TestOauth2Authenticator:
-    """
-    Test class for OAuth2Authenticator.
-    """
+    """Test class for OAuth2Authenticator."""
 
     refresh_endpoint = "refresh_end"
     client_id = "client_id"
@@ -89,9 +85,7 @@ class TestOauth2Authenticator:
     refresh_token = "refresh_token"
 
     def test_get_auth_header_fresh(self, mocker):
-        """
-        Should not retrieve new token if current token is valid.
-        """
+        """Should not retrieve new token if current token is valid."""
         oauth = Oauth2Authenticator(
             token_refresh_endpoint=TestOauth2Authenticator.refresh_endpoint,
             client_id=TestOauth2Authenticator.client_id,
@@ -103,12 +97,10 @@ class TestOauth2Authenticator:
             Oauth2Authenticator, "refresh_access_token", return_value=("access_token", 1000)
         )
         header = oauth.get_auth_header()
-        assert {"Authorization": "Bearer access_token"} == header
+        assert header == {"Authorization": "Bearer access_token"}
 
     def test_get_auth_header_expired(self, mocker):
-        """
-        Should retrieve new token if current token is expired.
-        """
+        """Should retrieve new token if current token is expired."""
         oauth = Oauth2Authenticator(
             token_refresh_endpoint=TestOauth2Authenticator.refresh_endpoint,
             client_id=TestOauth2Authenticator.client_id,
@@ -131,12 +123,10 @@ class TestOauth2Authenticator:
             return_value=("access_token_2", valid_100_secs),
         )
         header = oauth.get_auth_header()
-        assert {"Authorization": "Bearer access_token_2"} == header
+        assert header == {"Authorization": "Bearer access_token_2"}
 
     def test_refresh_request_body(self):
-        """
-        Request body should match given configuration.
-        """
+        """Request body should match given configuration."""
         scopes = ["scope1", "scope2"]
         oauth = Oauth2Authenticator(
             token_refresh_endpoint="refresh_end",
@@ -187,7 +177,7 @@ class TestOauth2Authenticator:
         token, expires_in = oauth.refresh_access_token()
 
         assert isinstance(expires_in, int)
-        assert ("access_token", 1000) == (token, expires_in)
+        assert (token, expires_in) == ("access_token", 1000)
 
         # Test with expires_in as str
         mocker.patch.object(
@@ -196,7 +186,7 @@ class TestOauth2Authenticator:
         token, expires_in = oauth.refresh_access_token()
 
         assert isinstance(expires_in, str)
-        assert ("access_token", "2000") == (token, expires_in)
+        assert (token, expires_in) == ("access_token", "2000")
 
         # Test with expires_in as str
         mocker.patch.object(
@@ -207,7 +197,7 @@ class TestOauth2Authenticator:
         token, expires_in = oauth.refresh_access_token()
 
         assert isinstance(expires_in, str)
-        assert ("access_token", "2022-04-24T00:00:00Z") == (token, expires_in)
+        assert (token, expires_in) == ("access_token", "2022-04-24T00:00:00Z")
 
     @pytest.mark.parametrize(
         "expires_in_response, token_expiry_date_format, expected_token_expiry_date",
@@ -227,8 +217,8 @@ class TestOauth2Authenticator:
     def test_parse_refresh_token_lifespan(
         self,
         mocker,
-        expires_in_response: Union[str, int],
-        token_expiry_date_format: Optional[str],
+        expires_in_response: str | int,
+        token_expiry_date_format: str | None,
         expected_token_expiry_date: pendulum.DateTime,
     ):
         oauth = Oauth2Authenticator(
@@ -297,7 +287,7 @@ class TestOauth2Authenticator:
         prepared_request.headers = {}
         oauth(prepared_request)
 
-        assert {"Authorization": "Bearer access_token"} == prepared_request.headers
+        assert prepared_request.headers == {"Authorization": "Bearer access_token"}
 
     @pytest.mark.parametrize(
         (

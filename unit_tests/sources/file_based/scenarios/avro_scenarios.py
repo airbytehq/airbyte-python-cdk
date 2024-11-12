@@ -1,6 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import datetime
 import decimal
@@ -8,6 +9,7 @@ import decimal
 from unit_tests.sources.file_based.in_memory_files_source import TemporaryAvroFilesStreamReader
 from unit_tests.sources.file_based.scenarios.file_based_source_builder import FileBasedSourceBuilder
 from unit_tests.sources.file_based.scenarios.scenario_builder import TestScenarioBuilder
+
 
 _single_avro_file = {
     "a.avro": {

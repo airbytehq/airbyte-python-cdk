@@ -1,15 +1,17 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-
+from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.wait_until_time_from_header_backoff_strategy import (
     WaitUntilTimeFromHeaderBackoffStrategy,
 )
+
 
 SOME_BACKOFF_TIME = 60
 REGEX = "[-+]?\\d+"
@@ -52,9 +54,9 @@ REGEX = "[-+]?\\d+"
             "wait_until",
             "1600000060,60",
             None,
-            "[-+]?\d+",
+            r"[-+]?\d+",
             60,
-        ),  # noqa
+        ),
         (
             "test_wait_until_time_from_header_with_regex_from_parameters",
             "wait_until",
@@ -63,7 +65,6 @@ REGEX = "[-+]?\\d+"
             "{{parameters['regex']}}",
             60,
         ),
-        # noqa
         (
             "test_wait_until_time_from_header_with_regex_from_config",
             "wait_until",
@@ -71,15 +72,15 @@ REGEX = "[-+]?\\d+"
             None,
             "{{config['regex']}}",
             60,
-        ),  # noqa
+        ),
         (
             "test_wait_until_time_from_header_with_regex_no_match",
             "wait_time",
             "...",
             None,
-            "[-+]?\d+",
+            r"[-+]?\d+",
             None,
-        ),  # noqa
+        ),
         (
             "test_wait_until_no_header_with_min",
             "absent_header",

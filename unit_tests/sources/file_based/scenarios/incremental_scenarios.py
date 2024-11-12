@@ -1,15 +1,18 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
-from airbyte_cdk.sources.file_based.stream.cursor import DefaultFileBasedCursor
-from airbyte_cdk.test.state_builder import StateBuilder
 from unit_tests.sources.file_based.helpers import LowHistoryLimitCursor
 from unit_tests.sources.file_based.scenarios.file_based_source_builder import FileBasedSourceBuilder
 from unit_tests.sources.file_based.scenarios.scenario_builder import (
     IncrementalScenarioConfig,
     TestScenarioBuilder,
 )
+
+from airbyte_cdk.sources.file_based.stream.cursor import DefaultFileBasedCursor
+from airbyte_cdk.test.state_builder import StateBuilder
+
 
 single_csv_input_state_is_earlier_scenario = (
     TestScenarioBuilder()

@@ -1,15 +1,19 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-
+from __future__ import annotations
 
 import datetime
 from abc import abstractmethod
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, List, Mapping, Optional, Union
+from typing import TYPE_CHECKING, Any
 
 import dpath
 import pendulum
+from isodate import Duration
+from pendulum import DateTime
+
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder
 from airbyte_cdk.sources.declarative.exceptions import ReadException
@@ -18,8 +22,6 @@ from airbyte_cdk.sources.declarative.requesters.requester import Requester
 from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.sources.types import Config
-from isodate import Duration
-from pendulum import DateTime
 
 
 class TokenProvider:
@@ -31,14 +33,14 @@ class TokenProvider:
 @dataclass
 class SessionTokenProvider(TokenProvider):
     login_requester: Requester
-    session_token_path: List[str]
-    expiration_duration: Optional[Union[datetime.timedelta, Duration]]
+    session_token_path: list[str]
+    expiration_duration: datetime.timedelta | Duration | None
     parameters: InitVar[Mapping[str, Any]]
-    message_repository: MessageRepository = NoopMessageRepository()
+    message_repository: MessageRepository = NoopMessageRepository()  # noqa: RUF009  (func call in default value)
     decoder: Decoder = field(default_factory=lambda: JsonDecoder(parameters={}))
 
-    _next_expiration_time: Optional[DateTime] = None
-    _token: Optional[str] = None
+    _next_expiration_time: DateTime | None = None
+    _token: str | None = None
 
     def get_token(self) -> str:
         self._refresh_if_necessary()
@@ -71,7 +73,7 @@ class SessionTokenProvider(TokenProvider):
 @dataclass
 class InterpolatedStringTokenProvider(TokenProvider):
     config: Config
-    api_token: Union[InterpolatedString, str]
+    api_token: InterpolatedString | str
     parameters: Mapping[str, Any]
 
     def __post_init__(self) -> None:

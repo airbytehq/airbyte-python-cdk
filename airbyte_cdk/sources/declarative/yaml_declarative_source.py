@@ -1,11 +1,14 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
 import pkgutil
-from typing import Any, List, Mapping, Optional
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, Any
 
 import yaml
+
 from airbyte_cdk.models import AirbyteStateMessage, ConfiguredAirbyteCatalog
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
@@ -13,20 +16,19 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
 from airbyte_cdk.sources.types import ConnectionDefinition
 
 
-class YamlDeclarativeSource(ConcurrentDeclarativeSource[List[AirbyteStateMessage]]):
+class YamlDeclarativeSource(ConcurrentDeclarativeSource[list[AirbyteStateMessage]]):
     """Declarative source defined by a yaml file"""
 
     def __init__(
         self,
         path_to_yaml: str,
-        debug: bool = False,
-        catalog: Optional[ConfiguredAirbyteCatalog] = None,
-        config: Optional[Mapping[str, Any]] = None,
-        state: Optional[List[AirbyteStateMessage]] = None,
+        *,
+        debug: bool = False,  # noqa: ARG002  (unused)
+        catalog: ConfiguredAirbyteCatalog | None = None,
+        config: Mapping[str, Any] | None = None,
+        state: list[AirbyteStateMessage] | None = None,
     ) -> None:
-        """
-        :param path_to_yaml: Path to the yaml file describing the source
-        """
+        """:param path_to_yaml: Path to the yaml file describing the source"""
         self._path_to_yaml = path_to_yaml
         source_config = self._read_and_parse_yaml_file(path_to_yaml)
 
@@ -44,8 +46,7 @@ class YamlDeclarativeSource(ConcurrentDeclarativeSource[List[AirbyteStateMessage
         if yaml_config:
             decoded_yaml = yaml_config.decode()
             return self._parse(decoded_yaml)
-        else:
-            return {}
+        return {}
 
     def _emit_manifest_debug_message(self, extra_args: dict[str, Any]) -> None:
         extra_args["path_to_yaml"] = self._path_to_yaml
@@ -53,8 +54,7 @@ class YamlDeclarativeSource(ConcurrentDeclarativeSource[List[AirbyteStateMessage
 
     @staticmethod
     def _parse(connection_definition_str: str) -> ConnectionDefinition:
-        """
-        Parses a yaml file into a manifest. Component references still exist in the manifest which will be
+        """Parses a yaml file into a manifest. Component references still exist in the manifest which will be
         resolved during the creating of the DeclarativeSource.
         :param connection_definition_str: yaml string to parse
         :return: The ConnectionDefinition parsed from connection_definition_str

@@ -1,12 +1,15 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from __future__ import annotations
 
+from collections.abc import Iterable, Mapping, MutableMapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Iterable, List, Mapping, MutableMapping, Union
+from typing import TYPE_CHECKING, Any
 
 import dpath
 import requests
+
 from airbyte_cdk.sources.declarative.decoders import Decoder, JsonDecoder
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
@@ -15,8 +18,7 @@ from airbyte_cdk.sources.types import Config
 
 @dataclass
 class DpathExtractor(RecordExtractor):
-    """
-    Record extractor that searches a decoded response over a path defined as an array of fields.
+    """Record extractor that searches a decoded response over a path defined as an array of fields.
 
     If the field path points to an array, that array is returned.
     If the field path points to an object, that object is returned wrapped as an array.
@@ -52,7 +54,7 @@ class DpathExtractor(RecordExtractor):
         decoder (Decoder): The decoder responsible to transfom the response in a Mapping
     """
 
-    field_path: List[Union[InterpolatedString, str]]
+    field_path: list[InterpolatedString | str]
     config: Config
     parameters: InitVar[Mapping[str, Any]]
     decoder: Decoder = field(default_factory=lambda: JsonDecoder(parameters={}))
