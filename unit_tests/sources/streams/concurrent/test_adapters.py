@@ -76,7 +76,7 @@ def test_stream_partition_generator(sync_mode):
     stream.stream_slices.return_value = stream_slices
 
     partition_generator = StreamPartitionGenerator(
-        stream, message_repository, _ANY_SYNC_MODE, _ANY_CURSOR_FIELD, _ANY_STATE, _ANY_CURSOR
+        stream, message_repository, _ANY_SYNC_MODE, _ANY_CURSOR_FIELD, _ANY_STATE
     )
 
     partitions = list(partition_generator.generate())
@@ -116,7 +116,7 @@ def test_stream_partition(transformer, expected_records):
     cursor_field = None
     state = None
     partition = StreamPartition(
-        stream, _slice, message_repository, sync_mode, cursor_field, state, _ANY_CURSOR
+        stream, _slice, message_repository, sync_mode, cursor_field, state
     )
 
     a_log_message = AirbyteMessage(
@@ -162,7 +162,6 @@ def test_stream_partition_raising_exception(exception_type, expected_display_mes
         _ANY_SYNC_MODE,
         _ANY_CURSOR_FIELD,
         _ANY_STATE,
-        _ANY_CURSOR,
     )
 
     stream.read_records.side_effect = Exception()
@@ -188,7 +187,7 @@ def test_stream_partition_hash(_slice, expected_hash):
     stream = Mock()
     stream.name = "stream"
     partition = StreamPartition(
-        stream, _slice, Mock(), _ANY_SYNC_MODE, _ANY_CURSOR_FIELD, _ANY_STATE, _ANY_CURSOR
+        stream, _slice, Mock(), _ANY_SYNC_MODE, _ANY_CURSOR_FIELD, _ANY_STATE
     )
 
     _hash = partition.__hash__()

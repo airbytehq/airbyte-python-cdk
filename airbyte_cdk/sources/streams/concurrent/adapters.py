@@ -96,7 +96,6 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
                     else SyncMode.incremental,
                     [cursor_field] if cursor_field is not None else None,
                     state,
-                    cursor,
                 ),
                 name=stream.name,
                 namespace=stream.namespace,
@@ -259,7 +258,6 @@ class StreamPartition(Partition):
         sync_mode: SyncMode,
         cursor_field: Optional[List[str]],
         state: Optional[MutableMapping[str, Any]],
-        cursor: Cursor,
     ):
         """
         :param stream: The stream to delegate to
@@ -272,8 +270,6 @@ class StreamPartition(Partition):
         self._sync_mode = sync_mode
         self._cursor_field = cursor_field
         self._state = state
-        self._cursor = cursor
-        self._is_closed = False
 
     def read(self) -> Iterable[Record]:
         """
@@ -323,13 +319,6 @@ class StreamPartition(Partition):
     def stream_name(self) -> str:
         return self._stream.name
 
-    def close(self) -> None:
-        self._cursor.close_partition(self)
-        self._is_closed = True
-
-    def is_closed(self) -> bool:
-        return self._is_closed
-
     def __repr__(self) -> str:
         return f"StreamPartition({self._stream.name}, {self._slice})"
 
@@ -349,7 +338,6 @@ class StreamPartitionGenerator(PartitionGenerator):
         sync_mode: SyncMode,
         cursor_field: Optional[List[str]],
         state: Optional[MutableMapping[str, Any]],
-        cursor: Cursor,
     ):
         """
         :param stream: The stream to delegate to
@@ -360,7 +348,6 @@ class StreamPartitionGenerator(PartitionGenerator):
         self._sync_mode = sync_mode
         self._cursor_field = cursor_field
         self._state = state
-        self._cursor = cursor
 
     def generate(self) -> Iterable[Partition]:
         for s in self._stream.stream_slices(
@@ -373,7 +360,6 @@ class StreamPartitionGenerator(PartitionGenerator):
                 self._sync_mode,
                 self._cursor_field,
                 self._state,
-                self._cursor,
             )
 
 
@@ -451,7 +437,6 @@ class CursorPartitionGenerator(PartitionGenerator):
                 self._sync_mode,
                 self._cursor_field,
                 self._state,
-                self._cursor,
             )
 
 
