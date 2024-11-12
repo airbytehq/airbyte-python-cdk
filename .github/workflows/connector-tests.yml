@@ -127,3 +127,9 @@ jobs:
         with:
           name: ${{matrix.connector}}-job-output
           path: airbyte/airbyte-ci/connectors/pipelines/pipeline_reports
+
+      - name: Add Notice to Job Summary
+        if: always()
+        run: |
+          echo "## Job Output for ${{matrix.connector}}" >> $GITHUB_STEP_SUMMARY
+          echo "[Download Job Output](./artifacts/${{matrix.connector}}-job-output)" >> $GITHUB_STEP_SUMMARY
