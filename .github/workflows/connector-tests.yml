@@ -68,6 +68,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - connector: source-faker
+            cdk_extra: n/a
           - connector: source-shopify
             cdk_extra: n/a
           # Currently not passing CI (unrelated)
