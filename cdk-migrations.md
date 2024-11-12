@@ -10,12 +10,14 @@ Version 6.x.x of the CDK introduces concurrent processing of low-code incrementa
 > It also does not include processing of full-refresh streams in parallel.
 
 Low-code incremental streams that match any of the following criteria are not supported by concurrent as of this version:
+
 - Uses a custom implementation of the `DatetimeBasedCursor` component
-- The `DatetimeBasedCursor` defines a `step` which will partition a stream's request into time intervals AND a 
+- The `DatetimeBasedCursor` defines a `step` which will partition a stream's request into time intervals AND a
   `AddedField` / `HttpRequester` / `RecordFilter` that relies on interpolation of the `stream_state` value. See below
   for the complete list
 
 In order to enable concurrency for a low-code connector, the following changes must be made:
+
 - In the connector's `source.py`, change the method signature to accept catalog, config, and state parameters. Change the invocation of `super()` to pass in those new parameters
 
 ```python3
@@ -23,6 +25,7 @@ class SourceName(YamlDeclarativeSource):
     def __init__(self, catalog: Optional[ConfiguredAirbyteCatalog], config: Optional[Mapping[str, Any]], state: TState, **kwargs):
         super().__init__(catalog=catalog, config=config, state=state, **{"path_to_yaml": "manifest.yaml"})
 ```
+
 - In the connector's `run.py`, update it to pass variables
 
 ```python3
@@ -76,6 +79,7 @@ concurrency_level:
 ### Connectors that have streams that cannot be processed concurrently
 
 Connectors that have streams that use `stream_state` during interpolation and must be run synchronously until they are fixed or updated:
+
 - Http Requester
   - `source-insightly`: Uses an DatetimeBasedCursor with a step interval and the HttpRequester has request_parameters relying on `stream_state`. This should be replaced by `step_interval`
   - `source-intercom`: Uses a custom `incremental_sync` component and `stream_state` used as part of the HttpRequester request_body_json. However, because this processed on a single slice, `stream_interval` can be used
@@ -94,6 +98,7 @@ by a thread safe interpolation context like `stream_interval` or `stream_partiti
 All manifest-only sources are run using the `source-declarative-manifest` which serves as the base image with the common code and flows for connectors that only define a `manifest.yaml` file.
 
 Within this package, to enable concurrent processing:
+
 - Modify `airbyte-cdk` package in `pyproject.toml` to the current version
 - In `run.py`, parse all entrypoint arguments into the respective config, catalog, and state objects
 - In `run.py`, modify the flow that instantiates a `ManifestDeclarativeSource` from the `__injected_declarative_manifest` to instantiate a `ConcurrentDeclarativeSource`
@@ -105,6 +110,7 @@ Version 5.0.0 of the CDK updates the `airbyte_cdk.models` dependency to replace 
 updates the `airbyte-protocol-models` dependency to a version that uses dataclasses models.
 
 The changes to Airbyte CDK itself are backwards-compatible, but some changes are required if the connector:
+
 - uses the `airbyte_protocol` models directly, or `airbyte_cdk.models`, which points to `airbyte_protocol` models
 - uses third-party libraries, such as `pandas`, to read data from sources, which output non-native Python objects that cannot be serialized by the [orjson](https://github.com/ijl/orjson) library.
 
@@ -116,7 +122,7 @@ The changes to Airbyte CDK itself are backwards-compatible, but some changes are
 
 - If the connector uses Pydantic based Airbyte Protocol Models, the code will need to be updated to reflect the changes `pydantic`.
 - It is recommended to import protocol classes not directly by `import airbyte_protocol` statement, but from `airbyte_cdk.models` package.
-- It is also recommended to use *-`Serializer` from `airbyte_cdk.models` to manipulate the data or convert to/from JSON.
+- It is also recommended to use \*-`Serializer` from `airbyte_cdk.models` to manipulate the data or convert to/from JSON.
   These are based on the [serpyco-rs](https://pypi.org/project/serpyco-rs/) library.
 - These classes have a `dump` method that converts the model to a dictionary and a `load` method that converts a dictionary to a model.
 - The recommended serialization strategy is to pass the dictionary to the `orjson` library when serializing as a JSON string.
@@ -150,7 +156,6 @@ yield orjson.loads(df.to_json(orient="records", date_format="iso", date_unit="us
 
 ```
 
-
 ## Upgrading to 4.5.0
 
 In this release, we are no longer supporting the legacy state format in favor of the current per-stream state
@@ -159,16 +164,18 @@ the small number of connectors that instantiate their own `ConnectorStateManager
 version of the CDK is to stop passing the `stream_instance_map` parameter to the `ConnectorStateManager` constructor.
 
 ## Upgrading to 4.1.0
+
 We are unifying the `BackoffStrategy` interface as it currently differs from the Python CDK package to the declarative one. The different is that the interface will require the attempt_count to be passed.
 
 Main impact: This change is mostly internal but we spotted a couple of tests that expect `backoff_time` to not have the `attempt_count` parameter so these tests would fail ([example](https://github.com/airbytehq/airbyte/blob/c9f45a0b85735f58102fcd78385f6f673e731aa6/airbyte-integrations/connectors/source-github/unit_tests/test_stream.py#L99)).
 
-This change should not impact the following classes even though they have a different interface as they accept `kwargs` and  `attempt_count` is currently passed as a keyword argument within the CDK. However, once there is a CDK change where `backoff_time` is called not as a keyword argument, they will fail:
-* Zendesk Support: ZendeskSupportBackoffStrategy (this one will be updated shortly after as it is used for CI to validate CDK changes)
-* Klaviyo: KlaviyoBackoffStrategy (the logic has been generified so we will remove this custom component shortly after this update)
-* GitHub: GithubStreamABCBackoffStrategy and ContributorActivityBackoffStrategy
-* Airtable: AirtableBackoffStrategy
-* Slack: SlackBackoffStrategy
+This change should not impact the following classes even though they have a different interface as they accept `kwargs` and `attempt_count` is currently passed as a keyword argument within the CDK. However, once there is a CDK change where `backoff_time` is called not as a keyword argument, they will fail:
+
+- Zendesk Support: ZendeskSupportBackoffStrategy (this one will be updated shortly after as it is used for CI to validate CDK changes)
+- Klaviyo: KlaviyoBackoffStrategy (the logic has been generified so we will remove this custom component shortly after this update)
+- GitHub: GithubStreamABCBackoffStrategy and ContributorActivityBackoffStrategy
+- Airtable: AirtableBackoffStrategy
+- Slack: SlackBackoffStrategy
 
 This change should not impact `WaitUntilMidnightBackoffStrategy` from source-gnews as well but it is interesting to note that its interface is also wrong as it considers the first parameter as a `requests.Response` instead of a `Optional[Union[requests.Response, requests.RequestException]]`.
 
@@ -177,6 +184,7 @@ This change should not impact `WaitUntilMidnightBackoffStrategy` from source-gne
 Updated the codebase to utilize new Python syntax features. As a result, support for Python 3.9 has been dropped. The minimum required Python version is now 3.10.
 
 ## Upgrading to 3.0.0
+
 Version 3.0.0 of the CDK updates the `HTTPStream` class by reusing the `HTTPClient` under the hood.
 
 - `backoff_time` and `should_retry` methods are removed from HttpStream
@@ -188,18 +196,22 @@ Therefore, catching exceptions should be updated, and error messages might chang
 See [Migration of Source Zendesk Support](https://github.com/airbytehq/airbyte/pull/41032/commits/4d3a247f36b9826dcea4b98d30fc19802b03d014) as an example.
 
 ### Migration of `should_retry` method
+
 In case the connector uses custom logic for backoff based on the response from the server, a new method `get_error_handler` should be implemented.
 This method should return instance of [`ErrorHandler`](https://github.com/airbytehq/airbyte/blob/master/airbyte-cdk/python/airbyte_cdk/sources/streams/http/error_handlers/error_handler.py).
 
 ### Migration of `backoff_time` method
+
 In case the connector uses custom logic for backoff time calculation, a new method `get_backoff_strategy` should be implemented.
 This method should return instance(s) of [`BackoffStrategy`](https://github.com/airbytehq/airbyte/blob/master/airbyte-cdk/python/airbyte_cdk/sources/streams/http/error_handlers/backoff_strategy.py).
 
 ## Upgrading to 2.0.0
+
 Version 2.0.0 of the CDK updates the `pydantic` dependency to from Pydantic v1 to Pydantic v2. It also
 updates the `airbyte-protocol-models` dependency to a version that uses Pydantic V2 models.
 
 The changes to Airbyte CDK itself are backwards-compatible, but some changes are required if the connector:
+
 - uses Pydantic directly, e.g. for its own custom models, or
 - uses the `airbyte_protocol` models directly, or `airbyte_cdk.models`, which points to `airbyte_protocol` models, or
 - customizes HashableStreamDescriptor, which inherits from a protocol model and has therefore been updated to use Pydantic V2 models.
@@ -213,19 +225,23 @@ The Pydantic [migration guide](https://docs.pydantic.dev/latest/migration/) is a
 might arise around upgrade behavior.
 
 #### Using Pydantic V1 models with Pydantic V2
+
 The easiest way to update the code to be compatible without major changes is to update the import statements from
 `from pydantic` to `from pydantic.v1`, as Pydantic has kept the v1 module for backwards compatibility.
 
 Some potential gotchas:
-  - `ValidationError` must be imported from `pydantic.v1.error_wrappers` instead of `pydantic.v1`
-  - `ModelMetaclass` must be imported from `pydantic.v1.main` instead of `pydantic.v1`
-  - `resolve_annotations` must be imported from `pydantic.v1.typing` instead of `pydantic.v1`
+
+- `ValidationError` must be imported from `pydantic.v1.error_wrappers` instead of `pydantic.v1`
+- `ModelMetaclass` must be imported from `pydantic.v1.main` instead of `pydantic.v1`
+- `resolve_annotations` must be imported from `pydantic.v1.typing` instead of `pydantic.v1`
 
 #### Upgrading to Pydantic V2
+
 To upgrade all the way to V2 proper, Pydantic also offers a [migration tool](https://docs.pydantic.dev/latest/migration/#code-transformation-tool)
 to automatically update the code to be compatible with Pydantic V2.
 
 #### Updating assertions
+
 It's possible that a connector might make assertions against protocol models without actually
 importing them - for example when testing methods which return `AirbyteStateBlob` or `AnyUrl`.
 
@@ -245,27 +261,27 @@ assert stream_read.slices[1].state[0].stream.stream_state == AirbyteStateBlob(a_
 assert stream_read.slices[1].state[0].stream.stream_state.dict() == {"a_timestamp": 123}
 ```
 
-
 ## Upgrading to 1.0.0
+
 Starting from 1.0.0, CDK classes and functions should be imported directly from `airbyte_cdk` (example: `from airbyte_cdk import HttpStream`). Lower-level `__init__` files are not considered stable, and will be modified without introducing a major release.
 
 Introducing breaking changes to a class or function exported from the top level `__init__.py` will require a major version bump and a migration note to help developer upgrade.
 
 Note that the following packages are not part of the top level init because they require extras dependencies, but are still considered stable:
+
 - `destination.vector_db_based`
 - `source.file_based`
 
 The `test` package is not included in the top level init either. The `test` package is still evolving and isn't considered stable.
 
-
 A few classes were deleted from the Airbyte CDK in version 1.0.0:
+
 - AirbyteLogger
 - AirbyteSpec
 - Authenticators in the `sources.streams.http.auth` module
 
-
-
 ### Migrating off AirbyteLogger
+
 No connectors should still be using `AirbyteLogger` directly, but the class is still used in some interfaces. The only required change is to update the type annotation from `AirbyteLogger` to `logging.Logger`. For example:
 
 ```
@@ -277,12 +293,15 @@ to
 ```
 def check_connection(self, logger: logging.Logger, config: Mapping[str, Any]) -> Tuple[bool, any]:
 ```
+
 Don't forget to also update the imports. You can delete `from airbyte_cdk import AirbyteLogger` and replace it with `import logging`.
 
 ### Migrating off AirbyteSpec
+
 AirbyteSpec isn't used by any connectors in the repository, and I don't expect any custom connectors to use the class either. This should be a no-op.
 
 ### Migrating off Authenticators
+
 Replace usage of authenticators in the `airbyte_cdk.sources.streams.http.auth` module with their sister classes in the `airbyte_cdk.sources.streams.http.requests_native_auth` module.
 
 If any of your streams reference `self.authenticator`, you'll also need to update these references to `self._session.auth` as the authenticator is embedded in the session object.

@@ -1,49 +1,63 @@
-name-template: 'v$RESOLVED_VERSION'
-tag-template: 'v$RESOLVED_VERSION'
+name-template: "v$RESOLVED_VERSION"
+tag-template: "v$RESOLVED_VERSION"
 categories:
-  - title: 'New Features ✨'
+  - title: "New Features ✨"
     labels:
-      - 'feature'
-      - 'enhancement'
-  - title: 'Bug Fixes 🐛'
+      - "feature"
+      - "enhancement"
+  - title: "Bug Fixes 🐛"
     labels:
-      - 'fix'
-      - 'bugfix'
-      - 'bug'
-  - title: 'Under the Hood ⚙️'
+      - "fix"
+      - "bugfix"
+      - "bug"
+  - title: "Under the Hood ⚙️"
     labels:
-      - 'chore'
-      - 'ci'
-      - 'refactor'
-  - title: 'Documentation 📖'
-    label: 'docs'
-change-template: '- $SUBJECT (#$NUMBER) - **_Thanks, @$AUTHOR_**!'
+      - "chore"
+      - "ci"
+      - "refactor"
+  - title: "Documentation 📖"
+    label: "docs"
+change-template: "- $TITLE (#$NUMBER)"
 change-title-escapes: '\<*_&' # You can add # and @ to disable mentions, and add ` to disable code blocks.
 version-resolver:
   major:
     labels:
-      - 'major'
+      - "major"
   minor:
     labels:
-      - 'minor'
+      - "minor"
   patch:
     labels:
-      - 'patch'
+      - "patch"
   default: patch
 template: |
   ## Changes
 
   $CHANGES
 autolabeler:
-  - label: 'chore'
+  - label: "chore"
     title:
       - '/^chore(\(.*\))?\:/i'
-  - label: 'ci'
+  - label: "ci"
     title:
       - '/^ci(\(.*\))?\:/i'
-  - label: 'bug'
+  - label: "bug"
     title:
       - '/^fix(\(.*\))?\:/i'
-  - label: 'enhancement'
+  - label: "enhancement"
     title:
       - '/^feat(\(.*\))?/i'
+  - label: "docs"
+    title:
+      - '/^docs(\(.*\))?\:/i'
+  - label: "security"
+    title:
+      - '/^security(\(.*\))?\:/i'
+      - '/^fix(\(security\))?\:/i'
+  - label: "dependencies"
+    title:
+      - '/^chore\(deps\)\:/i'
+      - '/^build\(deps\)\:/i'
+  - label: "breaking"
+    title:
+      - '/!:\s*$/i'

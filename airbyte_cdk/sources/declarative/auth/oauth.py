@@ -10,8 +10,12 @@ from airbyte_cdk.sources.declarative.auth.declarative_authenticator import Decla
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
-from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_oauth import AbstractOauth2Authenticator
-from airbyte_cdk.sources.streams.http.requests_native_auth.oauth import SingleUseRefreshTokenOauth2Authenticator
+from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_oauth import (
+    AbstractOauth2Authenticator,
+)
+from airbyte_cdk.sources.streams.http.requests_native_auth.oauth import (
+    SingleUseRefreshTokenOauth2Authenticator,
+)
 
 
 @dataclass
@@ -57,31 +61,49 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         super().__init__()
-        self._token_refresh_endpoint = InterpolatedString.create(self.token_refresh_endpoint, parameters=parameters)
+        self._token_refresh_endpoint = InterpolatedString.create(
+            self.token_refresh_endpoint, parameters=parameters
+        )
         self._client_id = InterpolatedString.create(self.client_id, parameters=parameters)
         self._client_secret = InterpolatedString.create(self.client_secret, parameters=parameters)
         if self.refresh_token is not None:
-            self._refresh_token: Optional[InterpolatedString] = InterpolatedString.create(self.refresh_token, parameters=parameters)
+            self._refresh_token: Optional[InterpolatedString] = InterpolatedString.create(
+                self.refresh_token, parameters=parameters
+            )
         else:
             self._refresh_token = None
-        self.access_token_name = InterpolatedString.create(self.access_token_name, parameters=parameters)
-        self.expires_in_name = InterpolatedString.create(self.expires_in_name, parameters=parameters)
+        self.access_token_name = InterpolatedString.create(
+            self.access_token_name, parameters=parameters
+        )
+        self.expires_in_name = InterpolatedString.create(
+            self.expires_in_name, parameters=parameters
+        )
         self.grant_type = InterpolatedString.create(self.grant_type, parameters=parameters)
-        self._refresh_request_body = InterpolatedMapping(self.refresh_request_body or {}, parameters=parameters)
+        self._refresh_request_body = InterpolatedMapping(
+            self.refresh_request_body or {}, parameters=parameters
+        )
         self._token_expiry_date: pendulum.DateTime = (
-            pendulum.parse(InterpolatedString.create(self.token_expiry_date, parameters=parameters).eval(self.config))  # type: ignore # pendulum.parse returns a datetime in this context
+            pendulum.parse(
+                InterpolatedString.create(self.token_expiry_date, parameters=parameters).eval(
+                    self.config
+                )
+            )  # type: ignore # pendulum.parse returns a datetime in this context
             if self.token_expiry_date
             else pendulum.now().subtract(days=1)  # type: ignore # substract does not have type hints
         )
         self._access_token: Optional[str] = None  # access_token is initialized by a setter
 
         if self.get_grant_type() == "refresh_token" and self._refresh_token is None:
-            raise ValueError("OAuthAuthenticator needs a refresh_token parameter if grant_type is set to `refresh_token`")
+            raise ValueError(
+                "OAuthAuthenticator needs a refresh_token parameter if grant_type is set to `refresh_token`"
+            )
 
     def get_token_refresh_endpoint(self) -> str:
         refresh_token: str = self._token_refresh_endpoint.eval(self.config)
         if not refresh_token:
-            raise ValueError("OAuthAuthenticator was unable to evaluate token_refresh_endpoint parameter")
+            raise ValueError(
+                "OAuthAuthenticator was unable to evaluate token_refresh_endpoint parameter"
+            )
         return refresh_token
 
     def get_client_id(self) -> str:
@@ -139,7 +161,9 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
 
 
 @dataclass
-class DeclarativeSingleUseRefreshTokenOauth2Authenticator(SingleUseRefreshTokenOauth2Authenticator, DeclarativeAuthenticator):
+class DeclarativeSingleUseRefreshTokenOauth2Authenticator(
+    SingleUseRefreshTokenOauth2Authenticator, DeclarativeAuthenticator
+):
     """
     Declarative version of SingleUseRefreshTokenOauth2Authenticator which can be used in declarative connectors.
     """

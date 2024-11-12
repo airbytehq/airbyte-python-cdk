@@ -44,7 +44,9 @@ from airbyte_cdk.sources.streams.http.rate_limiting import (
     user_defined_backoff_handler,
 )
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
-from airbyte_cdk.utils.stream_status_utils import as_airbyte_message as stream_status_as_airbyte_message
+from airbyte_cdk.utils.stream_status_utils import (
+    as_airbyte_message as stream_status_as_airbyte_message,
+)
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 from requests.auth import AuthBase
 
@@ -69,7 +71,6 @@ class MessageRepresentationAirbyteTracedErrors(AirbyteTracedException):
 
 
 class HttpClient:
-
     _DEFAULT_MAX_RETRY: int = 5
     _DEFAULT_MAX_TIME: int = 60 * 10
 
@@ -95,7 +96,10 @@ class HttpClient:
             self._use_cache = use_cache
             self._session = self._request_session()
             self._session.mount(
-                "https://", requests.adapters.HTTPAdapter(pool_connections=MAX_CONNECTION_POOL_SIZE, pool_maxsize=MAX_CONNECTION_POOL_SIZE)
+                "https://",
+                requests.adapters.HTTPAdapter(
+                    pool_connections=MAX_CONNECTION_POOL_SIZE, pool_maxsize=MAX_CONNECTION_POOL_SIZE
+                ),
             )
         if isinstance(authenticator, AuthBase):
             self._session.auth = authenticator
@@ -134,7 +138,9 @@ class HttpClient:
                 sqlite_path = str(Path(cache_dir) / self.cache_filename)
             else:
                 sqlite_path = "file::memory:?cache=shared"
-            return CachedLimiterSession(sqlite_path, backend="sqlite", api_budget=self._api_budget, match_headers=True)  # type: ignore # there are no typeshed stubs for requests_cache
+            return CachedLimiterSession(
+                sqlite_path, backend="sqlite", api_budget=self._api_budget, match_headers=True
+            )  # type: ignore # there are no typeshed stubs for requests_cache
         else:
             return LimiterSession(api_budget=self._api_budget)
 
@@ -145,7 +151,9 @@ class HttpClient:
         if isinstance(self._session, requests_cache.CachedSession):
             self._session.cache.clear()  # type: ignore # cache.clear is not typed
 
-    def _dedupe_query_params(self, url: str, params: Optional[Mapping[str, str]]) -> Mapping[str, str]:
+    def _dedupe_query_params(
+        self, url: str, params: Optional[Mapping[str, str]]
+    ) -> Mapping[str, str]:
         """
         Remove query parameters from params mapping if they are already encoded in the URL.
         :param url: URL with
@@ -157,7 +165,9 @@ class HttpClient:
         query_string = urllib.parse.urlparse(url).query
         query_dict = {k: v[0] for k, v in urllib.parse.parse_qs(query_string).items()}
 
-        duplicate_keys_with_same_value = {k for k in query_dict.keys() if str(params.get(k)) == str(query_dict[k])}
+        duplicate_keys_with_same_value = {
+            k for k in query_dict.keys() if str(params.get(k)) == str(query_dict[k])
+        }
         return {k: v for k, v in params.items() if k not in duplicate_keys_with_same_value}
 
     def _create_prepared_request(
@@ -184,7 +194,9 @@ class HttpClient:
                 args["json"] = json
             elif data:
                 args["data"] = data
-        prepared_request: requests.PreparedRequest = self._session.prepare_request(requests.Request(**args))
+        prepared_request: requests.PreparedRequest = self._session.prepare_request(
+            requests.Request(**args)
+        )
 
         return prepared_request
 
@@ -205,7 +217,11 @@ class HttpClient:
         """
         Determines the max time based on the provided error handler.
         """
-        return self._error_handler.max_time if self._error_handler.max_time is not None else self._DEFAULT_MAX_TIME
+        return (
+            self._error_handler.max_time
+            if self._error_handler.max_time is not None
+            else self._DEFAULT_MAX_TIME
+        )
 
     def _send_with_retry(
         self,
@@ -229,11 +245,20 @@ class HttpClient:
         max_tries = max(0, max_retries) + 1
         max_time = self._max_time
 
-        user_backoff_handler = user_defined_backoff_handler(max_tries=max_tries, max_time=max_time)(self._send)
+        user_backoff_handler = user_defined_backoff_handler(max_tries=max_tries, max_time=max_time)(
+            self._send
+        )
         rate_limit_backoff_handler = rate_limit_default_backoff_handler()
-        backoff_handler = http_client_default_backoff_handler(max_tries=max_tries, max_time=max_time)
+        backoff_handler = http_client_default_backoff_handler(
+            max_tries=max_tries, max_time=max_time
+        )
         # backoff handlers wrap _send, so it will always return a response
-        response = backoff_handler(rate_limit_backoff_handler(user_backoff_handler))(request, request_kwargs, log_formatter=log_formatter, exit_on_rate_limit=exit_on_rate_limit)  # type: ignore # mypy can't infer that backoff_handler wraps _send
+        response = backoff_handler(rate_limit_backoff_handler(user_backoff_handler))(
+            request,
+            request_kwargs,
+            log_formatter=log_formatter,
+            exit_on_rate_limit=exit_on_rate_limit,
+        )  # type: ignore # mypy can't infer that backoff_handler wraps _send
 
         return response
 
@@ -244,7 +269,6 @@ class HttpClient:
         log_formatter: Optional[Callable[[requests.Response], Any]] = None,
         exit_on_rate_limit: Optional[bool] = False,
     ) -> requests.Response:
-
         if request not in self._request_attempt_count:
             self._request_attempt_count[request] = 1
         else:
@@ -253,7 +277,8 @@ class HttpClient:
                 self._session.auth(request)
 
         self._logger.debug(
-            "Making outbound API request", extra={"headers": request.headers, "url": request.url, "request_body": request.body}
+            "Making outbound API request",
+            extra={"headers": request.headers, "url": request.url, "request_body": request.body},
         )
 
         response: Optional[requests.Response] = None
@@ -264,7 +289,9 @@ class HttpClient:
         except requests.RequestException as e:
             exc = e
 
-        error_resolution: ErrorResolution = self._error_handler.interpret_response(response if response is not None else exc)
+        error_resolution: ErrorResolution = self._error_handler.interpret_response(
+            response if response is not None else exc
+        )
 
         # Evaluation of response.text can be heavy, for example, if streaming a large response
         # Do it only in debug mode
@@ -276,11 +303,20 @@ class HttpClient:
                 )
             else:
                 self._logger.debug(
-                    "Receiving response", extra={"headers": response.headers, "status": response.status_code, "body": response.text}
+                    "Receiving response",
+                    extra={
+                        "headers": response.headers,
+                        "status": response.status_code,
+                        "body": response.text,
+                    },
                 )
 
         # Request/response logging for declarative cdk
-        if log_formatter is not None and response is not None and self._message_repository is not None:
+        if (
+            log_formatter is not None
+            and response is not None
+            and self._message_repository is not None
+        ):
             formatter = log_formatter
             self._message_repository.log_message(
                 Level.DEBUG,
@@ -288,7 +324,11 @@ class HttpClient:
             )
 
         self._handle_error_resolution(
-            response=response, exc=exc, request=request, error_resolution=error_resolution, exit_on_rate_limit=exit_on_rate_limit
+            response=response,
+            exc=exc,
+            request=request,
+            error_resolution=error_resolution,
+            exit_on_rate_limit=exit_on_rate_limit,
         )
 
         return response  # type: ignore # will either return a valid response of type requests.Response or raise an exception
@@ -307,7 +347,9 @@ class HttpClient:
             reasons = [AirbyteStreamStatusReason(type=AirbyteStreamStatusReasonType.RATE_LIMITED)]
             message = orjson.dumps(
                 AirbyteMessageSerializer.dump(
-                    stream_status_as_airbyte_message(StreamDescriptor(name=self._name), AirbyteStreamStatus.RUNNING, reasons)
+                    stream_status_as_airbyte_message(
+                        StreamDescriptor(name=self._name), AirbyteStreamStatus.RUNNING, reasons
+                    )
                 )
             ).decode()
 
@@ -321,7 +363,9 @@ class HttpClient:
             if response is not None:
                 error_message = f"'{request.method}' request to '{request.url}' failed with status code '{response.status_code}' and error message '{self._error_message_parser.parse_response_error_message(response)}'"
             else:
-                error_message = f"'{request.method}' request to '{request.url}' failed with exception: '{exc}'"
+                error_message = (
+                    f"'{request.method}' request to '{request.url}' failed with exception: '{exc}'"
+                )
 
             raise MessageRepresentationAirbyteTracedErrors(
                 internal_message=error_message,
@@ -331,20 +375,22 @@ class HttpClient:
 
         elif error_resolution.response_action == ResponseAction.IGNORE:
             if response is not None:
-                log_message = (
-                    f"Ignoring response for '{request.method}' request to '{request.url}' with response code '{response.status_code}'"
-                )
+                log_message = f"Ignoring response for '{request.method}' request to '{request.url}' with response code '{response.status_code}'"
             else:
                 log_message = f"Ignoring response for '{request.method}' request to '{request.url}' with error '{exc}'"
 
             self._logger.info(error_resolution.error_message or log_message)
 
         # TODO: Consider dynamic retry count depending on subsequent error codes
-        elif error_resolution.response_action == ResponseAction.RETRY or error_resolution.response_action == ResponseAction.RATE_LIMITED:
+        elif (
+            error_resolution.response_action == ResponseAction.RETRY
+            or error_resolution.response_action == ResponseAction.RATE_LIMITED
+        ):
             user_defined_backoff_time = None
             for backoff_strategy in self._backoff_strategies:
                 backoff_time = backoff_strategy.backoff_time(
-                    response_or_exception=response if response is not None else exc, attempt_count=self._request_attempt_count[request]
+                    response_or_exception=response if response is not None else exc,
+                    attempt_count=self._request_attempt_count[request],
                 )
                 if backoff_time:
                     user_defined_backoff_time = backoff_time
@@ -354,7 +400,10 @@ class HttpClient:
                 or f"Request to {request.url} failed with failure type {error_resolution.failure_type}, response action {error_resolution.response_action}."
             )
 
-            retry_endlessly = error_resolution.response_action == ResponseAction.RATE_LIMITED and not exit_on_rate_limit
+            retry_endlessly = (
+                error_resolution.response_action == ResponseAction.RATE_LIMITED
+                and not exit_on_rate_limit
+            )
 
             if user_defined_backoff_time:
                 raise UserDefinedBackoffException(
@@ -365,10 +414,14 @@ class HttpClient:
                 )
 
             elif retry_endlessly:
-                raise RateLimitBackoffException(request=request, response=response or exc, error_message=error_message)
+                raise RateLimitBackoffException(
+                    request=request, response=response or exc, error_message=error_message
+                )
 
             raise DefaultBackoffException(
-                request=request, response=(response if response is not None else exc), error_message=error_message
+                request=request,
+                response=(response if response is not None else exc),
+                error_message=error_message,
             )
 
         elif response:
@@ -400,11 +453,20 @@ class HttpClient:
         """
 
         request: requests.PreparedRequest = self._create_prepared_request(
-            http_method=http_method, url=url, dedupe_query_params=dedupe_query_params, headers=headers, params=params, json=json, data=data
+            http_method=http_method,
+            url=url,
+            dedupe_query_params=dedupe_query_params,
+            headers=headers,
+            params=params,
+            json=json,
+            data=data,
         )
 
         response: requests.Response = self._send_with_retry(
-            request=request, request_kwargs=request_kwargs, log_formatter=log_formatter, exit_on_rate_limit=exit_on_rate_limit
+            request=request,
+            request_kwargs=request_kwargs,
+            log_formatter=log_formatter,
+            exit_on_rate_limit=exit_on_rate_limit,
         )
 
         return request, response

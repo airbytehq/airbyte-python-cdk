@@ -184,7 +184,11 @@ class CursorBasedStreamStubFullRefresh(StreamStubFullRefresh):
 
 class LegacyCursorBasedStreamStubFullRefresh(CursorBasedStreamStubFullRefresh):
     def stream_slices(
-        self, *, sync_mode: SyncMode, cursor_field: Optional[List[str]] = None, stream_state: Optional[Mapping[str, Any]] = None
+        self,
+        *,
+        sync_mode: SyncMode,
+        cursor_field: Optional[List[str]] = None,
+        stream_state: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[Optional[Mapping[str, Any]]]:
         yield from [{}]
 
@@ -201,7 +205,11 @@ class MultipleSlicesStreamStub(HttpStream):
         return "https://airbyte.io/api/v1"
 
     def stream_slices(
-        self, *, sync_mode: SyncMode, cursor_field: Optional[List[str]] = None, stream_state: Optional[Mapping[str, Any]] = None
+        self,
+        *,
+        sync_mode: SyncMode,
+        cursor_field: Optional[List[str]] = None,
+        stream_state: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[Optional[Mapping[str, Any]]]:
         yield from [
             StreamSlice(partition={"parent_id": "korra"}, cursor_slice={}),
@@ -277,7 +285,12 @@ def test_as_airbyte_stream_full_refresh(mocker):
     mocker.patch.object(StreamStubFullRefresh, "get_json_schema", return_value={})
     airbyte_stream = test_stream.as_airbyte_stream()
 
-    exp = AirbyteStream(name="stream_stub_full_refresh", json_schema={}, supported_sync_modes=[SyncMode.full_refresh], is_resumable=False)
+    exp = AirbyteStream(
+        name="stream_stub_full_refresh",
+        json_schema={},
+        supported_sync_modes=[SyncMode.full_refresh],
+        is_resumable=False,
+    )
     assert airbyte_stream == exp
 
 
@@ -367,7 +380,11 @@ def test_namespace_not_set():
 
 @pytest.mark.parametrize(
     "test_input, expected",
-    [("key", [["key"]]), (["key1", "key2"], [["key1"], ["key2"]]), ([["key1", "key2"], ["key3"]], [["key1", "key2"], ["key3"]])],
+    [
+        ("key", [["key"]]),
+        (["key1", "key2"], [["key1"], ["key2"]]),
+        ([["key1", "key2"], ["key3"]], [["key1", "key2"], ["key3"]]),
+    ],
 )
 def test_wrapped_primary_key_various_argument(test_input, expected):
     """
@@ -390,13 +407,29 @@ def test_get_json_schema_is_cached(mocked_method):
 @pytest.mark.parametrize(
     "stream, stream_state, expected_checkpoint_reader_type",
     [
-        pytest.param(StreamStubIncremental(), {}, IncrementalCheckpointReader, id="test_incremental_checkpoint_reader"),
-        pytest.param(StreamStubFullRefresh(), {}, FullRefreshCheckpointReader, id="test_full_refresh_checkpoint_reader"),
         pytest.param(
-            StreamStubResumableFullRefresh(), {}, ResumableFullRefreshCheckpointReader, id="test_resumable_full_refresh_checkpoint_reader"
+            StreamStubIncremental(),
+            {},
+            IncrementalCheckpointReader,
+            id="test_incremental_checkpoint_reader",
         ),
         pytest.param(
-            StreamStubLegacyStateInterface(), {}, IncrementalCheckpointReader, id="test_incremental_checkpoint_reader_with_legacy_state"
+            StreamStubFullRefresh(),
+            {},
+            FullRefreshCheckpointReader,
+            id="test_full_refresh_checkpoint_reader",
+        ),
+        pytest.param(
+            StreamStubResumableFullRefresh(),
+            {},
+            ResumableFullRefreshCheckpointReader,
+            id="test_resumable_full_refresh_checkpoint_reader",
+        ),
+        pytest.param(
+            StreamStubLegacyStateInterface(),
+            {},
+            IncrementalCheckpointReader,
+            id="test_incremental_checkpoint_reader_with_legacy_state",
         ),
         pytest.param(
             CursorBasedStreamStubFullRefresh(),

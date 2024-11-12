@@ -107,10 +107,16 @@ class AbstractFileBasedSpec(BaseModel):
 
         properties_to_change = ["validation_policy"]
         for property_to_change in properties_to_change:
-            property_object = schema["properties"]["streams"]["items"]["properties"][property_to_change]
+            property_object = schema["properties"]["streams"]["items"]["properties"][
+                property_to_change
+            ]
             if "anyOf" in property_object:
-                schema["properties"]["streams"]["items"]["properties"][property_to_change]["type"] = "object"
-                schema["properties"]["streams"]["items"]["properties"][property_to_change]["oneOf"] = property_object.pop("anyOf")
+                schema["properties"]["streams"]["items"]["properties"][property_to_change][
+                    "type"
+                ] = "object"
+                schema["properties"]["streams"]["items"]["properties"][property_to_change][
+                    "oneOf"
+                ] = property_object.pop("anyOf")
             AbstractFileBasedSpec.move_enum_to_root(property_object)
 
         csv_format_schemas = list(
@@ -121,9 +127,9 @@ class AbstractFileBasedSpec(BaseModel):
         )
         if len(csv_format_schemas) != 1:
             raise ValueError(f"Expecting only one CSV format but got {csv_format_schemas}")
-        csv_format_schemas[0]["properties"]["header_definition"]["oneOf"] = csv_format_schemas[0]["properties"]["header_definition"].pop(
-            "anyOf", []
-        )
+        csv_format_schemas[0]["properties"]["header_definition"]["oneOf"] = csv_format_schemas[0][
+            "properties"
+        ]["header_definition"].pop("anyOf", [])
         csv_format_schemas[0]["properties"]["header_definition"]["type"] = "object"
         return schema
 

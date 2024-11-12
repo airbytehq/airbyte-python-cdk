@@ -4,16 +4,12 @@ on:
   issue_comment:
     types: [created]
 
-env:
-  AIRBYTE_ANALYTICS_ID: ${{ vars.AIRBYTE_ANALYTICS_ID }}
-
 jobs:
   slashCommandDispatch:
     # Only allow slash commands on pull request (not on issues)
     if: ${{ github.event.issue.pull_request }}
     runs-on: ubuntu-latest
     steps:
-
       - name: Slash Command Dispatch
         id: dispatch
         uses: peter-evans/slash-command-dispatch@v4
@@ -23,8 +19,8 @@ jobs:
           dispatch-type: workflow
           issue-type: pull-request
           commands: |
-            fix-pr
-            test-pr
+            autofix
+            test
             poetry-lock
           static-args: |
             pr=${{ github.event.issue.number }}

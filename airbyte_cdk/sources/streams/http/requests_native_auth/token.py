@@ -6,7 +6,9 @@ import base64
 from itertools import cycle
 from typing import List
 
-from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_token import AbstractHeaderAuthenticator
+from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_token import (
+    AbstractHeaderAuthenticator,
+)
 
 
 class MultipleTokenAuthenticator(AbstractHeaderAuthenticator):
@@ -24,7 +26,9 @@ class MultipleTokenAuthenticator(AbstractHeaderAuthenticator):
     def token(self) -> str:
         return f"{self._auth_method} {next(self._tokens_iter)}"
 
-    def __init__(self, tokens: List[str], auth_method: str = "Bearer", auth_header: str = "Authorization"):
+    def __init__(
+        self, tokens: List[str], auth_method: str = "Bearer", auth_header: str = "Authorization"
+    ):
         self._auth_method = auth_method
         self._auth_header = auth_header
         self._tokens = tokens
@@ -65,7 +69,13 @@ class BasicHttpAuthenticator(AbstractHeaderAuthenticator):
     def token(self) -> str:
         return f"{self._auth_method} {self._token}"
 
-    def __init__(self, username: str, password: str = "", auth_method: str = "Basic", auth_header: str = "Authorization"):
+    def __init__(
+        self,
+        username: str,
+        password: str = "",
+        auth_method: str = "Basic",
+        auth_header: str = "Authorization",
+    ):
         auth_string = f"{username}:{password}".encode("utf8")
         b64_encoded = base64.b64encode(auth_string).decode("utf8")
         self._auth_header = auth_header

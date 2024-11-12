@@ -8,8 +8,14 @@ from typing import TYPE_CHECKING, Optional, Tuple
 
 from airbyte_cdk import AirbyteTracedException
 from airbyte_cdk.sources import Source
-from airbyte_cdk.sources.file_based.availability_strategy import AbstractFileBasedAvailabilityStrategy
-from airbyte_cdk.sources.file_based.exceptions import CheckAvailabilityError, CustomFileBasedException, FileBasedSourceError
+from airbyte_cdk.sources.file_based.availability_strategy import (
+    AbstractFileBasedAvailabilityStrategy,
+)
+from airbyte_cdk.sources.file_based.exceptions import (
+    CheckAvailabilityError,
+    CustomFileBasedException,
+    FileBasedSourceError,
+)
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.schema_helpers import conforms_to_schema
@@ -22,7 +28,9 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
     def __init__(self, stream_reader: AbstractFileBasedStreamReader):
         self.stream_reader = stream_reader
 
-    def check_availability(self, stream: "AbstractFileBasedStream", logger: logging.Logger, _: Optional[Source]) -> Tuple[bool, Optional[str]]:  # type: ignore[override]
+    def check_availability(
+        self, stream: "AbstractFileBasedStream", logger: logging.Logger, _: Optional[Source]
+    ) -> Tuple[bool, Optional[str]]:  # type: ignore[override]
         """
         Perform a connection check for the stream (verify that we can list files from the stream).
 
@@ -87,15 +95,25 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
         except CustomFileBasedException as exc:
             raise CheckAvailabilityError(str(exc), stream=stream.name) from exc
         except Exception as exc:
-            raise CheckAvailabilityError(FileBasedSourceError.ERROR_LISTING_FILES, stream=stream.name) from exc
+            raise CheckAvailabilityError(
+                FileBasedSourceError.ERROR_LISTING_FILES, stream=stream.name
+            ) from exc
 
         return file
 
-    def _check_parse_record(self, stream: "AbstractFileBasedStream", file: RemoteFile, logger: logging.Logger) -> None:
+    def _check_parse_record(
+        self, stream: "AbstractFileBasedStream", file: RemoteFile, logger: logging.Logger
+    ) -> None:
         parser = stream.get_parser()
 
         try:
-            record = next(iter(parser.parse_records(stream.config, file, self.stream_reader, logger, discovered_schema=None)))
+            record = next(
+                iter(
+                    parser.parse_records(
+                        stream.config, file, self.stream_reader, logger, discovered_schema=None
+                    )
+                )
+            )
         except StopIteration:
             # The file is empty. We've verified that we can open it, so will
             # consider the connection check successful even though it means
@@ -104,7 +122,9 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
         except AirbyteTracedException as ate:
             raise ate
         except Exception as exc:
-            raise CheckAvailabilityError(FileBasedSourceError.ERROR_READING_FILE, stream=stream.name, file=file.uri) from exc
+            raise CheckAvailabilityError(
+                FileBasedSourceError.ERROR_READING_FILE, stream=stream.name, file=file.uri
+            ) from exc
 
         schema = stream.catalog_schema or stream.config.input_schema
         if schema and stream.validation_policy.validate_schema_before_sync:

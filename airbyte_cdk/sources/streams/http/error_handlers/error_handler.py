@@ -30,7 +30,9 @@ class ErrorHandler(ABC):
         pass
 
     @abstractmethod
-    def interpret_response(self, response: Optional[Union[requests.Response, Exception]]) -> ErrorResolution:
+    def interpret_response(
+        self, response: Optional[Union[requests.Response, Exception]]
+    ) -> ErrorResolution:
         """
         Interpret the response or exception and return the corresponding response action, failure type, and error message.
 

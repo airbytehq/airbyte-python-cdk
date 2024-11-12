@@ -8,7 +8,9 @@ import dpath
 from airbyte_cdk.models import AirbyteStream
 
 
-def get_first(iterable: Iterable[Any], predicate: Callable[[Any], bool] = lambda m: True) -> Optional[Any]:
+def get_first(
+    iterable: Iterable[Any], predicate: Callable[[Any], bool] = lambda m: True
+) -> Optional[Any]:
     return next(filter(predicate, iterable), None)
 
 

@@ -55,9 +55,14 @@ InferredSchema = Dict[str, Any]
 
 class SchemaValidationException(Exception):
     @classmethod
-    def merge_exceptions(cls, exceptions: List["SchemaValidationException"]) -> "SchemaValidationException":
+    def merge_exceptions(
+        cls, exceptions: List["SchemaValidationException"]
+    ) -> "SchemaValidationException":
         # We assume the schema is the same for all SchemaValidationException
-        return SchemaValidationException(exceptions[0].schema, [x for exception in exceptions for x in exception._validation_errors])
+        return SchemaValidationException(
+            exceptions[0].schema,
+            [x for exception in exceptions for x in exception._validation_errors],
+        )
 
     def __init__(self, schema: InferredSchema, validation_errors: List[Exception]):
         self._schema = schema
@@ -84,7 +89,9 @@ class SchemaInferrer:
 
     stream_to_builder: Dict[str, SchemaBuilder]
 
-    def __init__(self, pk: Optional[List[List[str]]] = None, cursor_field: Optional[List[List[str]]] = None) -> None:
+    def __init__(
+        self, pk: Optional[List[List[str]]] = None, cursor_field: Optional[List[List[str]]] = None
+    ) -> None:
         self.stream_to_builder = defaultdict(NoRequiredSchemaBuilder)
         self._pk = [] if pk is None else pk
         self._cursor_field = [] if cursor_field is None else cursor_field
@@ -105,7 +112,9 @@ class SchemaInferrer:
 
     def _clean_any_of(self, node: InferredSchema) -> None:
         if len(node[_ANY_OF]) == 2 and self._null_type_in_any_of(node):
-            real_type = node[_ANY_OF][1] if node[_ANY_OF][0][_TYPE] == _NULL_TYPE else node[_ANY_OF][0]
+            real_type = (
+                node[_ANY_OF][1] if node[_ANY_OF][0][_TYPE] == _NULL_TYPE else node[_ANY_OF][0]
+            )
             node.update(real_type)
             node[_TYPE] = [node[_TYPE], _NULL_TYPE]
             node.pop(_ANY_OF)
@@ -189,7 +198,9 @@ class SchemaInferrer:
         if errors:
             raise SchemaValidationException(node, errors)
 
-    def _add_field_as_required(self, node: InferredSchema, path: List[str], traveled_path: Optional[List[str]] = None) -> None:
+    def _add_field_as_required(
+        self, node: InferredSchema, path: List[str], traveled_path: Optional[List[str]] = None
+    ) -> None:
         """
         Take a nested key and travel the schema to mark every node as required.
         """
@@ -208,7 +219,9 @@ class SchemaInferrer:
 
         next_node = path[0]
         if next_node not in node[_PROPERTIES]:
-            raise ValueError(f"Path {traveled_path} does not have field `{next_node}` in the schema and hence can't be marked as required.")
+            raise ValueError(
+                f"Path {traveled_path} does not have field `{next_node}` in the schema and hence can't be marked as required."
+            )
 
         if _TYPE not in node:
             # We do not expect this case to happen but we added a specific error message just in case
@@ -216,8 +229,14 @@ class SchemaInferrer:
                 f"Unknown schema error: {traveled_path} is expected to have a type but did not. Schema inferrence is probably broken"
             )
 
-        if node[_TYPE] not in [_OBJECT_TYPE, [_NULL_TYPE, _OBJECT_TYPE], [_OBJECT_TYPE, _NULL_TYPE]]:
-            raise ValueError(f"Path {traveled_path} is expected to be an object but was of type `{node['properties'][next_node]['type']}`")
+        if node[_TYPE] not in [
+            _OBJECT_TYPE,
+            [_NULL_TYPE, _OBJECT_TYPE],
+            [_OBJECT_TYPE, _NULL_TYPE],
+        ]:
+            raise ValueError(
+                f"Path {traveled_path} is expected to be an object but was of type `{node['properties'][next_node]['type']}`"
+            )
 
         if _REQUIRED not in node or not node[_REQUIRED]:
             node[_REQUIRED] = [next_node]
@@ -242,7 +261,9 @@ class SchemaInferrer:
         Returns the inferred JSON schema for the specified stream. Might be `None` if there were no records for the given stream name.
         """
         return (
-            self._add_required_properties(self._clean(self.stream_to_builder[stream_name].to_schema()))
+            self._add_required_properties(
+                self._clean(self.stream_to_builder[stream_name].to_schema())
+            )
             if stream_name in self.stream_to_builder
             else None
         )

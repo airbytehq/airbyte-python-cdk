@@ -6,8 +6,10 @@ from dataclasses import InitVar, dataclass
 from typing import Annotated, Any, Dict, List, Mapping, Optional, Union
 
 from airbyte_cdk.models.file_transfer_record_message import AirbyteFileTransferRecordMessage
-from airbyte_protocol_dataclasses.models import *
+from airbyte_protocol_dataclasses.models import *  # noqa: F403  # Allow '*'
 from serpyco_rs.metadata import Alias
+
+# ruff: noqa: F405  # ignore fuzzy import issues with 'import *'
 
 
 @dataclass
@@ -42,7 +44,11 @@ class AirbyteStateBlob:
             setattr(self, key, value)
 
     def __eq__(self, other: object) -> bool:
-        return False if not isinstance(other, AirbyteStateBlob) else bool(self.__dict__ == other.__dict__)
+        return (
+            False
+            if not isinstance(other, AirbyteStateBlob)
+            else bool(self.__dict__ == other.__dict__)
+        )
 
 
 # The following dataclasses have been redeclared to include the new version of AirbyteStateBlob
@@ -62,9 +68,9 @@ class AirbyteGlobalState:
 class AirbyteStateMessage:
     type: Optional[AirbyteStateType] = None  # type: ignore [name-defined]
     stream: Optional[AirbyteStreamState] = None
-    global_: Annotated[
-        AirbyteGlobalState | None, Alias("global")
-    ] = None  # "global" is a reserved keyword in python ⇒ Alias is used for (de-)serialization
+    global_: Annotated[AirbyteGlobalState | None, Alias("global")] = (
+        None  # "global" is a reserved keyword in python ⇒ Alias is used for (de-)serialization
+    )
     data: Optional[Dict[str, Any]] = None
     sourceStats: Optional[AirbyteStateStats] = None  # type: ignore [name-defined]
     destinationStats: Optional[AirbyteStateStats] = None  # type: ignore [name-defined]

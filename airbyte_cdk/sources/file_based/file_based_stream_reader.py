@@ -45,7 +45,9 @@ class AbstractFileBasedStreamReader(ABC):
         ...
 
     @abstractmethod
-    def open_file(self, file: RemoteFile, mode: FileReadMode, encoding: Optional[str], logger: logging.Logger) -> IOBase:
+    def open_file(
+        self, file: RemoteFile, mode: FileReadMode, encoding: Optional[str], logger: logging.Logger
+    ) -> IOBase:
         """
         Return a file handle for reading.
 
@@ -80,11 +82,17 @@ class AbstractFileBasedStreamReader(ABC):
         """
         ...
 
-    def filter_files_by_globs_and_start_date(self, files: List[RemoteFile], globs: List[str]) -> Iterable[RemoteFile]:
+    def filter_files_by_globs_and_start_date(
+        self, files: List[RemoteFile], globs: List[str]
+    ) -> Iterable[RemoteFile]:
         """
         Utility method for filtering files based on globs.
         """
-        start_date = datetime.strptime(self.config.start_date, self.DATE_TIME_FORMAT) if self.config and self.config.start_date else None
+        start_date = (
+            datetime.strptime(self.config.start_date, self.DATE_TIME_FORMAT)
+            if self.config and self.config.start_date
+            else None
+        )
         seen = set()
 
         for file in files:
@@ -120,13 +128,16 @@ class AbstractFileBasedStreamReader(ABC):
     def use_file_transfer(self) -> bool:
         if self.config:
             use_file_transfer = (
-                hasattr(self.config.delivery_method, "delivery_type") and self.config.delivery_method.delivery_type == "use_file_transfer"
+                hasattr(self.config.delivery_method, "delivery_type")
+                and self.config.delivery_method.delivery_type == "use_file_transfer"
             )
             return use_file_transfer
         return False
 
     @abstractmethod
-    def get_file(self, file: RemoteFile, local_directory: str, logger: logging.Logger) -> Dict[str, Any]:
+    def get_file(
+        self, file: RemoteFile, local_directory: str, logger: logging.Logger
+    ) -> Dict[str, Any]:
         """
         This is required for connectors that will support writing to
         files. It will handle the logic to download,get,read,acquire or

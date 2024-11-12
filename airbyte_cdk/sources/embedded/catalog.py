@@ -31,15 +31,27 @@ def to_configured_stream(
     primary_key: Optional[List[List[str]]] = None,
 ) -> ConfiguredAirbyteStream:
     return ConfiguredAirbyteStream(
-        stream=stream, sync_mode=sync_mode, destination_sync_mode=destination_sync_mode, cursor_field=cursor_field, primary_key=primary_key
+        stream=stream,
+        sync_mode=sync_mode,
+        destination_sync_mode=destination_sync_mode,
+        cursor_field=cursor_field,
+        primary_key=primary_key,
     )
 
 
-def to_configured_catalog(configured_streams: List[ConfiguredAirbyteStream]) -> ConfiguredAirbyteCatalog:
+def to_configured_catalog(
+    configured_streams: List[ConfiguredAirbyteStream],
+) -> ConfiguredAirbyteCatalog:
     return ConfiguredAirbyteCatalog(streams=configured_streams)
 
 
-def create_configured_catalog(stream: AirbyteStream, sync_mode: SyncMode = SyncMode.full_refresh) -> ConfiguredAirbyteCatalog:
-    configured_streams = [to_configured_stream(stream, sync_mode=sync_mode, primary_key=stream.source_defined_primary_key)]
+def create_configured_catalog(
+    stream: AirbyteStream, sync_mode: SyncMode = SyncMode.full_refresh
+) -> ConfiguredAirbyteCatalog:
+    configured_streams = [
+        to_configured_stream(
+            stream, sync_mode=sync_mode, primary_key=stream.source_defined_primary_key
+        )
+    ]
 
     return to_configured_catalog(configured_streams)

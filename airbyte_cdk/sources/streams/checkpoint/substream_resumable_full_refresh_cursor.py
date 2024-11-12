@@ -5,7 +5,9 @@ from typing import Any, Mapping, MutableMapping, Optional
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.streams.checkpoint import Cursor
-from airbyte_cdk.sources.streams.checkpoint.per_partition_key_serializer import PerPartitionKeySerializer
+from airbyte_cdk.sources.streams.checkpoint.per_partition_key_serializer import (
+    PerPartitionKeySerializer,
+)
 from airbyte_cdk.sources.types import Record, StreamSlice, StreamState
 from airbyte_cdk.utils import AirbyteTracedException
 
@@ -97,7 +99,9 @@ class SubstreamResumableFullRefreshCursor(Cursor):
         if not stream_slice:
             raise ValueError("A partition needs to be provided in order to extract a state")
 
-        return self._per_partition_state.get(self._to_partition_key(stream_slice.partition), {}).get("cursor")
+        return self._per_partition_state.get(
+            self._to_partition_key(stream_slice.partition), {}
+        ).get("cursor")
 
     def _to_partition_key(self, partition: Mapping[str, Any]) -> str:
         return self._partition_serializer.to_partition_key(partition)

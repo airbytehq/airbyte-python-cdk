@@ -28,8 +28,7 @@ class DateTimeStreamStateConverter(AbstractStreamStateConverter):
 
     @property
     @abstractmethod
-    def _zero_value(self) -> Any:
-        ...
+    def _zero_value(self) -> Any: ...
 
     @property
     def zero_value(self) -> datetime:
@@ -40,16 +39,13 @@ class DateTimeStreamStateConverter(AbstractStreamStateConverter):
         return lambda: datetime.now(timezone.utc)
 
     @abstractmethod
-    def increment(self, timestamp: datetime) -> datetime:
-        ...
+    def increment(self, timestamp: datetime) -> datetime: ...
 
     @abstractmethod
-    def parse_timestamp(self, timestamp: Any) -> datetime:
-        ...
+    def parse_timestamp(self, timestamp: Any) -> datetime: ...
 
     @abstractmethod
-    def output_format(self, timestamp: datetime) -> Any:
-        ...
+    def output_format(self, timestamp: datetime) -> Any: ...
 
     def parse_value(self, value: Any) -> Any:
         """
@@ -61,7 +57,10 @@ class DateTimeStreamStateConverter(AbstractStreamStateConverter):
         return bool(self.increment(end_time) >= start_time)
 
     def convert_from_sequential_state(
-        self, cursor_field: CursorField, stream_state: MutableMapping[str, Any], start: Optional[datetime]
+        self,
+        cursor_field: CursorField,
+        stream_state: MutableMapping[str, Any],
+        start: Optional[datetime],
     ) -> Tuple[datetime, MutableMapping[str, Any]]:
         """
         Convert the state message to the format required by the ConcurrentCursor.
@@ -82,7 +81,9 @@ class DateTimeStreamStateConverter(AbstractStreamStateConverter):
         # Create a slice to represent the records synced during prior syncs.
         # The start and end are the same to avoid confusion as to whether the records for this slice
         # were actually synced
-        slices = [{self.START_KEY: start if start is not None else sync_start, self.END_KEY: sync_start}]
+        slices = [
+            {self.START_KEY: start if start is not None else sync_start, self.END_KEY: sync_start}
+        ]
 
         return sync_start, {
             "state_type": ConcurrencyCompatibleStateType.date_range.value,
@@ -90,10 +91,17 @@ class DateTimeStreamStateConverter(AbstractStreamStateConverter):
             "legacy": stream_state,
         }
 
-    def _get_sync_start(self, cursor_field: CursorField, stream_state: MutableMapping[str, Any], start: Optional[datetime]) -> datetime:
+    def _get_sync_start(
+        self,
+        cursor_field: CursorField,
+        stream_state: MutableMapping[str, Any],
+        start: Optional[datetime],
+    ) -> datetime:
         sync_start = start if start is not None else self.zero_value
         prev_sync_low_water_mark = (
-            self.parse_timestamp(stream_state[cursor_field.cursor_field_key]) if cursor_field.cursor_field_key in stream_state else None
+            self.parse_timestamp(stream_state[cursor_field.cursor_field_key])
+            if cursor_field.cursor_field_key in stream_state
+            else None
         )
         if prev_sync_low_water_mark and prev_sync_low_water_mark >= sync_start:
             return prev_sync_low_water_mark
@@ -126,7 +134,9 @@ class EpochValueConcurrentStreamStateConverter(DateTimeStreamStateConverter):
     def parse_timestamp(self, timestamp: int) -> datetime:
         dt_object = pendulum.from_timestamp(timestamp)
         if not isinstance(dt_object, DateTime):
-            raise ValueError(f"DateTime object was expected but got {type(dt_object)} from pendulum.parse({timestamp})")
+            raise ValueError(
+                f"DateTime object was expected but got {type(dt_object)} from pendulum.parse({timestamp})"
+            )
         return dt_object  # type: ignore  # we are manually type checking because pendulum.parse may return different types
 
 
@@ -146,7 +156,9 @@ class IsoMillisConcurrentStreamStateConverter(DateTimeStreamStateConverter):
 
     _zero_value = "0001-01-01T00:00:00.000Z"
 
-    def __init__(self, is_sequential_state: bool = True, cursor_granularity: Optional[timedelta] = None):
+    def __init__(
+        self, is_sequential_state: bool = True, cursor_granularity: Optional[timedelta] = None
+    ):
         super().__init__(is_sequential_state=is_sequential_state)
         self._cursor_granularity = cursor_granularity or timedelta(milliseconds=1)
 
@@ -159,7 +171,9 @@ class IsoMillisConcurrentStreamStateConverter(DateTimeStreamStateConverter):
     def parse_timestamp(self, timestamp: str) -> datetime:
         dt_object = pendulum.parse(timestamp)
         if not isinstance(dt_object, DateTime):
-            raise ValueError(f"DateTime object was expected but got {type(dt_object)} from pendulum.parse({timestamp})")
+            raise ValueError(
+                f"DateTime object was expected but got {type(dt_object)} from pendulum.parse({timestamp})"
+            )
         return dt_object  # type: ignore  # we are manually type checking because pendulum.parse may return different types
 
 
@@ -176,7 +190,9 @@ class CustomFormatConcurrentStreamStateConverter(IsoMillisConcurrentStreamStateC
         is_sequential_state: bool = True,
         cursor_granularity: Optional[timedelta] = None,
     ):
-        super().__init__(is_sequential_state=is_sequential_state, cursor_granularity=cursor_granularity)
+        super().__init__(
+            is_sequential_state=is_sequential_state, cursor_granularity=cursor_granularity
+        )
         self._datetime_format = datetime_format
         self._input_datetime_formats = input_datetime_formats if input_datetime_formats else []
         self._input_datetime_formats += [self._datetime_format]

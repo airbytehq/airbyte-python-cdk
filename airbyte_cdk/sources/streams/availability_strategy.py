@@ -20,7 +20,9 @@ class AvailabilityStrategy(ABC):
     """
 
     @abstractmethod
-    def check_availability(self, stream: Stream, logger: logging.Logger, source: Optional["Source"] = None) -> Tuple[bool, Optional[str]]:
+    def check_availability(
+        self, stream: Stream, logger: logging.Logger, source: Optional["Source"] = None
+    ) -> Tuple[bool, Optional[str]]:
         """
         Checks stream availability.
 
@@ -52,7 +54,9 @@ class AvailabilityStrategy(ABC):
         return next(slices)
 
     @staticmethod
-    def get_first_record_for_slice(stream: Stream, stream_slice: Optional[Mapping[str, Any]]) -> StreamData:
+    def get_first_record_for_slice(
+        stream: Stream, stream_slice: Optional[Mapping[str, Any]]
+    ) -> StreamData:
         """
         Gets the first record for a stream_slice of a stream.
 
@@ -70,7 +74,9 @@ class AvailabilityStrategy(ABC):
 
             # We wrap the return output of read_records() because some implementations return types that are iterable,
             # but not iterators such as lists or tuples
-            records_for_slice = iter(stream.read_records(sync_mode=SyncMode.full_refresh, stream_slice=stream_slice))
+            records_for_slice = iter(
+                stream.read_records(sync_mode=SyncMode.full_refresh, stream_slice=stream_slice)
+            )
 
             return next(records_for_slice)
         finally:

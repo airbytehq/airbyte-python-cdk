@@ -40,7 +40,10 @@ NOW = 1234567
                     "obj": {
                         "type": ["object", "null"],
                         "properties": {
-                            "data": {"type": ["array", "null"], "items": {"type": ["number", "null"]}},
+                            "data": {
+                                "type": ["array", "null"],
+                                "items": {"type": ["number", "null"]},
+                            },
                             "other_key": {"type": ["string", "null"]},
                         },
                     }
@@ -76,7 +79,14 @@ NOW = 1234567
                 {"stream": "my_stream", "data": {"field_A": None}},
                 {"stream": "my_stream", "data": {"field_A": {"nested": "abc"}}},
             ],
-            {"my_stream": {"field_A": {"type": ["object", "null"], "properties": {"nested": {"type": ["string", "null"]}}}}},
+            {
+                "my_stream": {
+                    "field_A": {
+                        "type": ["object", "null"],
+                        "properties": {"nested": {"type": ["string", "null"]}},
+                    }
+                }
+            },
             id="test_any_of",
         ),
         pytest.param(
@@ -84,20 +94,33 @@ NOW = 1234567
                 {"stream": "my_stream", "data": {"field_A": None}},
                 {"stream": "my_stream", "data": {"field_A": {"nested": "abc", "nully": None}}},
             ],
-            {"my_stream": {"field_A": {"type": ["object", "null"], "properties": {"nested": {"type": ["string", "null"]}}}}},
+            {
+                "my_stream": {
+                    "field_A": {
+                        "type": ["object", "null"],
+                        "properties": {"nested": {"type": ["string", "null"]}},
+                    }
+                }
+            },
             id="test_any_of_with_null",
         ),
         pytest.param(
             [
                 {"stream": "my_stream", "data": {"field_A": None}},
                 {"stream": "my_stream", "data": {"field_A": {"nested": "abc", "nully": None}}},
-                {"stream": "my_stream", "data": {"field_A": {"nested": "abc", "nully": "a string"}}},
+                {
+                    "stream": "my_stream",
+                    "data": {"field_A": {"nested": "abc", "nully": "a string"}},
+                },
             ],
             {
                 "my_stream": {
                     "field_A": {
                         "type": ["object", "null"],
-                        "properties": {"nested": {"type": ["string", "null"]}, "nully": {"type": ["string", "null"]}},
+                        "properties": {
+                            "nested": {"type": ["string", "null"]},
+                            "nully": {"type": ["string", "null"]},
+                        },
                     }
                 }
             },
@@ -105,7 +128,10 @@ NOW = 1234567
         ),
         pytest.param(
             [
-                {"stream": "my_stream", "data": {"field_A": {"nested": "abc", "nully": "a string"}}},
+                {
+                    "stream": "my_stream",
+                    "data": {"field_A": {"nested": "abc", "nully": "a string"}},
+                },
                 {"stream": "my_stream", "data": {"field_A": None}},
                 {"stream": "my_stream", "data": {"field_A": {"nested": "abc", "nully": None}}},
             ],
@@ -113,7 +139,10 @@ NOW = 1234567
                 "my_stream": {
                     "field_A": {
                         "type": ["object", "null"],
-                        "properties": {"nested": {"type": ["string", "null"]}, "nully": {"type": ["string", "null"]}},
+                        "properties": {
+                            "nested": {"type": ["string", "null"]},
+                            "nully": {"type": ["string", "null"]},
+                        },
                     }
                 }
             },
@@ -123,19 +152,30 @@ NOW = 1234567
             [
                 {"stream": "my_stream", "data": {"field_A": "abc", "nested": {"field_B": None}}},
             ],
-            {"my_stream": {"field_A": {"type": ["string", "null"]}, "nested": {"type": ["object", "null"], "properties": {}}}},
+            {
+                "my_stream": {
+                    "field_A": {"type": ["string", "null"]},
+                    "nested": {"type": ["object", "null"], "properties": {}},
+                }
+            },
             id="test_nested_null",
         ),
         pytest.param(
             [
-                {"stream": "my_stream", "data": {"field_A": "abc", "nested": [{"field_B": None, "field_C": "abc"}]}},
+                {
+                    "stream": "my_stream",
+                    "data": {"field_A": "abc", "nested": [{"field_B": None, "field_C": "abc"}]},
+                },
             ],
             {
                 "my_stream": {
                     "field_A": {"type": ["string", "null"]},
                     "nested": {
                         "type": ["array", "null"],
-                        "items": {"type": ["object", "null"], "properties": {"field_C": {"type": ["string", "null"]}}},
+                        "items": {
+                            "type": ["object", "null"],
+                            "properties": {"field_C": {"type": ["string", "null"]}},
+                        },
                     },
                 }
             },
@@ -144,14 +184,20 @@ NOW = 1234567
         pytest.param(
             [
                 {"stream": "my_stream", "data": {"field_A": "abc", "nested": None}},
-                {"stream": "my_stream", "data": {"field_A": "abc", "nested": [{"field_B": None, "field_C": "abc"}]}},
+                {
+                    "stream": "my_stream",
+                    "data": {"field_A": "abc", "nested": [{"field_B": None, "field_C": "abc"}]},
+                },
             ],
             {
                 "my_stream": {
                     "field_A": {"type": ["string", "null"]},
                     "nested": {
                         "type": ["array", "null"],
-                        "items": {"type": ["object", "null"], "properties": {"field_C": {"type": ["string", "null"]}}},
+                        "items": {
+                            "type": ["object", "null"],
+                            "properties": {"field_C": {"type": ["string", "null"]}},
+                        },
                     },
                 }
             },
@@ -176,7 +222,10 @@ NOW = 1234567
                                 {
                                     "title": "Nested_2",
                                     "type": "location",
-                                    "value": {"nested_key_1": "GB", "nested_key_2": "United Kingdom"},
+                                    "value": {
+                                        "nested_key_1": "GB",
+                                        "nested_key_2": "United Kingdom",
+                                    },
                                 },
                             ],
                         }
@@ -200,7 +249,10 @@ NOW = 1234567
                                                 {"type": "array", "items": {"type": "string"}},
                                                 {
                                                     "type": "object",
-                                                    "properties": {"nested_key_1": {"type": "string"}, "nested_key_2": {"type": "string"}},
+                                                    "properties": {
+                                                        "nested_key_1": {"type": "string"},
+                                                        "nested_key_2": {"type": "string"},
+                                                    },
                                                 },
                                             ]
                                         },
@@ -218,7 +270,9 @@ NOW = 1234567
 def test_schema_derivation(input_records: List, expected_schemas: Mapping):
     inferrer = SchemaInferrer()
     for record in input_records:
-        inferrer.accumulate(AirbyteRecordMessage(stream=record["stream"], data=record["data"], emitted_at=NOW))
+        inferrer.accumulate(
+            AirbyteRecordMessage(stream=record["stream"], data=record["data"], emitted_at=NOW)
+        )
 
     for stream_name, expected_schema in expected_schemas.items():
         assert inferrer.get_stream_schema(stream_name) == {
@@ -250,7 +304,9 @@ def _create_inferrer_with_required_field(is_pk: bool, field: List[List[str]]) ->
 def test_field_is_on_root(is_pk: bool):
     inferrer = _create_inferrer_with_required_field(is_pk, [["property"]])
 
-    inferrer.accumulate(AirbyteRecordMessage(stream=_STREAM_NAME, data={"property": _ANY_VALUE}, emitted_at=NOW))
+    inferrer.accumulate(
+        AirbyteRecordMessage(stream=_STREAM_NAME, data={"property": _ANY_VALUE}, emitted_at=NOW)
+    )
 
     assert inferrer.get_stream_schema(_STREAM_NAME)["required"] == ["property"]
     assert inferrer.get_stream_schema(_STREAM_NAME)["properties"]["property"]["type"] == "string"
@@ -266,11 +322,17 @@ def test_field_is_on_root(is_pk: bool):
 def test_field_is_nested(is_pk: bool):
     inferrer = _create_inferrer_with_required_field(is_pk, [["property", "nested_property"]])
 
-    inferrer.accumulate(AirbyteRecordMessage(stream=_STREAM_NAME, data={"property": {"nested_property": _ANY_VALUE}}, emitted_at=NOW))
+    inferrer.accumulate(
+        AirbyteRecordMessage(
+            stream=_STREAM_NAME, data={"property": {"nested_property": _ANY_VALUE}}, emitted_at=NOW
+        )
+    )
 
     assert inferrer.get_stream_schema(_STREAM_NAME)["required"] == ["property"]
     assert inferrer.get_stream_schema(_STREAM_NAME)["properties"]["property"]["type"] == "object"
-    assert inferrer.get_stream_schema(_STREAM_NAME)["properties"]["property"]["required"] == ["nested_property"]
+    assert inferrer.get_stream_schema(_STREAM_NAME)["properties"]["property"]["required"] == [
+        "nested_property"
+    ]
 
 
 @pytest.mark.parametrize(
@@ -283,7 +345,11 @@ def test_field_is_nested(is_pk: bool):
 def test_field_is_composite(is_pk: bool):
     inferrer = _create_inferrer_with_required_field(is_pk, [["property 1"], ["property 2"]])
     inferrer.accumulate(
-        AirbyteRecordMessage(stream=_STREAM_NAME, data={"property 1": _ANY_VALUE, "property 2": _ANY_VALUE}, emitted_at=NOW)
+        AirbyteRecordMessage(
+            stream=_STREAM_NAME,
+            data={"property 1": _ANY_VALUE, "property 2": _ANY_VALUE},
+            emitted_at=NOW,
+        )
     )
     assert inferrer.get_stream_schema(_STREAM_NAME)["required"] == ["property 1", "property 2"]
 
@@ -296,22 +362,37 @@ def test_field_is_composite(is_pk: bool):
     ],
 )
 def test_field_is_composite_and_nested(is_pk: bool):
-    inferrer = _create_inferrer_with_required_field(is_pk, [["property 1", "nested"], ["property 2"]])
+    inferrer = _create_inferrer_with_required_field(
+        is_pk, [["property 1", "nested"], ["property 2"]]
+    )
 
     inferrer.accumulate(
-        AirbyteRecordMessage(stream=_STREAM_NAME, data={"property 1": {"nested": _ANY_VALUE}, "property 2": _ANY_VALUE}, emitted_at=NOW)
+        AirbyteRecordMessage(
+            stream=_STREAM_NAME,
+            data={"property 1": {"nested": _ANY_VALUE}, "property 2": _ANY_VALUE},
+            emitted_at=NOW,
+        )
     )
 
     assert inferrer.get_stream_schema(_STREAM_NAME)["required"] == ["property 1", "property 2"]
     assert inferrer.get_stream_schema(_STREAM_NAME)["properties"]["property 1"]["type"] == "object"
     assert inferrer.get_stream_schema(_STREAM_NAME)["properties"]["property 2"]["type"] == "string"
-    assert inferrer.get_stream_schema(_STREAM_NAME)["properties"]["property 1"]["required"] == ["nested"]
-    assert inferrer.get_stream_schema(_STREAM_NAME)["properties"]["property 1"]["properties"]["nested"]["type"] == "string"
+    assert inferrer.get_stream_schema(_STREAM_NAME)["properties"]["property 1"]["required"] == [
+        "nested"
+    ]
+    assert (
+        inferrer.get_stream_schema(_STREAM_NAME)["properties"]["property 1"]["properties"][
+            "nested"
+        ]["type"]
+        == "string"
+    )
 
 
 def test_given_pk_does_not_exist_when_get_inferred_schemas_then_raise_error():
     inferrer = SchemaInferrer([["pk does not exist"]])
-    inferrer.accumulate(AirbyteRecordMessage(stream=_STREAM_NAME, data={"id": _ANY_VALUE}, emitted_at=NOW))
+    inferrer.accumulate(
+        AirbyteRecordMessage(stream=_STREAM_NAME, data={"id": _ANY_VALUE}, emitted_at=NOW)
+    )
 
     with pytest.raises(SchemaValidationException) as exception:
         inferrer.get_stream_schema(_STREAM_NAME)
@@ -321,7 +402,9 @@ def test_given_pk_does_not_exist_when_get_inferred_schemas_then_raise_error():
 
 def test_given_pk_path_is_partially_valid_when_get_inferred_schemas_then_validation_error_mentions_where_the_issue_is():
     inferrer = SchemaInferrer([["id", "nested pk that does not exist"]])
-    inferrer.accumulate(AirbyteRecordMessage(stream=_STREAM_NAME, data={"id": _ANY_VALUE}, emitted_at=NOW))
+    inferrer.accumulate(
+        AirbyteRecordMessage(stream=_STREAM_NAME, data={"id": _ANY_VALUE}, emitted_at=NOW)
+    )
 
     with pytest.raises(SchemaValidationException) as exception:
         inferrer.get_stream_schema(_STREAM_NAME)
@@ -332,7 +415,9 @@ def test_given_pk_path_is_partially_valid_when_get_inferred_schemas_then_validat
 
 def test_given_composite_pk_but_only_one_path_valid_when_get_inferred_schemas_then_valid_path_is_required():
     inferrer = SchemaInferrer([["id 1"], ["id 2"]])
-    inferrer.accumulate(AirbyteRecordMessage(stream=_STREAM_NAME, data={"id 1": _ANY_VALUE}, emitted_at=NOW))
+    inferrer.accumulate(
+        AirbyteRecordMessage(stream=_STREAM_NAME, data={"id 1": _ANY_VALUE}, emitted_at=NOW)
+    )
 
     with pytest.raises(SchemaValidationException) as exception:
         inferrer.get_stream_schema(_STREAM_NAME)
@@ -342,7 +427,9 @@ def test_given_composite_pk_but_only_one_path_valid_when_get_inferred_schemas_th
 
 def test_given_composite_pk_but_only_one_path_valid_when_get_inferred_schemas_then_validation_error_mentions_where_the_issue_is():
     inferrer = SchemaInferrer([["id 1"], ["id 2"]])
-    inferrer.accumulate(AirbyteRecordMessage(stream=_STREAM_NAME, data={"id 1": _ANY_VALUE}, emitted_at=NOW))
+    inferrer.accumulate(
+        AirbyteRecordMessage(stream=_STREAM_NAME, data={"id 1": _ANY_VALUE}, emitted_at=NOW)
+    )
 
     with pytest.raises(SchemaValidationException) as exception:
         inferrer.get_stream_schema(_STREAM_NAME)

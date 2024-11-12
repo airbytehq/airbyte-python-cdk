@@ -20,7 +20,9 @@ def test_authenticator_selected(mocker):
 def test_selection_path_not_found(mocker):
     authenticators = {"one": mocker.Mock(), "two": mocker.Mock()}
 
-    with pytest.raises(ValueError, match="The path from `authenticator_selection_path` is not found in the config"):
+    with pytest.raises(
+        ValueError, match="The path from `authenticator_selection_path` is not found in the config"
+    ):
         _ = SelectiveAuthenticator(
             config={"auth": {"type": "one"}},
             authenticators=authenticators,

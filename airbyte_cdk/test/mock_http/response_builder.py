@@ -91,7 +91,12 @@ class FieldUpdatePaginationStrategy(PaginationStrategy):
 
 
 class RecordBuilder:
-    def __init__(self, template: Dict[str, Any], id_path: Optional[Path], cursor_path: Optional[Union[FieldPath, NestedPath]]):
+    def __init__(
+        self,
+        template: Dict[str, Any],
+        id_path: Optional[Path],
+        cursor_path: Optional[Union[FieldPath, NestedPath]],
+    ):
         self._record = template
         self._id_path = id_path
         self._cursor_path = cursor_path
@@ -109,9 +114,13 @@ class RecordBuilder:
     def _validate_field(self, field_name: str, path: Optional[Path]) -> None:
         try:
             if path and not path.extract(self._record):
-                raise ValueError(f"{field_name} `{path}` was provided but it is not part of the template `{self._record}`")
+                raise ValueError(
+                    f"{field_name} `{path}` was provided but it is not part of the template `{self._record}`"
+                )
         except (IndexError, KeyError) as exception:
-            raise ValueError(f"{field_name} `{path}` was provided but it is not part of the template `{self._record}`") from exception
+            raise ValueError(
+                f"{field_name} `{path}` was provided but it is not part of the template `{self._record}`"
+            ) from exception
 
     def with_id(self, identifier: Any) -> "RecordBuilder":
         self._set_field("id", self._id_path, identifier)
@@ -139,7 +148,10 @@ class RecordBuilder:
 
 class HttpResponseBuilder:
     def __init__(
-        self, template: Dict[str, Any], records_path: Union[FieldPath, NestedPath], pagination_strategy: Optional[PaginationStrategy]
+        self,
+        template: Dict[str, Any],
+        records_path: Union[FieldPath, NestedPath],
+        pagination_strategy: Optional[PaginationStrategy],
     ):
         self._response = template
         self._records: List[RecordBuilder] = []
@@ -175,7 +187,13 @@ def _get_unit_test_folder(execution_folder: str) -> FilePath:
 
 
 def find_template(resource: str, execution_folder: str) -> Dict[str, Any]:
-    response_template_filepath = str(get_unit_test_folder(execution_folder) / "resource" / "http" / "response" / f"{resource}.json")
+    response_template_filepath = str(
+        get_unit_test_folder(execution_folder)
+        / "resource"
+        / "http"
+        / "response"
+        / f"{resource}.json"
+    )
     with open(response_template_filepath, "r") as template_file:
         return json.load(template_file)  # type: ignore  # we assume the dev correctly set up the resource file
 
@@ -198,10 +216,14 @@ def create_record_builder(
             )
         return RecordBuilder(record_template, record_id_path, record_cursor_path)
     except (IndexError, KeyError):
-        raise ValueError(f"Error while extracting records at path `{records_path}` from response template `{response_template}`")
+        raise ValueError(
+            f"Error while extracting records at path `{records_path}` from response template `{response_template}`"
+        )
 
 
 def create_response_builder(
-    response_template: Dict[str, Any], records_path: Union[FieldPath, NestedPath], pagination_strategy: Optional[PaginationStrategy] = None
+    response_template: Dict[str, Any],
+    records_path: Union[FieldPath, NestedPath],
+    pagination_strategy: Optional[PaginationStrategy] = None,
 ) -> HttpResponseBuilder:
     return HttpResponseBuilder(response_template, records_path, pagination_strategy)

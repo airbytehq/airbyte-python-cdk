@@ -24,7 +24,9 @@ config = {"backoff": 5}
 )
 def test_exponential_backoff(test_name, attempt_count, factor, expected_backoff_time):
     response_mock = MagicMock()
-    backoff_strategy = ExponentialBackoffStrategy(factor=factor, parameters=parameters, config=config)
+    backoff_strategy = ExponentialBackoffStrategy(
+        factor=factor, parameters=parameters, config=config
+    )
     backoff = backoff_strategy.backoff_time(response_mock, attempt_count=attempt_count)
     assert backoff == expected_backoff_time
 

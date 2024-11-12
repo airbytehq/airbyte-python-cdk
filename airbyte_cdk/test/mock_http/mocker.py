@@ -42,7 +42,12 @@ class HttpMocker(contextlib.ContextDecorator):
         self._mocker.__enter__()
         return self
 
-    def __exit__(self, exc_type: Optional[BaseException], exc_val: Optional[BaseException], exc_tb: Optional[TracebackType]) -> None:
+    def __exit__(
+        self,
+        exc_type: Optional[BaseException],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
         self._mocker.__exit__(exc_type, exc_val, exc_tb)
 
     def _validate_all_matchers_called(self) -> None:
@@ -51,7 +56,10 @@ class HttpMocker(contextlib.ContextDecorator):
                 raise ValueError(f"Invalid number of matches for `{matcher}`")
 
     def _mock_request_method(
-        self, method: SupportedHttpMethods, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]
+        self,
+        method: SupportedHttpMethods,
+        request: HttpRequest,
+        responses: Union[HttpResponse, List[HttpResponse]],
     ) -> None:
         if isinstance(responses, HttpResponse):
             responses = [responses]
@@ -65,37 +73,57 @@ class HttpMocker(contextlib.ContextDecorator):
             requests_mock.ANY,
             additional_matcher=self._matches_wrapper(matcher),
             response_list=[
-                {"text": response.body, "status_code": response.status_code, "headers": response.headers} for response in responses
+                {
+                    "text": response.body,
+                    "status_code": response.status_code,
+                    "headers": response.headers,
+                }
+                for response in responses
             ],
         )
 
     def get(self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]) -> None:
         self._mock_request_method(SupportedHttpMethods.GET, request, responses)
 
-    def patch(self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]) -> None:
+    def patch(
+        self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]
+    ) -> None:
         self._mock_request_method(SupportedHttpMethods.PATCH, request, responses)
 
-    def post(self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]) -> None:
+    def post(
+        self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]
+    ) -> None:
         self._mock_request_method(SupportedHttpMethods.POST, request, responses)
 
-    def delete(self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]) -> None:
+    def delete(
+        self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]
+    ) -> None:
         self._mock_request_method(SupportedHttpMethods.DELETE, request, responses)
 
     @staticmethod
-    def _matches_wrapper(matcher: HttpRequestMatcher) -> Callable[[requests_mock.request._RequestObjectProxy], bool]:
+    def _matches_wrapper(
+        matcher: HttpRequestMatcher,
+    ) -> Callable[[requests_mock.request._RequestObjectProxy], bool]:
         def matches(requests_mock_request: requests_mock.request._RequestObjectProxy) -> bool:
             # query_params are provided as part of `requests_mock_request.url`
             http_request = HttpRequest(
-                requests_mock_request.url, query_params={}, headers=requests_mock_request.headers, body=requests_mock_request.body
+                requests_mock_request.url,
+                query_params={},
+                headers=requests_mock_request.headers,
+                body=requests_mock_request.body,
             )
             return matcher.matches(http_request)
 
         return matches
 
     def assert_number_of_calls(self, request: HttpRequest, number_of_calls: int) -> None:
-        corresponding_matchers = list(filter(lambda matcher: matcher.request == request, self._matchers))
+        corresponding_matchers = list(
+            filter(lambda matcher: matcher.request == request, self._matchers)
+        )
         if len(corresponding_matchers) != 1:
-            raise ValueError(f"Was expecting only one matcher to match the request but got `{corresponding_matchers}`")
+            raise ValueError(
+                f"Was expecting only one matcher to match the request but got `{corresponding_matchers}`"
+            )
 
         assert corresponding_matchers[0].actual_number_of_matches == number_of_calls
 
@@ -110,7 +138,9 @@ class HttpMocker(contextlib.ContextDecorator):
                 try:
                     result = f(*args, **kwargs)
                 except requests_mock.NoMockAddress as no_mock_exception:
-                    matchers_as_string = "\n\t".join(map(lambda matcher: str(matcher.request), self._matchers))
+                    matchers_as_string = "\n\t".join(
+                        map(lambda matcher: str(matcher.request), self._matchers)
+                    )
                     raise ValueError(
                         f"No matcher matches {no_mock_exception.args[0]} with headers `{no_mock_exception.request.headers}` "
                         f"and body `{no_mock_exception.request.body}`. "

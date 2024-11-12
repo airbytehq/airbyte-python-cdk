@@ -53,7 +53,11 @@ class EntrypointOutput:
             raise ValueError("All messages are expected to be AirbyteMessage") from exception
 
         if uncaught_exception:
-            self._messages.append(assemble_uncaught_exception(type(uncaught_exception), uncaught_exception).as_airbyte_message())
+            self._messages.append(
+                assemble_uncaught_exception(
+                    type(uncaught_exception), uncaught_exception
+                ).as_airbyte_message()
+            )
 
     @staticmethod
     def _parse_message(message: str) -> AirbyteMessage:
@@ -61,7 +65,9 @@ class EntrypointOutput:
             return AirbyteMessageSerializer.load(orjson.loads(message))  # type: ignore[no-any-return] # Serializer.load() always returns AirbyteMessage
         except (orjson.JSONDecodeError, SchemaValidationError):
             # The platform assumes that logs that are not of AirbyteMessage format are log messages
-            return AirbyteMessage(type=Type.LOG, log=AirbyteLogMessage(level=Level.INFO, message=message))
+            return AirbyteMessage(
+                type=Type.LOG, log=AirbyteLogMessage(level=Level.INFO, message=message)
+            )
 
     @property
     def records_and_state_messages(self) -> List[AirbyteMessage]:
@@ -119,18 +125,26 @@ class EntrypointOutput:
         return [message for message in self._messages if message.type in message_types]
 
     def _get_trace_message_by_trace_type(self, trace_type: TraceType) -> List[AirbyteMessage]:
-        return [message for message in self._get_message_by_types([Type.TRACE]) if message.trace.type == trace_type]  # type: ignore[union-attr] # trace has `type`
+        return [
+            message
+            for message in self._get_message_by_types([Type.TRACE])
+            if message.trace.type == trace_type
+        ]  # type: ignore[union-attr] # trace has `type`
 
     def is_in_logs(self, pattern: str) -> bool:
         """Check if any log message case-insensitive matches the pattern."""
-        return any(re.search(pattern, entry.log.message, flags=re.IGNORECASE) for entry in self.logs)  # type: ignore[union-attr] # log has `message`
+        return any(
+            re.search(pattern, entry.log.message, flags=re.IGNORECASE) for entry in self.logs
+        )  # type: ignore[union-attr] # log has `message`
 
     def is_not_in_logs(self, pattern: str) -> bool:
         """Check if no log message matches the case-insensitive pattern."""
         return not self.is_in_logs(pattern)
 
 
-def _run_command(source: Source, args: List[str], expecting_exception: bool = False) -> EntrypointOutput:
+def _run_command(
+    source: Source, args: List[str], expecting_exception: bool = False
+) -> EntrypointOutput:
     log_capture_buffer = StringIO()
     stream_handler = logging.StreamHandler(log_capture_buffer)
     stream_handler.setLevel(logging.INFO)
@@ -174,7 +188,9 @@ def discover(
         tmp_directory_path = Path(tmp_directory)
         config_file = make_file(tmp_directory_path / "config.json", config)
 
-        return _run_command(source, ["discover", "--config", config_file, "--debug"], expecting_exception)
+        return _run_command(
+            source, ["discover", "--config", config_file, "--debug"], expecting_exception
+        )
 
 
 def read(
@@ -194,7 +210,8 @@ def read(
         tmp_directory_path = Path(tmp_directory)
         config_file = make_file(tmp_directory_path / "config.json", config)
         catalog_file = make_file(
-            tmp_directory_path / "catalog.json", orjson.dumps(ConfiguredAirbyteCatalogSerializer.dump(catalog)).decode()
+            tmp_directory_path / "catalog.json",
+            orjson.dumps(ConfiguredAirbyteCatalogSerializer.dump(catalog)).decode(),
         )
         args = [
             "read",
@@ -217,7 +234,9 @@ def read(
         return _run_command(source, args, expecting_exception)
 
 
-def make_file(path: Path, file_contents: Optional[Union[str, Mapping[str, Any], List[Mapping[str, Any]]]]) -> str:
+def make_file(
+    path: Path, file_contents: Optional[Union[str, Mapping[str, Any], List[Mapping[str, Any]]]]
+) -> str:
     if isinstance(file_contents, str):
         path.write_text(file_contents)
     else:

@@ -7,7 +7,9 @@ from typing import Any, List, Mapping, Optional
 
 import yaml
 from airbyte_cdk.models import AirbyteStateMessage, ConfiguredAirbyteCatalog
-from airbyte_cdk.sources.declarative.concurrent_declarative_source import ConcurrentDeclarativeSource
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+)
 from airbyte_cdk.sources.types import ConnectionDefinition
 
 

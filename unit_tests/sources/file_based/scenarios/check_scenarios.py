@@ -139,7 +139,9 @@ error_listing_files_scenario = (
     .set_name("error_listing_files_scenario")
     .set_source_builder(
         _base_failure_scenario.source_builder.copy().set_stream_reader(
-            TestErrorListMatchingFilesInMemoryFilesStreamReader(files=_base_failure_scenario.source_builder._files, file_type="csv")
+            TestErrorListMatchingFilesInMemoryFilesStreamReader(
+                files=_base_failure_scenario.source_builder._files, file_type="csv"
+            )
         )
     )
     .set_expected_check_error(None, FileBasedSourceError.ERROR_LISTING_FILES.value)
@@ -151,7 +153,9 @@ error_reading_file_scenario = (
     .set_name("error_reading_file_scenario")
     .set_source_builder(
         _base_failure_scenario.source_builder.copy().set_stream_reader(
-            TestErrorOpenFileInMemoryFilesStreamReader(files=_base_failure_scenario.source_builder._files, file_type="csv")
+            TestErrorOpenFileInMemoryFilesStreamReader(
+                files=_base_failure_scenario.source_builder._files, file_type="csv"
+            )
         )
     )
     .set_expected_check_error(None, FileBasedSourceError.ERROR_READING_FILE.value)
@@ -189,7 +193,9 @@ error_record_validation_user_provided_schema_scenario = (
             }
         )
         .set_file_type("csv")
-        .set_validation_policies({FailingSchemaValidationPolicy.ALWAYS_FAIL: FailingSchemaValidationPolicy()})
+        .set_validation_policies(
+            {FailingSchemaValidationPolicy.ALWAYS_FAIL: FailingSchemaValidationPolicy()}
+        )
     )
     .set_expected_check_error(None, FileBasedSourceError.ERROR_VALIDATING_RECORD.value)
 ).build()

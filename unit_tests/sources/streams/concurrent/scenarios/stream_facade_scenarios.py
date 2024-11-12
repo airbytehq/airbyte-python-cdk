@@ -3,8 +3,13 @@
 #
 from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from unit_tests.sources.file_based.scenarios.scenario_builder import IncrementalScenarioConfig, TestScenarioBuilder
-from unit_tests.sources.streams.concurrent.scenarios.stream_facade_builder import StreamFacadeSourceBuilder
+from unit_tests.sources.file_based.scenarios.scenario_builder import (
+    IncrementalScenarioConfig,
+    TestScenarioBuilder,
+)
+from unit_tests.sources.streams.concurrent.scenarios.stream_facade_builder import (
+    StreamFacadeSourceBuilder,
+)
 from unit_tests.sources.streams.concurrent.scenarios.utils import MockStream
 
 _stream1 = MockStream(
@@ -339,8 +344,14 @@ test_incremental_stream_with_slice_boundaries = (
             [
                 MockStream(
                     [
-                        ({"from": 0, "to": 1}, [{"id": "1", "cursor_field": 0}, {"id": "2", "cursor_field": 1}]),
-                        ({"from": 1, "to": 2}, [{"id": "3", "cursor_field": 2}, {"id": "4", "cursor_field": 3}]),
+                        (
+                            {"from": 0, "to": 1},
+                            [{"id": "1", "cursor_field": 0}, {"id": "2", "cursor_field": 1}],
+                        ),
+                        (
+                            {"from": 1, "to": 2},
+                            [{"id": "3", "cursor_field": 2}, {"id": "4", "cursor_field": 3}],
+                        ),
                     ],
                     "stream1",
                     cursor_field="cursor_field",

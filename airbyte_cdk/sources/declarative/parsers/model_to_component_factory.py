@@ -9,7 +9,21 @@ import importlib
 import inspect
 import re
 from functools import partial
-from typing import Any, Callable, Dict, List, Mapping, MutableMapping, Optional, Tuple, Type, Union, get_args, get_origin, get_type_hints
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Tuple,
+    Type,
+    Union,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 from airbyte_cdk.models import FailureType, Level
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
@@ -18,9 +32,14 @@ from airbyte_cdk.sources.declarative.async_job.job_tracker import JobTracker
 from airbyte_cdk.sources.declarative.async_job.repository import AsyncJobRepository
 from airbyte_cdk.sources.declarative.async_job.status import AsyncJobStatus
 from airbyte_cdk.sources.declarative.auth import DeclarativeOauth2Authenticator, JwtAuthenticator
-from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator, NoAuth
+from airbyte_cdk.sources.declarative.auth.declarative_authenticator import (
+    DeclarativeAuthenticator,
+    NoAuth,
+)
 from airbyte_cdk.sources.declarative.auth.jwt import JwtAlgorithm
-from airbyte_cdk.sources.declarative.auth.oauth import DeclarativeSingleUseRefreshTokenOauth2Authenticator
+from airbyte_cdk.sources.declarative.auth.oauth import (
+    DeclarativeSingleUseRefreshTokenOauth2Authenticator,
+)
 from airbyte_cdk.sources.declarative.auth.selective_authenticator import SelectiveAuthenticator
 from airbyte_cdk.sources.declarative.auth.token import (
     ApiKeyAuthenticator,
@@ -28,7 +47,11 @@ from airbyte_cdk.sources.declarative.auth.token import (
     BearerAuthenticator,
     LegacySessionTokenAuthenticator,
 )
-from airbyte_cdk.sources.declarative.auth.token_provider import InterpolatedStringTokenProvider, SessionTokenProvider, TokenProvider
+from airbyte_cdk.sources.declarative.auth.token_provider import (
+    InterpolatedStringTokenProvider,
+    SessionTokenProvider,
+    TokenProvider,
+)
 from airbyte_cdk.sources.declarative.checks import CheckStream
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
 from airbyte_cdk.sources.declarative.datetime import MinMaxDatetime
@@ -41,9 +64,18 @@ from airbyte_cdk.sources.declarative.decoders import (
     PaginationDecoderDecorator,
     XmlDecoder,
 )
-from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordFilter, RecordSelector, ResponseToFileExtractor
-from airbyte_cdk.sources.declarative.extractors.record_filter import ClientSideIncrementalRecordFilterDecorator
-from airbyte_cdk.sources.declarative.extractors.record_selector import SCHEMA_TRANSFORMER_TYPE_MAPPING
+from airbyte_cdk.sources.declarative.extractors import (
+    DpathExtractor,
+    RecordFilter,
+    RecordSelector,
+    ResponseToFileExtractor,
+)
+from airbyte_cdk.sources.declarative.extractors.record_filter import (
+    ClientSideIncrementalRecordFilterDecorator,
+)
+from airbyte_cdk.sources.declarative.extractors.record_selector import (
+    SCHEMA_TRANSFORMER_TYPE_MAPPING,
+)
 from airbyte_cdk.sources.declarative.incremental import (
     ChildPartitionResumableFullRefreshCursor,
     CursorFactory,
@@ -56,88 +88,216 @@ from airbyte_cdk.sources.declarative.incremental import (
 )
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
-from airbyte_cdk.sources.declarative.migrations.legacy_to_per_partition_state_migration import LegacyToPerPartitionStateMigration
+from airbyte_cdk.sources.declarative.migrations.legacy_to_per_partition_state_migration import (
+    LegacyToPerPartitionStateMigration,
+)
 from airbyte_cdk.sources.declarative.models import CustomStateMigration
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import AddedFieldDefinition as AddedFieldDefinitionModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import AddFields as AddFieldsModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import ApiKeyAuthenticator as ApiKeyAuthenticatorModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import AsyncJobStatusMap as AsyncJobStatusMapModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import AsyncRetriever as AsyncRetrieverModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import BasicHttpAuthenticator as BasicHttpAuthenticatorModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import BearerAuthenticator as BearerAuthenticatorModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import CheckStream as CheckStreamModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import CompositeErrorHandler as CompositeErrorHandlerModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import ConcurrencyLevel as ConcurrencyLevelModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import ConstantBackoffStrategy as ConstantBackoffStrategyModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import CursorPagination as CursorPaginationModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import CustomAuthenticator as CustomAuthenticatorModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import CustomBackoffStrategy as CustomBackoffStrategyModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import CustomErrorHandler as CustomErrorHandlerModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import CustomIncrementalSync as CustomIncrementalSyncModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import CustomPaginationStrategy as CustomPaginationStrategyModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import CustomPartitionRouter as CustomPartitionRouterModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import CustomRecordExtractor as CustomRecordExtractorModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import CustomRecordFilter as CustomRecordFilterModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import CustomRequester as CustomRequesterModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import CustomRetriever as CustomRetrieverModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import CustomSchemaLoader as CustomSchemaLoader
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import CustomTransformation as CustomTransformationModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import DatetimeBasedCursor as DatetimeBasedCursorModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import DeclarativeStream as DeclarativeStreamModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import DefaultErrorHandler as DefaultErrorHandlerModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import DefaultPaginator as DefaultPaginatorModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import DpathExtractor as DpathExtractorModel
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    AddedFieldDefinition as AddedFieldDefinitionModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    AddFields as AddFieldsModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ApiKeyAuthenticator as ApiKeyAuthenticatorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    AsyncJobStatusMap as AsyncJobStatusMapModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    AsyncRetriever as AsyncRetrieverModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    BasicHttpAuthenticator as BasicHttpAuthenticatorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    BearerAuthenticator as BearerAuthenticatorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CheckStream as CheckStreamModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CompositeErrorHandler as CompositeErrorHandlerModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ConcurrencyLevel as ConcurrencyLevelModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ConstantBackoffStrategy as ConstantBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CursorPagination as CursorPaginationModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomAuthenticator as CustomAuthenticatorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomBackoffStrategy as CustomBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomErrorHandler as CustomErrorHandlerModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomIncrementalSync as CustomIncrementalSyncModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomPaginationStrategy as CustomPaginationStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomPartitionRouter as CustomPartitionRouterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomRecordExtractor as CustomRecordExtractorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomRecordFilter as CustomRecordFilterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomRequester as CustomRequesterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomRetriever as CustomRetrieverModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomSchemaLoader as CustomSchemaLoader,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomTransformation as CustomTransformationModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    DatetimeBasedCursor as DatetimeBasedCursorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    DeclarativeStream as DeclarativeStreamModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    DefaultErrorHandler as DefaultErrorHandlerModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    DefaultPaginator as DefaultPaginatorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    DpathExtractor as DpathExtractorModel,
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ExponentialBackoffStrategy as ExponentialBackoffStrategyModel,
 )
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import HttpRequester as HttpRequesterModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import HttpResponseFilter as HttpResponseFilterModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import InlineSchemaLoader as InlineSchemaLoaderModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import IterableDecoder as IterableDecoderModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import JsonDecoder as JsonDecoderModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import JsonFileSchemaLoader as JsonFileSchemaLoaderModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import JsonlDecoder as JsonlDecoderModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import JwtAuthenticator as JwtAuthenticatorModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import JwtHeaders as JwtHeadersModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import JwtPayload as JwtPayloadModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import KeysToLower as KeysToLowerModel
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    HttpRequester as HttpRequesterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    HttpResponseFilter as HttpResponseFilterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    InlineSchemaLoader as InlineSchemaLoaderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    IterableDecoder as IterableDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonDecoder as JsonDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonFileSchemaLoader as JsonFileSchemaLoaderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonlDecoder as JsonlDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JwtAuthenticator as JwtAuthenticatorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JwtHeaders as JwtHeadersModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JwtPayload as JwtPayloadModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    KeysToLower as KeysToLowerModel,
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     LegacySessionTokenAuthenticator as LegacySessionTokenAuthenticatorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     LegacyToPerPartitionStateMigration as LegacyToPerPartitionStateMigrationModel,
 )
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import ListPartitionRouter as ListPartitionRouterModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import MinMaxDatetime as MinMaxDatetimeModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import NoAuth as NoAuthModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import NoPagination as NoPaginationModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import OAuthAuthenticator as OAuthAuthenticatorModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import OffsetIncrement as OffsetIncrementModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import PageIncrement as PageIncrementModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import ParentStreamConfig as ParentStreamConfigModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import RecordFilter as RecordFilterModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import RecordSelector as RecordSelectorModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import RemoveFields as RemoveFieldsModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import RequestOption as RequestOptionModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import RequestPath as RequestPathModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import SelectiveAuthenticator as SelectiveAuthenticatorModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import SessionTokenAuthenticator as SessionTokenAuthenticatorModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import SimpleRetriever as SimpleRetrieverModel
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ListPartitionRouter as ListPartitionRouterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    MinMaxDatetime as MinMaxDatetimeModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    NoAuth as NoAuthModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    NoPagination as NoPaginationModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    OAuthAuthenticator as OAuthAuthenticatorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    OffsetIncrement as OffsetIncrementModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    PageIncrement as PageIncrementModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ParentStreamConfig as ParentStreamConfigModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RecordFilter as RecordFilterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RecordSelector as RecordSelectorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RemoveFields as RemoveFieldsModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RequestOption as RequestOptionModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RequestPath as RequestPathModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    SelectiveAuthenticator as SelectiveAuthenticatorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    SessionTokenAuthenticator as SessionTokenAuthenticatorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    SimpleRetriever as SimpleRetrieverModel,
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import Spec as SpecModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import SubstreamPartitionRouter as SubstreamPartitionRouterModel
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    SubstreamPartitionRouter as SubstreamPartitionRouterModel,
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import ValueType
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import WaitTimeFromHeader as WaitTimeFromHeaderModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import WaitUntilTimeFromHeader as WaitUntilTimeFromHeaderModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import XmlDecoder as XmlDecoderModel
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    WaitTimeFromHeader as WaitTimeFromHeaderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    WaitUntilTimeFromHeader as WaitUntilTimeFromHeaderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    XmlDecoder as XmlDecoderModel,
+)
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
     ListPartitionRouter,
     SinglePartitionRouter,
     SubstreamPartitionRouter,
 )
-from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import ParentStreamConfig
+from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
+    ParentStreamConfig,
+)
 from airbyte_cdk.sources.declarative.requesters import HttpRequester, RequestOption
-from airbyte_cdk.sources.declarative.requesters.error_handlers import CompositeErrorHandler, DefaultErrorHandler, HttpResponseFilter
+from airbyte_cdk.sources.declarative.requesters.error_handlers import (
+    CompositeErrorHandler,
+    DefaultErrorHandler,
+    HttpResponseFilter,
+)
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies import (
     ConstantBackoffStrategy,
     ExponentialBackoffStrategy,
@@ -145,7 +305,11 @@ from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategie
     WaitUntilTimeFromHeaderBackoffStrategy,
 )
 from airbyte_cdk.sources.declarative.requesters.http_job_repository import AsyncHttpJobRepository
-from airbyte_cdk.sources.declarative.requesters.paginators import DefaultPaginator, NoPagination, PaginatorTestReadDecorator
+from airbyte_cdk.sources.declarative.requesters.paginators import (
+    DefaultPaginator,
+    NoPagination,
+    PaginatorTestReadDecorator,
+)
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     CursorPaginationStrategy,
     CursorStopCondition,
@@ -162,14 +326,32 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
-from airbyte_cdk.sources.declarative.retrievers import AsyncRetriever, SimpleRetriever, SimpleRetrieverTestReadDecorator
-from airbyte_cdk.sources.declarative.schema import DefaultSchemaLoader, InlineSchemaLoader, JsonFileSchemaLoader
+from airbyte_cdk.sources.declarative.retrievers import (
+    AsyncRetriever,
+    SimpleRetriever,
+    SimpleRetrieverTestReadDecorator,
+)
+from airbyte_cdk.sources.declarative.schema import (
+    DefaultSchemaLoader,
+    InlineSchemaLoader,
+    JsonFileSchemaLoader,
+)
 from airbyte_cdk.sources.declarative.spec import Spec
 from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicer
-from airbyte_cdk.sources.declarative.transformations import AddFields, RecordTransformation, RemoveFields
+from airbyte_cdk.sources.declarative.transformations import (
+    AddFields,
+    RecordTransformation,
+    RemoveFields,
+)
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
-from airbyte_cdk.sources.declarative.transformations.keys_to_lower_transformation import KeysToLowerTransformation
-from airbyte_cdk.sources.message import InMemoryMessageRepository, LogAppenderMessageRepositoryDecorator, MessageRepository
+from airbyte_cdk.sources.declarative.transformations.keys_to_lower_transformation import (
+    KeysToLowerTransformation,
+)
+from airbyte_cdk.sources.message import (
+    InMemoryMessageRepository,
+    LogAppenderMessageRepositoryDecorator,
+    MessageRepository,
+)
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
@@ -185,7 +367,6 @@ ComponentDefinition = Mapping[str, Any]
 
 
 class ModelToComponentFactory:
-
     EPOCH_DATETIME_FORMAT = "%s"
 
     def __init__(
@@ -277,7 +458,11 @@ class ModelToComponentFactory:
         self.TYPE_NAME_TO_MODEL = {cls.__name__: cls for cls in self.PYDANTIC_MODEL_TO_CONSTRUCTOR}
 
     def create_component(
-        self, model_type: Type[BaseModel], component_definition: ComponentDefinition, config: Config, **kwargs: Any
+        self,
+        model_type: Type[BaseModel],
+        component_definition: ComponentDefinition,
+        config: Config,
+        **kwargs: Any,
     ) -> Any:
         """
         Takes a given Pydantic model type and Mapping representing a component definition and creates a declarative component and
@@ -292,26 +477,38 @@ class ModelToComponentFactory:
 
         component_type = component_definition.get("type")
         if component_definition.get("type") != model_type.__name__:
-            raise ValueError(f"Expected manifest component of type {model_type.__name__}, but received {component_type} instead")
+            raise ValueError(
+                f"Expected manifest component of type {model_type.__name__}, but received {component_type} instead"
+            )
 
         declarative_component_model = model_type.parse_obj(component_definition)
 
         if not isinstance(declarative_component_model, model_type):
-            raise ValueError(f"Expected {model_type.__name__} component, but received {declarative_component_model.__class__.__name__}")
+            raise ValueError(
+                f"Expected {model_type.__name__} component, but received {declarative_component_model.__class__.__name__}"
+            )
 
-        return self._create_component_from_model(model=declarative_component_model, config=config, **kwargs)
+        return self._create_component_from_model(
+            model=declarative_component_model, config=config, **kwargs
+        )
 
     def _create_component_from_model(self, model: BaseModel, config: Config, **kwargs: Any) -> Any:
         if model.__class__ not in self.PYDANTIC_MODEL_TO_CONSTRUCTOR:
-            raise ValueError(f"{model.__class__} with attributes {model} is not a valid component type")
+            raise ValueError(
+                f"{model.__class__} with attributes {model} is not a valid component type"
+            )
         component_constructor = self.PYDANTIC_MODEL_TO_CONSTRUCTOR.get(model.__class__)
         if not component_constructor:
             raise ValueError(f"Could not find constructor for {model.__class__}")
         return component_constructor(model=model, config=config, **kwargs)
 
     @staticmethod
-    def create_added_field_definition(model: AddedFieldDefinitionModel, config: Config, **kwargs: Any) -> AddedFieldDefinition:
-        interpolated_value = InterpolatedString.create(model.value, parameters=model.parameters or {})
+    def create_added_field_definition(
+        model: AddedFieldDefinitionModel, config: Config, **kwargs: Any
+    ) -> AddedFieldDefinition:
+        interpolated_value = InterpolatedString.create(
+            model.value, parameters=model.parameters or {}
+        )
         return AddedFieldDefinition(
             path=model.path,
             value=interpolated_value,
@@ -323,14 +520,18 @@ class ModelToComponentFactory:
         added_field_definitions = [
             self._create_component_from_model(
                 model=added_field_definition_model,
-                value_type=ModelToComponentFactory._json_schema_type_name_to_type(added_field_definition_model.value_type),
+                value_type=ModelToComponentFactory._json_schema_type_name_to_type(
+                    added_field_definition_model.value_type
+                ),
                 config=config,
             )
             for added_field_definition_model in model.fields
         ]
         return AddFields(fields=added_field_definitions, parameters=model.parameters or {})
 
-    def create_keys_to_lower_transformation(self, model: KeysToLowerModel, config: Config, **kwargs: Any) -> KeysToLowerTransformation:
+    def create_keys_to_lower_transformation(
+        self, model: KeysToLowerModel, config: Config, **kwargs: Any
+    ) -> KeysToLowerTransformation:
         return KeysToLowerTransformation()
 
     @staticmethod
@@ -347,16 +548,25 @@ class ModelToComponentFactory:
 
     @staticmethod
     def create_api_key_authenticator(
-        model: ApiKeyAuthenticatorModel, config: Config, token_provider: Optional[TokenProvider] = None, **kwargs: Any
+        model: ApiKeyAuthenticatorModel,
+        config: Config,
+        token_provider: Optional[TokenProvider] = None,
+        **kwargs: Any,
     ) -> ApiKeyAuthenticator:
         if model.inject_into is None and model.header is None:
-            raise ValueError("Expected either inject_into or header to be set for ApiKeyAuthenticator")
+            raise ValueError(
+                "Expected either inject_into or header to be set for ApiKeyAuthenticator"
+            )
 
         if model.inject_into is not None and model.header is not None:
-            raise ValueError("inject_into and header cannot be set both for ApiKeyAuthenticator - remove the deprecated header option")
+            raise ValueError(
+                "inject_into and header cannot be set both for ApiKeyAuthenticator - remove the deprecated header option"
+            )
 
         if token_provider is not None and model.api_token != "":
-            raise ValueError("If token_provider is set, api_token is ignored and has to be set to empty string.")
+            raise ValueError(
+                "If token_provider is set, api_token is ignored and has to be set to empty string."
+            )
 
         request_option = (
             RequestOption(
@@ -375,7 +585,11 @@ class ModelToComponentFactory:
             token_provider=(
                 token_provider
                 if token_provider is not None
-                else InterpolatedStringTokenProvider(api_token=model.api_token or "", config=config, parameters=model.parameters or {})
+                else InterpolatedStringTokenProvider(
+                    api_token=model.api_token or "",
+                    config=config,
+                    parameters=model.parameters or {},
+                )
             ),
             request_option=request_option,
             config=config,
@@ -394,26 +608,44 @@ class ModelToComponentFactory:
                 f"LegacyToPerPartitionStateMigrations can only be applied on a DeclarativeStream with a SimpleRetriever. Got {type(retriever)}"
             )
         partition_router = retriever.partition_router
-        if not isinstance(partition_router, (SubstreamPartitionRouterModel, CustomPartitionRouterModel)):
+        if not isinstance(
+            partition_router, (SubstreamPartitionRouterModel, CustomPartitionRouterModel)
+        ):
             raise ValueError(
                 f"LegacyToPerPartitionStateMigrations can only be applied on a SimpleRetriever with a Substream partition router. Got {type(partition_router)}"
             )
         if not hasattr(partition_router, "parent_stream_configs"):
-            raise ValueError("LegacyToPerPartitionStateMigrations can only be applied with a parent stream configuration.")
+            raise ValueError(
+                "LegacyToPerPartitionStateMigrations can only be applied with a parent stream configuration."
+            )
 
-        return LegacyToPerPartitionStateMigration(declarative_stream.retriever.partition_router, declarative_stream.incremental_sync, config, declarative_stream.parameters)  # type: ignore # The retriever type was already checked
+        return LegacyToPerPartitionStateMigration(
+            declarative_stream.retriever.partition_router,
+            declarative_stream.incremental_sync,
+            config,
+            declarative_stream.parameters,
+        )  # type: ignore # The retriever type was already checked
 
     def create_session_token_authenticator(
         self, model: SessionTokenAuthenticatorModel, config: Config, name: str, **kwargs: Any
     ) -> Union[ApiKeyAuthenticator, BearerAuthenticator]:
-        decoder = self._create_component_from_model(model=model.decoder, config=config) if model.decoder else JsonDecoder(parameters={})
+        decoder = (
+            self._create_component_from_model(model=model.decoder, config=config)
+            if model.decoder
+            else JsonDecoder(parameters={})
+        )
         login_requester = self._create_component_from_model(
-            model=model.login_requester, config=config, name=f"{name}_login_requester", decoder=decoder
+            model=model.login_requester,
+            config=config,
+            name=f"{name}_login_requester",
+            decoder=decoder,
         )
         token_provider = SessionTokenProvider(
             login_requester=login_requester,
             session_token_path=model.session_token_path,
-            expiration_duration=parse_duration(model.expiration_duration) if model.expiration_duration else None,
+            expiration_duration=parse_duration(model.expiration_duration)
+            if model.expiration_duration
+            else None,
             parameters=model.parameters or {},
             message_repository=self._message_repository,
             decoder=decoder,
@@ -426,28 +658,46 @@ class ModelToComponentFactory:
             )
         else:
             return ModelToComponentFactory.create_api_key_authenticator(
-                ApiKeyAuthenticatorModel(type="ApiKeyAuthenticator", api_token="", inject_into=model.request_authentication.inject_into),  # type: ignore # $parameters and headers default to None
+                ApiKeyAuthenticatorModel(
+                    type="ApiKeyAuthenticator",
+                    api_token="",
+                    inject_into=model.request_authentication.inject_into,
+                ),  # type: ignore # $parameters and headers default to None
                 config=config,
                 token_provider=token_provider,
             )
 
     @staticmethod
-    def create_basic_http_authenticator(model: BasicHttpAuthenticatorModel, config: Config, **kwargs: Any) -> BasicHttpAuthenticator:
+    def create_basic_http_authenticator(
+        model: BasicHttpAuthenticatorModel, config: Config, **kwargs: Any
+    ) -> BasicHttpAuthenticator:
         return BasicHttpAuthenticator(
-            password=model.password or "", username=model.username, config=config, parameters=model.parameters or {}
+            password=model.password or "",
+            username=model.username,
+            config=config,
+            parameters=model.parameters or {},
         )
 
     @staticmethod
     def create_bearer_authenticator(
-        model: BearerAuthenticatorModel, config: Config, token_provider: Optional[TokenProvider] = None, **kwargs: Any
+        model: BearerAuthenticatorModel,
+        config: Config,
+        token_provider: Optional[TokenProvider] = None,
+        **kwargs: Any,
     ) -> BearerAuthenticator:
         if token_provider is not None and model.api_token != "":
-            raise ValueError("If token_provider is set, api_token is ignored and has to be set to empty string.")
+            raise ValueError(
+                "If token_provider is set, api_token is ignored and has to be set to empty string."
+            )
         return BearerAuthenticator(
             token_provider=(
                 token_provider
                 if token_provider is not None
-                else InterpolatedStringTokenProvider(api_token=model.api_token or "", config=config, parameters=model.parameters or {})
+                else InterpolatedStringTokenProvider(
+                    api_token=model.api_token or "",
+                    config=config,
+                    parameters=model.parameters or {},
+                )
             ),
             config=config,
             parameters=model.parameters or {},
@@ -457,14 +707,21 @@ class ModelToComponentFactory:
     def create_check_stream(model: CheckStreamModel, config: Config, **kwargs: Any) -> CheckStream:
         return CheckStream(stream_names=model.stream_names, parameters={})
 
-    def create_composite_error_handler(self, model: CompositeErrorHandlerModel, config: Config, **kwargs: Any) -> CompositeErrorHandler:
+    def create_composite_error_handler(
+        self, model: CompositeErrorHandlerModel, config: Config, **kwargs: Any
+    ) -> CompositeErrorHandler:
         error_handlers = [
-            self._create_component_from_model(model=error_handler_model, config=config) for error_handler_model in model.error_handlers
+            self._create_component_from_model(model=error_handler_model, config=config)
+            for error_handler_model in model.error_handlers
         ]
-        return CompositeErrorHandler(error_handlers=error_handlers, parameters=model.parameters or {})
+        return CompositeErrorHandler(
+            error_handlers=error_handlers, parameters=model.parameters or {}
+        )
 
     @staticmethod
-    def create_concurrency_level(model: ConcurrencyLevelModel, config: Config, **kwargs: Any) -> ConcurrencyLevel:
+    def create_concurrency_level(
+        model: ConcurrencyLevelModel, config: Config, **kwargs: Any
+    ) -> ConcurrencyLevel:
         return ConcurrencyLevel(
             default_concurrency=model.default_concurrency,
             max_concurrency=model.max_concurrency,
@@ -483,26 +740,32 @@ class ModelToComponentFactory:
         stream_state: MutableMapping[str, Any],
         **kwargs: Any,
     ) -> Tuple[ConcurrentCursor, DateTimeStreamStateConverter]:
-
         component_type = component_definition.get("type")
         if component_definition.get("type") != model_type.__name__:
-            raise ValueError(f"Expected manifest component of type {model_type.__name__}, but received {component_type} instead")
+            raise ValueError(
+                f"Expected manifest component of type {model_type.__name__}, but received {component_type} instead"
+            )
 
         datetime_based_cursor_model = model_type.parse_obj(component_definition)
 
         if not isinstance(datetime_based_cursor_model, DatetimeBasedCursorModel):
-            raise ValueError(f"Expected {model_type.__name__} component, but received {datetime_based_cursor_model.__class__.__name__}")
+            raise ValueError(
+                f"Expected {model_type.__name__} component, but received {datetime_based_cursor_model.__class__.__name__}"
+            )
 
         interpolated_cursor_field = InterpolatedString.create(
-            datetime_based_cursor_model.cursor_field, parameters=datetime_based_cursor_model.parameters or {}
+            datetime_based_cursor_model.cursor_field,
+            parameters=datetime_based_cursor_model.parameters or {},
         )
         cursor_field = CursorField(interpolated_cursor_field.eval(config=config))
 
         interpolated_partition_field_start = InterpolatedString.create(
-            datetime_based_cursor_model.partition_field_start or "start_time", parameters=datetime_based_cursor_model.parameters or {}
+            datetime_based_cursor_model.partition_field_start or "start_time",
+            parameters=datetime_based_cursor_model.parameters or {},
         )
         interpolated_partition_field_end = InterpolatedString.create(
-            datetime_based_cursor_model.partition_field_end or "end_time", parameters=datetime_based_cursor_model.parameters or {}
+            datetime_based_cursor_model.partition_field_end or "end_time",
+            parameters=datetime_based_cursor_model.parameters or {},
         )
 
         slice_boundary_fields = (
@@ -513,12 +776,17 @@ class ModelToComponentFactory:
         datetime_format = datetime_based_cursor_model.datetime_format
 
         cursor_granularity = (
-            parse_duration(datetime_based_cursor_model.cursor_granularity) if datetime_based_cursor_model.cursor_granularity else None
+            parse_duration(datetime_based_cursor_model.cursor_granularity)
+            if datetime_based_cursor_model.cursor_granularity
+            else None
         )
 
         lookback_window = None
         interpolated_lookback_window = (
-            InterpolatedString.create(datetime_based_cursor_model.lookback_window, parameters=datetime_based_cursor_model.parameters or {})
+            InterpolatedString.create(
+                datetime_based_cursor_model.lookback_window,
+                parameters=datetime_based_cursor_model.parameters or {},
+            )
             if datetime_based_cursor_model.lookback_window
             else None
         )
@@ -538,21 +806,30 @@ class ModelToComponentFactory:
 
         start_date_runtime_value: Union[InterpolatedString, str, MinMaxDatetime]
         if isinstance(datetime_based_cursor_model.start_datetime, MinMaxDatetimeModel):
-            start_date_runtime_value = self.create_min_max_datetime(model=datetime_based_cursor_model.start_datetime, config=config)
+            start_date_runtime_value = self.create_min_max_datetime(
+                model=datetime_based_cursor_model.start_datetime, config=config
+            )
         else:
             start_date_runtime_value = datetime_based_cursor_model.start_datetime
 
         end_date_runtime_value: Optional[Union[InterpolatedString, str, MinMaxDatetime]]
         if isinstance(datetime_based_cursor_model.end_datetime, MinMaxDatetimeModel):
-            end_date_runtime_value = self.create_min_max_datetime(model=datetime_based_cursor_model.end_datetime, config=config)
+            end_date_runtime_value = self.create_min_max_datetime(
+                model=datetime_based_cursor_model.end_datetime, config=config
+            )
         else:
             end_date_runtime_value = datetime_based_cursor_model.end_datetime
 
         interpolated_start_date = MinMaxDatetime.create(
-            interpolated_string_or_min_max_datetime=start_date_runtime_value, parameters=datetime_based_cursor_model.parameters
+            interpolated_string_or_min_max_datetime=start_date_runtime_value,
+            parameters=datetime_based_cursor_model.parameters,
         )
         interpolated_end_date = (
-            None if not end_date_runtime_value else MinMaxDatetime.create(end_date_runtime_value, datetime_based_cursor_model.parameters)
+            None
+            if not end_date_runtime_value
+            else MinMaxDatetime.create(
+                end_date_runtime_value, datetime_based_cursor_model.parameters
+            )
         )
 
         # If datetime format is not specified then start/end datetime should inherit it from the stream slicer
@@ -563,10 +840,14 @@ class ModelToComponentFactory:
 
         start_date = interpolated_start_date.get_datetime(config=config)
         end_date_provider = (
-            partial(interpolated_end_date.get_datetime, config) if interpolated_end_date else connector_state_converter.get_end_provider()
+            partial(interpolated_end_date.get_datetime, config)
+            if interpolated_end_date
+            else connector_state_converter.get_end_provider()
         )
 
-        if (datetime_based_cursor_model.step and not datetime_based_cursor_model.cursor_granularity) or (
+        if (
+            datetime_based_cursor_model.step and not datetime_based_cursor_model.cursor_granularity
+        ) or (
             not datetime_based_cursor_model.step and datetime_based_cursor_model.cursor_granularity
         ):
             raise ValueError(
@@ -577,7 +858,10 @@ class ModelToComponentFactory:
         # When step is not defined, default to a step size from the starting date to the present moment
         step_length = datetime.timedelta.max
         interpolated_step = (
-            InterpolatedString.create(datetime_based_cursor_model.step, parameters=datetime_based_cursor_model.parameters or {})
+            InterpolatedString.create(
+                datetime_based_cursor_model.step,
+                parameters=datetime_based_cursor_model.parameters or {},
+            )
             if datetime_based_cursor_model.step
             else None
         )
@@ -606,7 +890,9 @@ class ModelToComponentFactory:
         )
 
     @staticmethod
-    def create_constant_backoff_strategy(model: ConstantBackoffStrategyModel, config: Config, **kwargs: Any) -> ConstantBackoffStrategy:
+    def create_constant_backoff_strategy(
+        model: ConstantBackoffStrategyModel, config: Config, **kwargs: Any
+    ) -> ConstantBackoffStrategy:
         return ConstantBackoffStrategy(
             backoff_time_in_seconds=model.backoff_time_in_seconds,
             config=config,
@@ -624,7 +910,9 @@ class ModelToComponentFactory:
             decoder_to_use = decoder
         else:
             if not isinstance(decoder, (JsonDecoder, XmlDecoder)):
-                raise ValueError(f"Provided decoder of {type(decoder)=} is not supported. Please set JsonDecoder or XmlDecoder instead.")
+                raise ValueError(
+                    f"Provided decoder of {type(decoder)=} is not supported. Please set JsonDecoder or XmlDecoder instead."
+                )
             decoder_to_use = PaginationDecoderDecorator(decoder=decoder)
 
         return CursorPaginationStrategy(
@@ -660,18 +948,28 @@ class ModelToComponentFactory:
         # the custom component and this code performs a second parse to convert the sub-fields first into models, then declarative components
         for model_field, model_value in model_args.items():
             # If a custom component field doesn't have a type set, we try to use the type hints to infer the type
-            if isinstance(model_value, dict) and "type" not in model_value and model_field in component_fields:
-                derived_type = self._derive_component_type_from_type_hints(component_fields.get(model_field))
+            if (
+                isinstance(model_value, dict)
+                and "type" not in model_value
+                and model_field in component_fields
+            ):
+                derived_type = self._derive_component_type_from_type_hints(
+                    component_fields.get(model_field)
+                )
                 if derived_type:
                     model_value["type"] = derived_type
 
             if self._is_component(model_value):
-                model_args[model_field] = self._create_nested_component(model, model_field, model_value, config)
+                model_args[model_field] = self._create_nested_component(
+                    model, model_field, model_value, config
+                )
             elif isinstance(model_value, list):
                 vals = []
                 for v in model_value:
                     if isinstance(v, dict) and "type" not in v and model_field in component_fields:
-                        derived_type = self._derive_component_type_from_type_hints(component_fields.get(model_field))
+                        derived_type = self._derive_component_type_from_type_hints(
+                            component_fields.get(model_field)
+                        )
                         if derived_type:
                             v["type"] = derived_type
                     if self._is_component(v):
@@ -680,7 +978,11 @@ class ModelToComponentFactory:
                         vals.append(v)
                 model_args[model_field] = vals
 
-        kwargs = {class_field: model_args[class_field] for class_field in component_fields.keys() if class_field in model_args}
+        kwargs = {
+            class_field: model_args[class_field]
+            for class_field in component_fields.keys()
+            if class_field in model_args
+        }
         return custom_component_class(**kwargs)
 
     @staticmethod
@@ -724,7 +1026,9 @@ class ModelToComponentFactory:
         else:
             return []
 
-    def _create_nested_component(self, model: Any, model_field: str, model_value: Any, config: Config) -> Any:
+    def _create_nested_component(
+        self, model: Any, model_field: str, model_value: Any, config: Config
+    ) -> Any:
         type_name = model_value.get("type", None)
         if not type_name:
             # If no type is specified, we can assume this is a dictionary object which can be returned instead of a subcomponent
@@ -743,16 +1047,29 @@ class ModelToComponentFactory:
                 model_constructor = self.PYDANTIC_MODEL_TO_CONSTRUCTOR.get(parsed_model.__class__)
                 constructor_kwargs = inspect.getfullargspec(model_constructor).kwonlyargs
                 model_parameters = model_value.get("$parameters", {})
-                matching_parameters = {kwarg: model_parameters[kwarg] for kwarg in constructor_kwargs if kwarg in model_parameters}
-                return self._create_component_from_model(model=parsed_model, config=config, **matching_parameters)
+                matching_parameters = {
+                    kwarg: model_parameters[kwarg]
+                    for kwarg in constructor_kwargs
+                    if kwarg in model_parameters
+                }
+                return self._create_component_from_model(
+                    model=parsed_model, config=config, **matching_parameters
+                )
             except TypeError as error:
                 missing_parameters = self._extract_missing_parameters(error)
                 if missing_parameters:
                     raise ValueError(
                         f"Error creating component '{type_name}' with parent custom component {model.class_name}: Please provide "
-                        + ", ".join((f"{type_name}.$parameters.{parameter}" for parameter in missing_parameters))
+                        + ", ".join(
+                            (
+                                f"{type_name}.$parameters.{parameter}"
+                                for parameter in missing_parameters
+                            )
+                        )
                     )
-                raise TypeError(f"Error creating component '{type_name}' with parent custom component {model.class_name}: {error}")
+                raise TypeError(
+                    f"Error creating component '{type_name}' with parent custom component {model.class_name}: {error}"
+                )
         else:
             raise ValueError(
                 f"Error creating custom component {model.class_name}. Subcomponent creation has not been implemented for '{type_name}'"
@@ -762,18 +1079,26 @@ class ModelToComponentFactory:
     def _is_component(model_value: Any) -> bool:
         return isinstance(model_value, dict) and model_value.get("type") is not None
 
-    def create_datetime_based_cursor(self, model: DatetimeBasedCursorModel, config: Config, **kwargs: Any) -> DatetimeBasedCursor:
+    def create_datetime_based_cursor(
+        self, model: DatetimeBasedCursorModel, config: Config, **kwargs: Any
+    ) -> DatetimeBasedCursor:
         start_datetime: Union[str, MinMaxDatetime] = (
-            model.start_datetime if isinstance(model.start_datetime, str) else self.create_min_max_datetime(model.start_datetime, config)
+            model.start_datetime
+            if isinstance(model.start_datetime, str)
+            else self.create_min_max_datetime(model.start_datetime, config)
         )
         end_datetime: Union[str, MinMaxDatetime, None] = None
         if model.is_data_feed and model.end_datetime:
             raise ValueError("Data feed does not support end_datetime")
         if model.is_data_feed and model.is_client_side_incremental:
-            raise ValueError("`Client side incremental` cannot be applied with `data feed`. Choose only 1 from them.")
+            raise ValueError(
+                "`Client side incremental` cannot be applied with `data feed`. Choose only 1 from them."
+            )
         if model.end_datetime:
             end_datetime = (
-                model.end_datetime if isinstance(model.end_datetime, str) else self.create_min_max_datetime(model.end_datetime, config)
+                model.end_datetime
+                if isinstance(model.end_datetime, str)
+                else self.create_min_max_datetime(model.end_datetime, config)
             )
 
         end_time_option = (
@@ -797,7 +1122,9 @@ class ModelToComponentFactory:
 
         return DatetimeBasedCursor(
             cursor_field=model.cursor_field,
-            cursor_datetime_formats=model.cursor_datetime_formats if model.cursor_datetime_formats else [],
+            cursor_datetime_formats=model.cursor_datetime_formats
+            if model.cursor_datetime_formats
+            else [],
             cursor_granularity=model.cursor_granularity,
             datetime_format=model.datetime_format,
             end_datetime=end_datetime,
@@ -814,7 +1141,9 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
-    def create_declarative_stream(self, model: DeclarativeStreamModel, config: Config, **kwargs: Any) -> DeclarativeStream:
+    def create_declarative_stream(
+        self, model: DeclarativeStreamModel, config: Config, **kwargs: Any
+    ) -> DeclarativeStream:
         # When constructing a declarative stream, we assemble the incremental_sync component and retriever's partition_router field
         # components if they exist into a single CartesianProductStreamSlicer. This is then passed back as an argument when constructing the
         # Retriever. This is done in the declarative stream not the retriever to support custom retrievers. The custom create methods in
@@ -823,7 +1152,9 @@ class ModelToComponentFactory:
 
         primary_key = model.primary_key.__root__ if model.primary_key else None
         stop_condition_on_cursor = (
-            model.incremental_sync and hasattr(model.incremental_sync, "is_data_feed") and model.incremental_sync.is_data_feed
+            model.incremental_sync
+            and hasattr(model.incremental_sync, "is_data_feed")
+            and model.incremental_sync.is_data_feed
         )
         client_side_incremental_sync = None
         if (
@@ -831,13 +1162,25 @@ class ModelToComponentFactory:
             and hasattr(model.incremental_sync, "is_client_side_incremental")
             and model.incremental_sync.is_client_side_incremental
         ):
-            supported_slicers = (DatetimeBasedCursor, GlobalSubstreamCursor, PerPartitionWithGlobalCursor)
+            supported_slicers = (
+                DatetimeBasedCursor,
+                GlobalSubstreamCursor,
+                PerPartitionWithGlobalCursor,
+            )
             if combined_slicers and not isinstance(combined_slicers, supported_slicers):
-                raise ValueError("Unsupported Slicer is used. PerPartitionWithGlobalCursor should be used here instead")
+                raise ValueError(
+                    "Unsupported Slicer is used. PerPartitionWithGlobalCursor should be used here instead"
+                )
             client_side_incremental_sync = {
-                "date_time_based_cursor": self._create_component_from_model(model=model.incremental_sync, config=config),
+                "date_time_based_cursor": self._create_component_from_model(
+                    model=model.incremental_sync, config=config
+                ),
                 "substream_cursor": (
-                    combined_slicers if isinstance(combined_slicers, (PerPartitionWithGlobalCursor, GlobalSubstreamCursor)) else None
+                    combined_slicers
+                    if isinstance(
+                        combined_slicers, (PerPartitionWithGlobalCursor, GlobalSubstreamCursor)
+                    )
+                    else None
                 ),
             }
 
@@ -877,7 +1220,9 @@ class ModelToComponentFactory:
         transformations = []
         if model.transformations:
             for transformation_model in model.transformations:
-                transformations.append(self._create_component_from_model(model=transformation_model, config=config))
+                transformations.append(
+                    self._create_component_from_model(model=transformation_model, config=config)
+                )
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
@@ -900,7 +1245,9 @@ class ModelToComponentFactory:
             state_transformations = []
 
         if model.schema_loader:
-            schema_loader = self._create_component_from_model(model=model.schema_loader, config=config)
+            schema_loader = self._create_component_from_model(
+                model=model.schema_loader, config=config
+            )
         else:
             options = model.parameters or {}
             if "name" not in options:
@@ -918,7 +1265,9 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
-    def _merge_stream_slicers(self, model: DeclarativeStreamModel, config: Config) -> Optional[StreamSlicer]:
+    def _merge_stream_slicers(
+        self, model: DeclarativeStreamModel, config: Config
+    ) -> Optional[StreamSlicer]:
         stream_slicer = None
         if (
             hasattr(model.retriever, "partition_router")
@@ -929,50 +1278,85 @@ class ModelToComponentFactory:
 
             if isinstance(stream_slicer_model, list):
                 stream_slicer = CartesianProductStreamSlicer(
-                    [self._create_component_from_model(model=slicer, config=config) for slicer in stream_slicer_model], parameters={}
+                    [
+                        self._create_component_from_model(model=slicer, config=config)
+                        for slicer in stream_slicer_model
+                    ],
+                    parameters={},
                 )
             else:
-                stream_slicer = self._create_component_from_model(model=stream_slicer_model, config=config)
+                stream_slicer = self._create_component_from_model(
+                    model=stream_slicer_model, config=config
+                )
 
         if model.incremental_sync and stream_slicer:
             incremental_sync_model = model.incremental_sync
-            if hasattr(incremental_sync_model, "global_substream_cursor") and incremental_sync_model.global_substream_cursor:
-                cursor_component = self._create_component_from_model(model=incremental_sync_model, config=config)
-                return GlobalSubstreamCursor(stream_cursor=cursor_component, partition_router=stream_slicer)
+            if (
+                hasattr(incremental_sync_model, "global_substream_cursor")
+                and incremental_sync_model.global_substream_cursor
+            ):
+                cursor_component = self._create_component_from_model(
+                    model=incremental_sync_model, config=config
+                )
+                return GlobalSubstreamCursor(
+                    stream_cursor=cursor_component, partition_router=stream_slicer
+                )
             else:
-                cursor_component = self._create_component_from_model(model=incremental_sync_model, config=config)
+                cursor_component = self._create_component_from_model(
+                    model=incremental_sync_model, config=config
+                )
                 return PerPartitionWithGlobalCursor(
                     cursor_factory=CursorFactory(
-                        lambda: self._create_component_from_model(model=incremental_sync_model, config=config),
+                        lambda: self._create_component_from_model(
+                            model=incremental_sync_model, config=config
+                        ),
                     ),
                     partition_router=stream_slicer,
                     stream_cursor=cursor_component,
                 )
         elif model.incremental_sync:
-            return self._create_component_from_model(model=model.incremental_sync, config=config) if model.incremental_sync else None
+            return (
+                self._create_component_from_model(model=model.incremental_sync, config=config)
+                if model.incremental_sync
+                else None
+            )
         elif stream_slicer:
             # For the Full-Refresh sub-streams, we use the nested `ChildPartitionResumableFullRefreshCursor`
             return PerPartitionCursor(
-                cursor_factory=CursorFactory(create_function=partial(ChildPartitionResumableFullRefreshCursor, {})),
+                cursor_factory=CursorFactory(
+                    create_function=partial(ChildPartitionResumableFullRefreshCursor, {})
+                ),
                 partition_router=stream_slicer,
             )
-        elif hasattr(model.retriever, "paginator") and model.retriever.paginator and not stream_slicer:
+        elif (
+            hasattr(model.retriever, "paginator")
+            and model.retriever.paginator
+            and not stream_slicer
+        ):
             # For the regular Full-Refresh streams, we use the high level `ResumableFullRefreshCursor`
             return ResumableFullRefreshCursor(parameters={})
         else:
             return None
 
-    def create_default_error_handler(self, model: DefaultErrorHandlerModel, config: Config, **kwargs: Any) -> DefaultErrorHandler:
+    def create_default_error_handler(
+        self, model: DefaultErrorHandlerModel, config: Config, **kwargs: Any
+    ) -> DefaultErrorHandler:
         backoff_strategies = []
         if model.backoff_strategies:
             for backoff_strategy_model in model.backoff_strategies:
-                backoff_strategies.append(self._create_component_from_model(model=backoff_strategy_model, config=config))
+                backoff_strategies.append(
+                    self._create_component_from_model(model=backoff_strategy_model, config=config)
+                )
 
         response_filters = []
         if model.response_filters:
             for response_filter_model in model.response_filters:
-                response_filters.append(self._create_component_from_model(model=response_filter_model, config=config))
-        response_filters.append(HttpResponseFilter(config=config, parameters=model.parameters or {}))
+                response_filters.append(
+                    self._create_component_from_model(model=response_filter_model, config=config)
+                )
+        response_filters.append(
+            HttpResponseFilter(config=config, parameters=model.parameters or {})
+        )
 
         return DefaultErrorHandler(
             backoff_strategies=backoff_strategies,
@@ -993,17 +1377,25 @@ class ModelToComponentFactory:
     ) -> Union[DefaultPaginator, PaginatorTestReadDecorator]:
         if decoder:
             if not isinstance(decoder, (JsonDecoder, XmlDecoder)):
-                raise ValueError(f"Provided decoder of {type(decoder)=} is not supported. Please set JsonDecoder or XmlDecoder instead.")
+                raise ValueError(
+                    f"Provided decoder of {type(decoder)=} is not supported. Please set JsonDecoder or XmlDecoder instead."
+                )
             decoder_to_use = PaginationDecoderDecorator(decoder=decoder)
         else:
             decoder_to_use = PaginationDecoderDecorator(decoder=JsonDecoder(parameters={}))
         page_size_option = (
-            self._create_component_from_model(model=model.page_size_option, config=config) if model.page_size_option else None
+            self._create_component_from_model(model=model.page_size_option, config=config)
+            if model.page_size_option
+            else None
         )
         page_token_option = (
-            self._create_component_from_model(model=model.page_token_option, config=config) if model.page_token_option else None
+            self._create_component_from_model(model=model.page_token_option, config=config)
+            if model.page_token_option
+            else None
         )
-        pagination_strategy = self._create_component_from_model(model=model.pagination_strategy, config=config, decoder=decoder_to_use)
+        pagination_strategy = self._create_component_from_model(
+            model=model.pagination_strategy, config=config, decoder=decoder_to_use
+        )
         if cursor_used_for_stop_condition:
             pagination_strategy = StopConditionPaginationStrategyDecorator(
                 pagination_strategy, CursorStopCondition(cursor_used_for_stop_condition)
@@ -1022,29 +1414,55 @@ class ModelToComponentFactory:
         return paginator
 
     def create_dpath_extractor(
-        self, model: DpathExtractorModel, config: Config, decoder: Optional[Decoder] = None, **kwargs: Any
+        self,
+        model: DpathExtractorModel,
+        config: Config,
+        decoder: Optional[Decoder] = None,
+        **kwargs: Any,
     ) -> DpathExtractor:
         if decoder:
             decoder_to_use = decoder
         else:
             decoder_to_use = JsonDecoder(parameters={})
         model_field_path: List[Union[InterpolatedString, str]] = [x for x in model.field_path]
-        return DpathExtractor(decoder=decoder_to_use, field_path=model_field_path, config=config, parameters=model.parameters or {})
+        return DpathExtractor(
+            decoder=decoder_to_use,
+            field_path=model_field_path,
+            config=config,
+            parameters=model.parameters or {},
+        )
 
     @staticmethod
-    def create_exponential_backoff_strategy(model: ExponentialBackoffStrategyModel, config: Config) -> ExponentialBackoffStrategy:
-        return ExponentialBackoffStrategy(factor=model.factor or 5, parameters=model.parameters or {}, config=config)
+    def create_exponential_backoff_strategy(
+        model: ExponentialBackoffStrategyModel, config: Config
+    ) -> ExponentialBackoffStrategy:
+        return ExponentialBackoffStrategy(
+            factor=model.factor or 5, parameters=model.parameters or {}, config=config
+        )
 
-    def create_http_requester(self, model: HttpRequesterModel, decoder: Decoder, config: Config, *, name: str) -> HttpRequester:
+    def create_http_requester(
+        self, model: HttpRequesterModel, decoder: Decoder, config: Config, *, name: str
+    ) -> HttpRequester:
         authenticator = (
-            self._create_component_from_model(model=model.authenticator, config=config, url_base=model.url_base, name=name, decoder=decoder)
+            self._create_component_from_model(
+                model=model.authenticator,
+                config=config,
+                url_base=model.url_base,
+                name=name,
+                decoder=decoder,
+            )
             if model.authenticator
             else None
         )
         error_handler = (
             self._create_component_from_model(model=model.error_handler, config=config)
             if model.error_handler
-            else DefaultErrorHandler(backoff_strategies=[], response_filters=[], config=config, parameters=model.parameters or {})
+            else DefaultErrorHandler(
+                backoff_strategies=[],
+                response_filters=[],
+                config=config,
+                parameters=model.parameters or {},
+            )
         )
 
         request_options_provider = InterpolatedRequestOptionsProvider(
@@ -1079,7 +1497,9 @@ class ModelToComponentFactory:
         )
 
     @staticmethod
-    def create_http_response_filter(model: HttpResponseFilterModel, config: Config, **kwargs: Any) -> HttpResponseFilter:
+    def create_http_response_filter(
+        model: HttpResponseFilterModel, config: Config, **kwargs: Any
+    ) -> HttpResponseFilter:
         if model.action:
             action = ResponseAction(model.action.value)
         else:
@@ -1103,7 +1523,9 @@ class ModelToComponentFactory:
         )
 
     @staticmethod
-    def create_inline_schema_loader(model: InlineSchemaLoaderModel, config: Config, **kwargs: Any) -> InlineSchemaLoader:
+    def create_inline_schema_loader(
+        model: InlineSchemaLoaderModel, config: Config, **kwargs: Any
+    ) -> InlineSchemaLoader:
         return InlineSchemaLoader(schema=model.schema_ or {}, parameters={})
 
     @staticmethod
@@ -1111,11 +1533,15 @@ class ModelToComponentFactory:
         return JsonDecoder(parameters={})
 
     @staticmethod
-    def create_jsonl_decoder(model: JsonlDecoderModel, config: Config, **kwargs: Any) -> JsonlDecoder:
+    def create_jsonl_decoder(
+        model: JsonlDecoderModel, config: Config, **kwargs: Any
+    ) -> JsonlDecoder:
         return JsonlDecoder(parameters={})
 
     @staticmethod
-    def create_iterable_decoder(model: IterableDecoderModel, config: Config, **kwargs: Any) -> IterableDecoder:
+    def create_iterable_decoder(
+        model: IterableDecoderModel, config: Config, **kwargs: Any
+    ) -> IterableDecoder:
         return IterableDecoder(parameters={})
 
     @staticmethod
@@ -1123,11 +1549,17 @@ class ModelToComponentFactory:
         return XmlDecoder(parameters={})
 
     @staticmethod
-    def create_json_file_schema_loader(model: JsonFileSchemaLoaderModel, config: Config, **kwargs: Any) -> JsonFileSchemaLoader:
-        return JsonFileSchemaLoader(file_path=model.file_path or "", config=config, parameters=model.parameters or {})
+    def create_json_file_schema_loader(
+        model: JsonFileSchemaLoaderModel, config: Config, **kwargs: Any
+    ) -> JsonFileSchemaLoader:
+        return JsonFileSchemaLoader(
+            file_path=model.file_path or "", config=config, parameters=model.parameters or {}
+        )
 
     @staticmethod
-    def create_jwt_authenticator(model: JwtAuthenticatorModel, config: Config, **kwargs: Any) -> JwtAuthenticator:
+    def create_jwt_authenticator(
+        model: JwtAuthenticatorModel, config: Config, **kwargs: Any
+    ) -> JwtAuthenticator:
         jwt_headers = model.jwt_headers or JwtHeadersModel(kid=None, typ="JWT", cty=None)
         jwt_payload = model.jwt_payload or JwtPayloadModel(iss=None, sub=None, aud=None)
         return JwtAuthenticator(
@@ -1149,7 +1581,9 @@ class ModelToComponentFactory:
         )
 
     @staticmethod
-    def create_list_partition_router(model: ListPartitionRouterModel, config: Config, **kwargs: Any) -> ListPartitionRouter:
+    def create_list_partition_router(
+        model: ListPartitionRouterModel, config: Config, **kwargs: Any
+    ) -> ListPartitionRouter:
         request_option = (
             RequestOption(
                 inject_into=RequestOptionType(model.request_option.inject_into.value),
@@ -1168,7 +1602,9 @@ class ModelToComponentFactory:
         )
 
     @staticmethod
-    def create_min_max_datetime(model: MinMaxDatetimeModel, config: Config, **kwargs: Any) -> MinMaxDatetime:
+    def create_min_max_datetime(
+        model: MinMaxDatetimeModel, config: Config, **kwargs: Any
+    ) -> MinMaxDatetime:
         return MinMaxDatetime(
             datetime=model.datetime,
             datetime_format=model.datetime_format or "",
@@ -1182,29 +1618,43 @@ class ModelToComponentFactory:
         return NoAuth(parameters=model.parameters or {})
 
     @staticmethod
-    def create_no_pagination(model: NoPaginationModel, config: Config, **kwargs: Any) -> NoPagination:
+    def create_no_pagination(
+        model: NoPaginationModel, config: Config, **kwargs: Any
+    ) -> NoPagination:
         return NoPagination(parameters={})
 
-    def create_oauth_authenticator(self, model: OAuthAuthenticatorModel, config: Config, **kwargs: Any) -> DeclarativeOauth2Authenticator:
+    def create_oauth_authenticator(
+        self, model: OAuthAuthenticatorModel, config: Config, **kwargs: Any
+    ) -> DeclarativeOauth2Authenticator:
         if model.refresh_token_updater:
             # ignore type error because fixing it would have a lot of dependencies, revisit later
             return DeclarativeSingleUseRefreshTokenOauth2Authenticator(  # type: ignore
                 config,
-                InterpolatedString.create(model.token_refresh_endpoint, parameters=model.parameters or {}).eval(config),
+                InterpolatedString.create(
+                    model.token_refresh_endpoint, parameters=model.parameters or {}
+                ).eval(config),
                 access_token_name=InterpolatedString.create(
                     model.access_token_name or "access_token", parameters=model.parameters or {}
                 ).eval(config),
                 refresh_token_name=model.refresh_token_updater.refresh_token_name,
-                expires_in_name=InterpolatedString.create(model.expires_in_name or "expires_in", parameters=model.parameters or {}).eval(
-                    config
-                ),
-                client_id=InterpolatedString.create(model.client_id, parameters=model.parameters or {}).eval(config),
-                client_secret=InterpolatedString.create(model.client_secret, parameters=model.parameters or {}).eval(config),
+                expires_in_name=InterpolatedString.create(
+                    model.expires_in_name or "expires_in", parameters=model.parameters or {}
+                ).eval(config),
+                client_id=InterpolatedString.create(
+                    model.client_id, parameters=model.parameters or {}
+                ).eval(config),
+                client_secret=InterpolatedString.create(
+                    model.client_secret, parameters=model.parameters or {}
+                ).eval(config),
                 access_token_config_path=model.refresh_token_updater.access_token_config_path,
                 refresh_token_config_path=model.refresh_token_updater.refresh_token_config_path,
                 token_expiry_date_config_path=model.refresh_token_updater.token_expiry_date_config_path,
-                grant_type=InterpolatedString.create(model.grant_type or "refresh_token", parameters=model.parameters or {}).eval(config),
-                refresh_request_body=InterpolatedMapping(model.refresh_request_body or {}, parameters=model.parameters or {}).eval(config),
+                grant_type=InterpolatedString.create(
+                    model.grant_type or "refresh_token", parameters=model.parameters or {}
+                ).eval(config),
+                refresh_request_body=InterpolatedMapping(
+                    model.refresh_request_body or {}, parameters=model.parameters or {}
+                ).eval(config),
                 scopes=model.scopes,
                 token_expiry_date_format=model.token_expiry_date_format,
                 message_repository=self._message_repository,
@@ -1232,7 +1682,9 @@ class ModelToComponentFactory:
         )
 
     @staticmethod
-    def create_offset_increment(model: OffsetIncrementModel, config: Config, decoder: Decoder, **kwargs: Any) -> OffsetIncrement:
+    def create_offset_increment(
+        model: OffsetIncrementModel, config: Config, decoder: Decoder, **kwargs: Any
+    ) -> OffsetIncrement:
         if isinstance(decoder, PaginationDecoderDecorator):
             if not isinstance(decoder.decoder, (JsonDecoder, XmlDecoder)):
                 raise ValueError(
@@ -1241,7 +1693,9 @@ class ModelToComponentFactory:
             decoder_to_use = decoder
         else:
             if not isinstance(decoder, (JsonDecoder, XmlDecoder)):
-                raise ValueError(f"Provided decoder of {type(decoder)=} is not supported. Please set JsonDecoder or XmlDecoder instead.")
+                raise ValueError(
+                    f"Provided decoder of {type(decoder)=} is not supported. Please set JsonDecoder or XmlDecoder instead."
+                )
             decoder_to_use = PaginationDecoderDecorator(decoder=decoder)
         return OffsetIncrement(
             page_size=model.page_size,
@@ -1252,7 +1706,9 @@ class ModelToComponentFactory:
         )
 
     @staticmethod
-    def create_page_increment(model: PageIncrementModel, config: Config, **kwargs: Any) -> PageIncrement:
+    def create_page_increment(
+        model: PageIncrementModel, config: Config, **kwargs: Any
+    ) -> PageIncrement:
         return PageIncrement(
             page_size=model.page_size,
             config=config,
@@ -1261,9 +1717,15 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
-    def create_parent_stream_config(self, model: ParentStreamConfigModel, config: Config, **kwargs: Any) -> ParentStreamConfig:
+    def create_parent_stream_config(
+        self, model: ParentStreamConfigModel, config: Config, **kwargs: Any
+    ) -> ParentStreamConfig:
         declarative_stream = self._create_component_from_model(model.stream, config=config)
-        request_option = self._create_component_from_model(model.request_option, config=config) if model.request_option else None
+        request_option = (
+            self._create_component_from_model(model.request_option, config=config)
+            if model.request_option
+            else None
+        )
         return ParentStreamConfig(
             parent_key=model.parent_key,
             request_option=request_option,
@@ -1276,15 +1738,21 @@ class ModelToComponentFactory:
         )
 
     @staticmethod
-    def create_record_filter(model: RecordFilterModel, config: Config, **kwargs: Any) -> RecordFilter:
-        return RecordFilter(condition=model.condition or "", config=config, parameters=model.parameters or {})
+    def create_record_filter(
+        model: RecordFilterModel, config: Config, **kwargs: Any
+    ) -> RecordFilter:
+        return RecordFilter(
+            condition=model.condition or "", config=config, parameters=model.parameters or {}
+        )
 
     @staticmethod
     def create_request_path(model: RequestPathModel, config: Config, **kwargs: Any) -> RequestPath:
         return RequestPath(parameters={})
 
     @staticmethod
-    def create_request_option(model: RequestOptionModel, config: Config, **kwargs: Any) -> RequestOption:
+    def create_request_option(
+        model: RequestOptionModel, config: Config, **kwargs: Any
+    ) -> RequestOption:
         inject_into = RequestOptionType(model.inject_into.value)
         return RequestOption(field_name=model.field_name, inject_into=inject_into, parameters={})
 
@@ -1299,16 +1767,26 @@ class ModelToComponentFactory:
         **kwargs: Any,
     ) -> RecordSelector:
         assert model.schema_normalization is not None  # for mypy
-        extractor = self._create_component_from_model(model=model.extractor, decoder=decoder, config=config)
-        record_filter = self._create_component_from_model(model.record_filter, config=config) if model.record_filter else None
+        extractor = self._create_component_from_model(
+            model=model.extractor, decoder=decoder, config=config
+        )
+        record_filter = (
+            self._create_component_from_model(model.record_filter, config=config)
+            if model.record_filter
+            else None
+        )
         if client_side_incremental_sync:
             record_filter = ClientSideIncrementalRecordFilterDecorator(
                 config=config,
                 parameters=model.parameters,
-                condition=model.record_filter.condition if (model.record_filter and hasattr(model.record_filter, "condition")) else None,
+                condition=model.record_filter.condition
+                if (model.record_filter and hasattr(model.record_filter, "condition"))
+                else None,
                 **client_side_incremental_sync,
             )
-        schema_normalization = TypeTransformer(SCHEMA_TRANSFORMER_TYPE_MAPPING[model.schema_normalization])
+        schema_normalization = TypeTransformer(
+            SCHEMA_TRANSFORMER_TYPE_MAPPING[model.schema_normalization]
+        )
 
         return RecordSelector(
             extractor=extractor,
@@ -1320,11 +1798,20 @@ class ModelToComponentFactory:
         )
 
     @staticmethod
-    def create_remove_fields(model: RemoveFieldsModel, config: Config, **kwargs: Any) -> RemoveFields:
-        return RemoveFields(field_pointers=model.field_pointers, condition=model.condition or "", parameters={})
+    def create_remove_fields(
+        model: RemoveFieldsModel, config: Config, **kwargs: Any
+    ) -> RemoveFields:
+        return RemoveFields(
+            field_pointers=model.field_pointers, condition=model.condition or "", parameters={}
+        )
 
-    def create_selective_authenticator(self, model: SelectiveAuthenticatorModel, config: Config, **kwargs: Any) -> DeclarativeAuthenticator:
-        authenticators = {name: self._create_component_from_model(model=auth, config=config) for name, auth in model.authenticators.items()}
+    def create_selective_authenticator(
+        self, model: SelectiveAuthenticatorModel, config: Config, **kwargs: Any
+    ) -> DeclarativeAuthenticator:
+        authenticators = {
+            name: self._create_component_from_model(model=auth, config=config)
+            for name, auth in model.authenticators.items()
+        }
         # SelectiveAuthenticator will return instance of DeclarativeAuthenticator or raise ValueError error
         return SelectiveAuthenticator(  # type: ignore[abstract]
             config=config,
@@ -1363,8 +1850,14 @@ class ModelToComponentFactory:
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
         transformations: List[RecordTransformation],
     ) -> SimpleRetriever:
-        decoder = self._create_component_from_model(model=model.decoder, config=config) if model.decoder else JsonDecoder(parameters={})
-        requester = self._create_component_from_model(model=model.requester, decoder=decoder, config=config, name=name)
+        decoder = (
+            self._create_component_from_model(model=model.decoder, config=config)
+            if model.decoder
+            else JsonDecoder(parameters={})
+        )
+        requester = self._create_component_from_model(
+            model=model.requester, decoder=decoder, config=config, name=name
+        )
         record_selector = self._create_component_from_model(
             model=model.record_selector,
             config=config,
@@ -1372,12 +1865,19 @@ class ModelToComponentFactory:
             transformations=transformations,
             client_side_incremental_sync=client_side_incremental_sync,
         )
-        url_base = model.requester.url_base if hasattr(model.requester, "url_base") else requester.get_url_base()
+        url_base = (
+            model.requester.url_base
+            if hasattr(model.requester, "url_base")
+            else requester.get_url_base()
+        )
 
         # Define cursor only if per partition or common incremental support is needed
         cursor = stream_slicer if isinstance(stream_slicer, DeclarativeCursor) else None
 
-        if not isinstance(stream_slicer, DatetimeBasedCursor) or type(stream_slicer) is not DatetimeBasedCursor:
+        if (
+            not isinstance(stream_slicer, DatetimeBasedCursor)
+            or type(stream_slicer) is not DatetimeBasedCursor
+        ):
             # Many of the custom component implementations of DatetimeBasedCursor override get_request_params() (or other methods).
             # Because we're decoupling RequestOptionsProvider from the Cursor, custom components will eventually need to reimplement
             # their own RequestOptionsProvider. However, right now the existing StreamSlicer/Cursor still can act as the SimpleRetriever's
@@ -1401,7 +1901,9 @@ class ModelToComponentFactory:
             else NoPagination(parameters={})
         )
 
-        ignore_stream_slicer_parameters_on_paginated_requests = model.ignore_stream_slicer_parameters_on_paginated_requests or False
+        ignore_stream_slicer_parameters_on_paginated_requests = (
+            model.ignore_stream_slicer_parameters_on_paginated_requests or False
+        )
 
         if self._limit_slices_fetched or self._emit_connector_builder_messages:
             return SimpleRetrieverTestReadDecorator(
@@ -1468,14 +1970,19 @@ class ModelToComponentFactory:
         config: Config,
         *,
         name: str,
-        primary_key: Optional[Union[str, List[str], List[List[str]]]],  # this seems to be needed to match create_simple_retriever
+        primary_key: Optional[
+            Union[str, List[str], List[List[str]]]
+        ],  # this seems to be needed to match create_simple_retriever
         stream_slicer: Optional[StreamSlicer],
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
         transformations: List[RecordTransformation],
         **kwargs: Any,
     ) -> AsyncRetriever:
-
-        decoder = self._create_component_from_model(model=model.decoder, config=config) if model.decoder else JsonDecoder(parameters={})
+        decoder = (
+            self._create_component_from_model(model=model.decoder, config=config)
+            if model.decoder
+            else JsonDecoder(parameters={})
+        )
         record_selector = self._create_component_from_model(
             model=model.record_selector,
             config=config,
@@ -1485,14 +1992,23 @@ class ModelToComponentFactory:
         )
         stream_slicer = stream_slicer or SinglePartitionRouter(parameters={})
         creation_requester = self._create_component_from_model(
-            model=model.creation_requester, decoder=decoder, config=config, name=f"job creation - {name}"
+            model=model.creation_requester,
+            decoder=decoder,
+            config=config,
+            name=f"job creation - {name}",
         )
         polling_requester = self._create_component_from_model(
-            model=model.polling_requester, decoder=decoder, config=config, name=f"job polling - {name}"
+            model=model.polling_requester,
+            decoder=decoder,
+            config=config,
+            name=f"job polling - {name}",
         )
         job_download_components_name = f"job download - {name}"
         download_requester = self._create_component_from_model(
-            model=model.download_requester, decoder=decoder, config=config, name=job_download_components_name
+            model=model.download_requester,
+            decoder=decoder,
+            config=config,
+            name=job_download_components_name,
         )
         download_retriever = SimpleRetriever(
             requester=download_requester,
@@ -1507,7 +2023,9 @@ class ModelToComponentFactory:
             primary_key=None,
             name=job_download_components_name,
             paginator=(
-                self._create_component_from_model(model=model.download_paginator, decoder=decoder, config=config, url_base="")
+                self._create_component_from_model(
+                    model=model.download_paginator, decoder=decoder, config=config, url_base=""
+                )
                 if model.download_paginator
                 else NoPagination(parameters={})
             ),
@@ -1515,17 +2033,31 @@ class ModelToComponentFactory:
             parameters={},
         )
         abort_requester = (
-            self._create_component_from_model(model=model.abort_requester, decoder=decoder, config=config, name=f"job abort - {name}")
+            self._create_component_from_model(
+                model=model.abort_requester,
+                decoder=decoder,
+                config=config,
+                name=f"job abort - {name}",
+            )
             if model.abort_requester
             else None
         )
         delete_requester = (
-            self._create_component_from_model(model=model.delete_requester, decoder=decoder, config=config, name=f"job delete - {name}")
+            self._create_component_from_model(
+                model=model.delete_requester,
+                decoder=decoder,
+                config=config,
+                name=f"job delete - {name}",
+            )
             if model.delete_requester
             else None
         )
-        status_extractor = self._create_component_from_model(model=model.status_extractor, decoder=decoder, config=config, name=name)
-        urls_extractor = self._create_component_from_model(model=model.urls_extractor, decoder=decoder, config=config, name=name)
+        status_extractor = self._create_component_from_model(
+            model=model.status_extractor, decoder=decoder, config=config, name=name
+        )
+        urls_extractor = self._create_component_from_model(
+            model=model.urls_extractor, decoder=decoder, config=config, name=name
+        )
         job_repository: AsyncJobRepository = AsyncHttpJobRepository(
             creation_requester=creation_requester,
             polling_requester=polling_requester,
@@ -1541,7 +2073,9 @@ class ModelToComponentFactory:
             job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
                 job_repository,
                 stream_slices,
-                JobTracker(1),  # FIXME eventually make the number of concurrent jobs in the API configurable. Until then, we limit to 1
+                JobTracker(
+                    1
+                ),  # FIXME eventually make the number of concurrent jobs in the API configurable. Until then, we limit to 1
                 self._message_repository,
                 has_bulk_parent=False,  # FIXME work would need to be done here in order to detect if a stream as a parent stream that is bulk
             ),
@@ -1567,14 +2101,22 @@ class ModelToComponentFactory:
         if model.parent_stream_configs:
             parent_stream_configs.extend(
                 [
-                    self._create_message_repository_substream_wrapper(model=parent_stream_config, config=config)
+                    self._create_message_repository_substream_wrapper(
+                        model=parent_stream_config, config=config
+                    )
                     for parent_stream_config in model.parent_stream_configs
                 ]
             )
 
-        return SubstreamPartitionRouter(parent_stream_configs=parent_stream_configs, parameters=model.parameters or {}, config=config)
+        return SubstreamPartitionRouter(
+            parent_stream_configs=parent_stream_configs,
+            parameters=model.parameters or {},
+            config=config,
+        )
 
-    def _create_message_repository_substream_wrapper(self, model: ParentStreamConfigModel, config: Config) -> Any:
+    def _create_message_repository_substream_wrapper(
+        self, model: ParentStreamConfigModel, config: Config
+    ) -> Any:
         substream_factory = ModelToComponentFactory(
             limit_pages_fetched_per_slice=self._limit_pages_fetched_per_slice,
             limit_slices_fetched=self._limit_slices_fetched,
@@ -1590,13 +2132,17 @@ class ModelToComponentFactory:
         return substream_factory._create_component_from_model(model=model, config=config)
 
     @staticmethod
-    def create_wait_time_from_header(model: WaitTimeFromHeaderModel, config: Config, **kwargs: Any) -> WaitTimeFromHeaderBackoffStrategy:
+    def create_wait_time_from_header(
+        model: WaitTimeFromHeaderModel, config: Config, **kwargs: Any
+    ) -> WaitTimeFromHeaderBackoffStrategy:
         return WaitTimeFromHeaderBackoffStrategy(
             header=model.header,
             parameters=model.parameters or {},
             config=config,
             regex=model.regex,
-            max_waiting_time_in_seconds=model.max_waiting_time_in_seconds if model.max_waiting_time_in_seconds is not None else None,
+            max_waiting_time_in_seconds=model.max_waiting_time_in_seconds
+            if model.max_waiting_time_in_seconds is not None
+            else None,
         )
 
     @staticmethod
@@ -1604,7 +2150,11 @@ class ModelToComponentFactory:
         model: WaitUntilTimeFromHeaderModel, config: Config, **kwargs: Any
     ) -> WaitUntilTimeFromHeaderBackoffStrategy:
         return WaitUntilTimeFromHeaderBackoffStrategy(
-            header=model.header, parameters=model.parameters or {}, config=config, min_wait=model.min_wait, regex=model.regex
+            header=model.header,
+            parameters=model.parameters or {},
+            config=config,
+            min_wait=model.min_wait,
+            regex=model.regex,
         )
 
     def get_message_repository(self) -> MessageRepository:

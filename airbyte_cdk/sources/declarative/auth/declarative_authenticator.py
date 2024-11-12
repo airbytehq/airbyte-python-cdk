@@ -5,7 +5,9 @@
 from dataclasses import InitVar, dataclass
 from typing import Any, Mapping, Union
 
-from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_token import AbstractHeaderAuthenticator
+from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_token import (
+    AbstractHeaderAuthenticator,
+)
 
 
 @dataclass

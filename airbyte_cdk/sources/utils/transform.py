@@ -9,7 +9,13 @@ from typing import Any, Callable, Dict, Mapping, Optional
 
 from jsonschema import Draft7Validator, ValidationError, validators
 
-json_to_python_simple = {"string": str, "number": float, "integer": int, "boolean": bool, "null": type(None)}
+json_to_python_simple = {
+    "string": str,
+    "number": float,
+    "integer": int,
+    "boolean": bool,
+    "null": type(None),
+}
 json_to_python = {**json_to_python_simple, **{"object": dict, "array": list}}
 python_to_json = {v: k for k, v in json_to_python.items()}
 
@@ -56,9 +62,13 @@ class TypeTransformer:
             # Do not validate field we do not transform for maximum performance.
             if key in ["type", "array", "$ref", "properties", "items"]
         }
-        self._normalizer = validators.create(meta_schema=Draft7Validator.META_SCHEMA, validators=all_validators)
+        self._normalizer = validators.create(
+            meta_schema=Draft7Validator.META_SCHEMA, validators=all_validators
+        )
 
-    def registerCustomTransform(self, normalization_callback: Callable[[Any, Dict[str, Any]], Any]) -> Callable:
+    def registerCustomTransform(
+        self, normalization_callback: Callable[[Any, Dict[str, Any]], Any]
+    ) -> Callable:
         """
         Register custom normalization callback.
         :param normalization_callback function to be used for value
@@ -68,7 +78,9 @@ class TypeTransformer:
         :return Same callbeck, this is usefull for using registerCustomTransform function as decorator.
         """
         if TransformConfig.CustomSchemaNormalization not in self._config:
-            raise Exception("Please set TransformConfig.CustomSchemaNormalization config before registering custom normalizer")
+            raise Exception(
+                "Please set TransformConfig.CustomSchemaNormalization config before registering custom normalizer"
+            )
         self._custom_normalizer = normalization_callback
         return normalization_callback
 
@@ -120,7 +132,10 @@ class TypeTransformer:
                 return bool(original_item)
             elif target_type == "array":
                 item_types = set(subschema.get("items", {}).get("type", set()))
-                if item_types.issubset(json_to_python_simple) and type(original_item) in json_to_python_simple.values():
+                if (
+                    item_types.issubset(json_to_python_simple)
+                    and type(original_item) in json_to_python_simple.values()
+                ):
                     return [original_item]
         except (ValueError, TypeError):
             return original_item
@@ -133,7 +148,9 @@ class TypeTransformer:
         :original_validator: native jsonschema validator callback.
         """
 
-        def normalizator(validator_instance: Callable, property_value: Any, instance: Any, schema: Dict[str, Any]):
+        def normalizator(
+            validator_instance: Callable, property_value: Any, instance: Any, schema: Dict[str, Any]
+        ):
             """
             Jsonschema validator callable it uses for validating instance. We
             override default Draft7Validator to perform value transformation
@@ -191,6 +208,4 @@ class TypeTransformer:
     def get_error_message(self, e: ValidationError) -> str:
         instance_json_type = python_to_json[type(e.instance)]
         key_path = "." + ".".join(map(str, e.path))
-        return (
-            f"Failed to transform value {repr(e.instance)} of type '{instance_json_type}' to '{e.validator_value}', key path: '{key_path}'"
-        )
+        return f"Failed to transform value {repr(e.instance)} of type '{instance_json_type}' to '{e.validator_value}', key path: '{key_path}'"

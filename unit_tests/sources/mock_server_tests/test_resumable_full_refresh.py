@@ -7,7 +7,14 @@ from typing import Any, Dict, List, Optional
 from unittest import TestCase
 
 import freezegun
-from airbyte_cdk.models import AirbyteStateBlob, AirbyteStreamStatus, ConfiguredAirbyteCatalog, FailureType, SyncMode, Type
+from airbyte_cdk.models import (
+    AirbyteStateBlob,
+    AirbyteStreamStatus,
+    ConfiguredAirbyteCatalog,
+    FailureType,
+    SyncMode,
+    Type,
+)
 from airbyte_cdk.test.catalog_builder import ConfiguredAirbyteStreamBuilder
 from airbyte_cdk.test.entrypoint_wrapper import read
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest
@@ -21,7 +28,10 @@ from airbyte_cdk.test.mock_http.response_builder import (
 )
 from airbyte_cdk.test.state_builder import StateBuilder
 from unit_tests.sources.mock_server_tests.mock_source_fixture import SourceFixture
-from unit_tests.sources.mock_server_tests.test_helpers import emits_successful_sync_status_messages, validate_message_order
+from unit_tests.sources.mock_server_tests.test_helpers import (
+    emits_successful_sync_status_messages,
+    validate_message_order,
+)
 
 _NOW = datetime.now(timezone.utc)
 
@@ -50,11 +60,17 @@ class RequestBuilder:
         )
 
 
-def _create_catalog(names_and_sync_modes: List[tuple[str, SyncMode, Dict[str, Any]]]) -> ConfiguredAirbyteCatalog:
+def _create_catalog(
+    names_and_sync_modes: List[tuple[str, SyncMode, Dict[str, Any]]],
+) -> ConfiguredAirbyteCatalog:
     stream_builder = ConfiguredAirbyteStreamBuilder()
     streams = []
     for stream_name, sync_mode, json_schema in names_and_sync_modes:
-        streams.append(stream_builder.with_name(stream_name).with_sync_mode(sync_mode).with_json_schema(json_schema or {}))
+        streams.append(
+            stream_builder.with_name(stream_name)
+            .with_sync_mode(sync_mode)
+            .with_json_schema(json_schema or {})
+        )
 
     return ConfiguredAirbyteCatalog(streams=list(map(lambda builder: builder.build(), streams)))
 
@@ -63,7 +79,11 @@ def _create_justice_songs_request() -> RequestBuilder:
     return RequestBuilder.justice_songs_endpoint()
 
 
-RESPONSE_TEMPLATE = {"object": "list", "has_more": False, "data": [{"id": "123", "created_at": "2024-01-01T07:04:28.000Z"}]}
+RESPONSE_TEMPLATE = {
+    "object": "list",
+    "has_more": False,
+    "data": [{"id": "123", "created_at": "2024-01-01T07:04:28.000Z"}],
+}
 
 
 JUSTICE_SONGS_TEMPLATE = {
@@ -95,7 +115,9 @@ def _create_response(pagination_has_more: bool = False) -> HttpResponseBuilder:
     return create_response_builder(
         response_template=RESPONSE_TEMPLATE,
         records_path=FieldPath("data"),
-        pagination_strategy=FieldUpdatePaginationStrategy(FieldPath("has_more"), pagination_has_more),
+        pagination_strategy=FieldUpdatePaginationStrategy(
+            FieldPath("has_more"), pagination_has_more
+        ),
     )
 
 
@@ -134,30 +156,65 @@ class ResumableFullRefreshStreamTest(TestCase):
 
         http_mocker.get(
             _create_justice_songs_request().with_page(2).build(),
-            _create_response(pagination_has_more=False).with_pagination().with_record(record=_create_record("justice_songs")).build(),
+            _create_response(pagination_has_more=False)
+            .with_pagination()
+            .with_record(record=_create_record("justice_songs"))
+            .build(),
         )
 
         source = SourceFixture()
-        actual_messages = read(source, config=config, catalog=_create_catalog([("justice_songs", SyncMode.full_refresh, {})]))
+        actual_messages = read(
+            source,
+            config=config,
+            catalog=_create_catalog([("justice_songs", SyncMode.full_refresh, {})]),
+        )
 
-        assert emits_successful_sync_status_messages(actual_messages.get_stream_statuses("justice_songs"))
+        assert emits_successful_sync_status_messages(
+            actual_messages.get_stream_statuses("justice_songs")
+        )
         assert len(actual_messages.records) == 5
         assert len(actual_messages.state_messages) == 4
         validate_message_order(
-            [Type.RECORD, Type.RECORD, Type.STATE, Type.RECORD, Type.RECORD, Type.STATE, Type.RECORD, Type.STATE, Type.STATE],
+            [
+                Type.RECORD,
+                Type.RECORD,
+                Type.STATE,
+                Type.RECORD,
+                Type.RECORD,
+                Type.STATE,
+                Type.RECORD,
+                Type.STATE,
+                Type.STATE,
+            ],
             actual_messages.records_and_state_messages,
         )
-        assert actual_messages.state_messages[0].state.stream.stream_descriptor.name == "justice_songs"
-        assert actual_messages.state_messages[0].state.stream.stream_state == AirbyteStateBlob(page=1)
+        assert (
+            actual_messages.state_messages[0].state.stream.stream_descriptor.name == "justice_songs"
+        )
+        assert actual_messages.state_messages[0].state.stream.stream_state == AirbyteStateBlob(
+            page=1
+        )
         assert actual_messages.state_messages[0].state.sourceStats.recordCount == 2.0
-        assert actual_messages.state_messages[1].state.stream.stream_descriptor.name == "justice_songs"
-        assert actual_messages.state_messages[1].state.stream.stream_state == AirbyteStateBlob(page=2)
+        assert (
+            actual_messages.state_messages[1].state.stream.stream_descriptor.name == "justice_songs"
+        )
+        assert actual_messages.state_messages[1].state.stream.stream_state == AirbyteStateBlob(
+            page=2
+        )
         assert actual_messages.state_messages[1].state.sourceStats.recordCount == 2.0
-        assert actual_messages.state_messages[2].state.stream.stream_descriptor.name == "justice_songs"
-        assert actual_messages.state_messages[2].state.stream.stream_state == AirbyteStateBlob(__ab_full_refresh_sync_complete=True)
+        assert (
+            actual_messages.state_messages[2].state.stream.stream_descriptor.name == "justice_songs"
+        )
+        assert actual_messages.state_messages[2].state.stream.stream_state == AirbyteStateBlob(
+            __ab_full_refresh_sync_complete=True
+        )
         assert actual_messages.state_messages[2].state.sourceStats.recordCount == 1.0
-        assert actual_messages.state_messages[3].state.stream.stream_descriptor.name == "justice_songs"
-        assert actual_messages.state_messages[3].state.stream.stream_state == AirbyteStateBlob(__ab_full_refresh_sync_complete=True)
+        assert (
+            actual_messages.state_messages[3].state.stream.stream_descriptor.name == "justice_songs"
+        )
+        assert actual_messages.state_messages[3].state.stream.stream_state == AirbyteStateBlob(
+            __ab_full_refresh_sync_complete=True
+        )
         assert actual_messages.state_messages[3].state.sourceStats.recordCount == 0.0
 
     @HttpMocker()
@@ -196,9 +253,16 @@ class ResumableFullRefreshStreamTest(TestCase):
         )
 
         source = SourceFixture()
-        actual_messages = read(source, config=config, catalog=_create_catalog([("justice_songs", SyncMode.full_refresh, {})]), state=state)
+        actual_messages = read(
+            source,
+            config=config,
+            catalog=_create_catalog([("justice_songs", SyncMode.full_refresh, {})]),
+            state=state,
+        )
 
-        assert emits_successful_sync_status_messages(actual_messages.get_stream_statuses("justice_songs"))
+        assert emits_successful_sync_status_messages(
+            actual_messages.get_stream_statuses("justice_songs")
+        )
         assert len(actual_messages.records) == 8
         assert len(actual_messages.state_messages) == 4
         validate_message_order(
@@ -218,17 +282,33 @@ class ResumableFullRefreshStreamTest(TestCase):
             ],
             actual_messages.records_and_state_messages,
         )
-        assert actual_messages.state_messages[0].state.stream.stream_descriptor.name == "justice_songs"
-        assert actual_messages.state_messages[0].state.stream.stream_state == AirbyteStateBlob(page=101)
+        assert (
+            actual_messages.state_messages[0].state.stream.stream_descriptor.name == "justice_songs"
+        )
+        assert actual_messages.state_messages[0].state.stream.stream_state == AirbyteStateBlob(
+            page=101
+        )
         assert actual_messages.state_messages[0].state.sourceStats.recordCount == 3.0
-        assert actual_messages.state_messages[1].state.stream.stream_descriptor.name == "justice_songs"
-        assert actual_messages.state_messages[1].state.stream.stream_state == AirbyteStateBlob(page=102)
+        assert (
+            actual_messages.state_messages[1].state.stream.stream_descriptor.name == "justice_songs"
+        )
+        assert actual_messages.state_messages[1].state.stream.stream_state == AirbyteStateBlob(
+            page=102
+        )
         assert actual_messages.state_messages[1].state.sourceStats.recordCount == 3.0
-        assert actual_messages.state_messages[2].state.stream.stream_descriptor.name == "justice_songs"
-        assert actual_messages.state_messages[2].state.stream.stream_state == AirbyteStateBlob(__ab_full_refresh_sync_complete=True)
+        assert (
+            actual_messages.state_messages[2].state.stream.stream_descriptor.name == "justice_songs"
+        )
+        assert actual_messages.state_messages[2].state.stream.stream_state == AirbyteStateBlob(
+            __ab_full_refresh_sync_complete=True
+        )
         assert actual_messages.state_messages[2].state.sourceStats.recordCount == 2.0
-        assert actual_messages.state_messages[3].state.stream.stream_descriptor.name == "justice_songs"
-        assert actual_messages.state_messages[3].state.stream.stream_state == AirbyteStateBlob(__ab_full_refresh_sync_complete=True)
+        assert (
+            actual_messages.state_messages[3].state.stream.stream_descriptor.name == "justice_songs"
+        )
+        assert actual_messages.state_messages[3].state.stream.stream_state == AirbyteStateBlob(
+            __ab_full_refresh_sync_complete=True
+        )
         assert actual_messages.state_messages[3].state.sourceStats.recordCount == 0.0
 
     @HttpMocker()
@@ -253,11 +333,17 @@ class ResumableFullRefreshStreamTest(TestCase):
             .build(),
         )
 
-        http_mocker.get(_create_justice_songs_request().with_page(2).build(), _create_response().with_status_code(status_code=400).build())
+        http_mocker.get(
+            _create_justice_songs_request().with_page(2).build(),
+            _create_response().with_status_code(status_code=400).build(),
+        )
 
         source = SourceFixture()
         actual_messages = read(
-            source, config=config, catalog=_create_catalog([("justice_songs", SyncMode.full_refresh, {})]), expecting_exception=True
+            source,
+            config=config,
+            catalog=_create_catalog([("justice_songs", SyncMode.full_refresh, {})]),
+            expecting_exception=True,
         )
 
         status_messages = actual_messages.get_stream_statuses("justice_songs")
@@ -266,12 +352,21 @@ class ResumableFullRefreshStreamTest(TestCase):
         assert len(actual_messages.state_messages) == 2
 
         validate_message_order(
-            [Type.RECORD, Type.RECORD, Type.STATE, Type.RECORD, Type.RECORD, Type.STATE], actual_messages.records_and_state_messages
+            [Type.RECORD, Type.RECORD, Type.STATE, Type.RECORD, Type.RECORD, Type.STATE],
+            actual_messages.records_and_state_messages,
         )
-        assert actual_messages.state_messages[0].state.stream.stream_descriptor.name == "justice_songs"
-        assert actual_messages.state_messages[0].state.stream.stream_state == AirbyteStateBlob(page=1)
-        assert actual_messages.state_messages[1].state.stream.stream_descriptor.name == "justice_songs"
-        assert actual_messages.state_messages[1].state.stream.stream_state == AirbyteStateBlob(page=2)
+        assert (
+            actual_messages.state_messages[0].state.stream.stream_descriptor.name == "justice_songs"
+        )
+        assert actual_messages.state_messages[0].state.stream.stream_state == AirbyteStateBlob(
+            page=1
+        )
+        assert (
+            actual_messages.state_messages[1].state.stream.stream_descriptor.name == "justice_songs"
+        )
+        assert actual_messages.state_messages[1].state.stream.stream_state == AirbyteStateBlob(
+            page=2
+        )
 
         assert actual_messages.errors[0].trace.error.failure_type == FailureType.system_error
         assert actual_messages.errors[0].trace.error.stream_descriptor.name == "justice_songs"

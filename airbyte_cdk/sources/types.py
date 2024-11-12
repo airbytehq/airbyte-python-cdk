@@ -54,7 +54,11 @@ class Record(Mapping[str, Any]):
 
 class StreamSlice(Mapping[str, Any]):
     def __init__(
-        self, *, partition: Mapping[str, Any], cursor_slice: Mapping[str, Any], extra_fields: Optional[Mapping[str, Any]] = None
+        self,
+        *,
+        partition: Mapping[str, Any],
+        cursor_slice: Mapping[str, Any],
+        extra_fields: Optional[Mapping[str, Any]] = None,
     ) -> None:
         """
         :param partition: The partition keys representing a unique partition in the stream.

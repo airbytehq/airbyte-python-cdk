@@ -78,7 +78,9 @@ class XmlDecoder(Decoder):
     def is_stream_response(self) -> bool:
         return False
 
-    def decode(self, response: requests.Response) -> Generator[MutableMapping[str, Any], None, None]:
+    def decode(
+        self, response: requests.Response
+    ) -> Generator[MutableMapping[str, Any], None, None]:
         body_xml = response.text
         try:
             body_json = xmltodict.parse(body_xml)
@@ -89,5 +91,7 @@ class XmlDecoder(Decoder):
             else:
                 yield from body_json
         except ExpatError as exc:
-            logger.warning(f"Response cannot be parsed from XML: {response.status_code=}, {response.text=}, {exc=}")
+            logger.warning(
+                f"Response cannot be parsed from XML: {response.status_code=}, {response.text=}, {exc=}"
+            )
             yield {}

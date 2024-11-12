@@ -6,8 +6,12 @@ from unittest.mock import MagicMock
 
 import pytest
 from airbyte_cdk.models import FailureType
-from airbyte_cdk.sources.declarative.requesters.error_handlers.default_http_response_filter import DefaultHttpResponseFilter
-from airbyte_cdk.sources.streams.http.error_handlers.default_error_mapping import DEFAULT_ERROR_MAPPING
+from airbyte_cdk.sources.declarative.requesters.error_handlers.default_http_response_filter import (
+    DefaultHttpResponseFilter,
+)
+from airbyte_cdk.sources.streams.http.error_handlers.default_error_mapping import (
+    DEFAULT_ERROR_MAPPING,
+)
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
 from requests import RequestException, Response
 
@@ -21,7 +25,6 @@ from requests import RequestException, Response
     ],
 )
 def test_matches_mapped_http_status_code(http_code, expected_error_resolution):
-
     response = MagicMock(spec=Response)
     response.status_code = http_code
 
@@ -35,7 +38,6 @@ def test_matches_mapped_http_status_code(http_code, expected_error_resolution):
 
 
 def test_matches_mapped_exception():
-
     exc = MagicMock(spec=RequestException)
 
     response_filter = DefaultHttpResponseFilter(
@@ -48,7 +50,6 @@ def test_matches_mapped_exception():
 
 
 def test_unmapped_http_status_code_returns_default_error_resolution():
-
     response = MagicMock(spec=Response)
     response.status_code = 508
 

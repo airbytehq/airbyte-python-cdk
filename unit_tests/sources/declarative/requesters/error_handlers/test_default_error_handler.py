@@ -6,13 +6,24 @@ from unittest.mock import MagicMock
 
 import pytest
 import requests
-from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.constant_backoff_strategy import ConstantBackoffStrategy
+from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.constant_backoff_strategy import (
+    ConstantBackoffStrategy,
+)
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.exponential_backoff_strategy import (
     ExponentialBackoffStrategy,
 )
-from airbyte_cdk.sources.declarative.requesters.error_handlers.default_error_handler import DefaultErrorHandler, HttpResponseFilter
-from airbyte_cdk.sources.streams.http.error_handlers.default_error_mapping import DEFAULT_ERROR_MAPPING
-from airbyte_cdk.sources.streams.http.error_handlers.response_models import ErrorResolution, FailureType, ResponseAction
+from airbyte_cdk.sources.declarative.requesters.error_handlers.default_error_handler import (
+    DefaultErrorHandler,
+    HttpResponseFilter,
+)
+from airbyte_cdk.sources.streams.http.error_handlers.default_error_mapping import (
+    DEFAULT_ERROR_MAPPING,
+)
+from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
+    ErrorResolution,
+    FailureType,
+    ResponseAction,
+)
 
 SOME_BACKOFF_TIME = 60
 
@@ -55,7 +66,9 @@ SOME_BACKOFF_TIME = 60
         ),
     ],
 )
-def test_default_error_handler_with_default_response_filter(test_name, http_status_code: int, expected_error_resolution: ErrorResolution):
+def test_default_error_handler_with_default_response_filter(
+    test_name, http_status_code: int, expected_error_resolution: ErrorResolution
+):
     response_mock = create_response(http_status_code)
     error_handler = DefaultErrorHandler(config={}, parameters={})
     actual_error_resolution = error_handler.interpret_response(response_mock)
@@ -142,7 +155,9 @@ def test_default_error_handler_with_custom_response_filter(
         response_mock.json.return_value = {"error": "test"}
 
     response_filter = test_response_filter
-    error_handler = DefaultErrorHandler(config={}, parameters={}, response_filters=[response_filter])
+    error_handler = DefaultErrorHandler(
+        config={}, parameters={}, response_filters=[response_filter]
+    )
     actual_error_resolution = error_handler.interpret_response(response_mock)
     assert actual_error_resolution.response_action == response_action
     assert actual_error_resolution.failure_type == failure_type
@@ -156,7 +171,9 @@ def test_default_error_handler_with_custom_response_filter(
         (402, ResponseAction.FAIL),
     ],
 )
-def test_default_error_handler_with_multiple_response_filters(http_status_code, expected_response_action):
+def test_default_error_handler_with_multiple_response_filters(
+    http_status_code, expected_response_action
+):
     response_filter_one = HttpResponseFilter(
         http_codes=[400],
         action=ResponseAction.RETRY,
@@ -171,7 +188,9 @@ def test_default_error_handler_with_multiple_response_filters(http_status_code, 
     )
 
     response_mock = create_response(http_status_code)
-    error_handler = DefaultErrorHandler(config={}, parameters={}, response_filters=[response_filter_one, response_filter_two])
+    error_handler = DefaultErrorHandler(
+        config={}, parameters={}, response_filters=[response_filter_one, response_filter_two]
+    )
     actual_error_resolution = error_handler.interpret_response(response_mock)
     assert actual_error_resolution.response_action == expected_response_action
 
@@ -202,7 +221,9 @@ def test_default_error_handler_with_conflicting_response_filters(
     )
 
     response_mock = create_response(400)
-    error_handler = DefaultErrorHandler(config={}, parameters={}, response_filters=[response_filter_one, response_filter_two])
+    error_handler = DefaultErrorHandler(
+        config={}, parameters={}, response_filters=[response_filter_one, response_filter_two]
+    )
     actual_error_resolution = error_handler.interpret_response(response_mock)
     assert actual_error_resolution.response_action == expected_response_action
 
@@ -210,9 +231,14 @@ def test_default_error_handler_with_conflicting_response_filters(
 def test_default_error_handler_with_constant_backoff_strategy():
     response_mock = create_response(429)
     error_handler = DefaultErrorHandler(
-        config={}, parameters={}, backoff_strategies=[ConstantBackoffStrategy(SOME_BACKOFF_TIME, config={}, parameters={})]
+        config={},
+        parameters={},
+        backoff_strategies=[ConstantBackoffStrategy(SOME_BACKOFF_TIME, config={}, parameters={})],
     )
-    assert error_handler.backoff_time(response_or_exception=response_mock, attempt_count=0) == SOME_BACKOFF_TIME
+    assert (
+        error_handler.backoff_time(response_or_exception=response_mock, attempt_count=0)
+        == SOME_BACKOFF_TIME
+    )
 
 
 @pytest.mark.parametrize(
@@ -230,9 +256,13 @@ def test_default_error_handler_with_constant_backoff_strategy():
 def test_default_error_handler_with_exponential_backoff_strategy(attempt_count):
     response_mock = create_response(429)
     error_handler = DefaultErrorHandler(
-        config={}, parameters={}, backoff_strategies=[ExponentialBackoffStrategy(factor=1, config={}, parameters={})]
+        config={},
+        parameters={},
+        backoff_strategies=[ExponentialBackoffStrategy(factor=1, config={}, parameters={})],
     )
-    assert error_handler.backoff_time(response_or_exception=response_mock, attempt_count=attempt_count) == (1 * 2**attempt_count)
+    assert error_handler.backoff_time(
+        response_or_exception=response_mock, attempt_count=attempt_count
+    ) == (1 * 2**attempt_count)
 
 
 def create_response(status_code: int, headers=None, json_body=None):
@@ -270,7 +300,9 @@ def test_predicate_takes_precedent_over_default_mapped_error():
         parameters={},
     )
 
-    error_handler = DefaultErrorHandler(config={}, parameters={}, response_filters=[response_filter])
+    error_handler = DefaultErrorHandler(
+        config={}, parameters={}, response_filters=[response_filter]
+    )
     actual_error_resolution = error_handler.interpret_response(response_mock)
     assert actual_error_resolution.response_action == ResponseAction.FAIL
     assert actual_error_resolution.failure_type == FailureType.system_error

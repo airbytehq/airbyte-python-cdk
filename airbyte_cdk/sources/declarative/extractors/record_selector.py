@@ -61,7 +61,9 @@ class RecordSelector(HttpSelector):
         :return: List of Records selected from the response
         """
         all_data: Iterable[Mapping[str, Any]] = self.extractor.extract_records(response)
-        yield from self.filter_and_transform(all_data, stream_state, records_schema, stream_slice, next_page_token)
+        yield from self.filter_and_transform(
+            all_data, stream_state, records_schema, stream_slice, next_page_token
+        )
 
     def filter_and_transform(
         self,
@@ -106,7 +108,10 @@ class RecordSelector(HttpSelector):
     ) -> Iterable[Mapping[str, Any]]:
         if self.record_filter:
             yield from self.record_filter.filter_records(
-                records, stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
+                records,
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
             )
         else:
             yield from records
@@ -119,5 +124,7 @@ class RecordSelector(HttpSelector):
     ) -> Iterable[Mapping[str, Any]]:
         for record in records:
             for transformation in self.transformations:
-                transformation.transform(record, config=self.config, stream_state=stream_state, stream_slice=stream_slice)  # type: ignore  # record has type Mapping[str, Any], but Dict[str, Any] expected
+                transformation.transform(
+                    record, config=self.config, stream_state=stream_state, stream_slice=stream_slice
+                )  # type: ignore  # record has type Mapping[str, Any], but Dict[str, Any] expected
             yield record

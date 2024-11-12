@@ -22,7 +22,9 @@ if TYPE_CHECKING:
 
 class AbstractFileBasedAvailabilityStrategy(AvailabilityStrategy):
     @abstractmethod
-    def check_availability(self, stream: Stream, logger: logging.Logger, _: Optional[Source]) -> Tuple[bool, Optional[str]]:
+    def check_availability(
+        self, stream: Stream, logger: logging.Logger, _: Optional[Source]
+    ) -> Tuple[bool, Optional[str]]:
         """
         Perform a connection check for the stream.
 
@@ -48,10 +50,16 @@ class AbstractFileBasedAvailabilityStrategyWrapper(AbstractAvailabilityStrategy)
         self.stream = stream
 
     def check_availability(self, logger: logging.Logger) -> StreamAvailability:
-        is_available, reason = self.stream.availability_strategy.check_availability(self.stream, logger, None)
+        is_available, reason = self.stream.availability_strategy.check_availability(
+            self.stream, logger, None
+        )
         if is_available:
             return StreamAvailable()
         return StreamUnavailable(reason or "")
 
-    def check_availability_and_parsability(self, logger: logging.Logger) -> Tuple[bool, Optional[str]]:
-        return self.stream.availability_strategy.check_availability_and_parsability(self.stream, logger, None)
+    def check_availability_and_parsability(
+        self, logger: logging.Logger
+    ) -> Tuple[bool, Optional[str]]:
+        return self.stream.availability_strategy.check_availability_and_parsability(
+            self.stream, logger, None
+        )

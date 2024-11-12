@@ -77,23 +77,50 @@ class TestHttpRequestMatcher:
     def test_params(self, request_factory):
         matcher = HttpRequestMatcher(params={"param1": 10, "param2": 15})
         assert not matcher(request_factory(url="http://some_url/"))
-        assert not matcher(request_factory(url="http://some_url/", params={"param1": 10, "param3": 100}))
-        assert not matcher(request_factory(url="http://some_url/", params={"param1": 10, "param2": 10}))
-        assert matcher(request_factory(url="http://some_url/", params={"param1": 10, "param2": 15, "param3": 100}))
+        assert not matcher(
+            request_factory(url="http://some_url/", params={"param1": 10, "param3": 100})
+        )
+        assert not matcher(
+            request_factory(url="http://some_url/", params={"param1": 10, "param2": 10})
+        )
+        assert matcher(
+            request_factory(
+                url="http://some_url/", params={"param1": 10, "param2": 15, "param3": 100}
+            )
+        )
 
     @try_all_types_of_requests
     def test_header(self, request_factory):
         matcher = HttpRequestMatcher(headers={"header1": 10, "header2": 15})
         assert not matcher(request_factory(url="http://some_url"))
-        assert not matcher(request_factory(url="http://some_url", headers={"header1": "10", "header3": "100"}))
-        assert not matcher(request_factory(url="http://some_url", headers={"header1": "10", "header2": "10"}))
-        assert matcher(request_factory(url="http://some_url", headers={"header1": "10", "header2": "15", "header3": "100"}))
+        assert not matcher(
+            request_factory(url="http://some_url", headers={"header1": "10", "header3": "100"})
+        )
+        assert not matcher(
+            request_factory(url="http://some_url", headers={"header1": "10", "header2": "10"})
+        )
+        assert matcher(
+            request_factory(
+                url="http://some_url", headers={"header1": "10", "header2": "15", "header3": "100"}
+            )
+        )
 
     @try_all_types_of_requests
     def test_combination(self, request_factory):
-        matcher = HttpRequestMatcher(method="GET", url="http://some_url/", headers={"header1": 10}, params={"param2": "test"})
-        assert matcher(request_factory(method="GET", url="http://some_url", headers={"header1": "10"}, params={"param2": "test"}))
-        assert not matcher(request_factory(method="GET", url="http://some_url", headers={"header1": "10"}))
+        matcher = HttpRequestMatcher(
+            method="GET", url="http://some_url/", headers={"header1": 10}, params={"param2": "test"}
+        )
+        assert matcher(
+            request_factory(
+                method="GET",
+                url="http://some_url",
+                headers={"header1": "10"},
+                params={"param2": "test"},
+            )
+        )
+        assert not matcher(
+            request_factory(method="GET", url="http://some_url", headers={"header1": "10"})
+        )
         assert not matcher(request_factory(method="GET", url="http://some_url"))
         assert not matcher(request_factory(url="http://some_url"))
 
@@ -104,8 +131,12 @@ def test_http_request_matching(mocker):
     groups_policy = mocker.Mock(spec=MovingWindowCallRatePolicy)
     root_policy = mocker.Mock(spec=MovingWindowCallRatePolicy)
 
-    users_policy.matches.side_effect = HttpRequestMatcher(url="http://domain/api/users", method="GET")
-    groups_policy.matches.side_effect = HttpRequestMatcher(url="http://domain/api/groups", method="POST")
+    users_policy.matches.side_effect = HttpRequestMatcher(
+        url="http://domain/api/users", method="GET"
+    )
+    groups_policy.matches.side_effect = HttpRequestMatcher(
+        url="http://domain/api/groups", method="POST"
+    )
     root_policy.matches.side_effect = HttpRequestMatcher(method="GET")
     api_budget = APIBudget(
         policies=[
@@ -115,7 +146,12 @@ def test_http_request_matching(mocker):
         ]
     )
 
-    api_budget.acquire_call(Request("POST", url="http://domain/unmatched_endpoint"), block=False), "unrestricted call"
+    (
+        api_budget.acquire_call(
+            Request("POST", url="http://domain/unmatched_endpoint"), block=False
+        ),
+        "unrestricted call",
+    )
     users_policy.try_acquire.assert_not_called()
     groups_policy.try_acquire.assert_not_called()
     root_policy.try_acquire.assert_not_called()
@@ -126,7 +162,10 @@ def test_http_request_matching(mocker):
     groups_policy.try_acquire.assert_not_called()
     root_policy.try_acquire.assert_not_called()
 
-    api_budget.acquire_call(Request("GET", url="http://domain/api/users"), block=False), "second call, first matcher"
+    (
+        api_budget.acquire_call(Request("GET", url="http://domain/api/users"), block=False),
+        "second call, first matcher",
+    )
     assert users_policy.try_acquire.call_count == 2
     groups_policy.try_acquire.assert_not_called()
     root_policy.try_acquire.assert_not_called()
@@ -137,7 +176,10 @@ def test_http_request_matching(mocker):
     groups_policy.try_acquire.assert_called_once_with(group_request, weight=1)
     root_policy.try_acquire.assert_not_called()
 
-    api_budget.acquire_call(Request("POST", url="http://domain/api/groups"), block=False), "second call, second matcher"
+    (
+        api_budget.acquire_call(Request("POST", url="http://domain/api/groups"), block=False),
+        "second call, second matcher",
+    )
     assert users_policy.try_acquire.call_count == 2
     assert groups_policy.try_acquire.call_count == 2
     root_policy.try_acquire.assert_not_called()
@@ -165,7 +207,9 @@ class TestUnlimitedCallRatePolicy:
 
 class TestFixedWindowCallRatePolicy:
     def test_limit_rate(self, mocker):
-        policy = FixedWindowCallRatePolicy(matchers=[], next_reset_ts=datetime.now(), period=timedelta(hours=1), call_limit=100)
+        policy = FixedWindowCallRatePolicy(
+            matchers=[], next_reset_ts=datetime.now(), period=timedelta(hours=1), call_limit=100
+        )
         policy.try_acquire(mocker.Mock(), weight=1)
         policy.try_acquire(mocker.Mock(), weight=20)
         with pytest.raises(ValueError, match="Weight can not exceed the call limit"):
@@ -179,7 +223,9 @@ class TestFixedWindowCallRatePolicy:
         assert exc.value.item
 
     def test_update_available_calls(self, mocker):
-        policy = FixedWindowCallRatePolicy(matchers=[], next_reset_ts=datetime.now(), period=timedelta(hours=1), call_limit=100)
+        policy = FixedWindowCallRatePolicy(
+            matchers=[], next_reset_ts=datetime.now(), period=timedelta(hours=1), call_limit=100
+        )
         # update to decrease number of calls available
         policy.update(available_calls=2, call_reset_ts=None)
         # hit the limit with weight=3
@@ -216,7 +262,9 @@ class TestMovingWindowCallRatePolicy:
 
         with pytest.raises(CallRateLimitHit) as excinfo2:
             policy.try_acquire("call", weight=1), "call over limit"
-        assert excinfo2.value.time_to_wait < excinfo1.value.time_to_wait, "time to wait must decrease over time"
+        assert (
+            excinfo2.value.time_to_wait < excinfo1.value.time_to_wait
+        ), "time to wait must decrease over time"
 
     def test_limit_rate_support_custom_weight(self):
         """try_acquire must take into account provided weight and throw CallRateLimitHit when hit the limit."""
@@ -225,7 +273,9 @@ class TestMovingWindowCallRatePolicy:
         policy.try_acquire("call", weight=2), "1st call with weight of 2"
         with pytest.raises(CallRateLimitHit) as excinfo:
             policy.try_acquire("call", weight=9), "2nd call, over limit since 2 + 9 = 11 > 10"
-        assert excinfo.value.time_to_wait.total_seconds() == pytest.approx(60, 0.1), "should wait 1 minute before next call"
+        assert excinfo.value.time_to_wait.total_seconds() == pytest.approx(
+            60, 0.1
+        ), "should wait 1 minute before next call"
 
     def test_multiple_limit_rates(self):
         """try_acquire must take into all call rates and apply stricter."""
@@ -257,7 +307,9 @@ class TestHttpStreamIntegration:
         api_budget = APIBudget(
             policies=[
                 MovingWindowCallRatePolicy(
-                    matchers=[HttpRequestMatcher(url=f"{StubDummyHttpStream.url_base}/", method="GET")],
+                    matchers=[
+                        HttpRequestMatcher(url=f"{StubDummyHttpStream.url_base}/", method="GET")
+                    ],
                     rates=[
                         Rate(2, timedelta(minutes=1)),
                     ],
@@ -265,7 +317,9 @@ class TestHttpStreamIntegration:
             ]
         )
 
-        stream = StubDummyHttpStream(api_budget=api_budget, authenticator=TokenAuthenticator(token="ABCD"))
+        stream = StubDummyHttpStream(
+            api_budget=api_budget, authenticator=TokenAuthenticator(token="ABCD")
+        )
         for i in range(10):
             records = stream.read_records(SyncMode.full_refresh)
             assert next(records) == {"data": "some_data"}

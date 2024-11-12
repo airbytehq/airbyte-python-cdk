@@ -6,7 +6,10 @@ from airbyte_cdk.sources.file_based.stream.concurrent.cursor import FileBasedCon
 from airbyte_cdk.test.state_builder import StateBuilder
 from unit_tests.sources.file_based.helpers import LowHistoryLimitConcurrentCursor
 from unit_tests.sources.file_based.scenarios.file_based_source_builder import FileBasedSourceBuilder
-from unit_tests.sources.file_based.scenarios.scenario_builder import IncrementalScenarioConfig, TestScenarioBuilder
+from unit_tests.sources.file_based.scenarios.scenario_builder import (
+    IncrementalScenarioConfig,
+    TestScenarioBuilder,
+)
 
 single_csv_input_state_is_earlier_scenario_concurrent = (
     TestScenarioBuilder()
@@ -74,7 +77,10 @@ single_csv_input_state_is_earlier_scenario_concurrent = (
                 "stream": "stream1",
             },
             {
-                "history": {"some_old_file.csv": "2023-06-01T03:54:07.000000Z", "a.csv": "2023-06-05T03:54:07.000000Z"},
+                "history": {
+                    "some_old_file.csv": "2023-06-01T03:54:07.000000Z",
+                    "a.csv": "2023-06-05T03:54:07.000000Z",
+                },
                 "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z_a.csv",
             },
         ]
@@ -488,7 +494,10 @@ multi_csv_same_timestamp_scenario_concurrent = (
                 "stream": "stream1",
             },
             {
-                "history": {"a.csv": "2023-06-05T03:54:07.000000Z", "b.csv": "2023-06-05T03:54:07.000000Z"},
+                "history": {
+                    "a.csv": "2023-06-05T03:54:07.000000Z",
+                    "b.csv": "2023-06-05T03:54:07.000000Z",
+                },
                 "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z_b.csv",
             },
         ]
@@ -718,7 +727,10 @@ multi_csv_different_timestamps_scenario_concurrent = (
                 "stream": "stream1",
             },
             {
-                "history": {"a.csv": "2023-06-04T03:54:07.000000Z", "b.csv": "2023-06-05T03:54:07.000000Z"},
+                "history": {
+                    "a.csv": "2023-06-04T03:54:07.000000Z",
+                    "b.csv": "2023-06-05T03:54:07.000000Z",
+                },
                 "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z_b.csv",
             },
         ]
@@ -848,7 +860,10 @@ multi_csv_per_timestamp_scenario_concurrent = (
                 "stream": "stream1",
             },
             {
-                "history": {"a.csv": "2023-06-05T03:54:07.000000Z", "b.csv": "2023-06-05T03:54:07.000000Z"},
+                "history": {
+                    "a.csv": "2023-06-05T03:54:07.000000Z",
+                    "b.csv": "2023-06-05T03:54:07.000000Z",
+                },
                 "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z_b.csv",
             },
             {
@@ -990,7 +1005,10 @@ multi_csv_skip_file_if_already_in_history_concurrent = (
                 "stream": "stream1",
             },
             {
-                "history": {"a.csv": "2023-06-05T03:54:07.000000Z", "b.csv": "2023-06-05T03:54:07.000000Z"},
+                "history": {
+                    "a.csv": "2023-06-05T03:54:07.000000Z",
+                    "b.csv": "2023-06-05T03:54:07.000000Z",
+                },
                 "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z_b.csv",
             },
             {
@@ -1028,7 +1046,10 @@ multi_csv_skip_file_if_already_in_history_concurrent = (
             input_state=StateBuilder()
             .with_stream_state(
                 "stream1",
-                {"history": {"a.csv": "2023-06-05T03:54:07.000000Z"}, "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z_a.csv"},
+                {
+                    "history": {"a.csv": "2023-06-05T03:54:07.000000Z"},
+                    "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z_a.csv",
+                },
             )
             .build(),
         )
@@ -1154,7 +1175,10 @@ multi_csv_include_missing_files_within_history_range_concurrent_cursor_is_newer 
             .with_stream_state(
                 "stream1",
                 {
-                    "history": {"a.csv": "2023-06-05T03:54:07.000000Z", "c.csv": "2023-06-06T03:54:07.000000Z"},
+                    "history": {
+                        "a.csv": "2023-06-05T03:54:07.000000Z",
+                        "c.csv": "2023-06-06T03:54:07.000000Z",
+                    },
                     "_ab_source_file_last_modified": "2023-06-06T03:54:07.000000Z_c.csv",
                 },
             )
@@ -1282,7 +1306,10 @@ multi_csv_include_missing_files_within_history_range_concurrent_cursor_is_older 
             .with_stream_state(
                 "stream1",
                 {
-                    "history": {"a.csv": "2023-06-05T03:54:07.000000Z", "c.csv": "2023-06-06T03:54:07.000000Z"},
+                    "history": {
+                        "a.csv": "2023-06-05T03:54:07.000000Z",
+                        "c.csv": "2023-06-06T03:54:07.000000Z",
+                    },
                     "_ab_source_file_last_modified": "2023-06-03T03:54:07.000000Z_x.csv",
                 },
             )
@@ -1657,7 +1684,9 @@ multi_csv_remove_old_files_if_history_is_full_scenario_concurrent_cursor_is_olde
 
 multi_csv_same_timestamp_more_files_than_history_size_scenario_concurrent_cursor_is_newer = (
     TestScenarioBuilder()
-    .set_name("multi_csv_same_timestamp_more_files_than_history_size_scenario_concurrent_cursor_is_newer")
+    .set_name(
+        "multi_csv_same_timestamp_more_files_than_history_size_scenario_concurrent_cursor_is_newer"
+    )
     .set_config(
         {
             "streams": [
@@ -1840,7 +1869,9 @@ multi_csv_same_timestamp_more_files_than_history_size_scenario_concurrent_cursor
 
 multi_csv_same_timestamp_more_files_than_history_size_scenario_concurrent_cursor_is_older = (
     TestScenarioBuilder()
-    .set_name("multi_csv_same_timestamp_more_files_than_history_size_scenario_concurrent_cursor_is_older")
+    .set_name(
+        "multi_csv_same_timestamp_more_files_than_history_size_scenario_concurrent_cursor_is_older"
+    )
     .set_config(
         {
             "streams": [
@@ -2023,7 +2054,9 @@ multi_csv_same_timestamp_more_files_than_history_size_scenario_concurrent_cursor
 
 multi_csv_sync_recent_files_if_history_is_incomplete_scenario_concurrent_cursor_is_older = (
     TestScenarioBuilder()
-    .set_name("multi_csv_sync_recent_files_if_history_is_incomplete_scenario_concurrent_cursor_is_older")
+    .set_name(
+        "multi_csv_sync_recent_files_if_history_is_incomplete_scenario_concurrent_cursor_is_older"
+    )
     .set_config(
         {
             "streams": [
@@ -2140,7 +2173,9 @@ multi_csv_sync_recent_files_if_history_is_incomplete_scenario_concurrent_cursor_
 
 multi_csv_sync_recent_files_if_history_is_incomplete_scenario_concurrent_cursor_is_newer = (
     TestScenarioBuilder()
-    .set_name("multi_csv_sync_recent_files_if_history_is_incomplete_scenario_concurrent_cursor_is_newer")
+    .set_name(
+        "multi_csv_sync_recent_files_if_history_is_incomplete_scenario_concurrent_cursor_is_newer"
+    )
     .set_config(
         {
             "streams": [
@@ -2258,7 +2293,9 @@ multi_csv_sync_recent_files_if_history_is_incomplete_scenario_concurrent_cursor_
 
 multi_csv_sync_files_within_time_window_if_history_is_incomplete__different_timestamps_scenario_concurrent_cursor_is_older = (
     TestScenarioBuilder()
-    .set_name("multi_csv_sync_files_within_time_window_if_history_is_incomplete__different_timestamps_scenario_concurrent_cursor_is_older")
+    .set_name(
+        "multi_csv_sync_files_within_time_window_if_history_is_incomplete__different_timestamps_scenario_concurrent_cursor_is_older"
+    )
     .set_config(
         {
             "streams": [
@@ -2397,7 +2434,9 @@ multi_csv_sync_files_within_time_window_if_history_is_incomplete__different_time
 
 multi_csv_sync_files_within_time_window_if_history_is_incomplete__different_timestamps_scenario_concurrent_cursor_is_newer = (
     TestScenarioBuilder()
-    .set_name("multi_csv_sync_files_within_time_window_if_history_is_incomplete__different_timestamps_scenario_concurrent_cursor_is_newer")
+    .set_name(
+        "multi_csv_sync_files_within_time_window_if_history_is_incomplete__different_timestamps_scenario_concurrent_cursor_is_newer"
+    )
     .set_config(
         {
             "streams": [

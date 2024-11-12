@@ -4,7 +4,9 @@
 import time
 from queue import Queue
 
-from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentinel import PartitionGenerationCompletedSentinel
+from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentinel import (
+    PartitionGenerationCompletedSentinel,
+)
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
 from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPoolManager
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
@@ -16,7 +18,12 @@ class PartitionEnqueuer:
     Generates partitions from a partition generator and puts them in a queue.
     """
 
-    def __init__(self, queue: Queue[QueueItem], thread_pool_manager: ThreadPoolManager, sleep_time_in_seconds: float = 0.1) -> None:
+    def __init__(
+        self,
+        queue: Queue[QueueItem],
+        thread_pool_manager: ThreadPoolManager,
+        sleep_time_in_seconds: float = 0.1,
+    ) -> None:
         """
         :param queue:  The queue to put the partitions in.
         :param throttler: The throttler to use to throttle the partition generation.

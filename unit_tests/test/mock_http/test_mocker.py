@@ -54,7 +54,11 @@ class HttpMockerTest(TestCase):
             HttpResponse(_A_RESPONSE_BODY, 474),
         )
 
-        requests.get(_A_URL, params=_SOME_QUERY_PARAMS, headers=_SOME_HEADERS | {"more strict query param key": "any value"})
+        requests.get(
+            _A_URL,
+            params=_SOME_QUERY_PARAMS,
+            headers=_SOME_HEADERS | {"more strict query param key": "any value"},
+        )
 
     @HttpMocker()
     def test_given_post_request_match_when_decorate_then_return_response(self, http_mocker):
@@ -63,13 +67,17 @@ class HttpMockerTest(TestCase):
             HttpResponse(_A_RESPONSE_BODY, 474),
         )
 
-        response = requests.post(_A_URL, params=_SOME_QUERY_PARAMS, headers=_SOME_HEADERS, data=_SOME_REQUEST_BODY_STR)
+        response = requests.post(
+            _A_URL, params=_SOME_QUERY_PARAMS, headers=_SOME_HEADERS, data=_SOME_REQUEST_BODY_STR
+        )
 
         assert response.text == _A_RESPONSE_BODY
         assert response.status_code == 474
 
     @HttpMocker()
-    def test_given_multiple_responses_when_decorate_get_request_then_return_response(self, http_mocker):
+    def test_given_multiple_responses_when_decorate_get_request_then_return_response(
+        self, http_mocker
+    ):
         http_mocker.get(
             HttpRequest(_A_URL, _SOME_QUERY_PARAMS, _SOME_HEADERS),
             [HttpResponse(_A_RESPONSE_BODY, 1), HttpResponse(_ANOTHER_RESPONSE_BODY, 2)],
@@ -84,7 +92,9 @@ class HttpMockerTest(TestCase):
         assert second_response.status_code == 2
 
     @HttpMocker()
-    def test_given_multiple_responses_when_decorate_delete_request_then_return_response(self, http_mocker):
+    def test_given_multiple_responses_when_decorate_delete_request_then_return_response(
+        self, http_mocker
+    ):
         http_mocker.delete(
             HttpRequest(_A_URL, headers=_SOME_HEADERS),
             [HttpResponse(_A_RESPONSE_BODY, 1), HttpResponse(_ANOTHER_RESPONSE_BODY, 2)],
@@ -99,14 +109,20 @@ class HttpMockerTest(TestCase):
         assert second_response.status_code == 2
 
     @HttpMocker()
-    def test_given_multiple_responses_when_decorate_post_request_then_return_response(self, http_mocker):
+    def test_given_multiple_responses_when_decorate_post_request_then_return_response(
+        self, http_mocker
+    ):
         http_mocker.post(
             HttpRequest(_A_URL, _SOME_QUERY_PARAMS, _SOME_HEADERS, _SOME_REQUEST_BODY_STR),
             [HttpResponse(_A_RESPONSE_BODY, 1), HttpResponse(_ANOTHER_RESPONSE_BODY, 2)],
         )
 
-        first_response = requests.post(_A_URL, params=_SOME_QUERY_PARAMS, headers=_SOME_HEADERS, data=_SOME_REQUEST_BODY_STR)
-        second_response = requests.post(_A_URL, params=_SOME_QUERY_PARAMS, headers=_SOME_HEADERS, data=_SOME_REQUEST_BODY_STR)
+        first_response = requests.post(
+            _A_URL, params=_SOME_QUERY_PARAMS, headers=_SOME_HEADERS, data=_SOME_REQUEST_BODY_STR
+        )
+        second_response = requests.post(
+            _A_URL, params=_SOME_QUERY_PARAMS, headers=_SOME_HEADERS, data=_SOME_REQUEST_BODY_STR
+        )
 
         assert first_response.text == _A_RESPONSE_BODY
         assert first_response.status_code == 1
@@ -120,7 +136,10 @@ class HttpMockerTest(TestCase):
             [HttpResponse(_A_RESPONSE_BODY, 1), HttpResponse(_ANOTHER_RESPONSE_BODY, 2)],
         )
 
-        last_response = [requests.get(_A_URL, params=_SOME_QUERY_PARAMS, headers=_SOME_HEADERS) for _ in range(10)][-1]
+        last_response = [
+            requests.get(_A_URL, params=_SOME_QUERY_PARAMS, headers=_SOME_HEADERS)
+            for _ in range(10)
+        ][-1]
 
         assert last_response.text == _ANOTHER_RESPONSE_BODY
         assert last_response.status_code == 2
@@ -158,7 +177,9 @@ class HttpMockerTest(TestCase):
         with pytest.raises(AssertionError):
             decorated_function()
 
-    def test_given_assertion_error_but_missing_request_when_decorate_then_raise_missing_http_request(self):
+    def test_given_assertion_error_but_missing_request_when_decorate_then_raise_missing_http_request(
+        self,
+    ):
         @HttpMocker()
         def decorated_function(http_mocker):
             http_mocker.get(
@@ -202,9 +223,13 @@ class HttpMockerTest(TestCase):
 
         with pytest.raises(ValueError) as exc_info:
             decorated_function()
-        assert "more_granular" in str(exc_info.value)  # the matcher corresponding to the first `http_mocker.get` is not matched
+        assert "more_granular" in str(
+            exc_info.value
+        )  # the matcher corresponding to the first `http_mocker.get` is not matched
 
-    def test_given_exact_number_of_call_provided_when_assert_number_of_calls_then_do_not_raise(self):
+    def test_given_exact_number_of_call_provided_when_assert_number_of_calls_then_do_not_raise(
+        self,
+    ):
         @HttpMocker()
         def decorated_function(http_mocker):
             request = HttpRequest(_A_URL)
@@ -230,15 +255,6 @@ class HttpMockerTest(TestCase):
             http_mocker.assert_number_of_calls(request, 1)
 
         with pytest.raises(AssertionError):
-            decorated_function()
-
-    def test_given_unknown_request_when_assert_number_of_calls_then_raise(self):
-        @HttpMocker()
-        def decorated_function(http_mocker):
-            http_mocker.get(HttpRequest(_A_URL), _A_RESPONSE)
-            http_mocker.assert_number_of_calls(HttpRequest(_ANOTHER_URL), 1)
-
-        with pytest.raises(ValueError):
             decorated_function()
 
     def test_given_unknown_request_when_assert_number_of_calls_then_raise(self):

@@ -9,7 +9,9 @@ from airbyte_cdk.sources.http_logger import format_http_message
 A_TITLE = "a title"
 A_DESCRIPTION = "a description"
 A_STREAM_NAME = "a stream name"
-ANY_REQUEST = requests.Request(method="POST", url="http://a-url.com", headers={}, params={}).prepare()
+ANY_REQUEST = requests.Request(
+    method="POST", url="http://a-url.com", headers={}, params={}
+).prepare()
 
 
 class ResponseBuilder:
@@ -83,7 +85,11 @@ EMPTY_RESPONSE = {"body": {"content": ""}, "headers": {}, "status_code": 100}
                 "http": {
                     "title": A_TITLE,
                     "description": A_DESCRIPTION,
-                    "request": {"method": "GET", "body": {"content": None}, "headers": {"h1": "v1", "h2": "v2"}},
+                    "request": {
+                        "method": "GET",
+                        "body": {"content": None},
+                        "headers": {"h1": "v1", "h2": "v2"},
+                    },
                     "response": EMPTY_RESPONSE,
                 },
                 "log": {"level": "debug"},
@@ -150,7 +156,11 @@ EMPTY_RESPONSE = {"body": {"content": ""}, "headers": {}, "status_code": 100}
                     "request": {
                         "method": "GET",
                         "body": {"content": '{"b1": "v1", "b2": "v2"}'},
-                        "headers": {"Content-Type": "application/json", "Content-Length": "24", "h1": "v1"},
+                        "headers": {
+                            "Content-Type": "application/json",
+                            "Content-Length": "24",
+                            "h1": "v1",
+                        },
                     },
                     "response": EMPTY_RESPONSE,
                 },
@@ -174,7 +184,10 @@ EMPTY_RESPONSE = {"body": {"content": ""}, "headers": {}, "status_code": 100}
                     "request": {
                         "method": "GET",
                         "body": {"content": "b1=v1&b2=v2"},
-                        "headers": {"Content-Type": "application/x-www-form-urlencoded", "Content-Length": "11"},
+                        "headers": {
+                            "Content-Type": "application/x-www-form-urlencoded",
+                            "Content-Length": "11",
+                        },
                     },
                     "response": EMPTY_RESPONSE,
                 },
@@ -195,7 +208,11 @@ EMPTY_RESPONSE = {"body": {"content": ""}, "headers": {}, "status_code": 100}
                 "http": {
                     "title": A_TITLE,
                     "description": A_DESCRIPTION,
-                    "request": {"method": "POST", "body": {"content": None}, "headers": {"Content-Length": "0"}},
+                    "request": {
+                        "method": "POST",
+                        "body": {"content": None},
+                        "headers": {"Content-Length": "0"},
+                    },
                     "response": EMPTY_RESPONSE,
                 },
                 "log": {"level": "debug"},
@@ -204,7 +221,9 @@ EMPTY_RESPONSE = {"body": {"content": ""}, "headers": {}, "status_code": 100}
         ),
     ],
 )
-def test_prepared_request_to_airbyte_message(test_name, http_method, url, headers, params, body_json, body_data, expected_airbyte_message):
+def test_prepared_request_to_airbyte_message(
+    test_name, http_method, url, headers, params, body_json, body_data, expected_airbyte_message
+):
     request = requests.Request(method=http_method, url=url, headers=headers, params=params)
     if body_json:
         request.json = body_json
@@ -212,7 +231,9 @@ def test_prepared_request_to_airbyte_message(test_name, http_method, url, header
         request.data = body_data
     prepared_request = request.prepare()
 
-    actual_airbyte_message = format_http_message(ResponseBuilder().request(prepared_request).build(), A_TITLE, A_DESCRIPTION, A_STREAM_NAME)
+    actual_airbyte_message = format_http_message(
+        ResponseBuilder().request(prepared_request).build(), A_TITLE, A_DESCRIPTION, A_STREAM_NAME
+    )
 
     assert actual_airbyte_message == expected_airbyte_message
 
@@ -220,7 +241,13 @@ def test_prepared_request_to_airbyte_message(test_name, http_method, url, header
 @pytest.mark.parametrize(
     "test_name, response_body, response_headers, status_code, expected_airbyte_message",
     [
-        ("test_response_no_body_no_headers", b"", {}, 200, {"body": {"content": ""}, "headers": {}, "status_code": 200}),
+        (
+            "test_response_no_body_no_headers",
+            b"",
+            {},
+            200,
+            {"body": {"content": ""}, "headers": {}, "status_code": 200},
+        ),
         (
             "test_response_no_body_with_headers",
             b"",
@@ -240,12 +267,24 @@ def test_prepared_request_to_airbyte_message(test_name, http_method, url, header
             b'{"b1": "v1", "b2": "v2"}',
             {"h1": "v1", "h2": "v2"},
             200,
-            {"body": {"content": '{"b1": "v1", "b2": "v2"}'}, "headers": {"h1": "v1", "h2": "v2"}, "status_code": 200},
+            {
+                "body": {"content": '{"b1": "v1", "b2": "v2"}'},
+                "headers": {"h1": "v1", "h2": "v2"},
+                "status_code": 200,
+            },
         ),
     ],
 )
-def test_response_to_airbyte_message(test_name, response_body, response_headers, status_code, expected_airbyte_message):
-    response = ResponseBuilder().body_content(response_body).headers(response_headers).status_code(status_code).build()
+def test_response_to_airbyte_message(
+    test_name, response_body, response_headers, status_code, expected_airbyte_message
+):
+    response = (
+        ResponseBuilder()
+        .body_content(response_body)
+        .headers(response_headers)
+        .status_code(status_code)
+        .build()
+    )
 
     actual_airbyte_message = format_http_message(response, A_TITLE, A_DESCRIPTION, A_STREAM_NAME)
 

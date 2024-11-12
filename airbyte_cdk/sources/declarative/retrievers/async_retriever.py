@@ -5,7 +5,10 @@ from dataclasses import InitVar, dataclass, field
 from typing import Any, Callable, Iterable, Mapping, Optional
 
 from airbyte_cdk.models import FailureType
-from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator, AsyncPartition
+from airbyte_cdk.sources.declarative.async_job.job_orchestrator import (
+    AsyncJobOrchestrator,
+    AsyncPartition,
+)
 from airbyte_cdk.sources.declarative.extractors.record_selector import RecordSelector
 from airbyte_cdk.sources.declarative.partition_routers import SinglePartitionRouter
 from airbyte_cdk.sources.declarative.retrievers import Retriever
@@ -24,7 +27,9 @@ class AsyncRetriever(Retriever):
     parameters: InitVar[Mapping[str, Any]]
     job_orchestrator_factory: Callable[[Iterable[StreamSlice]], AsyncJobOrchestrator]
     record_selector: RecordSelector
-    stream_slicer: StreamSlicer = field(default_factory=lambda: SinglePartitionRouter(parameters={}))
+    stream_slicer: StreamSlicer = field(
+        default_factory=lambda: SinglePartitionRouter(parameters={})
+    )
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._job_orchestrator_factory = self.job_orchestrator_factory
@@ -66,7 +71,9 @@ class AsyncRetriever(Retriever):
 
         return self.state
 
-    def _validate_and_get_stream_slice_partition(self, stream_slice: Optional[StreamSlice] = None) -> AsyncPartition:
+    def _validate_and_get_stream_slice_partition(
+        self, stream_slice: Optional[StreamSlice] = None
+    ) -> AsyncPartition:
         """
         Validates the stream_slice argument and returns the partition from it.
 
@@ -93,7 +100,8 @@ class AsyncRetriever(Retriever):
 
         for completed_partition in self._job_orchestrator.create_and_get_completed_partitions():
             yield StreamSlice(
-                partition=dict(completed_partition.stream_slice.partition) | {"partition": completed_partition},
+                partition=dict(completed_partition.stream_slice.partition)
+                | {"partition": completed_partition},
                 cursor_slice=completed_partition.stream_slice.cursor_slice,
             )
 
@@ -102,7 +110,6 @@ class AsyncRetriever(Retriever):
         records_schema: Mapping[str, Any],
         stream_slice: Optional[StreamSlice] = None,
     ) -> Iterable[StreamData]:
-
         stream_state: StreamState = self._get_stream_state()
         partition: AsyncPartition = self._validate_and_get_stream_slice_partition(stream_slice)
         records: Iterable[Mapping[str, Any]] = self._job_orchestrator.fetch_records(partition)

@@ -11,7 +11,9 @@ from airbyte_cdk.sources.streams.core import StreamData
 class MockStream(Stream):
     def __init__(
         self,
-        slices_and_records_or_exception: Iterable[Tuple[Optional[Mapping[str, Any]], Iterable[Union[Exception, Mapping[str, Any]]]]],
+        slices_and_records_or_exception: Iterable[
+            Tuple[Optional[Mapping[str, Any]], Iterable[Union[Exception, Mapping[str, Any]]]]
+        ],
         name,
         json_schema,
         primary_key=None,
@@ -53,9 +55,15 @@ class MockStream(Stream):
         return self._json_schema
 
     def stream_slices(
-        self, *, sync_mode: SyncMode, cursor_field: Optional[List[str]] = None, stream_state: Optional[Mapping[str, Any]] = None
+        self,
+        *,
+        sync_mode: SyncMode,
+        cursor_field: Optional[List[str]] = None,
+        stream_state: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[Optional[Mapping[str, Any]]]:
         if self._slices_and_records_or_exception:
-            yield from [_slice for _slice, records_or_exception in self._slices_and_records_or_exception]
+            yield from [
+                _slice for _slice, records_or_exception in self._slices_and_records_or_exception
+            ]
         else:
             yield None

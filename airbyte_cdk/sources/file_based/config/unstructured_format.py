@@ -13,7 +13,9 @@ class LocalProcessingConfigModel(BaseModel):
 
     class Config(OneOfOptionConfig):
         title = "Local"
-        description = "Process files locally, supporting `fast` and `ocr` modes. This is the default option."
+        description = (
+            "Process files locally, supporting `fast` and `ocr` modes. This is the default option."
+        )
         discriminator = "mode"
 
 
@@ -23,7 +25,9 @@ class APIParameterConfigModel(BaseModel):
         description="The name of the unstructured API parameter to use",
         examples=["combine_under_n_chars", "languages"],
     )
-    value: str = Field(title="Value", description="The value of the parameter", examples=["true", "hi_res"])
+    value: str = Field(
+        title="Value", description="The value of the parameter", examples=["true", "hi_res"]
+    )
 
 
 class APIProcessingConfigModel(BaseModel):
@@ -85,7 +89,10 @@ class UnstructuredFormat(BaseModel):
         description="The strategy used to parse documents. `fast` extracts text directly from the document which doesn't work for all files. `ocr_only` is more reliable, but slower. `hi_res` is the most reliable, but requires an API key and a hosted instance of unstructured and can't be used with local mode. See the unstructured.io documentation for more details: https://unstructured-io.github.io/unstructured/core/partition.html#partition-pdf",
     )
 
-    processing: Union[LocalProcessingConfigModel, APIProcessingConfigModel,] = Field(
+    processing: Union[
+        LocalProcessingConfigModel,
+        APIProcessingConfigModel,
+    ] = Field(
         default=LocalProcessingConfigModel(mode="local"),
         title="Processing",
         description="Processing configuration",

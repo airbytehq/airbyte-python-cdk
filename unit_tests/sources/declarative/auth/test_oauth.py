@@ -160,7 +160,9 @@ class TestOauth2Authenticator:
         )
 
         resp.status_code = 200
-        mocker.patch.object(resp, "json", return_value={"access_token": "access_token", "expires_in": 1000})
+        mocker.patch.object(
+            resp, "json", return_value={"access_token": "access_token", "expires_in": 1000}
+        )
         mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
         token = oauth.refresh_access_token()
 
@@ -200,7 +202,9 @@ class TestOauth2Authenticator:
         ],
         ids=["timestamp_as_integer", "timestamp_as_integer_inside_string"],
     )
-    def test_initialize_declarative_oauth_with_token_expiry_date_as_timestamp(self, timestamp, expected_date):
+    def test_initialize_declarative_oauth_with_token_expiry_date_as_timestamp(
+        self, timestamp, expected_date
+    ):
         # TODO: should be fixed inside DeclarativeOauth2Authenticator, remove next line after fixing
         with pytest.raises(TypeError):
             oauth = DeclarativeOauth2Authenticator(
@@ -231,9 +235,13 @@ class TestOauth2Authenticator:
         ids=["rfc3339", "iso8601", "simple_date"],
     )
     @freezegun.freeze_time("2020-01-01")
-    def test_refresh_access_token_expire_format(self, mocker, expires_in_response, token_expiry_date_format):
+    def test_refresh_access_token_expire_format(
+        self, mocker, expires_in_response, token_expiry_date_format
+    ):
         next_day = "2020-01-02T00:00:00Z"
-        config.update({"token_expiry_date": pendulum.parse(next_day).subtract(days=2).to_rfc3339_string()})
+        config.update(
+            {"token_expiry_date": pendulum.parse(next_day).subtract(days=2).to_rfc3339_string()}
+        )
         message_repository = Mock()
         oauth = DeclarativeOauth2Authenticator(
             token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
@@ -255,7 +263,11 @@ class TestOauth2Authenticator:
         )
 
         resp.status_code = 200
-        mocker.patch.object(resp, "json", return_value={"access_token": "access_token", "expires_in": expires_in_response})
+        mocker.patch.object(
+            resp,
+            "json",
+            return_value={"access_token": "access_token", "expires_in": expires_in_response},
+        )
         mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
         token = oauth.get_access_token()
         assert "access_token" == token
@@ -271,11 +283,19 @@ class TestOauth2Authenticator:
             ("86400.1", "2020-01-02T00:00:00Z", False),
             ("2020-01-02T00:00:00Z", "2020-01-02T00:00:00Z", True),
         ],
-        ids=["time_in_seconds", "time_in_seconds_float", "time_in_seconds_str", "time_in_seconds_str_float", "invalid"],
+        ids=[
+            "time_in_seconds",
+            "time_in_seconds_float",
+            "time_in_seconds_str",
+            "time_in_seconds_str_float",
+            "invalid",
+        ],
     )
     @freezegun.freeze_time("2020-01-01")
     def test_set_token_expiry_date_no_format(self, mocker, expires_in_response, next_day, raises):
-        config.update({"token_expiry_date": pendulum.parse(next_day).subtract(days=2).to_rfc3339_string()})
+        config.update(
+            {"token_expiry_date": pendulum.parse(next_day).subtract(days=2).to_rfc3339_string()}
+        )
         oauth = DeclarativeOauth2Authenticator(
             token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
             client_id="{{ config['client_id'] }}",
@@ -292,7 +312,11 @@ class TestOauth2Authenticator:
         )
 
         resp.status_code = 200
-        mocker.patch.object(resp, "json", return_value={"access_token": "access_token", "expires_in": expires_in_response})
+        mocker.patch.object(
+            resp,
+            "json",
+            return_value={"access_token": "access_token", "expires_in": expires_in_response},
+        )
         mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
         if raises:
             with pytest.raises(ValueError):
@@ -318,7 +342,9 @@ class TestOauth2Authenticator:
             parameters={},
         )
         resp.status_code = 400
-        mocker.patch.object(resp, "json", return_value={"access_token": "access_token", "expires_in": 123})
+        mocker.patch.object(
+            resp, "json", return_value={"access_token": "access_token", "expires_in": 123}
+        )
         mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
         with pytest.raises(requests.exceptions.HTTPError) as e:
             oauth.refresh_access_token()

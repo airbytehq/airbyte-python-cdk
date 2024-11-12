@@ -10,11 +10,15 @@ from dataclasses import InitVar, dataclass
 from typing import Any, Iterable, List, Mapping, Optional
 
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
-from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import SubstreamPartitionRouter
+from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
+    SubstreamPartitionRouter,
+)
 from airbyte_cdk.sources.types import StreamSlice, StreamState
 
 
-def check_for_substream_in_slicers(slicers: Iterable[PartitionRouter], log_warning: Callable[[str], None]) -> None:
+def check_for_substream_in_slicers(
+    slicers: Iterable[PartitionRouter], log_warning: Callable[[str], None]
+) -> None:
     """
     Recursively checks for the presence of SubstreamPartitionRouter within slicers.
     Logs a warning if a SubstreamPartitionRouter is found within a CartesianProductStreamSlicer.
@@ -69,7 +73,11 @@ class CartesianProductStreamSlicer(PartitionRouter):
         return dict(
             ChainMap(
                 *[  # type: ignore # ChainMap expects a MutableMapping[Never, Never] for reasons
-                    s.get_request_params(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token)
+                    s.get_request_params(
+                        stream_state=stream_state,
+                        stream_slice=stream_slice,
+                        next_page_token=next_page_token,
+                    )
                     for s in self.stream_slicers
                 ]
             )
@@ -85,7 +93,11 @@ class CartesianProductStreamSlicer(PartitionRouter):
         return dict(
             ChainMap(
                 *[  # type: ignore # ChainMap expects a MutableMapping[Never, Never] for reasons
-                    s.get_request_headers(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token)
+                    s.get_request_headers(
+                        stream_state=stream_state,
+                        stream_slice=stream_slice,
+                        next_page_token=next_page_token,
+                    )
                     for s in self.stream_slicers
                 ]
             )
@@ -101,7 +113,11 @@ class CartesianProductStreamSlicer(PartitionRouter):
         return dict(
             ChainMap(
                 *[  # type: ignore # ChainMap expects a MutableMapping[Never, Never] for reasons
-                    s.get_request_body_data(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token)
+                    s.get_request_body_data(
+                        stream_state=stream_state,
+                        stream_slice=stream_slice,
+                        next_page_token=next_page_token,
+                    )
                     for s in self.stream_slicers
                 ]
             )
@@ -117,7 +133,11 @@ class CartesianProductStreamSlicer(PartitionRouter):
         return dict(
             ChainMap(
                 *[  # type: ignore # ChainMap expects a MutableMapping[Never, Never] for reasons
-                    s.get_request_body_json(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token)
+                    s.get_request_body_json(
+                        stream_state=stream_state,
+                        stream_slice=stream_slice,
+                        next_page_token=next_page_token,
+                    )
                     for s in self.stream_slicers
                 ]
             )
@@ -130,7 +150,9 @@ class CartesianProductStreamSlicer(PartitionRouter):
             partition = dict(ChainMap(*[s.partition for s in stream_slice_tuple]))  # type: ignore # ChainMap expects a MutableMapping[Never, Never] for reasons
             cursor_slices = [s.cursor_slice for s in stream_slice_tuple if s.cursor_slice]
             if len(cursor_slices) > 1:
-                raise ValueError(f"There should only be a single cursor slice. Found {cursor_slices}")
+                raise ValueError(
+                    f"There should only be a single cursor slice. Found {cursor_slices}"
+                )
             if cursor_slices:
                 cursor_slice = cursor_slices[0]
             else:

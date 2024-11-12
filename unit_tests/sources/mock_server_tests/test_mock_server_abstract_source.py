@@ -21,7 +21,10 @@ from airbyte_cdk.test.mock_http.response_builder import (
 )
 from airbyte_cdk.test.state_builder import StateBuilder
 from unit_tests.sources.mock_server_tests.mock_source_fixture import SourceFixture
-from unit_tests.sources.mock_server_tests.test_helpers import emits_successful_sync_status_messages, validate_message_order
+from unit_tests.sources.mock_server_tests.test_helpers import (
+    emits_successful_sync_status_messages,
+    validate_message_order,
+)
 
 _NOW = datetime.now(timezone.utc)
 
@@ -114,7 +117,11 @@ def _create_justice_songs_request() -> RequestBuilder:
     return RequestBuilder.justice_songs_endpoint()
 
 
-RESPONSE_TEMPLATE = {"object": "list", "has_more": False, "data": [{"id": "123", "created_at": "2024-01-01T07:04:28.000Z"}]}
+RESPONSE_TEMPLATE = {
+    "object": "list",
+    "has_more": False,
+    "data": [{"id": "123", "created_at": "2024-01-01T07:04:28.000Z"}],
+}
 
 USER_TEMPLATE = {
     "object": "list",
@@ -199,7 +206,9 @@ def _create_response(pagination_has_more: bool = False) -> HttpResponseBuilder:
     return create_response_builder(
         response_template=RESPONSE_TEMPLATE,
         records_path=FieldPath("data"),
-        pagination_strategy=FieldUpdatePaginationStrategy(FieldPath("has_more"), pagination_has_more),
+        pagination_strategy=FieldUpdatePaginationStrategy(
+            FieldPath("has_more"), pagination_has_more
+        ),
     )
 
 
@@ -220,18 +229,27 @@ class FullRefreshStreamTest(TestCase):
 
         http_mocker.get(
             _create_users_request().build(),
-            _create_response().with_record(record=_create_record("users")).with_record(record=_create_record("users")).build(),
+            _create_response()
+            .with_record(record=_create_record("users"))
+            .with_record(record=_create_record("users"))
+            .build(),
         )
 
         source = SourceFixture()
-        actual_messages = read(source, config=config, catalog=_create_catalog([("users", SyncMode.full_refresh)]))
+        actual_messages = read(
+            source, config=config, catalog=_create_catalog([("users", SyncMode.full_refresh)])
+        )
 
         assert emits_successful_sync_status_messages(actual_messages.get_stream_statuses("users"))
         assert len(actual_messages.records) == 2
         assert len(actual_messages.state_messages) == 1
-        validate_message_order([Type.RECORD, Type.RECORD, Type.STATE], actual_messages.records_and_state_messages)
+        validate_message_order(
+            [Type.RECORD, Type.RECORD, Type.STATE], actual_messages.records_and_state_messages
+        )
         assert actual_messages.state_messages[0].state.stream.stream_descriptor.name == "users"
-        assert actual_messages.state_messages[0].state.stream.stream_state == AirbyteStateBlob(__ab_full_refresh_sync_complete=True)
+        assert actual_messages.state_messages[0].state.stream.stream_state == AirbyteStateBlob(
+            __ab_full_refresh_sync_complete=True
+        )
         assert actual_messages.state_messages[0].state.sourceStats.recordCount == 2.0
 
     @HttpMocker()
@@ -240,32 +258,52 @@ class FullRefreshStreamTest(TestCase):
         config = {"start_date": start_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")}
 
         expected_first_substream_per_stream_state = [
-            {"partition": {"divide_category": "dukes"}, "cursor": {"__ab_full_refresh_sync_complete": True}},
+            {
+                "partition": {"divide_category": "dukes"},
+                "cursor": {"__ab_full_refresh_sync_complete": True},
+            },
         ]
 
         expected_second_substream_per_stream_state = [
-            {"partition": {"divide_category": "dukes"}, "cursor": {"__ab_full_refresh_sync_complete": True}},
-            {"partition": {"divide_category": "mentats"}, "cursor": {"__ab_full_refresh_sync_complete": True}},
+            {
+                "partition": {"divide_category": "dukes"},
+                "cursor": {"__ab_full_refresh_sync_complete": True},
+            },
+            {
+                "partition": {"divide_category": "mentats"},
+                "cursor": {"__ab_full_refresh_sync_complete": True},
+            },
         ]
 
         http_mocker.get(
             _create_dividers_request().with_category("dukes").build(),
-            _create_response().with_record(record=_create_record("dividers")).with_record(record=_create_record("dividers")).build(),
+            _create_response()
+            .with_record(record=_create_record("dividers"))
+            .with_record(record=_create_record("dividers"))
+            .build(),
         )
 
         http_mocker.get(
             _create_dividers_request().with_category("mentats").build(),
-            _create_response().with_record(record=_create_record("dividers")).with_record(record=_create_record("dividers")).build(),
+            _create_response()
+            .with_record(record=_create_record("dividers"))
+            .with_record(record=_create_record("dividers"))
+            .build(),
         )
 
         source = SourceFixture()
-        actual_messages = read(source, config=config, catalog=_create_catalog([("dividers", SyncMode.full_refresh)]))
+        actual_messages = read(
+            source, config=config, catalog=_create_catalog([("dividers", SyncMode.full_refresh)])
+        )
 
-        assert emits_successful_sync_status_messages(actual_messages.get_stream_statuses("dividers"))
+        assert emits_successful_sync_status_messages(
+            actual_messages.get_stream_statuses("dividers")
+        )
         assert len(actual_messages.records) == 4
         assert len(actual_messages.state_messages) == 2
         validate_message_order(
-            [Type.RECORD, Type.RECORD, Type.STATE, Type.RECORD, Type.RECORD, Type.STATE], actual_messages.records_and_state_messages
+            [Type.RECORD, Type.RECORD, Type.STATE, Type.RECORD, Type.RECORD, Type.STATE],
+            actual_messages.records_and_state_messages,
         )
         assert actual_messages.state_messages[0].state.stream.stream_state == AirbyteStateBlob(
             states=expected_first_substream_per_stream_state
@@ -286,7 +324,10 @@ class IncrementalStreamTest(TestCase):
 
         last_record_date_0 = (start_datetime + timedelta(days=4)).strftime("%Y-%m-%dT%H:%M:%SZ")
         http_mocker.get(
-            _create_planets_request().with_start_date(start_datetime).with_end_date(start_datetime + timedelta(days=7)).build(),
+            _create_planets_request()
+            .with_start_date(start_datetime)
+            .with_end_date(start_datetime + timedelta(days=7))
+            .build(),
             _create_response()
             .with_record(record=_create_record("planets").with_cursor(last_record_date_0))
             .with_record(record=_create_record("planets").with_cursor(last_record_date_0))
@@ -296,7 +337,10 @@ class IncrementalStreamTest(TestCase):
 
         last_record_date_1 = (_NOW - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
         http_mocker.get(
-            _create_planets_request().with_start_date(start_datetime + timedelta(days=7)).with_end_date(_NOW).build(),
+            _create_planets_request()
+            .with_start_date(start_datetime + timedelta(days=7))
+            .with_end_date(_NOW)
+            .build(),
             _create_response()
             .with_record(record=_create_record("planets").with_cursor(last_record_date_1))
             .with_record(record=_create_record("planets").with_cursor(last_record_date_1))
@@ -304,20 +348,34 @@ class IncrementalStreamTest(TestCase):
         )
 
         source = SourceFixture()
-        actual_messages = read(source, config=config, catalog=_create_catalog([("planets", SyncMode.incremental)]))
+        actual_messages = read(
+            source, config=config, catalog=_create_catalog([("planets", SyncMode.incremental)])
+        )
 
         assert emits_successful_sync_status_messages(actual_messages.get_stream_statuses("planets"))
         assert len(actual_messages.records) == 5
         assert len(actual_messages.state_messages) == 2
         validate_message_order(
-            [Type.RECORD, Type.RECORD, Type.RECORD, Type.STATE, Type.RECORD, Type.RECORD, Type.STATE],
+            [
+                Type.RECORD,
+                Type.RECORD,
+                Type.RECORD,
+                Type.STATE,
+                Type.RECORD,
+                Type.RECORD,
+                Type.STATE,
+            ],
             actual_messages.records_and_state_messages,
         )
         assert actual_messages.state_messages[0].state.stream.stream_descriptor.name == "planets"
-        assert actual_messages.state_messages[0].state.stream.stream_state == AirbyteStateBlob(created_at=last_record_date_0)
+        assert actual_messages.state_messages[0].state.stream.stream_state == AirbyteStateBlob(
+            created_at=last_record_date_0
+        )
         assert actual_messages.state_messages[0].state.sourceStats.recordCount == 3.0
         assert actual_messages.state_messages[1].state.stream.stream_descriptor.name == "planets"
-        assert actual_messages.state_messages[1].state.stream.stream_state == AirbyteStateBlob(created_at=last_record_date_1)
+        assert actual_messages.state_messages[1].state.stream.stream_state == AirbyteStateBlob(
+            created_at=last_record_date_1
+        )
         assert actual_messages.state_messages[1].state.sourceStats.recordCount == 2.0
 
     @HttpMocker()
@@ -327,7 +385,10 @@ class IncrementalStreamTest(TestCase):
 
         last_record_date_0 = (start_datetime + timedelta(days=4)).strftime("%Y-%m-%dT%H:%M:%SZ")
         http_mocker.get(
-            _create_planets_request().with_start_date(start_datetime).with_end_date(start_datetime + timedelta(days=7)).build(),
+            _create_planets_request()
+            .with_start_date(start_datetime)
+            .with_end_date(start_datetime + timedelta(days=7))
+            .build(),
             _create_response()
             .with_record(record=_create_record("planets").with_cursor(last_record_date_0))
             .with_record(record=_create_record("planets").with_cursor(last_record_date_0))
@@ -337,7 +398,10 @@ class IncrementalStreamTest(TestCase):
 
         last_record_date_1 = (_NOW - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
         http_mocker.get(
-            _create_planets_request().with_start_date(start_datetime + timedelta(days=7)).with_end_date(_NOW).build(),
+            _create_planets_request()
+            .with_start_date(start_datetime + timedelta(days=7))
+            .with_end_date(_NOW)
+            .build(),
             _create_response()
             .with_record(record=_create_record("planets").with_cursor(last_record_date_1))
             .with_record(record=_create_record("planets").with_cursor(last_record_date_1))
@@ -345,21 +409,35 @@ class IncrementalStreamTest(TestCase):
         )
 
         source = SourceFixture()
-        actual_messages = read(source, config=config, catalog=_create_catalog([("planets", SyncMode.full_refresh)]))
+        actual_messages = read(
+            source, config=config, catalog=_create_catalog([("planets", SyncMode.full_refresh)])
+        )
 
         assert emits_successful_sync_status_messages(actual_messages.get_stream_statuses("planets"))
         assert len(actual_messages.records) == 5
         assert len(actual_messages.state_messages) == 2
         validate_message_order(
-            [Type.RECORD, Type.RECORD, Type.RECORD, Type.STATE, Type.RECORD, Type.RECORD, Type.STATE],
+            [
+                Type.RECORD,
+                Type.RECORD,
+                Type.RECORD,
+                Type.STATE,
+                Type.RECORD,
+                Type.RECORD,
+                Type.STATE,
+            ],
             actual_messages.records_and_state_messages,
         )
 
         assert actual_messages.state_messages[0].state.stream.stream_descriptor.name == "planets"
-        assert actual_messages.state_messages[0].state.stream.stream_state == AirbyteStateBlob(created_at=last_record_date_0)
+        assert actual_messages.state_messages[0].state.stream.stream_state == AirbyteStateBlob(
+            created_at=last_record_date_0
+        )
         assert actual_messages.state_messages[0].state.sourceStats.recordCount == 3.0
         assert actual_messages.state_messages[1].state.stream.stream_descriptor.name == "planets"
-        assert actual_messages.state_messages[1].state.stream.stream_state == AirbyteStateBlob(created_at=last_record_date_1)
+        assert actual_messages.state_messages[1].state.stream.stream_state == AirbyteStateBlob(
+            created_at=last_record_date_1
+        )
         assert actual_messages.state_messages[1].state.sourceStats.recordCount == 2.0
 
     @HttpMocker()
@@ -369,7 +447,10 @@ class IncrementalStreamTest(TestCase):
 
         last_record_date_0 = (start_datetime + timedelta(days=4)).strftime("%Y-%m-%dT%H:%M:%SZ")
         http_mocker.get(
-            _create_legacies_request().with_start_date(start_datetime).with_end_date(start_datetime + timedelta(days=7)).build(),
+            _create_legacies_request()
+            .with_start_date(start_datetime)
+            .with_end_date(start_datetime + timedelta(days=7))
+            .build(),
             _create_response()
             .with_record(record=_create_record("legacies").with_cursor(last_record_date_0))
             .with_record(record=_create_record("legacies").with_cursor(last_record_date_0))
@@ -379,7 +460,10 @@ class IncrementalStreamTest(TestCase):
 
         last_record_date_1 = (_NOW - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
         http_mocker.get(
-            _create_legacies_request().with_start_date(start_datetime + timedelta(days=7)).with_end_date(_NOW).build(),
+            _create_legacies_request()
+            .with_start_date(start_datetime + timedelta(days=7))
+            .with_end_date(_NOW)
+            .build(),
             _create_response()
             .with_record(record=_create_record("legacies").with_cursor(last_record_date_1))
             .with_record(record=_create_record("legacies").with_cursor(last_record_date_1))
@@ -387,20 +471,36 @@ class IncrementalStreamTest(TestCase):
         )
 
         source = SourceFixture()
-        actual_messages = read(source, config=config, catalog=_create_catalog([("legacies", SyncMode.incremental)]))
+        actual_messages = read(
+            source, config=config, catalog=_create_catalog([("legacies", SyncMode.incremental)])
+        )
 
-        assert emits_successful_sync_status_messages(actual_messages.get_stream_statuses("legacies"))
+        assert emits_successful_sync_status_messages(
+            actual_messages.get_stream_statuses("legacies")
+        )
         assert len(actual_messages.records) == 5
         assert len(actual_messages.state_messages) == 2
         validate_message_order(
-            [Type.RECORD, Type.RECORD, Type.RECORD, Type.STATE, Type.RECORD, Type.RECORD, Type.STATE],
+            [
+                Type.RECORD,
+                Type.RECORD,
+                Type.RECORD,
+                Type.STATE,
+                Type.RECORD,
+                Type.RECORD,
+                Type.STATE,
+            ],
             actual_messages.records_and_state_messages,
         )
         assert actual_messages.state_messages[0].state.stream.stream_descriptor.name == "legacies"
-        assert actual_messages.state_messages[0].state.stream.stream_state == AirbyteStateBlob(created_at=last_record_date_0)
+        assert actual_messages.state_messages[0].state.stream.stream_state == AirbyteStateBlob(
+            created_at=last_record_date_0
+        )
         assert actual_messages.state_messages[0].state.sourceStats.recordCount == 3.0
         assert actual_messages.state_messages[1].state.stream.stream_descriptor.name == "legacies"
-        assert actual_messages.state_messages[1].state.stream.stream_state == AirbyteStateBlob(created_at=last_record_date_1)
+        assert actual_messages.state_messages[1].state.stream.stream_state == AirbyteStateBlob(
+            created_at=last_record_date_1
+        )
         assert actual_messages.state_messages[1].state.sourceStats.recordCount == 2.0
 
     @HttpMocker()
@@ -410,7 +510,10 @@ class IncrementalStreamTest(TestCase):
 
         last_record_date_1 = (_NOW - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
         http_mocker.get(
-            _create_legacies_request().with_start_date(_NOW - timedelta(days=1)).with_end_date(_NOW).build(),
+            _create_legacies_request()
+            .with_start_date(_NOW - timedelta(days=1))
+            .with_end_date(_NOW)
+            .build(),
             _create_response().build(),
         )
 
@@ -418,7 +521,12 @@ class IncrementalStreamTest(TestCase):
         state = StateBuilder().with_stream_state("legacies", incoming_state).build()
 
         source = SourceFixture()
-        actual_messages = read(source, config=config, catalog=_create_catalog([("legacies", SyncMode.incremental)]), state=state)
+        actual_messages = read(
+            source,
+            config=config,
+            catalog=_create_catalog([("legacies", SyncMode.incremental)]),
+            state=state,
+        )
 
         assert actual_messages.state_messages[0].state.stream.stream_descriptor.name == "legacies"
         assert actual_messages.state_messages[0].state.stream.stream_state == incoming_state
@@ -435,7 +543,12 @@ class IncrementalStreamTest(TestCase):
         state = StateBuilder().with_stream_state("legacies", incoming_state).build()
 
         source = SourceFixture()
-        actual_messages = read(source, config=config, catalog=_create_catalog([("legacies", SyncMode.incremental)]), state=state)
+        actual_messages = read(
+            source,
+            config=config,
+            catalog=_create_catalog([("legacies", SyncMode.incremental)]),
+            state=state,
+        )
 
         assert actual_messages.state_messages[0].state.stream.stream_descriptor.name == "legacies"
         assert actual_messages.state_messages[0].state.stream.stream_state == incoming_state
@@ -450,24 +563,39 @@ class MultipleStreamTest(TestCase):
         config = {"start_date": start_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")}
 
         expected_first_substream_per_stream_state = [
-            {"partition": {"divide_category": "dukes"}, "cursor": {"__ab_full_refresh_sync_complete": True}},
+            {
+                "partition": {"divide_category": "dukes"},
+                "cursor": {"__ab_full_refresh_sync_complete": True},
+            },
         ]
 
         expected_second_substream_per_stream_state = [
-            {"partition": {"divide_category": "dukes"}, "cursor": {"__ab_full_refresh_sync_complete": True}},
-            {"partition": {"divide_category": "mentats"}, "cursor": {"__ab_full_refresh_sync_complete": True}},
+            {
+                "partition": {"divide_category": "dukes"},
+                "cursor": {"__ab_full_refresh_sync_complete": True},
+            },
+            {
+                "partition": {"divide_category": "mentats"},
+                "cursor": {"__ab_full_refresh_sync_complete": True},
+            },
         ]
 
         # Mocks for users full refresh stream
         http_mocker.get(
             _create_users_request().build(),
-            _create_response().with_record(record=_create_record("users")).with_record(record=_create_record("users")).build(),
+            _create_response()
+            .with_record(record=_create_record("users"))
+            .with_record(record=_create_record("users"))
+            .build(),
         )
 
         # Mocks for planets incremental stream
         last_record_date_0 = (start_datetime + timedelta(days=4)).strftime("%Y-%m-%dT%H:%M:%SZ")
         http_mocker.get(
-            _create_planets_request().with_start_date(start_datetime).with_end_date(start_datetime + timedelta(days=7)).build(),
+            _create_planets_request()
+            .with_start_date(start_datetime)
+            .with_end_date(start_datetime + timedelta(days=7))
+            .build(),
             _create_response()
             .with_record(record=_create_record("planets").with_cursor(last_record_date_0))
             .with_record(record=_create_record("planets").with_cursor(last_record_date_0))
@@ -477,7 +605,10 @@ class MultipleStreamTest(TestCase):
 
         last_record_date_1 = (_NOW - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
         http_mocker.get(
-            _create_planets_request().with_start_date(start_datetime + timedelta(days=7)).with_end_date(_NOW).build(),
+            _create_planets_request()
+            .with_start_date(start_datetime + timedelta(days=7))
+            .with_end_date(_NOW)
+            .build(),
             _create_response()
             .with_record(record=_create_record("planets").with_cursor(last_record_date_1))
             .with_record(record=_create_record("planets").with_cursor(last_record_date_1))
@@ -487,12 +618,18 @@ class MultipleStreamTest(TestCase):
         # Mocks for dividers full refresh stream
         http_mocker.get(
             _create_dividers_request().with_category("dukes").build(),
-            _create_response().with_record(record=_create_record("dividers")).with_record(record=_create_record("dividers")).build(),
+            _create_response()
+            .with_record(record=_create_record("dividers"))
+            .with_record(record=_create_record("dividers"))
+            .build(),
         )
 
         http_mocker.get(
             _create_dividers_request().with_category("mentats").build(),
-            _create_response().with_record(record=_create_record("dividers")).with_record(record=_create_record("dividers")).build(),
+            _create_response()
+            .with_record(record=_create_record("dividers"))
+            .with_record(record=_create_record("dividers"))
+            .build(),
         )
 
         source = SourceFixture()
@@ -500,13 +637,19 @@ class MultipleStreamTest(TestCase):
             source,
             config=config,
             catalog=_create_catalog(
-                [("users", SyncMode.full_refresh), ("planets", SyncMode.incremental), ("dividers", SyncMode.full_refresh)]
+                [
+                    ("users", SyncMode.full_refresh),
+                    ("planets", SyncMode.incremental),
+                    ("dividers", SyncMode.full_refresh),
+                ]
             ),
         )
 
         assert emits_successful_sync_status_messages(actual_messages.get_stream_statuses("users"))
         assert emits_successful_sync_status_messages(actual_messages.get_stream_statuses("planets"))
-        assert emits_successful_sync_status_messages(actual_messages.get_stream_statuses("dividers"))
+        assert emits_successful_sync_status_messages(
+            actual_messages.get_stream_statuses("dividers")
+        )
 
         assert len(actual_messages.records) == 11
         assert len(actual_messages.state_messages) == 5
@@ -532,13 +675,19 @@ class MultipleStreamTest(TestCase):
             actual_messages.records_and_state_messages,
         )
         assert actual_messages.state_messages[0].state.stream.stream_descriptor.name == "users"
-        assert actual_messages.state_messages[0].state.stream.stream_state == AirbyteStateBlob(__ab_full_refresh_sync_complete=True)
+        assert actual_messages.state_messages[0].state.stream.stream_state == AirbyteStateBlob(
+            __ab_full_refresh_sync_complete=True
+        )
         assert actual_messages.state_messages[0].state.sourceStats.recordCount == 2.0
         assert actual_messages.state_messages[1].state.stream.stream_descriptor.name == "planets"
-        assert actual_messages.state_messages[1].state.stream.stream_state == AirbyteStateBlob(created_at=last_record_date_0)
+        assert actual_messages.state_messages[1].state.stream.stream_state == AirbyteStateBlob(
+            created_at=last_record_date_0
+        )
         assert actual_messages.state_messages[1].state.sourceStats.recordCount == 3.0
         assert actual_messages.state_messages[2].state.stream.stream_descriptor.name == "planets"
-        assert actual_messages.state_messages[2].state.stream.stream_state == AirbyteStateBlob(created_at=last_record_date_1)
+        assert actual_messages.state_messages[2].state.stream.stream_state == AirbyteStateBlob(
+            created_at=last_record_date_1
+        )
         assert actual_messages.state_messages[2].state.sourceStats.recordCount == 2.0
         assert actual_messages.state_messages[3].state.stream.stream_descriptor.name == "dividers"
         assert actual_messages.state_messages[3].state.stream.stream_state == AirbyteStateBlob(

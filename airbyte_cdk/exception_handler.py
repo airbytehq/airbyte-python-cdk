@@ -11,7 +11,9 @@ from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
-def assemble_uncaught_exception(exception_type: type[BaseException], exception_value: BaseException) -> AirbyteTracedException:
+def assemble_uncaught_exception(
+    exception_type: type[BaseException], exception_value: BaseException
+) -> AirbyteTracedException:
     if issubclass(exception_type, AirbyteTracedException):
         return exception_value  # type: ignore  # validated as part of the previous line
     return AirbyteTracedException.from_exception(exception_value)
@@ -23,7 +25,11 @@ def init_uncaught_exception_handler(logger: logging.Logger) -> None:
     printed to the console without having secrets removed.
     """
 
-    def hook_fn(exception_type: type[BaseException], exception_value: BaseException, traceback_: Optional[TracebackType]) -> Any:
+    def hook_fn(
+        exception_type: type[BaseException],
+        exception_value: BaseException,
+        traceback_: Optional[TracebackType],
+    ) -> Any:
         # For developer ergonomics, we want to see the stack trace in the logs when we do a ctrl-c
         if issubclass(exception_type, KeyboardInterrupt):
             sys.__excepthook__(exception_type, exception_value, traceback_)
@@ -41,6 +47,10 @@ def init_uncaught_exception_handler(logger: logging.Logger) -> None:
 
 def generate_failed_streams_error_message(stream_failures: Mapping[str, List[Exception]]) -> str:
     failures = "\n".join(
-        [f"{stream}: {filter_secrets(exception.__repr__())}" for stream, exceptions in stream_failures.items() for exception in exceptions]
+        [
+            f"{stream}: {filter_secrets(exception.__repr__())}"
+            for stream, exceptions in stream_failures.items()
+            for exception in exceptions
+        ]
     )
     return f"During the sync, the following streams did not sync successfully: {failures}"

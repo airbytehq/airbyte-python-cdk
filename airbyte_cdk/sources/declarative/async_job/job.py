@@ -18,7 +18,9 @@ class AsyncJob:
     it and call `ApiJob.update_status`, `ApiJob.status` will not reflect the actual API side status.
     """
 
-    def __init__(self, api_job_id: str, job_parameters: StreamSlice, timeout: Optional[timedelta] = None) -> None:
+    def __init__(
+        self, api_job_id: str, job_parameters: StreamSlice, timeout: Optional[timedelta] = None
+    ) -> None:
         self._api_job_id = api_job_id
         self._job_parameters = job_parameters
         self._status = AsyncJobStatus.RUNNING

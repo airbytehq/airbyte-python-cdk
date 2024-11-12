@@ -8,9 +8,14 @@ from unittest.mock import MagicMock
 
 import pytest
 from airbyte_cdk.sources.file_based.config.csv_format import CsvFormat
-from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig, ValidationPolicy
+from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
+    FileBasedStreamConfig,
+    ValidationPolicy,
+)
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
-from airbyte_cdk.sources.file_based.stream.cursor.default_file_based_cursor import DefaultFileBasedCursor
+from airbyte_cdk.sources.file_based.stream.cursor.default_file_based_cursor import (
+    DefaultFileBasedCursor,
+)
 from freezegun import freeze_time
 
 
@@ -20,13 +25,25 @@ from freezegun import freeze_time
         pytest.param(
             [
                 RemoteFile(
-                    uri="a.csv", last_modified=datetime.strptime("2021-01-01T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="a.csv",
+                    last_modified=datetime.strptime(
+                        "2021-01-01T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
                 RemoteFile(
-                    uri="b.csv", last_modified=datetime.strptime("2021-01-02T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="b.csv",
+                    last_modified=datetime.strptime(
+                        "2021-01-02T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
                 RemoteFile(
-                    uri="c.csv", last_modified=datetime.strptime("2020-12-31T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="c.csv",
+                    last_modified=datetime.strptime(
+                        "2020-12-31T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
             ],
             [datetime(2021, 1, 1), datetime(2021, 1, 1), datetime(2020, 12, 31)],
@@ -43,19 +60,40 @@ from freezegun import freeze_time
         pytest.param(
             [
                 RemoteFile(
-                    uri="a.csv", last_modified=datetime.strptime("2021-01-01T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="a.csv",
+                    last_modified=datetime.strptime(
+                        "2021-01-01T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
                 RemoteFile(
-                    uri="b.csv", last_modified=datetime.strptime("2021-01-02T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="b.csv",
+                    last_modified=datetime.strptime(
+                        "2021-01-02T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
                 RemoteFile(
-                    uri="c.csv", last_modified=datetime.strptime("2021-01-03T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="c.csv",
+                    last_modified=datetime.strptime(
+                        "2021-01-03T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
                 RemoteFile(
-                    uri="d.csv", last_modified=datetime.strptime("2021-01-04T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="d.csv",
+                    last_modified=datetime.strptime(
+                        "2021-01-04T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
             ],
-            [datetime(2021, 1, 1), datetime(2021, 1, 1), datetime(2021, 1, 1), datetime(2021, 1, 2)],
+            [
+                datetime(2021, 1, 1),
+                datetime(2021, 1, 1),
+                datetime(2021, 1, 1),
+                datetime(2021, 1, 2),
+            ],
             {
                 "history": {
                     "b.csv": "2021-01-02T00:00:00.000000Z",
@@ -69,21 +107,39 @@ from freezegun import freeze_time
         pytest.param(
             [
                 RemoteFile(
-                    uri="a.csv", last_modified=datetime.strptime("2021-01-01T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
-                ),
-                RemoteFile(
-                    uri="file_with_same_timestamp_as_b.csv",
-                    last_modified=datetime.strptime("2021-01-02T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"),
+                    uri="a.csv",
+                    last_modified=datetime.strptime(
+                        "2021-01-01T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
                     file_type="csv",
                 ),
                 RemoteFile(
-                    uri="b.csv", last_modified=datetime.strptime("2021-01-02T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="file_with_same_timestamp_as_b.csv",
+                    last_modified=datetime.strptime(
+                        "2021-01-02T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
                 RemoteFile(
-                    uri="c.csv", last_modified=datetime.strptime("2021-01-03T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="b.csv",
+                    last_modified=datetime.strptime(
+                        "2021-01-02T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
                 RemoteFile(
-                    uri="d.csv", last_modified=datetime.strptime("2021-01-04T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="c.csv",
+                    last_modified=datetime.strptime(
+                        "2021-01-03T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
+                ),
+                RemoteFile(
+                    uri="d.csv",
+                    last_modified=datetime.strptime(
+                        "2021-01-04T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
             ],
             [
@@ -105,7 +161,11 @@ from freezegun import freeze_time
         ),
     ],
 )
-def test_add_file(files_to_add: List[RemoteFile], expected_start_time: List[datetime], expected_state_dict: Mapping[str, Any]) -> None:
+def test_add_file(
+    files_to_add: List[RemoteFile],
+    expected_start_time: List[datetime],
+    expected_state_dict: Mapping[str, Any],
+) -> None:
     cursor = get_cursor(max_history_size=3, days_to_sync_if_history_is_full=3)
     assert cursor._compute_start_time() == datetime.min
 
@@ -121,24 +181,48 @@ def test_add_file(files_to_add: List[RemoteFile], expected_start_time: List[date
         pytest.param(
             [
                 RemoteFile(
-                    uri="a.csv", last_modified=datetime.strptime("2021-01-01T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="a.csv",
+                    last_modified=datetime.strptime(
+                        "2021-01-01T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
                 RemoteFile(
-                    uri="b.csv", last_modified=datetime.strptime("2021-01-02T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="b.csv",
+                    last_modified=datetime.strptime(
+                        "2021-01-02T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
                 RemoteFile(
-                    uri="c.csv", last_modified=datetime.strptime("2020-12-31T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="c.csv",
+                    last_modified=datetime.strptime(
+                        "2020-12-31T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
             ],
             [
                 RemoteFile(
-                    uri="a.csv", last_modified=datetime.strptime("2021-01-01T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="a.csv",
+                    last_modified=datetime.strptime(
+                        "2021-01-01T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
                 RemoteFile(
-                    uri="b.csv", last_modified=datetime.strptime("2021-01-02T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="b.csv",
+                    last_modified=datetime.strptime(
+                        "2021-01-02T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
                 RemoteFile(
-                    uri="c.csv", last_modified=datetime.strptime("2020-12-31T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="c.csv",
+                    last_modified=datetime.strptime(
+                        "2020-12-31T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
             ],
             3,
@@ -148,24 +232,48 @@ def test_add_file(files_to_add: List[RemoteFile], expected_start_time: List[date
         pytest.param(
             [
                 RemoteFile(
-                    uri="a.csv", last_modified=datetime.strptime("2021-01-01T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="a.csv",
+                    last_modified=datetime.strptime(
+                        "2021-01-01T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
                 RemoteFile(
-                    uri="b.csv", last_modified=datetime.strptime("2021-01-02T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="b.csv",
+                    last_modified=datetime.strptime(
+                        "2021-01-02T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
                 RemoteFile(
-                    uri="c.csv", last_modified=datetime.strptime("2020-12-31T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="c.csv",
+                    last_modified=datetime.strptime(
+                        "2020-12-31T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
             ],
             [
                 RemoteFile(
-                    uri="a.csv", last_modified=datetime.strptime("2021-01-01T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="a.csv",
+                    last_modified=datetime.strptime(
+                        "2021-01-01T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
                 RemoteFile(
-                    uri="b.csv", last_modified=datetime.strptime("2021-01-02T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="b.csv",
+                    last_modified=datetime.strptime(
+                        "2021-01-02T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
                 RemoteFile(
-                    uri="c.csv", last_modified=datetime.strptime("2020-12-31T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"), file_type="csv"
+                    uri="c.csv",
+                    last_modified=datetime.strptime(
+                        "2020-12-31T00:00:00.000Z", "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
+                    file_type="csv",
                 ),
             ],
             2,
@@ -175,7 +283,10 @@ def test_add_file(files_to_add: List[RemoteFile], expected_start_time: List[date
     ],
 )
 def test_get_files_to_sync(
-    files: List[RemoteFile], expected_files_to_sync: List[RemoteFile], max_history_size: int, history_is_partial: bool
+    files: List[RemoteFile],
+    expected_files_to_sync: List[RemoteFile],
+    max_history_size: int,
+    history_is_partial: bool,
 ) -> None:
     logger = MagicMock()
     cursor = get_cursor(max_history_size, 3)
@@ -199,7 +310,10 @@ def test_only_recent_files_are_synced_if_history_is_full() -> None:
     ]
 
     state = {
-        "history": {f.uri: f.last_modified.strftime(DefaultFileBasedCursor.DATE_TIME_FORMAT) for f in files_in_history},
+        "history": {
+            f.uri: f.last_modified.strftime(DefaultFileBasedCursor.DATE_TIME_FORMAT)
+            for f in files_in_history
+        },
     }
     cursor.set_initial_state(state)
 
@@ -227,7 +341,9 @@ def test_only_recent_files_are_synced_if_history_is_full() -> None:
         pytest.param(timedelta(days=1), True, id="test_modified_at_is_more_recent"),
     ],
 )
-def test_sync_file_already_present_in_history(modified_at_delta: timedelta, should_sync_file: bool) -> None:
+def test_sync_file_already_present_in_history(
+    modified_at_delta: timedelta, should_sync_file: bool
+) -> None:
     logger = MagicMock()
     cursor = get_cursor(2, 3)
     original_modified_at = datetime(2021, 1, 2)
@@ -237,12 +353,17 @@ def test_sync_file_already_present_in_history(modified_at_delta: timedelta, shou
     ]
 
     state = {
-        "history": {f.uri: f.last_modified.strftime(DefaultFileBasedCursor.DATE_TIME_FORMAT) for f in files_in_history},
+        "history": {
+            f.uri: f.last_modified.strftime(DefaultFileBasedCursor.DATE_TIME_FORMAT)
+            for f in files_in_history
+        },
     }
     cursor.set_initial_state(state)
 
     files = [
-        RemoteFile(uri=filename, last_modified=original_modified_at + modified_at_delta, file_type="csv"),
+        RemoteFile(
+            uri=filename, last_modified=original_modified_at + modified_at_delta, file_type="csv"
+        ),
     ]
 
     files_to_sync = list(cursor.get_files_to_sync(files, logger))
@@ -253,9 +374,27 @@ def test_sync_file_already_present_in_history(modified_at_delta: timedelta, shou
 @pytest.mark.parametrize(
     "file_name, last_modified, earliest_dt_in_history, should_sync_file",
     [
-        pytest.param("a.csv", datetime(2023, 6, 3), datetime(2023, 6, 6), True, id="test_last_modified_is_equal_to_time_buffer"),
-        pytest.param("b.csv", datetime(2023, 6, 6), datetime(2023, 6, 6), False, id="test_file_was_already_synced"),
-        pytest.param("b.csv", datetime(2023, 6, 7), datetime(2023, 6, 6), True, id="test_file_was_synced_in_the_past"),
+        pytest.param(
+            "a.csv",
+            datetime(2023, 6, 3),
+            datetime(2023, 6, 6),
+            True,
+            id="test_last_modified_is_equal_to_time_buffer",
+        ),
+        pytest.param(
+            "b.csv",
+            datetime(2023, 6, 6),
+            datetime(2023, 6, 6),
+            False,
+            id="test_file_was_already_synced",
+        ),
+        pytest.param(
+            "b.csv",
+            datetime(2023, 6, 7),
+            datetime(2023, 6, 6),
+            True,
+            id="test_file_was_synced_in_the_past",
+        ),
         pytest.param(
             "b.csv",
             datetime(2023, 6, 3),
@@ -279,7 +418,12 @@ def test_sync_file_already_present_in_history(modified_at_delta: timedelta, shou
         ),
     ],
 )
-def test_should_sync_file(file_name: str, last_modified: datetime, earliest_dt_in_history: datetime, should_sync_file: bool) -> None:
+def test_should_sync_file(
+    file_name: str,
+    last_modified: datetime,
+    earliest_dt_in_history: datetime,
+    should_sync_file: bool,
+) -> None:
     logger = MagicMock()
     cursor = get_cursor(1, 3)
 
@@ -288,7 +432,14 @@ def test_should_sync_file(file_name: str, last_modified: datetime, earliest_dt_i
     cursor._initial_earliest_file_in_history = cursor._compute_earliest_file_in_history()
 
     assert (
-        bool(list(cursor.get_files_to_sync([RemoteFile(uri=file_name, last_modified=last_modified, file_type="csv")], logger)))
+        bool(
+            list(
+                cursor.get_files_to_sync(
+                    [RemoteFile(uri=file_name, last_modified=last_modified, file_type="csv")],
+                    logger,
+                )
+            )
+        )
         == should_sync_file
     )
 
@@ -298,7 +449,9 @@ def test_set_initial_state_no_history() -> None:
     cursor.set_initial_state({})
 
 
-def get_cursor(max_history_size: int, days_to_sync_if_history_is_full: int) -> DefaultFileBasedCursor:
+def get_cursor(
+    max_history_size: int, days_to_sync_if_history_is_full: int
+) -> DefaultFileBasedCursor:
     cursor_cls = DefaultFileBasedCursor
     cursor_cls.DEFAULT_MAX_HISTORY_SIZE = max_history_size
     config = FileBasedStreamConfig(

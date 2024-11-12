@@ -8,7 +8,21 @@ from typing import Any, Final, List, Mapping
 from airbyte_cdk.sources.declarative.interpolation.jinja import JinjaInterpolation
 from airbyte_cdk.sources.types import Config
 
-FALSE_VALUES: Final[List[Any]] = ["False", "false", "{}", "[]", "()", "", "0", "0.0", {}, False, [], (), set()]
+FALSE_VALUES: Final[List[Any]] = [
+    "False",
+    "false",
+    "{}",
+    "[]",
+    "()",
+    "",
+    "0",
+    "0.0",
+    {},
+    False,
+    [],
+    (),
+    set(),
+]
 
 
 @dataclass
@@ -40,7 +54,11 @@ class InterpolatedBoolean:
             return self.condition
         else:
             evaluated = self._interpolation.eval(
-                self.condition, config, self._default, parameters=self._parameters, **additional_parameters
+                self.condition,
+                config,
+                self._default,
+                parameters=self._parameters,
+                **additional_parameters,
             )
             if evaluated in FALSE_VALUES:
                 return False

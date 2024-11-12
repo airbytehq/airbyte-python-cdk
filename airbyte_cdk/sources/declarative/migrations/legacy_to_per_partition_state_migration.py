@@ -43,7 +43,9 @@ class LegacyToPerPartitionStateMigration(StateMigration):
         self._partition_key_field = InterpolatedString.create(
             self._get_partition_field(self._partition_router), parameters=self._parameters
         ).eval(self._config)
-        self._cursor_field = InterpolatedString.create(self._cursor.cursor_field, parameters=self._parameters).eval(self._config)
+        self._cursor_field = InterpolatedString.create(
+            self._cursor.cursor_field, parameters=self._parameters
+        ).eval(self._config)
 
     def _get_partition_field(self, partition_router: SubstreamPartitionRouter) -> str:
         parent_stream_config = partition_router.parent_stream_configs[0]
@@ -85,5 +87,8 @@ class LegacyToPerPartitionStateMigration(StateMigration):
         return True
 
     def migrate(self, stream_state: Mapping[str, Any]) -> Mapping[str, Any]:
-        states = [{"partition": {self._partition_key_field: key}, "cursor": value} for key, value in stream_state.items()]
+        states = [
+            {"partition": {self._partition_key_field: key}, "cursor": value}
+            for key, value in stream_state.items()
+        ]
         return {"states": states}

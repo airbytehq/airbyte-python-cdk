@@ -20,16 +20,30 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import CheckStream as CheckStreamModel
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import DeclarativeStream as DeclarativeStreamModel
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CheckStream as CheckStreamModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    DeclarativeStream as DeclarativeStreamModel,
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import Spec as SpecModel
-from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer import ManifestComponentTransformer
-from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import ManifestReferenceResolver
-from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import ModelToComponentFactory
+from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer import (
+    ManifestComponentTransformer,
+)
+from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import (
+    ManifestReferenceResolver,
+)
+from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
+    ModelToComponentFactory,
+)
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.types import ConnectionDefinition
-from airbyte_cdk.sources.utils.slice_logger import AlwaysLogSliceLogger, DebugSliceLogger, SliceLogger
+from airbyte_cdk.sources.utils.slice_logger import (
+    AlwaysLogSliceLogger,
+    DebugSliceLogger,
+    SliceLogger,
+)
 from jsonschema.exceptions import ValidationError
 from jsonschema.validators import validate
 
@@ -57,13 +71,21 @@ class ManifestDeclarativeSource(DeclarativeSource):
             manifest["type"] = "DeclarativeSource"
 
         resolved_source_config = ManifestReferenceResolver().preprocess_manifest(manifest)
-        propagated_source_config = ManifestComponentTransformer().propagate_types_and_parameters("", resolved_source_config, {})
+        propagated_source_config = ManifestComponentTransformer().propagate_types_and_parameters(
+            "", resolved_source_config, {}
+        )
         self._source_config = propagated_source_config
         self._debug = debug
         self._emit_connector_builder_messages = emit_connector_builder_messages
-        self._constructor = component_factory if component_factory else ModelToComponentFactory(emit_connector_builder_messages)
+        self._constructor = (
+            component_factory
+            if component_factory
+            else ModelToComponentFactory(emit_connector_builder_messages)
+        )
         self._message_repository = self._constructor.get_message_repository()
-        self._slice_logger: SliceLogger = AlwaysLogSliceLogger() if emit_connector_builder_messages else DebugSliceLogger()
+        self._slice_logger: SliceLogger = (
+            AlwaysLogSliceLogger() if emit_connector_builder_messages else DebugSliceLogger()
+        )
 
         self._validate_source()
 
@@ -81,20 +103,30 @@ class ManifestDeclarativeSource(DeclarativeSource):
         if "type" not in check:
             check["type"] = "CheckStream"
         check_stream = self._constructor.create_component(
-            CheckStreamModel, check, dict(), emit_connector_builder_messages=self._emit_connector_builder_messages
+            CheckStreamModel,
+            check,
+            dict(),
+            emit_connector_builder_messages=self._emit_connector_builder_messages,
         )
         if isinstance(check_stream, ConnectionChecker):
             return check_stream
         else:
-            raise ValueError(f"Expected to generate a ConnectionChecker component, but received {check_stream.__class__}")
+            raise ValueError(
+                f"Expected to generate a ConnectionChecker component, but received {check_stream.__class__}"
+            )
 
     def streams(self, config: Mapping[str, Any]) -> List[Stream]:
-        self._emit_manifest_debug_message(extra_args={"source_name": self.name, "parsed_config": json.dumps(self._source_config)})
+        self._emit_manifest_debug_message(
+            extra_args={"source_name": self.name, "parsed_config": json.dumps(self._source_config)}
+        )
         stream_configs = self._stream_configs(self._source_config)
 
         source_streams = [
             self._constructor.create_component(
-                DeclarativeStreamModel, stream_config, config, emit_connector_builder_messages=self._emit_connector_builder_messages
+                DeclarativeStreamModel,
+                stream_config,
+                config,
+                emit_connector_builder_messages=self._emit_connector_builder_messages,
             )
             for stream_config in self._initialize_cache_for_parent_streams(deepcopy(stream_configs))
         ]
@@ -102,7 +134,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
         return source_streams
 
     @staticmethod
-    def _initialize_cache_for_parent_streams(stream_configs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _initialize_cache_for_parent_streams(
+        stream_configs: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
         parent_streams = set()
 
         def update_with_cache_parent_configs(parent_configs: list[dict[str, Any]]) -> None:
@@ -113,12 +147,16 @@ class ManifestDeclarativeSource(DeclarativeSource):
         for stream_config in stream_configs:
             if stream_config.get("incremental_sync", {}).get("parent_stream"):
                 parent_streams.add(stream_config["incremental_sync"]["parent_stream"]["name"])
-                stream_config["incremental_sync"]["parent_stream"]["retriever"]["requester"]["use_cache"] = True
+                stream_config["incremental_sync"]["parent_stream"]["retriever"]["requester"][
+                    "use_cache"
+                ] = True
 
             elif stream_config.get("retriever", {}).get("partition_router", {}):
                 partition_router = stream_config["retriever"]["partition_router"]
 
-                if isinstance(partition_router, dict) and partition_router.get("parent_stream_configs"):
+                if isinstance(partition_router, dict) and partition_router.get(
+                    "parent_stream_configs"
+                ):
                     update_with_cache_parent_configs(partition_router["parent_stream_configs"])
                 elif isinstance(partition_router, list):
                     for router in partition_router:
@@ -139,7 +177,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
         in the project root.
         """
         self._configure_logger_level(logger)
-        self._emit_manifest_debug_message(extra_args={"source_name": self.name, "parsed_config": json.dumps(self._source_config)})
+        self._emit_manifest_debug_message(
+            extra_args={"source_name": self.name, "parsed_config": json.dumps(self._source_config)}
+        )
 
         spec = self._source_config.get("spec")
         if spec:
@@ -176,22 +216,34 @@ class ManifestDeclarativeSource(DeclarativeSource):
         Validates the connector manifest against the declarative component schema
         """
         try:
-            raw_component_schema = pkgutil.get_data("airbyte_cdk", "sources/declarative/declarative_component_schema.yaml")
+            raw_component_schema = pkgutil.get_data(
+                "airbyte_cdk", "sources/declarative/declarative_component_schema.yaml"
+            )
             if raw_component_schema is not None:
-                declarative_component_schema = yaml.load(raw_component_schema, Loader=yaml.SafeLoader)
+                declarative_component_schema = yaml.load(
+                    raw_component_schema, Loader=yaml.SafeLoader
+                )
             else:
-                raise RuntimeError("Failed to read manifest component json schema required for validation")
+                raise RuntimeError(
+                    "Failed to read manifest component json schema required for validation"
+                )
         except FileNotFoundError as e:
-            raise FileNotFoundError(f"Failed to read manifest component json schema required for validation: {e}")
+            raise FileNotFoundError(
+                f"Failed to read manifest component json schema required for validation: {e}"
+            )
 
         streams = self._source_config.get("streams")
         if not streams:
-            raise ValidationError(f"A valid manifest should have at least one stream defined. Got {streams}")
+            raise ValidationError(
+                f"A valid manifest should have at least one stream defined. Got {streams}"
+            )
 
         try:
             validate(self._source_config, declarative_component_schema)
         except ValidationError as e:
-            raise ValidationError("Validation against json schema defined in declarative_component_schema.yaml schema failed") from e
+            raise ValidationError(
+                "Validation against json schema defined in declarative_component_schema.yaml schema failed"
+            ) from e
 
         cdk_version = metadata.version("airbyte_cdk")
         cdk_major, cdk_minor, cdk_patch = self._get_version_parts(cdk_version, "airbyte-cdk")
@@ -200,9 +252,16 @@ class ManifestDeclarativeSource(DeclarativeSource):
             raise RuntimeError(
                 "Manifest version is not defined in the manifest. This is unexpected since it should be a required field. Please contact support."
             )
-        manifest_major, manifest_minor, manifest_patch = self._get_version_parts(manifest_version, "manifest")
+        manifest_major, manifest_minor, manifest_patch = self._get_version_parts(
+            manifest_version, "manifest"
+        )
 
-        if cdk_major < manifest_major or (cdk_major == manifest_major and cdk_minor < manifest_minor):
+        if cdk_version.startswith("0.0.0"):
+            # Skipping version compatibility check on unreleased dev branch
+            pass
+        elif cdk_major < manifest_major or (
+            cdk_major == manifest_major and cdk_minor < manifest_minor
+        ):
             raise ValidationError(
                 f"The manifest version {manifest_version} is greater than the airbyte-cdk package version ({cdk_version}). Your "
                 f"manifest may contain features that are not in the current CDK version."
@@ -221,7 +280,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
         """
         version_parts = re.split(r"\.", version)
         if len(version_parts) != 3 or not all([part.isdigit() for part in version_parts]):
-            raise ValidationError(f"The {version_type} version {version} specified is not a valid version format (ex. 1.2.3)")
+            raise ValidationError(
+                f"The {version_type} version {version} specified is not a valid version format (ex. 1.2.3)"
+            )
         return tuple(int(part) for part in version_parts)  # type: ignore # We already verified there were 3 parts and they are all digits
 
     def _stream_configs(self, manifest: Mapping[str, Any]) -> List[Dict[str, Any]]:

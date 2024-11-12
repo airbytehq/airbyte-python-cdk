@@ -6,7 +6,14 @@ import copy
 from dataclasses import dataclass
 from typing import Any, List, Mapping, MutableMapping, Optional, Tuple, Union
 
-from airbyte_cdk.models import AirbyteMessage, AirbyteStateBlob, AirbyteStateMessage, AirbyteStateType, AirbyteStreamState, StreamDescriptor
+from airbyte_cdk.models import (
+    AirbyteMessage,
+    AirbyteStateBlob,
+    AirbyteStateMessage,
+    AirbyteStateType,
+    AirbyteStreamState,
+    StreamDescriptor,
+)
 from airbyte_cdk.models import Type as MessageType
 
 
@@ -42,19 +49,25 @@ class ConnectorStateManager:
             )
         self.per_stream_states = per_stream_states
 
-    def get_stream_state(self, stream_name: str, namespace: Optional[str]) -> MutableMapping[str, Any]:
+    def get_stream_state(
+        self, stream_name: str, namespace: Optional[str]
+    ) -> MutableMapping[str, Any]:
         """
         Retrieves the state of a given stream based on its descriptor (name + namespace).
         :param stream_name: Name of the stream being fetched
         :param namespace: Namespace of the stream being fetched
         :return: The per-stream state for a stream
         """
-        stream_state: AirbyteStateBlob | None = self.per_stream_states.get(HashableStreamDescriptor(name=stream_name, namespace=namespace))
+        stream_state: AirbyteStateBlob | None = self.per_stream_states.get(
+            HashableStreamDescriptor(name=stream_name, namespace=namespace)
+        )
         if stream_state:
             return copy.deepcopy({k: v for k, v in stream_state.__dict__.items()})
         return {}
 
-    def update_state_for_stream(self, stream_name: str, namespace: Optional[str], value: Mapping[str, Any]) -> None:
+    def update_state_for_stream(
+        self, stream_name: str, namespace: Optional[str], value: Mapping[str, Any]
+    ) -> None:
         """
         Overwrites the state blob of a specific stream based on the provided stream name and optional namespace
         :param stream_name: The name of the stream whose state is being updated
@@ -79,7 +92,8 @@ class ConnectorStateManager:
             state=AirbyteStateMessage(
                 type=AirbyteStateType.STREAM,
                 stream=AirbyteStreamState(
-                    stream_descriptor=StreamDescriptor(name=stream_name, namespace=namespace), stream_state=stream_state
+                    stream_descriptor=StreamDescriptor(name=stream_name, namespace=namespace),
+                    stream_state=stream_state,
                 ),
             ),
         )
@@ -88,7 +102,10 @@ class ConnectorStateManager:
     def _extract_from_state_message(
         cls,
         state: Optional[List[AirbyteStateMessage]],
-    ) -> Tuple[Optional[AirbyteStateBlob], MutableMapping[HashableStreamDescriptor, Optional[AirbyteStateBlob]]]:
+    ) -> Tuple[
+        Optional[AirbyteStateBlob],
+        MutableMapping[HashableStreamDescriptor, Optional[AirbyteStateBlob]],
+    ]:
         """
         Takes an incoming list of state messages or a global state message and extracts state attributes according to
         type which can then be assigned to the new state manager being instantiated
@@ -105,7 +122,8 @@ class ConnectorStateManager:
             shared_state = copy.deepcopy(global_state.shared_state, {})  # type: ignore[union-attr] # global_state has shared_state
             streams = {
                 HashableStreamDescriptor(
-                    name=per_stream_state.stream_descriptor.name, namespace=per_stream_state.stream_descriptor.namespace
+                    name=per_stream_state.stream_descriptor.name,
+                    namespace=per_stream_state.stream_descriptor.namespace,
                 ): per_stream_state.stream_state
                 for per_stream_state in global_state.stream_states  # type: ignore[union-attr] # global_state has shared_state
             }
@@ -113,10 +131,12 @@ class ConnectorStateManager:
         else:
             streams = {
                 HashableStreamDescriptor(
-                    name=per_stream_state.stream.stream_descriptor.name, namespace=per_stream_state.stream.stream_descriptor.namespace  # type: ignore[union-attr] # stream has stream_descriptor
+                    name=per_stream_state.stream.stream_descriptor.name,
+                    namespace=per_stream_state.stream.stream_descriptor.namespace,  # type: ignore[union-attr] # stream has stream_descriptor
                 ): per_stream_state.stream.stream_state  # type: ignore[union-attr] # stream has stream_state
                 for per_stream_state in state
-                if per_stream_state.type == AirbyteStateType.STREAM and hasattr(per_stream_state, "stream")  # type: ignore # state is always a list of AirbyteStateMessage if is_per_stream is True
+                if per_stream_state.type == AirbyteStateType.STREAM
+                and hasattr(per_stream_state, "stream")  # type: ignore # state is always a list of AirbyteStateMessage if is_per_stream is True
             }
             return None, streams
 
@@ -130,5 +150,7 @@ class ConnectorStateManager:
         )
 
     @staticmethod
-    def _is_per_stream_state(state: Union[List[AirbyteStateMessage], MutableMapping[str, Any]]) -> bool:
+    def _is_per_stream_state(
+        state: Union[List[AirbyteStateMessage], MutableMapping[str, Any]],
+    ) -> bool:
         return isinstance(state, List)

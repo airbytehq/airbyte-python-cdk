@@ -8,9 +8,18 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import dpath
-from airbyte_cdk.destinations.vector_db_based.config import ProcessingConfigModel, SeparatorSplitterConfigModel, TextSplitterConfigModel
+from airbyte_cdk.destinations.vector_db_based.config import (
+    ProcessingConfigModel,
+    SeparatorSplitterConfigModel,
+    TextSplitterConfigModel,
+)
 from airbyte_cdk.destinations.vector_db_based.utils import create_stream_identifier
-from airbyte_cdk.models import AirbyteRecordMessage, ConfiguredAirbyteCatalog, ConfiguredAirbyteStream, DestinationSyncMode
+from airbyte_cdk.models import (
+    AirbyteRecordMessage,
+    ConfiguredAirbyteCatalog,
+    ConfiguredAirbyteStream,
+    DestinationSyncMode,
+)
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException, FailureType
 from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
 from langchain.utils import stringify_dict
@@ -30,7 +39,14 @@ class Chunk:
     embedding: Optional[List[float]] = None
 
 
-headers_to_split_on = ["(?:^|\n)# ", "(?:^|\n)## ", "(?:^|\n)### ", "(?:^|\n)#### ", "(?:^|\n)##### ", "(?:^|\n)###### "]
+headers_to_split_on = [
+    "(?:^|\n)# ",
+    "(?:^|\n)## ",
+    "(?:^|\n)### ",
+    "(?:^|\n)#### ",
+    "(?:^|\n)##### ",
+    "(?:^|\n)###### ",
+]
 
 
 class DocumentProcessor:
@@ -64,7 +80,10 @@ class DocumentProcessor:
         return None
 
     def _get_text_splitter(
-        self, chunk_size: int, chunk_overlap: int, splitter_config: Optional[TextSplitterConfigModel]
+        self,
+        chunk_size: int,
+        chunk_overlap: int,
+        splitter_config: Optional[TextSplitterConfigModel],
     ) -> RecursiveCharacterTextSplitter:
         if splitter_config is None:
             splitter_config = SeparatorSplitterConfigModel(mode="separator")
@@ -89,14 +108,20 @@ class DocumentProcessor:
             return RecursiveCharacterTextSplitter.from_tiktoken_encoder(
                 chunk_size=chunk_size,
                 chunk_overlap=chunk_overlap,
-                separators=RecursiveCharacterTextSplitter.get_separators_for_language(Language(splitter_config.language)),
+                separators=RecursiveCharacterTextSplitter.get_separators_for_language(
+                    Language(splitter_config.language)
+                ),
                 disallowed_special=(),
             )
 
     def __init__(self, config: ProcessingConfigModel, catalog: ConfiguredAirbyteCatalog):
-        self.streams = {create_stream_identifier(stream.stream): stream for stream in catalog.streams}
+        self.streams = {
+            create_stream_identifier(stream.stream): stream for stream in catalog.streams
+        }
 
-        self.splitter = self._get_text_splitter(config.chunk_size, config.chunk_overlap, config.text_splitter)
+        self.splitter = self._get_text_splitter(
+            config.chunk_size, config.chunk_overlap, config.text_splitter
+        )
         self.text_fields = config.text_fields
         self.metadata_fields = config.metadata_fields
         self.field_name_mappings = config.field_name_mappings
@@ -119,10 +144,18 @@ class DocumentProcessor:
                 failure_type=FailureType.config_error,
             )
         chunks = [
-            Chunk(page_content=chunk_document.page_content, metadata=chunk_document.metadata, record=record)
+            Chunk(
+                page_content=chunk_document.page_content,
+                metadata=chunk_document.metadata,
+                record=record,
+            )
             for chunk_document in self._split_document(doc)
         ]
-        id_to_delete = doc.metadata[METADATA_RECORD_ID_FIELD] if METADATA_RECORD_ID_FIELD in doc.metadata else None
+        id_to_delete = (
+            doc.metadata[METADATA_RECORD_ID_FIELD]
+            if METADATA_RECORD_ID_FIELD in doc.metadata
+            else None
+        )
         return chunks, id_to_delete
 
     def _generate_document(self, record: AirbyteRecordMessage) -> Optional[Document]:
@@ -133,7 +166,9 @@ class DocumentProcessor:
         metadata = self._extract_metadata(record)
         return Document(page_content=text, metadata=metadata)
 
-    def _extract_relevant_fields(self, record: AirbyteRecordMessage, fields: Optional[List[str]]) -> Dict[str, Any]:
+    def _extract_relevant_fields(
+        self, record: AirbyteRecordMessage, fields: Optional[List[str]]
+    ) -> Dict[str, Any]:
         relevant_fields = {}
         if fields and len(fields) > 0:
             for field in fields:
@@ -156,7 +191,10 @@ class DocumentProcessor:
         stream_identifier = create_stream_identifier(record)
         current_stream: ConfiguredAirbyteStream = self.streams[stream_identifier]
         # if the sync mode is deduping, use the primary key to upsert existing records instead of appending new ones
-        if not current_stream.primary_key or current_stream.destination_sync_mode != DestinationSyncMode.append_dedup:
+        if (
+            not current_stream.primary_key
+            or current_stream.destination_sync_mode != DestinationSyncMode.append_dedup
+        ):
             return None
 
         primary_key = []

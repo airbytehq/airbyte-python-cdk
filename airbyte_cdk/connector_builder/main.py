@@ -7,7 +7,13 @@ import sys
 from typing import Any, List, Mapping, Optional, Tuple
 
 from airbyte_cdk.connector import BaseConnector
-from airbyte_cdk.connector_builder.connector_builder_handler import TestReadLimits, create_source, get_limits, read_stream, resolve_manifest
+from airbyte_cdk.connector_builder.connector_builder_handler import (
+    TestReadLimits,
+    create_source,
+    get_limits,
+    read_stream,
+    resolve_manifest,
+)
 from airbyte_cdk.entrypoint import AirbyteEntrypoint
 from airbyte_cdk.models import (
     AirbyteMessage,
@@ -22,11 +28,17 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 from orjson import orjson
 
 
-def get_config_and_catalog_from_args(args: List[str]) -> Tuple[str, Mapping[str, Any], Optional[ConfiguredAirbyteCatalog], Any]:
+def get_config_and_catalog_from_args(
+    args: List[str],
+) -> Tuple[str, Mapping[str, Any], Optional[ConfiguredAirbyteCatalog], Any]:
     # TODO: Add functionality for the `debug` logger.
     #  Currently, no one `debug` level log will be displayed during `read` a stream for a connector created through `connector-builder`.
     parsed_args = AirbyteEntrypoint.parse_args(args)
-    config_path, catalog_path, state_path = parsed_args.config, parsed_args.catalog, parsed_args.state
+    config_path, catalog_path, state_path = (
+        parsed_args.config,
+        parsed_args.catalog,
+        parsed_args.state,
+    )
     if parsed_args.command != "read":
         raise ValueError("Only read commands are allowed for Connector Builder requests.")
 
@@ -64,7 +76,9 @@ def handle_connector_builder_request(
     if command == "resolve_manifest":
         return resolve_manifest(source)
     elif command == "test_read":
-        assert catalog is not None, "`test_read` requires a valid `ConfiguredAirbyteCatalog`, got None."
+        assert (
+            catalog is not None
+        ), "`test_read` requires a valid `ConfiguredAirbyteCatalog`, got None."
         return read_stream(source, config, catalog, state, limits)
     else:
         raise ValueError(f"Unrecognized command {command}.")
@@ -74,13 +88,19 @@ def handle_request(args: List[str]) -> str:
     command, config, catalog, state = get_config_and_catalog_from_args(args)
     limits = get_limits(config)
     source = create_source(config, limits)
-    return orjson.dumps(AirbyteMessageSerializer.dump(handle_connector_builder_request(source, command, config, catalog, state, limits))).decode()  # type: ignore[no-any-return] # Serializer.dump() always returns AirbyteMessage
+    return orjson.dumps(
+        AirbyteMessageSerializer.dump(
+            handle_connector_builder_request(source, command, config, catalog, state, limits)
+        )
+    ).decode()  # type: ignore[no-any-return] # Serializer.dump() always returns AirbyteMessage
 
 
 if __name__ == "__main__":
     try:
         print(handle_request(sys.argv[1:]))
     except Exception as exc:
-        error = AirbyteTracedException.from_exception(exc, message=f"Error handling request: {str(exc)}")
+        error = AirbyteTracedException.from_exception(
+            exc, message=f"Error handling request: {str(exc)}"
+        )
         m = error.as_airbyte_message()
         print(orjson.dumps(AirbyteMessageSerializer.dump(m)).decode())

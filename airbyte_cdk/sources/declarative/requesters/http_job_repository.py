@@ -12,8 +12,13 @@ from airbyte_cdk.models import FailureType, Type
 from airbyte_cdk.sources.declarative.async_job.job import AsyncJob
 from airbyte_cdk.sources.declarative.async_job.repository import AsyncJobRepository
 from airbyte_cdk.sources.declarative.async_job.status import AsyncJobStatus
-from airbyte_cdk.sources.declarative.extractors.dpath_extractor import DpathExtractor, RecordExtractor
-from airbyte_cdk.sources.declarative.extractors.response_to_file_extractor import ResponseToFileExtractor
+from airbyte_cdk.sources.declarative.extractors.dpath_extractor import (
+    DpathExtractor,
+    RecordExtractor,
+)
+from airbyte_cdk.sources.declarative.extractors.response_to_file_extractor import (
+    ResponseToFileExtractor,
+)
 from airbyte_cdk.sources.declarative.requesters.requester import Requester
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.types import Record, StreamSlice
@@ -35,7 +40,9 @@ class AsyncHttpJobRepository(AsyncJobRepository):
     urls_extractor: DpathExtractor
 
     job_timeout: Optional[timedelta] = None
-    record_extractor: RecordExtractor = field(init=False, repr=False, default_factory=lambda: ResponseToFileExtractor())
+    record_extractor: RecordExtractor = field(
+        init=False, repr=False, default_factory=lambda: ResponseToFileExtractor()
+    )
 
     def __post_init__(self) -> None:
         self._create_job_response_by_id: Dict[str, Response] = {}
@@ -55,7 +62,9 @@ class AsyncHttpJobRepository(AsyncJobRepository):
             AirbyteTracedException: If the polling request returns an empty response.
         """
 
-        polling_response: Optional[requests.Response] = self.polling_requester.send_request(stream_slice=stream_slice)
+        polling_response: Optional[requests.Response] = self.polling_requester.send_request(
+            stream_slice=stream_slice
+        )
         if polling_response is None:
             raise AirbyteTracedException(
                 internal_message="Polling Requester received an empty Response.",
@@ -100,7 +109,9 @@ class AsyncHttpJobRepository(AsyncJobRepository):
             AirbyteTracedException: If no response is received from the creation requester.
         """
 
-        response: Optional[requests.Response] = self.creation_requester.send_request(stream_slice=stream_slice)
+        response: Optional[requests.Response] = self.creation_requester.send_request(
+            stream_slice=stream_slice
+        )
         if not response:
             raise AirbyteTracedException(
                 internal_message="Always expect a response or an exception from creation_requester",
@@ -146,9 +157,17 @@ class AsyncHttpJobRepository(AsyncJobRepository):
             job_status: AsyncJobStatus = self._get_validated_job_status(polling_response)
 
             if job_status != job.status():
-                lazy_log(LOGGER, logging.DEBUG, lambda: f"Status of job {job.api_job_id()} changed from {job.status()} to {job_status}")
+                lazy_log(
+                    LOGGER,
+                    logging.DEBUG,
+                    lambda: f"Status of job {job.api_job_id()} changed from {job.status()} to {job_status}",
+                )
             else:
-                lazy_log(LOGGER, logging.DEBUG, lambda: f"Status of job {job.api_job_id()} is still {job.status()}")
+                lazy_log(
+                    LOGGER,
+                    logging.DEBUG,
+                    lambda: f"Status of job {job.api_job_id()} is still {job.status()}",
+                )
 
             job.update_status(job_status)
             if job_status == AsyncJobStatus.COMPLETED:
@@ -166,7 +185,9 @@ class AsyncHttpJobRepository(AsyncJobRepository):
 
         """
 
-        for url in self.urls_extractor.extract_records(self._polling_job_response_by_id[job.api_job_id()]):
+        for url in self.urls_extractor.extract_records(
+            self._polling_job_response_by_id[job.api_job_id()]
+        ):
             stream_slice: StreamSlice = StreamSlice(partition={"url": url}, cursor_slice={})
             for message in self.download_retriever.read_records({}, stream_slice):
                 if isinstance(message, Record):

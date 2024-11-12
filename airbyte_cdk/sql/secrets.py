@@ -101,7 +101,9 @@ class SecretString(str):
         handler: GetCoreSchemaHandler,
     ) -> CoreSchema:
         """Return a modified core schema for the secret string."""
-        return core_schema.with_info_after_validator_function(function=cls.validate, schema=handler(str), field_name=handler.field_name)
+        return core_schema.with_info_after_validator_function(
+            function=cls.validate, schema=handler(str), field_name=handler.field_name
+        )
 
     @classmethod
     def __get_pydantic_json_schema__(  # noqa: PLW3201  # Pydantic dunder method

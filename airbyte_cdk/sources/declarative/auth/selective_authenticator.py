@@ -29,7 +29,9 @@ class SelectiveAuthenticator(DeclarativeAuthenticator):
         try:
             selected_key = str(dpath.get(config, authenticator_selection_path))
         except KeyError as err:
-            raise ValueError("The path from `authenticator_selection_path` is not found in the config.") from err
+            raise ValueError(
+                "The path from `authenticator_selection_path` is not found in the config."
+            ) from err
 
         try:
             return authenticators[selected_key]

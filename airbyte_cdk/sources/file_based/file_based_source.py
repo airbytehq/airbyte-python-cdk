@@ -22,15 +22,31 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.concurrent_source.concurrent_source import ConcurrentSource
 from airbyte_cdk.sources.concurrent_source.concurrent_source_adapter import ConcurrentSourceAdapter
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
-from airbyte_cdk.sources.file_based.availability_strategy import AbstractFileBasedAvailabilityStrategy, DefaultFileBasedAvailabilityStrategy
+from airbyte_cdk.sources.file_based.availability_strategy import (
+    AbstractFileBasedAvailabilityStrategy,
+    DefaultFileBasedAvailabilityStrategy,
+)
 from airbyte_cdk.sources.file_based.config.abstract_file_based_spec import AbstractFileBasedSpec
-from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig, ValidationPolicy
-from airbyte_cdk.sources.file_based.discovery_policy import AbstractDiscoveryPolicy, DefaultDiscoveryPolicy
-from airbyte_cdk.sources.file_based.exceptions import ConfigValidationError, FileBasedErrorsCollector, FileBasedSourceError
+from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
+    FileBasedStreamConfig,
+    ValidationPolicy,
+)
+from airbyte_cdk.sources.file_based.discovery_policy import (
+    AbstractDiscoveryPolicy,
+    DefaultDiscoveryPolicy,
+)
+from airbyte_cdk.sources.file_based.exceptions import (
+    ConfigValidationError,
+    FileBasedErrorsCollector,
+    FileBasedSourceError,
+)
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
 from airbyte_cdk.sources.file_based.file_types import default_parsers
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
-from airbyte_cdk.sources.file_based.schema_validation_policies import DEFAULT_SCHEMA_VALIDATION_POLICIES, AbstractSchemaValidationPolicy
+from airbyte_cdk.sources.file_based.schema_validation_policies import (
+    DEFAULT_SCHEMA_VALIDATION_POLICIES,
+    AbstractSchemaValidationPolicy,
+)
 from airbyte_cdk.sources.file_based.stream import AbstractFileBasedStream, DefaultFileBasedStream
 from airbyte_cdk.sources.file_based.stream.concurrent.adapters import FileBasedStreamFacade
 from airbyte_cdk.sources.file_based.stream.concurrent.cursor import (
@@ -65,25 +81,37 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         availability_strategy: Optional[AbstractFileBasedAvailabilityStrategy] = None,
         discovery_policy: AbstractDiscoveryPolicy = DefaultDiscoveryPolicy(),
         parsers: Mapping[Type[Any], FileTypeParser] = default_parsers,
-        validation_policies: Mapping[ValidationPolicy, AbstractSchemaValidationPolicy] = DEFAULT_SCHEMA_VALIDATION_POLICIES,
-        cursor_cls: Type[Union[AbstractConcurrentFileBasedCursor, AbstractFileBasedCursor]] = FileBasedConcurrentCursor,
+        validation_policies: Mapping[
+            ValidationPolicy, AbstractSchemaValidationPolicy
+        ] = DEFAULT_SCHEMA_VALIDATION_POLICIES,
+        cursor_cls: Type[
+            Union[AbstractConcurrentFileBasedCursor, AbstractFileBasedCursor]
+        ] = FileBasedConcurrentCursor,
     ):
         self.stream_reader = stream_reader
         self.spec_class = spec_class
         self.config = config
         self.catalog = catalog
         self.state = state
-        self.availability_strategy = availability_strategy or DefaultFileBasedAvailabilityStrategy(stream_reader)
+        self.availability_strategy = availability_strategy or DefaultFileBasedAvailabilityStrategy(
+            stream_reader
+        )
         self.discovery_policy = discovery_policy
         self.parsers = parsers
         self.validation_policies = validation_policies
-        self.stream_schemas = {s.stream.name: s.stream.json_schema for s in catalog.streams} if catalog else {}
+        self.stream_schemas = (
+            {s.stream.name: s.stream.json_schema for s in catalog.streams} if catalog else {}
+        )
         self.cursor_cls = cursor_cls
         self.logger = init_logger(f"airbyte.{self.name}")
         self.errors_collector: FileBasedErrorsCollector = FileBasedErrorsCollector()
         self._message_repository: Optional[MessageRepository] = None
         concurrent_source = ConcurrentSource.create(
-            MAX_CONCURRENCY, INITIAL_N_PARTITIONS, self.logger, self._slice_logger, self.message_repository
+            MAX_CONCURRENCY,
+            INITIAL_N_PARTITIONS,
+            self.logger,
+            self._slice_logger,
+            self.message_repository,
         )
         self._state = None
         super().__init__(concurrent_source)
@@ -91,10 +119,14 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
     @property
     def message_repository(self) -> MessageRepository:
         if self._message_repository is None:
-            self._message_repository = InMemoryMessageRepository(Level(AirbyteLogFormatter.level_mapping[self.logger.level]))
+            self._message_repository = InMemoryMessageRepository(
+                Level(AirbyteLogFormatter.level_mapping[self.logger.level])
+            )
         return self._message_repository
 
-    def check_connection(self, logger: logging.Logger, config: Mapping[str, Any]) -> Tuple[bool, Optional[Any]]:
+    def check_connection(
+        self, logger: logging.Logger, config: Mapping[str, Any]
+    ) -> Tuple[bool, Optional[Any]]:
         """
         Check that the source can be accessed using the user-provided configuration.
 
@@ -195,13 +227,21 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
 
                 sync_mode = self._get_sync_mode_from_catalog(stream_config.name)
 
-                if sync_mode == SyncMode.full_refresh and hasattr(self, "_concurrency_level") and self._concurrency_level is not None:
+                if (
+                    sync_mode == SyncMode.full_refresh
+                    and hasattr(self, "_concurrency_level")
+                    and self._concurrency_level is not None
+                ):
                     cursor = FileBasedFinalStateCursor(
-                        stream_config=stream_config, stream_namespace=None, message_repository=self.message_repository
+                        stream_config=stream_config,
+                        stream_namespace=None,
+                        message_repository=self.message_repository,
                     )
                     stream = FileBasedStreamFacade.create_from_stream(
                         stream=self._make_default_stream(
-                            stream_config=stream_config, cursor=cursor, use_file_transfer=self._use_file_transfer(parsed_config)
+                            stream_config=stream_config,
+                            cursor=cursor,
+                            use_file_transfer=self._use_file_transfer(parsed_config),
                         ),
                         source=self,
                         logger=self.logger,
@@ -230,7 +270,9 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                     )
                     stream = FileBasedStreamFacade.create_from_stream(
                         stream=self._make_default_stream(
-                            stream_config=stream_config, cursor=cursor, use_file_transfer=self._use_file_transfer(parsed_config)
+                            stream_config=stream_config,
+                            cursor=cursor,
+                            use_file_transfer=self._use_file_transfer(parsed_config),
                         ),
                         source=self,
                         logger=self.logger,
@@ -240,7 +282,9 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                 else:
                     cursor = self.cursor_cls(stream_config)
                     stream = self._make_default_stream(
-                        stream_config=stream_config, cursor=cursor, use_file_transfer=self._use_file_transfer(parsed_config)
+                        stream_config=stream_config,
+                        cursor=cursor,
+                        use_file_transfer=self._use_file_transfer(parsed_config),
                     )
 
                 streams.append(stream)
@@ -250,7 +294,10 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
             raise ConfigValidationError(FileBasedSourceError.CONFIG_VALIDATION_ERROR) from exc
 
     def _make_default_stream(
-        self, stream_config: FileBasedStreamConfig, cursor: Optional[AbstractFileBasedCursor], use_file_transfer: bool = False
+        self,
+        stream_config: FileBasedStreamConfig,
+        cursor: Optional[AbstractFileBasedCursor],
+        use_file_transfer: bool = False,
     ) -> AbstractFileBasedStream:
         return DefaultFileBasedStream(
             config=stream_config,
@@ -265,7 +312,9 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
             use_file_transfer=use_file_transfer,
         )
 
-    def _get_stream_from_catalog(self, stream_config: FileBasedStreamConfig) -> Optional[AirbyteStream]:
+    def _get_stream_from_catalog(
+        self, stream_config: FileBasedStreamConfig
+    ) -> Optional[AirbyteStream]:
         if self.catalog:
             for stream in self.catalog.streams or []:
                 if stream.stream.name == stream_config.name:
@@ -292,7 +341,9 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         yield from self.errors_collector.yield_and_raise_collected()
         # count streams using a certain parser
         parsed_config = self._get_parsed_config(config)
-        for parser, count in Counter(stream.format.filetype for stream in parsed_config.streams).items():
+        for parser, count in Counter(
+            stream.format.filetype for stream in parsed_config.streams
+        ).items():
             yield create_analytics_message(f"file-cdk-{parser}-stream-count", count)
 
     def spec(self, *args: Any, **kwargs: Any) -> ConnectorSpecification:
@@ -308,21 +359,28 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
     def _get_parsed_config(self, config: Mapping[str, Any]) -> AbstractFileBasedSpec:
         return self.spec_class(**config)
 
-    def _validate_and_get_validation_policy(self, stream_config: FileBasedStreamConfig) -> AbstractSchemaValidationPolicy:
+    def _validate_and_get_validation_policy(
+        self, stream_config: FileBasedStreamConfig
+    ) -> AbstractSchemaValidationPolicy:
         if stream_config.validation_policy not in self.validation_policies:
             # This should never happen because we validate the config against the schema's validation_policy enum
             raise ValidationError(
-                f"`validation_policy` must be one of {list(self.validation_policies.keys())}", model=FileBasedStreamConfig
+                f"`validation_policy` must be one of {list(self.validation_policies.keys())}",
+                model=FileBasedStreamConfig,
             )
         return self.validation_policies[stream_config.validation_policy]
 
     def _validate_input_schema(self, stream_config: FileBasedStreamConfig) -> None:
         if stream_config.schemaless and stream_config.input_schema:
-            raise ValidationError("`input_schema` and `schemaless` options cannot both be set", model=FileBasedStreamConfig)
+            raise ValidationError(
+                "`input_schema` and `schemaless` options cannot both be set",
+                model=FileBasedStreamConfig,
+            )
 
     @staticmethod
     def _use_file_transfer(parsed_config: AbstractFileBasedSpec) -> bool:
         use_file_transfer = (
-            hasattr(parsed_config.delivery_method, "delivery_type") and parsed_config.delivery_method.delivery_type == "use_file_transfer"
+            hasattr(parsed_config.delivery_method, "delivery_type")
+            and parsed_config.delivery_method.delivery_type == "use_file_transfer"
         )
         return use_file_transfer

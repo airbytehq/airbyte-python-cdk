@@ -56,7 +56,9 @@ class FileBasedStreamConfig(BaseModel):
         description="When the state history of the file store is full, syncs will only read files that were last modified in the provided day range.",
         default=3,
     )
-    format: Union[AvroFormat, CsvFormat, JsonlFormat, ParquetFormat, UnstructuredFormat, ExcelFormat] = Field(
+    format: Union[
+        AvroFormat, CsvFormat, JsonlFormat, ParquetFormat, UnstructuredFormat, ExcelFormat
+    ] = Field(
         title="Format",
         description="The configuration options that are used to alter how to read incoming files that deviate from the standard formatting.",
     )
@@ -89,6 +91,8 @@ class FileBasedStreamConfig(BaseModel):
         if self.input_schema:
             schema = type_mapping_to_jsonschema(self.input_schema)
             if not schema:
-                raise ValueError(f"Unable to create JSON schema from input schema {self.input_schema}")
+                raise ValueError(
+                    f"Unable to create JSON schema from input schema {self.input_schema}"
+                )
             return schema
         return None

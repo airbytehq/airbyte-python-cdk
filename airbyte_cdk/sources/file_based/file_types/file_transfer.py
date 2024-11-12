@@ -15,7 +15,11 @@ DEFAULT_LOCAL_DIRECTORY = "/tmp/airbyte-file-transfer"
 
 class FileTransfer:
     def __init__(self) -> None:
-        self._local_directory = AIRBYTE_STAGING_DIRECTORY if os.path.exists(AIRBYTE_STAGING_DIRECTORY) else DEFAULT_LOCAL_DIRECTORY
+        self._local_directory = (
+            AIRBYTE_STAGING_DIRECTORY
+            if os.path.exists(AIRBYTE_STAGING_DIRECTORY)
+            else DEFAULT_LOCAL_DIRECTORY
+        )
 
     def get_file(
         self,
@@ -25,7 +29,9 @@ class FileTransfer:
         logger: logging.Logger,
     ) -> Iterable[Dict[str, Any]]:
         try:
-            yield stream_reader.get_file(file=file, local_directory=self._local_directory, logger=logger)
+            yield stream_reader.get_file(
+                file=file, local_directory=self._local_directory, logger=logger
+            )
         except Exception as ex:
             logger.error("An error has occurred while getting file: %s", str(ex))
             raise ex

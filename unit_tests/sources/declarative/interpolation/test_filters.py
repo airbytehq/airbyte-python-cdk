@@ -97,7 +97,9 @@ def test_regex_search_no_match_group() -> None:
 
 def test_regex_search_no_match() -> None:
     # If no group is set in the regular expression, the result will be an empty string
-    expression_with_regex = "{{ '<https://this-is-test-link.com/?page=2>; rel=\"next\"' | regex_search('WATWATWAT') }}"
+    expression_with_regex = (
+        "{{ '<https://this-is-test-link.com/?page=2>; rel=\"next\"' | regex_search('WATWATWAT') }}"
+    )
 
     val = interpolation.eval(expression_with_regex, {})
 

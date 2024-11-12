@@ -27,7 +27,10 @@ class SliceLogger(ABC):
         printable_slice = dict(_slice) if _slice else _slice
         return AirbyteMessage(
             type=MessageType.LOG,
-            log=AirbyteLogMessage(level=Level.INFO, message=f"{SliceLogger.SLICE_LOG_PREFIX}{json.dumps(printable_slice, default=str)}"),
+            log=AirbyteLogMessage(
+                level=Level.INFO,
+                message=f"{SliceLogger.SLICE_LOG_PREFIX}{json.dumps(printable_slice, default=str)}",
+            ),
         )
 
     @abstractmethod
