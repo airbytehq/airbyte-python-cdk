@@ -2,7 +2,12 @@
 
 from typing import Any, Dict, List, Union, overload
 
-from airbyte_cdk.models import ConfiguredAirbyteCatalog, ConfiguredAirbyteStream, ConfiguredAirbyteStreamSerializer, SyncMode
+from airbyte_cdk.models import (
+    ConfiguredAirbyteCatalog,
+    ConfiguredAirbyteStream,
+    ConfiguredAirbyteStreamSerializer,
+    SyncMode,
+)
 
 
 class ConfiguredAirbyteStreamBuilder:
@@ -45,14 +50,16 @@ class CatalogBuilder:
         self._streams: List[ConfiguredAirbyteStreamBuilder] = []
 
     @overload
-    def with_stream(self, name: ConfiguredAirbyteStreamBuilder) -> "CatalogBuilder":
-        ...
+    def with_stream(self, name: ConfiguredAirbyteStreamBuilder) -> "CatalogBuilder": ...
 
     @overload
-    def with_stream(self, name: str, sync_mode: SyncMode) -> "CatalogBuilder":
-        ...
+    def with_stream(self, name: str, sync_mode: SyncMode) -> "CatalogBuilder": ...
 
-    def with_stream(self, name: Union[str, ConfiguredAirbyteStreamBuilder], sync_mode: Union[SyncMode, None] = None) -> "CatalogBuilder":
+    def with_stream(
+        self,
+        name: Union[str, ConfiguredAirbyteStreamBuilder],
+        sync_mode: Union[SyncMode, None] = None,
+    ) -> "CatalogBuilder":
         # As we are introducing a fully fledge ConfiguredAirbyteStreamBuilder, we would like to deprecate the previous interface
         # with_stream(str, SyncMode)
 
@@ -61,10 +68,14 @@ class CatalogBuilder:
         builder = (
             name_or_builder
             if isinstance(name_or_builder, ConfiguredAirbyteStreamBuilder)
-            else ConfiguredAirbyteStreamBuilder().with_name(name_or_builder).with_sync_mode(sync_mode)
+            else ConfiguredAirbyteStreamBuilder()
+            .with_name(name_or_builder)
+            .with_sync_mode(sync_mode)
         )
         self._streams.append(builder)
         return self
 
     def build(self) -> ConfiguredAirbyteCatalog:
-        return ConfiguredAirbyteCatalog(streams=list(map(lambda builder: builder.build(), self._streams)))
+        return ConfiguredAirbyteCatalog(
+            streams=list(map(lambda builder: builder.build(), self._streams))
+        )

@@ -8,7 +8,9 @@ from typing import Iterable, Iterator, List
 
 from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.sources.concurrent_source.concurrent_read_processor import ConcurrentReadProcessor
-from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentinel import PartitionGenerationCompletedSentinel
+from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentinel import (
+    PartitionGenerationCompletedSentinel,
+)
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
 from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPoolManager
 from airbyte_cdk.sources.message import InMemoryMessageRepository, MessageRepository
@@ -17,7 +19,10 @@ from airbyte_cdk.sources.streams.concurrent.partition_enqueuer import PartitionE
 from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionReader
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
-from airbyte_cdk.sources.streams.concurrent.partitions.types import PartitionCompleteSentinel, QueueItem
+from airbyte_cdk.sources.streams.concurrent.partitions.types import (
+    PartitionCompleteSentinel,
+    QueueItem,
+)
 from airbyte_cdk.sources.utils.slice_logger import DebugSliceLogger, SliceLogger
 
 
@@ -41,14 +46,25 @@ class ConcurrentSource:
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     ) -> "ConcurrentSource":
         is_single_threaded = initial_number_of_partitions_to_generate == 1 and num_workers == 1
-        too_many_generator = not is_single_threaded and initial_number_of_partitions_to_generate >= num_workers
-        assert not too_many_generator, "It is required to have more workers than threads generating partitions"
+        too_many_generator = (
+            not is_single_threaded and initial_number_of_partitions_to_generate >= num_workers
+        )
+        assert (
+            not too_many_generator
+        ), "It is required to have more workers than threads generating partitions"
         threadpool = ThreadPoolManager(
-            concurrent.futures.ThreadPoolExecutor(max_workers=num_workers, thread_name_prefix="workerpool"),
+            concurrent.futures.ThreadPoolExecutor(
+                max_workers=num_workers, thread_name_prefix="workerpool"
+            ),
             logger,
         )
         return ConcurrentSource(
-            threadpool, logger, slice_logger, message_repository, initial_number_of_partitions_to_generate, timeout_seconds
+            threadpool,
+            logger,
+            slice_logger,
+            message_repository,
+            initial_number_of_partitions_to_generate,
+            timeout_seconds,
         )
 
     def __init__(
@@ -107,7 +123,9 @@ class ConcurrentSource:
         self._threadpool.check_for_errors_and_shutdown()
         self._logger.info("Finished syncing")
 
-    def _submit_initial_partition_generators(self, concurrent_stream_processor: ConcurrentReadProcessor) -> Iterable[AirbyteMessage]:
+    def _submit_initial_partition_generators(
+        self, concurrent_stream_processor: ConcurrentReadProcessor
+    ) -> Iterable[AirbyteMessage]:
         for _ in range(self._initial_number_partitions_to_generate):
             status_message = concurrent_stream_processor.start_next_partition_generator()
             if status_message:

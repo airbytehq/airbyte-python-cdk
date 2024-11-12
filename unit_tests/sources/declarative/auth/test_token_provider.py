@@ -6,7 +6,10 @@ from unittest.mock import MagicMock
 
 import pendulum
 import pytest
-from airbyte_cdk.sources.declarative.auth.token_provider import InterpolatedStringTokenProvider, SessionTokenProvider
+from airbyte_cdk.sources.declarative.auth.token_provider import (
+    InterpolatedStringTokenProvider,
+    SessionTokenProvider,
+)
 from airbyte_cdk.sources.declarative.exceptions import ReadException
 from isodate import parse_duration
 
@@ -27,7 +30,9 @@ def create_session_token_provider():
 
 def test_interpolated_string_token_provider():
     provider = InterpolatedStringTokenProvider(
-        config={"config_key": "val"}, api_token="{{ config.config_key }}-{{ parameters.test }}", parameters={"test": "test"}
+        config={"config_key": "val"},
+        api_token="{{ config.config_key }}-{{ parameters.test }}",
+        parameters={"test": "test"},
     )
     assert provider.get_token() == "val-test"
 
@@ -49,7 +54,9 @@ def test_session_token_provider_cache_expiration():
         provider = create_session_token_provider()
         provider.get_token()
 
-    provider.login_requester.send_request.return_value.json.return_value = {"nested": {"token": "updated_token"}}
+    provider.login_requester.send_request.return_value.json.return_value = {
+        "nested": {"token": "updated_token"}
+    }
 
     with pendulum.test(pendulum.datetime(2001, 5, 21, 14)):
         assert provider.get_token() == "updated_token"

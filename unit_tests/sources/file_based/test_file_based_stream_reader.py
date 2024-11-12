@@ -77,7 +77,9 @@ class TestStreamReader(AbstractFileBasedStreamReader):
     def file_size(self, file: RemoteFile) -> int:
         return 0
 
-    def get_file(self, file: RemoteFile, local_directory: str, logger: logging.Logger) -> Dict[str, Any]:
+    def get_file(
+        self, file: RemoteFile, local_directory: str, logger: logging.Logger
+    ) -> Dict[str, Any]:
         return {}
 
 
@@ -94,7 +96,11 @@ class TestSpec(AbstractFileBasedSpec):
         pytest.param([""], DEFAULT_CONFIG, set(), set(), id="empty-string"),
         pytest.param(["**"], DEFAULT_CONFIG, set(FILEPATHS), set(), id="**"),
         pytest.param(
-            ["**/*.csv"], DEFAULT_CONFIG, {"a.csv", "a/b.csv", "a/c.csv", "a/b/c.csv", "a/c/c.csv", "a/b/c/d.csv"}, set(), id="**/*.csv"
+            ["**/*.csv"],
+            DEFAULT_CONFIG,
+            {"a.csv", "a/b.csv", "a/c.csv", "a/b/c.csv", "a/c/c.csv", "a/b/c/d.csv"},
+            set(),
+            id="**/*.csv",
         ),
         pytest.param(
             ["**/*.csv*"],
@@ -122,12 +128,27 @@ class TestSpec(AbstractFileBasedSpec):
         pytest.param(
             ["*/*"],
             DEFAULT_CONFIG,
-            {"a/b", "a/b.csv", "a/b.csv.gz", "a/b.jsonl", "a/c", "a/c.csv", "a/c.csv.gz", "a/c.jsonl"},
+            {
+                "a/b",
+                "a/b.csv",
+                "a/b.csv.gz",
+                "a/b.jsonl",
+                "a/c",
+                "a/c.csv",
+                "a/c.csv.gz",
+                "a/c.jsonl",
+            },
             set(),
             id="*/*",
         ),
         pytest.param(["*/*.csv"], DEFAULT_CONFIG, {"a/b.csv", "a/c.csv"}, set(), id="*/*.csv"),
-        pytest.param(["*/*.csv*"], DEFAULT_CONFIG, {"a/b.csv", "a/b.csv.gz", "a/c.csv", "a/c.csv.gz"}, set(), id="*/*.csv*"),
+        pytest.param(
+            ["*/*.csv*"],
+            DEFAULT_CONFIG,
+            {"a/b.csv", "a/b.csv.gz", "a/c.csv", "a/c.csv.gz"},
+            set(),
+            id="*/*.csv*",
+        ),
         pytest.param(
             ["*/**"],
             DEFAULT_CONFIG,
@@ -159,24 +180,64 @@ class TestSpec(AbstractFileBasedSpec):
         pytest.param(
             ["a/*"],
             DEFAULT_CONFIG,
-            {"a/b", "a/b.csv", "a/b.csv.gz", "a/b.jsonl", "a/c", "a/c.csv", "a/c.csv.gz", "a/c.jsonl"},
+            {
+                "a/b",
+                "a/b.csv",
+                "a/b.csv.gz",
+                "a/b.jsonl",
+                "a/c",
+                "a/c.csv",
+                "a/c.csv.gz",
+                "a/c.jsonl",
+            },
             {"a/"},
             id="a/*",
         ),
         pytest.param(["a/*.csv"], DEFAULT_CONFIG, {"a/b.csv", "a/c.csv"}, {"a/"}, id="a/*.csv"),
-        pytest.param(["a/*.csv*"], DEFAULT_CONFIG, {"a/b.csv", "a/b.csv.gz", "a/c.csv", "a/c.csv.gz"}, {"a/"}, id="a/*.csv*"),
-        pytest.param(["a/b/*"], DEFAULT_CONFIG, {"a/b/c", "a/b/c.csv", "a/b/c.csv.gz", "a/b/c.jsonl"}, {"a/b/"}, id="a/b/*"),
+        pytest.param(
+            ["a/*.csv*"],
+            DEFAULT_CONFIG,
+            {"a/b.csv", "a/b.csv.gz", "a/c.csv", "a/c.csv.gz"},
+            {"a/"},
+            id="a/*.csv*",
+        ),
+        pytest.param(
+            ["a/b/*"],
+            DEFAULT_CONFIG,
+            {"a/b/c", "a/b/c.csv", "a/b/c.csv.gz", "a/b/c.jsonl"},
+            {"a/b/"},
+            id="a/b/*",
+        ),
         pytest.param(["a/b/*.csv"], DEFAULT_CONFIG, {"a/b/c.csv"}, {"a/b/"}, id="a/b/*.csv"),
-        pytest.param(["a/b/*.csv*"], DEFAULT_CONFIG, {"a/b/c.csv", "a/b/c.csv.gz"}, {"a/b/"}, id="a/b/*.csv*"),
+        pytest.param(
+            ["a/b/*.csv*"], DEFAULT_CONFIG, {"a/b/c.csv", "a/b/c.csv.gz"}, {"a/b/"}, id="a/b/*.csv*"
+        ),
         pytest.param(
             ["a/*/*"],
             DEFAULT_CONFIG,
-            {"a/b/c", "a/b/c.csv", "a/b/c.csv.gz", "a/b/c.jsonl", "a/c/c", "a/c/c.csv", "a/c/c.csv.gz", "a/c/c.jsonl"},
+            {
+                "a/b/c",
+                "a/b/c.csv",
+                "a/b/c.csv.gz",
+                "a/b/c.jsonl",
+                "a/c/c",
+                "a/c/c.csv",
+                "a/c/c.csv.gz",
+                "a/c/c.jsonl",
+            },
             {"a/"},
             id="a/*/*",
         ),
-        pytest.param(["a/*/*.csv"], DEFAULT_CONFIG, {"a/b/c.csv", "a/c/c.csv"}, {"a/"}, id="a/*/*.csv"),
-        pytest.param(["a/*/*.csv*"], DEFAULT_CONFIG, {"a/b/c.csv", "a/b/c.csv.gz", "a/c/c.csv", "a/c/c.csv.gz"}, {"a/"}, id="a/*/*.csv*"),
+        pytest.param(
+            ["a/*/*.csv"], DEFAULT_CONFIG, {"a/b/c.csv", "a/c/c.csv"}, {"a/"}, id="a/*/*.csv"
+        ),
+        pytest.param(
+            ["a/*/*.csv*"],
+            DEFAULT_CONFIG,
+            {"a/b/c.csv", "a/b/c.csv.gz", "a/c/c.csv", "a/c/c.csv.gz"},
+            {"a/"},
+            id="a/*/*.csv*",
+        ),
         pytest.param(
             ["a/**/*"],
             DEFAULT_CONFIG,
@@ -206,7 +267,11 @@ class TestSpec(AbstractFileBasedSpec):
             id="a/**/*",
         ),
         pytest.param(
-            ["a/**/*.csv"], DEFAULT_CONFIG, {"a/b.csv", "a/c.csv", "a/b/c.csv", "a/c/c.csv", "a/b/c/d.csv"}, {"a/"}, id="a/**/*.csv"
+            ["a/**/*.csv"],
+            DEFAULT_CONFIG,
+            {"a/b.csv", "a/c.csv", "a/b/c.csv", "a/c/c.csv", "a/b/c/d.csv"},
+            {"a/"},
+            id="a/**/*.csv",
         ),
         pytest.param(
             ["a/**/*.csv*"],
@@ -246,11 +311,23 @@ class TestSpec(AbstractFileBasedSpec):
             set(),
             id="**/*.csv,**/*.gz",
         ),
-        pytest.param(["*.csv", "*.gz"], DEFAULT_CONFIG, {"a.csv", "a.csv.gz"}, set(), id="*.csv,*.gz"),
         pytest.param(
-            ["a/*.csv", "a/*/*.csv"], DEFAULT_CONFIG, {"a/b.csv", "a/c.csv", "a/b/c.csv", "a/c/c.csv"}, {"a/"}, id="a/*.csv,a/*/*.csv"
+            ["*.csv", "*.gz"], DEFAULT_CONFIG, {"a.csv", "a.csv.gz"}, set(), id="*.csv,*.gz"
         ),
-        pytest.param(["a/*.csv", "a/b/*.csv"], DEFAULT_CONFIG, {"a/b.csv", "a/c.csv", "a/b/c.csv"}, {"a/", "a/b/"}, id="a/*.csv,a/b/*.csv"),
+        pytest.param(
+            ["a/*.csv", "a/*/*.csv"],
+            DEFAULT_CONFIG,
+            {"a/b.csv", "a/c.csv", "a/b/c.csv", "a/c/c.csv"},
+            {"a/"},
+            id="a/*.csv,a/*/*.csv",
+        ),
+        pytest.param(
+            ["a/*.csv", "a/b/*.csv"],
+            DEFAULT_CONFIG,
+            {"a/b.csv", "a/c.csv", "a/b/c.csv"},
+            {"a/", "a/b/"},
+            id="a/*.csv,a/b/*.csv",
+        ),
         pytest.param(
             ["**/*.csv"],
             {"start_date": "2023-06-01T03:54:07.000Z", "streams": []},
@@ -259,7 +336,11 @@ class TestSpec(AbstractFileBasedSpec):
             id="all_csvs_modified_after_start_date",
         ),
         pytest.param(
-            ["**/*.csv"], {"start_date": "2023-06-10T03:54:07.000Z", "streams": []}, set(), set(), id="all_csvs_modified_before_start_date"
+            ["**/*.csv"],
+            {"start_date": "2023-06-10T03:54:07.000Z", "streams": []},
+            set(),
+            set(),
+            id="all_csvs_modified_before_start_date",
         ),
         pytest.param(
             ["**/*.csv"],
@@ -271,9 +352,15 @@ class TestSpec(AbstractFileBasedSpec):
     ],
 )
 def test_globs_and_prefixes_from_globs(
-    globs: List[str], config: Mapping[str, Any], expected_matches: Set[str], expected_path_prefixes: Set[str]
+    globs: List[str],
+    config: Mapping[str, Any],
+    expected_matches: Set[str],
+    expected_path_prefixes: Set[str],
 ) -> None:
     reader = TestStreamReader()
     reader.config = TestSpec(**config)
-    assert set([f.uri for f in reader.filter_files_by_globs_and_start_date(FILES, globs)]) == expected_matches
+    assert (
+        set([f.uri for f in reader.filter_files_by_globs_and_start_date(FILES, globs)])
+        == expected_matches
+    )
     assert set(reader.get_prefixes_from_globs(globs)) == expected_path_prefixes

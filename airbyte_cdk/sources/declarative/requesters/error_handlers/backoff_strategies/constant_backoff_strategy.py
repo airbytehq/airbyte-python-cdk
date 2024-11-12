@@ -28,9 +28,13 @@ class ConstantBackoffStrategy(BackoffStrategy):
         if not isinstance(self.backoff_time_in_seconds, InterpolatedString):
             self.backoff_time_in_seconds = str(self.backoff_time_in_seconds)
         if isinstance(self.backoff_time_in_seconds, float):
-            self.backoff_time_in_seconds = InterpolatedString.create(str(self.backoff_time_in_seconds), parameters=parameters)
+            self.backoff_time_in_seconds = InterpolatedString.create(
+                str(self.backoff_time_in_seconds), parameters=parameters
+            )
         else:
-            self.backoff_time_in_seconds = InterpolatedString.create(self.backoff_time_in_seconds, parameters=parameters)
+            self.backoff_time_in_seconds = InterpolatedString.create(
+                self.backoff_time_in_seconds, parameters=parameters
+            )
 
     def backoff_time(
         self,

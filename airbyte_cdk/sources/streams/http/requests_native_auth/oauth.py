@@ -6,9 +6,14 @@ from typing import Any, List, Mapping, Optional, Sequence, Tuple, Union
 
 import dpath
 import pendulum
-from airbyte_cdk.config_observation import create_connector_config_control_message, emit_configuration_as_airbyte_control_message
+from airbyte_cdk.config_observation import (
+    create_connector_config_control_message,
+    emit_configuration_as_airbyte_control_message,
+)
 from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
-from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_oauth import AbstractOauth2Authenticator
+from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_oauth import (
+    AbstractOauth2Authenticator,
+)
 
 
 class Oauth2Authenticator(AbstractOauth2Authenticator):
@@ -50,7 +55,9 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         self._token_expiry_date_format = token_expiry_date_format
         self._token_expiry_is_time_of_expiration = token_expiry_is_time_of_expiration
         self._access_token = None
-        super().__init__(refresh_token_error_status_codes, refresh_token_error_key, refresh_token_error_values)
+        super().__init__(
+            refresh_token_error_status_codes, refresh_token_error_key, refresh_token_error_values
+        )
 
     def get_token_refresh_endpoint(self) -> str:
         return self._token_refresh_endpoint
@@ -153,8 +160,16 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             token_expiry_is_time_of_expiration bool: set True it if expires_in is returned as time of expiration instead of the number seconds until expiration
             message_repository (MessageRepository): the message repository used to emit logs on HTTP requests and control message on config update
         """
-        self._client_id = client_id if client_id is not None else dpath.get(connector_config, ("credentials", "client_id"))
-        self._client_secret = client_secret if client_secret is not None else dpath.get(connector_config, ("credentials", "client_secret"))
+        self._client_id = (
+            client_id
+            if client_id is not None
+            else dpath.get(connector_config, ("credentials", "client_id"))
+        )
+        self._client_secret = (
+            client_secret
+            if client_secret is not None
+            else dpath.get(connector_config, ("credentials", "client_secret"))
+        )
         self._access_token_config_path = access_token_config_path
         self._refresh_token_config_path = refresh_token_config_path
         self._token_expiry_date_config_path = token_expiry_date_config_path
@@ -204,18 +219,24 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         dpath.new(self._connector_config, self._refresh_token_config_path, new_refresh_token)
 
     def get_token_expiry_date(self) -> pendulum.DateTime:
-        expiry_date = dpath.get(self._connector_config, self._token_expiry_date_config_path, default="")
+        expiry_date = dpath.get(
+            self._connector_config, self._token_expiry_date_config_path, default=""
+        )
         return pendulum.now().subtract(days=1) if expiry_date == "" else pendulum.parse(expiry_date)
 
     def set_token_expiry_date(self, new_token_expiry_date):
-        dpath.new(self._connector_config, self._token_expiry_date_config_path, str(new_token_expiry_date))
+        dpath.new(
+            self._connector_config, self._token_expiry_date_config_path, str(new_token_expiry_date)
+        )
 
     def token_has_expired(self) -> bool:
         """Returns True if the token is expired"""
         return pendulum.now("UTC") > self.get_token_expiry_date()
 
     @staticmethod
-    def get_new_token_expiry_date(access_token_expires_in: str, token_expiry_date_format: str = None) -> pendulum.DateTime:
+    def get_new_token_expiry_date(
+        access_token_expires_in: str, token_expiry_date_format: str = None
+    ) -> pendulum.DateTime:
         if token_expiry_date_format:
             return pendulum.from_format(access_token_expires_in, token_expiry_date_format)
         else:
@@ -228,8 +249,12 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             str: The current access_token, updated if it was previously expired.
         """
         if self.token_has_expired():
-            new_access_token, access_token_expires_in, new_refresh_token = self.refresh_access_token()
-            new_token_expiry_date = self.get_new_token_expiry_date(access_token_expires_in, self._token_expiry_date_format)
+            new_access_token, access_token_expires_in, new_refresh_token = (
+                self.refresh_access_token()
+            )
+            new_token_expiry_date = self.get_new_token_expiry_date(
+                access_token_expires_in, self._token_expiry_date_format
+            )
             self.access_token = new_access_token
             self.set_refresh_token(new_refresh_token)
             self.set_token_expiry_date(new_token_expiry_date)
@@ -237,7 +262,9 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             #  Usually, a class shouldn't care about the implementation details but to keep backward compatibility where we print the
             #  message directly in the console, this is needed
             if not isinstance(self._message_repository, NoopMessageRepository):
-                self._message_repository.emit_message(create_connector_config_control_message(self._connector_config))
+                self._message_repository.emit_message(
+                    create_connector_config_control_message(self._connector_config)
+                )
             else:
                 emit_configuration_as_airbyte_control_message(self._connector_config)
         return self.access_token

@@ -8,7 +8,10 @@ from typing import Any, Iterable, List, Mapping, Optional
 
 from airbyte_cdk.models import AirbyteStream, SyncMode
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
-from airbyte_cdk.sources.streams.concurrent.availability_strategy import AbstractAvailabilityStrategy, StreamAvailability
+from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
+    AbstractAvailabilityStrategy,
+    StreamAvailability,
+)
 from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
@@ -60,7 +63,11 @@ class DefaultStream(AbstractStream):
         return self._json_schema
 
     def as_airbyte_stream(self) -> AirbyteStream:
-        stream = AirbyteStream(name=self.name, json_schema=dict(self._json_schema), supported_sync_modes=[SyncMode.full_refresh])
+        stream = AirbyteStream(
+            name=self.name,
+            json_schema=dict(self._json_schema),
+            supported_sync_modes=[SyncMode.full_refresh],
+        )
 
         if self._namespace:
             stream.namespace = self._namespace

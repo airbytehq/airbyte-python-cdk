@@ -23,7 +23,10 @@ from orjson import orjson
 
 class ObservedDict(dict):  # type: ignore # disallow_any_generics is set to True, and dict is equivalent to dict[Any]
     def __init__(
-        self, non_observed_mapping: MutableMapping[Any, Any], observer: ConfigObserver, update_on_unchanged_value: bool = True
+        self,
+        non_observed_mapping: MutableMapping[Any, Any],
+        observer: ConfigObserver,
+        update_on_unchanged_value: bool = True,
     ) -> None:
         non_observed_mapping = copy(non_observed_mapping)
         self.observer = observer
@@ -69,11 +72,15 @@ class ConfigObserver:
         emit_configuration_as_airbyte_control_message(self.config)
 
 
-def observe_connector_config(non_observed_connector_config: MutableMapping[str, Any]) -> ObservedDict:
+def observe_connector_config(
+    non_observed_connector_config: MutableMapping[str, Any],
+) -> ObservedDict:
     if isinstance(non_observed_connector_config, ObservedDict):
         raise ValueError("This connector configuration is already observed")
     connector_config_observer = ConfigObserver()
-    observed_connector_config = ObservedDict(non_observed_connector_config, connector_config_observer)
+    observed_connector_config = ObservedDict(
+        non_observed_connector_config, connector_config_observer
+    )
     connector_config_observer.set_config(observed_connector_config)
     return observed_connector_config
 

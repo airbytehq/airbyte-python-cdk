@@ -22,13 +22,21 @@ record = MagicMock()
     "test_name, record, streams_to_check, stream_slice, expectation",
     [
         ("test_success_check", record, stream_names, {}, (True, None)),
-        ("test_success_check_stream_slice", record, stream_names, {"slice": "slice_value"}, (True, None)),
+        (
+            "test_success_check_stream_slice",
+            record,
+            stream_names,
+            {"slice": "slice_value"},
+            (True, None),
+        ),
         ("test_fail_check", None, stream_names, {}, (True, None)),
         ("test_try_to_check_invalid stream", record, ["invalid_stream_name"], {}, None),
     ],
 )
 @pytest.mark.parametrize("slices_as_list", [True, False])
-def test_check_stream_with_slices_as_list(test_name, record, streams_to_check, stream_slice, expectation, slices_as_list):
+def test_check_stream_with_slices_as_list(
+    test_name, record, streams_to_check, stream_slice, expectation, slices_as_list
+):
     stream = MagicMock()
     stream.name = "s1"
     stream.availability_strategy = None
@@ -53,7 +61,11 @@ def test_check_stream_with_slices_as_list(test_name, record, streams_to_check, s
 
 
 def mock_read_records(responses, default_response=None, **kwargs):
-    return lambda stream_slice, sync_mode: responses[frozenset(stream_slice)] if frozenset(stream_slice) in responses else default_response
+    return (
+        lambda stream_slice, sync_mode: responses[frozenset(stream_slice)]
+        if frozenset(stream_slice) in responses
+        else default_response
+    )
 
 
 def test_check_empty_stream():
@@ -87,7 +99,12 @@ def test_check_stream_with_no_stream_slices_aborts():
 @pytest.mark.parametrize(
     "test_name, response_code, available_expectation, expected_messages",
     [
-        ("test_stream_unavailable_unhandled_error", 404, False, ["Not found. The requested resource was not found on the server."]),
+        (
+            "test_stream_unavailable_unhandled_error",
+            404,
+            False,
+            ["Not found. The requested resource was not found on the server."],
+        ),
         (
             "test_stream_unavailable_handled_error",
             403,
@@ -97,7 +114,9 @@ def test_check_stream_with_no_stream_slices_aborts():
         ("test_stream_available", 200, True, []),
     ],
 )
-def test_check_http_stream_via_availability_strategy(mocker, test_name, response_code, available_expectation, expected_messages):
+def test_check_http_stream_via_availability_strategy(
+    mocker, test_name, response_code, available_expectation, expected_messages
+):
     class MockHttpStream(HttpStream):
         url_base = "https://test_base_url.com"
         primary_key = ""

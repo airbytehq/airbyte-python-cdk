@@ -90,12 +90,18 @@ class AirbyteError(Exception):
             "original_exception",
         ]
         display_properties = {
-            k: v for k, v in self.__dict__.items() if k not in special_properties and not k.startswith("_") and v is not None
+            k: v
+            for k, v in self.__dict__.items()
+            if k not in special_properties and not k.startswith("_") and v is not None
         }
         display_properties.update(self.context or {})
-        context_str = "\n    ".join(f"{str(k).replace('_', ' ').title()}: {v!r}" for k, v in display_properties.items())
+        context_str = "\n    ".join(
+            f"{str(k).replace('_', ' ').title()}: {v!r}" for k, v in display_properties.items()
+        )
         exception_str = (
-            f"{self.get_message()} ({self.__class__.__name__})" + VERTICAL_SEPARATOR + f"\n{self.__class__.__name__}: {self.get_message()}"
+            f"{self.get_message()} ({self.__class__.__name__})"
+            + VERTICAL_SEPARATOR
+            + f"\n{self.__class__.__name__}: {self.get_message()}"
         )
 
         if self.guidance:
@@ -124,7 +130,9 @@ class AirbyteError(Exception):
     def __repr__(self) -> str:
         """Return a string representation of the exception."""
         class_name = self.__class__.__name__
-        properties_str = ", ".join(f"{k}={v!r}" for k, v in self.__dict__.items() if not k.startswith("_"))
+        properties_str = ", ".join(
+            f"{k}={v!r}" for k, v in self.__dict__.items() if not k.startswith("_")
+        )
         return f"{class_name}({properties_str})"
 
     def safe_logging_dict(self) -> dict[str, Any]:
@@ -180,7 +188,10 @@ class AirbyteInputError(AirbyteError, ValueError):
 class AirbyteNameNormalizationError(AirbyteError, ValueError):
     """Error occurred while normalizing a table or column name."""
 
-    guidance = "Please consider renaming the source object if possible, or " "raise an issue in GitHub if not."
+    guidance = (
+        "Please consider renaming the source object if possible, or "
+        "raise an issue in GitHub if not."
+    )
     help_url = NEW_ISSUE_URL
 
     raw_name: str | None = None
@@ -205,7 +216,9 @@ class AirbyteConnectorError(AirbyteError):
             logger = logging.getLogger(f"airbyte.{self.connector_name}")
 
             log_paths: list[Path] = [
-                Path(handler.baseFilename).absolute() for handler in logger.handlers if isinstance(handler, logging.FileHandler)
+                Path(handler.baseFilename).absolute()
+                for handler in logger.handlers
+                if isinstance(handler, logging.FileHandler)
             ]
 
             if log_paths:

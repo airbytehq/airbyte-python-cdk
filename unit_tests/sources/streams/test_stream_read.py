@@ -45,7 +45,11 @@ _NO_STATE = None
 
 
 class _MockStream(Stream):
-    def __init__(self, slice_to_records: Mapping[str, List[Mapping[str, Any]]], json_schema: Dict[str, Any] = None):
+    def __init__(
+        self,
+        slice_to_records: Mapping[str, List[Mapping[str, Any]]],
+        json_schema: Dict[str, Any] = None,
+    ):
         self._slice_to_records = slice_to_records
         self._mocked_json_schema = json_schema or {}
 
@@ -54,7 +58,11 @@ class _MockStream(Stream):
         return None
 
     def stream_slices(
-        self, *, sync_mode: SyncMode, cursor_field: Optional[List[str]] = None, stream_state: Optional[Mapping[str, Any]] = None
+        self,
+        *,
+        sync_mode: SyncMode,
+        cursor_field: Optional[List[str]] = None,
+        stream_state: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[Optional[Mapping[str, Any]]]:
         for partition in self._slice_to_records.keys():
             yield {"partition_key": partition}
@@ -143,9 +151,19 @@ def _stream(slice_to_partition_mapping, slice_logger, logger, message_repository
     return _MockStream(slice_to_partition_mapping, json_schema=json_schema)
 
 
-def _concurrent_stream(slice_to_partition_mapping, slice_logger, logger, message_repository, cursor: Optional[Cursor] = None):
+def _concurrent_stream(
+    slice_to_partition_mapping,
+    slice_logger,
+    logger,
+    message_repository,
+    cursor: Optional[Cursor] = None,
+):
     stream = _stream(slice_to_partition_mapping, slice_logger, logger, message_repository)
-    cursor = cursor or FinalStateCursor(stream_name=stream.name, stream_namespace=stream.namespace, message_repository=message_repository)
+    cursor = cursor or FinalStateCursor(
+        stream_name=stream.name,
+        stream_namespace=stream.namespace,
+        message_repository=message_repository,
+    )
     source = Mock()
     source._slice_logger = slice_logger
     source.message_repository = message_repository
@@ -154,18 +172,28 @@ def _concurrent_stream(slice_to_partition_mapping, slice_logger, logger, message
     return stream
 
 
-def _incremental_stream(slice_to_partition_mapping, slice_logger, logger, message_repository, timestamp):
+def _incremental_stream(
+    slice_to_partition_mapping, slice_logger, logger, message_repository, timestamp
+):
     stream = _MockIncrementalStream(slice_to_partition_mapping)
     return stream
 
 
-def _incremental_concurrent_stream(slice_to_partition_mapping, slice_logger, logger, message_repository, cursor):
-    stream = _concurrent_stream(slice_to_partition_mapping, slice_logger, logger, message_repository, cursor)
+def _incremental_concurrent_stream(
+    slice_to_partition_mapping, slice_logger, logger, message_repository, cursor
+):
+    stream = _concurrent_stream(
+        slice_to_partition_mapping, slice_logger, logger, message_repository, cursor
+    )
     return stream
 
 
-def _stream_with_no_cursor_field(slice_to_partition_mapping, slice_logger, logger, message_repository):
-    def get_updated_state(current_stream_state: MutableMapping[str, Any], latest_record: Mapping[str, Any]) -> MutableMapping[str, Any]:
+def _stream_with_no_cursor_field(
+    slice_to_partition_mapping, slice_logger, logger, message_repository
+):
+    def get_updated_state(
+        current_stream_state: MutableMapping[str, Any], latest_record: Mapping[str, Any]
+    ) -> MutableMapping[str, Any]:
         raise Exception("I shouldn't be invoked by a full_refresh stream")
 
     mock_stream = _MockStream(slice_to_partition_mapping)
@@ -184,7 +212,9 @@ def test_full_refresh_read_a_single_slice_with_debug(constructor):
     # This test verifies that a concurrent stream adapted from a Stream behaves the same as the Stream object.
     # It is done by running the same test cases on both streams
     configured_stream = ConfiguredAirbyteStream(
-        stream=AirbyteStream(name="mock_stream", supported_sync_modes=[SyncMode.full_refresh], json_schema={}),
+        stream=AirbyteStream(
+            name="mock_stream", supported_sync_modes=[SyncMode.full_refresh], json_schema={}
+        ),
         sync_mode=SyncMode.full_refresh,
         destination_sync_mode=DestinationSyncMode.overwrite,
     )
@@ -228,7 +258,15 @@ def test_full_refresh_read_a_single_slice_with_debug(constructor):
             ),
         )
 
-    actual_records = _read(stream, configured_stream, logger, slice_logger, message_repository, state_manager, internal_config)
+    actual_records = _read(
+        stream,
+        configured_stream,
+        logger,
+        slice_logger,
+        message_repository,
+        state_manager,
+        internal_config,
+    )
 
     if constructor == _concurrent_stream:
         assert hasattr(stream._cursor, "state")
@@ -248,7 +286,9 @@ def test_full_refresh_read_a_single_slice(constructor):
     # This test verifies that a concurrent stream adapted from a Stream behaves the same as the Stream object.
     # It is done by running the same test cases on both streams
     configured_stream = ConfiguredAirbyteStream(
-        stream=AirbyteStream(name="mock_stream", supported_sync_modes=[SyncMode.full_refresh], json_schema={}),
+        stream=AirbyteStream(
+            name="mock_stream", supported_sync_modes=[SyncMode.full_refresh], json_schema={}
+        ),
         sync_mode=SyncMode.full_refresh,
         destination_sync_mode=DestinationSyncMode.overwrite,
     )
@@ -284,7 +324,15 @@ def test_full_refresh_read_a_single_slice(constructor):
             ),
         )
 
-    actual_records = _read(stream, configured_stream, logger, slice_logger, message_repository, state_manager, internal_config)
+    actual_records = _read(
+        stream,
+        configured_stream,
+        logger,
+        slice_logger,
+        message_repository,
+        state_manager,
+        internal_config,
+    )
 
     if constructor == _concurrent_stream:
         assert hasattr(stream._cursor, "state")
@@ -305,7 +353,9 @@ def test_full_refresh_read_two_slices(constructor):
     # This test verifies that a concurrent stream adapted from a Stream behaves the same as the Stream object
     # It is done by running the same test cases on both streams
     configured_stream = ConfiguredAirbyteStream(
-        stream=AirbyteStream(name="mock_stream", supported_sync_modes=[SyncMode.full_refresh], json_schema={}),
+        stream=AirbyteStream(
+            name="mock_stream", supported_sync_modes=[SyncMode.full_refresh], json_schema={}
+        ),
         sync_mode=SyncMode.full_refresh,
         destination_sync_mode=DestinationSyncMode.overwrite,
     )
@@ -348,7 +398,15 @@ def test_full_refresh_read_two_slices(constructor):
             ),
         )
 
-    actual_records = _read(stream, configured_stream, logger, slice_logger, message_repository, state_manager, internal_config)
+    actual_records = _read(
+        stream,
+        configured_stream,
+        logger,
+        slice_logger,
+        message_repository,
+        state_manager,
+        internal_config,
+    )
 
     if constructor == _concurrent_stream:
         assert hasattr(stream._cursor, "state")
@@ -362,7 +420,11 @@ def test_full_refresh_read_two_slices(constructor):
 def test_incremental_read_two_slices():
     # This test verifies that a stream running in incremental mode emits state messages correctly
     configured_stream = ConfiguredAirbyteStream(
-        stream=AirbyteStream(name="mock_stream", supported_sync_modes=[SyncMode.full_refresh, SyncMode.incremental], json_schema={}),
+        stream=AirbyteStream(
+            name="mock_stream",
+            supported_sync_modes=[SyncMode.full_refresh, SyncMode.incremental],
+            json_schema={},
+        ),
         sync_mode=SyncMode.incremental,
         cursor_field=["created_at"],
         destination_sync_mode=DestinationSyncMode.overwrite,
@@ -383,7 +445,9 @@ def test_incremental_read_two_slices():
         {"id": 4, "partition": 2, "created_at": "1708899427"},
     ]
     slice_to_partition = {1: records_partition_1, 2: records_partition_2}
-    stream = _incremental_stream(slice_to_partition, slice_logger, logger, message_repository, timestamp)
+    stream = _incremental_stream(
+        slice_to_partition, slice_logger, logger, message_repository, timestamp
+    )
 
     expected_records = [
         *records_partition_1,
@@ -392,7 +456,15 @@ def test_incremental_read_two_slices():
         _create_state_message("__mock_incremental_stream", {"created_at": timestamp}),
     ]
 
-    actual_records = _read(stream, configured_stream, logger, slice_logger, message_repository, state_manager, internal_config)
+    actual_records = _read(
+        stream,
+        configured_stream,
+        logger,
+        slice_logger,
+        message_repository,
+        state_manager,
+        internal_config,
+    )
 
     for record in expected_records:
         assert record in actual_records
@@ -402,7 +474,11 @@ def test_incremental_read_two_slices():
 def test_concurrent_incremental_read_two_slices():
     # This test verifies that an incremental concurrent stream manages state correctly for multiple slices syncing concurrently
     configured_stream = ConfiguredAirbyteStream(
-        stream=AirbyteStream(name="mock_stream", supported_sync_modes=[SyncMode.full_refresh, SyncMode.incremental], json_schema={}),
+        stream=AirbyteStream(
+            name="mock_stream",
+            supported_sync_modes=[SyncMode.full_refresh, SyncMode.incremental],
+            json_schema={},
+        ),
         sync_mode=SyncMode.incremental,
         destination_sync_mode=DestinationSyncMode.overwrite,
     )
@@ -424,7 +500,9 @@ def test_concurrent_incremental_read_two_slices():
         {"id": 4, "partition": 2, "created_at": slice_timestamp_2},
     ]
     slice_to_partition = {1: records_partition_1, 2: records_partition_2}
-    stream = _incremental_concurrent_stream(slice_to_partition, slice_logger, logger, message_repository, cursor)
+    stream = _incremental_concurrent_stream(
+        slice_to_partition, slice_logger, logger, message_repository, cursor
+    )
 
     expected_records = [
         *records_partition_1,
@@ -432,10 +510,19 @@ def test_concurrent_incremental_read_two_slices():
     ]
 
     expected_state = _create_state_message(
-        "__mock_stream", {"1": {"created_at": slice_timestamp_1}, "2": {"created_at": slice_timestamp_2}}
+        "__mock_stream",
+        {"1": {"created_at": slice_timestamp_1}, "2": {"created_at": slice_timestamp_2}},
     )
 
-    actual_records = _read(stream, configured_stream, logger, slice_logger, message_repository, state_manager, internal_config)
+    actual_records = _read(
+        stream,
+        configured_stream,
+        logger,
+        slice_logger,
+        message_repository,
+        state_manager,
+        internal_config,
+    )
 
     handler = ConcurrentReadProcessor(
         [stream],
@@ -452,7 +539,13 @@ def test_concurrent_incremental_read_two_slices():
 
     # We need run on_record to update cursor with record cursor value
     for record in actual_records:
-        list(handler.on_record(Record(record, Mock(spec=Partition, **{"stream_name.return_value": "__mock_stream"}))))
+        list(
+            handler.on_record(
+                Record(
+                    record, Mock(spec=Partition, **{"stream_name.return_value": "__mock_stream"})
+                )
+            )
+        )
 
     assert len(actual_records) == len(expected_records)
 
@@ -467,7 +560,11 @@ def test_concurrent_incremental_read_two_slices():
 
 def setup_stream_dependencies(configured_json_schema):
     configured_stream = ConfiguredAirbyteStream(
-        stream=AirbyteStream(name="mock_stream", supported_sync_modes=[SyncMode.full_refresh], json_schema=configured_json_schema),
+        stream=AirbyteStream(
+            name="mock_stream",
+            supported_sync_modes=[SyncMode.full_refresh],
+            json_schema=configured_json_schema,
+        ),
         sync_mode=SyncMode.full_refresh,
         destination_sync_mode=DestinationSyncMode.overwrite,
     )
@@ -476,7 +573,14 @@ def setup_stream_dependencies(configured_json_schema):
     slice_logger = DebugSliceLogger()
     message_repository = InMemoryMessageRepository(Level.INFO)
     state_manager = ConnectorStateManager()
-    return configured_stream, internal_config, logger, slice_logger, message_repository, state_manager
+    return (
+        configured_stream,
+        internal_config,
+        logger,
+        slice_logger,
+        message_repository,
+        state_manager,
+    )
 
 
 def test_configured_json_schema():
@@ -489,8 +593,8 @@ def test_configured_json_schema():
         },
     }
 
-    configured_stream, internal_config, logger, slice_logger, message_repository, state_manager = setup_stream_dependencies(
-        current_json_schema
+    configured_stream, internal_config, logger, slice_logger, message_repository, state_manager = (
+        setup_stream_dependencies(current_json_schema)
     )
     records = [
         {"id": 1, "partition": 1},
@@ -498,9 +602,23 @@ def test_configured_json_schema():
     ]
 
     slice_to_partition = {1: records}
-    stream = _stream(slice_to_partition, slice_logger, logger, message_repository, json_schema=current_json_schema)
+    stream = _stream(
+        slice_to_partition,
+        slice_logger,
+        logger,
+        message_repository,
+        json_schema=current_json_schema,
+    )
     assert not stream.configured_json_schema
-    _read(stream, configured_stream, logger, slice_logger, message_repository, state_manager, internal_config)
+    _read(
+        stream,
+        configured_stream,
+        logger,
+        slice_logger,
+        message_repository,
+        state_manager,
+        internal_config,
+    )
     assert stream.configured_json_schema == current_json_schema
 
 
@@ -527,8 +645,8 @@ def test_configured_json_schema_with_invalid_properties():
     del stream_schema["properties"][old_user_insights]
     del stream_schema["properties"][old_feature_info]
 
-    configured_stream, internal_config, logger, slice_logger, message_repository, state_manager = setup_stream_dependencies(
-        configured_json_schema
+    configured_stream, internal_config, logger, slice_logger, message_repository, state_manager = (
+        setup_stream_dependencies(configured_json_schema)
     )
     records = [
         {"id": 1, "partition": 1},
@@ -536,9 +654,19 @@ def test_configured_json_schema_with_invalid_properties():
     ]
 
     slice_to_partition = {1: records}
-    stream = _stream(slice_to_partition, slice_logger, logger, message_repository, json_schema=stream_schema)
+    stream = _stream(
+        slice_to_partition, slice_logger, logger, message_repository, json_schema=stream_schema
+    )
     assert not stream.configured_json_schema
-    _read(stream, configured_stream, logger, slice_logger, message_repository, state_manager, internal_config)
+    _read(
+        stream,
+        configured_stream,
+        logger,
+        slice_logger,
+        message_repository,
+        state_manager,
+        internal_config,
+    )
     assert stream.configured_json_schema != configured_json_schema
     configured_json_schema_properties = stream.configured_json_schema["properties"]
     assert old_user_insights not in configured_json_schema_properties
@@ -547,19 +675,34 @@ def test_configured_json_schema_with_invalid_properties():
         assert (
             stream_schema_property in configured_json_schema_properties
         ), f"Stream schema property: {stream_schema_property} missing in configured schema"
-        assert stream_schema["properties"][stream_schema_property] == configured_json_schema_properties[stream_schema_property]
+        assert (
+            stream_schema["properties"][stream_schema_property]
+            == configured_json_schema_properties[stream_schema_property]
+        )
 
 
-def _read(stream, configured_stream, logger, slice_logger, message_repository, state_manager, internal_config):
+def _read(
+    stream,
+    configured_stream,
+    logger,
+    slice_logger,
+    message_repository,
+    state_manager,
+    internal_config,
+):
     records = []
-    for record in stream.read(configured_stream, logger, slice_logger, {}, state_manager, internal_config):
+    for record in stream.read(
+        configured_stream, logger, slice_logger, {}, state_manager, internal_config
+    ):
         for message in message_repository.consume_queue():
             records.append(message)
         records.append(record)
     return records
 
 
-def _mock_partition_generator(name: str, slices, records_per_partition, *, available=True, debug_log=False):
+def _mock_partition_generator(
+    name: str, slices, records_per_partition, *, available=True, debug_log=False
+):
     stream = Mock()
     stream.name = name
     stream.get_json_schema.return_value = {}

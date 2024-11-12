@@ -72,5 +72,7 @@ def test_concurrent_read(scenario: TestScenario) -> None:
 
 
 @pytest.mark.parametrize("scenario", scenarios, ids=[s.name for s in scenarios])
-def test_concurrent_discover(capsys: CaptureFixture[str], tmp_path: PosixPath, scenario: TestScenario) -> None:
+def test_concurrent_discover(
+    capsys: CaptureFixture[str], tmp_path: PosixPath, scenario: TestScenario
+) -> None:
     verify_discover(capsys, tmp_path, scenario)

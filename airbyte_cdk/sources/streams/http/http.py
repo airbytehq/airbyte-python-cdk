@@ -14,11 +14,22 @@ from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.message.repository import InMemoryMessageRepository
 from airbyte_cdk.sources.streams.call_rate import APIBudget
 from airbyte_cdk.sources.streams.checkpoint.cursor import Cursor
-from airbyte_cdk.sources.streams.checkpoint.resumable_full_refresh_cursor import ResumableFullRefreshCursor
-from airbyte_cdk.sources.streams.checkpoint.substream_resumable_full_refresh_cursor import SubstreamResumableFullRefreshCursor
+from airbyte_cdk.sources.streams.checkpoint.resumable_full_refresh_cursor import (
+    ResumableFullRefreshCursor,
+)
+from airbyte_cdk.sources.streams.checkpoint.substream_resumable_full_refresh_cursor import (
+    SubstreamResumableFullRefreshCursor,
+)
 from airbyte_cdk.sources.streams.core import CheckpointMixin, Stream, StreamData
-from airbyte_cdk.sources.streams.http.error_handlers import BackoffStrategy, ErrorHandler, HttpStatusErrorHandler
-from airbyte_cdk.sources.streams.http.error_handlers.response_models import ErrorResolution, ResponseAction
+from airbyte_cdk.sources.streams.http.error_handlers import (
+    BackoffStrategy,
+    ErrorHandler,
+    HttpStatusErrorHandler,
+)
+from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
+    ErrorResolution,
+    ResponseAction,
+)
 from airbyte_cdk.sources.streams.http.http_client import HttpClient
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.sources.utils.types import JsonType
@@ -35,9 +46,13 @@ class HttpStream(Stream, CheckpointMixin, ABC):
     """
 
     source_defined_cursor = True  # Most HTTP streams use a source defined cursor (i.e: the user can't configure it like on a SQL table)
-    page_size: Optional[int] = None  # Use this variable to define page size for API http requests with pagination support
+    page_size: Optional[int] = (
+        None  # Use this variable to define page size for API http requests with pagination support
+    )
 
-    def __init__(self, authenticator: Optional[AuthBase] = None, api_budget: Optional[APIBudget] = None):
+    def __init__(
+        self, authenticator: Optional[AuthBase] = None, api_budget: Optional[APIBudget] = None
+    ):
         self._exit_on_rate_limit: bool = False
         self._http_client = HttpClient(
             name=self.name,
@@ -55,7 +70,11 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         # 2. Streams with at least one cursor_field are incremental and thus a superior sync to RFR.
         # 3. Streams overriding read_records() do not guarantee that they will call the parent implementation which can perform
         #    per-page checkpointing so RFR is only supported if a stream use the default `HttpStream.read_records()` method
-        if not self.cursor and len(self.cursor_field) == 0 and type(self).read_records is HttpStream.read_records:
+        if (
+            not self.cursor
+            and len(self.cursor_field) == 0
+            and type(self).read_records is HttpStream.read_records
+        ):
             self.cursor = ResumableFullRefreshCursor()
 
     @property
@@ -100,7 +119,10 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         return "GET"
 
     @property
-    @deprecated(version="3.0.0", reason="You should set error_handler explicitly in HttpStream.get_error_handler() instead.")
+    @deprecated(
+        version="3.0.0",
+        reason="You should set error_handler explicitly in HttpStream.get_error_handler() instead.",
+    )
     def raise_on_http_errors(self) -> bool:
         """
         Override if needed. If set to False, allows opting-out of raising HTTP code exception.
@@ -108,7 +130,10 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         return True
 
     @property
-    @deprecated(version="3.0.0", reason="You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead.")
+    @deprecated(
+        version="3.0.0",
+        reason="You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead.",
+    )
     def max_retries(self) -> Union[int, None]:
         """
         Override if needed. Specifies maximum amount of retries for backoff policy. Return None for no limit.
@@ -116,7 +141,10 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         return 5
 
     @property
-    @deprecated(version="3.0.0", reason="You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead.")
+    @deprecated(
+        version="3.0.0",
+        reason="You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead.",
+    )
     def max_time(self) -> Union[int, None]:
         """
         Override if needed. Specifies maximum total waiting time (in seconds) for backoff policy. Return None for no limit.
@@ -124,7 +152,10 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         return 60 * 10
 
     @property
-    @deprecated(version="3.0.0", reason="You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead.")
+    @deprecated(
+        version="3.0.0",
+        reason="You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead.",
+    )
     def retry_factor(self) -> float:
         """
         Override if needed. Specifies factor for backoff policy.
@@ -262,7 +293,10 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         """
         if hasattr(self, "should_retry"):
             error_handler = HttpStreamAdapterHttpStatusErrorHandler(
-                stream=self, logger=logging.getLogger(), max_retries=self.max_retries, max_time=timedelta(seconds=self.max_time or 0)
+                stream=self,
+                logger=logging.getLogger(),
+                max_retries=self.max_retries,
+                max_time=timedelta(seconds=self.max_time or 0),
             )
             return error_handler
         else:
@@ -333,13 +367,17 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         # A cursor_field indicates this is an incremental stream which offers better checkpointing than RFR enabled via the cursor
         if self.cursor_field or not isinstance(self.get_cursor(), ResumableFullRefreshCursor):
             yield from self._read_pages(
-                lambda req, res, state, _slice: self.parse_response(res, stream_slice=_slice, stream_state=state),
+                lambda req, res, state, _slice: self.parse_response(
+                    res, stream_slice=_slice, stream_state=state
+                ),
                 stream_slice,
                 stream_state,
             )
         else:
             yield from self._read_single_page(
-                lambda req, res, state, _slice: self.parse_response(res, stream_slice=_slice, stream_state=state),
+                lambda req, res, state, _slice: self.parse_response(
+                    res, stream_slice=_slice, stream_state=state
+                ),
                 stream_slice,
                 stream_state,
             )
@@ -373,7 +411,13 @@ class HttpStream(Stream, CheckpointMixin, ABC):
     def _read_pages(
         self,
         records_generator_fn: Callable[
-            [requests.PreparedRequest, requests.Response, Mapping[str, Any], Optional[Mapping[str, Any]]], Iterable[StreamData]
+            [
+                requests.PreparedRequest,
+                requests.Response,
+                Mapping[str, Any],
+                Optional[Mapping[str, Any]],
+            ],
+            Iterable[StreamData],
         ],
         stream_slice: Optional[Mapping[str, Any]] = None,
         stream_state: Optional[Mapping[str, Any]] = None,
@@ -403,19 +447,29 @@ class HttpStream(Stream, CheckpointMixin, ABC):
     def _read_single_page(
         self,
         records_generator_fn: Callable[
-            [requests.PreparedRequest, requests.Response, Mapping[str, Any], Optional[Mapping[str, Any]]], Iterable[StreamData]
+            [
+                requests.PreparedRequest,
+                requests.Response,
+                Mapping[str, Any],
+                Optional[Mapping[str, Any]],
+            ],
+            Iterable[StreamData],
         ],
         stream_slice: Optional[Mapping[str, Any]] = None,
         stream_state: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[StreamData]:
-        partition, cursor_slice, remaining_slice = self._extract_slice_fields(stream_slice=stream_slice)
+        partition, cursor_slice, remaining_slice = self._extract_slice_fields(
+            stream_slice=stream_slice
+        )
         stream_state = stream_state or {}
         next_page_token = cursor_slice or None
 
         request, response = self._fetch_next_page(remaining_slice, stream_state, next_page_token)
         yield from records_generator_fn(request, response, stream_state, remaining_slice)
 
-        next_page_token = self.next_page_token(response) or {"__ab_full_refresh_sync_complete": True}
+        next_page_token = self.next_page_token(response) or {
+            "__ab_full_refresh_sync_complete": True
+        }
 
         cursor = self.get_cursor()
         if cursor:
@@ -425,7 +479,9 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         yield from []
 
     @staticmethod
-    def _extract_slice_fields(stream_slice: Optional[Mapping[str, Any]]) -> tuple[Mapping[str, Any], Mapping[str, Any], Mapping[str, Any]]:
+    def _extract_slice_fields(
+        stream_slice: Optional[Mapping[str, Any]],
+    ) -> tuple[Mapping[str, Any], Mapping[str, Any], Mapping[str, Any]]:
         if not stream_slice:
             return {}, {}, {}
 
@@ -439,7 +495,11 @@ class HttpStream(Stream, CheckpointMixin, ABC):
             # fields for the partition and cursor_slice value
             partition = stream_slice.get("partition", {})
             cursor_slice = stream_slice.get("cursor_slice", {})
-            remaining = {key: val for key, val in stream_slice.items() if key != "partition" and key != "cursor_slice"}
+            remaining = {
+                key: val
+                for key, val in stream_slice.items()
+                if key != "partition" and key != "cursor_slice"
+            }
         return partition, cursor_slice, remaining
 
     def _fetch_next_page(
@@ -448,18 +508,41 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         stream_state: Optional[Mapping[str, Any]] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Tuple[requests.PreparedRequest, requests.Response]:
-
         request, response = self._http_client.send_request(
             http_method=self.http_method,
             url=self._join_url(
                 self.url_base,
-                self.path(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token),
+                self.path(
+                    stream_state=stream_state,
+                    stream_slice=stream_slice,
+                    next_page_token=next_page_token,
+                ),
             ),
-            request_kwargs=self.request_kwargs(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token),
-            headers=self.request_headers(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token),
-            params=self.request_params(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token),
-            json=self.request_body_json(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token),
-            data=self.request_body_data(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token),
+            request_kwargs=self.request_kwargs(
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
+            ),
+            headers=self.request_headers(
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
+            ),
+            params=self.request_params(
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
+            ),
+            json=self.request_body_json(
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
+            ),
+            data=self.request_body_data(
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
+            ),
             dedupe_query_params=True,
             log_formatter=self.get_log_formatter(),
             exit_on_rate_limit=self.exit_on_rate_limit,
@@ -482,18 +565,27 @@ class HttpSubStream(HttpStream, ABC):
         """
         super().__init__(**kwargs)
         self.parent = parent
-        self.has_multiple_slices = True  # Substreams are based on parent records which implies there are multiple slices
+        self.has_multiple_slices = (
+            True  # Substreams are based on parent records which implies there are multiple slices
+        )
 
         # There are three conditions that dictate if RFR should automatically be applied to a stream
         # 1. Streams that explicitly initialize their own cursor should defer to it and not automatically apply RFR
         # 2. Streams with at least one cursor_field are incremental and thus a superior sync to RFR.
         # 3. Streams overriding read_records() do not guarantee that they will call the parent implementation which can perform
         #    per-page checkpointing so RFR is only supported if a stream use the default `HttpStream.read_records()` method
-        if not self.cursor and len(self.cursor_field) == 0 and type(self).read_records is HttpStream.read_records:
+        if (
+            not self.cursor
+            and len(self.cursor_field) == 0
+            and type(self).read_records is HttpStream.read_records
+        ):
             self.cursor = SubstreamResumableFullRefreshCursor()
 
     def stream_slices(
-        self, sync_mode: SyncMode, cursor_field: Optional[List[str]] = None, stream_state: Optional[Mapping[str, Any]] = None
+        self,
+        sync_mode: SyncMode,
+        cursor_field: Optional[List[str]] = None,
+        stream_state: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[Optional[Mapping[str, Any]]]:
         # read_stateless() assumes the parent is not concurrent. This is currently okay since the concurrent CDK does
         # not support either substreams or RFR, but something that needs to be considered once we do
@@ -509,7 +601,10 @@ class HttpSubStream(HttpStream, ABC):
             yield {"parent": parent_record}
 
 
-@deprecated(version="3.0.0", reason="You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead.")
+@deprecated(
+    version="3.0.0",
+    reason="You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead.",
+)
 class HttpStreamAdapterBackoffStrategy(BackoffStrategy):
     def __init__(self, stream: HttpStream):
         self.stream = stream
@@ -522,13 +617,18 @@ class HttpStreamAdapterBackoffStrategy(BackoffStrategy):
         return self.stream.backoff_time(response_or_exception)  # type: ignore # noqa  # HttpStream.backoff_time has been deprecated
 
 
-@deprecated(version="3.0.0", reason="You should set error_handler explicitly in HttpStream.get_error_handler() instead.")
+@deprecated(
+    version="3.0.0",
+    reason="You should set error_handler explicitly in HttpStream.get_error_handler() instead.",
+)
 class HttpStreamAdapterHttpStatusErrorHandler(HttpStatusErrorHandler):
     def __init__(self, stream: HttpStream, **kwargs):  # type: ignore # noqa
         self.stream = stream
         super().__init__(**kwargs)
 
-    def interpret_response(self, response_or_exception: Optional[Union[requests.Response, Exception]] = None) -> ErrorResolution:
+    def interpret_response(
+        self, response_or_exception: Optional[Union[requests.Response, Exception]] = None
+    ) -> ErrorResolution:
         if isinstance(response_or_exception, Exception):
             return super().interpret_response(response_or_exception)
         elif isinstance(response_or_exception, requests.Response):

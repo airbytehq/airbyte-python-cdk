@@ -12,7 +12,9 @@ from unittest.mock import Mock
 import pytest
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level
 from airbyte_cdk.models import Type as MessageType
-from airbyte_cdk.sources.file_based.availability_strategy import AbstractFileBasedAvailabilityStrategy
+from airbyte_cdk.sources.file_based.availability_strategy import (
+    AbstractFileBasedAvailabilityStrategy,
+)
 from airbyte_cdk.sources.file_based.discovery_policy import AbstractDiscoveryPolicy
 from airbyte_cdk.sources.file_based.exceptions import FileBasedErrorsCollector, FileBasedSourceError
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
@@ -103,7 +105,11 @@ class DefaultFileBasedStreamTest(unittest.TestCase):
 
     def test_when_read_records_from_slice_then_return_records(self) -> None:
         self._parser.parse_records.return_value = [self._A_RECORD]
-        messages = list(self._stream.read_records_from_slice({"files": [RemoteFile(uri="uri", last_modified=self._NOW)]}))
+        messages = list(
+            self._stream.read_records_from_slice(
+                {"files": [RemoteFile(uri="uri", last_modified=self._NOW)]}
+            )
+        )
         assert list(map(lambda message: message.record.data["data"], messages)) == [self._A_RECORD]
 
     def test_when_transform_record_then_return_updated_record(self) -> None:
@@ -166,7 +172,9 @@ class DefaultFileBasedStreamTest(unittest.TestCase):
     ) -> None:
         self._stream_config.schemaless = False
         self._validation_policy.record_passes_validation_policy.return_value = False
-        self._parser.parse_records.side_effect = [self._iter([self._A_RECORD, ValueError("An error")])]
+        self._parser.parse_records.side_effect = [
+            self._iter([self._A_RECORD, ValueError("An error")])
+        ]
 
         messages = list(
             self._stream.read_records_from_slice(
@@ -225,7 +233,9 @@ class TestFileBasedErrorCollector:
             "Multiple errors",
         ],
     )
-    def test_collect_parsing_error(self, stream, file, line_no, n_skipped, collector_expected_len) -> None:
+    def test_collect_parsing_error(
+        self, stream, file, line_no, n_skipped, collector_expected_len
+    ) -> None:
         test_error_pattern = "Error parsing record."
         # format the error body
         test_error = (
@@ -251,12 +261,19 @@ class TestFileBasedErrorCollector:
         with pytest.raises(AirbyteTracedException) as parse_error:
             list(self.test_error_collector.yield_and_raise_collected())
         assert parse_error.value.message == "Some errors occured while reading from the source."
-        assert parse_error.value.internal_message == "Please check the logged errors for more information."
+        assert (
+            parse_error.value.internal_message
+            == "Please check the logged errors for more information."
+        )
 
 
 class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
     _NOW = datetime(2022, 10, 22, tzinfo=timezone.utc)
-    _A_RECORD = {'bytes': 10, 'file_relative_path': 'relative/path/file.csv', 'file_url': '/absolute/path/file.csv'}
+    _A_RECORD = {
+        "bytes": 10,
+        "file_relative_path": "relative/path/file.csv",
+        "file_url": "/absolute/path/file.csv",
+    }
 
     def setUp(self) -> None:
         self._stream_config = Mock()
@@ -281,13 +298,17 @@ class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
             validation_policy=self._validation_policy,
             cursor=self._cursor,
             errors_collector=FileBasedErrorsCollector(),
-            use_file_transfer=True
+            use_file_transfer=True,
         )
 
     def test_when_read_records_from_slice_then_return_records(self) -> None:
         """Verify that we have the new file method and data is empty"""
         with mock.patch.object(FileTransfer, "get_file", return_value=[self._A_RECORD]):
-            messages = list(self._stream.read_records_from_slice({"files": [RemoteFile(uri="uri", last_modified=self._NOW)]}))
+            messages = list(
+                self._stream.read_records_from_slice(
+                    {"files": [RemoteFile(uri="uri", last_modified=self._NOW)]}
+                )
+            )
             assert list(map(lambda message: message.record.file, messages)) == [self._A_RECORD]
             assert list(map(lambda message: message.record.data, messages)) == [{}]
 

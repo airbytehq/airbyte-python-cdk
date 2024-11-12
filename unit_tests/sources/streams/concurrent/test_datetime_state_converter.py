@@ -6,7 +6,9 @@ from datetime import datetime, timezone
 
 import pytest
 from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
-from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import ConcurrencyCompatibleStateType
+from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
+    ConcurrencyCompatibleStateType,
+)
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
     EpochValueConcurrentStreamStateConverter,
@@ -83,7 +85,9 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_sta
         ),
     ],
 )
-def test_concurrent_stream_state_converter_is_state_message_compatible(converter, input_state, is_compatible):
+def test_concurrent_stream_state_converter_is_state_message_compatible(
+    converter, input_state, is_compatible
+):
     assert converter.is_state_message_compatible(input_state) == is_compatible
 
 
@@ -222,14 +226,22 @@ def test_get_sync_start(converter, start, state, expected_start):
 def test_convert_from_sequential_state(converter, start, sequential_state, expected_output_state):
     comparison_format = "%Y-%m-%dT%H:%M:%S.%f"
     if expected_output_state["slices"]:
-        _, conversion = converter.convert_from_sequential_state(CursorField("created"), sequential_state, start)
+        _, conversion = converter.convert_from_sequential_state(
+            CursorField("created"), sequential_state, start
+        )
         assert conversion["state_type"] == expected_output_state["state_type"]
         assert conversion["legacy"] == expected_output_state["legacy"]
         for actual, expected in zip(conversion["slices"], expected_output_state["slices"]):
-            assert actual["start"].strftime(comparison_format) == expected["start"].strftime(comparison_format)
-            assert actual["end"].strftime(comparison_format) == expected["end"].strftime(comparison_format)
+            assert actual["start"].strftime(comparison_format) == expected["start"].strftime(
+                comparison_format
+            )
+            assert actual["end"].strftime(comparison_format) == expected["end"].strftime(
+                comparison_format
+            )
     else:
-        _, conversion = converter.convert_from_sequential_state(CursorField("created"), sequential_state, start)
+        _, conversion = converter.convert_from_sequential_state(
+            CursorField("created"), sequential_state, start
+        )
         assert conversion == expected_output_state
 
 
@@ -339,7 +351,10 @@ def test_convert_from_sequential_state(converter, start, sequential_state, expec
     ],
 )
 def test_convert_to_sequential_state(converter, concurrent_state, expected_output_state):
-    assert converter.convert_to_state_message(CursorField("created"), concurrent_state) == expected_output_state
+    assert (
+        converter.convert_to_state_message(CursorField("created"), concurrent_state)
+        == expected_output_state
+    )
 
 
 @pytest.mark.parametrize(
@@ -365,7 +380,9 @@ def test_convert_to_sequential_state(converter, concurrent_state, expected_outpu
         ),
     ],
 )
-def test_convert_to_sequential_state_no_slices_returns_legacy_state(converter, concurrent_state, expected_output_state):
+def test_convert_to_sequential_state_no_slices_returns_legacy_state(
+    converter, concurrent_state, expected_output_state
+):
     with pytest.raises(RuntimeError):
         converter.convert_to_state_message(CursorField("created"), concurrent_state)
 

@@ -10,7 +10,11 @@ from typing import Any, Callable, Mapping, Optional
 import backoff
 from requests import PreparedRequest, RequestException, Response, codes, exceptions
 
-from .exceptions import DefaultBackoffException, RateLimitBackoffException, UserDefinedBackoffException
+from .exceptions import (
+    DefaultBackoffException,
+    RateLimitBackoffException,
+    UserDefinedBackoffException,
+)
 
 TRANSIENT_EXCEPTIONS = (
     DefaultBackoffException,
@@ -32,7 +36,9 @@ def default_backoff_handler(
     def log_retry_attempt(details: Mapping[str, Any]) -> None:
         _, exc, _ = sys.exc_info()
         if isinstance(exc, RequestException) and exc.response:
-            logger.info(f"Status code: {exc.response.status_code!r}, Response Content: {exc.response.content!r}")
+            logger.info(
+                f"Status code: {exc.response.status_code!r}, Response Content: {exc.response.content!r}"
+            )
         logger.info(
             f"Caught retryable error '{str(exc)}' after {details['tries']} tries. Waiting {details['wait']} seconds then retrying..."
         )
@@ -71,7 +77,9 @@ def http_client_default_backoff_handler(
     def log_retry_attempt(details: Mapping[str, Any]) -> None:
         _, exc, _ = sys.exc_info()
         if isinstance(exc, RequestException) and exc.response:
-            logger.info(f"Status code: {exc.response.status_code!r}, Response Content: {exc.response.content!r}")
+            logger.info(
+                f"Status code: {exc.response.status_code!r}, Response Content: {exc.response.content!r}"
+            )
         logger.info(
             f"Caught retryable error '{str(exc)}' after {details['tries']} tries. Waiting {details['wait']} seconds then retrying..."
         )
@@ -99,7 +107,9 @@ def user_defined_backoff_handler(
         _, exc, _ = sys.exc_info()
         if isinstance(exc, UserDefinedBackoffException):
             if exc.response:
-                logger.info(f"Status code: {exc.response.status_code!r}, Response Content: {exc.response.content!r}")
+                logger.info(
+                    f"Status code: {exc.response.status_code!r}, Response Content: {exc.response.content!r}"
+                )
             retry_after = exc.backoff
             logger.info(f"Retrying. Sleeping for {retry_after} seconds")
             time.sleep(retry_after + 1)  # extra second to cover any fractions of second
@@ -107,7 +117,9 @@ def user_defined_backoff_handler(
     def log_give_up(details: Mapping[str, Any]) -> None:
         _, exc, _ = sys.exc_info()
         if isinstance(exc, RequestException):
-            logger.error(f"Max retry limit reached in {details['elapsed']}s. Request: {exc.request}, Response: {exc.response}")
+            logger.error(
+                f"Max retry limit reached in {details['elapsed']}s. Request: {exc.request}, Response: {exc.response}"
+            )
         else:
             logger.error("Max retry limit reached for unknown request and response")
 
@@ -124,11 +136,15 @@ def user_defined_backoff_handler(
     )
 
 
-def rate_limit_default_backoff_handler(**kwargs: Any) -> Callable[[SendRequestCallableType], SendRequestCallableType]:
+def rate_limit_default_backoff_handler(
+    **kwargs: Any,
+) -> Callable[[SendRequestCallableType], SendRequestCallableType]:
     def log_retry_attempt(details: Mapping[str, Any]) -> None:
         _, exc, _ = sys.exc_info()
         if isinstance(exc, RequestException) and exc.response:
-            logger.info(f"Status code: {exc.response.status_code!r}, Response Content: {exc.response.content!r}")
+            logger.info(
+                f"Status code: {exc.response.status_code!r}, Response Content: {exc.response.content!r}"
+            )
         logger.info(
             f"Caught retryable error '{str(exc)}' after {details['tries']} tries. Waiting {details['wait']} seconds then retrying..."
         )

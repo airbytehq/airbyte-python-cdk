@@ -104,7 +104,9 @@ def day_delta(num_days: int, format: str = "%Y-%m-%dT%H:%M:%S.%f%z") -> str:
     :param num_days: number of days to add to current date time
     :return: datetime formatted as RFC3339
     """
-    return (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=num_days)).strftime(format)
+    return (
+        datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=num_days)
+    ).strftime(format)
 
 
 def duration(datestring: str) -> Union[datetime.timedelta, isodate.Duration]:
@@ -117,7 +119,9 @@ def duration(datestring: str) -> Union[datetime.timedelta, isodate.Duration]:
     return parse_duration(datestring)  # type: ignore # mypy thinks this returns Any for some reason
 
 
-def format_datetime(dt: Union[str, datetime.datetime], format: str, input_format: Optional[str] = None) -> str:
+def format_datetime(
+    dt: Union[str, datetime.datetime], format: str, input_format: Optional[str] = None
+) -> str:
     """
     Converts datetime to another format
 
@@ -130,11 +134,22 @@ def format_datetime(dt: Union[str, datetime.datetime], format: str, input_format
     """
     if isinstance(dt, datetime.datetime):
         return dt.strftime(format)
-    dt_datetime = datetime.datetime.strptime(dt, input_format) if input_format else _str_to_datetime(dt)
+    dt_datetime = (
+        datetime.datetime.strptime(dt, input_format) if input_format else _str_to_datetime(dt)
+    )
     if format == "%s":
         return str(int(dt_datetime.timestamp()))
     return dt_datetime.strftime(format)
 
 
-_macros_list = [now_utc, today_utc, timestamp, max, day_delta, duration, format_datetime, today_with_timezone]
+_macros_list = [
+    now_utc,
+    today_utc,
+    timestamp,
+    max,
+    day_delta,
+    duration,
+    format_datetime,
+    today_with_timezone,
+]
 macros = {f.__name__: f for f in _macros_list}

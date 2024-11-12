@@ -5,7 +5,9 @@
 from unittest.mock import Mock, call
 
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
-from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import PaginationStrategy
+from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
+    PaginationStrategy,
+)
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.stop_condition import (
     CursorStopCondition,
     PaginationStopCondition,
@@ -44,11 +46,15 @@ def test_given_record_should_not_be_synced_when_is_met_return_true(mocked_cursor
     assert CursorStopCondition(mocked_cursor).is_met(ANY_RECORD)
 
 
-def test_given_stop_condition_is_met_when_next_page_token_then_return_none(mocked_pagination_strategy, mocked_stop_condition):
+def test_given_stop_condition_is_met_when_next_page_token_then_return_none(
+    mocked_pagination_strategy, mocked_stop_condition
+):
     mocked_stop_condition.is_met.return_value = True
     last_record = Mock(spec=Record)
 
-    decorator = StopConditionPaginationStrategyDecorator(mocked_pagination_strategy, mocked_stop_condition)
+    decorator = StopConditionPaginationStrategyDecorator(
+        mocked_pagination_strategy, mocked_stop_condition
+    )
 
     assert not decorator.next_page_token(ANY_RESPONSE, 2, last_record)
     mocked_stop_condition.is_met.assert_has_calls([call(last_record)])
@@ -60,17 +66,21 @@ def test_given_last_record_meets_condition_when_next_page_token_then_do_not_chec
     mocked_stop_condition.is_met.return_value = True
     last_record = Mock(spec=Record)
 
-    StopConditionPaginationStrategyDecorator(mocked_pagination_strategy, mocked_stop_condition).next_page_token(
-        ANY_RESPONSE, 2, last_record
-    )
+    StopConditionPaginationStrategyDecorator(
+        mocked_pagination_strategy, mocked_stop_condition
+    ).next_page_token(ANY_RESPONSE, 2, last_record)
 
     mocked_stop_condition.is_met.assert_called_once_with(last_record)
 
 
-def test_given_stop_condition_is_not_met_when_next_page_token_then_delegate(mocked_pagination_strategy, mocked_stop_condition):
+def test_given_stop_condition_is_not_met_when_next_page_token_then_delegate(
+    mocked_pagination_strategy, mocked_stop_condition
+):
     mocked_stop_condition.is_met.return_value = False
     last_record = Mock(spec=Record)
-    decorator = StopConditionPaginationStrategyDecorator(mocked_pagination_strategy, mocked_stop_condition)
+    decorator = StopConditionPaginationStrategyDecorator(
+        mocked_pagination_strategy, mocked_stop_condition
+    )
 
     next_page_token = decorator.next_page_token(ANY_RESPONSE, 2, last_record)
 
@@ -79,8 +89,12 @@ def test_given_stop_condition_is_not_met_when_next_page_token_then_delegate(mock
     mocked_stop_condition.is_met.assert_has_calls([call(last_record)])
 
 
-def test_given_no_records_when_next_page_token_then_delegate(mocked_pagination_strategy, mocked_stop_condition):
-    decorator = StopConditionPaginationStrategyDecorator(mocked_pagination_strategy, mocked_stop_condition)
+def test_given_no_records_when_next_page_token_then_delegate(
+    mocked_pagination_strategy, mocked_stop_condition
+):
+    decorator = StopConditionPaginationStrategyDecorator(
+        mocked_pagination_strategy, mocked_stop_condition
+    )
 
     next_page_token = decorator.next_page_token(ANY_RESPONSE, 0, NO_RECORD)
 
@@ -89,13 +103,17 @@ def test_given_no_records_when_next_page_token_then_delegate(mocked_pagination_s
 
 
 def test_when_reset_then_delegate(mocked_pagination_strategy, mocked_stop_condition):
-    decorator = StopConditionPaginationStrategyDecorator(mocked_pagination_strategy, mocked_stop_condition)
+    decorator = StopConditionPaginationStrategyDecorator(
+        mocked_pagination_strategy, mocked_stop_condition
+    )
     decorator.reset()
     mocked_pagination_strategy.reset.assert_called_once_with()
 
 
 def test_when_get_page_size_then_delegate(mocked_pagination_strategy, mocked_stop_condition):
-    decorator = StopConditionPaginationStrategyDecorator(mocked_pagination_strategy, mocked_stop_condition)
+    decorator = StopConditionPaginationStrategyDecorator(
+        mocked_pagination_strategy, mocked_stop_condition
+    )
 
     page_size = decorator.get_page_size()
 

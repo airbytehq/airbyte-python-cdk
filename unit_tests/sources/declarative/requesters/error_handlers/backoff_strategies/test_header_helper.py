@@ -6,7 +6,9 @@ import re
 from unittest.mock import MagicMock
 
 import pytest
-from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.header_helper import get_numeric_value_from_header
+from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.header_helper import (
+    get_numeric_value_from_header,
+)
 
 
 @pytest.mark.parametrize(
@@ -17,9 +19,27 @@ from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategie
         ("test_get_numeric_value_from_string_value", {"header": "10.9"}, "header", None, 10.9),
         ("test_get_numeric_value_from_non_numeric", {"header": "60,120"}, "header", None, None),
         ("test_get_numeric_value_from_missing_header", {"header": 1}, "notheader", None, None),
-        ("test_get_numeric_value_with_regex", {"header": "61,60"}, "header", re.compile("([-+]?\d+)"), 61),  # noqa
-        ("test_get_numeric_value_with_regex_no_header", {"header": "61,60"}, "notheader", re.compile("([-+]?\d+)"), None),  # noqa
-        ("test_get_numeric_value_with_regex_not_matching", {"header": "abc61,60"}, "header", re.compile("([-+]?\d+)"), None),  # noqa
+        (
+            "test_get_numeric_value_with_regex",
+            {"header": "61,60"},
+            "header",
+            re.compile("([-+]?\d+)"),
+            61,
+        ),  # noqa
+        (
+            "test_get_numeric_value_with_regex_no_header",
+            {"header": "61,60"},
+            "notheader",
+            re.compile("([-+]?\d+)"),
+            None,
+        ),  # noqa
+        (
+            "test_get_numeric_value_with_regex_not_matching",
+            {"header": "abc61,60"},
+            "header",
+            re.compile("([-+]?\d+)"),
+            None,
+        ),  # noqa
     ],
 )
 def test_get_numeric_value_from_header(test_name, headers, requested_header, regex, expected_value):

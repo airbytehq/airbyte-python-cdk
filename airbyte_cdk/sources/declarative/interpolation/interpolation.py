@@ -14,7 +14,13 @@ class Interpolation(ABC):
     """
 
     @abstractmethod
-    def eval(self, input_str: str, config: Config, default: Optional[str] = None, **additional_options: Any) -> Any:
+    def eval(
+        self,
+        input_str: str,
+        config: Config,
+        default: Optional[str] = None,
+        **additional_options: Any,
+    ) -> Any:
         """
         Interpolates the input string using the config, and additional options passed as parameter.
 

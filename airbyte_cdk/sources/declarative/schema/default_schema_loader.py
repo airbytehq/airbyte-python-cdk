@@ -41,5 +41,7 @@ class DefaultSchemaLoader(SchemaLoader):
             # A slight hack since we don't directly have the stream name. However, when building the default filepath we assume the
             # runtime options stores stream name 'name' so we'll do the same here
             stream_name = self._parameters.get("name", "")
-            logging.info(f"Could not find schema for stream {stream_name}, defaulting to the empty schema")
+            logging.info(
+                f"Could not find schema for stream {stream_name}, defaulting to the empty schema"
+            )
             return {}

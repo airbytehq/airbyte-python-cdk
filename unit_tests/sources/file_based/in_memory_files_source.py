@@ -17,15 +17,30 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 from airbyte_cdk.models import ConfiguredAirbyteCatalog, ConfiguredAirbyteCatalogSerializer
-from airbyte_cdk.sources.file_based.availability_strategy import AbstractFileBasedAvailabilityStrategy, DefaultFileBasedAvailabilityStrategy
+from airbyte_cdk.sources.file_based.availability_strategy import (
+    AbstractFileBasedAvailabilityStrategy,
+    DefaultFileBasedAvailabilityStrategy,
+)
 from airbyte_cdk.sources.file_based.config.abstract_file_based_spec import AbstractFileBasedSpec
-from airbyte_cdk.sources.file_based.discovery_policy import AbstractDiscoveryPolicy, DefaultDiscoveryPolicy
+from airbyte_cdk.sources.file_based.discovery_policy import (
+    AbstractDiscoveryPolicy,
+    DefaultDiscoveryPolicy,
+)
 from airbyte_cdk.sources.file_based.file_based_source import FileBasedSource
-from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader, FileReadMode
+from airbyte_cdk.sources.file_based.file_based_stream_reader import (
+    AbstractFileBasedStreamReader,
+    FileReadMode,
+)
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
-from airbyte_cdk.sources.file_based.schema_validation_policies import DEFAULT_SCHEMA_VALIDATION_POLICIES, AbstractSchemaValidationPolicy
-from airbyte_cdk.sources.file_based.stream.cursor import AbstractFileBasedCursor, DefaultFileBasedCursor
+from airbyte_cdk.sources.file_based.schema_validation_policies import (
+    DEFAULT_SCHEMA_VALIDATION_POLICIES,
+    AbstractSchemaValidationPolicy,
+)
+from airbyte_cdk.sources.file_based.stream.cursor import (
+    AbstractFileBasedCursor,
+    DefaultFileBasedCursor,
+)
 from airbyte_cdk.sources.source import TState
 from avro import datafile
 from pydantic.v1 import AnyUrl
@@ -53,13 +68,19 @@ class InMemoryFilesSource(FileBasedSource):
         self.files = files
         self.file_type = file_type
         self.catalog = catalog
-        self.configured_catalog = ConfiguredAirbyteCatalogSerializer.load(self.catalog) if self.catalog else None
+        self.configured_catalog = (
+            ConfiguredAirbyteCatalogSerializer.load(self.catalog) if self.catalog else None
+        )
         self.config = config
         self.state = state
 
         # Source setup
-        stream_reader = stream_reader or InMemoryFilesStreamReader(files=files, file_type=file_type, file_write_options=file_write_options)
-        availability_strategy = availability_strategy or DefaultFileBasedAvailabilityStrategy(stream_reader)  # type: ignore[assignment]
+        stream_reader = stream_reader or InMemoryFilesStreamReader(
+            files=files, file_type=file_type, file_write_options=file_write_options
+        )
+        availability_strategy = availability_strategy or DefaultFileBasedAvailabilityStrategy(
+            stream_reader
+        )  # type: ignore[assignment]
         super().__init__(
             stream_reader,
             spec_class=InMemorySpec,
@@ -78,7 +99,12 @@ class InMemoryFilesSource(FileBasedSource):
 
 
 class InMemoryFilesStreamReader(AbstractFileBasedStreamReader):
-    def __init__(self, files: Mapping[str, Mapping[str, Any]], file_type: str, file_write_options: Optional[Mapping[str, Any]] = None):
+    def __init__(
+        self,
+        files: Mapping[str, Mapping[str, Any]],
+        file_type: str,
+        file_write_options: Optional[Mapping[str, Any]] = None,
+    ):
         self.files = files
         self.file_type = file_type
         self.file_write_options = file_write_options
@@ -113,10 +139,14 @@ class InMemoryFilesStreamReader(AbstractFileBasedStreamReader):
     def file_size(self, file: RemoteFile) -> int:
         return 0
 
-    def get_file(self, file: RemoteFile, local_directory: str, logger: logging.Logger) -> Dict[str, Any]:
+    def get_file(
+        self, file: RemoteFile, local_directory: str, logger: logging.Logger
+    ) -> Dict[str, Any]:
         return {}
 
-    def open_file(self, file: RemoteFile, mode: FileReadMode, encoding: Optional[str], logger: logging.Logger) -> IOBase:
+    def open_file(
+        self, file: RemoteFile, mode: FileReadMode, encoding: Optional[str], logger: logging.Logger
+    ) -> IOBase:
         if self.file_type == "csv":
             return self._make_csv_file_contents(file.uri)
         elif self.file_type == "jsonl":
@@ -127,7 +157,6 @@ class InMemoryFilesStreamReader(AbstractFileBasedStreamReader):
             raise NotImplementedError(f"No implementation for file type: {self.file_type}")
 
     def _make_csv_file_contents(self, file_name: str) -> IOBase:
-
         # Some tests define the csv as an array of strings to make it easier to validate the handling
         # of quotes, delimiter, and escpare chars.
         if isinstance(self.files[file_name]["contents"][0], str):
@@ -169,7 +198,9 @@ class InMemoryFilesStreamReader(AbstractFileBasedStreamReader):
 class InMemorySpec(AbstractFileBasedSpec):
     @classmethod
     def documentation_url(cls) -> AnyUrl:
-        return AnyUrl(scheme="https", url="https://docs.airbyte.com/integrations/sources/in_memory_files")  # type: ignore
+        return AnyUrl(
+            scheme="https", url="https://docs.airbyte.com/integrations/sources/in_memory_files"
+        )  # type: ignore
 
 
 class TemporaryParquetFilesStreamReader(InMemoryFilesStreamReader):
@@ -177,7 +208,9 @@ class TemporaryParquetFilesStreamReader(InMemoryFilesStreamReader):
     A file reader that writes RemoteFiles to a temporary file and then reads them back.
     """
 
-    def open_file(self, file: RemoteFile, mode: FileReadMode, encoding: Optional[str], logger: logging.Logger) -> IOBase:
+    def open_file(
+        self, file: RemoteFile, mode: FileReadMode, encoding: Optional[str], logger: logging.Logger
+    ) -> IOBase:
         return io.BytesIO(self._create_file(file.uri))
 
     def _create_file(self, file_name: str) -> bytes:
@@ -198,7 +231,9 @@ class TemporaryAvroFilesStreamReader(InMemoryFilesStreamReader):
     A file reader that writes RemoteFiles to a temporary file and then reads them back.
     """
 
-    def open_file(self, file: RemoteFile, mode: FileReadMode, encoding: Optional[str], logger: logging.Logger) -> IOBase:
+    def open_file(
+        self, file: RemoteFile, mode: FileReadMode, encoding: Optional[str], logger: logging.Logger
+    ) -> IOBase:
         return io.BytesIO(self._make_file_contents(file.uri))
 
     def _make_file_contents(self, file_name: str) -> bytes:
@@ -222,7 +257,9 @@ class TemporaryExcelFilesStreamReader(InMemoryFilesStreamReader):
     A file reader that writes RemoteFiles to a temporary file and then reads them back.
     """
 
-    def open_file(self, file: RemoteFile, mode: FileReadMode, encoding: Optional[str], logger: logging.Logger) -> IOBase:
+    def open_file(
+        self, file: RemoteFile, mode: FileReadMode, encoding: Optional[str], logger: logging.Logger
+    ) -> IOBase:
         return io.BytesIO(self._make_file_contents(file.uri))
 
     def _make_file_contents(self, file_name: str) -> bytes:

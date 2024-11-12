@@ -11,9 +11,21 @@ from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import I
     [
         ("test_field_value", "field", "value"),
         ("test_number", "number", 100),
-        ("test_field_to_interpolate_from_config", "field_to_interpolate_from_config", "VALUE_FROM_CONFIG"),
-        ("test_field_to_interpolate_from_kwargs", "field_to_interpolate_from_kwargs", "VALUE_FROM_KWARGS"),
-        ("test_field_to_interpolate_from_parameters", "field_to_interpolate_from_parameters", "VALUE_FROM_PARAMETERS"),
+        (
+            "test_field_to_interpolate_from_config",
+            "field_to_interpolate_from_config",
+            "VALUE_FROM_CONFIG",
+        ),
+        (
+            "test_field_to_interpolate_from_kwargs",
+            "field_to_interpolate_from_kwargs",
+            "VALUE_FROM_KWARGS",
+        ),
+        (
+            "test_field_to_interpolate_from_parameters",
+            "field_to_interpolate_from_parameters",
+            "VALUE_FROM_PARAMETERS",
+        ),
         ("test_key_is_interpolated", "key", "VALUE"),
     ],
 )

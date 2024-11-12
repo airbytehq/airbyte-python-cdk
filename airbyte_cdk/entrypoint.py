@@ -62,33 +62,54 @@ class AirbyteEntrypoint(object):
     def parse_args(args: List[str]) -> argparse.Namespace:
         # set up parent parsers
         parent_parser = argparse.ArgumentParser(add_help=False)
-        parent_parser.add_argument("--debug", action="store_true", help="enables detailed debug logs related to the sync")
+        parent_parser.add_argument(
+            "--debug", action="store_true", help="enables detailed debug logs related to the sync"
+        )
         main_parser = argparse.ArgumentParser()
         subparsers = main_parser.add_subparsers(title="commands", dest="command")
 
         # spec
-        subparsers.add_parser("spec", help="outputs the json configuration specification", parents=[parent_parser])
+        subparsers.add_parser(
+            "spec", help="outputs the json configuration specification", parents=[parent_parser]
+        )
 
         # check
-        check_parser = subparsers.add_parser("check", help="checks the config can be used to connect", parents=[parent_parser])
+        check_parser = subparsers.add_parser(
+            "check", help="checks the config can be used to connect", parents=[parent_parser]
+        )
         required_check_parser = check_parser.add_argument_group("required named arguments")
-        required_check_parser.add_argument("--config", type=str, required=True, help="path to the json configuration file")
+        required_check_parser.add_argument(
+            "--config", type=str, required=True, help="path to the json configuration file"
+        )
 
         # discover
         discover_parser = subparsers.add_parser(
-            "discover", help="outputs a catalog describing the source's schema", parents=[parent_parser]
+            "discover",
+            help="outputs a catalog describing the source's schema",
+            parents=[parent_parser],
         )
         required_discover_parser = discover_parser.add_argument_group("required named arguments")
-        required_discover_parser.add_argument("--config", type=str, required=True, help="path to the json configuration file")
+        required_discover_parser.add_argument(
+            "--config", type=str, required=True, help="path to the json configuration file"
+        )
 
         # read
-        read_parser = subparsers.add_parser("read", help="reads the source and outputs messages to STDOUT", parents=[parent_parser])
+        read_parser = subparsers.add_parser(
+            "read", help="reads the source and outputs messages to STDOUT", parents=[parent_parser]
+        )
 
-        read_parser.add_argument("--state", type=str, required=False, help="path to the json-encoded state file")
+        read_parser.add_argument(
+            "--state", type=str, required=False, help="path to the json-encoded state file"
+        )
         required_read_parser = read_parser.add_argument_group("required named arguments")
-        required_read_parser.add_argument("--config", type=str, required=True, help="path to the json configuration file")
         required_read_parser.add_argument(
-            "--catalog", type=str, required=True, help="path to the catalog used to determine which data to read"
+            "--config", type=str, required=True, help="path to the json configuration file"
+        )
+        required_read_parser.add_argument(
+            "--catalog",
+            type=str,
+            required=True,
+            help="path to the catalog used to determine which data to read",
         )
 
         return main_parser.parse_args(args)
@@ -108,11 +129,14 @@ class AirbyteEntrypoint(object):
         source_spec: ConnectorSpecification = self.source.spec(self.logger)
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
-                os.environ[ENV_REQUEST_CACHE_PATH] = temp_dir  # set this as default directory for request_cache to store *.sqlite files
+                os.environ[ENV_REQUEST_CACHE_PATH] = (
+                    temp_dir  # set this as default directory for request_cache to store *.sqlite files
+                )
                 if cmd == "spec":
                     message = AirbyteMessage(type=Type.SPEC, spec=source_spec)
                     yield from [
-                        self.airbyte_message_to_string(queued_message) for queued_message in self._emit_queued_messages(self.source)
+                        self.airbyte_message_to_string(queued_message)
+                        for queued_message in self._emit_queued_messages(self.source)
                     ]
                     yield self.airbyte_message_to_string(message)
                 else:
@@ -120,23 +144,38 @@ class AirbyteEntrypoint(object):
                     config = self.source.configure(raw_config, temp_dir)
 
                     yield from [
-                        self.airbyte_message_to_string(queued_message) for queued_message in self._emit_queued_messages(self.source)
+                        self.airbyte_message_to_string(queued_message)
+                        for queued_message in self._emit_queued_messages(self.source)
                     ]
                     if cmd == "check":
-                        yield from map(AirbyteEntrypoint.airbyte_message_to_string, self.check(source_spec, config))
+                        yield from map(
+                            AirbyteEntrypoint.airbyte_message_to_string,
+                            self.check(source_spec, config),
+                        )
                     elif cmd == "discover":
-                        yield from map(AirbyteEntrypoint.airbyte_message_to_string, self.discover(source_spec, config))
+                        yield from map(
+                            AirbyteEntrypoint.airbyte_message_to_string,
+                            self.discover(source_spec, config),
+                        )
                     elif cmd == "read":
                         config_catalog = self.source.read_catalog(parsed_args.catalog)
                         state = self.source.read_state(parsed_args.state)
 
-                        yield from map(AirbyteEntrypoint.airbyte_message_to_string, self.read(source_spec, config, config_catalog, state))
+                        yield from map(
+                            AirbyteEntrypoint.airbyte_message_to_string,
+                            self.read(source_spec, config, config_catalog, state),
+                        )
                     else:
                         raise Exception("Unexpected command " + cmd)
         finally:
-            yield from [self.airbyte_message_to_string(queued_message) for queued_message in self._emit_queued_messages(self.source)]
+            yield from [
+                self.airbyte_message_to_string(queued_message)
+                for queued_message in self._emit_queued_messages(self.source)
+            ]
 
-    def check(self, source_spec: ConnectorSpecification, config: TConfig) -> Iterable[AirbyteMessage]:
+    def check(
+        self, source_spec: ConnectorSpecification, config: TConfig
+    ) -> Iterable[AirbyteMessage]:
         self.set_up_secret_filter(config, source_spec.connectionSpecification)
         try:
             self.validate_connection(source_spec, config)
@@ -161,7 +200,10 @@ class AirbyteEntrypoint(object):
                 raise traced_exc
             else:
                 yield AirbyteMessage(
-                    type=Type.CONNECTION_STATUS, connectionStatus=AirbyteConnectionStatus(status=Status.FAILED, message=traced_exc.message)
+                    type=Type.CONNECTION_STATUS,
+                    connectionStatus=AirbyteConnectionStatus(
+                        status=Status.FAILED, message=traced_exc.message
+                    ),
                 )
                 return
         if check_result.status == Status.SUCCEEDED:
@@ -172,7 +214,9 @@ class AirbyteEntrypoint(object):
         yield from self._emit_queued_messages(self.source)
         yield AirbyteMessage(type=Type.CONNECTION_STATUS, connectionStatus=check_result)
 
-    def discover(self, source_spec: ConnectorSpecification, config: TConfig) -> Iterable[AirbyteMessage]:
+    def discover(
+        self, source_spec: ConnectorSpecification, config: TConfig
+    ) -> Iterable[AirbyteMessage]:
         self.set_up_secret_filter(config, source_spec.connectionSpecification)
         if self.source.check_config_against_spec:
             self.validate_connection(source_spec, config)
@@ -181,7 +225,9 @@ class AirbyteEntrypoint(object):
         yield from self._emit_queued_messages(self.source)
         yield AirbyteMessage(type=Type.CATALOG, catalog=catalog)
 
-    def read(self, source_spec: ConnectorSpecification, config: TConfig, catalog: Any, state: list[Any]) -> Iterable[AirbyteMessage]:
+    def read(
+        self, source_spec: ConnectorSpecification, config: TConfig, catalog: Any, state: list[Any]
+    ) -> Iterable[AirbyteMessage]:
         self.set_up_secret_filter(config, source_spec.connectionSpecification)
         if self.source.check_config_against_spec:
             self.validate_connection(source_spec, config)
@@ -194,16 +240,24 @@ class AirbyteEntrypoint(object):
             yield self.handle_record_counts(message, stream_message_counter)
 
     @staticmethod
-    def handle_record_counts(message: AirbyteMessage, stream_message_count: DefaultDict[HashableStreamDescriptor, float]) -> AirbyteMessage:
+    def handle_record_counts(
+        message: AirbyteMessage, stream_message_count: DefaultDict[HashableStreamDescriptor, float]
+    ) -> AirbyteMessage:
         match message.type:
             case Type.RECORD:
-                stream_message_count[HashableStreamDescriptor(name=message.record.stream, namespace=message.record.namespace)] += 1.0  # type: ignore[union-attr] # record has `stream` and `namespace`
+                stream_message_count[
+                    HashableStreamDescriptor(
+                        name=message.record.stream, namespace=message.record.namespace
+                    )
+                ] += 1.0  # type: ignore[union-attr] # record has `stream` and `namespace`
             case Type.STATE:
                 stream_descriptor = message_utils.get_stream_descriptor(message)
 
                 # Set record count from the counter onto the state message
                 message.state.sourceStats = message.state.sourceStats or AirbyteStateStats()  # type: ignore[union-attr] # state has `sourceStats`
-                message.state.sourceStats.recordCount = stream_message_count.get(stream_descriptor, 0.0)  # type: ignore[union-attr] # state has `sourceStats`
+                message.state.sourceStats.recordCount = stream_message_count.get(
+                    stream_descriptor, 0.0
+                )  # type: ignore[union-attr] # state has `sourceStats`
 
                 # Reset the counter
                 stream_message_count[stream_descriptor] = 0.0
@@ -283,7 +337,9 @@ def _init_internal_request_filter() -> None:
             )
 
         if not parsed_url.hostname:
-            raise requests.exceptions.InvalidURL("Invalid URL specified: The endpoint that data is being requested from is not a valid URL")
+            raise requests.exceptions.InvalidURL(
+                "Invalid URL specified: The endpoint that data is being requested from is not a valid URL"
+            )
 
         try:
             is_private = _is_private_url(parsed_url.hostname, parsed_url.port)  # type: ignore [arg-type]

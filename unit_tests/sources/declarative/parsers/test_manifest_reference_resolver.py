@@ -3,8 +3,14 @@
 #
 
 import pytest
-from airbyte_cdk.sources.declarative.parsers.custom_exceptions import CircularReferenceException, UndefinedReferenceException
-from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import ManifestReferenceResolver, _parse_path
+from airbyte_cdk.sources.declarative.parsers.custom_exceptions import (
+    CircularReferenceException,
+    UndefinedReferenceException,
+)
+from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import (
+    ManifestReferenceResolver,
+    _parse_path,
+)
 
 resolver = ManifestReferenceResolver()
 
@@ -29,7 +35,13 @@ def test_refer_to_non_existant_struct():
 
 
 def test_refer_in_dict():
-    content = {"limit": 50, "offset_request_parameters": {"offset": "{{ next_page_token['offset'] }}", "limit": "#/limit"}}
+    content = {
+        "limit": 50,
+        "offset_request_parameters": {
+            "offset": "{{ next_page_token['offset'] }}",
+            "limit": "#/limit",
+        },
+    }
     config = resolver.preprocess_manifest(content)
     assert config["offset_request_parameters"]["offset"] == "{{ next_page_token['offset'] }}"
     assert config["offset_request_parameters"]["limit"] == 50
@@ -38,7 +50,10 @@ def test_refer_in_dict():
 def test_refer_to_dict():
     content = {
         "limit": 50,
-        "offset_request_parameters": {"offset": "{{ next_page_token['offset'] }}", "limit": "#/limit"},
+        "offset_request_parameters": {
+            "offset": "{{ next_page_token['offset'] }}",
+            "limit": "#/limit",
+        },
         "offset_pagination_request_parameters": {
             "class": "InterpolatedRequestParameterProvider",
             "request_parameters": "#/offset_request_parameters",
@@ -49,15 +64,24 @@ def test_refer_to_dict():
     assert config["offset_request_parameters"]["limit"] == 50
     assert len(config["offset_pagination_request_parameters"]) == 2
     assert config["offset_pagination_request_parameters"]["request_parameters"]["limit"] == 50
-    assert config["offset_pagination_request_parameters"]["request_parameters"]["offset"] == "{{ next_page_token['offset'] }}"
+    assert (
+        config["offset_pagination_request_parameters"]["request_parameters"]["offset"]
+        == "{{ next_page_token['offset'] }}"
+    )
 
 
 def test_refer_and_overwrite():
     content = {
         "limit": 50,
         "custom_limit": 25,
-        "offset_request_parameters": {"offset": "{{ next_page_token['offset'] }}", "limit": "#/limit"},
-        "custom_request_parameters": {"$ref": "#/offset_request_parameters", "limit": "#/custom_limit"},
+        "offset_request_parameters": {
+            "offset": "{{ next_page_token['offset'] }}",
+            "limit": "#/limit",
+        },
+        "custom_request_parameters": {
+            "$ref": "#/offset_request_parameters",
+            "limit": "#/custom_limit",
+        },
     }
     config = resolver.preprocess_manifest(content)
     assert config["offset_request_parameters"]["limit"] == 50

@@ -19,7 +19,9 @@ class HttpRequestMatcherTest(TestCase):
         self._matcher.matches(self._a_request)
         assert self._matcher.has_expected_match_count()
 
-    def test_given_request_does_not_match_when_matches_then_does_not_have_expected_match_count(self):
+    def test_given_request_does_not_match_when_matches_then_does_not_have_expected_match_count(
+        self,
+    ):
         self._a_request.matches.return_value = False
         self._matcher.matches(self._a_request)
 
@@ -44,7 +46,9 @@ class HttpRequestMatcherTest(TestCase):
         assert _matcher.has_expected_match_count()
         assert _matcher.actual_number_of_matches == 2
 
-    def test_given_expected_number_of_requests_not_met_when_matches_then_does_not_have_expected_match_count(self):
+    def test_given_expected_number_of_requests_not_met_when_matches_then_does_not_have_expected_match_count(
+        self,
+    ):
         _matcher = HttpRequestMatcher(self._request_to_match, 2)
         self._a_request.matches.side_effect = [True, False]
         _matcher.matches(self._a_request)

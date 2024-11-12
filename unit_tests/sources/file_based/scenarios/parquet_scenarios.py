@@ -166,7 +166,9 @@ single_parquet_scenario = (
     )
     .set_source_builder(
         FileBasedSourceBuilder()
-        .set_stream_reader(TemporaryParquetFilesStreamReader(files=_single_parquet_file, file_type="parquet"))
+        .set_stream_reader(
+            TemporaryParquetFilesStreamReader(files=_single_parquet_file, file_type="parquet")
+        )
         .set_file_type("parquet")
     )
     .set_expected_records(
@@ -232,7 +234,11 @@ single_partitioned_parquet_scenario = (
     )
     .set_source_builder(
         FileBasedSourceBuilder()
-        .set_stream_reader(TemporaryParquetFilesStreamReader(files=_single_partitioned_parquet_file, file_type="parquet"))
+        .set_stream_reader(
+            TemporaryParquetFilesStreamReader(
+                files=_single_partitioned_parquet_file, file_type="parquet"
+            )
+        )
         .set_file_type("parquet")
     )
     .set_expected_records(
@@ -305,7 +311,9 @@ multi_parquet_scenario = (
     .set_source_builder(
         FileBasedSourceBuilder()
         .set_file_type("parquet")
-        .set_stream_reader(TemporaryParquetFilesStreamReader(files=_multiple_parquet_file, file_type="parquet"))
+        .set_stream_reader(
+            TemporaryParquetFilesStreamReader(files=_multiple_parquet_file, file_type="parquet")
+        )
     )
     .set_expected_catalog(
         {
@@ -391,7 +399,11 @@ parquet_various_types_scenario = (
     )
     .set_source_builder(
         FileBasedSourceBuilder()
-        .set_stream_reader(TemporaryParquetFilesStreamReader(files=_parquet_file_with_various_types, file_type="parquet"))
+        .set_stream_reader(
+            TemporaryParquetFilesStreamReader(
+                files=_parquet_file_with_various_types, file_type="parquet"
+            )
+        )
         .set_file_type("parquet")
     )
     .set_expected_catalog(
@@ -437,8 +449,14 @@ parquet_various_types_scenario = (
                             },
                             "col_date32": {"type": ["null", "string"], "format": "date"},
                             "col_date64": {"type": ["null", "string"], "format": "date"},
-                            "col_timestamp_without_tz": {"type": ["null", "string"], "format": "date-time"},
-                            "col_timestamp_with_tz": {"type": ["null", "string"], "format": "date-time"},
+                            "col_timestamp_without_tz": {
+                                "type": ["null", "string"],
+                                "format": "date-time",
+                            },
+                            "col_timestamp_with_tz": {
+                                "type": ["null", "string"],
+                                "format": "date-time",
+                            },
                             "col_time32s": {
                                 "type": ["null", "string"],
                             },
@@ -528,7 +546,9 @@ parquet_file_with_decimal_no_config_scenario = (
     )
     .set_source_builder(
         FileBasedSourceBuilder()
-        .set_stream_reader(TemporaryParquetFilesStreamReader(files=_parquet_file_with_decimal, file_type="parquet"))
+        .set_stream_reader(
+            TemporaryParquetFilesStreamReader(files=_parquet_file_with_decimal, file_type="parquet")
+        )
         .set_file_type("parquet")
     )
     .set_expected_records(
@@ -583,7 +603,9 @@ parquet_file_with_decimal_as_string_scenario = (
     )
     .set_source_builder(
         FileBasedSourceBuilder()
-        .set_stream_reader(TemporaryParquetFilesStreamReader(files=_parquet_file_with_decimal, file_type="parquet"))
+        .set_stream_reader(
+            TemporaryParquetFilesStreamReader(files=_parquet_file_with_decimal, file_type="parquet")
+        )
         .set_file_type("parquet")
     )
     .set_expected_records(
@@ -638,13 +660,19 @@ parquet_file_with_decimal_as_float_scenario = (
     )
     .set_source_builder(
         FileBasedSourceBuilder()
-        .set_stream_reader(TemporaryParquetFilesStreamReader(files=_parquet_file_with_decimal, file_type="parquet"))
+        .set_stream_reader(
+            TemporaryParquetFilesStreamReader(files=_parquet_file_with_decimal, file_type="parquet")
+        )
         .set_file_type("parquet")
     )
     .set_expected_records(
         [
             {
-                "data": {"col1": 13.00, "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z", "_ab_source_file_url": "a.parquet"},
+                "data": {
+                    "col1": 13.00,
+                    "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
+                    "_ab_source_file_url": "a.parquet",
+                },
                 "stream": "stream1",
             },
         ]
@@ -691,13 +719,19 @@ parquet_file_with_decimal_legacy_config_scenario = (
     )
     .set_source_builder(
         FileBasedSourceBuilder()
-        .set_stream_reader(TemporaryParquetFilesStreamReader(files=_parquet_file_with_decimal, file_type="parquet"))
+        .set_stream_reader(
+            TemporaryParquetFilesStreamReader(files=_parquet_file_with_decimal, file_type="parquet")
+        )
         .set_file_type("parquet")
     )
     .set_expected_records(
         [
             {
-                "data": {"col1": 13.00, "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z", "_ab_source_file_url": "a.parquet"},
+                "data": {
+                    "col1": 13.00,
+                    "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
+                    "_ab_source_file_url": "a.parquet",
+                },
                 "stream": "stream1",
             },
         ]
@@ -728,16 +762,31 @@ parquet_file_with_decimal_legacy_config_scenario = (
 parquet_with_invalid_config_scenario = (
     TestScenarioBuilder()
     .set_name("parquet_with_invalid_config")
-    .set_config({"streams": [{"name": "stream1", "globs": ["*"], "validation_policy": "Emit Record", "format": {"filetype": "csv"}}]})
+    .set_config(
+        {
+            "streams": [
+                {
+                    "name": "stream1",
+                    "globs": ["*"],
+                    "validation_policy": "Emit Record",
+                    "format": {"filetype": "csv"},
+                }
+            ]
+        }
+    )
     .set_source_builder(
         FileBasedSourceBuilder()
-        .set_stream_reader(TemporaryParquetFilesStreamReader(files=_single_parquet_file, file_type="parquet"))
+        .set_stream_reader(
+            TemporaryParquetFilesStreamReader(files=_single_parquet_file, file_type="parquet")
+        )
         .set_file_type("parquet")
     )
     .set_expected_records([])
     .set_expected_logs({"read": [{"level": "ERROR", "message": "Error parsing record"}]})
     .set_expected_discover_error(AirbyteTracedException, "Error inferring schema from files")
-    .set_expected_read_error(AirbyteTracedException, "Please check the logged errors for more information.")
+    .set_expected_read_error(
+        AirbyteTracedException, "Please check the logged errors for more information."
+    )
     .set_expected_catalog(
         {
             "streams": [

@@ -3,14 +3,19 @@
 #
 
 import pytest
-from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer import ManifestComponentTransformer
+from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer import (
+    ManifestComponentTransformer,
+)
 
 
 @pytest.mark.parametrize(
     "component, expected_component",
     [
         pytest.param(
-            {"type": "DeclarativeSource", "streams": [{"type": "DeclarativeStream", "retriever": {}, "schema_loader": {}}]},
+            {
+                "type": "DeclarativeSource",
+                "streams": [{"type": "DeclarativeStream", "retriever": {}, "schema_loader": {}}],
+            },
             {
                 "type": "DeclarativeSource",
                 "streams": [
@@ -26,7 +31,12 @@ from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer impo
         pytest.param(
             {
                 "type": "DeclarativeStream",
-                "retriever": {"type": "SimpleRetriever", "paginator": {}, "record_selector": {}, "requester": {}},
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "paginator": {},
+                    "record_selector": {},
+                    "requester": {},
+                },
             },
             {
                 "type": "DeclarativeStream",
@@ -40,7 +50,10 @@ from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer impo
             id="test_simple_retriever",
         ),
         pytest.param(
-            {"type": "DeclarativeStream", "requester": {"type": "HttpRequester", "error_handler": {}}},
+            {
+                "type": "DeclarativeStream",
+                "requester": {"type": "HttpRequester", "error_handler": {}},
+            },
             {
                 "type": "DeclarativeStream",
                 "requester": {
@@ -51,7 +64,14 @@ from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer impo
             id="test_http_requester",
         ),
         pytest.param(
-            {"type": "SimpleRetriever", "paginator": {"type": "DefaultPaginator", "page_size_option": {}, "page_token_option": {}}},
+            {
+                "type": "SimpleRetriever",
+                "paginator": {
+                    "type": "DefaultPaginator",
+                    "page_size_option": {},
+                    "page_token_option": {},
+                },
+            },
             {
                 "type": "SimpleRetriever",
                 "paginator": {
@@ -63,7 +83,13 @@ from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer impo
             id="test_default_paginator",
         ),
         pytest.param(
-            {"type": "SimpleRetriever", "partition_router": {"type": "SubstreamPartitionRouter", "parent_stream_configs": [{}, {}, {}]}},
+            {
+                "type": "SimpleRetriever",
+                "partition_router": {
+                    "type": "SubstreamPartitionRouter",
+                    "parent_stream_configs": [{}, {}, {}],
+                },
+            },
             {
                 "type": "SimpleRetriever",
                 "partition_router": {
@@ -92,13 +118,21 @@ def test_find_default_types(component, expected_component):
         pytest.param(
             {
                 "type": "SimpleRetriever",
-                "requester": {"type": "HttpRequester", "authenticator": {"class_name": "source_greenhouse.components.NewAuthenticator"}},
+                "requester": {
+                    "type": "HttpRequester",
+                    "authenticator": {
+                        "class_name": "source_greenhouse.components.NewAuthenticator"
+                    },
+                },
             },
             {
                 "type": "SimpleRetriever",
                 "requester": {
                     "type": "HttpRequester",
-                    "authenticator": {"type": "CustomAuthenticator", "class_name": "source_greenhouse.components.NewAuthenticator"},
+                    "authenticator": {
+                        "type": "CustomAuthenticator",
+                        "class_name": "source_greenhouse.components.NewAuthenticator",
+                    },
                 },
             },
             id="test_custom_authenticator",
@@ -115,7 +149,10 @@ def test_find_default_types(component, expected_component):
                 "type": "SimpleRetriever",
                 "record_selector": {
                     "type": "RecordSelector",
-                    "extractor": {"type": "CustomRecordExtractor", "class_name": "source_greenhouse.components.NewRecordExtractor"},
+                    "extractor": {
+                        "type": "CustomRecordExtractor",
+                        "class_name": "source_greenhouse.components.NewRecordExtractor",
+                    },
                 },
             },
             id="test_custom_extractor",
@@ -138,7 +175,10 @@ def test_propagate_parameters_to_all_components():
                 "$parameters": {"name": "roasters", "primary_key": "id"},
                 "retriever": {
                     "type": "SimpleRetriever",
-                    "record_selector": {"type": "RecordSelector", "extractor": {"type": "DpathExtractor", "field_path": []}},
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
                     "requester": {
                         "type": "HttpRequester",
                         "name": '{{ parameters["name"] }}',
@@ -252,7 +292,10 @@ def test_do_not_propagate_parameters_that_have_the_same_field_name():
                 "$parameters": {
                     "name": "roasters",
                     "primary_key": "id",
-                    "schema_loader": {"type": "JsonFileSchemaLoader", "file_path": './source_coffee/schemas/{{ parameters["name"] }}.json'},
+                    "schema_loader": {
+                        "type": "JsonFileSchemaLoader",
+                        "file_path": './source_coffee/schemas/{{ parameters["name"] }}.json',
+                    },
                 },
             }
         ],
@@ -278,7 +321,10 @@ def test_do_not_propagate_parameters_that_have_the_same_field_name():
                 "$parameters": {
                     "name": "roasters",
                     "primary_key": "id",
-                    "schema_loader": {"type": "JsonFileSchemaLoader", "file_path": './source_coffee/schemas/{{ parameters["name"] }}.json'},
+                    "schema_loader": {
+                        "type": "JsonFileSchemaLoader",
+                        "file_path": './source_coffee/schemas/{{ parameters["name"] }}.json',
+                    },
                 },
             }
         ],
@@ -295,7 +341,10 @@ def test_ignore_empty_parameters():
         "type": "DeclarativeStream",
         "retriever": {
             "type": "SimpleRetriever",
-            "record_selector": {"type": "RecordSelector", "extractor": {"type": "DpathExtractor", "field_path": []}},
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": []},
+            },
         },
     }
 
@@ -317,7 +366,10 @@ def test_only_propagate_parameters_to_components():
                     "some_option": "already",
                 },
             },
-            "dictionary_field": {"details": "should_not_contain_parameters", "other": "no_parameters_as_fields"},
+            "dictionary_field": {
+                "details": "should_not_contain_parameters",
+                "other": "no_parameters_as_fields",
+            },
             "$parameters": {
                 "included": "not!",
             },
@@ -335,7 +387,10 @@ def test_only_propagate_parameters_to_components():
                 "included": "not!",
                 "$parameters": {"some_option": "already", "included": "not!"},
             },
-            "dictionary_field": {"details": "should_not_contain_parameters", "other": "no_parameters_as_fields"},
+            "dictionary_field": {
+                "details": "should_not_contain_parameters",
+                "other": "no_parameters_as_fields",
+            },
             "included": "not!",
             "$parameters": {
                 "included": "not!",

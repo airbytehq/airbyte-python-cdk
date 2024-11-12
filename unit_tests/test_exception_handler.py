@@ -53,7 +53,8 @@ def test_uncaught_exception_handler():
     )
 
     expected_log_message = AirbyteMessage(
-        type=MessageType.LOG, log=AirbyteLogMessage(level=Level.FATAL, message=f"{exception_message}\n{exception_trace}")
+        type=MessageType.LOG,
+        log=AirbyteLogMessage(level=Level.FATAL, message=f"{exception_message}\n{exception_trace}"),
     )
 
     expected_trace_message = AirbyteMessage(
@@ -86,4 +87,6 @@ def test_uncaught_exception_handler():
     out_trace_message = AirbyteMessageSerializer.load(json.loads(trace_output))
     assert out_trace_message.trace.emitted_at > 0
     out_trace_message.trace.emitted_at = 0.0  # set a specific emitted_at value for testing
-    assert out_trace_message == expected_trace_message, "Trace message should be emitted in expected form"
+    assert (
+        out_trace_message == expected_trace_message
+    ), "Trace message should be emitted in expected form"

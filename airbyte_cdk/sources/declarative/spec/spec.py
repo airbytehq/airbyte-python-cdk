@@ -5,7 +5,11 @@
 from dataclasses import InitVar, dataclass
 from typing import Any, Mapping, Optional
 
-from airbyte_cdk.models import AdvancedAuth, ConnectorSpecification, ConnectorSpecificationSerializer  # type: ignore [attr-defined]
+from airbyte_cdk.models import (
+    AdvancedAuth,
+    ConnectorSpecification,
+    ConnectorSpecificationSerializer,
+)  # type: ignore [attr-defined]
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import AuthFlow
 
 
@@ -29,7 +33,9 @@ class Spec:
         Returns the connector specification according the spec block defined in the low code connector manifest.
         """
 
-        obj: dict[str, Mapping[str, Any] | str | AdvancedAuth] = {"connectionSpecification": self.connection_specification}
+        obj: dict[str, Mapping[str, Any] | str | AdvancedAuth] = {
+            "connectionSpecification": self.connection_specification
+        }
 
         if self.documentation_url:
             obj["documentationUrl"] = self.documentation_url

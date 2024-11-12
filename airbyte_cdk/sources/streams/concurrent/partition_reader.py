@@ -5,7 +5,10 @@ from queue import Queue
 
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
-from airbyte_cdk.sources.streams.concurrent.partitions.types import PartitionCompleteSentinel, QueueItem
+from airbyte_cdk.sources.streams.concurrent.partitions.types import (
+    PartitionCompleteSentinel,
+    QueueItem,
+)
 
 
 class PartitionReader:

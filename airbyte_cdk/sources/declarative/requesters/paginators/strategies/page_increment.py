@@ -7,7 +7,9 @@ from typing import Any, Mapping, Optional, Union
 
 import requests
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
-from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import PaginationStrategy
+from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
+    PaginationStrategy,
+)
 from airbyte_cdk.sources.types import Config, Record
 
 
@@ -43,7 +45,9 @@ class PageIncrement(PaginationStrategy):
             return self._page
         return None
 
-    def next_page_token(self, response: requests.Response, last_page_size: int, last_record: Optional[Record]) -> Optional[Any]:
+    def next_page_token(
+        self, response: requests.Response, last_page_size: int, last_record: Optional[Record]
+    ) -> Optional[Any]:
         # Stop paginating when there are fewer records than the page size or the current page has no records
         if (self._page_size and last_page_size < self._page_size) or last_page_size == 0:
             return None
@@ -55,7 +59,9 @@ class PageIncrement(PaginationStrategy):
         if reset_value is None:
             self._page = self.start_from_page
         elif not isinstance(reset_value, int):
-            raise ValueError(f"Reset value {reset_value} for PageIncrement pagination strategy was not an integer")
+            raise ValueError(
+                f"Reset value {reset_value} for PageIncrement pagination strategy was not an integer"
+            )
         else:
             self._page = reset_value
 

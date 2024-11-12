@@ -24,7 +24,9 @@ class PaginationStrategy:
         """
 
     @abstractmethod
-    def next_page_token(self, response: requests.Response, last_page_size: int, last_record: Optional[Record]) -> Optional[Any]:
+    def next_page_token(
+        self, response: requests.Response, last_page_size: int, last_record: Optional[Record]
+    ) -> Optional[Any]:
         """
         :param response: response to process
         :param last_page_size: the number of records read from the response

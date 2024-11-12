@@ -52,15 +52,26 @@ class EmbeddedIntegrationTestCase(unittest.TestCase):
             json_schema={},
             supported_sync_modes=[SyncMode.full_refresh, SyncMode.incremental],
         )
-        self.stream2 = AirbyteStream(name="test2", json_schema={}, supported_sync_modes=[SyncMode.full_refresh])
+        self.stream2 = AirbyteStream(
+            name="test2", json_schema={}, supported_sync_modes=[SyncMode.full_refresh]
+        )
         self.source.discover.return_value = AirbyteCatalog(streams=[self.stream2, self.stream1])
 
     def test_integration(self):
         self.source.read.return_value = [
             AirbyteMessage(type=Type.LOG, log=AirbyteLogMessage(level=Level.INFO, message="test")),
-            AirbyteMessage(type=Type.RECORD, record=AirbyteRecordMessage(stream="test", data={"test": 1}, emitted_at=1)),
-            AirbyteMessage(type=Type.RECORD, record=AirbyteRecordMessage(stream="test", data={"test": 2}, emitted_at=2)),
-            AirbyteMessage(type=Type.RECORD, record=AirbyteRecordMessage(stream="test", data={"test": 3}, emitted_at=3)),
+            AirbyteMessage(
+                type=Type.RECORD,
+                record=AirbyteRecordMessage(stream="test", data={"test": 1}, emitted_at=1),
+            ),
+            AirbyteMessage(
+                type=Type.RECORD,
+                record=AirbyteRecordMessage(stream="test", data={"test": 2}, emitted_at=2),
+            ),
+            AirbyteMessage(
+                type=Type.RECORD,
+                record=AirbyteRecordMessage(stream="test", data={"test": 3}, emitted_at=3),
+            ),
         ]
         result = list(self.integration._load_data("test", None))
         self.assertEqual(
@@ -97,7 +108,10 @@ class EmbeddedIntegrationTestCase(unittest.TestCase):
         state = AirbyteStateMessage(data={})
         self.source.read.return_value = [
             AirbyteMessage(type=Type.LOG, log=AirbyteLogMessage(level=Level.INFO, message="test")),
-            AirbyteMessage(type=Type.RECORD, record=AirbyteRecordMessage(stream="test", data={"test": 1}, emitted_at=1)),
+            AirbyteMessage(
+                type=Type.RECORD,
+                record=AirbyteRecordMessage(stream="test", data={"test": 1}, emitted_at=1),
+            ),
             AirbyteMessage(type=Type.STATE, state=state),
         ]
         result = list(self.integration._load_data("test", None))

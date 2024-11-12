@@ -32,7 +32,11 @@ _multiple_excel_combine_schema_file = {
     },
     "b.xlsx": {
         "contents": [
-            {"col_double": 1975.1975, "col_string": "It's Not Living (If It's Not with You)", "col_song": "Love It If We Made It"},
+            {
+                "col_double": 1975.1975,
+                "col_string": "It's Not Living (If It's Not with You)",
+                "col_song": "Love It If We Made It",
+            },
             {"col_double": 5791.5791, "col_string": "The 1975", "col_song": "About You"},
         ],
         "last_modified": "2023-06-06T03:54:07.000Z",
@@ -60,9 +64,24 @@ _excel_all_types_file = {
 _multiple_excel_stream_file = {
     "odesza_songs.xlsx": {
         "contents": [
-            {"col_title": "Late Night", "col_album": "A_MOMENT_APART", "col_year": 2017, "col_vocals": False},
-            {"col_title": "White Lies", "col_album": "IN_RETURN", "col_year": 2014, "col_vocals": True},
-            {"col_title": "Wide Awake", "col_album": "THE_LAST_GOODBYE", "col_year": 2022, "col_vocals": True},
+            {
+                "col_title": "Late Night",
+                "col_album": "A_MOMENT_APART",
+                "col_year": 2017,
+                "col_vocals": False,
+            },
+            {
+                "col_title": "White Lies",
+                "col_album": "IN_RETURN",
+                "col_year": 2014,
+                "col_vocals": True,
+            },
+            {
+                "col_title": "Wide Awake",
+                "col_album": "THE_LAST_GOODBYE",
+                "col_year": 2022,
+                "col_vocals": True,
+            },
         ],
         "last_modified": "2023-06-05T03:54:07.000Z",
     },
@@ -70,7 +89,11 @@ _multiple_excel_stream_file = {
         "contents": [
             {
                 "col_name": "Lightning in a Bottle",
-                "col_location": {"country": "USA", "state": "California", "city": "Buena Vista Lake"},
+                "col_location": {
+                    "country": "USA",
+                    "state": "California",
+                    "city": "Buena Vista Lake",
+                },
                 "col_attendance": 18000,
             },
             {
@@ -100,7 +123,9 @@ single_excel_scenario = (
     )
     .set_source_builder(
         FileBasedSourceBuilder()
-        .set_stream_reader(TemporaryExcelFilesStreamReader(files=_single_excel_file, file_type="excel"))
+        .set_stream_reader(
+            TemporaryExcelFilesStreamReader(files=_single_excel_file, file_type="excel")
+        )
         .set_file_type("excel")
     )
     .set_expected_check_status("SUCCEEDED")
@@ -167,7 +192,11 @@ multiple_excel_combine_schema_scenario = (
     )
     .set_source_builder(
         FileBasedSourceBuilder()
-        .set_stream_reader(TemporaryExcelFilesStreamReader(files=_multiple_excel_combine_schema_file, file_type="excel"))
+        .set_stream_reader(
+            TemporaryExcelFilesStreamReader(
+                files=_multiple_excel_combine_schema_file, file_type="excel"
+            )
+        )
         .set_file_type("excel")
     )
     .set_expected_records(
@@ -257,7 +286,9 @@ excel_all_types_scenario = (
     )
     .set_source_builder(
         FileBasedSourceBuilder()
-        .set_stream_reader(TemporaryExcelFilesStreamReader(files=_excel_all_types_file, file_type="excel"))
+        .set_stream_reader(
+            TemporaryExcelFilesStreamReader(files=_excel_all_types_file, file_type="excel")
+        )
         .set_file_type("excel")
     )
     .set_expected_records(
@@ -332,7 +363,9 @@ multiple_streams_excel_scenario = (
     )
     .set_source_builder(
         FileBasedSourceBuilder()
-        .set_stream_reader(TemporaryExcelFilesStreamReader(files=_multiple_excel_stream_file, file_type="excel"))
+        .set_stream_reader(
+            TemporaryExcelFilesStreamReader(files=_multiple_excel_stream_file, file_type="excel")
+        )
         .set_file_type("excel")
     )
     .set_expected_records(

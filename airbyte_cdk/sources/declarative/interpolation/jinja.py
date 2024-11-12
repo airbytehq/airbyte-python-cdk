@@ -61,7 +61,9 @@ class JinjaInterpolation(Interpolation):
     # By default, these Python builtin functions are available in the Jinja context.
     # We explicitely remove them because of the potential security risk.
     # Please add a unit test to test_jinja.py when adding a restriction.
-    RESTRICTED_BUILTIN_FUNCTIONS = ["range"]  # The range function can cause very expensive computations
+    RESTRICTED_BUILTIN_FUNCTIONS = [
+        "range"
+    ]  # The range function can cause very expensive computations
 
     def __init__(self) -> None:
         self._environment = StreamPartitionAccessEnvironment()
@@ -119,7 +121,9 @@ class JinjaInterpolation(Interpolation):
             undeclared = self._find_undeclared_variables(s)
             undeclared_not_in_context = {var for var in undeclared if var not in context}
             if undeclared_not_in_context:
-                raise ValueError(f"Jinja macro has undeclared variables: {undeclared_not_in_context}. Context: {context}")
+                raise ValueError(
+                    f"Jinja macro has undeclared variables: {undeclared_not_in_context}. Context: {context}"
+                )
             return self._compile(s).render(context)  # type: ignore # from_string is able to handle None
         except TypeError:
             # The string is a static value, not a jinja template

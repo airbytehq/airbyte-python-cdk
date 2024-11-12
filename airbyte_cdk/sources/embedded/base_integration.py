@@ -7,7 +7,11 @@ from typing import Generic, Iterable, Optional, TypeVar
 
 from airbyte_cdk.connector import TConfig
 from airbyte_cdk.models import AirbyteRecordMessage, AirbyteStateMessage, SyncMode, Type
-from airbyte_cdk.sources.embedded.catalog import create_configured_catalog, get_stream, get_stream_names
+from airbyte_cdk.sources.embedded.catalog import (
+    create_configured_catalog,
+    get_stream,
+    get_stream_names,
+)
 from airbyte_cdk.sources.embedded.runner import SourceRunner
 from airbyte_cdk.sources.embedded.tools import get_defined_id
 from airbyte_cdk.sources.utils.schema_helpers import check_config_against_spec_or_exit
@@ -31,11 +35,15 @@ class BaseEmbeddedIntegration(ABC, Generic[TConfig, TOutput]):
         """
         pass
 
-    def _load_data(self, stream_name: str, state: Optional[AirbyteStateMessage] = None) -> Iterable[TOutput]:
+    def _load_data(
+        self, stream_name: str, state: Optional[AirbyteStateMessage] = None
+    ) -> Iterable[TOutput]:
         catalog = self.source.discover(self.config)
         stream = get_stream(catalog, stream_name)
         if not stream:
-            raise ValueError(f"Stream {stream_name} not found, the following streams are available: {', '.join(get_stream_names(catalog))}")
+            raise ValueError(
+                f"Stream {stream_name} not found, the following streams are available: {', '.join(get_stream_names(catalog))}"
+            )
         if SyncMode.incremental not in stream.supported_sync_modes:
             configured_catalog = create_configured_catalog(stream, sync_mode=SyncMode.full_refresh)
         else:
@@ -43,7 +51,9 @@ class BaseEmbeddedIntegration(ABC, Generic[TConfig, TOutput]):
 
         for message in self.source.read(self.config, configured_catalog, state):
             if message.type == Type.RECORD:
-                output = self._handle_record(message.record, get_defined_id(stream, message.record.data))  # type: ignore[union-attr] # record has `data`
+                output = self._handle_record(
+                    message.record, get_defined_id(stream, message.record.data)
+                )  # type: ignore[union-attr] # record has `data`
                 if output:
                     yield output
             elif message.type is Type.STATE and message.state:

@@ -5,7 +5,15 @@
 from unittest.mock import MagicMock
 
 import pytest
-from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, AirbyteTraceMessage, Level, SyncMode, TraceType, Type
+from airbyte_cdk.models import (
+    AirbyteLogMessage,
+    AirbyteMessage,
+    AirbyteTraceMessage,
+    Level,
+    SyncMode,
+    TraceType,
+    Type,
+)
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.types import StreamSlice
 
@@ -24,8 +32,12 @@ def test_declarative_stream():
     records = [
         {"pk": 1234, "field": "value"},
         {"pk": 4567, "field": "different_value"},
-        AirbyteMessage(type=Type.LOG, log=AirbyteLogMessage(level=Level.INFO, message="This is a log  message")),
-        AirbyteMessage(type=Type.TRACE, trace=AirbyteTraceMessage(type=TraceType.ERROR, emitted_at=12345)),
+        AirbyteMessage(
+            type=Type.LOG, log=AirbyteLogMessage(level=Level.INFO, message="This is a log  message")
+        ),
+        AirbyteMessage(
+            type=Type.TRACE, trace=AirbyteTraceMessage(type=TraceType.ERROR, emitted_at=12345)
+        ),
     ]
     stream_slices = [
         StreamSlice(partition={}, cursor_slice={"date": "2021-01-01"}),
@@ -54,10 +66,18 @@ def test_declarative_stream():
     assert stream.get_json_schema() == _json_schema
     assert stream.state == state
     input_slice = stream_slices[0]
-    assert list(stream.read_records(SyncMode.full_refresh, _cursor_field, input_slice, state)) == records
+    assert (
+        list(stream.read_records(SyncMode.full_refresh, _cursor_field, input_slice, state))
+        == records
+    )
     assert stream.primary_key == _primary_key
     assert stream.cursor_field == _cursor_field
-    assert stream.stream_slices(sync_mode=SyncMode.incremental, cursor_field=_cursor_field, stream_state=None) == stream_slices
+    assert (
+        stream.stream_slices(
+            sync_mode=SyncMode.incremental, cursor_field=_cursor_field, stream_state=None
+        )
+        == stream_slices
+    )
 
 
 def test_declarative_stream_using_empty_slice():
@@ -69,8 +89,12 @@ def test_declarative_stream_using_empty_slice():
     records = [
         {"pk": 1234, "field": "value"},
         {"pk": 4567, "field": "different_value"},
-        AirbyteMessage(type=Type.LOG, log=AirbyteLogMessage(level=Level.INFO, message="This is a log  message")),
-        AirbyteMessage(type=Type.TRACE, trace=AirbyteTraceMessage(type=TraceType.ERROR, emitted_at=12345)),
+        AirbyteMessage(
+            type=Type.LOG, log=AirbyteLogMessage(level=Level.INFO, message="This is a log  message")
+        ),
+        AirbyteMessage(
+            type=Type.TRACE, trace=AirbyteTraceMessage(type=TraceType.ERROR, emitted_at=12345)
+        ),
     ]
 
     retriever = MagicMock()

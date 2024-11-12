@@ -7,7 +7,10 @@ from abc import ABC, abstractmethod
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
-from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader, FileReadMode
+from airbyte_cdk.sources.file_based.file_based_stream_reader import (
+    AbstractFileBasedStreamReader,
+    FileReadMode,
+)
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
 

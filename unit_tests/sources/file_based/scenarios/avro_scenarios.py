@@ -35,12 +35,25 @@ _multiple_avro_combine_schema_file = {
             "fields": [
                 {"name": "col_double", "type": "double"},
                 {"name": "col_string", "type": "string"},
-                {"name": "col_album", "type": {"type": "record", "name": "Album", "fields": [{"name": "album", "type": "string"}]}},
+                {
+                    "name": "col_album",
+                    "type": {
+                        "type": "record",
+                        "name": "Album",
+                        "fields": [{"name": "album", "type": "string"}],
+                    },
+                },
             ],
         },
         "contents": [
             (20.02, "Robbers", {"album": "The 1975"}),
-            (20.23, "Somebody Else", {"album": "I Like It When You Sleep, for You Are So Beautiful yet So Unaware of It"}),
+            (
+                20.23,
+                "Somebody Else",
+                {
+                    "album": "I Like It When You Sleep, for You Are So Beautiful yet So Unaware of It"
+                },
+            ),
         ],
         "last_modified": "2023-06-05T03:54:07.000Z",
     },
@@ -51,11 +64,22 @@ _multiple_avro_combine_schema_file = {
             "fields": [
                 {"name": "col_double", "type": "double"},
                 {"name": "col_string", "type": "string"},
-                {"name": "col_song", "type": {"type": "record", "name": "Song", "fields": [{"name": "title", "type": "string"}]}},
+                {
+                    "name": "col_song",
+                    "type": {
+                        "type": "record",
+                        "name": "Song",
+                        "fields": [{"name": "title", "type": "string"}],
+                    },
+                },
             ],
         },
         "contents": [
-            (1975.1975, "It's Not Living (If It's Not with You)", {"title": "Love It If We Made It"}),
+            (
+                1975.1975,
+                "It's Not Living (If It's Not with You)",
+                {"title": "Love It If We Made It"},
+            ),
             (5791.5791, "The 1975", {"title": "About You"}),
         ],
         "last_modified": "2023-06-06T03:54:07.000Z",
@@ -89,18 +113,39 @@ _avro_all_types_file = {
                         ],
                     },
                 },
-                {"name": "col_enum", "type": {"type": "enum", "name": "Genre", "symbols": ["POP_ROCK", "INDIE_ROCK", "ALTERNATIVE_ROCK"]}},
+                {
+                    "name": "col_enum",
+                    "type": {
+                        "type": "enum",
+                        "name": "Genre",
+                        "symbols": ["POP_ROCK", "INDIE_ROCK", "ALTERNATIVE_ROCK"],
+                    },
+                },
                 {"name": "col_array", "type": {"type": "array", "items": "string"}},
                 {"name": "col_map", "type": {"type": "map", "values": "string"}},
                 {"name": "col_fixed", "type": {"type": "fixed", "name": "MyFixed", "size": 4}},
                 # Logical Types
-                {"name": "col_decimal", "type": {"type": "bytes", "logicalType": "decimal", "precision": 10, "scale": 5}},
+                {
+                    "name": "col_decimal",
+                    "type": {
+                        "type": "bytes",
+                        "logicalType": "decimal",
+                        "precision": 10,
+                        "scale": 5,
+                    },
+                },
                 {"name": "col_uuid", "type": {"type": "string", "logicalType": "uuid"}},
                 {"name": "col_date", "type": {"type": "int", "logicalType": "date"}},
                 {"name": "col_time_millis", "type": {"type": "int", "logicalType": "time-millis"}},
                 {"name": "col_time_micros", "type": {"type": "long", "logicalType": "time-micros"}},
-                {"name": "col_timestamp_millis", "type": {"type": "long", "logicalType": "timestamp-millis"}},
-                {"name": "col_timestamp_micros", "type": {"type": "long", "logicalType": "timestamp-micros"}},
+                {
+                    "name": "col_timestamp_millis",
+                    "type": {"type": "long", "logicalType": "timestamp-millis"},
+                },
+                {
+                    "name": "col_timestamp_micros",
+                    "type": {"type": "long", "logicalType": "timestamp-micros"},
+                },
             ],
         },
         "contents": [
@@ -121,7 +166,12 @@ _avro_all_types_file = {
                     "Notes on a Conditional Form",
                     "Being Funny in a Foreign Language",
                 ],
-                {"lead_singer": "Matty Healy", "lead_guitar": "Adam Hann", "bass_guitar": "Ross MacDonald", "drummer": "George Daniel"},
+                {
+                    "lead_singer": "Matty Healy",
+                    "lead_guitar": "Adam Hann",
+                    "bass_guitar": "Ross MacDonald",
+                    "drummer": "George Daniel",
+                },
                 b"\x12\x34\x56\x78",
                 decimal.Decimal("1234.56789"),
                 "123e4567-e89b-12d3-a456-426655440000",
@@ -148,7 +198,12 @@ _multiple_avro_stream_file = {
                     "type": {
                         "type": "enum",
                         "name": "Album",
-                        "symbols": ["SUMMERS_GONE", "IN_RETURN", "A_MOMENT_APART", "THE_LAST_GOODBYE"],
+                        "symbols": [
+                            "SUMMERS_GONE",
+                            "IN_RETURN",
+                            "A_MOMENT_APART",
+                            "THE_LAST_GOODBYE",
+                        ],
                     },
                 },
                 {"name": "col_year", "type": "int"},
@@ -188,8 +243,16 @@ _multiple_avro_stream_file = {
         "contents": [
             ("Coachella", {"country": "USA", "state": "California", "city": "Indio"}, 250000),
             ("CRSSD", {"country": "USA", "state": "California", "city": "San Diego"}, 30000),
-            ("Lightning in a Bottle", {"country": "USA", "state": "California", "city": "Buena Vista Lake"}, 18000),
-            ("Outside Lands", {"country": "USA", "state": "California", "city": "San Francisco"}, 220000),
+            (
+                "Lightning in a Bottle",
+                {"country": "USA", "state": "California", "city": "Buena Vista Lake"},
+                18000,
+            ),
+            (
+                "Outside Lands",
+                {"country": "USA", "state": "California", "city": "San Francisco"},
+                220000,
+            ),
         ],
         "last_modified": "2023-06-06T03:54:07.000Z",
     },
@@ -212,7 +275,9 @@ single_avro_scenario = (
     )
     .set_source_builder(
         FileBasedSourceBuilder()
-        .set_stream_reader(TemporaryAvroFilesStreamReader(files=_single_avro_file, file_type="avro"))
+        .set_stream_reader(
+            TemporaryAvroFilesStreamReader(files=_single_avro_file, file_type="avro")
+        )
         .set_file_type("avro")
     )
     .set_expected_check_status("SUCCEEDED")
@@ -279,7 +344,11 @@ multiple_avro_combine_schema_scenario = (
     )
     .set_source_builder(
         FileBasedSourceBuilder()
-        .set_stream_reader(TemporaryAvroFilesStreamReader(files=_multiple_avro_combine_schema_file, file_type="avro"))
+        .set_stream_reader(
+            TemporaryAvroFilesStreamReader(
+                files=_multiple_avro_combine_schema_file, file_type="avro"
+            )
+        )
         .set_file_type("avro")
     )
     .set_expected_records(
@@ -298,7 +367,9 @@ multiple_avro_combine_schema_scenario = (
                 "data": {
                     "col_double": 20.23,
                     "col_string": "Somebody Else",
-                    "col_album": {"album": "I Like It When You Sleep, for You Are So Beautiful yet So Unaware of It"},
+                    "col_album": {
+                        "album": "I Like It When You Sleep, for You Are So Beautiful yet So Unaware of It"
+                    },
                     "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
                     "_ab_source_file_url": "a.avro",
                 },
@@ -379,7 +450,9 @@ avro_all_types_scenario = (
     )
     .set_source_builder(
         FileBasedSourceBuilder()
-        .set_stream_reader(TemporaryAvroFilesStreamReader(files=_avro_all_types_file, file_type="avro"))
+        .set_stream_reader(
+            TemporaryAvroFilesStreamReader(files=_avro_all_types_file, file_type="avro")
+        )
         .set_file_type("avro")
     )
     .set_expected_records(
@@ -431,16 +504,28 @@ avro_all_types_scenario = (
                     "json_schema": {
                         "type": "object",
                         "properties": {
-                            "col_array": {"items": {"type": ["null", "string"]}, "type": ["null", "array"]},
+                            "col_array": {
+                                "items": {"type": ["null", "string"]},
+                                "type": ["null", "array"],
+                            },
                             "col_bool": {"type": ["null", "boolean"]},
                             "col_bytes": {"type": ["null", "string"]},
                             "col_double": {"type": ["null", "number"]},
-                            "col_enum": {"enum": ["POP_ROCK", "INDIE_ROCK", "ALTERNATIVE_ROCK"], "type": ["null", "string"]},
-                            "col_fixed": {"pattern": "^[0-9A-Fa-f]{8}$", "type": ["null", "string"]},
+                            "col_enum": {
+                                "enum": ["POP_ROCK", "INDIE_ROCK", "ALTERNATIVE_ROCK"],
+                                "type": ["null", "string"],
+                            },
+                            "col_fixed": {
+                                "pattern": "^[0-9A-Fa-f]{8}$",
+                                "type": ["null", "string"],
+                            },
                             "col_float": {"type": ["null", "number"]},
                             "col_int": {"type": ["null", "integer"]},
                             "col_long": {"type": ["null", "integer"]},
-                            "col_map": {"additionalProperties": {"type": ["null", "string"]}, "type": ["null", "object"]},
+                            "col_map": {
+                                "additionalProperties": {"type": ["null", "string"]},
+                                "type": ["null", "object"],
+                            },
                             "col_record": {
                                 "properties": {
                                     "artist": {"type": ["null", "string"]},
@@ -450,12 +535,18 @@ avro_all_types_scenario = (
                                 "type": ["null", "object"],
                             },
                             "col_string": {"type": ["null", "string"]},
-                            "col_decimal": {"pattern": "^-?\\d{(1, 5)}(?:\\.\\d(1, 5))?$", "type": ["null", "string"]},
+                            "col_decimal": {
+                                "pattern": "^-?\\d{(1, 5)}(?:\\.\\d(1, 5))?$",
+                                "type": ["null", "string"],
+                            },
                             "col_uuid": {"type": ["null", "string"]},
                             "col_date": {"format": "date", "type": ["null", "string"]},
                             "col_time_millis": {"type": ["null", "integer"]},
                             "col_time_micros": {"type": ["null", "integer"]},
-                            "col_timestamp_millis": {"format": "date-time", "type": ["null", "string"]},
+                            "col_timestamp_millis": {
+                                "format": "date-time",
+                                "type": ["null", "string"],
+                            },
                             "col_timestamp_micros": {"type": ["null", "string"]},
                             "_ab_source_file_last_modified": {"type": "string"},
                             "_ab_source_file_url": {"type": "string"},
@@ -494,7 +585,9 @@ multiple_streams_avro_scenario = (
     )
     .set_source_builder(
         FileBasedSourceBuilder()
-        .set_stream_reader(TemporaryAvroFilesStreamReader(files=_multiple_avro_stream_file, file_type="avro"))
+        .set_stream_reader(
+            TemporaryAvroFilesStreamReader(files=_multiple_avro_stream_file, file_type="avro")
+        )
         .set_file_type("avro")
     )
     .set_expected_records(
@@ -577,7 +670,11 @@ multiple_streams_avro_scenario = (
             {
                 "data": {
                     "col_name": "Lightning in a Bottle",
-                    "col_location": {"country": "USA", "state": "California", "city": "Buena Vista Lake"},
+                    "col_location": {
+                        "country": "USA",
+                        "state": "California",
+                        "city": "Buena Vista Lake",
+                    },
                     "col_attendance": 18000,
                     "_ab_source_file_last_modified": "2023-06-06T03:54:07.000000Z",
                     "_ab_source_file_url": "california_festivals.avro",
@@ -587,7 +684,11 @@ multiple_streams_avro_scenario = (
             {
                 "data": {
                     "col_name": "Outside Lands",
-                    "col_location": {"country": "USA", "state": "California", "city": "San Francisco"},
+                    "col_location": {
+                        "country": "USA",
+                        "state": "California",
+                        "city": "San Francisco",
+                    },
                     "col_attendance": 220000,
                     "_ab_source_file_last_modified": "2023-06-06T03:54:07.000000Z",
                     "_ab_source_file_url": "california_festivals.avro",
@@ -607,7 +708,12 @@ multiple_streams_avro_scenario = (
                             "col_title": {"type": ["null", "string"]},
                             "col_album": {
                                 "type": ["null", "string"],
-                                "enum": ["SUMMERS_GONE", "IN_RETURN", "A_MOMENT_APART", "THE_LAST_GOODBYE"],
+                                "enum": [
+                                    "SUMMERS_GONE",
+                                    "IN_RETURN",
+                                    "A_MOMENT_APART",
+                                    "THE_LAST_GOODBYE",
+                                ],
                             },
                             "col_year": {"type": ["null", "integer"]},
                             "col_vocals": {"type": ["null", "boolean"]},
@@ -666,7 +772,11 @@ avro_file_with_double_as_number_scenario = (
     )
     .set_source_builder(
         FileBasedSourceBuilder()
-        .set_stream_reader(TemporaryAvroFilesStreamReader(files=_multiple_avro_combine_schema_file, file_type="avro"))
+        .set_stream_reader(
+            TemporaryAvroFilesStreamReader(
+                files=_multiple_avro_combine_schema_file, file_type="avro"
+            )
+        )
         .set_file_type("avro")
     )
     .set_expected_records(
@@ -685,7 +795,9 @@ avro_file_with_double_as_number_scenario = (
                 "data": {
                     "col_double": 20.23,
                     "col_string": "Somebody Else",
-                    "col_album": {"album": "I Like It When You Sleep, for You Are So Beautiful yet So Unaware of It"},
+                    "col_album": {
+                        "album": "I Like It When You Sleep, for You Are So Beautiful yet So Unaware of It"
+                    },
                     "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
                     "_ab_source_file_url": "a.avro",
                 },

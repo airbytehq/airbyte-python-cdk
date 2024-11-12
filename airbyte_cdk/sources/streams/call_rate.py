@@ -76,7 +76,9 @@ class AbstractCallRatePolicy(abc.ABC):
         """
 
     @abc.abstractmethod
-    def update(self, available_calls: Optional[int], call_reset_ts: Optional[datetime.datetime]) -> None:
+    def update(
+        self, available_calls: Optional[int], call_reset_ts: Optional[datetime.datetime]
+    ) -> None:
         """Update call rate counting with current values
 
         :param available_calls:
@@ -202,12 +204,20 @@ class UnlimitedCallRatePolicy(BaseCallRatePolicy):
     def try_acquire(self, request: Any, weight: int) -> None:
         """Do nothing"""
 
-    def update(self, available_calls: Optional[int], call_reset_ts: Optional[datetime.datetime]) -> None:
+    def update(
+        self, available_calls: Optional[int], call_reset_ts: Optional[datetime.datetime]
+    ) -> None:
         """Do nothing"""
 
 
 class FixedWindowCallRatePolicy(BaseCallRatePolicy):
-    def __init__(self, next_reset_ts: datetime.datetime, period: timedelta, call_limit: int, matchers: list[RequestMatcher]):
+    def __init__(
+        self,
+        next_reset_ts: datetime.datetime,
+        period: timedelta,
+        call_limit: int,
+        matchers: list[RequestMatcher],
+    ):
         """A policy that allows {call_limit} calls within a {period} time interval
 
         :param next_reset_ts: next call rate reset time point
@@ -235,7 +245,8 @@ class FixedWindowCallRatePolicy(BaseCallRatePolicy):
             if self._calls_num + weight > self._call_limit:
                 reset_in = self._next_reset_ts - datetime.datetime.now()
                 error_message = (
-                    f"reached maximum number of allowed calls {self._call_limit} " f"per {self._offset} interval, next reset in {reset_in}."
+                    f"reached maximum number of allowed calls {self._call_limit} "
+                    f"per {self._offset} interval, next reset in {reset_in}."
                 )
                 raise CallRateLimitHit(
                     error=error_message,
@@ -247,7 +258,9 @@ class FixedWindowCallRatePolicy(BaseCallRatePolicy):
 
             self._calls_num += weight
 
-    def update(self, available_calls: Optional[int], call_reset_ts: Optional[datetime.datetime]) -> None:
+    def update(
+        self, available_calls: Optional[int], call_reset_ts: Optional[datetime.datetime]
+    ) -> None:
         """Update call rate counters, by default, only reacts to decreasing updates of available_calls and changes to call_reset_ts.
         We ignore updates with available_calls > current_available_calls to support call rate limits that are lower than API limits.
 
@@ -260,12 +273,18 @@ class FixedWindowCallRatePolicy(BaseCallRatePolicy):
 
             if available_calls is not None and current_available_calls > available_calls:
                 logger.debug(
-                    "got rate limit update from api, adjusting available calls from %s to %s", current_available_calls, available_calls
+                    "got rate limit update from api, adjusting available calls from %s to %s",
+                    current_available_calls,
+                    available_calls,
                 )
                 self._calls_num = self._call_limit - available_calls
 
             if call_reset_ts is not None and call_reset_ts != self._next_reset_ts:
-                logger.debug("got rate limit update from api, adjusting reset time from %s to %s", self._next_reset_ts, call_reset_ts)
+                logger.debug(
+                    "got rate limit update from api, adjusting reset time from %s to %s",
+                    self._next_reset_ts,
+                    call_reset_ts,
+                )
                 self._next_reset_ts = call_reset_ts
 
     def _update_current_window(self) -> None:
@@ -292,7 +311,10 @@ class MovingWindowCallRatePolicy(BaseCallRatePolicy):
         """
         if not rates:
             raise ValueError("The list of rates can not be empty")
-        pyrate_rates = [PyRateRate(limit=rate.limit, interval=int(rate.interval.total_seconds() * 1000)) for rate in rates]
+        pyrate_rates = [
+            PyRateRate(limit=rate.limit, interval=int(rate.interval.total_seconds() * 1000))
+            for rate in rates
+        ]
         self._bucket = InMemoryBucket(pyrate_rates)
         # Limiter will create the background task that clears old requests in the bucket
         self._limiter = Limiter(self._bucket)
@@ -320,14 +342,18 @@ class MovingWindowCallRatePolicy(BaseCallRatePolicy):
                     time_to_wait=timedelta(milliseconds=time_to_wait),
                 )
 
-    def update(self, available_calls: Optional[int], call_reset_ts: Optional[datetime.datetime]) -> None:
+    def update(
+        self, available_calls: Optional[int], call_reset_ts: Optional[datetime.datetime]
+    ) -> None:
         """Adjust call bucket to reflect the state of the API server
 
         :param available_calls:
         :param call_reset_ts:
         :return:
         """
-        if available_calls is not None and call_reset_ts is None:  # we do our best to sync buckets with API
+        if (
+            available_calls is not None and call_reset_ts is None
+        ):  # we do our best to sync buckets with API
             if available_calls == 0:
                 with self._limiter.lock:
                     items_to_add = self._bucket.count() < self._bucket.rates[0].limit
@@ -350,7 +376,9 @@ class AbstractAPIBudget(abc.ABC):
     """
 
     @abc.abstractmethod
-    def acquire_call(self, request: Any, block: bool = True, timeout: Optional[float] = None) -> None:
+    def acquire_call(
+        self, request: Any, block: bool = True, timeout: Optional[float] = None
+    ) -> None:
         """Try to get a call from budget, will block by default
 
         :param request:
@@ -375,7 +403,9 @@ class AbstractAPIBudget(abc.ABC):
 class APIBudget(AbstractAPIBudget):
     """Default APIBudget implementation"""
 
-    def __init__(self, policies: list[AbstractCallRatePolicy], maximum_attempts_to_acquire: int = 100000) -> None:
+    def __init__(
+        self, policies: list[AbstractCallRatePolicy], maximum_attempts_to_acquire: int = 100000
+    ) -> None:
         """Constructor
 
         :param policies: list of policies in this budget
@@ -392,7 +422,9 @@ class APIBudget(AbstractAPIBudget):
                 return policy
         return None
 
-    def acquire_call(self, request: Any, block: bool = True, timeout: Optional[float] = None) -> None:
+    def acquire_call(
+        self, request: Any, block: bool = True, timeout: Optional[float] = None
+    ) -> None:
         """Try to get a call from budget, will block by default.
         Matchers will be called sequentially in the same order they were added.
         The first matcher that returns True will
@@ -417,7 +449,9 @@ class APIBudget(AbstractAPIBudget):
         """
         pass
 
-    def _do_acquire(self, request: Any, policy: AbstractCallRatePolicy, block: bool, timeout: Optional[float]) -> None:
+    def _do_acquire(
+        self, request: Any, policy: AbstractCallRatePolicy, block: bool, timeout: Optional[float]
+    ) -> None:
         """Internal method to try to acquire a call credit
 
         :param request:
@@ -439,14 +473,20 @@ class APIBudget(AbstractAPIBudget):
                     else:
                         time_to_wait = exc.time_to_wait
 
-                    time_to_wait = max(timedelta(0), time_to_wait)  # sometimes we get negative duration
-                    logger.info("reached call limit %s. going to sleep for %s", exc.rate, time_to_wait)
+                    time_to_wait = max(
+                        timedelta(0), time_to_wait
+                    )  # sometimes we get negative duration
+                    logger.info(
+                        "reached call limit %s. going to sleep for %s", exc.rate, time_to_wait
+                    )
                     time.sleep(time_to_wait.total_seconds())
                 else:
                     raise
 
         if last_exception:
-            logger.info("we used all %s attempts to acquire and failed", self._maximum_attempts_to_acquire)
+            logger.info(
+                "we used all %s attempts to acquire and failed", self._maximum_attempts_to_acquire
+            )
             raise last_exception
 
 
@@ -481,9 +521,13 @@ class HttpAPIBudget(APIBudget):
             reset_ts = self.get_reset_ts_from_response(response)
             policy.update(available_calls=available_calls, call_reset_ts=reset_ts)
 
-    def get_reset_ts_from_response(self, response: requests.Response) -> Optional[datetime.datetime]:
+    def get_reset_ts_from_response(
+        self, response: requests.Response
+    ) -> Optional[datetime.datetime]:
         if response.headers.get(self._ratelimit_reset_header):
-            return datetime.datetime.fromtimestamp(int(response.headers[self._ratelimit_reset_header]))
+            return datetime.datetime.fromtimestamp(
+                int(response.headers[self._ratelimit_reset_header])
+            )
         return None
 
     def get_calls_left_from_response(self, response: requests.Response) -> Optional[int]:

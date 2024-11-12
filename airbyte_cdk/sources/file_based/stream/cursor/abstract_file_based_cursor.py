@@ -54,7 +54,9 @@ class AbstractFileBasedCursor(ABC):
         ...
 
     @abstractmethod
-    def get_files_to_sync(self, all_files: Iterable[RemoteFile], logger: logging.Logger) -> Iterable[RemoteFile]:
+    def get_files_to_sync(
+        self, all_files: Iterable[RemoteFile], logger: logging.Logger
+    ) -> Iterable[RemoteFile]:
         """
         Given the list of files in the source, return the files that should be synced.
         :param all_files: All files in the source

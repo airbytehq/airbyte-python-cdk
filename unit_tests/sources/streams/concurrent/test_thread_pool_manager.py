@@ -11,7 +11,9 @@ from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPool
 class ThreadPoolManagerTest(TestCase):
     def setUp(self):
         self._threadpool = Mock(spec=ThreadPoolExecutor)
-        self._thread_pool_manager = ThreadPoolManager(self._threadpool, Mock(), max_concurrent_tasks=1)
+        self._thread_pool_manager = ThreadPoolManager(
+            self._threadpool, Mock(), max_concurrent_tasks=1
+        )
         self._fn = lambda x: x
         self._arg = "arg"
 
@@ -21,7 +23,9 @@ class ThreadPoolManagerTest(TestCase):
 
         assert len(self._thread_pool_manager._futures) == 1
 
-    def test_given_exception_during_pruning_when_check_for_errors_and_shutdown_then_shutdown_and_raise(self):
+    def test_given_exception_during_pruning_when_check_for_errors_and_shutdown_then_shutdown_and_raise(
+        self,
+    ):
         future = Mock(spec=Future)
         future.exception.return_value = RuntimeError
         future.done.side_effect = [True, True]

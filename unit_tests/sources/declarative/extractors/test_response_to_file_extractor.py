@@ -66,7 +66,7 @@ def large_event_response_fixture():
         csv_writer = csv.writer(csvfile)
         csv_writer.writerow(["username", "email"])  # headers
         for _ in range(lines_in_response):
-            csv_writer.writerow(["a_username","email1@example.com"])
+            csv_writer.writerow(["a_username", "email1@example.com"])
     yield (lines_in_response, file_path)
     os.remove(file_path)
 

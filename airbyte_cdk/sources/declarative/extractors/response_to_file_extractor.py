@@ -68,7 +68,9 @@ class ResponseToFileExtractor(RecordExtractor):
 
         res = b.replace(b"\x00", b"")
         if len(res) < len(b):
-            self.logger.warning("Filter 'null' bytes from string, size reduced %d -> %d chars", len(b), len(res))
+            self.logger.warning(
+                "Filter 'null' bytes from string, size reduced %d -> %d chars", len(b), len(res)
+            )
         return res
 
     def _save_to_file(self, response: requests.Response) -> Tuple[str, str]:
@@ -106,9 +108,13 @@ class ResponseToFileExtractor(RecordExtractor):
         if os.path.isfile(tmp_file):
             return tmp_file, response_encoding
         else:
-            raise ValueError(f"The IO/Error occured while verifying binary data. Tmp file {tmp_file} doesn't exist.")
+            raise ValueError(
+                f"The IO/Error occured while verifying binary data. Tmp file {tmp_file} doesn't exist."
+            )
 
-    def _read_with_chunks(self, path: str, file_encoding: str, chunk_size: int = 100) -> Iterable[Mapping[str, Any]]:
+    def _read_with_chunks(
+        self, path: str, file_encoding: str, chunk_size: int = 100
+    ) -> Iterable[Mapping[str, Any]]:
         """
         Reads data from a file in chunks and yields each row as a dictionary.
 
@@ -126,7 +132,9 @@ class ResponseToFileExtractor(RecordExtractor):
 
         try:
             with open(path, "r", encoding=file_encoding) as data:
-                chunks = pd.read_csv(data, chunksize=chunk_size, iterator=True, dialect="unix", dtype=object)
+                chunks = pd.read_csv(
+                    data, chunksize=chunk_size, iterator=True, dialect="unix", dtype=object
+                )
                 for chunk in chunks:
                     chunk = chunk.replace({nan: None}).to_dict(orient="records")
                     for row in chunk:
@@ -140,7 +148,9 @@ class ResponseToFileExtractor(RecordExtractor):
             # remove binary tmp file, after data is read
             os.remove(path)
 
-    def extract_records(self, response: Optional[requests.Response] = None) -> Iterable[Mapping[str, Any]]:
+    def extract_records(
+        self, response: Optional[requests.Response] = None
+    ) -> Iterable[Mapping[str, Any]]:
         """
         Extracts records from the given response by:
             1) Saving the result to a tmp file

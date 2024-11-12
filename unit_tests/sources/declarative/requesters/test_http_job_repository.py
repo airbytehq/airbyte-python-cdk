@@ -9,13 +9,22 @@ import pytest
 from airbyte_cdk.sources.declarative.async_job.status import AsyncJobStatus
 from airbyte_cdk.sources.declarative.decoders import NoopDecoder
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder
-from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordSelector, ResponseToFileExtractor
+from airbyte_cdk.sources.declarative.extractors import (
+    DpathExtractor,
+    RecordSelector,
+    ResponseToFileExtractor,
+)
 from airbyte_cdk.sources.declarative.requesters.error_handlers import DefaultErrorHandler
 from airbyte_cdk.sources.declarative.requesters.http_job_repository import AsyncHttpJobRepository
 from airbyte_cdk.sources.declarative.requesters.http_requester import HttpRequester
 from airbyte_cdk.sources.declarative.requesters.paginators import DefaultPaginator
-from airbyte_cdk.sources.declarative.requesters.paginators.strategies.cursor_pagination_strategy import CursorPaginationStrategy
-from airbyte_cdk.sources.declarative.requesters.request_option import RequestOption, RequestOptionType
+from airbyte_cdk.sources.declarative.requesters.paginators.strategies.cursor_pagination_strategy import (
+    CursorPaginationStrategy,
+)
+from airbyte_cdk.sources.declarative.requesters.request_option import (
+    RequestOption,
+    RequestOptionType,
+)
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.types import StreamSlice
@@ -122,13 +131,23 @@ class HttpJobRepositoryTest(TestCase):
             download_retriever=self._download_retriever,
             abort_requester=None,
             delete_requester=None,
-            status_extractor=DpathExtractor(decoder=JsonDecoder(parameters={}), field_path=["status"], config={}, parameters={} or {}),
+            status_extractor=DpathExtractor(
+                decoder=JsonDecoder(parameters={}),
+                field_path=["status"],
+                config={},
+                parameters={} or {},
+            ),
             status_mapping={
                 "ready": AsyncJobStatus.COMPLETED,
                 "failure": AsyncJobStatus.FAILED,
                 "pending": AsyncJobStatus.RUNNING,
             },
-            urls_extractor=DpathExtractor(decoder=JsonDecoder(parameters={}), field_path=["urls"], config={}, parameters={} or {}),
+            urls_extractor=DpathExtractor(
+                decoder=JsonDecoder(parameters={}),
+                field_path=["urls"],
+                config={},
+                parameters={} or {},
+            ),
         )
 
         self._http_mocker = HttpMocker()
@@ -137,7 +156,9 @@ class HttpJobRepositoryTest(TestCase):
     def tearDown(self) -> None:
         self._http_mocker.__exit__(None, None, None)
 
-    def test_given_different_statuses_when_update_jobs_status_then_update_status_properly(self) -> None:
+    def test_given_different_statuses_when_update_jobs_status_then_update_status_properly(
+        self,
+    ) -> None:
         self._mock_create_response(_A_JOB_ID)
         self._http_mocker.get(
             HttpRequest(url=f"{_EXPORT_URL}/{_A_JOB_ID}"),
@@ -145,7 +166,7 @@ class HttpJobRepositoryTest(TestCase):
                 HttpResponse(body=json.dumps({"id": _A_JOB_ID, "status": "pending"})),
                 HttpResponse(body=json.dumps({"id": _A_JOB_ID, "status": "failure"})),
                 HttpResponse(body=json.dumps({"id": _A_JOB_ID, "status": "ready"})),
-            ]
+            ],
         )
         job = self._repository.start(_ANY_SLICE)
 
@@ -167,7 +188,9 @@ class HttpJobRepositoryTest(TestCase):
         with pytest.raises(ValueError):
             self._repository.update_jobs_status([job])
 
-    def test_given_multiple_jobs_when_update_jobs_status_then_all_the_jobs_are_updated(self) -> None:
+    def test_given_multiple_jobs_when_update_jobs_status_then_all_the_jobs_are_updated(
+        self,
+    ) -> None:
         self._http_mocker.post(
             HttpRequest(url=_EXPORT_URL),
             [
@@ -195,15 +218,15 @@ class HttpJobRepositoryTest(TestCase):
         self._mock_create_response(_A_JOB_ID)
         self._http_mocker.get(
             HttpRequest(url=f"{_EXPORT_URL}/{_A_JOB_ID}"),
-            HttpResponse(body=json.dumps({
-                "id": _A_JOB_ID,
-                "status": "ready",
-                "urls": [_JOB_FIRST_URL]
-            }))
+            HttpResponse(
+                body=json.dumps({"id": _A_JOB_ID, "status": "ready", "urls": [_JOB_FIRST_URL]})
+            ),
         )
         self._http_mocker.get(
             HttpRequest(url=_JOB_FIRST_URL),
-            HttpResponse(body=_A_CSV_WITH_ONE_RECORD, headers={"Sforce-Locator": _A_CURSOR_FOR_PAGINATION}),
+            HttpResponse(
+                body=_A_CSV_WITH_ONE_RECORD, headers={"Sforce-Locator": _A_CURSOR_FOR_PAGINATION}
+            ),
         )
         self._http_mocker.get(
             HttpRequest(url=_JOB_FIRST_URL, query_params={"locator": _A_CURSOR_FOR_PAGINATION}),
@@ -220,14 +243,18 @@ class HttpJobRepositoryTest(TestCase):
         self._mock_create_response(_A_JOB_ID)
         self._http_mocker.get(
             HttpRequest(url=f"{_EXPORT_URL}/{_A_JOB_ID}"),
-            HttpResponse(body=json.dumps({
-                "id": _A_JOB_ID,
-                "status": "ready",
-                "urls": [
-                    _JOB_FIRST_URL,
-                    _JOB_SECOND_URL,
-                ]
-            }))
+            HttpResponse(
+                body=json.dumps(
+                    {
+                        "id": _A_JOB_ID,
+                        "status": "ready",
+                        "urls": [
+                            _JOB_FIRST_URL,
+                            _JOB_SECOND_URL,
+                        ],
+                    }
+                )
+            ),
         )
         self._http_mocker.get(
             HttpRequest(url=_JOB_FIRST_URL),

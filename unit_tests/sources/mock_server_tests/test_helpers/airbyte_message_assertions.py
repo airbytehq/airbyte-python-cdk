@@ -19,7 +19,9 @@ def emits_successful_sync_status_messages(status_messages: List[AirbyteStreamSta
 
 def validate_message_order(expected_message_order: List[Type], messages: List[AirbyteMessage]):
     if len(expected_message_order) != len(messages):
-        pytest.fail(f"Expected message order count {len(expected_message_order)} did not match actual messages {len(messages)}")
+        pytest.fail(
+            f"Expected message order count {len(expected_message_order)} did not match actual messages {len(messages)}"
+        )
 
     for i, message in enumerate(messages):
         if message.type != expected_message_order[i]:

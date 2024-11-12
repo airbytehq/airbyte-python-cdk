@@ -7,7 +7,9 @@ from typing import Any, Optional
 
 import requests
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
-from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import PaginationStrategy
+from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
+    PaginationStrategy,
+)
 from airbyte_cdk.sources.types import Record
 
 
@@ -35,7 +37,9 @@ class StopConditionPaginationStrategyDecorator(PaginationStrategy):
         self._delegate = _delegate
         self._stop_condition = stop_condition
 
-    def next_page_token(self, response: requests.Response, last_page_size: int, last_record: Optional[Record]) -> Optional[Any]:
+    def next_page_token(
+        self, response: requests.Response, last_page_size: int, last_record: Optional[Record]
+    ) -> Optional[Any]:
         # We evaluate in reverse order because the assumption is that most of the APIs using data feed structure will return records in
         # descending order. In terms of performance/memory, we return the records lazily
         if last_record and self._stop_condition.is_met(last_record):

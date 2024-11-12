@@ -9,7 +9,9 @@ from typing import Optional
 import requests
 
 
-def get_numeric_value_from_header(response: requests.Response, header: str, regex: Optional[Pattern[str]]) -> Optional[float]:
+def get_numeric_value_from_header(
+    response: requests.Response, header: str, regex: Optional[Pattern[str]]
+) -> Optional[float]:
     """
     Extract a header value from the response as a float
     :param response: response the extract header value from

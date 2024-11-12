@@ -47,7 +47,9 @@ VERY_NESTED_SCHEMA = {
                             "properties": {
                                 "very_nested_value": {
                                     "type": ["null", "object"],
-                                    "properties": {"very_nested_value": {"type": ["null", "number"]}},
+                                    "properties": {
+                                        "very_nested_value": {"type": ["null", "number"]}
+                                    },
                                 }
                             },
                         }
@@ -64,16 +66,36 @@ VERY_NESTED_SCHEMA = {
     [
         (SIMPLE_SCHEMA, {"value": 12}, {"value": "12"}, None),
         (SIMPLE_SCHEMA, {"value": 12}, {"value": "12"}, None),
-        (SIMPLE_SCHEMA, {"value": 12, "unexpected_value": "unexpected"}, {"value": "12", "unexpected_value": "unexpected"}, None),
-        (COMPLEX_SCHEMA, {"value": 1, "array": ["111", 111, {1: 111}]}, {"value": True, "array": ["111", "111", "{1: 111}"]}, None),
+        (
+            SIMPLE_SCHEMA,
+            {"value": 12, "unexpected_value": "unexpected"},
+            {"value": "12", "unexpected_value": "unexpected"},
+            None,
+        ),
+        (
+            COMPLEX_SCHEMA,
+            {"value": 1, "array": ["111", 111, {1: 111}]},
+            {"value": True, "array": ["111", "111", "{1: 111}"]},
+            None,
+        ),
         (
             COMPLEX_SCHEMA,
             {"value": 1, "list_of_lists": [["111"], [111], [11], [{1: 1}]]},
             {"value": True, "list_of_lists": [["111"], ["111"], ["11"], ["{1: 1}"]]},
             None,
         ),
-        (COMPLEX_SCHEMA, {"value": 1, "nested": {"a": [1, 2, 3]}}, {"value": True, "nested": {"a": "[1, 2, 3]"}}, None),
-        (COMPLEX_SCHEMA, {"value": "false", "nested": {"a": [1, 2, 3]}}, {"value": False, "nested": {"a": "[1, 2, 3]"}}, None),
+        (
+            COMPLEX_SCHEMA,
+            {"value": 1, "nested": {"a": [1, 2, 3]}},
+            {"value": True, "nested": {"a": "[1, 2, 3]"}},
+            None,
+        ),
+        (
+            COMPLEX_SCHEMA,
+            {"value": "false", "nested": {"a": [1, 2, 3]}},
+            {"value": False, "nested": {"a": "[1, 2, 3]"}},
+            None,
+        ),
         (COMPLEX_SCHEMA, {}, {}, None),
         (COMPLEX_SCHEMA, {"int_prop": "12"}, {"int_prop": 12}, None),
         # Skip invalid formattted field and process other fields.
@@ -93,14 +115,36 @@ VERY_NESTED_SCHEMA = {
         # Test null field
         (COMPLEX_SCHEMA, {"prop": None, "array": [12]}, {"prop": "None", "array": ["12"]}, None),
         # If field can be null do not convert
-        (COMPLEX_SCHEMA, {"prop_with_null": None, "array": [12]}, {"prop_with_null": None, "array": ["12"]}, None),
         (
-            VERY_NESTED_SCHEMA,
-            {"very_nested_value": {"very_nested_value": {"very_nested_value": {"very_nested_value": {"very_nested_value": "2"}}}}},
-            {"very_nested_value": {"very_nested_value": {"very_nested_value": {"very_nested_value": {"very_nested_value": 2.0}}}}},
+            COMPLEX_SCHEMA,
+            {"prop_with_null": None, "array": [12]},
+            {"prop_with_null": None, "array": ["12"]},
             None,
         ),
-        (VERY_NESTED_SCHEMA, {"very_nested_value": {"very_nested_value": None}}, {"very_nested_value": {"very_nested_value": None}}, None),
+        (
+            VERY_NESTED_SCHEMA,
+            {
+                "very_nested_value": {
+                    "very_nested_value": {
+                        "very_nested_value": {"very_nested_value": {"very_nested_value": "2"}}
+                    }
+                }
+            },
+            {
+                "very_nested_value": {
+                    "very_nested_value": {
+                        "very_nested_value": {"very_nested_value": {"very_nested_value": 2.0}}
+                    }
+                }
+            },
+            None,
+        ),
+        (
+            VERY_NESTED_SCHEMA,
+            {"very_nested_value": {"very_nested_value": None}},
+            {"very_nested_value": {"very_nested_value": None}},
+            None,
+        ),
         # Object without properties
         ({"type": "object"}, {"value": 12}, {"value": 12}, None),
         (
@@ -136,19 +180,28 @@ VERY_NESTED_SCHEMA = {
             None,
         ),
         (
-            {"type": "object", "properties": {"value": {"type": "array", "items": {"type": ["string"]}}}},
+            {
+                "type": "object",
+                "properties": {"value": {"type": "array", "items": {"type": ["string"]}}},
+            },
             {"value": 10},
             {"value": ["10"]},
             None,
         ),
         (
-            {"type": "object", "properties": {"value": {"type": "array", "items": {"type": ["object"]}}}},
+            {
+                "type": "object",
+                "properties": {"value": {"type": "array", "items": {"type": ["object"]}}},
+            },
             {"value": "string"},
             {"value": "string"},
             "Failed to transform value 'string' of type 'string' to 'array', key path: '.value'",
         ),
         (
-            {"type": "object", "properties": {"value": {"type": "array", "items": {"type": ["string"]}}}},
+            {
+                "type": "object",
+                "properties": {"value": {"type": "array", "items": {"type": ["string"]}}},
+            },
             {"value": {"key": "value"}},
             {"value": {"key": "value"}},
             "Failed to transform value {'key': 'value'} of type 'object' to 'array', key path: '.value'",
@@ -169,7 +222,13 @@ VERY_NESTED_SCHEMA = {
         ),
         (
             # Oneof not suported, no conversion for one_of_value should happen
-            {"type": "object", "properties": {"one_of_value": {"oneOf": ["string", "boolean", "null"]}, "value_2": {"type": "string"}}},
+            {
+                "type": "object",
+                "properties": {
+                    "one_of_value": {"oneOf": ["string", "boolean", "null"]},
+                    "value_2": {"type": "string"},
+                },
+            },
             {"one_of_value": 12, "value_2": 12},
             {"one_of_value": 12, "value_2": "12"},
             None,
@@ -186,19 +245,30 @@ VERY_NESTED_SCHEMA = {
             None,
         ),
         (
-            {"type": "object", "properties": {"value": {"type": "array", "items": {"type": "string"}}}},
+            {
+                "type": "object",
+                "properties": {"value": {"type": "array", "items": {"type": "string"}}},
+            },
             {"value": {"key": "value"}},
             {"value": {"key": "value"}},
             "Failed to transform value {'key': 'value'} of type 'object' to 'array', key path: '.value'",
         ),
         (
-            {"type": "object", "properties": {"value1": {"type": "object", "properties": {"value2": {"type": "string"}}}}},
+            {
+                "type": "object",
+                "properties": {
+                    "value1": {"type": "object", "properties": {"value2": {"type": "string"}}}
+                },
+            },
             {"value1": "value2"},
             {"value1": "value2"},
             "Failed to transform value 'value2' of type 'string' to 'object', key path: '.value1'",
         ),
         (
-            {"type": "object", "properties": {"value": {"type": "array", "items": {"type": "object"}}}},
+            {
+                "type": "object",
+                "properties": {"value": {"type": "array", "items": {"type": "object"}}},
+            },
             {"value": ["one", "two"]},
             {"value": ["one", "two"]},
             "Failed to transform value 'one' of type 'string' to 'object', key path: '.value.0'",
@@ -222,7 +292,10 @@ def test_transform_wrong_config():
     with pytest.raises(Exception, match="NoTransform option cannot be combined with other flags."):
         TypeTransformer(TransformConfig.NoTransform | TransformConfig.DefaultSchemaNormalization)
 
-    with pytest.raises(Exception, match="Please set TransformConfig.CustomSchemaNormalization config before registering custom normalizer"):
+    with pytest.raises(
+        Exception,
+        match="Please set TransformConfig.CustomSchemaNormalization config before registering custom normalizer",
+    ):
 
         class NotAStream:
             transformer = TypeTransformer(TransformConfig.DefaultSchemaNormalization)
@@ -251,7 +324,9 @@ def test_custom_transform():
 
 def test_custom_transform_with_default_normalization():
     class NotAStream:
-        transformer = TypeTransformer(TransformConfig.CustomSchemaNormalization | TransformConfig.DefaultSchemaNormalization)
+        transformer = TypeTransformer(
+            TransformConfig.CustomSchemaNormalization | TransformConfig.DefaultSchemaNormalization
+        )
 
         @transformer.registerCustomTransform
         def transform_cb(instance, schema):

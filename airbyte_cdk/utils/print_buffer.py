@@ -65,6 +65,11 @@ class PrintBuffer:
             sys.stderr = self
         return self
 
-    def __exit__(self, exc_type: Optional[BaseException], exc_val: Optional[BaseException], exc_tb: Optional[TracebackType]) -> None:
+    def __exit__(
+        self,
+        exc_type: Optional[BaseException],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> None:
         self.flush()
         sys.stdout, sys.stderr = self.old_stdout, self.old_stderr

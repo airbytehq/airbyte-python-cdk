@@ -13,8 +13,22 @@ from airbyte_cdk.sources.types import FieldPointer
 @pytest.mark.parametrize(
     ["input_record", "field", "field_type", "kwargs", "expected"],
     [
-        pytest.param({"k": "v"}, [(["path"], "static_value")], None, {}, {"k": "v", "path": "static_value"}, id="add new static value"),
-        pytest.param({"k": "v"}, [(["path"], "{{ 1 }}")], None, {}, {"k": "v", "path": 1}, id="add an expression evaluated as a number"),
+        pytest.param(
+            {"k": "v"},
+            [(["path"], "static_value")],
+            None,
+            {},
+            {"k": "v", "path": "static_value"},
+            id="add new static value",
+        ),
+        pytest.param(
+            {"k": "v"},
+            [(["path"], "{{ 1 }}")],
+            None,
+            {},
+            {"k": "v", "path": 1},
+            id="add an expression evaluated as a number",
+        ),
         pytest.param(
             {"k": "v"},
             [(["path"], "{{ 1 }}")],
@@ -39,8 +53,22 @@ from airbyte_cdk.sources.types import FieldPointer
             {"k": "v", "nested": {"path": "static_value"}},
             id="set static value at nested path",
         ),
-        pytest.param({"k": "v"}, [(["k"], "new_value")], None, {}, {"k": "new_value"}, id="update value which already exists"),
-        pytest.param({"k": [0, 1]}, [(["k", 3], "v")], None, {}, {"k": [0, 1, None, "v"]}, id="Set element inside array"),
+        pytest.param(
+            {"k": "v"},
+            [(["k"], "new_value")],
+            None,
+            {},
+            {"k": "new_value"},
+            id="update value which already exists",
+        ),
+        pytest.param(
+            {"k": [0, 1]},
+            [(["k", 3], "v")],
+            None,
+            {},
+            {"k": [0, 1, None, "v"]},
+            id="Set element inside array",
+        ),
         pytest.param(
             {"k": "v"},
             [(["k2"], '{{ config["shop"] }}')],
@@ -121,7 +149,14 @@ from airbyte_cdk.sources.types import FieldPointer
             {"k": {"nested": "v"}, "k2": "v"},
             id="set a value from a nested field in the record using bracket notation",
         ),
-        pytest.param({"k": "v"}, [(["k2"], "{{ 2 + 2 }}")], None, {}, {"k": "v", "k2": 4}, id="set a value from a jinja expression"),
+        pytest.param(
+            {"k": "v"},
+            [(["k2"], "{{ 2 + 2 }}")],
+            None,
+            {},
+            {"k": "v", "k2": 4},
+            id="set a value from a jinja expression",
+        ),
     ],
 )
 def test_add_fields(
@@ -131,6 +166,9 @@ def test_add_fields(
     kwargs: Mapping[str, Any],
     expected: Mapping[str, Any],
 ):
-    inputs = [AddedFieldDefinition(path=v[0], value=v[1], value_type=field_type, parameters={}) for v in field]
+    inputs = [
+        AddedFieldDefinition(path=v[0], value=v[1], value_type=field_type, parameters={})
+        for v in field
+    ]
     AddFields(fields=inputs, parameters={"alas": "i live"}).transform(input_record, **kwargs)
     assert input_record == expected

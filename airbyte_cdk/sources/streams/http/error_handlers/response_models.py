@@ -33,13 +33,17 @@ def _format_response_error_message(response: requests.Response) -> str:
     try:
         response.raise_for_status()
     except HTTPError as exception:
-        return filter_secrets(f"Response was not ok: `{str(exception)}`. Response content is: {response.text}")
+        return filter_secrets(
+            f"Response was not ok: `{str(exception)}`. Response content is: {response.text}"
+        )
     # We purposefully do not add the response.content because the response is "ok" so there might be sensitive information in the payload.
     # Feel free the
     return f"Unexpected response with HTTP status {response.status_code}"
 
 
-def create_fallback_error_resolution(response_or_exception: Optional[Union[requests.Response, Exception]]) -> ErrorResolution:
+def create_fallback_error_resolution(
+    response_or_exception: Optional[Union[requests.Response, Exception]],
+) -> ErrorResolution:
     if response_or_exception is None:
         # We do not expect this case to happen but if it does, it would be good to understand the cause and improve the error message
         error_message = "Error handler did not receive a valid response or exception. This is unexpected please contact Airbyte Support"
@@ -55,4 +59,6 @@ def create_fallback_error_resolution(response_or_exception: Optional[Union[reque
     )
 
 
-SUCCESS_RESOLUTION = ErrorResolution(response_action=ResponseAction.SUCCESS, failure_type=None, error_message=None)
+SUCCESS_RESOLUTION = ErrorResolution(
+    response_action=ResponseAction.SUCCESS, failure_type=None, error_message=None
+)

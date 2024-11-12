@@ -1,7 +1,9 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 import pytest
-from airbyte_cdk.sources.streams.checkpoint.substream_resumable_full_refresh_cursor import SubstreamResumableFullRefreshCursor
+from airbyte_cdk.sources.streams.checkpoint.substream_resumable_full_refresh_cursor import (
+    SubstreamResumableFullRefreshCursor,
+)
 from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.utils import AirbyteTracedException
 
@@ -14,8 +16,14 @@ def test_substream_resumable_full_refresh_cursor():
 
     expected_ending_state = {
         "states": [
-            {"partition": {"musician_id": "kousei_arima"}, "cursor": {"__ab_full_refresh_sync_complete": True}},
-            {"partition": {"musician_id": "kaori_miyazono"}, "cursor": {"__ab_full_refresh_sync_complete": True}},
+            {
+                "partition": {"musician_id": "kousei_arima"},
+                "cursor": {"__ab_full_refresh_sync_complete": True},
+            },
+            {
+                "partition": {"musician_id": "kaori_miyazono"},
+                "cursor": {"__ab_full_refresh_sync_complete": True},
+            },
         ]
     }
 
@@ -44,18 +52,36 @@ def test_substream_resumable_full_refresh_cursor_with_state():
     """
     initial_state = {
         "states": [
-            {"partition": {"musician_id": "kousei_arima"}, "cursor": {"__ab_full_refresh_sync_complete": True}},
-            {"partition": {"musician_id": "kaori_miyazono"}, "cursor": {"__ab_full_refresh_sync_complete": True}},
+            {
+                "partition": {"musician_id": "kousei_arima"},
+                "cursor": {"__ab_full_refresh_sync_complete": True},
+            },
+            {
+                "partition": {"musician_id": "kaori_miyazono"},
+                "cursor": {"__ab_full_refresh_sync_complete": True},
+            },
             {"partition": {"musician_id": "takeshi_aiza"}, "cursor": {}},
         ]
     }
 
     expected_ending_state = {
         "states": [
-            {"partition": {"musician_id": "kousei_arima"}, "cursor": {"__ab_full_refresh_sync_complete": True}},
-            {"partition": {"musician_id": "kaori_miyazono"}, "cursor": {"__ab_full_refresh_sync_complete": True}},
-            {"partition": {"musician_id": "takeshi_aiza"}, "cursor": {"__ab_full_refresh_sync_complete": True}},
-            {"partition": {"musician_id": "emi_igawa"}, "cursor": {"__ab_full_refresh_sync_complete": True}},
+            {
+                "partition": {"musician_id": "kousei_arima"},
+                "cursor": {"__ab_full_refresh_sync_complete": True},
+            },
+            {
+                "partition": {"musician_id": "kaori_miyazono"},
+                "cursor": {"__ab_full_refresh_sync_complete": True},
+            },
+            {
+                "partition": {"musician_id": "takeshi_aiza"},
+                "cursor": {"__ab_full_refresh_sync_complete": True},
+            },
+            {
+                "partition": {"musician_id": "emi_igawa"},
+                "cursor": {"__ab_full_refresh_sync_complete": True},
+            },
         ]
     }
 

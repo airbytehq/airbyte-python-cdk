@@ -5,7 +5,10 @@
 from airbyte_cdk.sources.file_based.config.jsonl_format import JsonlFormat
 from airbyte_cdk.sources.file_based.exceptions import FileBasedSourceError
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from unit_tests.sources.file_based.helpers import LowInferenceBytesJsonlParser, LowInferenceLimitDiscoveryPolicy
+from unit_tests.sources.file_based.helpers import (
+    LowInferenceBytesJsonlParser,
+    LowInferenceLimitDiscoveryPolicy,
+)
 from unit_tests.sources.file_based.scenarios.file_based_source_builder import FileBasedSourceBuilder
 from unit_tests.sources.file_based.scenarios.scenario_builder import TestScenarioBuilder
 
@@ -490,8 +493,12 @@ invalid_jsonl_scenario = (
         }
     )
     .set_expected_records([])
-    .set_expected_discover_error(AirbyteTracedException, FileBasedSourceError.SCHEMA_INFERENCE_ERROR.value)
-    .set_expected_read_error(AirbyteTracedException, "Please check the logged errors for more information.")
+    .set_expected_discover_error(
+        AirbyteTracedException, FileBasedSourceError.SCHEMA_INFERENCE_ERROR.value
+    )
+    .set_expected_read_error(
+        AirbyteTracedException, "Please check the logged errors for more information."
+    )
     .set_expected_logs(
         {
             "read": [
@@ -617,19 +624,35 @@ jsonl_multi_stream_scenario = (
                 "stream": "stream1",
             },
             {
-                "data": {"col3": 1.1, "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z", "_ab_source_file_url": "b.jsonl"},
+                "data": {
+                    "col3": 1.1,
+                    "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
+                    "_ab_source_file_url": "b.jsonl",
+                },
                 "stream": "stream1",
             },
             {
-                "data": {"col3": 2.2, "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z", "_ab_source_file_url": "b.jsonl"},
+                "data": {
+                    "col3": 2.2,
+                    "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
+                    "_ab_source_file_url": "b.jsonl",
+                },
                 "stream": "stream1",
             },
             {
-                "data": {"col3": 1.1, "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z", "_ab_source_file_url": "b.jsonl"},
+                "data": {
+                    "col3": 1.1,
+                    "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
+                    "_ab_source_file_url": "b.jsonl",
+                },
                 "stream": "stream2",
             },
             {
-                "data": {"col3": 2.2, "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z", "_ab_source_file_url": "b.jsonl"},
+                "data": {
+                    "col3": 2.2,
+                    "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
+                    "_ab_source_file_url": "b.jsonl",
+                },
                 "stream": "stream2",
             },
         ]
@@ -846,11 +869,19 @@ schemaless_jsonl_multi_stream_scenario = (
                 "stream": "stream1",
             },
             {
-                "data": {"col3": 1.1, "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z", "_ab_source_file_url": "b.jsonl"},
+                "data": {
+                    "col3": 1.1,
+                    "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
+                    "_ab_source_file_url": "b.jsonl",
+                },
                 "stream": "stream2",
             },
             {
-                "data": {"col3": 2.2, "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z", "_ab_source_file_url": "b.jsonl"},
+                "data": {
+                    "col3": 2.2,
+                    "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
+                    "_ab_source_file_url": "b.jsonl",
+                },
                 "stream": "stream2",
             },
         ]

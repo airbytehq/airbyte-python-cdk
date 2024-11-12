@@ -1,7 +1,10 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 import pytest
-from airbyte_cdk.sources.declarative.incremental import ChildPartitionResumableFullRefreshCursor, ResumableFullRefreshCursor
+from airbyte_cdk.sources.declarative.incremental import (
+    ChildPartitionResumableFullRefreshCursor,
+    ResumableFullRefreshCursor,
+)
 from airbyte_cdk.sources.types import StreamSlice
 
 

@@ -9,7 +9,10 @@ import pytest
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.incremental import DatetimeBasedCursor
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
-from airbyte_cdk.sources.declarative.requesters.request_option import RequestOption, RequestOptionType
+from airbyte_cdk.sources.declarative.requesters.request_option import (
+    RequestOption,
+    RequestOptionType,
+)
 from airbyte_cdk.sources.types import Record, StreamSlice
 
 datetime_format = "%Y-%m-%dT%H:%M:%S.%f%z"
@@ -50,16 +53,46 @@ def mock_datetime_now(monkeypatch):
             cursor_granularity,
             None,
             [
-                {"start_time": "2021-01-01T00:00:00.000000+0000", "end_time": "2021-01-01T23:59:59.999999+0000"},
-                {"start_time": "2021-01-02T00:00:00.000000+0000", "end_time": "2021-01-02T23:59:59.999999+0000"},
-                {"start_time": "2021-01-03T00:00:00.000000+0000", "end_time": "2021-01-03T23:59:59.999999+0000"},
-                {"start_time": "2021-01-04T00:00:00.000000+0000", "end_time": "2021-01-04T23:59:59.999999+0000"},
-                {"start_time": "2021-01-05T00:00:00.000000+0000", "end_time": "2021-01-05T23:59:59.999999+0000"},
-                {"start_time": "2021-01-06T00:00:00.000000+0000", "end_time": "2021-01-06T23:59:59.999999+0000"},
-                {"start_time": "2021-01-07T00:00:00.000000+0000", "end_time": "2021-01-07T23:59:59.999999+0000"},
-                {"start_time": "2021-01-08T00:00:00.000000+0000", "end_time": "2021-01-08T23:59:59.999999+0000"},
-                {"start_time": "2021-01-09T00:00:00.000000+0000", "end_time": "2021-01-09T23:59:59.999999+0000"},
-                {"start_time": "2021-01-10T00:00:00.000000+0000", "end_time": "2021-01-10T00:00:00.000000+0000"},
+                {
+                    "start_time": "2021-01-01T00:00:00.000000+0000",
+                    "end_time": "2021-01-01T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-02T00:00:00.000000+0000",
+                    "end_time": "2021-01-02T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-03T00:00:00.000000+0000",
+                    "end_time": "2021-01-03T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-04T00:00:00.000000+0000",
+                    "end_time": "2021-01-04T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-05T00:00:00.000000+0000",
+                    "end_time": "2021-01-05T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-06T00:00:00.000000+0000",
+                    "end_time": "2021-01-06T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-07T00:00:00.000000+0000",
+                    "end_time": "2021-01-07T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-08T00:00:00.000000+0000",
+                    "end_time": "2021-01-08T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-09T00:00:00.000000+0000",
+                    "end_time": "2021-01-09T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-10T00:00:00.000000+0000",
+                    "end_time": "2021-01-10T00:00:00.000000+0000",
+                },
             ],
         ),
         (
@@ -74,11 +107,26 @@ def mock_datetime_now(monkeypatch):
             cursor_granularity,
             None,
             [
-                {"start_time": "2021-01-01T00:00:00.000000+0000", "end_time": "2021-01-02T23:59:59.999999+0000"},
-                {"start_time": "2021-01-03T00:00:00.000000+0000", "end_time": "2021-01-04T23:59:59.999999+0000"},
-                {"start_time": "2021-01-05T00:00:00.000000+0000", "end_time": "2021-01-06T23:59:59.999999+0000"},
-                {"start_time": "2021-01-07T00:00:00.000000+0000", "end_time": "2021-01-08T23:59:59.999999+0000"},
-                {"start_time": "2021-01-09T00:00:00.000000+0000", "end_time": "2021-01-10T00:00:00.000000+0000"},
+                {
+                    "start_time": "2021-01-01T00:00:00.000000+0000",
+                    "end_time": "2021-01-02T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-03T00:00:00.000000+0000",
+                    "end_time": "2021-01-04T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-05T00:00:00.000000+0000",
+                    "end_time": "2021-01-06T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-07T00:00:00.000000+0000",
+                    "end_time": "2021-01-08T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-09T00:00:00.000000+0000",
+                    "end_time": "2021-01-10T00:00:00.000000+0000",
+                },
             ],
         ),
         (
@@ -93,12 +141,30 @@ def mock_datetime_now(monkeypatch):
             cursor_granularity,
             None,
             [
-                {"start_time": "2021-01-01T00:00:00.000000+0000", "end_time": "2021-01-07T23:59:59.999999+0000"},
-                {"start_time": "2021-01-08T00:00:00.000000+0000", "end_time": "2021-01-14T23:59:59.999999+0000"},
-                {"start_time": "2021-01-15T00:00:00.000000+0000", "end_time": "2021-01-21T23:59:59.999999+0000"},
-                {"start_time": "2021-01-22T00:00:00.000000+0000", "end_time": "2021-01-28T23:59:59.999999+0000"},
-                {"start_time": "2021-01-29T00:00:00.000000+0000", "end_time": "2021-02-04T23:59:59.999999+0000"},
-                {"start_time": "2021-02-05T00:00:00.000000+0000", "end_time": "2021-02-10T00:00:00.000000+0000"},
+                {
+                    "start_time": "2021-01-01T00:00:00.000000+0000",
+                    "end_time": "2021-01-07T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-08T00:00:00.000000+0000",
+                    "end_time": "2021-01-14T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-15T00:00:00.000000+0000",
+                    "end_time": "2021-01-21T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-22T00:00:00.000000+0000",
+                    "end_time": "2021-01-28T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-29T00:00:00.000000+0000",
+                    "end_time": "2021-02-04T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-02-05T00:00:00.000000+0000",
+                    "end_time": "2021-02-10T00:00:00.000000+0000",
+                },
             ],
         ),
         (
@@ -113,12 +179,30 @@ def mock_datetime_now(monkeypatch):
             cursor_granularity,
             None,
             [
-                {"start_time": "2021-01-01T00:00:00.000000+0000", "end_time": "2021-01-31T23:59:59.999999+0000"},
-                {"start_time": "2021-02-01T00:00:00.000000+0000", "end_time": "2021-02-28T23:59:59.999999+0000"},
-                {"start_time": "2021-03-01T00:00:00.000000+0000", "end_time": "2021-03-31T23:59:59.999999+0000"},
-                {"start_time": "2021-04-01T00:00:00.000000+0000", "end_time": "2021-04-30T23:59:59.999999+0000"},
-                {"start_time": "2021-05-01T00:00:00.000000+0000", "end_time": "2021-05-31T23:59:59.999999+0000"},
-                {"start_time": "2021-06-01T00:00:00.000000+0000", "end_time": "2021-06-10T00:00:00.000000+0000"},
+                {
+                    "start_time": "2021-01-01T00:00:00.000000+0000",
+                    "end_time": "2021-01-31T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-02-01T00:00:00.000000+0000",
+                    "end_time": "2021-02-28T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-03-01T00:00:00.000000+0000",
+                    "end_time": "2021-03-31T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-04-01T00:00:00.000000+0000",
+                    "end_time": "2021-04-30T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-05-01T00:00:00.000000+0000",
+                    "end_time": "2021-05-31T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-06-01T00:00:00.000000+0000",
+                    "end_time": "2021-06-10T00:00:00.000000+0000",
+                },
             ],
         ),
         (
@@ -133,8 +217,14 @@ def mock_datetime_now(monkeypatch):
             cursor_granularity,
             None,
             [
-                {"start_time": "2021-01-01T00:00:00.000000+0000", "end_time": "2021-12-31T23:59:59.999999+0000"},
-                {"start_time": "2022-01-01T00:00:00.000000+0000", "end_time": "2022-01-01T00:00:00.000000+0000"},
+                {
+                    "start_time": "2021-01-01T00:00:00.000000+0000",
+                    "end_time": "2021-12-31T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2022-01-01T00:00:00.000000+0000",
+                    "end_time": "2022-01-01T00:00:00.000000+0000",
+                },
             ],
         ),
         (
@@ -149,12 +239,30 @@ def mock_datetime_now(monkeypatch):
             cursor_granularity,
             None,
             [
-                {"start_time": "2021-01-05T00:00:00.000000+0000", "end_time": "2021-01-05T23:59:59.999999+0000"},
-                {"start_time": "2021-01-06T00:00:00.000000+0000", "end_time": "2021-01-06T23:59:59.999999+0000"},
-                {"start_time": "2021-01-07T00:00:00.000000+0000", "end_time": "2021-01-07T23:59:59.999999+0000"},
-                {"start_time": "2021-01-08T00:00:00.000000+0000", "end_time": "2021-01-08T23:59:59.999999+0000"},
-                {"start_time": "2021-01-09T00:00:00.000000+0000", "end_time": "2021-01-09T23:59:59.999999+0000"},
-                {"start_time": "2021-01-10T00:00:00.000000+0000", "end_time": "2021-01-10T00:00:00.000000+0000"},
+                {
+                    "start_time": "2021-01-05T00:00:00.000000+0000",
+                    "end_time": "2021-01-05T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-06T00:00:00.000000+0000",
+                    "end_time": "2021-01-06T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-07T00:00:00.000000+0000",
+                    "end_time": "2021-01-07T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-08T00:00:00.000000+0000",
+                    "end_time": "2021-01-08T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-09T00:00:00.000000+0000",
+                    "end_time": "2021-01-09T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-10T00:00:00.000000+0000",
+                    "end_time": "2021-01-10T00:00:00.000000+0000",
+                },
             ],
         ),
         (
@@ -169,14 +277,20 @@ def mock_datetime_now(monkeypatch):
             cursor_granularity,
             None,
             [
-                {"start_time": "2021-01-01T00:00:00.000000+0000", "end_time": "2021-01-10T00:00:00.000000+0000"},
+                {
+                    "start_time": "2021-01-01T00:00:00.000000+0000",
+                    "end_time": "2021-01-10T00:00:00.000000+0000",
+                },
             ],
         ),
         (
             "test_end_time_greater_than_now",
             NO_STATE,
             MinMaxDatetime(datetime="2021-12-28T00:00:00.000000+0000", parameters={}),
-            MinMaxDatetime(datetime=f"{(FAKE_NOW + datetime.timedelta(days=1)).strftime(datetime_format)}", parameters={}),
+            MinMaxDatetime(
+                datetime=f"{(FAKE_NOW + datetime.timedelta(days=1)).strftime(datetime_format)}",
+                parameters={},
+            ),
             "P1D",
             cursor_field,
             None,
@@ -184,11 +298,26 @@ def mock_datetime_now(monkeypatch):
             cursor_granularity,
             None,
             [
-                {"start_time": "2021-12-28T00:00:00.000000+0000", "end_time": "2021-12-28T23:59:59.999999+0000"},
-                {"start_time": "2021-12-29T00:00:00.000000+0000", "end_time": "2021-12-29T23:59:59.999999+0000"},
-                {"start_time": "2021-12-30T00:00:00.000000+0000", "end_time": "2021-12-30T23:59:59.999999+0000"},
-                {"start_time": "2021-12-31T00:00:00.000000+0000", "end_time": "2021-12-31T23:59:59.999999+0000"},
-                {"start_time": "2022-01-01T00:00:00.000000+0000", "end_time": "2022-01-01T00:00:00.000000+0000"},
+                {
+                    "start_time": "2021-12-28T00:00:00.000000+0000",
+                    "end_time": "2021-12-28T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-12-29T00:00:00.000000+0000",
+                    "end_time": "2021-12-29T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-12-30T00:00:00.000000+0000",
+                    "end_time": "2021-12-30T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-12-31T00:00:00.000000+0000",
+                    "end_time": "2021-12-31T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2022-01-01T00:00:00.000000+0000",
+                    "end_time": "2022-01-01T00:00:00.000000+0000",
+                },
             ],
         ),
         (
@@ -203,7 +332,10 @@ def mock_datetime_now(monkeypatch):
             cursor_granularity,
             None,
             [
-                {"start_time": "2021-01-05T00:00:00.000000+0000", "end_time": "2021-01-05T00:00:00.000000+0000"},
+                {
+                    "start_time": "2021-01-05T00:00:00.000000+0000",
+                    "end_time": "2021-01-05T00:00:00.000000+0000",
+                },
             ],
         ),
         (
@@ -218,12 +350,30 @@ def mock_datetime_now(monkeypatch):
             cursor_granularity,
             None,
             [
-                {"start_time": "2021-01-05T00:00:00.000000+0000", "end_time": "2021-01-05T23:59:59.999999+0000"},
-                {"start_time": "2021-01-06T00:00:00.000000+0000", "end_time": "2021-01-06T23:59:59.999999+0000"},
-                {"start_time": "2021-01-07T00:00:00.000000+0000", "end_time": "2021-01-07T23:59:59.999999+0000"},
-                {"start_time": "2021-01-08T00:00:00.000000+0000", "end_time": "2021-01-08T23:59:59.999999+0000"},
-                {"start_time": "2021-01-09T00:00:00.000000+0000", "end_time": "2021-01-09T23:59:59.999999+0000"},
-                {"start_time": "2021-01-10T00:00:00.000000+0000", "end_time": "2021-01-10T00:00:00.000000+0000"},
+                {
+                    "start_time": "2021-01-05T00:00:00.000000+0000",
+                    "end_time": "2021-01-05T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-06T00:00:00.000000+0000",
+                    "end_time": "2021-01-06T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-07T00:00:00.000000+0000",
+                    "end_time": "2021-01-07T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-08T00:00:00.000000+0000",
+                    "end_time": "2021-01-08T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-09T00:00:00.000000+0000",
+                    "end_time": "2021-01-09T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-10T00:00:00.000000+0000",
+                    "end_time": "2021-01-10T00:00:00.000000+0000",
+                },
             ],
         ),
         (
@@ -238,9 +388,18 @@ def mock_datetime_now(monkeypatch):
             cursor_granularity,
             None,
             [
-                {"start_time": "2021-01-05T00:00:00.000000+0000", "end_time": "2021-01-06T23:59:59.999999+0000"},
-                {"start_time": "2021-01-07T00:00:00.000000+0000", "end_time": "2021-01-08T23:59:59.999999+0000"},
-                {"start_time": "2021-01-09T00:00:00.000000+0000", "end_time": "2021-01-10T00:00:00.000000+0000"},
+                {
+                    "start_time": "2021-01-05T00:00:00.000000+0000",
+                    "end_time": "2021-01-06T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-07T00:00:00.000000+0000",
+                    "end_time": "2021-01-08T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-09T00:00:00.000000+0000",
+                    "end_time": "2021-01-10T00:00:00.000000+0000",
+                },
             ],
         ),
         (
@@ -255,10 +414,22 @@ def mock_datetime_now(monkeypatch):
             cursor_granularity,
             None,
             [
-                {"start_time": "2021-01-05T00:00:00.000000+0000", "end_time": "2021-01-05T23:59:59.999999+0000"},
-                {"start_time": "2021-01-06T00:00:00.000000+0000", "end_time": "2021-01-06T23:59:59.999999+0000"},
-                {"start_time": "2021-01-07T00:00:00.000000+0000", "end_time": "2021-01-07T23:59:59.999999+0000"},
-                {"start_time": "2021-01-08T00:00:00.000000+0000", "end_time": "2021-01-08T00:00:00.000000+0000"},
+                {
+                    "start_time": "2021-01-05T00:00:00.000000+0000",
+                    "end_time": "2021-01-05T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-06T00:00:00.000000+0000",
+                    "end_time": "2021-01-06T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-07T00:00:00.000000+0000",
+                    "end_time": "2021-01-07T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-08T00:00:00.000000+0000",
+                    "end_time": "2021-01-08T00:00:00.000000+0000",
+                },
             ],
         ),
         (
@@ -273,11 +444,26 @@ def mock_datetime_now(monkeypatch):
             cursor_granularity,
             None,
             [
-                {"start_time": "2021-01-02T00:00:00.000000+0000", "end_time": "2021-01-02T23:59:59.999999+0000"},
-                {"start_time": "2021-01-03T00:00:00.000000+0000", "end_time": "2021-01-03T23:59:59.999999+0000"},
-                {"start_time": "2021-01-04T00:00:00.000000+0000", "end_time": "2021-01-04T23:59:59.999999+0000"},
-                {"start_time": "2021-01-05T00:00:00.000000+0000", "end_time": "2021-01-05T23:59:59.999999+0000"},
-                {"start_time": "2021-01-06T00:00:00.000000+0000", "end_time": "2021-01-06T00:00:00.000000+0000"},
+                {
+                    "start_time": "2021-01-02T00:00:00.000000+0000",
+                    "end_time": "2021-01-02T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-03T00:00:00.000000+0000",
+                    "end_time": "2021-01-03T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-04T00:00:00.000000+0000",
+                    "end_time": "2021-01-04T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-05T00:00:00.000000+0000",
+                    "end_time": "2021-01-05T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-06T00:00:00.000000+0000",
+                    "end_time": "2021-01-06T00:00:00.000000+0000",
+                },
             ],
         ),
         (
@@ -292,11 +478,26 @@ def mock_datetime_now(monkeypatch):
             cursor_granularity,
             None,
             [
-                {"start_time": "2021-01-01T00:00:00.000000+0000", "end_time": "2021-01-01T23:59:59.999999+0000"},
-                {"start_time": "2021-01-02T00:00:00.000000+0000", "end_time": "2021-01-02T23:59:59.999999+0000"},
-                {"start_time": "2021-01-03T00:00:00.000000+0000", "end_time": "2021-01-03T23:59:59.999999+0000"},
-                {"start_time": "2021-01-04T00:00:00.000000+0000", "end_time": "2021-01-04T23:59:59.999999+0000"},
-                {"start_time": "2021-01-05T00:00:00.000000+0000", "end_time": "2021-01-05T00:00:00.000000+0000"},
+                {
+                    "start_time": "2021-01-01T00:00:00.000000+0000",
+                    "end_time": "2021-01-01T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-02T00:00:00.000000+0000",
+                    "end_time": "2021-01-02T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-03T00:00:00.000000+0000",
+                    "end_time": "2021-01-03T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-04T00:00:00.000000+0000",
+                    "end_time": "2021-01-04T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-05T00:00:00.000000+0000",
+                    "end_time": "2021-01-05T00:00:00.000000+0000",
+                },
             ],
         ),
         (
@@ -311,12 +512,30 @@ def mock_datetime_now(monkeypatch):
             cursor_granularity,
             None,
             [
-                {"start_time": "2021-01-05T00:00:00.000000+0000", "end_time": "2021-01-05T23:59:59.999999+0000"},
-                {"start_time": "2021-01-06T00:00:00.000000+0000", "end_time": "2021-01-06T23:59:59.999999+0000"},
-                {"start_time": "2021-01-07T00:00:00.000000+0000", "end_time": "2021-01-07T23:59:59.999999+0000"},
-                {"start_time": "2021-01-08T00:00:00.000000+0000", "end_time": "2021-01-08T23:59:59.999999+0000"},
-                {"start_time": "2021-01-09T00:00:00.000000+0000", "end_time": "2021-01-09T23:59:59.999999+0000"},
-                {"start_time": "2021-01-10T00:00:00.000000+0000", "end_time": "2021-01-10T00:00:00.000000+0000"},
+                {
+                    "start_time": "2021-01-05T00:00:00.000000+0000",
+                    "end_time": "2021-01-05T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-06T00:00:00.000000+0000",
+                    "end_time": "2021-01-06T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-07T00:00:00.000000+0000",
+                    "end_time": "2021-01-07T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-08T00:00:00.000000+0000",
+                    "end_time": "2021-01-08T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-09T00:00:00.000000+0000",
+                    "end_time": "2021-01-09T23:59:59.999999+0000",
+                },
+                {
+                    "start_time": "2021-01-10T00:00:00.000000+0000",
+                    "end_time": "2021-01-10T00:00:00.000000+0000",
+                },
             ],
         ),
         (
@@ -331,7 +550,10 @@ def mock_datetime_now(monkeypatch):
             cursor_granularity,
             True,
             [
-                {"start_time": "2021-01-01T00:00:00.000000+0000", "end_time": "2021-01-31T23:59:59.999999+0000"},
+                {
+                    "start_time": "2021-01-01T00:00:00.000000+0000",
+                    "end_time": "2021-01-31T23:59:59.999999+0000",
+                },
             ],
         ),
     ],
@@ -350,7 +572,9 @@ def test_stream_slices(
     is_compare_strictly,
     expected_slices,
 ):
-    lookback_window = InterpolatedString(string=lookback_window, parameters={}) if lookback_window else None
+    lookback_window = (
+        InterpolatedString(string=lookback_window, parameters={}) if lookback_window else None
+    )
     cursor = DatetimeBasedCursor(
         start_datetime=start,
         end_datetime=end,
@@ -375,70 +599,98 @@ def test_stream_slices(
         (
             "test_close_slice_previous_cursor_is_highest",
             "2023-01-01",
-            StreamSlice(partition={}, cursor_slice={"start_time": "2021-01-01", "end_time": "2022-01-01"}),
+            StreamSlice(
+                partition={}, cursor_slice={"start_time": "2021-01-01", "end_time": "2022-01-01"}
+            ),
             [{cursor_field: "2021-01-01"}],
             {cursor_field: "2023-01-01"},
         ),
         (
             "test_close_slice_stream_slice_partition_end_is_highest",
             "2020-01-01",
-            StreamSlice(partition={}, cursor_slice={"start_time": "2021-01-01", "end_time": "2023-01-01"}),
+            StreamSlice(
+                partition={}, cursor_slice={"start_time": "2021-01-01", "end_time": "2023-01-01"}
+            ),
             [{cursor_field: "2021-01-01"}],
             {cursor_field: "2021-01-01"},
         ),
         (
             "test_close_slice_latest_record_cursor_value_is_higher_than_slice_end",
             "2021-01-01",
-            StreamSlice(partition={}, cursor_slice={"start_time": "2021-01-01", "end_time": "2022-01-01"}),
+            StreamSlice(
+                partition={}, cursor_slice={"start_time": "2021-01-01", "end_time": "2022-01-01"}
+            ),
             [{cursor_field: "2023-01-01"}],
             {cursor_field: "2021-01-01"},
         ),
         (
             "test_close_slice_with_no_records_observed",
             "2021-01-01",
-            StreamSlice(partition={}, cursor_slice={"start_time": "2021-01-01", "end_time": "2022-01-01"}),
+            StreamSlice(
+                partition={}, cursor_slice={"start_time": "2021-01-01", "end_time": "2022-01-01"}
+            ),
             [],
             {cursor_field: "2021-01-01"},
         ),
         (
             "test_close_slice_with_no_records_observed_and_no_previous_state",
             None,
-            StreamSlice(partition={}, cursor_slice={"start_time": "2021-01-01", "end_time": "2022-01-01"}),
+            StreamSlice(
+                partition={}, cursor_slice={"start_time": "2021-01-01", "end_time": "2022-01-01"}
+            ),
             [],
             {},
         ),
         (
             "test_close_slice_without_previous_cursor",
             None,
-            StreamSlice(partition={}, cursor_slice={"start_time": "2021-01-01", "end_time": "2023-01-01"}),
+            StreamSlice(
+                partition={}, cursor_slice={"start_time": "2021-01-01", "end_time": "2023-01-01"}
+            ),
             [{cursor_field: "2022-01-01"}],
             {cursor_field: "2022-01-01"},
         ),
         (
             "test_close_slice_with_out_of_order_records",
             "2021-01-01",
-            StreamSlice(partition={}, cursor_slice={"start_time": "2021-01-01", "end_time": "2022-01-01"}),
-            [{cursor_field: "2021-04-01"}, {cursor_field: "2021-02-01"}, {cursor_field: "2021-03-01"}],
+            StreamSlice(
+                partition={}, cursor_slice={"start_time": "2021-01-01", "end_time": "2022-01-01"}
+            ),
+            [
+                {cursor_field: "2021-04-01"},
+                {cursor_field: "2021-02-01"},
+                {cursor_field: "2021-03-01"},
+            ],
             {cursor_field: "2021-04-01"},
         ),
         (
             "test_close_slice_with_some_records_out_of_slice_boundaries",
             "2021-01-01",
-            StreamSlice(partition={}, cursor_slice={"start_time": "2021-01-01", "end_time": "2022-01-01"}),
-            [{cursor_field: "2021-02-01"}, {cursor_field: "2021-03-01"}, {cursor_field: "2023-01-01"}],
+            StreamSlice(
+                partition={}, cursor_slice={"start_time": "2021-01-01", "end_time": "2022-01-01"}
+            ),
+            [
+                {cursor_field: "2021-02-01"},
+                {cursor_field: "2021-03-01"},
+                {cursor_field: "2023-01-01"},
+            ],
             {cursor_field: "2021-03-01"},
         ),
         (
             "test_close_slice_with_all_records_out_of_slice_boundaries",
             "2021-01-01",
-            StreamSlice(partition={}, cursor_slice={"start_time": "2021-01-01", "end_time": "2022-01-01"}),
+            StreamSlice(
+                partition={}, cursor_slice={"start_time": "2021-01-01", "end_time": "2022-01-01"}
+            ),
             [{cursor_field: "2023-01-01"}],
             {cursor_field: "2021-01-01"},
         ),
         (
             "test_close_slice_with_all_records_out_of_slice_and_no_previous_cursor",
             None,
-            StreamSlice(partition={}, cursor_slice={"start_time": "2021-01-01", "end_time": "2022-01-01"}),
+            StreamSlice(
+                partition={}, cursor_slice={"start_time": "2021-01-01", "end_time": "2022-01-01"}
+            ),
             [{cursor_field: "2023-01-01"}],
             {},
         ),
@@ -485,7 +737,9 @@ def test_compares_cursor_values_by_chronological_order():
         parameters={},
     )
 
-    _slice = StreamSlice(partition={}, cursor_slice={"start_time": "01-01-2023", "end_time": "01-04-2023"})
+    _slice = StreamSlice(
+        partition={}, cursor_slice={"start_time": "01-01-2023", "end_time": "01-04-2023"}
+    )
     first_record = Record({cursor_field: "21-02-2023"}, _slice)
     cursor.observe(_slice, first_record)
     second_record = Record({cursor_field: "01-03-2023"}, _slice)
@@ -505,7 +759,13 @@ def test_given_different_format_and_slice_is_highest_when_close_slice_then_state
         parameters={},
     )
 
-    _slice = StreamSlice(partition={}, cursor_slice={"start_time": "2023-01-01T17:30:19.000Z", "end_time": "2023-01-04T17:30:19.000Z"})
+    _slice = StreamSlice(
+        partition={},
+        cursor_slice={
+            "start_time": "2023-01-01T17:30:19.000Z",
+            "end_time": "2023-01-04T17:30:19.000Z",
+        },
+    )
     record_cursor_value = "2023-01-03"
     record = Record({cursor_field: record_cursor_value}, _slice)
     cursor.observe(_slice, record)
@@ -522,7 +782,10 @@ def test_given_different_format_and_slice_is_highest_when_close_slice_then_state
             "test_start_time_passed_by_req_param",
             RequestOptionType.request_parameter,
             "start_time",
-            {"start_time": "2021-01-01T00:00:00.000000+0000", "endtime": "2021-01-04T00:00:00.000000+0000"},
+            {
+                "start_time": "2021-01-01T00:00:00.000000+0000",
+                "endtime": "2021-01-04T00:00:00.000000+0000",
+            },
             {},
             {},
             {},
@@ -532,7 +795,10 @@ def test_given_different_format_and_slice_is_highest_when_close_slice_then_state
             RequestOptionType.header,
             "start_time",
             {},
-            {"start_time": "2021-01-01T00:00:00.000000+0000", "endtime": "2021-01-04T00:00:00.000000+0000"},
+            {
+                "start_time": "2021-01-01T00:00:00.000000+0000",
+                "endtime": "2021-01-04T00:00:00.000000+0000",
+            },
             {},
             {},
         ),
@@ -542,7 +808,10 @@ def test_given_different_format_and_slice_is_highest_when_close_slice_then_state
             "start_time",
             {},
             {},
-            {"start_time": "2021-01-01T00:00:00.000000+0000", "endtime": "2021-01-04T00:00:00.000000+0000"},
+            {
+                "start_time": "2021-01-01T00:00:00.000000+0000",
+                "endtime": "2021-01-04T00:00:00.000000+0000",
+            },
             {},
         ),
         (
@@ -552,13 +821,32 @@ def test_given_different_format_and_slice_is_highest_when_close_slice_then_state
             {},
             {},
             {},
-            {"start_time": "2021-01-01T00:00:00.000000+0000", "endtime": "2021-01-04T00:00:00.000000+0000"},
+            {
+                "start_time": "2021-01-01T00:00:00.000000+0000",
+                "endtime": "2021-01-04T00:00:00.000000+0000",
+            },
         ),
     ],
 )
-def test_request_option(test_name, inject_into, field_name, expected_req_params, expected_headers, expected_body_json, expected_body_data):
-    start_request_option = RequestOption(inject_into=inject_into, parameters={}, field_name=field_name) if inject_into else None
-    end_request_option = RequestOption(inject_into=inject_into, parameters={}, field_name="endtime") if inject_into else None
+def test_request_option(
+    test_name,
+    inject_into,
+    field_name,
+    expected_req_params,
+    expected_headers,
+    expected_body_json,
+    expected_body_data,
+):
+    start_request_option = (
+        RequestOption(inject_into=inject_into, parameters={}, field_name=field_name)
+        if inject_into
+        else None
+    )
+    end_request_option = (
+        RequestOption(inject_into=inject_into, parameters={}, field_name="endtime")
+        if inject_into
+        else None
+    )
     slicer = DatetimeBasedCursor(
         start_datetime=MinMaxDatetime(datetime="2021-01-01T00:00:00.000000+0000", parameters={}),
         end_datetime=MinMaxDatetime(datetime="2021-01-10T00:00:00.000000+0000", parameters={}),
@@ -572,7 +860,10 @@ def test_request_option(test_name, inject_into, field_name, expected_req_params,
         config=config,
         parameters={},
     )
-    stream_slice = {"start_time": "2021-01-01T00:00:00.000000+0000", "end_time": "2021-01-04T00:00:00.000000+0000"}
+    stream_slice = {
+        "start_time": "2021-01-01T00:00:00.000000+0000",
+        "end_time": "2021-01-04T00:00:00.000000+0000",
+    }
     assert slicer.get_request_params(stream_slice=stream_slice) == expected_req_params
     assert slicer.get_request_headers(stream_slice=stream_slice) == expected_headers
     assert slicer.get_request_body_json(stream_slice=stream_slice) == expected_body_json
@@ -587,8 +878,12 @@ def test_request_option(test_name, inject_into, field_name, expected_req_params,
     ],
 )
 def test_request_option_with_empty_stream_slice(stream_slice):
-    start_request_option = RequestOption(inject_into=RequestOptionType.request_parameter, parameters={}, field_name="starttime")
-    end_request_option = RequestOption(inject_into=RequestOptionType.request_parameter, parameters={}, field_name="endtime")
+    start_request_option = RequestOption(
+        inject_into=RequestOptionType.request_parameter, parameters={}, field_name="starttime"
+    )
+    end_request_option = RequestOption(
+        inject_into=RequestOptionType.request_parameter, parameters={}, field_name="endtime"
+    )
     slicer = DatetimeBasedCursor(
         start_datetime=MinMaxDatetime(datetime="2021-01-01T00:00:00.000000+0000", parameters={}),
         end_datetime=MinMaxDatetime(datetime="2021-01-10T00:00:00.000000+0000", parameters={}),
@@ -622,7 +917,13 @@ def test_request_option_with_empty_stream_slice(stream_slice):
             "PT1S",
             datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
         ),
-        ("test_parse_date_number", "20210101", "%Y%m%d", "P1D", datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone.utc)),
+        (
+            "test_parse_date_number",
+            "20210101",
+            "%Y%m%d",
+            "P1D",
+            datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
+        ),
     ],
 )
 def test_parse_date_legacy_merge_datetime_format_in_cursor_datetime_format(
@@ -688,12 +989,32 @@ def test_given_unknown_format_when_parse_date_then_raise_error():
 @pytest.mark.parametrize(
     "test_name, input_dt, datetimeformat, datetimeformat_granularity, expected_output",
     [
-        ("test_format_timestamp", datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone.utc), "%s", "PT1S", "1609459200"),
-        ("test_format_string", datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone.utc), "%Y-%m-%d", "P1D", "2021-01-01"),
-        ("test_format_to_number", datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone.utc), "%Y%m%d", "P1D", "20210101"),
+        (
+            "test_format_timestamp",
+            datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
+            "%s",
+            "PT1S",
+            "1609459200",
+        ),
+        (
+            "test_format_string",
+            datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
+            "%Y-%m-%d",
+            "P1D",
+            "2021-01-01",
+        ),
+        (
+            "test_format_to_number",
+            datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
+            "%Y%m%d",
+            "P1D",
+            "20210101",
+        ),
     ],
 )
-def test_format_datetime(test_name, input_dt, datetimeformat, datetimeformat_granularity, expected_output):
+def test_format_datetime(
+    test_name, input_dt, datetimeformat, datetimeformat_granularity, expected_output
+):
     slicer = DatetimeBasedCursor(
         start_datetime=MinMaxDatetime("2021-01-01T00:00:00.000000+0000", parameters={}),
         end_datetime=MinMaxDatetime("2021-01-10T00:00:00.000000+0000", parameters={}),
@@ -772,7 +1093,9 @@ def test_no_end_datetime(mock_datetime_now):
         parameters={},
     )
     stream_slices = cursor.stream_slices()
-    assert stream_slices == [{"start_time": "2021-01-01", "end_time": FAKE_NOW.strftime("%Y-%m-%d")}]
+    assert stream_slices == [
+        {"start_time": "2021-01-01", "end_time": FAKE_NOW.strftime("%Y-%m-%d")}
+    ]
 
 
 def test_given_no_state_and_start_before_cursor_value_when_should_be_synced_then_return_true():
@@ -852,7 +1175,9 @@ def test_given_first_greater_than_second_then_return_true():
         config=config,
         parameters={},
     )
-    assert cursor.is_greater_than_or_equal(Record({"cursor_field": "2023-01-01"}, {}), Record({"cursor_field": "2021-01-01"}, {}))
+    assert cursor.is_greater_than_or_equal(
+        Record({"cursor_field": "2023-01-01"}, {}), Record({"cursor_field": "2021-01-01"}, {})
+    )
 
 
 def test_given_first_lesser_than_second_then_return_false():
@@ -863,7 +1188,9 @@ def test_given_first_lesser_than_second_then_return_false():
         config=config,
         parameters={},
     )
-    assert not cursor.is_greater_than_or_equal(Record({"cursor_field": "2021-01-01"}, {}), Record({"cursor_field": "2023-01-01"}, {}))
+    assert not cursor.is_greater_than_or_equal(
+        Record({"cursor_field": "2021-01-01"}, {}), Record({"cursor_field": "2023-01-01"}, {})
+    )
 
 
 def test_given_no_cursor_value_for_second_than_second_then_return_true():
@@ -874,7 +1201,9 @@ def test_given_no_cursor_value_for_second_than_second_then_return_true():
         config=config,
         parameters={},
     )
-    assert cursor.is_greater_than_or_equal(Record({"cursor_field": "2021-01-01"}, {}), Record({}, {}))
+    assert cursor.is_greater_than_or_equal(
+        Record({"cursor_field": "2021-01-01"}, {}), Record({}, {})
+    )
 
 
 def test_given_no_cursor_value_for_first_than_second_then_return_false():
@@ -885,7 +1214,9 @@ def test_given_no_cursor_value_for_first_than_second_then_return_false():
         config=config,
         parameters={},
     )
-    assert not cursor.is_greater_than_or_equal(Record({}, {}), Record({"cursor_field": "2021-01-01"}, {}))
+    assert not cursor.is_greater_than_or_equal(
+        Record({}, {}), Record({"cursor_field": "2021-01-01"}, {})
+    )
 
 
 if __name__ == "__main__":

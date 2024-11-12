@@ -32,7 +32,9 @@ def raised_exception():
 
 
 def test_build_from_existing_exception(raised_exception):
-    traced_exc = AirbyteTracedException.from_exception(raised_exception, message="my user-friendly message")
+    traced_exc = AirbyteTracedException.from_exception(
+        raised_exception, message="my user-friendly message"
+    )
     assert traced_exc.message == "my user-friendly message"
     assert traced_exc.internal_message == "an error has occurred"
     assert traced_exc.failure_type == FailureType.system_error
@@ -48,9 +50,15 @@ def test_exception_as_airbyte_message():
     assert airbyte_message.trace.type == TraceType.ERROR
     assert airbyte_message.trace.emitted_at > 0
     assert airbyte_message.trace.error.failure_type == FailureType.system_error
-    assert airbyte_message.trace.error.message == "Something went wrong in the connector. See the logs for more details."
+    assert (
+        airbyte_message.trace.error.message
+        == "Something went wrong in the connector. See the logs for more details."
+    )
     assert airbyte_message.trace.error.internal_message == "an internal message"
-    assert airbyte_message.trace.error.stack_trace == "airbyte_cdk.utils.traced_exception.AirbyteTracedException: an internal message\n"
+    assert (
+        airbyte_message.trace.error.stack_trace
+        == "airbyte_cdk.utils.traced_exception.AirbyteTracedException: an internal message\n"
+    )
 
 
 def test_existing_exception_as_airbyte_message(raised_exception):
@@ -60,7 +68,10 @@ def test_existing_exception_as_airbyte_message(raised_exception):
     assert isinstance(airbyte_message, AirbyteMessage)
     assert airbyte_message.type == MessageType.TRACE
     assert airbyte_message.trace.type == TraceType.ERROR
-    assert airbyte_message.trace.error.message == "Something went wrong in the connector. See the logs for more details."
+    assert (
+        airbyte_message.trace.error.message
+        == "Something went wrong in the connector. See the logs for more details."
+    )
     assert airbyte_message.trace.error.internal_message == "an error has occurred"
     assert airbyte_message.trace.error.stack_trace.startswith("Traceback (most recent call last):")
     assert airbyte_message.trace.error.stack_trace.endswith(
@@ -69,7 +80,11 @@ def test_existing_exception_as_airbyte_message(raised_exception):
 
 
 def test_config_error_as_connection_status_message():
-    traced_exc = AirbyteTracedException("an internal message", message="Config validation error", failure_type=FailureType.config_error)
+    traced_exc = AirbyteTracedException(
+        "an internal message",
+        message="Config validation error",
+        failure_type=FailureType.config_error,
+    )
     airbyte_message = traced_exc.as_connection_status_message()
 
     assert isinstance(airbyte_message, AirbyteMessage)
@@ -79,7 +94,9 @@ def test_config_error_as_connection_status_message():
 
 
 def test_other_error_as_connection_status_message():
-    traced_exc = AirbyteTracedException("an internal message", failure_type=FailureType.system_error)
+    traced_exc = AirbyteTracedException(
+        "an internal message", failure_type=FailureType.system_error
+    )
     airbyte_message = traced_exc.as_connection_status_message()
 
     assert airbyte_message is None
@@ -87,7 +104,9 @@ def test_other_error_as_connection_status_message():
 
 def test_emit_message(capsys):
     traced_exc = AirbyteTracedException(
-        internal_message="internal message", message="user-friendly message", exception=RuntimeError("oh no")
+        internal_message="internal message",
+        message="user-friendly message",
+        exception=RuntimeError("oh no"),
     )
 
     expected_message = AirbyteMessage(
@@ -112,25 +131,37 @@ def test_emit_message(capsys):
     assert printed_message == expected_message
 
 
-def test_given_both_init_and_as_message_with_stream_descriptor_when_as_airbyte_message_use_init_stream_descriptor() -> None:
+def test_given_both_init_and_as_message_with_stream_descriptor_when_as_airbyte_message_use_init_stream_descriptor() -> (
+    None
+):
     traced_exc = AirbyteTracedException(stream_descriptor=_A_STREAM_DESCRIPTOR)
     message = traced_exc.as_airbyte_message(stream_descriptor=_ANOTHER_STREAM_DESCRIPTOR)
     assert message.trace.error.stream_descriptor == _A_STREAM_DESCRIPTOR
 
 
-def test_given_both_init_and_as_sanitized_airbyte_message_with_stream_descriptor_when_as_airbyte_message_use_init_stream_descriptor() -> None:
+def test_given_both_init_and_as_sanitized_airbyte_message_with_stream_descriptor_when_as_airbyte_message_use_init_stream_descriptor() -> (
+    None
+):
     traced_exc = AirbyteTracedException(stream_descriptor=_A_STREAM_DESCRIPTOR)
     message = traced_exc.as_sanitized_airbyte_message(stream_descriptor=_ANOTHER_STREAM_DESCRIPTOR)
     assert message.trace.error.stream_descriptor == _A_STREAM_DESCRIPTOR
 
 
-def test_given_both_from_exception_and_as_message_with_stream_descriptor_when_as_airbyte_message_use_init_stream_descriptor() -> None:
-    traced_exc = AirbyteTracedException.from_exception(_AN_EXCEPTION, stream_descriptor=_A_STREAM_DESCRIPTOR)
+def test_given_both_from_exception_and_as_message_with_stream_descriptor_when_as_airbyte_message_use_init_stream_descriptor() -> (
+    None
+):
+    traced_exc = AirbyteTracedException.from_exception(
+        _AN_EXCEPTION, stream_descriptor=_A_STREAM_DESCRIPTOR
+    )
     message = traced_exc.as_airbyte_message(stream_descriptor=_ANOTHER_STREAM_DESCRIPTOR)
     assert message.trace.error.stream_descriptor == _A_STREAM_DESCRIPTOR
 
 
-def test_given_both_from_exception_and_as_sanitized_airbyte_message_with_stream_descriptor_when_as_airbyte_message_use_init_stream_descriptor() -> None:
-    traced_exc = AirbyteTracedException.from_exception(_AN_EXCEPTION, stream_descriptor=_A_STREAM_DESCRIPTOR)
+def test_given_both_from_exception_and_as_sanitized_airbyte_message_with_stream_descriptor_when_as_airbyte_message_use_init_stream_descriptor() -> (
+    None
+):
+    traced_exc = AirbyteTracedException.from_exception(
+        _AN_EXCEPTION, stream_descriptor=_A_STREAM_DESCRIPTOR
+    )
     message = traced_exc.as_sanitized_airbyte_message(stream_descriptor=_ANOTHER_STREAM_DESCRIPTOR)
     assert message.trace.error.stream_descriptor == _A_STREAM_DESCRIPTOR

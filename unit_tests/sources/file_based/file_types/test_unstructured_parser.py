@@ -11,7 +11,11 @@ import pytest
 import requests
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
-from airbyte_cdk.sources.file_based.config.unstructured_format import APIParameterConfigModel, APIProcessingConfigModel, UnstructuredFormat
+from airbyte_cdk.sources.file_based.config.unstructured_format import (
+    APIParameterConfigModel,
+    APIProcessingConfigModel,
+    UnstructuredFormat,
+)
 from airbyte_cdk.sources.file_based.exceptions import RecordParseError
 from airbyte_cdk.sources.file_based.file_types import UnstructuredParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
@@ -80,12 +84,22 @@ def test_infer_schema(mock_detect_filetype, filetype, format_config, raises):
     config.format = format_config
     if raises:
         with pytest.raises(RecordParseError):
-            loop.run_until_complete(UnstructuredParser().infer_schema(config, fake_file, stream_reader, logger))
+            loop.run_until_complete(
+                UnstructuredParser().infer_schema(config, fake_file, stream_reader, logger)
+            )
     else:
-        schema = loop.run_until_complete(UnstructuredParser().infer_schema(config, MagicMock(), MagicMock(), MagicMock()))
+        schema = loop.run_until_complete(
+            UnstructuredParser().infer_schema(config, MagicMock(), MagicMock(), MagicMock())
+        )
         assert schema == {
-            "content": {"type": "string", "description": "Content of the file as markdown. Might be null if the file could not be parsed"},
-            "document_key": {"type": "string", "description": "Unique identifier of the document, e.g. the file path"},
+            "content": {
+                "type": "string",
+                "description": "Content of the file as markdown. Might be null if the file could not be parsed",
+            },
+            "document_key": {
+                "type": "string",
+                "description": "Unique identifier of the document, e.g. the file path",
+            },
             "_ab_source_file_parse_error": {
                 "type": "string",
                 "description": "Error message if the file could not be parsed even though the file is supported",
@@ -246,9 +260,20 @@ def test_parse_records(
         mock_partition_pdf.return_value = parse_result
     if raises:
         with pytest.raises(RecordParseError):
-            list(UnstructuredParser().parse_records(config, fake_file, stream_reader, logger, MagicMock()))
+            list(
+                UnstructuredParser().parse_records(
+                    config, fake_file, stream_reader, logger, MagicMock()
+                )
+            )
     else:
-        assert list(UnstructuredParser().parse_records(config, fake_file, stream_reader, logger, MagicMock())) == expected_records
+        assert (
+            list(
+                UnstructuredParser().parse_records(
+                    config, fake_file, stream_reader, logger, MagicMock()
+                )
+            )
+            == expected_records
+        )
 
 
 @pytest.mark.parametrize(
@@ -279,7 +304,10 @@ def test_parse_records(
             id="local_unsupported_strategy",
         ),
         pytest.param(
-            UnstructuredFormat(skip_unprocessable_file_types=False, processing=APIProcessingConfigModel(mode="api", api_key="test")),
+            UnstructuredFormat(
+                skip_unprocessable_file_types=False,
+                processing=APIProcessingConfigModel(mode="api", api_key="test"),
+            ),
             False,
             [{"type": "Title", "text": "Airbyte source connection test"}],
             True,
@@ -287,7 +315,10 @@ def test_parse_records(
             id="api_ok",
         ),
         pytest.param(
-            UnstructuredFormat(skip_unprocessable_file_types=False, processing=APIProcessingConfigModel(mode="api", api_key="test")),
+            UnstructuredFormat(
+                skip_unprocessable_file_types=False,
+                processing=APIProcessingConfigModel(mode="api", api_key="test"),
+            ),
             True,
             None,
             False,
@@ -295,7 +326,10 @@ def test_parse_records(
             id="api_error",
         ),
         pytest.param(
-            UnstructuredFormat(skip_unprocessable_file_types=False, processing=APIProcessingConfigModel(mode="api", api_key="test")),
+            UnstructuredFormat(
+                skip_unprocessable_file_types=False,
+                processing=APIProcessingConfigModel(mode="api", api_key="test"),
+            ),
             False,
             {"unexpected": "response"},
             False,
@@ -305,13 +339,17 @@ def test_parse_records(
     ],
 )
 @patch("airbyte_cdk.sources.file_based.file_types.unstructured_parser.requests")
-def test_check_config(requests_mock, format_config, raises_for_status, json_response, is_ok, expected_error):
+def test_check_config(
+    requests_mock, format_config, raises_for_status, json_response, is_ok, expected_error
+):
     mock_response = MagicMock()
     mock_response.json.return_value = json_response
     if raises_for_status:
         mock_response.raise_for_status.side_effect = Exception("API error")
     requests_mock.post.return_value = mock_response
-    result, error = UnstructuredParser().check_config(FileBasedStreamConfig(name="test", format=format_config))
+    result, error = UnstructuredParser().check_config(
+        FileBasedStreamConfig(name="test", format=format_config)
+    )
     assert result == is_ok
     if expected_error:
         assert expected_error in error
@@ -322,7 +360,10 @@ def test_check_config(requests_mock, format_config, raises_for_status, json_resp
     [
         pytest.param(
             FileType.PDF,
-            UnstructuredFormat(skip_unprocessable_file_types=False, processing=APIProcessingConfigModel(mode="api", api_key="test")),
+            UnstructuredFormat(
+                skip_unprocessable_file_types=False,
+                processing=APIProcessingConfigModel(mode="api", api_key="test"),
+            ),
             None,
             "test",
             [{"type": "Text", "text": "test"}],
@@ -362,7 +403,11 @@ def test_check_config(requests_mock, format_config, raises_for_status, json_resp
                 call(
                     "http://localhost:8000/general/v0/general",
                     headers={"accept": "application/json", "unstructured-api-key": "test"},
-                    data={"strategy": "hi_res", "include_page_breaks": "true", "ocr_languages": ["eng", "kor"]},
+                    data={
+                        "strategy": "hi_res",
+                        "include_page_breaks": "true",
+                        "ocr_languages": ["eng", "kor"],
+                    },
                     files={"files": ("filename", mock.ANY, "application/pdf")},
                 )
             ],
@@ -373,19 +418,31 @@ def test_check_config(requests_mock, format_config, raises_for_status, json_resp
         ),
         pytest.param(
             FileType.MD,
-            UnstructuredFormat(skip_unprocessable_file_types=False, processing=APIProcessingConfigModel(mode="api", api_key="test")),
+            UnstructuredFormat(
+                skip_unprocessable_file_types=False,
+                processing=APIProcessingConfigModel(mode="api", api_key="test"),
+            ),
             None,
             "# Mymarkdown",
             None,
             None,
             False,
-            [{"content": "# Mymarkdown", "document_key": FILE_URI, "_ab_source_file_parse_error": None}],
+            [
+                {
+                    "content": "# Mymarkdown",
+                    "document_key": FILE_URI,
+                    "_ab_source_file_parse_error": None,
+                }
+            ],
             200,
             id="handle_markdown_locally",
         ),
         pytest.param(
             FileType.PDF,
-            UnstructuredFormat(skip_unprocessable_file_types=False, processing=APIProcessingConfigModel(mode="api", api_key="test")),
+            UnstructuredFormat(
+                skip_unprocessable_file_types=False,
+                processing=APIProcessingConfigModel(mode="api", api_key="test"),
+            ),
             [
                 requests.exceptions.RequestException("API error"),
                 requests.exceptions.RequestException("API error"),
@@ -439,7 +496,10 @@ def test_check_config(requests_mock, format_config, raises_for_status, json_resp
         ),
         pytest.param(
             FileType.PDF,
-            UnstructuredFormat(skip_unprocessable_file_types=False, processing=APIProcessingConfigModel(mode="api", api_key="test")),
+            UnstructuredFormat(
+                skip_unprocessable_file_types=False,
+                processing=APIProcessingConfigModel(mode="api", api_key="test"),
+            ),
             [
                 requests.exceptions.RequestException("API error"),
                 requests.exceptions.RequestException("API error"),
@@ -477,7 +537,10 @@ def test_check_config(requests_mock, format_config, raises_for_status, json_resp
         ),
         pytest.param(
             FileType.PDF,
-            UnstructuredFormat(skip_unprocessable_file_types=False, processing=APIProcessingConfigModel(mode="api", api_key="test")),
+            UnstructuredFormat(
+                skip_unprocessable_file_types=False,
+                processing=APIProcessingConfigModel(mode="api", api_key="test"),
+            ),
             [
                 Exception("Unexpected error"),
             ],
@@ -499,9 +562,14 @@ def test_check_config(requests_mock, format_config, raises_for_status, json_resp
         ),
         pytest.param(
             FileType.PDF,
-            UnstructuredFormat(skip_unprocessable_file_types=False, processing=APIProcessingConfigModel(mode="api", api_key="test")),
+            UnstructuredFormat(
+                skip_unprocessable_file_types=False,
+                processing=APIProcessingConfigModel(mode="api", api_key="test"),
+            ),
             [
-                requests.exceptions.RequestException("API error", response=MagicMock(status_code=400)),
+                requests.exceptions.RequestException(
+                    "API error", response=MagicMock(status_code=400)
+                ),
             ],
             "test",
             [{"type": "Text", "text": "test"}],
@@ -521,7 +589,10 @@ def test_check_config(requests_mock, format_config, raises_for_status, json_resp
         ),
         pytest.param(
             FileType.PDF,
-            UnstructuredFormat(skip_unprocessable_file_types=False, processing=APIProcessingConfigModel(mode="api", api_key="test")),
+            UnstructuredFormat(
+                skip_unprocessable_file_types=False,
+                processing=APIProcessingConfigModel(mode="api", api_key="test"),
+            ),
             None,
             "test",
             [{"detail": "Something went wrong"}],
@@ -581,11 +652,22 @@ def test_parse_records_remotely(
 
     if raises:
         with pytest.raises(AirbyteTracedException) as exc:
-            list(UnstructuredParser().parse_records(config, fake_file, stream_reader, logger, MagicMock()))
+            list(
+                UnstructuredParser().parse_records(
+                    config, fake_file, stream_reader, logger, MagicMock()
+                )
+            )
         # Failures from the API are treated as config errors
         assert exc.value.failure_type == FailureType.config_error
     else:
-        assert list(UnstructuredParser().parse_records(config, fake_file, stream_reader, logger, MagicMock())) == expected_records
+        assert (
+            list(
+                UnstructuredParser().parse_records(
+                    config, fake_file, stream_reader, logger, MagicMock()
+                )
+            )
+            == expected_records
+        )
 
     if expected_requests:
         requests_mock.post.assert_has_calls(expected_requests)

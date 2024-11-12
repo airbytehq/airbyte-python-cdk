@@ -11,7 +11,10 @@ import requests
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.auth.token_provider import TokenProvider
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
-from airbyte_cdk.sources.declarative.requesters.request_option import RequestOption, RequestOptionType
+from airbyte_cdk.sources.declarative.requesters.request_option import (
+    RequestOption,
+    RequestOptionType,
+)
 from airbyte_cdk.sources.types import Config
 from cachetools import TTLCache, cached
 
@@ -42,7 +45,9 @@ class ApiKeyAuthenticator(DeclarativeAuthenticator):
     parameters: InitVar[Mapping[str, Any]]
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        self._field_name = InterpolatedString.create(self.request_option.field_name, parameters=parameters)
+        self._field_name = InterpolatedString.create(
+            self.request_option.field_name, parameters=parameters
+        )
 
     @property
     def auth_header(self) -> str:
@@ -127,7 +132,9 @@ class BasicHttpAuthenticator(DeclarativeAuthenticator):
 
     @property
     def token(self) -> str:
-        auth_string = f"{self._username.eval(self.config)}:{self._password.eval(self.config)}".encode("utf8")
+        auth_string = (
+            f"{self._username.eval(self.config)}:{self._password.eval(self.config)}".encode("utf8")
+        )
         b64_encoded = base64.b64encode(auth_string).decode("utf8")
         return f"Basic {b64_encoded}"
 
@@ -164,7 +171,9 @@ def get_new_session_token(api_url: str, username: str, password: str, response_k
     )
     response.raise_for_status()
     if not response.ok:
-        raise ConnectionError(f"Failed to retrieve new session token, response code {response.status_code} because {response.reason}")
+        raise ConnectionError(
+            f"Failed to retrieve new session token, response code {response.status_code} because {response.reason}"
+        )
     return str(response.json()[response_key])
 
 
@@ -208,9 +217,13 @@ class LegacySessionTokenAuthenticator(DeclarativeAuthenticator):
         self._api_url = InterpolatedString.create(self.api_url, parameters=parameters)
         self._header = InterpolatedString.create(self.header, parameters=parameters)
         self._session_token = InterpolatedString.create(self.session_token, parameters=parameters)
-        self._session_token_response_key = InterpolatedString.create(self.session_token_response_key, parameters=parameters)
+        self._session_token_response_key = InterpolatedString.create(
+            self.session_token_response_key, parameters=parameters
+        )
         self._login_url = InterpolatedString.create(self.login_url, parameters=parameters)
-        self._validate_session_url = InterpolatedString.create(self.validate_session_url, parameters=parameters)
+        self._validate_session_url = InterpolatedString.create(
+            self.validate_session_url, parameters=parameters
+        )
 
         self.logger = logging.getLogger("airbyte")
 
@@ -232,7 +245,9 @@ class LegacySessionTokenAuthenticator(DeclarativeAuthenticator):
             self.logger.info("Using generated session token by username and password")
             return get_new_session_token(api_url, username, password, session_token_response_key)
 
-        raise ConnectionError("Invalid credentials: session token is not valid or provide username and password")
+        raise ConnectionError(
+            "Invalid credentials: session token is not valid or provide username and password"
+        )
 
     def is_valid_session_token(self) -> bool:
         try:
@@ -251,4 +266,6 @@ class LegacySessionTokenAuthenticator(DeclarativeAuthenticator):
             self.logger.info("Connection check for source is successful.")
             return True
         else:
-            raise ConnectionError(f"Failed to retrieve new session token, response code {response.status_code} because {response.reason}")
+            raise ConnectionError(
+                f"Failed to retrieve new session token, response code {response.status_code} because {response.reason}"
+            )

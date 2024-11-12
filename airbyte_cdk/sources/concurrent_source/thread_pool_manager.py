@@ -37,7 +37,9 @@ class ThreadPoolManager:
     def prune_to_validate_has_reached_futures_limit(self) -> bool:
         self._prune_futures(self._futures)
         if len(self._futures) > self._logging_threshold:
-            self._logger.warning(f"ThreadPoolManager: The list of futures is getting bigger than expected ({len(self._futures)})")
+            self._logger.warning(
+                f"ThreadPoolManager: The list of futures is getting bigger than expected ({len(self._futures)})"
+            )
         return len(self._futures) >= self._max_concurrent_tasks
 
     def submit(self, function: Callable[..., Any], *args: Any) -> None:
@@ -92,14 +94,18 @@ class ThreadPoolManager:
             )
             self._stop_and_raise_exception(self._most_recently_seen_exception)
 
-        exceptions_from_futures = [f for f in [future.exception() for future in self._futures] if f is not None]
+        exceptions_from_futures = [
+            f for f in [future.exception() for future in self._futures] if f is not None
+        ]
         if exceptions_from_futures:
             exception = RuntimeError(f"Failed reading with errors: {exceptions_from_futures}")
             self._stop_and_raise_exception(exception)
         else:
             futures_not_done = [f for f in self._futures if not f.done()]
             if futures_not_done:
-                exception = RuntimeError(f"Failed reading with futures not done: {futures_not_done}")
+                exception = RuntimeError(
+                    f"Failed reading with futures not done: {futures_not_done}"
+                )
                 self._stop_and_raise_exception(exception)
             else:
                 self._shutdown()

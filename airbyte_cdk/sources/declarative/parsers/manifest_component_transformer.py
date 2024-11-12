@@ -77,7 +77,10 @@ CUSTOM_COMPONENTS_MAPPING: Mapping[str, str] = {
 
 class ManifestComponentTransformer:
     def propagate_types_and_parameters(
-        self, parent_field_identifier: str, declarative_component: Mapping[str, Any], parent_parameters: Mapping[str, Any]
+        self,
+        parent_field_identifier: str,
+        declarative_component: Mapping[str, Any],
+        parent_parameters: Mapping[str, Any],
     ) -> Mapping[str, Any]:
         """
         Recursively transforms the specified declarative component and subcomponents to propagate parameters and insert the
@@ -119,7 +122,9 @@ class ManifestComponentTransformer:
         # Parameters should be applied to the current component fields with the existing field taking precedence over parameters if
         # both exist
         for parameter_key, parameter_value in current_parameters.items():
-            propagated_component[parameter_key] = propagated_component.get(parameter_key) or parameter_value
+            propagated_component[parameter_key] = (
+                propagated_component.get(parameter_key) or parameter_value
+            )
 
         for field_name, field_value in propagated_component.items():
             if isinstance(field_value, dict):
@@ -136,8 +141,12 @@ class ManifestComponentTransformer:
                 excluded_parameter = current_parameters.pop(field_name, None)
                 for i, element in enumerate(field_value):
                     if isinstance(element, dict):
-                        parent_type_field_identifier = f"{propagated_component.get('type')}.{field_name}"
-                        field_value[i] = self.propagate_types_and_parameters(parent_type_field_identifier, element, current_parameters)
+                        parent_type_field_identifier = (
+                            f"{propagated_component.get('type')}.{field_name}"
+                        )
+                        field_value[i] = self.propagate_types_and_parameters(
+                            parent_type_field_identifier, element, current_parameters
+                        )
                 if excluded_parameter:
                     current_parameters[field_name] = excluded_parameter
 

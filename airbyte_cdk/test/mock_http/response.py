@@ -5,7 +5,9 @@ from typing import Mapping
 
 
 class HttpResponse:
-    def __init__(self, body: str, status_code: int = 200, headers: Mapping[str, str] = MappingProxyType({})):
+    def __init__(
+        self, body: str, status_code: int = 200, headers: Mapping[str, str] = MappingProxyType({})
+    ):
         self._body = body
         self._status_code = status_code
         self._headers = headers

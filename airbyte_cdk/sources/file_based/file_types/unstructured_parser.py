@@ -19,13 +19,21 @@ from airbyte_cdk.sources.file_based.config.unstructured_format import (
     UnstructuredFormat,
 )
 from airbyte_cdk.sources.file_based.exceptions import FileBasedSourceError, RecordParseError
-from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader, FileReadMode
+from airbyte_cdk.sources.file_based.file_based_stream_reader import (
+    AbstractFileBasedStreamReader,
+    FileReadMode,
+)
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
 from airbyte_cdk.utils import is_cloud_environment
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from unstructured.file_utils.filetype import FILETYPE_TO_MIMETYPE, STR_TO_FILETYPE, FileType, detect_filetype
+from unstructured.file_utils.filetype import (
+    FILETYPE_TO_MIMETYPE,
+    STR_TO_FILETYPE,
+    FileType,
+    detect_filetype,
+)
 
 unstructured_partition_pdf = None
 unstructured_partition_docx = None
@@ -109,7 +117,10 @@ class UnstructuredParser(FileTypeParser):
                     "type": "string",
                     "description": "Content of the file as markdown. Might be null if the file could not be parsed",
                 },
-                "document_key": {"type": "string", "description": "Unique identifier of the document, e.g. the file path"},
+                "document_key": {
+                    "type": "string",
+                    "description": "Unique identifier of the document, e.g. the file path",
+                },
                 "_ab_source_file_parse_error": {
                     "type": "string",
                     "description": "Error message if the file could not be parsed even though the file is supported",
@@ -149,9 +160,19 @@ class UnstructuredParser(FileTypeParser):
                 else:
                     raise e
 
-    def _read_file(self, file_handle: IOBase, remote_file: RemoteFile, format: UnstructuredFormat, logger: logging.Logger) -> str:
+    def _read_file(
+        self,
+        file_handle: IOBase,
+        remote_file: RemoteFile,
+        format: UnstructuredFormat,
+        logger: logging.Logger,
+    ) -> str:
         _import_unstructured()
-        if (not unstructured_partition_pdf) or (not unstructured_partition_docx) or (not unstructured_partition_pptx):
+        if (
+            (not unstructured_partition_pdf)
+            or (not unstructured_partition_docx)
+            or (not unstructured_partition_pptx)
+        ):
             # check whether unstructured library is actually available for better error message and to ensure proper typing (can't be None after this point)
             raise Exception("unstructured library is not available")
 
@@ -167,7 +188,9 @@ class UnstructuredParser(FileTypeParser):
             return self._read_file_locally(file_handle, filetype, format.strategy, remote_file)
         elif format.processing.mode == "api":
             try:
-                result: str = self._read_file_remotely_with_retries(file_handle, format.processing, filetype, format.strategy, remote_file)
+                result: str = self._read_file_remotely_with_retries(
+                    file_handle, format.processing, filetype, format.strategy, remote_file
+                )
             except Exception as e:
                 # If a parser error happens during remotely processing the file, this means the file is corrupted. This case is handled by the parse_records method, so just rethrow.
                 #
@@ -175,11 +198,15 @@ class UnstructuredParser(FileTypeParser):
                 # Once this parser leaves experimental stage, we should consider making this a system error instead for issues that might be transient.
                 if isinstance(e, RecordParseError):
                     raise e
-                raise AirbyteTracedException.from_exception(e, failure_type=FailureType.config_error)
+                raise AirbyteTracedException.from_exception(
+                    e, failure_type=FailureType.config_error
+                )
 
             return result
 
-    def _params_to_dict(self, params: Optional[List[APIParameterConfigModel]], strategy: str) -> Dict[str, Union[str, List[str]]]:
+    def _params_to_dict(
+        self, params: Optional[List[APIParameterConfigModel]], strategy: str
+    ) -> Dict[str, Union[str, List[str]]]:
         result_dict: Dict[str, Union[str, List[str]]] = {"strategy": strategy}
         if params is None:
             return result_dict
@@ -229,9 +256,16 @@ class UnstructuredParser(FileTypeParser):
 
         return True, None
 
-    @backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=5, giveup=user_error)
+    @backoff.on_exception(
+        backoff.expo, requests.exceptions.RequestException, max_tries=5, giveup=user_error
+    )
     def _read_file_remotely_with_retries(
-        self, file_handle: IOBase, format: APIProcessingConfigModel, filetype: FileType, strategy: str, remote_file: RemoteFile
+        self,
+        file_handle: IOBase,
+        format: APIProcessingConfigModel,
+        filetype: FileType,
+        strategy: str,
+        remote_file: RemoteFile,
     ) -> str:
         """
         Read a file remotely, retrying up to 5 times if the error is not caused by user error. This is useful for transient network errors or the API server being overloaded temporarily.
@@ -239,7 +273,12 @@ class UnstructuredParser(FileTypeParser):
         return self._read_file_remotely(file_handle, format, filetype, strategy, remote_file)
 
     def _read_file_remotely(
-        self, file_handle: IOBase, format: APIProcessingConfigModel, filetype: FileType, strategy: str, remote_file: RemoteFile
+        self,
+        file_handle: IOBase,
+        format: APIProcessingConfigModel,
+        filetype: FileType,
+        strategy: str,
+        remote_file: RemoteFile,
     ) -> str:
         headers = {"accept": "application/json", "unstructured-api-key": format.api_key}
 
@@ -247,7 +286,9 @@ class UnstructuredParser(FileTypeParser):
 
         file_data = {"files": ("filename", file_handle, FILETYPE_TO_MIMETYPE[filetype])}
 
-        response = requests.post(f"{format.api_url}/general/v0/general", headers=headers, data=data, files=file_data)
+        response = requests.post(
+            f"{format.api_url}/general/v0/general", headers=headers, data=data, files=file_data
+        )
 
         if response.status_code == 422:
             # 422 means the file couldn't be processed, but the API is working. Treat this as a parsing error (passing an error record to the destination).
@@ -260,9 +301,15 @@ class UnstructuredParser(FileTypeParser):
 
         return self._render_markdown(json_response)
 
-    def _read_file_locally(self, file_handle: IOBase, filetype: FileType, strategy: str, remote_file: RemoteFile) -> str:
+    def _read_file_locally(
+        self, file_handle: IOBase, filetype: FileType, strategy: str, remote_file: RemoteFile
+    ) -> str:
         _import_unstructured()
-        if (not unstructured_partition_pdf) or (not unstructured_partition_docx) or (not unstructured_partition_pptx):
+        if (
+            (not unstructured_partition_pdf)
+            or (not unstructured_partition_docx)
+            or (not unstructured_partition_pptx)
+        ):
             # check whether unstructured library is actually available for better error message and to ensure proper typing (can't be None after this point)
             raise Exception("unstructured library is not available")
 
@@ -290,7 +337,9 @@ class UnstructuredParser(FileTypeParser):
         return self._render_markdown([element.to_dict() for element in elements])
 
     def _create_parse_error(self, remote_file: RemoteFile, message: str) -> RecordParseError:
-        return RecordParseError(FileBasedSourceError.ERROR_PARSING_RECORD, filename=remote_file.uri, message=message)
+        return RecordParseError(
+            FileBasedSourceError.ERROR_PARSING_RECORD, filename=remote_file.uri, message=message
+        )
 
     def _get_filetype(self, file: IOBase, remote_file: RemoteFile) -> Optional[FileType]:
         """

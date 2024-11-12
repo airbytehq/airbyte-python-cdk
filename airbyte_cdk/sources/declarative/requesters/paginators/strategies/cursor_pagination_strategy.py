@@ -6,10 +6,16 @@ from dataclasses import InitVar, dataclass, field
 from typing import Any, Dict, Mapping, Optional, Union
 
 import requests
-from airbyte_cdk.sources.declarative.decoders import Decoder, JsonDecoder, PaginationDecoderDecorator
+from airbyte_cdk.sources.declarative.decoders import (
+    Decoder,
+    JsonDecoder,
+    PaginationDecoderDecorator,
+)
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
-from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import PaginationStrategy
+from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
+    PaginationStrategy,
+)
 from airbyte_cdk.sources.types import Config, Record
 
 
@@ -31,7 +37,9 @@ class CursorPaginationStrategy(PaginationStrategy):
     parameters: InitVar[Mapping[str, Any]]
     page_size: Optional[int] = None
     stop_condition: Optional[Union[InterpolatedBoolean, str]] = None
-    decoder: Decoder = field(default_factory=lambda: PaginationDecoderDecorator(decoder=JsonDecoder(parameters={})))
+    decoder: Decoder = field(
+        default_factory=lambda: PaginationDecoderDecorator(decoder=JsonDecoder(parameters={}))
+    )
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._initial_cursor = None
@@ -40,7 +48,9 @@ class CursorPaginationStrategy(PaginationStrategy):
         else:
             self._cursor_value = self.cursor_value
         if isinstance(self.stop_condition, str):
-            self._stop_condition: Optional[InterpolatedBoolean] = InterpolatedBoolean(condition=self.stop_condition, parameters=parameters)
+            self._stop_condition: Optional[InterpolatedBoolean] = InterpolatedBoolean(
+                condition=self.stop_condition, parameters=parameters
+            )
         else:
             self._stop_condition = self.stop_condition
 
@@ -48,7 +58,9 @@ class CursorPaginationStrategy(PaginationStrategy):
     def initial_token(self) -> Optional[Any]:
         return self._initial_cursor
 
-    def next_page_token(self, response: requests.Response, last_page_size: int, last_record: Optional[Record]) -> Optional[Any]:
+    def next_page_token(
+        self, response: requests.Response, last_page_size: int, last_record: Optional[Record]
+    ) -> Optional[Any]:
         decoded_response = next(self.decoder.decode(response))
 
         # The default way that link is presented in requests.Response is a string of various links (last, next, etc). This

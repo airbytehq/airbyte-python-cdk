@@ -10,8 +10,13 @@ from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.streams.http.error_handlers import JsonErrorMessageParser
-from airbyte_cdk.sources.streams.http.error_handlers.default_error_mapping import DEFAULT_ERROR_MAPPING
-from airbyte_cdk.sources.streams.http.error_handlers.response_models import ErrorResolution, ResponseAction
+from airbyte_cdk.sources.streams.http.error_handlers.default_error_mapping import (
+    DEFAULT_ERROR_MAPPING,
+)
+from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
+    ErrorResolution,
+    ResponseAction,
+)
 from airbyte_cdk.sources.types import Config
 
 
@@ -42,24 +47,35 @@ class HttpResponseFilter:
     error_message: Union[InterpolatedString, str] = ""
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-
         if self.action is not None:
-            if self.http_codes is None and self.predicate is None and self.error_message_contains is None:
-                raise ValueError("HttpResponseFilter requires a filter condition if an action is specified")
+            if (
+                self.http_codes is None
+                and self.predicate is None
+                and self.error_message_contains is None
+            ):
+                raise ValueError(
+                    "HttpResponseFilter requires a filter condition if an action is specified"
+                )
             elif isinstance(self.action, str):
                 self.action = ResponseAction[self.action]
         self.http_codes = self.http_codes or set()
         if isinstance(self.predicate, str):
             self.predicate = InterpolatedBoolean(condition=self.predicate, parameters=parameters)
-        self.error_message = InterpolatedString.create(string_or_interpolated=self.error_message, parameters=parameters)
+        self.error_message = InterpolatedString.create(
+            string_or_interpolated=self.error_message, parameters=parameters
+        )
         self._error_message_parser = JsonErrorMessageParser()
         if self.failure_type and isinstance(self.failure_type, str):
             self.failure_type = FailureType[self.failure_type]
 
-    def matches(self, response_or_exception: Optional[Union[requests.Response, Exception]]) -> Optional[ErrorResolution]:
+    def matches(
+        self, response_or_exception: Optional[Union[requests.Response, Exception]]
+    ) -> Optional[ErrorResolution]:
         filter_action = self._matches_filter(response_or_exception)
         mapped_key = (
-            response_or_exception.status_code if isinstance(response_or_exception, requests.Response) else response_or_exception.__class__
+            response_or_exception.status_code
+            if isinstance(response_or_exception, requests.Response)
+            else response_or_exception.__class__
         )
 
         if isinstance(mapped_key, (int, Exception)):
@@ -68,7 +84,11 @@ class HttpResponseFilter:
             default_mapped_error_resolution = None
 
         if filter_action is not None:
-            default_error_message = default_mapped_error_resolution.error_message if default_mapped_error_resolution else ""
+            default_error_message = (
+                default_mapped_error_resolution.error_message
+                if default_mapped_error_resolution
+                else ""
+            )
             error_message = None
             if isinstance(response_or_exception, requests.Response):
                 error_message = self._create_error_message(response_or_exception)
@@ -96,10 +116,14 @@ class HttpResponseFilter:
 
         return None
 
-    def _match_default_error_mapping(self, mapped_key: Union[int, type[Exception]]) -> Optional[ErrorResolution]:
+    def _match_default_error_mapping(
+        self, mapped_key: Union[int, type[Exception]]
+    ) -> Optional[ErrorResolution]:
         return DEFAULT_ERROR_MAPPING.get(mapped_key)
 
-    def _matches_filter(self, response_or_exception: Optional[Union[requests.Response, Exception]]) -> Optional[ResponseAction]:
+    def _matches_filter(
+        self, response_or_exception: Optional[Union[requests.Response, Exception]]
+    ) -> Optional[ResponseAction]:
         """
         Apply the HTTP filter on the response and return the action to execute if it matches
         :param response: The HTTP response to evaluate
@@ -126,14 +150,27 @@ class HttpResponseFilter:
         :param response: The HTTP response which can be used during interpolation
         :return: The evaluated error message string to be emitted
         """
-        return self.error_message.eval(self.config, response=self._safe_response_json(response), headers=response.headers)  # type: ignore # error_message is always cast to an interpolated string
+        return self.error_message.eval(
+            self.config, response=self._safe_response_json(response), headers=response.headers
+        )  # type: ignore # error_message is always cast to an interpolated string
 
     def _response_matches_predicate(self, response: requests.Response) -> bool:
-        return bool(self.predicate.condition and self.predicate.eval(None, response=self._safe_response_json(response), headers=response.headers)) if self.predicate else False  # type: ignore # predicate is always cast to an interpolated string
+        return (
+            bool(
+                self.predicate.condition
+                and self.predicate.eval(
+                    None, response=self._safe_response_json(response), headers=response.headers
+                )
+            )
+            if self.predicate
+            else False
+        )  # type: ignore # predicate is always cast to an interpolated string
 
     def _response_contains_error_message(self, response: requests.Response) -> bool:
         if not self.error_message_contains:
             return False
         else:
-            error_message = self._error_message_parser.parse_response_error_message(response=response)
+            error_message = self._error_message_parser.parse_response_error_message(
+                response=response
+            )
             return bool(error_message and self.error_message_contains in error_message)

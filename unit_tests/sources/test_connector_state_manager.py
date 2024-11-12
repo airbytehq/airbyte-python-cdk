@@ -16,7 +16,10 @@ from airbyte_cdk.models import (
     StreamDescriptor,
 )
 from airbyte_cdk.models import Type as MessageType
-from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager, HashableStreamDescriptor
+from airbyte_cdk.sources.connector_state_manager import (
+    ConnectorStateManager,
+    HashableStreamDescriptor,
+)
 
 
 @pytest.mark.parametrize(
@@ -26,23 +29,38 @@ from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager, H
             [
                 {
                     "type": "STREAM",
-                    "stream": {"stream_descriptor": {"name": "actors", "namespace": "public"}, "stream_state": {"id": "mando_michael"}},
+                    "stream": {
+                        "stream_descriptor": {"name": "actors", "namespace": "public"},
+                        "stream_state": {"id": "mando_michael"},
+                    },
                 },
                 {
                     "type": "STREAM",
-                    "stream": {"stream_descriptor": {"name": "actresses", "namespace": "public"}, "stream_state": {"id": "seehorn_rhea"}},
+                    "stream": {
+                        "stream_descriptor": {"name": "actresses", "namespace": "public"},
+                        "stream_state": {"id": "seehorn_rhea"},
+                    },
                 },
             ],
             {
-                HashableStreamDescriptor(name="actors", namespace="public"): AirbyteStateBlob({"id": "mando_michael"}),
-                HashableStreamDescriptor(name="actresses", namespace="public"): AirbyteStateBlob({"id": "seehorn_rhea"}),
+                HashableStreamDescriptor(name="actors", namespace="public"): AirbyteStateBlob(
+                    {"id": "mando_michael"}
+                ),
+                HashableStreamDescriptor(name="actresses", namespace="public"): AirbyteStateBlob(
+                    {"id": "seehorn_rhea"}
+                ),
             },
             does_not_raise(),
             id="test_incoming_per_stream_state",
         ),
         pytest.param([], {}, does_not_raise(), id="test_incoming_empty_stream_state"),
         pytest.param(
-            [{"type": "STREAM", "stream": {"stream_descriptor": {"name": "actresses", "namespace": "public"}}}],
+            [
+                {
+                    "type": "STREAM",
+                    "stream": {"stream_descriptor": {"name": "actresses", "namespace": "public"}},
+                }
+            ],
             {HashableStreamDescriptor(name="actresses", namespace="public"): None},
             does_not_raise(),
             id="test_stream_states_that_have_none_state_blob",
@@ -67,8 +85,12 @@ from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager, H
                 },
             ],
             {
-                HashableStreamDescriptor(name="actors", namespace="public"): AirbyteStateBlob({"id": "mando_michael"}),
-                HashableStreamDescriptor(name="actresses", namespace="public"): AirbyteStateBlob({"id": "seehorn_rhea"}),
+                HashableStreamDescriptor(name="actors", namespace="public"): AirbyteStateBlob(
+                    {"id": "mando_michael"}
+                ),
+                HashableStreamDescriptor(name="actresses", namespace="public"): AirbyteStateBlob(
+                    {"id": "seehorn_rhea"}
+                ),
             },
             pytest.raises(ValueError),
             id="test_incoming_global_state_with_shared_state_throws_error",
@@ -79,13 +101,18 @@ from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager, H
                     "type": "GLOBAL",
                     "global": {
                         "stream_states": [
-                            {"stream_descriptor": {"name": "actors", "namespace": "public"}, "stream_state": {"id": "mando_michael"}},
+                            {
+                                "stream_descriptor": {"name": "actors", "namespace": "public"},
+                                "stream_state": {"id": "mando_michael"},
+                            },
                         ],
                     },
                 },
             ],
             {
-                HashableStreamDescriptor(name="actors", namespace="public"): AirbyteStateBlob({"id": "mando_michael"}),
+                HashableStreamDescriptor(name="actors", namespace="public"): AirbyteStateBlob(
+                    {"id": "mando_michael"}
+                ),
             },
             does_not_raise(),
             id="test_incoming_global_state_without_shared",
@@ -106,7 +133,9 @@ from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager, H
                 },
             ],
             {
-                HashableStreamDescriptor(name="actors", namespace="public"): AirbyteStateBlob({"id": "mando_michael"}),
+                HashableStreamDescriptor(name="actors", namespace="public"): AirbyteStateBlob(
+                    {"id": "mando_michael"}
+                ),
             },
             does_not_raise(),
             id="test_incoming_global_state_with_none_shared",
@@ -130,7 +159,9 @@ from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager, H
 )
 def test_initialize_state_manager(input_stream_state, expected_stream_state, expected_error):
     if isinstance(input_stream_state, List):
-        input_stream_state = [AirbyteStateMessageSerializer.load(state_obj) for state_obj in list(input_stream_state)]
+        input_stream_state = [
+            AirbyteStateMessageSerializer.load(state_obj) for state_obj in list(input_stream_state)
+        ]
 
     with expected_error:
         state_manager = ConnectorStateManager(input_stream_state)
@@ -145,11 +176,17 @@ def test_initialize_state_manager(input_stream_state, expected_stream_state, exp
             [
                 {
                     "type": "STREAM",
-                    "stream": {"stream_descriptor": {"name": "users", "namespace": "public"}, "stream_state": {"created_at": 12345}},
+                    "stream": {
+                        "stream_descriptor": {"name": "users", "namespace": "public"},
+                        "stream_state": {"created_at": 12345},
+                    },
                 },
                 {
                     "type": "STREAM",
-                    "stream": {"stream_descriptor": {"name": "accounts", "namespace": "public"}, "stream_state": {"id": "abc"}},
+                    "stream": {
+                        "stream_descriptor": {"name": "accounts", "namespace": "public"},
+                        "stream_state": {"id": "abc"},
+                    },
                 },
             ],
             "users",
@@ -161,9 +198,18 @@ def test_initialize_state_manager(input_stream_state, expected_stream_state, exp
             [
                 {
                     "type": "STREAM",
-                    "stream": {"stream_descriptor": {"name": "users"}, "stream_state": {"created_at": 12345}},
+                    "stream": {
+                        "stream_descriptor": {"name": "users"},
+                        "stream_state": {"created_at": 12345},
+                    },
                 },
-                {"type": "STREAM", "stream": {"stream_descriptor": {"name": "accounts"}, "stream_state": {"id": "abc"}}},
+                {
+                    "type": "STREAM",
+                    "stream": {
+                        "stream_descriptor": {"name": "accounts"},
+                        "stream_state": {"id": "abc"},
+                    },
+                },
             ],
             "users",
             None,
@@ -173,7 +219,13 @@ def test_initialize_state_manager(input_stream_state, expected_stream_state, exp
         pytest.param(
             [
                 {"type": "STREAM", "stream": {"stream_descriptor": {"name": "users"}}},
-                {"type": "STREAM", "stream": {"stream_descriptor": {"name": "accounts"}, "stream_state": {"id": "abc"}}},
+                {
+                    "type": "STREAM",
+                    "stream": {
+                        "stream_descriptor": {"name": "accounts"},
+                        "stream_state": {"id": "abc"},
+                    },
+                },
             ],
             "users",
             None,
@@ -184,11 +236,17 @@ def test_initialize_state_manager(input_stream_state, expected_stream_state, exp
             [
                 {
                     "type": "STREAM",
-                    "stream": {"stream_descriptor": {"name": "users", "namespace": "public"}, "stream_state": {"created_at": 12345}},
+                    "stream": {
+                        "stream_descriptor": {"name": "users", "namespace": "public"},
+                        "stream_state": {"created_at": 12345},
+                    },
                 },
                 {
                     "type": "STREAM",
-                    "stream": {"stream_descriptor": {"name": "accounts", "namespace": "public"}, "stream_state": {"id": "abc"}},
+                    "stream": {
+                        "stream_descriptor": {"name": "accounts", "namespace": "public"},
+                        "stream_state": {"id": "abc"},
+                    },
                 },
             ],
             "missing",
@@ -200,11 +258,17 @@ def test_initialize_state_manager(input_stream_state, expected_stream_state, exp
             [
                 {
                     "type": "STREAM",
-                    "stream": {"stream_descriptor": {"name": "users", "namespace": "public"}, "stream_state": {"created_at": 12345}},
+                    "stream": {
+                        "stream_descriptor": {"name": "users", "namespace": "public"},
+                        "stream_state": {"created_at": 12345},
+                    },
                 },
                 {
                     "type": "STREAM",
-                    "stream": {"stream_descriptor": {"name": "accounts", "namespace": "public"}, "stream_state": {"id": "abc"}},
+                    "stream": {
+                        "stream_descriptor": {"name": "accounts", "namespace": "public"},
+                        "stream_state": {"id": "abc"},
+                    },
                 },
             ],
             "users",
@@ -212,12 +276,17 @@ def test_initialize_state_manager(input_stream_state, expected_stream_state, exp
             {},
             id="test_get_stream_wrong_namespace",
         ),
-        pytest.param([], "users", "public", {}, id="test_get_empty_stream_state_defaults_to_empty_dictionary"),
+        pytest.param(
+            [], "users", "public", {}, id="test_get_empty_stream_state_defaults_to_empty_dictionary"
+        ),
         pytest.param(
             [
                 {
                     "type": "STREAM",
-                    "stream": {"stream_descriptor": {"name": "users", "namespace": "public"}, "stream_state": None},
+                    "stream": {
+                        "stream_descriptor": {"name": "users", "namespace": "public"},
+                        "stream_state": None,
+                    },
                 },
             ],
             "users",
@@ -228,7 +297,9 @@ def test_initialize_state_manager(input_stream_state, expected_stream_state, exp
     ],
 )
 def test_get_stream_state(input_state, stream_name, namespace, expected_state):
-    state_messages = [AirbyteStateMessageSerializer.load(state_obj) for state_obj in list(input_state)]
+    state_messages = [
+        AirbyteStateMessageSerializer.load(state_obj) for state_obj in list(input_state)
+    ]
     state_manager = ConnectorStateManager(state_messages)
 
     actual_state = state_manager.get_stream_state(stream_name, namespace)
@@ -261,11 +332,17 @@ def test_get_state_returns_deep_copy():
             [
                 {
                     "type": "STREAM",
-                    "stream": {"stream_descriptor": {"name": "actors", "namespace": "public"}, "stream_state": {"id": "mckean_michael"}},
+                    "stream": {
+                        "stream_descriptor": {"name": "actors", "namespace": "public"},
+                        "stream_state": {"id": "mckean_michael"},
+                    },
                 },
                 {
                     "type": "STREAM",
-                    "stream": {"stream_descriptor": {"name": "actresses", "namespace": "public"}, "stream_state": {"id": "seehorn_rhea"}},
+                    "stream": {
+                        "stream_descriptor": {"name": "actresses", "namespace": "public"},
+                        "stream_state": {"id": "seehorn_rhea"},
+                    },
                 },
             ],
             "actors",
@@ -284,7 +361,10 @@ def test_get_state_returns_deep_copy():
             [
                 {
                     "type": "STREAM",
-                    "stream": {"stream_descriptor": {"name": "actresses", "namespace": "public"}, "stream_state": {"id": "seehorn_rhea"}},
+                    "stream": {
+                        "stream_descriptor": {"name": "actresses", "namespace": "public"},
+                        "stream_state": {"id": "seehorn_rhea"},
+                    },
                 }
             ],
             "actors",
@@ -296,7 +376,10 @@ def test_get_state_returns_deep_copy():
             [
                 {
                     "type": "STREAM",
-                    "stream": {"stream_descriptor": {"name": "actresses", "namespace": "public"}, "stream_state": {"id": "seehorn_rhea"}},
+                    "stream": {
+                        "stream_descriptor": {"name": "actresses", "namespace": "public"},
+                        "stream_state": {"id": "seehorn_rhea"},
+                    },
                 }
             ],
             "actors",
@@ -312,9 +395,9 @@ def test_update_state_for_stream(start_state, update_name, update_namespace, upd
 
     state_manager.update_state_for_stream(update_name, update_namespace, update_value)
 
-    assert state_manager.per_stream_states[HashableStreamDescriptor(name=update_name, namespace=update_namespace)] == AirbyteStateBlob(
-        update_value
-    )
+    assert state_manager.per_stream_states[
+        HashableStreamDescriptor(name=update_name, namespace=update_namespace)
+    ] == AirbyteStateBlob(update_value)
 
 
 @pytest.mark.parametrize(
@@ -392,7 +475,8 @@ def test_update_state_for_stream(start_state, update_name, update_namespace, upd
                 state=AirbyteStateMessage(
                     type=AirbyteStateType.STREAM,
                     stream=AirbyteStreamState(
-                        stream_descriptor=StreamDescriptor(name="missing", namespace="public"), stream_state=AirbyteStateBlob()
+                        stream_descriptor=StreamDescriptor(name="missing", namespace="public"),
+                        stream_state=AirbyteStateBlob(),
                     ),
                 ),
             ),
@@ -415,7 +499,10 @@ def test_update_state_for_stream(start_state, update_name, update_namespace, upd
                 state=AirbyteStateMessage(
                     type=AirbyteStateType.STREAM,
                     stream=AirbyteStreamState(
-                        stream_descriptor=StreamDescriptor(name="episodes", namespace="nonexistent"), stream_state=AirbyteStateBlob()
+                        stream_descriptor=StreamDescriptor(
+                            name="episodes", namespace="nonexistent"
+                        ),
+                        stream_state=AirbyteStateBlob(),
                     ),
                 ),
             ),
@@ -426,5 +513,7 @@ def test_update_state_for_stream(start_state, update_name, update_namespace, upd
 def test_create_state_message(start_state, update_name, update_namespace, expected_state_message):
     state_manager = ConnectorStateManager(start_state)
 
-    actual_state_message = state_manager.create_state_message(stream_name=update_name, namespace=update_namespace)
+    actual_state_message = state_manager.create_state_message(
+        stream_name=update_name, namespace=update_namespace
+    )
     assert actual_state_message == expected_state_message

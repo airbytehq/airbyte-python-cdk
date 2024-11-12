@@ -74,7 +74,9 @@ def _expand_refs(schema: Any, ref_resolver: Optional[RefResolver] = None) -> Non
         if "$ref" in schema:
             ref_url = schema.pop("$ref")
             _, definition = ref_resolver.resolve(ref_url)
-            _expand_refs(definition, ref_resolver=ref_resolver)  # expand refs in definitions as well
+            _expand_refs(
+                definition, ref_resolver=ref_resolver
+            )  # expand refs in definitions as well
             schema.update(definition)
         else:
             for key, value in schema.items():
@@ -152,7 +154,9 @@ class ResourceSchemaLoader:
             base = os.path.dirname(package.__file__) + "/"
         else:
             raise ValueError(f"Package {package} does not have a valid __file__ field")
-        resolved = jsonref.JsonRef.replace_refs(raw_schema, loader=JsonFileLoader(base, "schemas/shared"), base_uri=base)
+        resolved = jsonref.JsonRef.replace_refs(
+            raw_schema, loader=JsonFileLoader(base, "schemas/shared"), base_uri=base
+        )
         resolved = resolve_ref_links(resolved)
         if isinstance(resolved, dict):
             return resolved
@@ -160,7 +164,9 @@ class ResourceSchemaLoader:
             raise ValueError(f"Expected resolved to be a dict. Got {resolved}")
 
 
-def check_config_against_spec_or_exit(config: Mapping[str, Any], spec: ConnectorSpecification) -> None:
+def check_config_against_spec_or_exit(
+    config: Mapping[str, Any], spec: ConnectorSpecification
+) -> None:
     """
     Check config object against spec. In case of spec is invalid, throws
     an exception with validation error description.

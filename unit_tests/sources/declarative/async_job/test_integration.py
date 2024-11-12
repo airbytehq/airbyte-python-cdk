@@ -5,7 +5,13 @@ import logging
 from typing import Any, Iterable, List, Mapping, Optional, Set, Tuple
 from unittest import TestCase, mock
 
-from airbyte_cdk import AbstractSource, DeclarativeStream, SinglePartitionRouter, Stream, StreamSlice
+from airbyte_cdk import (
+    AbstractSource,
+    DeclarativeStream,
+    SinglePartitionRouter,
+    Stream,
+    StreamSlice,
+)
 from airbyte_cdk.models import ConnectorSpecification
 from airbyte_cdk.sources.declarative.async_job.job import AsyncJob
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator
@@ -28,7 +34,6 @@ _NO_LIMIT = 10000
 
 
 class MockAsyncJobRepository(AsyncJobRepository):
-
     def start(self, stream_slice: StreamSlice) -> AsyncJob:
         return AsyncJob("a_job_id", StreamSlice(partition={}, cursor_slice={}))
 
@@ -47,12 +52,13 @@ class MockAsyncJobRepository(AsyncJobRepository):
 
 
 class MockSource(AbstractSource):
-
     def __init__(self, stream_slicer: Optional[StreamSlicer] = None) -> None:
         self._stream_slicer = SinglePartitionRouter({}) if stream_slicer is None else stream_slicer
         self._message_repository = NoopMessageRepository()
 
-    def check_connection(self, logger: logging.Logger, config: Mapping[str, Any]) -> Tuple[bool, Optional[Any]]:
+    def check_connection(
+        self, logger: logging.Logger, config: Mapping[str, Any]
+    ) -> Tuple[bool, Optional[Any]]:
         return True, None
 
     def spec(self, logger: logging.Logger) -> ConnectorSpecification:
@@ -65,7 +71,7 @@ class MockSource(AbstractSource):
             parameters={},
             schema_normalization=TypeTransformer(TransformConfig.NoTransform),
             record_filter=None,
-            transformations=[]
+            transformations=[],
         )
         return [
             DeclarativeStream(
@@ -75,7 +81,10 @@ class MockSource(AbstractSource):
                     record_selector=noop_record_selector,
                     stream_slicer=self._stream_slicer,
                     job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
-                        MockAsyncJobRepository(), stream_slices, JobTracker(_NO_LIMIT), self._message_repository,
+                        MockAsyncJobRepository(),
+                        stream_slices,
+                        JobTracker(_NO_LIMIT),
+                        self._message_repository,
                     ),
                 ),
                 config={},
@@ -102,7 +111,9 @@ class JobDeclarativeStreamTest(TestCase):
         output = read(
             self._source,
             self._CONFIG,
-            CatalogBuilder().with_stream(ConfiguredAirbyteStreamBuilder().with_name(_A_STREAM_NAME)).build()
+            CatalogBuilder()
+            .with_stream(ConfiguredAirbyteStreamBuilder().with_name(_A_STREAM_NAME))
+            .build(),
         )
 
         assert len(output.records) == 1
@@ -114,7 +125,9 @@ class JobDeclarativeStreamTest(TestCase):
         output = read(
             self._source,
             self._CONFIG,
-            CatalogBuilder().with_stream(ConfiguredAirbyteStreamBuilder().with_name(_A_STREAM_NAME)).build()
+            CatalogBuilder()
+            .with_stream(ConfiguredAirbyteStreamBuilder().with_name(_A_STREAM_NAME))
+            .build(),
         )
 
         assert not output.errors

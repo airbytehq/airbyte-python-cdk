@@ -55,7 +55,9 @@ def run() -> None:
                 continue
 
             print(f"Found module file: {'|'.join([parent_dir, file_name])}")
-            module = cast(str, ".".join([parent_dir, file_name])).replace("/", ".").removesuffix(".py")
+            module = (
+                cast(str, ".".join([parent_dir, file_name])).replace("/", ".").removesuffix(".py")
+            )
             public_modules.append(module)
 
     # recursively delete the docs/generated folder if it exists

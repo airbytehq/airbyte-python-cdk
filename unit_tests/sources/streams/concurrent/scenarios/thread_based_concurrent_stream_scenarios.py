@@ -5,7 +5,9 @@
 import logging
 
 from airbyte_cdk.sources.message import InMemoryMessageRepository
-from airbyte_cdk.sources.streams.concurrent.availability_strategy import AlwaysAvailableAvailabilityStrategy
+from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
+    AlwaysAvailableAvailabilityStrategy,
+)
 from airbyte_cdk.sources.streams.concurrent.cursor import FinalStateCursor
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
@@ -21,7 +23,17 @@ _message_repository = InMemoryMessageRepository()
 
 _id_only_stream = DefaultStream(
     partition_generator=InMemoryPartitionGenerator(
-        [InMemoryPartition("partition1", "stream1", None, [Record({"id": "1"}, InMemoryPartition("partition1", "stream1", None, [])), Record({"id": "2"}, InMemoryPartition("partition1", "stream1", None, []))])]
+        [
+            InMemoryPartition(
+                "partition1",
+                "stream1",
+                None,
+                [
+                    Record({"id": "1"}, InMemoryPartition("partition1", "stream1", None, [])),
+                    Record({"id": "2"}, InMemoryPartition("partition1", "stream1", None, [])),
+                ],
+            )
+        ]
     ),
     name="stream1",
     json_schema={
@@ -34,12 +46,21 @@ _id_only_stream = DefaultStream(
     primary_key=[],
     cursor_field=None,
     logger=logging.getLogger("test_logger"),
-    cursor=FinalStateCursor(stream_name="stream1", stream_namespace=None, message_repository=_message_repository),
+    cursor=FinalStateCursor(
+        stream_name="stream1", stream_namespace=None, message_repository=_message_repository
+    ),
 )
 
 _id_only_stream_with_slice_logger = DefaultStream(
     partition_generator=InMemoryPartitionGenerator(
-        [InMemoryPartition("partition1", "stream1", None, [Record({"id": "1"}, "stream1"), Record({"id": "2"}, "stream1")])]
+        [
+            InMemoryPartition(
+                "partition1",
+                "stream1",
+                None,
+                [Record({"id": "1"}, "stream1"), Record({"id": "2"}, "stream1")],
+            )
+        ]
     ),
     name="stream1",
     json_schema={
@@ -52,12 +73,24 @@ _id_only_stream_with_slice_logger = DefaultStream(
     primary_key=[],
     cursor_field=None,
     logger=logging.getLogger("test_logger"),
-    cursor=FinalStateCursor(stream_name="stream1", stream_namespace=None, message_repository=_message_repository),
+    cursor=FinalStateCursor(
+        stream_name="stream1", stream_namespace=None, message_repository=_message_repository
+    ),
 )
 
 _id_only_stream_with_primary_key = DefaultStream(
     partition_generator=InMemoryPartitionGenerator(
-        [InMemoryPartition("partition1", "stream1", None, [Record({"id": "1"}, InMemoryPartition("partition1", "stream1", None, [])), Record({"id": "2"}, InMemoryPartition("partition1", "stream1", None, []))])]
+        [
+            InMemoryPartition(
+                "partition1",
+                "stream1",
+                None,
+                [
+                    Record({"id": "1"}, InMemoryPartition("partition1", "stream1", None, [])),
+                    Record({"id": "2"}, InMemoryPartition("partition1", "stream1", None, [])),
+                ],
+            )
+        ]
     ),
     name="stream1",
     json_schema={
@@ -70,14 +103,32 @@ _id_only_stream_with_primary_key = DefaultStream(
     primary_key=["id"],
     cursor_field=None,
     logger=logging.getLogger("test_logger"),
-    cursor=FinalStateCursor(stream_name="stream1", stream_namespace=None, message_repository=_message_repository),
+    cursor=FinalStateCursor(
+        stream_name="stream1", stream_namespace=None, message_repository=_message_repository
+    ),
 )
 
 _id_only_stream_multiple_partitions = DefaultStream(
     partition_generator=InMemoryPartitionGenerator(
         [
-            InMemoryPartition("partition1", "stream1", {"p": "1"}, [Record({"id": "1"}, InMemoryPartition("partition1", "stream1", None, [])), Record({"id": "2"}, InMemoryPartition("partition1", "stream1", None, []))]),
-            InMemoryPartition("partition2", "stream1", {"p": "2"}, [Record({"id": "3"}, InMemoryPartition("partition1", "stream1", None, [])), Record({"id": "4"}, InMemoryPartition("partition1", "stream1", None, []))]),
+            InMemoryPartition(
+                "partition1",
+                "stream1",
+                {"p": "1"},
+                [
+                    Record({"id": "1"}, InMemoryPartition("partition1", "stream1", None, [])),
+                    Record({"id": "2"}, InMemoryPartition("partition1", "stream1", None, [])),
+                ],
+            ),
+            InMemoryPartition(
+                "partition2",
+                "stream1",
+                {"p": "2"},
+                [
+                    Record({"id": "3"}, InMemoryPartition("partition1", "stream1", None, [])),
+                    Record({"id": "4"}, InMemoryPartition("partition1", "stream1", None, [])),
+                ],
+            ),
         ]
     ),
     name="stream1",
@@ -91,14 +142,32 @@ _id_only_stream_multiple_partitions = DefaultStream(
     primary_key=[],
     cursor_field=None,
     logger=logging.getLogger("test_logger"),
-    cursor=FinalStateCursor(stream_name="stream1", stream_namespace=None, message_repository=_message_repository),
+    cursor=FinalStateCursor(
+        stream_name="stream1", stream_namespace=None, message_repository=_message_repository
+    ),
 )
 
 _id_only_stream_multiple_partitions_concurrency_level_two = DefaultStream(
     partition_generator=InMemoryPartitionGenerator(
         [
-            InMemoryPartition("partition1", "stream1", {"p": "1"}, [Record({"id": "1"}, InMemoryPartition("partition1", "stream1", None, [])), Record({"id": "2"}, InMemoryPartition("partition1", "stream1", None, []))]),
-            InMemoryPartition("partition2", "stream1", {"p": "2"}, [Record({"id": "3"}, InMemoryPartition("partition1", "stream1", None, [])), Record({"id": "4"}, InMemoryPartition("partition1", "stream1", None, []))]),
+            InMemoryPartition(
+                "partition1",
+                "stream1",
+                {"p": "1"},
+                [
+                    Record({"id": "1"}, InMemoryPartition("partition1", "stream1", None, [])),
+                    Record({"id": "2"}, InMemoryPartition("partition1", "stream1", None, [])),
+                ],
+            ),
+            InMemoryPartition(
+                "partition2",
+                "stream1",
+                {"p": "2"},
+                [
+                    Record({"id": "3"}, InMemoryPartition("partition1", "stream1", None, [])),
+                    Record({"id": "4"}, InMemoryPartition("partition1", "stream1", None, [])),
+                ],
+            ),
         ]
     ),
     name="stream1",
@@ -112,12 +181,24 @@ _id_only_stream_multiple_partitions_concurrency_level_two = DefaultStream(
     primary_key=[],
     cursor_field=None,
     logger=logging.getLogger("test_logger"),
-    cursor=FinalStateCursor(stream_name="stream1", stream_namespace=None, message_repository=_message_repository),
+    cursor=FinalStateCursor(
+        stream_name="stream1", stream_namespace=None, message_repository=_message_repository
+    ),
 )
 
 _stream_raising_exception = DefaultStream(
     partition_generator=InMemoryPartitionGenerator(
-        [InMemoryPartition("partition1", "stream1", None, [Record({"id": "1"}, InMemoryPartition("partition1", "stream1", None, [])), ValueError("test exception")])]
+        [
+            InMemoryPartition(
+                "partition1",
+                "stream1",
+                None,
+                [
+                    Record({"id": "1"}, InMemoryPartition("partition1", "stream1", None, [])),
+                    ValueError("test exception"),
+                ],
+            )
+        ]
     ),
     name="stream1",
     json_schema={
@@ -130,7 +211,9 @@ _stream_raising_exception = DefaultStream(
     primary_key=[],
     cursor_field=None,
     logger=logging.getLogger("test_logger"),
-    cursor=FinalStateCursor(stream_name="stream1", stream_namespace=None, message_repository=_message_repository),
+    cursor=FinalStateCursor(
+        stream_name="stream1", stream_namespace=None, message_repository=_message_repository
+    ),
 )
 
 test_concurrent_cdk_single_stream = (
@@ -241,8 +324,16 @@ test_concurrent_cdk_multiple_streams = (
                                 "partition1",
                                 "stream2",
                                 None,
-                                [Record({"id": "10", "key": "v1"}, InMemoryPartition("partition1", "stream2", None, [])),
-                                 Record({"id": "20", "key": "v2"}, InMemoryPartition("partition1", "stream2", None, []))],
+                                [
+                                    Record(
+                                        {"id": "10", "key": "v1"},
+                                        InMemoryPartition("partition1", "stream2", None, []),
+                                    ),
+                                    Record(
+                                        {"id": "20", "key": "v2"},
+                                        InMemoryPartition("partition1", "stream2", None, []),
+                                    ),
+                                ],
                             )
                         ]
                     ),
@@ -258,7 +349,11 @@ test_concurrent_cdk_multiple_streams = (
                     primary_key=[],
                     cursor_field=None,
                     logger=logging.getLogger("test_logger"),
-                    cursor=FinalStateCursor(stream_name="stream2", stream_namespace=None, message_repository=_message_repository),
+                    cursor=FinalStateCursor(
+                        stream_name="stream2",
+                        stream_namespace=None,
+                        message_repository=_message_repository,
+                    ),
                 ),
             ]
         )

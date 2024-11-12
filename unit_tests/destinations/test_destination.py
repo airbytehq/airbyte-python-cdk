@@ -52,7 +52,9 @@ class TestArgParsing:
             ),
         ],
     )
-    def test_successful_parse(self, arg_list: List[str], expected_output: Mapping[str, Any], destination: Destination):
+    def test_successful_parse(
+        self, arg_list: List[str], expected_output: Mapping[str, Any], destination: Destination
+    ):
         parsed_args = vars(destination.parse_args(arg_list))
         assert (
             parsed_args == expected_output
@@ -98,7 +100,13 @@ def write_file(path: PathLike, content: Union[str, Mapping]):
 
 
 def _wrapped(
-    msg: Union[AirbyteRecordMessage, AirbyteStateMessage, AirbyteCatalog, ConnectorSpecification, AirbyteConnectionStatus]
+    msg: Union[
+        AirbyteRecordMessage,
+        AirbyteStateMessage,
+        AirbyteCatalog,
+        ConnectorSpecification,
+        AirbyteConnectionStatus,
+    ],
 ) -> AirbyteMessage:
     if isinstance(msg, AirbyteRecordMessage):
         return AirbyteMessage(type=Type.RECORD, record=msg)
@@ -145,13 +153,17 @@ class TestRun:
         mocker.patch.object(destination, "parse_args")
         mocker.patch.object(destination, "run_cmd")
         destination.run(["dummy"])
-        destination_module.init_uncaught_exception_handler.assert_called_once_with(destination_module.logger)
+        destination_module.init_uncaught_exception_handler.assert_called_once_with(
+            destination_module.logger
+        )
 
     def test_run_spec(self, mocker, destination: Destination):
         args = {"command": "spec"}
         parsed_args = argparse.Namespace(**args)
 
-        expected_spec = ConnectorSpecification(connectionSpecification={"json_schema": {"prop": "value"}})
+        expected_spec = ConnectorSpecification(
+            connectionSpecification={"json_schema": {"prop": "value"}}
+        )
         mocker.patch.object(destination, "spec", return_value=expected_spec, autospec=True)
 
         spec_message = next(iter(destination.run_cmd(parsed_args)))
@@ -172,7 +184,9 @@ class TestRun:
         destination.run_cmd(parsed_args)
         spec_msg = ConnectorSpecification(connectionSpecification={})
         mocker.patch.object(destination, "spec", return_value=spec_msg)
-        validate_mock = mocker.patch("airbyte_cdk.destinations.destination.check_config_against_spec_or_exit")
+        validate_mock = mocker.patch(
+            "airbyte_cdk.destinations.destination.check_config_against_spec_or_exit"
+        )
         expected_check_result = AirbyteConnectionStatus(status=Status.SUCCEEDED)
         mocker.patch.object(destination, "check", return_value=expected_check_result, autospec=True)
 
@@ -226,7 +240,11 @@ class TestRun:
         dummy_catalog = ConfiguredAirbyteCatalog(
             streams=[
                 ConfiguredAirbyteStream(
-                    stream=AirbyteStream(name="mystream", json_schema={"type": "object"}, supported_sync_modes=[SyncMode.full_refresh]),
+                    stream=AirbyteStream(
+                        name="mystream",
+                        json_schema={"type": "object"},
+                        supported_sync_modes=[SyncMode.full_refresh],
+                    ),
                     sync_mode=SyncMode.full_refresh,
                     destination_sync_mode=DestinationSyncMode.overwrite,
                 )
@@ -240,14 +258,27 @@ class TestRun:
 
         expected_write_result = [_wrapped(_state({"k1": "v1"})), _wrapped(_state({"k2": "v2"}))]
         mocker.patch.object(
-            destination, "write", return_value=iter(expected_write_result), autospec=True  # convert to iterator to mimic real usage
+            destination,
+            "write",
+            return_value=iter(expected_write_result),
+            autospec=True,  # convert to iterator to mimic real usage
         )
         spec_msg = ConnectorSpecification(connectionSpecification={})
         mocker.patch.object(destination, "spec", return_value=spec_msg)
-        validate_mock = mocker.patch("airbyte_cdk.destinations.destination.check_config_against_spec_or_exit")
+        validate_mock = mocker.patch(
+            "airbyte_cdk.destinations.destination.check_config_against_spec_or_exit"
+        )
         # mock input is a record followed by some state messages
-        mocked_input: List[AirbyteMessage] = [_wrapped(_record("s1", {"k1": "v1"})), *expected_write_result]
-        mocked_stdin_string = "\n".join([orjson.dumps(AirbyteMessageSerializer.dump(record)).decode() for record in mocked_input])
+        mocked_input: List[AirbyteMessage] = [
+            _wrapped(_record("s1", {"k1": "v1"})),
+            *expected_write_result,
+        ]
+        mocked_stdin_string = "\n".join(
+            [
+                orjson.dumps(AirbyteMessageSerializer.dump(record)).decode()
+                for record in mocked_input
+            ]
+        )
         mocked_stdin_string += "\n add this non-serializable string to verify the destination does not break on malformed input"
         mocked_stdin = io.TextIOWrapper(io.BytesIO(bytes(mocked_stdin_string, "utf-8")))
 

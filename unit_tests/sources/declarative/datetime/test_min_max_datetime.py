@@ -18,12 +18,48 @@ new_date = "2022-06-24T20:12:19.597854Z"
 @pytest.mark.parametrize(
     "test_name, date, min_date, max_date, expected_date",
     [
-        ("test_time_is_greater_than_min", "{{ config['older'] }}", "{{ stream_state['newer'] }}", "", new_date),
-        ("test_time_is_less_than_min", "{{ stream_state['newer'] }}", "{{ config['older'] }}", "", new_date),
-        ("test_time_is_equal_to_min", "{{ config['older'] }}", "{{ config['older'] }}", "", old_date),
-        ("test_time_is_greater_than_max", "{{ stream_state['newer'] }}", "", "{{ config['older'] }}", old_date),
-        ("test_time_is_less_than_max", "{{ config['older'] }}", "", "{{ stream_state['newer'] }}", old_date),
-        ("test_time_is_equal_to_min", "{{ stream_state['newer'] }}", "{{ stream_state['newer'] }}", "", new_date),
+        (
+            "test_time_is_greater_than_min",
+            "{{ config['older'] }}",
+            "{{ stream_state['newer'] }}",
+            "",
+            new_date,
+        ),
+        (
+            "test_time_is_less_than_min",
+            "{{ stream_state['newer'] }}",
+            "{{ config['older'] }}",
+            "",
+            new_date,
+        ),
+        (
+            "test_time_is_equal_to_min",
+            "{{ config['older'] }}",
+            "{{ config['older'] }}",
+            "",
+            old_date,
+        ),
+        (
+            "test_time_is_greater_than_max",
+            "{{ stream_state['newer'] }}",
+            "",
+            "{{ config['older'] }}",
+            old_date,
+        ),
+        (
+            "test_time_is_less_than_max",
+            "{{ config['older'] }}",
+            "",
+            "{{ stream_state['newer'] }}",
+            old_date,
+        ),
+        (
+            "test_time_is_equal_to_min",
+            "{{ stream_state['newer'] }}",
+            "{{ stream_state['newer'] }}",
+            "",
+            new_date,
+        ),
         (
             "test_time_is_between_min_and_max",
             "{{ config['middle'] }}",
@@ -31,8 +67,20 @@ new_date = "2022-06-24T20:12:19.597854Z"
             "{{ stream_state['newer'] }}",
             middle_date,
         ),
-        ("test_min_newer_time_from_parameters", "{{ config['older'] }}", "{{ parameters['newer'] }}", "", new_date),
-        ("test_max_newer_time_from_parameters", "{{ stream_state['newer'] }}", "", "{{ parameters['older'] }}", old_date),
+        (
+            "test_min_newer_time_from_parameters",
+            "{{ config['older'] }}",
+            "{{ parameters['newer'] }}",
+            "",
+            new_date,
+        ),
+        (
+            "test_max_newer_time_from_parameters",
+            "{{ stream_state['newer'] }}",
+            "",
+            "{{ parameters['older'] }}",
+            old_date,
+        ),
     ],
 )
 def test_min_max_datetime(test_name, date, min_date, max_date, expected_date):
@@ -40,7 +88,9 @@ def test_min_max_datetime(test_name, date, min_date, max_date, expected_date):
     stream_state = {"newer": new_date}
     parameters = {"newer": new_date, "older": old_date}
 
-    min_max_date = MinMaxDatetime(datetime=date, min_datetime=min_date, max_datetime=max_date, parameters=parameters)
+    min_max_date = MinMaxDatetime(
+        datetime=date, min_datetime=min_date, max_datetime=max_date, parameters=parameters
+    )
     actual_date = min_max_date.get_datetime(config, **{"stream_state": stream_state})
 
     assert actual_date == datetime.datetime.strptime(expected_date, date_format)
@@ -59,7 +109,9 @@ def test_custom_datetime_format():
     )
     actual_date = min_max_date.get_datetime(config, **{"stream_state": stream_state})
 
-    assert actual_date == datetime.datetime.strptime("2022-01-01T20:12:19", "%Y-%m-%dT%H:%M:%S").replace(tzinfo=datetime.timezone.utc)
+    assert actual_date == datetime.datetime.strptime(
+        "2022-01-01T20:12:19", "%Y-%m-%dT%H:%M:%S"
+    ).replace(tzinfo=datetime.timezone.utc)
 
 
 def test_format_is_a_number():
@@ -75,17 +127,26 @@ def test_format_is_a_number():
     )
     actual_date = min_max_date.get_datetime(config, **{"stream_state": stream_state})
 
-    assert actual_date == datetime.datetime.strptime("20220101", "%Y%m%d").replace(tzinfo=datetime.timezone.utc)
+    assert actual_date == datetime.datetime.strptime("20220101", "%Y%m%d").replace(
+        tzinfo=datetime.timezone.utc
+    )
 
 
 def test_set_datetime_format():
-    min_max_date = MinMaxDatetime(datetime="{{ config['middle'] }}", min_datetime="{{ config['older'] }}", parameters={})
+    min_max_date = MinMaxDatetime(
+        datetime="{{ config['middle'] }}", min_datetime="{{ config['older'] }}", parameters={}
+    )
 
     # Retrieve datetime using the default datetime formatting
-    default_fmt_config = {"older": "2021-01-01T20:12:19.597854Z", "middle": "2022-01-01T20:12:19.597854Z"}
+    default_fmt_config = {
+        "older": "2021-01-01T20:12:19.597854Z",
+        "middle": "2022-01-01T20:12:19.597854Z",
+    }
     actual_date = min_max_date.get_datetime(default_fmt_config)
 
-    assert actual_date == datetime.datetime.strptime("2022-01-01T20:12:19.597854Z", "%Y-%m-%dT%H:%M:%S.%f%z")
+    assert actual_date == datetime.datetime.strptime(
+        "2022-01-01T20:12:19.597854Z", "%Y-%m-%dT%H:%M:%S.%f%z"
+    )
 
     # Set a different datetime format and attempt to retrieve datetime using an updated format
     min_max_date.datetime_format = "%Y-%m-%dT%H:%M:%S"
@@ -93,7 +154,9 @@ def test_set_datetime_format():
     custom_fmt_config = {"older": "2021-01-01T20:12:19", "middle": "2022-01-01T20:12:19"}
     actual_date = min_max_date.get_datetime(custom_fmt_config)
 
-    assert actual_date == datetime.datetime.strptime("2022-01-01T20:12:19", "%Y-%m-%dT%H:%M:%S").replace(tzinfo=datetime.timezone.utc)
+    assert actual_date == datetime.datetime.strptime(
+        "2022-01-01T20:12:19", "%Y-%m-%dT%H:%M:%S"
+    ).replace(tzinfo=datetime.timezone.utc)
 
 
 def test_min_max_datetime_lazy_eval():
@@ -104,7 +167,9 @@ def test_min_max_datetime_lazy_eval():
         "max_datetime": "{{ parameters.max_datetime }}",
     }
 
-    assert datetime.datetime(2022, 1, 10, 0, 0, tzinfo=datetime.timezone.utc) == MinMaxDatetime(**kwargs, parameters={}).get_datetime({})
+    assert datetime.datetime(2022, 1, 10, 0, 0, tzinfo=datetime.timezone.utc) == MinMaxDatetime(
+        **kwargs, parameters={}
+    ).get_datetime({})
     assert datetime.datetime(2022, 1, 20, 0, 0, tzinfo=datetime.timezone.utc) == MinMaxDatetime(
         **kwargs, parameters={"min_datetime": "2022-01-20T00:00:00"}
     ).get_datetime({})
@@ -117,8 +182,14 @@ def test_min_max_datetime_lazy_eval():
     "input_datetime",
     [
         pytest.param("2022-01-01T00:00:00", id="test_create_min_max_datetime_from_string"),
-        pytest.param(InterpolatedString.create("2022-01-01T00:00:00", parameters={}), id="test_create_min_max_datetime_from_string"),
-        pytest.param(MinMaxDatetime("2022-01-01T00:00:00", parameters={}), id="test_create_min_max_datetime_from_minmaxdatetime"),
+        pytest.param(
+            InterpolatedString.create("2022-01-01T00:00:00", parameters={}),
+            id="test_create_min_max_datetime_from_string",
+        ),
+        pytest.param(
+            MinMaxDatetime("2022-01-01T00:00:00", parameters={}),
+            id="test_create_min_max_datetime_from_minmaxdatetime",
+        ),
     ],
 )
 def test_create_min_max_datetime(input_datetime):

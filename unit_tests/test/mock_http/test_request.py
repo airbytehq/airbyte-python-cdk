@@ -8,21 +8,37 @@ from airbyte_cdk.test.mock_http.request import ANY_QUERY_PARAMS, HttpRequest
 
 class HttpRequestMatcherTest(TestCase):
     def test_given_query_params_as_dict_and_string_then_query_params_are_properly_considered(self):
-        with_string = HttpRequest("mock://test.com/path", query_params="a_query_param=q1&a_list_param=first&a_list_param=second")
-        with_dict = HttpRequest("mock://test.com/path", query_params={"a_query_param": "q1", "a_list_param": ["first", "second"]})
+        with_string = HttpRequest(
+            "mock://test.com/path",
+            query_params="a_query_param=q1&a_list_param=first&a_list_param=second",
+        )
+        with_dict = HttpRequest(
+            "mock://test.com/path",
+            query_params={"a_query_param": "q1", "a_list_param": ["first", "second"]},
+        )
         assert with_string.matches(with_dict) and with_dict.matches(with_string)
 
     def test_given_query_params_in_url_and_also_provided_then_raise_error(self):
         with pytest.raises(ValueError):
-            HttpRequest("mock://test.com/path?a_query_param=1", query_params={"another_query_param": "2"})
+            HttpRequest(
+                "mock://test.com/path?a_query_param=1", query_params={"another_query_param": "2"}
+            )
 
     def test_given_same_url_query_params_and_subset_headers_when_matches_then_return_true(self):
-        request_to_match = HttpRequest("mock://test.com/path", {"a_query_param": "q1"}, {"first_header": "h1"})
-        actual_request = HttpRequest("mock://test.com/path", {"a_query_param": "q1"}, {"first_header": "h1", "second_header": "h2"})
+        request_to_match = HttpRequest(
+            "mock://test.com/path", {"a_query_param": "q1"}, {"first_header": "h1"}
+        )
+        actual_request = HttpRequest(
+            "mock://test.com/path",
+            {"a_query_param": "q1"},
+            {"first_header": "h1", "second_header": "h2"},
+        )
         assert actual_request.matches(request_to_match)
 
     def test_given_url_differs_when_matches_then_return_false(self):
-        assert not HttpRequest("mock://test.com/another_path").matches(HttpRequest("mock://test.com/path"))
+        assert not HttpRequest("mock://test.com/another_path").matches(
+            HttpRequest("mock://test.com/path")
+        )
 
     def test_given_query_params_differs_when_matches_then_return_false(self):
         request_to_match = HttpRequest("mock://test.com/path", {"a_query_param": "q1"})
@@ -31,27 +47,39 @@ class HttpRequestMatcherTest(TestCase):
 
     def test_given_query_params_is_subset_differs_when_matches_then_return_false(self):
         request_to_match = HttpRequest("mock://test.com/path", {"a_query_param": "q1"})
-        actual_request = HttpRequest("mock://test.com/path", {"a_query_param": "q1", "another_query_param": "q2"})
+        actual_request = HttpRequest(
+            "mock://test.com/path", {"a_query_param": "q1", "another_query_param": "q2"}
+        )
         assert not actual_request.matches(request_to_match)
 
     def test_given_headers_is_subset_differs_when_matches_then_return_true(self):
         request_to_match = HttpRequest("mock://test.com/path", headers={"first_header": "h1"})
-        actual_request = HttpRequest("mock://test.com/path", headers={"first_header": "h1", "second_header": "h2"})
+        actual_request = HttpRequest(
+            "mock://test.com/path", headers={"first_header": "h1", "second_header": "h2"}
+        )
         assert actual_request.matches(request_to_match)
 
     def test_given_headers_value_does_not_match_differs_when_matches_then_return_false(self):
         request_to_match = HttpRequest("mock://test.com/path", headers={"first_header": "h1"})
-        actual_request = HttpRequest("mock://test.com/path", headers={"first_header": "value does not match"})
+        actual_request = HttpRequest(
+            "mock://test.com/path", headers={"first_header": "value does not match"}
+        )
         assert not actual_request.matches(request_to_match)
 
     def test_given_same_body_mappings_value_when_matches_then_return_true(self):
-        request_to_match = HttpRequest("mock://test.com/path", body={"first_field": "first_value", "second_field": 2})
-        actual_request = HttpRequest("mock://test.com/path", body={"first_field": "first_value", "second_field": 2})
+        request_to_match = HttpRequest(
+            "mock://test.com/path", body={"first_field": "first_value", "second_field": 2}
+        )
+        actual_request = HttpRequest(
+            "mock://test.com/path", body={"first_field": "first_value", "second_field": 2}
+        )
         assert actual_request.matches(request_to_match)
 
     def test_given_bodies_are_mapping_and_differs_when_matches_then_return_false(self):
         request_to_match = HttpRequest("mock://test.com/path", body={"first_field": "first_value"})
-        actual_request = HttpRequest("mock://test.com/path", body={"first_field": "value does not match"})
+        actual_request = HttpRequest(
+            "mock://test.com/path", body={"first_field": "value does not match"}
+        )
         assert not actual_request.matches(request_to_match)
 
     def test_given_same_mapping_and_bytes_when_matches_then_return_true(self):
@@ -61,7 +89,9 @@ class HttpRequestMatcherTest(TestCase):
 
     def test_given_different_mapping_and_bytes_when_matches_then_return_false(self):
         request_to_match = HttpRequest("mock://test.com/path", body={"first_field": "first_value"})
-        actual_request = HttpRequest("mock://test.com/path", body=b'{"first_field": "another value"}')
+        actual_request = HttpRequest(
+            "mock://test.com/path", body=b'{"first_field": "another value"}'
+        )
         assert not actual_request.matches(request_to_match)
 
     def test_given_same_mapping_and_str_when_matches_then_return_true(self):
@@ -71,26 +101,36 @@ class HttpRequestMatcherTest(TestCase):
 
     def test_given_different_mapping_and_str_when_matches_then_return_false(self):
         request_to_match = HttpRequest("mock://test.com/path", body={"first_field": "first_value"})
-        actual_request = HttpRequest("mock://test.com/path", body='{"first_field": "another value"}')
+        actual_request = HttpRequest(
+            "mock://test.com/path", body='{"first_field": "another value"}'
+        )
         assert not actual_request.matches(request_to_match)
 
     def test_given_same_bytes_and_mapping_when_matches_then_return_true(self):
-        request_to_match = HttpRequest("mock://test.com/path", body=b'{"first_field": "first_value"}')
+        request_to_match = HttpRequest(
+            "mock://test.com/path", body=b'{"first_field": "first_value"}'
+        )
         actual_request = HttpRequest("mock://test.com/path", body={"first_field": "first_value"})
         assert actual_request.matches(request_to_match)
 
     def test_given_different_bytes_and_mapping_when_matches_then_return_false(self):
-        request_to_match = HttpRequest("mock://test.com/path", body=b'{"first_field": "first_value"}')
+        request_to_match = HttpRequest(
+            "mock://test.com/path", body=b'{"first_field": "first_value"}'
+        )
         actual_request = HttpRequest("mock://test.com/path", body={"first_field": "another value"})
         assert not actual_request.matches(request_to_match)
 
     def test_given_same_str_and_mapping_when_matches_then_return_true(self):
-        request_to_match = HttpRequest("mock://test.com/path", body='{"first_field": "first_value"}')
+        request_to_match = HttpRequest(
+            "mock://test.com/path", body='{"first_field": "first_value"}'
+        )
         actual_request = HttpRequest("mock://test.com/path", body={"first_field": "first_value"})
         assert actual_request.matches(request_to_match)
 
     def test_given_different_str_and_mapping_when_matches_then_return_false(self):
-        request_to_match = HttpRequest("mock://test.com/path", body='{"first_field": "first_value"}')
+        request_to_match = HttpRequest(
+            "mock://test.com/path", body='{"first_field": "first_value"}'
+        )
         actual_request = HttpRequest("mock://test.com/path", body={"first_field": "another value"})
         assert not actual_request.matches(request_to_match)
 

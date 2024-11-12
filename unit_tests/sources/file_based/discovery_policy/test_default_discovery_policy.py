@@ -5,7 +5,9 @@
 import unittest
 from unittest.mock import Mock
 
-from airbyte_cdk.sources.file_based.discovery_policy.default_discovery_policy import DefaultDiscoveryPolicy
+from airbyte_cdk.sources.file_based.discovery_policy.default_discovery_policy import (
+    DefaultDiscoveryPolicy,
+)
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
 
 

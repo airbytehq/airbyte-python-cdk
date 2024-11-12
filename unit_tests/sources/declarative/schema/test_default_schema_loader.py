@@ -12,7 +12,10 @@ from airbyte_cdk.sources.declarative.schema import DefaultSchemaLoader
     "found_schema, found_error, expected_schema",
     [
         pytest.param(
-            {"type": "object", "properties": {}}, None, {"type": "object", "properties": {}}, id="test_has_schema_in_default_location"
+            {"type": "object", "properties": {}},
+            None,
+            {"type": "object", "properties": {}},
+            id="test_has_schema_in_default_location",
         ),
         pytest.param(None, FileNotFoundError, {}, id="test_schema_file_does_not_exist"),
     ],

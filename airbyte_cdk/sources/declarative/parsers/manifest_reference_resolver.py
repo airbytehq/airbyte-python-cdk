@@ -5,7 +5,10 @@
 import re
 from typing import Any, Mapping, Set, Tuple, Union
 
-from airbyte_cdk.sources.declarative.parsers.custom_exceptions import CircularReferenceException, UndefinedReferenceException
+from airbyte_cdk.sources.declarative.parsers.custom_exceptions import (
+    CircularReferenceException,
+    UndefinedReferenceException,
+)
 
 REF_TAG = "$ref"
 
@@ -105,7 +108,11 @@ class ManifestReferenceResolver:
 
     def _evaluate_node(self, node: Any, manifest: Mapping[str, Any], visited: Set[Any]) -> Any:
         if isinstance(node, dict):
-            evaluated_dict = {k: self._evaluate_node(v, manifest, visited) for k, v in node.items() if not self._is_ref_key(k)}
+            evaluated_dict = {
+                k: self._evaluate_node(v, manifest, visited)
+                for k, v in node.items()
+                if not self._is_ref_key(k)
+            }
             if REF_TAG in node:
                 # The node includes a $ref key, so we splat the referenced value(s) into the evaluated dict
                 evaluated_ref = self._evaluate_node(node[REF_TAG], manifest, visited)

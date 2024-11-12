@@ -28,15 +28,23 @@ class ConcurrencyLevel:
         if isinstance(self.default_concurrency, int):
             self._default_concurrency: Union[int, InterpolatedString] = self.default_concurrency
         elif "config" in self.default_concurrency and not self.max_concurrency:
-            raise ValueError("ConcurrencyLevel requires that max_concurrency be defined if the default_concurrency can be used-specified")
+            raise ValueError(
+                "ConcurrencyLevel requires that max_concurrency be defined if the default_concurrency can be used-specified"
+            )
         else:
-            self._default_concurrency = InterpolatedString.create(self.default_concurrency, parameters=parameters)
+            self._default_concurrency = InterpolatedString.create(
+                self.default_concurrency, parameters=parameters
+            )
 
     def get_concurrency_level(self) -> int:
         if isinstance(self._default_concurrency, InterpolatedString):
             evaluated_default_concurrency = self._default_concurrency.eval(config=self.config)
             if not isinstance(evaluated_default_concurrency, int):
                 raise ValueError("default_concurrency did not evaluate to an integer")
-            return min(evaluated_default_concurrency, self.max_concurrency) if self.max_concurrency else evaluated_default_concurrency
+            return (
+                min(evaluated_default_concurrency, self.max_concurrency)
+                if self.max_concurrency
+                else evaluated_default_concurrency
+            )
         else:
             return self._default_concurrency

@@ -11,7 +11,13 @@ from functools import cached_property, lru_cache
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, MutableMapping, Optional, Union
 
 import airbyte_cdk.sources.utils.casing as casing
-from airbyte_cdk.models import AirbyteMessage, AirbyteStream, ConfiguredAirbyteStream, DestinationSyncMode, SyncMode
+from airbyte_cdk.models import (
+    AirbyteMessage,
+    AirbyteStream,
+    ConfiguredAirbyteStream,
+    DestinationSyncMode,
+    SyncMode,
+)
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.streams.checkpoint import (
     CheckpointMode,
@@ -84,7 +90,10 @@ class CheckpointMixin(ABC):
         """State setter, accept state serialized by state getter."""
 
 
-@deprecated(version="0.87.0", reason="Deprecated in favor of the CheckpointMixin which offers similar functionality")
+@deprecated(
+    version="0.87.0",
+    reason="Deprecated in favor of the CheckpointMixin which offers similar functionality",
+)
 class IncrementalMixin(CheckpointMixin, ABC):
     """Mixin to make stream incremental.
 
@@ -192,9 +201,14 @@ class Stream(ABC):
             for record_data_or_message in records:
                 yield record_data_or_message
                 if isinstance(record_data_or_message, Mapping) or (
-                    hasattr(record_data_or_message, "type") and record_data_or_message.type == MessageType.RECORD
+                    hasattr(record_data_or_message, "type")
+                    and record_data_or_message.type == MessageType.RECORD
                 ):
-                    record_data = record_data_or_message if isinstance(record_data_or_message, Mapping) else record_data_or_message.record
+                    record_data = (
+                        record_data_or_message
+                        if isinstance(record_data_or_message, Mapping)
+                        else record_data_or_message.record
+                    )
 
                     # Thanks I hate it. RFR fundamentally doesn't fit with the concept of the legacy Stream.get_updated_state()
                     # method because RFR streams rely on pagination as a cursor. Stream.get_updated_state() was designed to make
@@ -206,14 +220,23 @@ class Stream(ABC):
                     if self.cursor_field:
                         # Some connectors have streams that implement get_updated_state(), but do not define a cursor_field. This
                         # should be fixed on the stream implementation, but we should also protect against this in the CDK as well
-                        stream_state_tracker = self.get_updated_state(stream_state_tracker, record_data)
+                        stream_state_tracker = self.get_updated_state(
+                            stream_state_tracker, record_data
+                        )
                         self._observe_state(checkpoint_reader, stream_state_tracker)
                     record_counter += 1
 
                     checkpoint_interval = self.state_checkpoint_interval
                     checkpoint = checkpoint_reader.get_checkpoint()
-                    if should_checkpoint and checkpoint_interval and record_counter % checkpoint_interval == 0 and checkpoint is not None:
-                        airbyte_state_message = self._checkpoint_state(checkpoint, state_manager=state_manager)
+                    if (
+                        should_checkpoint
+                        and checkpoint_interval
+                        and record_counter % checkpoint_interval == 0
+                        and checkpoint is not None
+                    ):
+                        airbyte_state_message = self._checkpoint_state(
+                            checkpoint, state_manager=state_manager
+                        )
                         yield airbyte_state_message
 
                     if internal_config.is_limit_reached(record_counter):
@@ -221,7 +244,9 @@ class Stream(ABC):
             self._observe_state(checkpoint_reader)
             checkpoint_state = checkpoint_reader.get_checkpoint()
             if should_checkpoint and checkpoint_state is not None:
-                airbyte_state_message = self._checkpoint_state(checkpoint_state, state_manager=state_manager)
+                airbyte_state_message = self._checkpoint_state(
+                    checkpoint_state, state_manager=state_manager
+                )
                 yield airbyte_state_message
 
             next_slice = checkpoint_reader.next()
@@ -252,7 +277,9 @@ class Stream(ABC):
             configured_stream=configured_stream,
             logger=self.logger,
             slice_logger=DebugSliceLogger(),
-            stream_state=dict(state) if state else {},  # read() expects MutableMapping instead of Mapping which is used more often
+            stream_state=dict(state)
+            if state
+            else {},  # read() expects MutableMapping instead of Mapping which is used more often
             state_manager=None,
             internal_config=InternalConfig(),
         )
@@ -378,7 +405,11 @@ class Stream(ABC):
         """
 
     def stream_slices(
-        self, *, sync_mode: SyncMode, cursor_field: Optional[List[str]] = None, stream_state: Optional[Mapping[str, Any]] = None
+        self,
+        *,
+        sync_mode: SyncMode,
+        cursor_field: Optional[List[str]] = None,
+        stream_state: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[Optional[Mapping[str, Any]]]:
         """
         Override to define the slices for this stream. See the stream slicing section of the docs for more information.
@@ -449,12 +480,16 @@ class Stream(ABC):
             mappings_or_slices = [{}]
 
         slices_iterable_copy, iterable_for_detecting_format = itertools.tee(mappings_or_slices, 2)
-        stream_classification = self._classify_stream(mappings_or_slices=iterable_for_detecting_format)
+        stream_classification = self._classify_stream(
+            mappings_or_slices=iterable_for_detecting_format
+        )
 
         # Streams that override has_multiple_slices are explicitly indicating that they will iterate over
         # multiple partitions. Inspecting slices to automatically apply the correct cursor is only needed as
         # a backup. So if this value was already assigned to True by the stream, we don't need to reassign it
-        self.has_multiple_slices = self.has_multiple_slices or stream_classification.has_multiple_slices
+        self.has_multiple_slices = (
+            self.has_multiple_slices or stream_classification.has_multiple_slices
+        )
 
         cursor = self.get_cursor()
         if cursor:
@@ -463,7 +498,9 @@ class Stream(ABC):
         checkpoint_mode = self._checkpoint_mode
 
         if cursor and stream_classification.is_legacy_format:
-            return LegacyCursorBasedCheckpointReader(stream_slices=slices_iterable_copy, cursor=cursor, read_state_from_cursor=True)
+            return LegacyCursorBasedCheckpointReader(
+                stream_slices=slices_iterable_copy, cursor=cursor, read_state_from_cursor=True
+            )
         elif cursor:
             return CursorBasedCheckpointReader(
                 stream_slices=slices_iterable_copy,
@@ -475,7 +512,9 @@ class Stream(ABC):
             # not iterate over a static set of slices.
             return ResumableFullRefreshCheckpointReader(stream_state=stream_state)
         elif checkpoint_mode == CheckpointMode.INCREMENTAL:
-            return IncrementalCheckpointReader(stream_slices=slices_iterable_copy, stream_state=stream_state)
+            return IncrementalCheckpointReader(
+                stream_slices=slices_iterable_copy, stream_state=stream_state
+            )
         else:
             return FullRefreshCheckpointReader(stream_slices=slices_iterable_copy)
 
@@ -489,7 +528,9 @@ class Stream(ABC):
             return CheckpointMode.FULL_REFRESH
 
     @staticmethod
-    def _classify_stream(mappings_or_slices: Iterator[Optional[Union[Mapping[str, Any], StreamSlice]]]) -> StreamClassification:
+    def _classify_stream(
+        mappings_or_slices: Iterator[Optional[Union[Mapping[str, Any], StreamSlice]]],
+    ) -> StreamClassification:
         """
         This is a bit of a crazy solution, but also the only way we can detect certain attributes about the stream since Python
         streams do not follow consistent implementation patterns. We care about the following two attributes:
@@ -506,7 +547,9 @@ class Stream(ABC):
             raise ValueError("A stream should always have at least one slice")
         try:
             next_slice = next(mappings_or_slices)
-            if isinstance(next_slice, StreamSlice) and next_slice == StreamSlice(partition={}, cursor_slice={}):
+            if isinstance(next_slice, StreamSlice) and next_slice == StreamSlice(
+                partition={}, cursor_slice={}
+            ):
                 is_legacy_format = False
                 slice_has_value = False
             elif next_slice == {}:
@@ -526,7 +569,9 @@ class Stream(ABC):
         if slice_has_value:
             # If the first slice contained a partition value from the result of stream_slices(), this is a substream that might
             # have multiple parent records to iterate over
-            return StreamClassification(is_legacy_format=is_legacy_format, has_multiple_slices=slice_has_value)
+            return StreamClassification(
+                is_legacy_format=is_legacy_format, has_multiple_slices=slice_has_value
+            )
 
         try:
             # If stream_slices() returns multiple slices, this is also a substream that can potentially generate empty slices
@@ -534,7 +579,9 @@ class Stream(ABC):
             return StreamClassification(is_legacy_format=is_legacy_format, has_multiple_slices=True)
         except StopIteration:
             # If the result of stream_slices() only returns a single empty stream slice, then we know this is a regular stream
-            return StreamClassification(is_legacy_format=is_legacy_format, has_multiple_slices=False)
+            return StreamClassification(
+                is_legacy_format=is_legacy_format, has_multiple_slices=False
+            )
 
     def log_stream_sync_configuration(self) -> None:
         """
@@ -549,7 +596,9 @@ class Stream(ABC):
         )
 
     @staticmethod
-    def _wrapped_primary_key(keys: Optional[Union[str, List[str], List[List[str]]]]) -> Optional[List[List[str]]]:
+    def _wrapped_primary_key(
+        keys: Optional[Union[str, List[str], List[List[str]]]],
+    ) -> Optional[List[List[str]]]:
         """
         :return: wrap the primary_key property in a list of list of strings required by the Airbyte Stream object.
         """
@@ -571,7 +620,9 @@ class Stream(ABC):
         else:
             raise ValueError(f"Element must be either list or str. Got: {type(keys)}")
 
-    def _observe_state(self, checkpoint_reader: CheckpointReader, stream_state: Optional[Mapping[str, Any]] = None) -> None:
+    def _observe_state(
+        self, checkpoint_reader: CheckpointReader, stream_state: Optional[Mapping[str, Any]] = None
+    ) -> None:
         """
         Convenience method that attempts to read the Stream's state using the recommended way of connector's managing their
         own state via state setter/getter. But if we get back an AttributeError, then the legacy Stream.get_updated_state()
@@ -617,7 +668,9 @@ class Stream(ABC):
     def configured_json_schema(self, json_schema: Dict[str, Any]) -> None:
         self._configured_json_schema = self._filter_schema_invalid_properties(json_schema)
 
-    def _filter_schema_invalid_properties(self, configured_catalog_json_schema: Dict[str, Any]) -> Dict[str, Any]:
+    def _filter_schema_invalid_properties(
+        self, configured_catalog_json_schema: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         Filters the properties in json_schema that are not present in the stream schema.
         Configured Schemas can have very old fields, so we need to housekeeping ourselves.
@@ -639,6 +692,8 @@ class Stream(ABC):
         valid_configured_schema_properties = {}
 
         for configured_schema_property in valid_configured_schema_properties_keys:
-            valid_configured_schema_properties[configured_schema_property] = stream_schema_properties[configured_schema_property]
+            valid_configured_schema_properties[configured_schema_property] = (
+                stream_schema_properties[configured_schema_property]
+            )
 
         return {**configured_catalog_json_schema, "properties": valid_configured_schema_properties}

@@ -80,7 +80,9 @@ def test_get_other_message_stream_descriptor_fails():
         control=AirbyteControlMessage(
             type=OrchestratorType.CONNECTOR_CONFIG,
             emitted_at=10,
-            connectorConfig=AirbyteControlConnectorConfigMessage(config={"any config": "a config value"}),
+            connectorConfig=AirbyteControlConnectorConfigMessage(
+                config={"any config": "a config value"}
+            ),
         ),
     )
     with pytest.raises(NotImplementedError):

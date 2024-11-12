@@ -28,7 +28,9 @@ _SEVERITY_BY_LOG_LEVEL = {
 
 def _is_severe_enough(threshold: Level, level: Level) -> bool:
     if threshold not in _SEVERITY_BY_LOG_LEVEL:
-        _LOGGER.warning(f"Log level {threshold} for threshold is not supported. This is probably a CDK bug. Please contact Airbyte.")
+        _LOGGER.warning(
+            f"Log level {threshold} for threshold is not supported. This is probably a CDK bug. Please contact Airbyte."
+        )
         return True
 
     if level not in _SEVERITY_BY_LOG_LEVEL:
@@ -80,7 +82,12 @@ class InMemoryMessageRepository(MessageRepository):
     def log_message(self, level: Level, message_provider: Callable[[], LogMessage]) -> None:
         if _is_severe_enough(self._log_level, level):
             self.emit_message(
-                AirbyteMessage(type=Type.LOG, log=AirbyteLogMessage(level=level, message=filter_secrets(json.dumps(message_provider()))))
+                AirbyteMessage(
+                    type=Type.LOG,
+                    log=AirbyteLogMessage(
+                        level=level, message=filter_secrets(json.dumps(message_provider()))
+                    ),
+                )
             )
 
     def consume_queue(self) -> Iterable[AirbyteMessage]:
@@ -89,7 +96,12 @@ class InMemoryMessageRepository(MessageRepository):
 
 
 class LogAppenderMessageRepositoryDecorator(MessageRepository):
-    def __init__(self, dict_to_append: LogMessage, decorated: MessageRepository, log_level: Level = Level.INFO):
+    def __init__(
+        self,
+        dict_to_append: LogMessage,
+        decorated: MessageRepository,
+        log_level: Level = Level.INFO,
+    ):
         self._dict_to_append = dict_to_append
         self._decorated = decorated
         self._log_level = log_level
@@ -106,7 +118,9 @@ class LogAppenderMessageRepositoryDecorator(MessageRepository):
     def consume_queue(self) -> Iterable[AirbyteMessage]:
         return self._decorated.consume_queue()
 
-    def _append_second_to_first(self, first: LogMessage, second: LogMessage, path: Optional[List[str]] = None) -> LogMessage:
+    def _append_second_to_first(
+        self, first: LogMessage, second: LogMessage, path: Optional[List[str]] = None
+    ) -> LogMessage:
         if path is None:
             path = []
 

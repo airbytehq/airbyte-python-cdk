@@ -9,7 +9,11 @@ from unittest.mock import MagicMock, Mock, mock_open, patch
 
 import pandas as pd
 import pytest
-from airbyte_cdk.sources.file_based.config.file_based_stream_config import ExcelFormat, FileBasedStreamConfig, ValidationPolicy
+from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
+    ExcelFormat,
+    FileBasedStreamConfig,
+    ValidationPolicy,
+)
 from airbyte_cdk.sources.file_based.exceptions import ConfigValidationError, RecordParseError
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
 from airbyte_cdk.sources.file_based.file_types.excel_parser import ExcelParser
@@ -66,7 +70,14 @@ def setup_parser(remote_file):
     stream_reader = MagicMock(spec=AbstractFileBasedStreamReader)
     stream_reader.open_file.return_value = BytesIO(excel_bytes.read())
 
-    return parser, FileBasedStreamConfig(name="test_stream", format=ExcelFormat()), remote_file, stream_reader, MagicMock(), data
+    return (
+        parser,
+        FileBasedStreamConfig(name="test_stream", format=ExcelFormat()),
+        remote_file,
+        stream_reader,
+        MagicMock(),
+        data,
+    )
 
 
 @patch("pandas.ExcelFile")
@@ -92,7 +103,9 @@ async def test_infer_schema(mock_excel_file, setup_parser):
     assert schema == expected_schema
 
     # Assert that the stream_reader's open_file was called correctly
-    stream_reader.open_file.assert_called_once_with(file, parser.file_read_mode, parser.ENCODING, logger)
+    stream_reader.open_file.assert_called_once_with(
+        file, parser.file_read_mode, parser.ENCODING, logger
+    )
 
     # Assert that the logger was not used for warnings/errors
     logger.info.assert_not_called()
@@ -119,4 +132,6 @@ def test_file_read_error(mock_stream_reader, mock_logger, file_config, remote_fi
             mock_excel.return_value.parse.side_effect = ValueError("Failed to parse file")
 
             with pytest.raises(RecordParseError):
-                list(parser.parse_records(file_config, remote_file, mock_stream_reader, mock_logger))
+                list(
+                    parser.parse_records(file_config, remote_file, mock_stream_reader, mock_logger)
+                )

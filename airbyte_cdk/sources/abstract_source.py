@@ -4,7 +4,18 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Iterable, Iterator, List, Mapping, MutableMapping, Optional, Tuple, Union
+from typing import (
+    Any,
+    Dict,
+    Iterable,
+    Iterator,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Tuple,
+    Union,
+)
 
 from airbyte_cdk.exception_handler import generate_failed_streams_error_message
 from airbyte_cdk.models import (
@@ -30,7 +41,9 @@ from airbyte_cdk.sources.utils.record_helper import stream_data_to_airbyte_messa
 from airbyte_cdk.sources.utils.schema_helpers import InternalConfig, split_config
 from airbyte_cdk.sources.utils.slice_logger import DebugSliceLogger, SliceLogger
 from airbyte_cdk.utils.event_timing import create_timer
-from airbyte_cdk.utils.stream_status_utils import as_airbyte_message as stream_status_as_airbyte_message
+from airbyte_cdk.utils.stream_status_utils import (
+    as_airbyte_message as stream_status_as_airbyte_message,
+)
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 _default_message_repository = InMemoryMessageRepository()
@@ -43,7 +56,9 @@ class AbstractSource(Source, ABC):
     """
 
     @abstractmethod
-    def check_connection(self, logger: logging.Logger, config: Mapping[str, Any]) -> Tuple[bool, Optional[Any]]:
+    def check_connection(
+        self, logger: logging.Logger, config: Mapping[str, Any]
+    ) -> Tuple[bool, Optional[Any]]:
         """
         :param logger: source logger
         :param config: The user-provided configuration as specified by the source's spec.
@@ -109,7 +124,9 @@ class AbstractSource(Source, ABC):
                     # Used direct reference to `stream_instance` instead of `is_stream_exist` to avoid mypy type checking errors
                     if not stream_instance:
                         if not self.raise_exception_on_missing_stream:
-                            yield stream_status_as_airbyte_message(configured_stream.stream, AirbyteStreamStatus.INCOMPLETE)
+                            yield stream_status_as_airbyte_message(
+                                configured_stream.stream, AirbyteStreamStatus.INCOMPLETE
+                            )
                             continue
 
                         error_message = (
@@ -129,7 +146,9 @@ class AbstractSource(Source, ABC):
 
                     timer.start_event(f"Syncing stream {configured_stream.stream.name}")
                     logger.info(f"Marking stream {configured_stream.stream.name} as STARTED")
-                    yield stream_status_as_airbyte_message(configured_stream.stream, AirbyteStreamStatus.STARTED)
+                    yield stream_status_as_airbyte_message(
+                        configured_stream.stream, AirbyteStreamStatus.STARTED
+                    )
                     yield from self._read_stream(
                         logger=logger,
                         stream_instance=stream_instance,
@@ -138,13 +157,19 @@ class AbstractSource(Source, ABC):
                         internal_config=internal_config,
                     )
                     logger.info(f"Marking stream {configured_stream.stream.name} as STOPPED")
-                    yield stream_status_as_airbyte_message(configured_stream.stream, AirbyteStreamStatus.COMPLETE)
+                    yield stream_status_as_airbyte_message(
+                        configured_stream.stream, AirbyteStreamStatus.COMPLETE
+                    )
 
                 except Exception as e:
                     yield from self._emit_queued_messages()
-                    logger.exception(f"Encountered an exception while reading stream {configured_stream.stream.name}")
+                    logger.exception(
+                        f"Encountered an exception while reading stream {configured_stream.stream.name}"
+                    )
                     logger.info(f"Marking stream {configured_stream.stream.name} as STOPPED")
-                    yield stream_status_as_airbyte_message(configured_stream.stream, AirbyteStreamStatus.INCOMPLETE)
+                    yield stream_status_as_airbyte_message(
+                        configured_stream.stream, AirbyteStreamStatus.INCOMPLETE
+                    )
 
                     stream_descriptor = StreamDescriptor(name=configured_stream.stream.name)
 
@@ -152,10 +177,14 @@ class AbstractSource(Source, ABC):
                         traced_exception = e
                         info_message = f"Stopping sync on error from stream {configured_stream.stream.name} because {self.name} does not support continuing syncs on error."
                     else:
-                        traced_exception = self._serialize_exception(stream_descriptor, e, stream_instance=stream_instance)
+                        traced_exception = self._serialize_exception(
+                            stream_descriptor, e, stream_instance=stream_instance
+                        )
                         info_message = f"{self.name} does not support continuing syncs on error from stream {configured_stream.stream.name}"
 
-                    yield traced_exception.as_sanitized_airbyte_message(stream_descriptor=stream_descriptor)
+                    yield traced_exception.as_sanitized_airbyte_message(
+                        stream_descriptor=stream_descriptor
+                    )
                     stream_name_to_exception[stream_instance.name] = traced_exception  # type: ignore # use configured_stream if stream_instance is None
                     if self.stop_sync_on_stream_failure:
                         logger.info(info_message)
@@ -169,12 +198,16 @@ class AbstractSource(Source, ABC):
                         logger.info(timer.report())
 
         if len(stream_name_to_exception) > 0:
-            error_message = generate_failed_streams_error_message({key: [value] for key, value in stream_name_to_exception.items()})  # type: ignore  # for some reason, mypy can't figure out the types for key and value
+            error_message = generate_failed_streams_error_message(
+                {key: [value] for key, value in stream_name_to_exception.items()}
+            )  # type: ignore  # for some reason, mypy can't figure out the types for key and value
             logger.info(error_message)
             # We still raise at least one exception when a stream raises an exception because the platform currently relies
             # on a non-zero exit code to determine if a sync attempt has failed. We also raise the exception as a config_error
             # type because this combined error isn't actionable, but rather the previously emitted individual errors.
-            raise AirbyteTracedException(message=error_message, failure_type=FailureType.config_error)
+            raise AirbyteTracedException(
+                message=error_message, failure_type=FailureType.config_error
+            )
         logger.info(f"Finished syncing {self.name}")
 
     @staticmethod
@@ -183,7 +216,9 @@ class AbstractSource(Source, ABC):
     ) -> AirbyteTracedException:
         display_message = stream_instance.get_error_display_message(e) if stream_instance else None
         if display_message:
-            return AirbyteTracedException.from_exception(e, message=display_message, stream_descriptor=stream_descriptor)
+            return AirbyteTracedException.from_exception(
+                e, message=display_message, stream_descriptor=stream_descriptor
+            )
         return AirbyteTracedException.from_exception(e, stream_descriptor=stream_descriptor)
 
     @property
@@ -199,7 +234,9 @@ class AbstractSource(Source, ABC):
         internal_config: InternalConfig,
     ) -> Iterator[AirbyteMessage]:
         if internal_config.page_size and isinstance(stream_instance, HttpStream):
-            logger.info(f"Setting page size for {stream_instance.name} to {internal_config.page_size}")
+            logger.info(
+                f"Setting page size for {stream_instance.name} to {internal_config.page_size}"
+            )
             stream_instance.page_size = internal_config.page_size
         logger.debug(
             f"Syncing configured stream: {configured_stream.stream.name}",
@@ -243,7 +280,9 @@ class AbstractSource(Source, ABC):
                 if record_counter == 1:
                     logger.info(f"Marking stream {stream_name} as RUNNING")
                     # If we just read the first record of the stream, emit the transition to the RUNNING state
-                    yield stream_status_as_airbyte_message(configured_stream.stream, AirbyteStreamStatus.RUNNING)
+                    yield stream_status_as_airbyte_message(
+                        configured_stream.stream, AirbyteStreamStatus.RUNNING
+                    )
             yield from self._emit_queued_messages()
             yield record
 
@@ -254,7 +293,9 @@ class AbstractSource(Source, ABC):
             yield from self.message_repository.consume_queue()
         return
 
-    def _get_message(self, record_data_or_message: Union[StreamData, AirbyteMessage], stream: Stream) -> AirbyteMessage:
+    def _get_message(
+        self, record_data_or_message: Union[StreamData, AirbyteMessage], stream: Stream
+    ) -> AirbyteMessage:
         """
         Converts the input to an AirbyteMessage if it is a StreamData. Returns the input as is if it is already an AirbyteMessage
         """
@@ -262,7 +303,12 @@ class AbstractSource(Source, ABC):
             case AirbyteMessage():
                 return record_data_or_message
             case _:
-                return stream_data_to_airbyte_message(stream.name, record_data_or_message, stream.transformer, stream.get_json_schema())
+                return stream_data_to_airbyte_message(
+                    stream.name,
+                    record_data_or_message,
+                    stream.transformer,
+                    stream.get_json_schema(),
+                )
 
     @property
     def message_repository(self) -> Union[None, MessageRepository]:

@@ -30,7 +30,11 @@ STREAM_NAME = "my_stream"
             {"id": 0, "field_A": 1.0, "field_B": "airbyte"},
             AirbyteMessage(
                 type=MessageType.RECORD,
-                record=AirbyteRecordMessage(stream="my_stream", data={"id": 0, "field_A": 1.0, "field_B": "airbyte"}, emitted_at=NOW),
+                record=AirbyteRecordMessage(
+                    stream="my_stream",
+                    data={"id": 0, "field_A": 1.0, "field_B": "airbyte"},
+                    emitted_at=NOW,
+                ),
             ),
         ),
     ],
@@ -54,12 +58,18 @@ def test_data_or_record_to_airbyte_record(test_name, data, expected_message):
         (
             "test_log_message_to_airbyte_record",
             AirbyteLogMessage(level=Level.INFO, message="Hello, this is a log message"),
-            AirbyteMessage(type=MessageType.LOG, log=AirbyteLogMessage(level=Level.INFO, message="Hello, this is a log message")),
+            AirbyteMessage(
+                type=MessageType.LOG,
+                log=AirbyteLogMessage(level=Level.INFO, message="Hello, this is a log message"),
+            ),
         ),
         (
             "test_trace_message_to_airbyte_record",
             AirbyteTraceMessage(type=TraceType.ERROR, emitted_at=101),
-            AirbyteMessage(type=MessageType.TRACE, trace=AirbyteTraceMessage(type=TraceType.ERROR, emitted_at=101)),
+            AirbyteMessage(
+                type=MessageType.TRACE,
+                trace=AirbyteTraceMessage(type=TraceType.ERROR, emitted_at=101),
+            ),
         ),
     ],
 )

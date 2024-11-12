@@ -10,12 +10,18 @@ from airbyte_cdk import YamlDeclarativeSource
 from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder, JsonlDecoder
 from airbyte_cdk.sources.declarative.models import DeclarativeStream as DeclarativeStreamModel
-from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import ModelToComponentFactory
+from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
+    ModelToComponentFactory,
+)
 
 
 @pytest.mark.parametrize(
     "response_body, first_element",
-    [("", {}), ("[]", {}), ('{"healthcheck": {"status": "ok"}}', {"healthcheck": {"status": "ok"}})],
+    [
+        ("", {}),
+        ("[]", {}),
+        ('{"healthcheck": {"status": "ok"}}', {"healthcheck": {"status": "ok"}}),
+    ],
 )
 def test_json_decoder(requests_mock, response_body, first_element):
     requests_mock.register_uri("GET", "https://airbyte.io/", text=response_body)
@@ -28,7 +34,10 @@ def test_json_decoder(requests_mock, response_body, first_element):
     [
         ("", []),
         ('{"id": 1, "name": "test1"}', [{"id": 1, "name": "test1"}]),
-        ('{"id": 1, "name": "test1"}\n{"id": 2, "name": "test2"}', [{"id": 1, "name": "test1"}, {"id": 2, "name": "test2"}]),
+        (
+            '{"id": 1, "name": "test1"}\n{"id": 2, "name": "test2"}',
+            [{"id": 1, "name": "test1"}, {"id": 2, "name": "test2"}],
+        ),
     ],
     ids=["empty_response", "one_line_json", "multi_line_json"],
 )
@@ -92,7 +101,9 @@ def test_jsonl_decoder_memory_usage(requests_mock, large_events_response):
 
     factory = ModelToComponentFactory()
     stream_manifest = YamlDeclarativeSource._parse(content)
-    stream = factory.create_component(model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={})
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config={}
+    )
 
     def get_body():
         return open(file_path, "rb", buffering=30)

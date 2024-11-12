@@ -5,7 +5,13 @@ import json
 import logging
 from typing import Any, Iterable, List, Mapping, Optional, Tuple, Union
 
-from airbyte_cdk.models import ConfiguredAirbyteCatalog, ConfiguredAirbyteStream, ConnectorSpecification, DestinationSyncMode, SyncMode
+from airbyte_cdk.models import (
+    ConfiguredAirbyteCatalog,
+    ConfiguredAirbyteStream,
+    ConnectorSpecification,
+    DestinationSyncMode,
+    SyncMode,
+)
 from airbyte_cdk.sources.concurrent_source.concurrent_source import ConcurrentSource
 from airbyte_cdk.sources.concurrent_source.concurrent_source_adapter import ConcurrentSourceAdapter
 from airbyte_cdk.sources.message import InMemoryMessageRepository, MessageRepository
@@ -36,13 +42,23 @@ class LegacyStream(Stream):
 
 
 class ConcurrentCdkSource(ConcurrentSourceAdapter):
-    def __init__(self, streams: List[DefaultStream], message_repository: Optional[MessageRepository], max_workers, timeout_in_seconds):
-        concurrent_source = ConcurrentSource.create(1, 1, streams[0]._logger, NeverLogSliceLogger(), message_repository)
+    def __init__(
+        self,
+        streams: List[DefaultStream],
+        message_repository: Optional[MessageRepository],
+        max_workers,
+        timeout_in_seconds,
+    ):
+        concurrent_source = ConcurrentSource.create(
+            1, 1, streams[0]._logger, NeverLogSliceLogger(), message_repository
+        )
         super().__init__(concurrent_source)
         self._streams = streams
         self._message_repository = message_repository
 
-    def check_connection(self, logger: logging.Logger, config: Mapping[str, Any]) -> Tuple[bool, Optional[Any]]:
+    def check_connection(
+        self, logger: logging.Logger, config: Mapping[str, Any]
+    ) -> Tuple[bool, Optional[Any]]:
         # Check is not verified because it is up to the source to implement this method
         return True, None
 
@@ -51,7 +67,11 @@ class ConcurrentCdkSource(ConcurrentSourceAdapter):
             StreamFacade(
                 s,
                 LegacyStream(),
-                FinalStateCursor(stream_name=s.name, stream_namespace=s.namespace, message_repository=self.message_repository),
+                FinalStateCursor(
+                    stream_name=s.name,
+                    stream_namespace=s.namespace,
+                    message_repository=self.message_repository,
+                ),
                 NeverLogSliceLogger(),
                 s._logger,
             )
@@ -68,7 +88,11 @@ class ConcurrentCdkSource(ConcurrentSourceAdapter):
                     stream=StreamFacade(
                         s,
                         LegacyStream(),
-                        FinalStateCursor(stream_name=s.name, stream_namespace=s.namespace, message_repository=InMemoryMessageRepository()),
+                        FinalStateCursor(
+                            stream_name=s.name,
+                            stream_namespace=s.namespace,
+                            message_repository=InMemoryMessageRepository(),
+                        ),
                         NeverLogSliceLogger(),
                         s._logger,
                     ).as_airbyte_stream(),
@@ -140,7 +164,9 @@ class ConcurrentSourceBuilder(SourceBuilder[ConcurrentCdkSource]):
         self._streams = streams
         return self
 
-    def set_message_repository(self, message_repository: MessageRepository) -> "ConcurrentSourceBuilder":
+    def set_message_repository(
+        self, message_repository: MessageRepository
+    ) -> "ConcurrentSourceBuilder":
         self._message_repository = message_repository
         return self
 
