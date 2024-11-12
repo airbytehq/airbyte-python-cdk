@@ -4,7 +4,6 @@
 
 from datetime import datetime, timedelta, timezone
 from functools import partial
-from turtledemo.sorting_animate import partition
 from typing import Any, Mapping, Optional
 from unittest import TestCase
 from unittest.mock import Mock
