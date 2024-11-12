@@ -101,9 +101,9 @@ jobs:
         if: steps.no_changes.outcome != 'failure'
         with:
           repository: airbytehq/airbyte
-          ref: master
           # TODO: Revert to `master` after Airbyte CI released:
-          path: aj/airbyte-ci/update-python-local-cdk-code
+          ref: aj/airbyte-ci/update-python-local-cdk-code
+          path: airbyte
       - name: Test Connector
         if: steps.no_changes.outcome != 'failure'
         timeout-minutes: 90
