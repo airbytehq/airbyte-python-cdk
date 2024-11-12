@@ -119,20 +119,6 @@ jobs:
           test \
           --fail-fast \
           --skip-step qa_checks
-          # save job output json file as ci step output
-          json_output_file=$(find airbyte/airbyte-ci/connectors/pipelines/pipeline_reports -name 'output.json' -print -quit)
-          job_output=$(cat $json_output_file)
-          echo "job_output=$job_output" >> $GITHUB_OUTPUT
-          succes=$(echo $job_output | jq -r '.success')
-          failed_jobs=$(echo $job_output | jq -r '.failed_steps')
-          echo "succes=${succes}\nfailed_jobs=${failed_jobs}" >> $GITHUB_OUTPUT
-          echo "## Job Output for ${{matrix.connector}}" >> $GITHUB_STEP_SUMMARY
-          echo "- Success: ${success}" >> $GITHUB_STEP_SUMMARY
-          echo "- Failed Jobs: ${failed_jobs}" >> $GITHUB_STEP_SUMMARY
-          if [ "$succes" != "true" ]; then
-            echo "status=failed" >> $GITHUB_OUTPUT
-            exit 1
-          fi
 
       # Upload the job output to the artifacts
       - name: Upload Job Output
@@ -143,7 +129,21 @@ jobs:
           name: ${{matrix.connector}}-job-output
           path: airbyte/airbyte-ci/connectors/pipelines/pipeline_reports
 
-      - name: Add Notice to Job Summary
+      - name: Evaluate Job Output
         if: always()
         run: |
-          echo "\n[Download Job Output](${{steps.upload_job_output.outputs.artifact-url}})" >> $GITHUB_STEP_SUMMARY
+          # save job output json file as ci step output
+          json_output_file=$(find airbyte/airbyte-ci/connectors/pipelines/pipeline_reports -name 'output.json' -print -quit)
+          job_output=$(cat $json_output_file)
+          echo "job_output=$job_output" >> $GITHUB_OUTPUT
+          succes=$(echo $job_output | jq -r '.success')
+          failed_jobs=$(echo $job_output | jq -r '.failed_steps')
+          echo -e "succes=${success}\nfailed_jobs=${failed_jobs}" >> $GITHUB_OUTPUT
+          echo "## Job Output for ${{matrix.connector}}" >> $GITHUB_STEP_SUMMARY
+          echo "- Success: ${success}" >> $GITHUB_STEP_SUMMARY
+          echo "- Failed Jobs: ${failed_jobs}" >> $GITHUB_STEP_SUMMARY
+          if [ "$succes" != "true" ]; then
+            echo "status=failed" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          echo -e "\n[Download Job Output](${{steps.upload_job_output.outputs.artifact-url}})" >> $GITHUB_STEP_SUMMARY
