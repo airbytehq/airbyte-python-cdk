@@ -12,9 +12,6 @@ on:
         type: string
         required: false
 
-env:
-  AIRBYTE_ANALYTICS_ID: ${{ vars.AIRBYTE_ANALYTICS_ID }}
-
 jobs:
   # This is copied from the `python_pytest.yml` file.
   # Only the first two steps of the job are different, and they check out the PR's branch.
@@ -51,8 +48,8 @@ jobs:
       id: pr-info
       run: |
         PR_JSON=$(gh api repos/${{ github.repository }}/pulls/${{ github.event.inputs.pr }})
-        echo "::set-output name=repo::$(echo "$PR_JSON" | jq -r .head.repo.full_name)"
-        echo "::set-output name=branch::$(echo "$PR_JSON" | jq -r .head.ref)"
+        echo "repo=$(echo "$PR_JSON" | jq -r .head.repo.full_name)" >> $GITHUB_OUTPUT
+        echo "branch=$(echo "$PR_JSON" | jq -r .head.ref)" >> $GITHUB_OUTPUT
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       shell: bash
@@ -104,7 +101,7 @@ jobs:
     - name: Check for changes
       id: git-diff
       run: |
-        git diff --quiet && echo "No changes to commit" || echo "::set-output name=changes::true"
+        git diff --quiet && echo "No changes to commit" || echo "changes=true" >> $GITHUB_OUTPUT
       shell: bash
 
     # Commit changes (if any)
@@ -129,7 +126,7 @@ jobs:
     - name: Check for changes ('unsafe' fixes)
       id: git-diff-2
       run: |
-        git diff --quiet && echo "No changes to commit" || echo "::set-output name=changes::true"
+        git diff --quiet && echo "No changes to commit" || echo "changes=true" >> $GITHUB_OUTPUT
       shell: bash
 
     - name: Commit 'unsafe' lint fixes

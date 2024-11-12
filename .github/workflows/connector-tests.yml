@@ -99,7 +99,7 @@ jobs:
         if: ${{ matrix.cdk_extra != 'n/a' && needs.cdk_changes.outputs[matrix.cdk_extra] == 'false' }}
         run: |
             echo "Aborting job as specified extra not changed: ${{matrix.cdk_extra}} = ${{ needs.cdk_changes.outputs[matrix.cdk_extra] }}"
-            echo "::set-output name=status::cancelled"
+            echo "status=cancelled" >> $GITHUB_OUTPUT
             exit 1
         continue-on-error: true
       # Get the monorepo so we can test the connectors
@@ -109,14 +109,6 @@ jobs:
         with:
           repository: airbytehq/airbyte
           ref: master
-      - name: Fetch last commit id from remote branch [PULL REQUESTS]
-        if: github.event_name == 'pull_request' && steps.no_changes.outcome != 'failure'
-        id: fetch_last_commit_id_pr
-        run: echo "commit_id=$(git ls-remote --heads origin refs/heads/${{ github.head_ref }} | cut -f 1)" >> $GITHUB_OUTPUT
-      - name: Fetch last commit id from remote branch [WORKFLOW DISPATCH]
-        if: github.event_name == 'workflow_dispatch' && steps.no_changes.outcome != 'failure'
-        id: fetch_last_commit_id_wd
-        run: echo "commit_id=$(git rev-parse origin/${{ steps.extract_branch.outputs.branch }})" >> $GITHUB_OUTPUT
       - name: Test Connector
         if: steps.no_changes.outcome != 'failure'
         timeout-minutes: 90

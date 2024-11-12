@@ -11,9 +11,6 @@ on:
   # pull_request_target:
   #   types: [opened, reopened, synchronize]
 
-env:
-  AIRBYTE_ANALYTICS_ID: ${{ vars.AIRBYTE_ANALYTICS_ID }}
-
 jobs:
   update_release_draft:
     permissions:
