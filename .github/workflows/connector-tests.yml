@@ -133,8 +133,8 @@ jobs:
       - name: Evaluate Job Output
         if: always()
         run: |
-          if [ "${{steps.no_changes.outcome}}" == "failure"]; then
-            echo "> Skipped '${{matrix.connector}}'(no changes)" >> $GITHUB_OUTPUT
+          if [ "${{steps.no_changes.outcome}}" == "failure" ]; then
+            echo "> Skipped '${{matrix.connector}}' (no changes)" >> $GITHUB_OUTPUT
             exit 0
           fi
 
