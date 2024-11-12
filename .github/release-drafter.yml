@@ -47,3 +47,17 @@ autolabeler:
   - label: 'enhancement'
     title:
       - '/^feat(\(.*\))?/i'
+  - label: 'docs'
+    title:
+      - '/^docs(\(.*\))?\:/i'
+  - label: 'security'
+    title:
+      - '/^security(\(.*\))?\:/i'
+      - '/^fix(\(security\))?\:/i'
+  - label: 'dependencies'
+    title:
+      - '/^chore\(deps\)\:/i'
+      - '/^build\(deps\)\:/i'
+  - label: 'breaking'
+    title:
+      - '/!:\s*$/i'
