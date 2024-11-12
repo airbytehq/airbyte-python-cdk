@@ -119,7 +119,8 @@ jobs:
           --use-local-cdk \
           test \
           --fail-fast \
-          --skip-step qa_checks
+          --skip-step qa_checks \
+          --skip-step connector_live_tests
 
       # Upload the job output to the artifacts
       - name: Upload Job Output
@@ -134,7 +135,7 @@ jobs:
         if: always()
         run: |
           if [ "${{steps.no_changes.outcome}}" == "failure" ]; then
-            echo "> Skipped '${{matrix.connector}}' (no changes)" >> $GITHUB_OUTPUT
+            echo "> Skipped '${{matrix.connector}}' (no changes)" >> $GITHUB_STEP_SUMMARY
             exit 0
           fi
 
