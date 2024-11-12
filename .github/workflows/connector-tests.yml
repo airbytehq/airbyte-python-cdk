@@ -113,7 +113,8 @@ jobs:
         run: |
           cd airbyte
           make tools.airbyte-ci-dev.install
-          airbyte-ci connectors \
+          airbyte-ci-dev connectors \
           --name ${{matrix.connector}} \
-          test
+          test \
+          --use-local-cdk \
           --global-status-check-context='Connectors Test: ${{matrix.connector}}'
