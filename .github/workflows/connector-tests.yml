@@ -101,14 +101,14 @@ jobs:
           path: airbyte-python-cdk
       - name: Checkout Airbyte Monorepo
         uses: actions/checkout@v4
-        if: steps.no_changes.conclusion != 'cancelled'
+        if: steps.no_changes.outputs.status != 'cancelled'
         with:
           repository: airbytehq/airbyte
           # TODO: Revert to `master` after Airbyte CI released:
           ref: aj/airbyte-ci/update-python-local-cdk-code
           path: airbyte
       - name: Test Connector
-        if: steps.no_changes.conclusion != 'cancelled'
+        if: steps.no_changes.outputs.status != 'cancelled'
         timeout-minutes: 90
         env:
           GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
@@ -128,24 +128,26 @@ jobs:
       # Upload the job output to the artifacts
       - name: Upload Job Output
         id: upload_job_output
-        if: always() && steps.no_changes.conclusion != 'cancelled'
+        if: always() && steps.no_changes.outputs.status != 'cancelled'
         uses: actions/upload-artifact@v4
         with:
           name: ${{matrix.connector}}-job-output
           path: airbyte/airbyte-ci/connectors/pipelines/pipeline_reports
 
       - name: Evaluate Job Output
-        if: always() && steps.no_changes.conclusion != 'cancelled'
+        if: always() && steps.no_changes.outputs.status != 'cancelled'
         run: |
           # save job output json file as ci step output
           json_output_file=$(find airbyte/airbyte-ci/connectors/pipelines/pipeline_reports -name 'output.json' -print -quit)
-          job_output=$(cat $json_output_file)
-          succes=$(echo $job_output | jq -r '.success')
-          failed_jobs=$(echo $job_output | jq -r '.failed_steps')
+          job_output=$(cat ${json_output_file})
+          success=$(echo ${job_output} | jq -r '.success')
+          failed_jobs=$(echo ${job_output} | jq -r '.failed_steps')
           echo "## Job Output for ${{matrix.connector}}" >> $GITHUB_STEP_SUMMARY
           echo "- Success: ${success}" >> $GITHUB_STEP_SUMMARY
-          echo "- Failed Jobs: ${failed_jobs}" >> $GITHUB_STEP_SUMMARY
+          echo "- Test Duration: $(printf "%.0f" $run_duration)s" >> $GITHUB_STEP_SUMMARY
+          echo "- Failed Checks: ${failed_jobs}" >> $GITHUB_STEP_SUMMARY
           echo -e "\n[Download Job Output](${{steps.upload_job_output.outputs.artifact-url}})" >> $GITHUB_STEP_SUMMARY
-          if [ "$succes" != "true" ]; then
+          if [ "${succes}" != "true" ]; then
+            # Throw failure if tests failed
             exit 1
           fi
