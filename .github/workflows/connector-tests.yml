@@ -102,15 +102,17 @@ jobs:
         with:
           repository: airbytehq/airbyte
           ref: master
-          path: airbyte
+          # TODO: Revert to `master` after Airbyte CI released:
+          path: aj/airbyte-ci/update-python-local-cdk-code
       - name: Test Connector
         if: steps.no_changes.outcome != 'failure'
         timeout-minutes: 90
         env:
           GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
+        # TODO: Revert below to use `tools.airbyte-ci-binary.install` after Airbyte CI released:
         run: |
           cd airbyte
-          make tools.airbyte-ci-binary.install
+          make tools.airbyte-ci-dev.install
           airbyte-ci connectors \
           --name ${{matrix.connector}} \
           test
