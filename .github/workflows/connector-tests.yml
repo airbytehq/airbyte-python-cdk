@@ -114,4 +114,4 @@ jobs:
           airbyte-ci connectors \
           --name ${{matrix.connector}} \
           test
-          --global-status-check-context='Connectors Test: ${{matrix.connector}}'"
+          --global-status-check-context='Connectors Test: ${{matrix.connector}}'
