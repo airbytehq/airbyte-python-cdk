@@ -7,7 +7,9 @@ from abc import ABC
 from airbyte_cdk.sources.declarative.requesters.request_options.request_options_provider import (
     RequestOptionsProvider,
 )
-from airbyte_cdk.sources.streams.concurrent.partitions.stream_slicer import StreamSlicer as ConcurrentStreamSlicer
+from airbyte_cdk.sources.streams.concurrent.partitions.stream_slicer import (
+    StreamSlicer as ConcurrentStreamSlicer,
+)
 
 
 class StreamSlicer(ConcurrentStreamSlicer, RequestOptionsProvider, ABC):
@@ -19,4 +21,5 @@ class StreamSlicer(ConcurrentStreamSlicer, RequestOptionsProvider, ABC):
 
     See the stream slicing section of the docs for more information.
     """
+
     pass

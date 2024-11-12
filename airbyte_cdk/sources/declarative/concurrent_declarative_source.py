@@ -3,7 +3,7 @@
 #
 
 import logging
-from typing import Any, Generic, Iterator, List, Mapping, Optional, Tuple, Union
+from typing import Any, Generic, Iterator, List, Mapping, Optional, Tuple, Union, Callable
 
 from airbyte_cdk.models import (
     AirbyteCatalog,
@@ -24,12 +24,14 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DatetimeBasedCursor as DatetimeBasedCursorModel,
+    DeclarativeStream as DeclarativeStreamModel,
 )
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
+    ComponentDefinition,
 )
 from airbyte_cdk.sources.declarative.requesters import HttpRequester
-from airbyte_cdk.sources.declarative.retrievers import SimpleRetriever
+from airbyte_cdk.sources.declarative.retrievers import SimpleRetriever, Retriever
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
     DeclarativePartitionFactory,
     StreamSlicerPartitionGenerator,
@@ -37,6 +39,7 @@ from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_genera
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddFields
 from airbyte_cdk.sources.declarative.types import ConnectionDefinition
 from airbyte_cdk.sources.source import TState
+from airbyte_cdk.sources.types import Config, StreamState
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
@@ -213,30 +216,15 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                         )
                     )
 
-                    # This is an optimization so that we don't invoke any cursor or state management flows within the
-                    # low-code framework because state management is handled through the ConcurrentCursor.
-                    if (
-                        declarative_stream
-                        and declarative_stream.retriever
-                        and isinstance(declarative_stream.retriever, SimpleRetriever)
-                    ):
-                        # Also a temporary hack. In the legacy Stream implementation, as part of the read, set_initial_state() is
-                        # called to instantiate incoming state on the cursor. Although we no longer rely on the legacy low-code cursor
-                        # for concurrent checkpointing, low-code components like StopConditionPaginationStrategyDecorator and
-                        # ClientSideIncrementalRecordFilterDecorator still rely on a DatetimeBasedCursor that is properly initialized
-                        # with state.
-                        if declarative_stream.retriever.cursor:
-                            declarative_stream.retriever.cursor.set_initial_state(
-                                stream_state=stream_state
-                            )
-                        declarative_stream.retriever.cursor = None
-
-
                     partition_generator = StreamSlicerPartitionGenerator(
                         DeclarativePartitionFactory(
                             declarative_stream.name,
                             declarative_stream.get_json_schema(),
-                            declarative_stream.retriever,
+                            self._retriever_factory(
+                                name_to_stream_mapping[declarative_stream.name],
+                                config,
+                                stream_state,
+                            ),
                             self.message_repository,
                         ),
                         cursor,
@@ -349,3 +337,34 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                 if stream.stream.name not in concurrent_stream_names
             ]
         )
+
+    def _retriever_factory(
+        self, stream_config: ComponentDefinition, source_config: Config, stream_state: StreamState
+    ) -> Callable[[], Retriever]:
+        def _factory_method():
+            declarative_stream = self._constructor.create_component(
+                DeclarativeStreamModel,
+                stream_config,
+                source_config,
+                emit_connector_builder_messages=self._emit_connector_builder_messages,
+            )
+
+            # This is an optimization so that we don't invoke any cursor or state management flows within the
+            # low-code framework because state management is handled through the ConcurrentCursor.
+            if (
+                declarative_stream
+                and declarative_stream.retriever
+                and isinstance(declarative_stream.retriever, SimpleRetriever)
+            ):
+                # Also a temporary hack. In the legacy Stream implementation, as part of the read, set_initial_state() is
+                # called to instantiate incoming state on the cursor. Although we no longer rely on the legacy low-code cursor
+                # for concurrent checkpointing, low-code components like StopConditionPaginationStrategyDecorator and
+                # ClientSideIncrementalRecordFilterDecorator still rely on a DatetimeBasedCursor that is properly initialized
+                # with state.
+                if declarative_stream.retriever.cursor:
+                    declarative_stream.retriever.cursor.set_initial_state(stream_state=stream_state)
+                declarative_stream.retriever.cursor = None
+
+            return declarative_stream.retriever
+
+        return _factory_method

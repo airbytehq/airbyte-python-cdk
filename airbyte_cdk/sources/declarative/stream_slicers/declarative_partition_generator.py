@@ -1,6 +1,6 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
-from typing import Iterable, Optional, Mapping, Any
+from typing import Iterable, Optional, Mapping, Any, Callable
 
 from airbyte_cdk.sources.declarative.retrievers import Retriever
 from airbyte_cdk.sources.message import MessageRepository
@@ -13,24 +13,37 @@ from airbyte_cdk.utils.slice_hasher import SliceHasher
 
 
 class DeclarativePartitionFactory:
-    def __init__(self, stream_name: str, json_schema: Mapping[str, Any], retriever: Retriever, message_repository: MessageRepository) -> None:
+    def __init__(
+        self,
+        stream_name: str,
+        json_schema: Mapping[str, Any],
+        retriever_factory: Callable[[], Retriever],
+        message_repository: MessageRepository,
+    ) -> None:
         self._stream_name = stream_name
         self._json_schema = json_schema
-        self._retriever = retriever  # FIXME: it should be a retriever_factory here to ensure that paginators and other classes don't share interal/class state
+        self._retriever_factory = retriever_factory
         self._message_repository = message_repository
 
     def create(self, stream_slice: StreamSlice) -> Partition:
         return DeclarativePartition(
             self._stream_name,
             self._json_schema,
-            self._retriever,
+            self._retriever_factory(),
             self._message_repository,
             stream_slice,
         )
 
 
 class DeclarativePartition(Partition):
-    def __init__(self, stream_name: str, json_schema: Mapping[str, Any], retriever: Retriever, message_repository: MessageRepository, stream_slice: StreamSlice):
+    def __init__(
+        self,
+        stream_name: str,
+        json_schema: Mapping[str, Any],
+        retriever: Retriever,
+        message_repository: MessageRepository,
+        stream_slice: StreamSlice,
+    ):
         self._stream_name = stream_name
         self._json_schema = json_schema
         self._retriever = retriever
@@ -57,7 +70,9 @@ class DeclarativePartition(Partition):
 
 
 class StreamSlicerPartitionGenerator(PartitionGenerator):
-    def __init__(self, partition_factory: DeclarativePartitionFactory, stream_slicer: StreamSlicer) -> None:
+    def __init__(
+        self, partition_factory: DeclarativePartitionFactory, stream_slicer: StreamSlicer
+    ) -> None:
         self._partition_factory = partition_factory
         self._stream_slicer = stream_slicer
 

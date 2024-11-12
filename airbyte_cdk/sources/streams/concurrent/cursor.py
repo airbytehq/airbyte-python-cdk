@@ -187,7 +187,14 @@ class ConcurrentCursor(Cursor):
 
     @property
     def _slice_boundary_fields_wrapper(self) -> Tuple[str, str]:
-        return self._slice_boundary_fields if self._slice_boundary_fields else (self._connector_state_converter.START_KEY, self._connector_state_converter.END_KEY)
+        return (
+            self._slice_boundary_fields
+            if self._slice_boundary_fields
+            else (
+                self._connector_state_converter.START_KEY,
+                self._connector_state_converter.END_KEY,
+            )
+        )
 
     def _get_concurrent_state(
         self, state: MutableMapping[str, Any]
@@ -379,13 +386,21 @@ class ConcurrentCursor(Cursor):
 
         lower = max(lower, self._start) if self._start else lower
         if not self._slice_range or self._evaluate_upper_safely(lower, self._slice_range) >= upper:
-            start_value, end_value = (lower, upper - self._cursor_granularity) if self._cursor_granularity and not upper_is_end else (lower, upper)
+            start_value, end_value = (
+                (lower, upper - self._cursor_granularity)
+                if self._cursor_granularity and not upper_is_end
+                else (lower, upper)
+            )
             yield StreamSlice(
                 partition={},
                 cursor_slice={
-                    self._slice_boundary_fields_wrapper[self._START_BOUNDARY]: self._connector_state_converter.output_format(start_value),
-                    self._slice_boundary_fields_wrapper[self._END_BOUNDARY]: self._connector_state_converter.output_format(end_value)
-                }
+                    self._slice_boundary_fields_wrapper[
+                        self._START_BOUNDARY
+                    ]: self._connector_state_converter.output_format(start_value),
+                    self._slice_boundary_fields_wrapper[
+                        self._END_BOUNDARY
+                    ]: self._connector_state_converter.output_format(end_value),
+                },
             )
         else:
             stop_processing = False
@@ -396,13 +411,22 @@ class ConcurrentCursor(Cursor):
                 )
                 has_reached_upper_boundary = current_upper_boundary >= upper
 
-                start_value, end_value = (current_lower_boundary, current_upper_boundary - self._cursor_granularity) if self._cursor_granularity and (not upper_is_end or not has_reached_upper_boundary) else (current_lower_boundary, current_upper_boundary)
+                start_value, end_value = (
+                    (current_lower_boundary, current_upper_boundary - self._cursor_granularity)
+                    if self._cursor_granularity
+                    and (not upper_is_end or not has_reached_upper_boundary)
+                    else (current_lower_boundary, current_upper_boundary)
+                )
                 yield StreamSlice(
                     partition={},
                     cursor_slice={
-                        self._slice_boundary_fields_wrapper[self._START_BOUNDARY]: self._connector_state_converter.output_format(start_value),
-                        self._slice_boundary_fields_wrapper[self._END_BOUNDARY]: self._connector_state_converter.output_format(end_value)
-                    }
+                        self._slice_boundary_fields_wrapper[
+                            self._START_BOUNDARY
+                        ]: self._connector_state_converter.output_format(start_value),
+                        self._slice_boundary_fields_wrapper[
+                            self._END_BOUNDARY
+                        ]: self._connector_state_converter.output_format(end_value),
+                    },
                 )
                 current_lower_boundary = current_upper_boundary
                 if current_upper_boundary >= upper:

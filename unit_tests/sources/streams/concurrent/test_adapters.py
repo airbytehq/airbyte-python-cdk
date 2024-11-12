@@ -114,9 +114,7 @@ def test_stream_partition(transformer, expected_records):
     sync_mode = SyncMode.full_refresh
     cursor_field = None
     state = None
-    partition = StreamPartition(
-        stream, _slice, message_repository, sync_mode, cursor_field, state
-    )
+    partition = StreamPartition(stream, _slice, message_repository, sync_mode, cursor_field, state)
 
     a_log_message = AirbyteMessage(
         type=MessageType.LOG,
