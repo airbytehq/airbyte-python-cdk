@@ -133,9 +133,10 @@ jobs:
       - name: Evaluate Job Output
         if: always()
         run: |
-          if "${{steps.no_changes.outcome}}" == "failure":
+          if [ "${{steps.no_changes.outcome}}" == "failure"]; then
             echo "> Skipped '${{matrix.connector}}'(no changes)" >> $GITHUB_OUTPUT
             exit 0
+          fi
 
           # save job output json file as ci step output
           json_output_file=$(find airbyte/airbyte-ci/connectors/pipelines/pipeline_reports -name 'output.json' -print -quit)
