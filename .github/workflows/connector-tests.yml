@@ -1,4 +1,15 @@
-name: Connectors Tests
+name: Test Connectors
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+  # TODO: Consider moving to run these only after the "PyTest (Fast)" workflow is successful.
+  # workflow_run:
+  #   workflows: [PyTest (Fast)]
+  #   types:
+  #     - completed
 
 concurrency:
   # This is the name of the concurrency group. It is used to prevent concurrent runs of the same workflow.
@@ -11,12 +22,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
-on:
-  workflow_dispatch:
-  pull_request:
-    types:
-      - opened
-      - synchronize
 jobs:
   cdk_changes:
     name: Get Changes
@@ -51,21 +56,6 @@ jobs:
       vector-db-based: ${{ steps.changes.outputs.vector-db-based }}
       sql: ${{ steps.changes.outputs.sql }}
 
-    #   # The Connector CI Tests is a status check emitted by airbyte-ci
-    #   # We make it pass once we have determined that there are no changes to the connectors
-    #   - name: "Skip Connectors CI tests"
-    #     if: steps.changes.outputs.src != 'true' && github.event_name == 'pull_request'
-    #     run: |
-    #       curl --request POST \
-    #       --url https://api.github.com/repos/${{ github.repository }}/statuses/${{ github.event.pull_request.head.sha }} \
-    #       --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
-    #       --header 'content-type: application/json' \
-    #       --data '{
-    #         "state": "success",
-    #         "context": "CDK Changes - Connectors Tests",
-    #         "target_url": "${{ github.event.workflow_run.html_url }}"
-    #         }' \
-
   connectors_ci:
     needs: cdk_changes
     # We only run the Connectors CI job if there are changes to the connectors on a non-forked PR
@@ -89,9 +79,7 @@ jobs:
             cdk_extra: vector-db-based
           - connector: destination-motherduck
             cdk_extra: sql
-    if: >
-      ( github.event_name == 'pull_request' && needs.cdk_changes.outputs.src == 'true' && github.event.pull_request.head.repo.fork != true
-      ) || github.event_name == 'workflow_dispatch'
+
     name: "Check: '${{matrix.connector}}' (skip=${{needs.cdk_changes.outputs[matrix.cdk_extra] == 'false'}})"
     steps:
       - name: Abort if extra not changed (${{matrix.cdk_extra}})
@@ -103,20 +91,27 @@ jobs:
           exit 1
         continue-on-error: true
       # Get the monorepo so we can test the connectors
+      - name: Checkout CDK
+        if: steps.no_changes.outcome != 'failure'
+        uses: actions/checkout@v4
+        with:
+          path: airbyte-python-cdk
       - name: Checkout Airbyte Monorepo
         uses: actions/checkout@v4
         if: steps.no_changes.outcome != 'failure'
         with:
           repository: airbytehq/airbyte
           ref: master
+          path: airbyte
       - name: Test Connector
         if: steps.no_changes.outcome != 'failure'
         timeout-minutes: 90
         env:
           GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
         run: |
+          cd airbyte
           make tools.airbyte-ci-binary.install
           airbyte-ci connectors \
           --name ${{matrix.connector}} \
           test
-          --global-status-check-context='Connectors Test: ${{matrix.connector}}'"
+          --global-status-check-context='Connectors Test: ${{matrix.connector}}'

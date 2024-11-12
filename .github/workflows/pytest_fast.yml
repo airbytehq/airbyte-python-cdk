@@ -1,0 +1,59 @@
+name: Pytest (Fast)
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'airbyte_cdk/**'
+      - 'poetry.lock'
+      - 'pyproject.toml'
+  pull_request:
+    paths:
+      - 'airbyte_cdk/**'
+      - 'poetry.lock'
+      - 'pyproject.toml'
+
+jobs:
+  pytest-fast:
+    name: Pytest (Fast)
+    runs-on: ubuntu-latest
+    steps:
+      # Common steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Poetry
+        uses: Gr1N/setup-poetry@v9
+        with:
+          poetry-version: "1.7.1"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "poetry"
+      - name: Install dependencies
+        run: poetry install --all-extras
+
+      - name: Run Pytest with Coverage (Fast Tests Only)
+        timeout-minutes: 20
+        run: >
+          poetry run coverage run -m pytest
+          --durations=5 --exitfirst
+          -m "not slow"
+
+      - name: Print Coverage Report
+        if: always()
+        run: poetry run coverage report
+
+      - name: Create Coverage Artifacts
+        if: always()
+        run: |
+          poetry run coverage html -d htmlcov
+          poetry run coverage xml -o htmlcov/coverage.xml
+
+      - name: Upload coverage to GitHub Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fasttest-coverage
+          path: htmlcov/
