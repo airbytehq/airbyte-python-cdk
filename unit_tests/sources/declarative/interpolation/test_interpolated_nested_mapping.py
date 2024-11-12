@@ -4,7 +4,9 @@
 
 import dpath
 import pytest
-from airbyte_cdk.sources.declarative.interpolation.interpolated_nested_mapping import InterpolatedNestedMapping
+from airbyte_cdk.sources.declarative.interpolation.interpolated_nested_mapping import (
+    InterpolatedNestedMapping,
+)
 
 
 @pytest.mark.parametrize(
@@ -16,7 +18,11 @@ from airbyte_cdk.sources.declarative.interpolation.interpolated_nested_mapping i
         ("test_interpolated_boolean", "nested/nested_array/2/value", True),
         ("test_field_to_interpolate_from_config", "nested/config_value", "VALUE_FROM_CONFIG"),
         ("test_field_to_interpolate_from_kwargs", "nested/kwargs_value", "VALUE_FROM_KWARGS"),
-        ("test_field_to_interpolate_from_parameters", "nested/parameters_value", "VALUE_FROM_PARAMETERS"),
+        (
+            "test_field_to_interpolate_from_parameters",
+            "nested/parameters_value",
+            "VALUE_FROM_PARAMETERS",
+        ),
         ("test_key_is_interpolated", "nested/nested_array/0/key", "VALUE"),
     ],
 )
@@ -38,7 +44,9 @@ def test(test_name, path, expected_value):
 
     config = {"c": "VALUE_FROM_CONFIG", "num_value": 3}
     kwargs = {"a": "VALUE_FROM_KWARGS"}
-    mapping = InterpolatedNestedMapping(mapping=d, parameters={"b": "VALUE_FROM_PARAMETERS", "k": "key"})
+    mapping = InterpolatedNestedMapping(
+        mapping=d, parameters={"b": "VALUE_FROM_PARAMETERS", "k": "key"}
+    )
 
     interpolated = mapping.eval(config, **{"kwargs": kwargs})
 

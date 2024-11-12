@@ -8,7 +8,9 @@ from typing import Any, Callable, Iterable, Mapping, Optional, Union
 
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
-from airbyte_cdk.sources.streams.checkpoint.per_partition_key_serializer import PerPartitionKeySerializer
+from airbyte_cdk.sources.streams.checkpoint.per_partition_key_serializer import (
+    PerPartitionKeySerializer,
+)
 from airbyte_cdk.sources.types import Record, StreamSlice, StreamState
 
 logger = logging.getLogger("airbyte")
@@ -67,12 +69,18 @@ class PerPartitionCursor(DeclarativeCursor):
 
         cursor = self._cursor_per_partition.get(self._to_partition_key(partition.partition))
         if not cursor:
-            partition_state = self._state_to_migrate_from if self._state_to_migrate_from else self._NO_CURSOR_STATE
+            partition_state = (
+                self._state_to_migrate_from
+                if self._state_to_migrate_from
+                else self._NO_CURSOR_STATE
+            )
             cursor = self._create_cursor(partition_state)
             self._cursor_per_partition[self._to_partition_key(partition.partition)] = cursor
 
         for cursor_slice in cursor.stream_slices():
-            yield StreamSlice(partition=partition, cursor_slice=cursor_slice, extra_fields=partition.extra_fields)
+            yield StreamSlice(
+                partition=partition, cursor_slice=cursor_slice, extra_fields=partition.extra_fields
+            )
 
     def _ensure_partition_limit(self) -> None:
         """
@@ -80,7 +88,9 @@ class PerPartitionCursor(DeclarativeCursor):
         """
         while len(self._cursor_per_partition) > self.DEFAULT_MAX_PARTITIONS_NUMBER - 1:
             self._over_limit += 1
-            oldest_partition = self._cursor_per_partition.popitem(last=False)[0]  # Remove the oldest partition
+            oldest_partition = self._cursor_per_partition.popitem(last=False)[
+                0
+            ]  # Remove the oldest partition
             logger.warning(
                 f"The maximum number of partitions has been reached. Dropping the oldest partition: {oldest_partition}. Over limit: {self._over_limit}."
             )
@@ -128,7 +138,9 @@ class PerPartitionCursor(DeclarativeCursor):
 
         else:
             for state in stream_state["states"]:
-                self._cursor_per_partition[self._to_partition_key(state["partition"])] = self._create_cursor(state["cursor"])
+                self._cursor_per_partition[self._to_partition_key(state["partition"])] = (
+                    self._create_cursor(state["cursor"])
+                )
 
             # set default state for missing partitions if it is per partition with fallback to global
             if "state" in stream_state:
@@ -214,7 +226,9 @@ class PerPartitionCursor(DeclarativeCursor):
                 stream_state=stream_state,
                 stream_slice=StreamSlice(partition=stream_slice.partition, cursor_slice={}),
                 next_page_token=next_page_token,
-            ) | self._cursor_per_partition[self._to_partition_key(stream_slice.partition)].get_request_params(
+            ) | self._cursor_per_partition[
+                self._to_partition_key(stream_slice.partition)
+            ].get_request_params(
                 stream_state=stream_state,
                 stream_slice=StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice),
                 next_page_token=next_page_token,
@@ -234,7 +248,9 @@ class PerPartitionCursor(DeclarativeCursor):
                 stream_state=stream_state,
                 stream_slice=StreamSlice(partition=stream_slice.partition, cursor_slice={}),
                 next_page_token=next_page_token,
-            ) | self._cursor_per_partition[self._to_partition_key(stream_slice.partition)].get_request_headers(
+            ) | self._cursor_per_partition[
+                self._to_partition_key(stream_slice.partition)
+            ].get_request_headers(
                 stream_state=stream_state,
                 stream_slice=StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice),
                 next_page_token=next_page_token,
@@ -254,7 +270,9 @@ class PerPartitionCursor(DeclarativeCursor):
                 stream_state=stream_state,
                 stream_slice=StreamSlice(partition=stream_slice.partition, cursor_slice={}),
                 next_page_token=next_page_token,
-            ) | self._cursor_per_partition[self._to_partition_key(stream_slice.partition)].get_request_body_data(
+            ) | self._cursor_per_partition[
+                self._to_partition_key(stream_slice.partition)
+            ].get_request_body_data(
                 stream_state=stream_state,
                 stream_slice=StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice),
                 next_page_token=next_page_token,
@@ -274,7 +292,9 @@ class PerPartitionCursor(DeclarativeCursor):
                 stream_state=stream_state,
                 stream_slice=StreamSlice(partition=stream_slice.partition, cursor_slice={}),
                 next_page_token=next_page_token,
-            ) | self._cursor_per_partition[self._to_partition_key(stream_slice.partition)].get_request_body_json(
+            ) | self._cursor_per_partition[
+                self._to_partition_key(stream_slice.partition)
+            ].get_request_body_json(
                 stream_state=stream_state,
                 stream_slice=StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice),
                 next_page_token=next_page_token,
@@ -283,32 +303,43 @@ class PerPartitionCursor(DeclarativeCursor):
             raise ValueError("A partition needs to be provided in order to get request body json")
 
     def should_be_synced(self, record: Record) -> bool:
-        return self._get_cursor(record).should_be_synced(self._convert_record_to_cursor_record(record))
+        return self._get_cursor(record).should_be_synced(
+            self._convert_record_to_cursor_record(record)
+        )
 
     def is_greater_than_or_equal(self, first: Record, second: Record) -> bool:
         if not first.associated_slice or not second.associated_slice:
-            raise ValueError(f"Both records should have an associated slice but got {first.associated_slice} and {second.associated_slice}")
+            raise ValueError(
+                f"Both records should have an associated slice but got {first.associated_slice} and {second.associated_slice}"
+            )
         if first.associated_slice.partition != second.associated_slice.partition:
             raise ValueError(
                 f"To compare records, partition should be the same but got {first.associated_slice.partition} and {second.associated_slice.partition}"
             )
 
         return self._get_cursor(first).is_greater_than_or_equal(
-            self._convert_record_to_cursor_record(first), self._convert_record_to_cursor_record(second)
+            self._convert_record_to_cursor_record(first),
+            self._convert_record_to_cursor_record(second),
         )
 
     @staticmethod
     def _convert_record_to_cursor_record(record: Record) -> Record:
         return Record(
             record.data,
-            StreamSlice(partition={}, cursor_slice=record.associated_slice.cursor_slice) if record.associated_slice else None,
+            StreamSlice(partition={}, cursor_slice=record.associated_slice.cursor_slice)
+            if record.associated_slice
+            else None,
         )
 
     def _get_cursor(self, record: Record) -> DeclarativeCursor:
         if not record.associated_slice:
-            raise ValueError("Invalid state as stream slices that are emitted should refer to an existing cursor")
+            raise ValueError(
+                "Invalid state as stream slices that are emitted should refer to an existing cursor"
+            )
         partition_key = self._to_partition_key(record.associated_slice.partition)
         if partition_key not in self._cursor_per_partition:
-            raise ValueError("Invalid state as stream slices that are emitted should refer to an existing cursor")
+            raise ValueError(
+                "Invalid state as stream slices that are emitted should refer to an existing cursor"
+            )
         cursor = self._cursor_per_partition[partition_key]
         return cursor

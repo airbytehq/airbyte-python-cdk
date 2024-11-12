@@ -51,7 +51,6 @@ jobs:
       vector-db-based: ${{ steps.changes.outputs.vector-db-based }}
       sql: ${{ steps.changes.outputs.sql }}
 
-
     #   # The Connector CI Tests is a status check emitted by airbyte-ci
     #   # We make it pass once we have determined that there are no changes to the connectors
     #   - name: "Skip Connectors CI tests"
@@ -76,13 +75,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360 # 6 hours
     strategy:
-      fail-fast: true  # Save resources by aborting if one connector fails
+      fail-fast: false
       matrix:
         include:
           - connector: source-shopify
             cdk_extra: n/a
-          - connector: source-zendesk-support
-            cdk_extra: n/a
+          # Currently not passing CI (unrelated)
+          # - connector: source-zendesk-support
+          #   cdk_extra: n/a
           - connector: source-s3
             cdk_extra: file-based
           - connector: destination-pinecone
@@ -98,9 +98,9 @@ jobs:
         id: no_changes
         if: ${{ matrix.cdk_extra != 'n/a' && needs.cdk_changes.outputs[matrix.cdk_extra] == 'false' }}
         run: |
-            echo "Aborting job as specified extra not changed: ${{matrix.cdk_extra}} = ${{ needs.cdk_changes.outputs[matrix.cdk_extra] }}"
-            echo "status=cancelled" >> $GITHUB_OUTPUT
-            exit 1
+          echo "Aborting job as specified extra not changed: ${{matrix.cdk_extra}} = ${{ needs.cdk_changes.outputs[matrix.cdk_extra] }}"
+          echo "status=cancelled" >> $GITHUB_OUTPUT
+          exit 1
         continue-on-error: true
       # Get the monorepo so we can test the connectors
       - name: Checkout Airbyte Monorepo

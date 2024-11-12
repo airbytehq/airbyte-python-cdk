@@ -6,14 +6,23 @@ from dataclasses import InitVar, dataclass, field
 from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Union
 
 from airbyte_cdk.models import SyncMode
-from airbyte_cdk.sources.declarative.incremental import GlobalSubstreamCursor, PerPartitionCursor, PerPartitionWithGlobalCursor
+from airbyte_cdk.sources.declarative.incremental import (
+    GlobalSubstreamCursor,
+    PerPartitionCursor,
+    PerPartitionWithGlobalCursor,
+)
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.migrations.state_migration import StateMigration
 from airbyte_cdk.sources.declarative.retrievers import SimpleRetriever
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.schema import DefaultSchemaLoader
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
-from airbyte_cdk.sources.streams.checkpoint import CheckpointMode, CheckpointReader, Cursor, CursorBasedCheckpointReader
+from airbyte_cdk.sources.streams.checkpoint import (
+    CheckpointMode,
+    CheckpointReader,
+    Cursor,
+    CursorBasedCheckpointReader,
+)
 from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.types import Config, StreamSlice
 
@@ -50,7 +59,11 @@ class DeclarativeStream(Stream):
             if isinstance(self.stream_cursor_field, str)
             else self.stream_cursor_field
         )
-        self._schema_loader = self.schema_loader if self.schema_loader else DefaultSchemaLoader(config=self.config, parameters=parameters)
+        self._schema_loader = (
+            self.schema_loader
+            if self.schema_loader
+            else DefaultSchemaLoader(config=self.config, parameters=parameters)
+        )
 
     @property  # type: ignore
     def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
@@ -133,7 +146,9 @@ class DeclarativeStream(Stream):
             # empty slice which seems to make sense.
             stream_slice = StreamSlice(partition={}, cursor_slice={})
         if not isinstance(stream_slice, StreamSlice):
-            raise ValueError(f"DeclarativeStream does not support stream_slices that are not StreamSlice. Got {stream_slice}")
+            raise ValueError(
+                f"DeclarativeStream does not support stream_slices that are not StreamSlice. Got {stream_slice}"
+            )
         yield from self.retriever.read_records(self.get_json_schema(), stream_slice)  # type: ignore # records are of the correct type
 
     def get_json_schema(self) -> Mapping[str, Any]:  # type: ignore
@@ -146,7 +161,11 @@ class DeclarativeStream(Stream):
         return self._schema_loader.get_json_schema()
 
     def stream_slices(
-        self, *, sync_mode: SyncMode, cursor_field: Optional[List[str]] = None, stream_state: Optional[Mapping[str, Any]] = None
+        self,
+        *,
+        sync_mode: SyncMode,
+        cursor_field: Optional[List[str]] = None,
+        stream_state: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[Optional[StreamSlice]]:
         """
         Override to define the slices for this stream. See the stream slicing section of the docs for more information.
@@ -200,7 +219,9 @@ class DeclarativeStream(Stream):
         cursor = self.get_cursor()
         checkpoint_mode = self._checkpoint_mode
 
-        if isinstance(cursor, (GlobalSubstreamCursor, PerPartitionCursor, PerPartitionWithGlobalCursor)):
+        if isinstance(
+            cursor, (GlobalSubstreamCursor, PerPartitionCursor, PerPartitionWithGlobalCursor)
+        ):
             self.has_multiple_slices = True
             return CursorBasedCheckpointReader(
                 stream_slices=mappings_or_slices,

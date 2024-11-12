@@ -11,9 +11,17 @@ import pytest
 from _pytest.capture import CaptureFixture
 from _pytest.reports import ExceptionInfo
 from airbyte_cdk.entrypoint import launch
-from airbyte_cdk.models import AirbyteAnalyticsTraceMessage, AirbyteLogMessage, AirbyteMessage, ConfiguredAirbyteCatalogSerializer, SyncMode
+from airbyte_cdk.models import (
+    AirbyteAnalyticsTraceMessage,
+    AirbyteLogMessage,
+    AirbyteMessage,
+    ConfiguredAirbyteCatalogSerializer,
+    SyncMode,
+)
 from airbyte_cdk.sources import AbstractSource
-from airbyte_cdk.sources.file_based.stream.concurrent.cursor import AbstractConcurrentFileBasedCursor
+from airbyte_cdk.sources.file_based.stream.concurrent.cursor import (
+    AbstractConcurrentFileBasedCursor,
+)
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.entrypoint_wrapper import read as entrypoint_read
 from airbyte_cdk.utils import message_utils
@@ -21,7 +29,9 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 from unit_tests.sources.file_based.scenarios.scenario_builder import TestScenario
 
 
-def verify_discover(capsys: CaptureFixture[str], tmp_path: PosixPath, scenario: TestScenario[AbstractSource]) -> None:
+def verify_discover(
+    capsys: CaptureFixture[str], tmp_path: PosixPath, scenario: TestScenario[AbstractSource]
+) -> None:
     expected_exc, expected_msg = scenario.expected_discover_error
     expected_logs = scenario.expected_logs
     if expected_exc:
@@ -72,7 +82,9 @@ def assert_exception(expected_exception: type[BaseException], output: Entrypoint
 
 def _verify_read_output(output: EntrypointOutput, scenario: TestScenario[AbstractSource]) -> None:
     records_and_state_messages, log_messages = output.records_and_state_messages, output.logs
-    logs = [message.log for message in log_messages if message.log.level.value in scenario.log_levels]
+    logs = [
+        message.log for message in log_messages if message.log.level.value in scenario.log_levels
+    ]
     if scenario.expected_records is None:
         return
 
@@ -81,13 +93,17 @@ def _verify_read_output(output: EntrypointOutput, scenario: TestScenario[Abstrac
     sorted_expected_records = sorted(
         filter(lambda e: "data" in e, expected_records),
         key=lambda record: ",".join(
-            f"{k}={v}" for k, v in sorted(record["data"].items(), key=lambda items: (items[0], items[1])) if k != "emitted_at"
+            f"{k}={v}"
+            for k, v in sorted(record["data"].items(), key=lambda items: (items[0], items[1]))
+            if k != "emitted_at"
         ),
     )
     sorted_records = sorted(
         filter(lambda r: r.record, records_and_state_messages),
         key=lambda record: ",".join(
-            f"{k}={v}" for k, v in sorted(record.record.data.items(), key=lambda items: (items[0], items[1])) if k != "emitted_at"
+            f"{k}={v}"
+            for k, v in sorted(record.record.data.items(), key=lambda items: (items[0], items[1]))
+            if k != "emitted_at"
         ),
     )
 
@@ -105,15 +121,23 @@ def _verify_read_output(output: EntrypointOutput, scenario: TestScenario[Abstrac
 
     expected_states = list(filter(lambda e: "data" not in e, expected_records))
     states = list(filter(lambda r: r.state, records_and_state_messages))
-    assert len(states) > 0, "No state messages emitted. Successful syncs should emit at least one stream state."
+    assert (
+        len(states) > 0
+    ), "No state messages emitted. Successful syncs should emit at least one stream state."
     _verify_state_record_counts(sorted_records, states)
 
-    if hasattr(scenario.source, "cursor_cls") and issubclass(scenario.source.cursor_cls, AbstractConcurrentFileBasedCursor):
+    if hasattr(scenario.source, "cursor_cls") and issubclass(
+        scenario.source.cursor_cls, AbstractConcurrentFileBasedCursor
+    ):
         # Only check the last state emitted because we don't know the order the others will be in.
         # This may be needed for non-file-based concurrent scenarios too.
-        assert {k: v for k, v in states[-1].state.stream.stream_state.__dict__.items()} == expected_states[-1]
+        assert {
+            k: v for k, v in states[-1].state.stream.stream_state.__dict__.items()
+        } == expected_states[-1]
     else:
-        for actual, expected in zip(states, expected_states):  # states should be emitted in sorted order
+        for actual, expected in zip(
+            states, expected_states
+        ):  # states should be emitted in sorted order
             assert {k: v for k, v in actual.state.stream.stream_state.__dict__.items()} == expected
 
     if scenario.expected_logs:
@@ -127,7 +151,9 @@ def _verify_read_output(output: EntrypointOutput, scenario: TestScenario[Abstrac
         _verify_analytics(analytics, scenario.expected_analytics)
 
 
-def _verify_state_record_counts(records: List[AirbyteMessage], states: List[AirbyteMessage]) -> None:
+def _verify_state_record_counts(
+    records: List[AirbyteMessage], states: List[AirbyteMessage]
+) -> None:
     actual_record_counts = {}
     for record in records:
         stream_descriptor = message_utils.get_stream_descriptor(record)
@@ -137,7 +163,8 @@ def _verify_state_record_counts(records: List[AirbyteMessage], states: List[Airb
     for state_message in states:
         stream_descriptor = message_utils.get_stream_descriptor(state_message)
         state_record_count_sums[stream_descriptor] = (
-            state_record_count_sums.get(stream_descriptor, 0) + state_message.state.sourceStats.recordCount
+            state_record_count_sums.get(stream_descriptor, 0)
+            + state_message.state.sourceStats.recordCount
         )
 
     for stream, actual_count in actual_record_counts.items():
@@ -149,10 +176,13 @@ def _verify_state_record_counts(records: List[AirbyteMessage], states: List[Airb
         assert state_record_count_sums[stream] == 0
 
 
-def _verify_analytics(analytics: List[AirbyteMessage], expected_analytics: Optional[List[AirbyteAnalyticsTraceMessage]]) -> None:
+def _verify_analytics(
+    analytics: List[AirbyteMessage],
+    expected_analytics: Optional[List[AirbyteAnalyticsTraceMessage]],
+) -> None:
     if expected_analytics:
-        assert len(analytics) == len(
-            expected_analytics
+        assert (
+            len(analytics) == len(expected_analytics)
         ), f"Number of actual analytics messages ({len(analytics)}) did not match expected ({len(expected_analytics)})"
         for actual, expected in zip(analytics, expected_analytics):
             actual_type, actual_value = actual.trace.analytics.type, actual.trace.analytics.value
@@ -162,7 +192,9 @@ def _verify_analytics(analytics: List[AirbyteMessage], expected_analytics: Optio
             assert actual_value == expected_value
 
 
-def _verify_expected_logs(logs: List[AirbyteLogMessage], expected_logs: Optional[List[Mapping[str, Any]]]) -> None:
+def _verify_expected_logs(
+    logs: List[AirbyteLogMessage], expected_logs: Optional[List[Mapping[str, Any]]]
+) -> None:
     if expected_logs:
         for actual, expected in zip(logs, expected_logs):
             actual_level, actual_message = actual.level.value, actual.message
@@ -176,7 +208,9 @@ def verify_spec(capsys: CaptureFixture[str], scenario: TestScenario[AbstractSour
     assert spec(capsys, scenario) == scenario.expected_spec
 
 
-def verify_check(capsys: CaptureFixture[str], tmp_path: PosixPath, scenario: TestScenario[AbstractSource]) -> None:
+def verify_check(
+    capsys: CaptureFixture[str], tmp_path: PosixPath, scenario: TestScenario[AbstractSource]
+) -> None:
     expected_exc, expected_msg = scenario.expected_check_error
 
     if expected_exc:
@@ -200,7 +234,9 @@ def spec(capsys: CaptureFixture[str], scenario: TestScenario[AbstractSource]) ->
     return json.loads(captured.out.splitlines()[0])["spec"]  # type: ignore
 
 
-def check(capsys: CaptureFixture[str], tmp_path: PosixPath, scenario: TestScenario[AbstractSource]) -> Dict[str, Any]:
+def check(
+    capsys: CaptureFixture[str], tmp_path: PosixPath, scenario: TestScenario[AbstractSource]
+) -> Dict[str, Any]:
     launch(
         scenario.source,
         ["check", "--config", make_file(tmp_path / "config.json", scenario.config)],
@@ -217,7 +253,9 @@ def _find_connection_status(output: List[str]) -> Mapping[str, Any]:
     raise ValueError("No valid connectionStatus found in output")
 
 
-def discover(capsys: CaptureFixture[str], tmp_path: PosixPath, scenario: TestScenario[AbstractSource]) -> Dict[str, Any]:
+def discover(
+    capsys: CaptureFixture[str], tmp_path: PosixPath, scenario: TestScenario[AbstractSource]
+) -> Dict[str, Any]:
     launch(
         scenario.source,
         ["discover", "--config", make_file(tmp_path / "config.json", scenario.config)],
@@ -247,7 +285,9 @@ def read_with_state(scenario: TestScenario[AbstractSource]) -> EntrypointOutput:
     )
 
 
-def make_file(path: Path, file_contents: Optional[Union[Mapping[str, Any], List[Mapping[str, Any]]]]) -> str:
+def make_file(
+    path: Path, file_contents: Optional[Union[Mapping[str, Any], List[Mapping[str, Any]]]]
+) -> str:
     path.write_text(json.dumps(file_contents))
     return str(path)
 

@@ -8,7 +8,11 @@ from typing import Dict, List, Union
 import pytest
 import requests
 from airbyte_cdk import Decoder
-from airbyte_cdk.sources.declarative.decoders.json_decoder import IterableDecoder, JsonDecoder, JsonlDecoder
+from airbyte_cdk.sources.declarative.decoders.json_decoder import (
+    IterableDecoder,
+    JsonDecoder,
+    JsonlDecoder,
+)
 from airbyte_cdk.sources.declarative.extractors.dpath_extractor import DpathExtractor
 
 config = {"field": "record_array"}
@@ -32,15 +36,35 @@ def create_response(body: Union[Dict, bytes]):
         (["data"], decoder_json, {"data": {"id": 1}}, [{"id": 1}]),
         ([], decoder_json, {"id": 1}, [{"id": 1}]),
         ([], decoder_json, [{"id": 1}, {"id": 2}], [{"id": 1}, {"id": 2}]),
-        (["data", "records"], decoder_json, {"data": {"records": [{"id": 1}, {"id": 2}]}}, [{"id": 1}, {"id": 2}]),
-        (["{{ config['field'] }}"], decoder_json, {"record_array": [{"id": 1}, {"id": 2}]}, [{"id": 1}, {"id": 2}]),
-        (["{{ parameters['parameters_field'] }}"], decoder_json, {"record_array": [{"id": 1}, {"id": 2}]}, [{"id": 1}, {"id": 2}]),
+        (
+            ["data", "records"],
+            decoder_json,
+            {"data": {"records": [{"id": 1}, {"id": 2}]}},
+            [{"id": 1}, {"id": 2}],
+        ),
+        (
+            ["{{ config['field'] }}"],
+            decoder_json,
+            {"record_array": [{"id": 1}, {"id": 2}]},
+            [{"id": 1}, {"id": 2}],
+        ),
+        (
+            ["{{ parameters['parameters_field'] }}"],
+            decoder_json,
+            {"record_array": [{"id": 1}, {"id": 2}]},
+            [{"id": 1}, {"id": 2}],
+        ),
         (["record"], decoder_json, {"id": 1}, []),
         (["list", "*", "item"], decoder_json, {"list": [{"item": {"id": "1"}}]}, [{"id": "1"}]),
         (
             ["data", "*", "list", "data2", "*"],
             decoder_json,
-            {"data": [{"list": {"data2": [{"id": 1}, {"id": 2}]}}, {"list": {"data2": [{"id": 3}, {"id": 4}]}}]},
+            {
+                "data": [
+                    {"list": {"data2": [{"id": 1}, {"id": 2}]}},
+                    {"list": {"data2": [{"id": 3}, {"id": 4}]}},
+                ]
+            },
             [{"id": 1}, {"id": 2}, {"id": 3}, {"id": 4}],
         ),
         ([], decoder_jsonl, {"id": 1}, [{"id": 1}]),
@@ -88,7 +112,9 @@ def create_response(body: Union[Dict, bytes]):
     ],
 )
 def test_dpath_extractor(field_path: List, decoder: Decoder, body, expected_records: List):
-    extractor = DpathExtractor(field_path=field_path, config=config, decoder=decoder, parameters=parameters)
+    extractor = DpathExtractor(
+        field_path=field_path, config=config, decoder=decoder, parameters=parameters
+    )
 
     response = create_response(body)
     actual_records = list(extractor.extract_records(response))

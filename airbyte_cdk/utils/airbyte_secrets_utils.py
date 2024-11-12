@@ -36,7 +36,9 @@ def get_secret_paths(spec: Mapping[str, Any]) -> List[List[str]]:
     return paths
 
 
-def get_secrets(connection_specification: Mapping[str, Any], config: Mapping[str, Any]) -> List[Any]:
+def get_secrets(
+    connection_specification: Mapping[str, Any], config: Mapping[str, Any]
+) -> List[Any]:
     """
     Get a list of secret values from the source config based on the source specification
     :type connection_specification: the connection_specification field of an AirbyteSpecification i.e the JSONSchema definition

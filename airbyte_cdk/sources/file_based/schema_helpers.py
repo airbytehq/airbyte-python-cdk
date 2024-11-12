@@ -8,13 +8,20 @@ from enum import Enum
 from functools import total_ordering
 from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple, Type, Union
 
-from airbyte_cdk.sources.file_based.exceptions import ConfigValidationError, FileBasedSourceError, SchemaInferenceError
+from airbyte_cdk.sources.file_based.exceptions import (
+    ConfigValidationError,
+    FileBasedSourceError,
+    SchemaInferenceError,
+)
 
 JsonSchemaSupportedType = Union[List[str], Literal["string"], str]
 SchemaType = Mapping[str, Mapping[str, JsonSchemaSupportedType]]
 
 schemaless_schema = {"type": "object", "properties": {"data": {"type": "object"}}}
-file_transfer_schema = {"type": "object", "properties": {"data": {"type": "object"}, "file": {"type": "object"}}}
+file_transfer_schema = {
+    "type": "object",
+    "properties": {"data": {"type": "object"}, "file": {"type": "object"}},
+}
 
 
 @total_ordering
@@ -129,7 +136,12 @@ def _choose_wider_type(key: str, t1: Mapping[str, Any], t2: Mapping[str, Any]) -
             detected_types=f"{t1},{t2}",
         )
     # Schemas can still be merged if a key contains a null value in either t1 or t2, but it is still an object
-    elif (t1_type == "object" or t2_type == "object") and t1_type != "null" and t2_type != "null" and t1 != t2:
+    elif (
+        (t1_type == "object" or t2_type == "object")
+        and t1_type != "null"
+        and t2_type != "null"
+        and t1 != t2
+    ):
         raise SchemaInferenceError(
             FileBasedSourceError.SCHEMA_INFERENCE_ERROR,
             details="Cannot merge schema for unequal object types.",
@@ -137,12 +149,19 @@ def _choose_wider_type(key: str, t1: Mapping[str, Any], t2: Mapping[str, Any]) -
             detected_types=f"{t1},{t2}",
         )
     else:
-        comparable_t1 = get_comparable_type(TYPE_PYTHON_MAPPING[t1_type][0])  # accessing the type_mapping value
-        comparable_t2 = get_comparable_type(TYPE_PYTHON_MAPPING[t2_type][0])  # accessing the type_mapping value
+        comparable_t1 = get_comparable_type(
+            TYPE_PYTHON_MAPPING[t1_type][0]
+        )  # accessing the type_mapping value
+        comparable_t2 = get_comparable_type(
+            TYPE_PYTHON_MAPPING[t2_type][0]
+        )  # accessing the type_mapping value
         if not comparable_t1 and comparable_t2:
-            raise SchemaInferenceError(FileBasedSourceError.UNRECOGNIZED_TYPE, key=key, detected_types=f"{t1},{t2}")
+            raise SchemaInferenceError(
+                FileBasedSourceError.UNRECOGNIZED_TYPE, key=key, detected_types=f"{t1},{t2}"
+            )
         return max(
-            [t1, t2], key=lambda x: ComparableType(get_comparable_type(TYPE_PYTHON_MAPPING[x["type"]][0]))
+            [t1, t2],
+            key=lambda x: ComparableType(get_comparable_type(TYPE_PYTHON_MAPPING[x["type"]][0])),
         )  # accessing the type_mapping value
 
 
@@ -205,7 +224,8 @@ def _parse_json_input(input_schema: Union[str, Mapping[str, str]]) -> Optional[M
             schema = input_schema
         if not all(isinstance(s, str) for s in schema.values()):
             raise ConfigValidationError(
-                FileBasedSourceError.ERROR_PARSING_USER_PROVIDED_SCHEMA, details="Invalid input schema; nested schemas are not supported."
+                FileBasedSourceError.ERROR_PARSING_USER_PROVIDED_SCHEMA,
+                details="Invalid input schema; nested schemas are not supported.",
             )
 
     except json.decoder.JSONDecodeError:
@@ -214,7 +234,9 @@ def _parse_json_input(input_schema: Union[str, Mapping[str, str]]) -> Optional[M
     return schema
 
 
-def type_mapping_to_jsonschema(input_schema: Optional[Union[str, Mapping[str, str]]]) -> Optional[Mapping[str, Any]]:
+def type_mapping_to_jsonschema(
+    input_schema: Optional[Union[str, Mapping[str, str]]],
+) -> Optional[Mapping[str, Any]]:
     """
     Return the user input schema (type mapping), transformed to JSON Schema format.
 
@@ -241,7 +263,8 @@ def type_mapping_to_jsonschema(input_schema: Optional[Union[str, Mapping[str, st
 
         if not _json_schema_type:
             raise ConfigValidationError(
-                FileBasedSourceError.ERROR_PARSING_USER_PROVIDED_SCHEMA, details=f"Invalid type '{type_name}' for property '{col_name}'."
+                FileBasedSourceError.ERROR_PARSING_USER_PROVIDED_SCHEMA,
+                details=f"Invalid type '{type_name}' for property '{col_name}'.",
             )
 
         json_schema_type = _json_schema_type[0]

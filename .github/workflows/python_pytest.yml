@@ -8,66 +8,66 @@
 name: PyTest
 
 on:
-    push:
-      branches:
+  push:
+    branches:
       - main
-    pull_request: {}
+  pull_request: {}
 
 jobs:
   pytest-fast:
     name: Pytest (Fast)
     runs-on: ubuntu-latest
     steps:
-    # Common steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    - name: Set up Poetry
-      uses: Gr1N/setup-poetry@v9
-      with:
-        poetry-version: "1.7.1"
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-        cache: 'poetry'
-    - name: Install dependencies
-      run: poetry install --all-extras
+      # Common steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Poetry
+        uses: Gr1N/setup-poetry@v9
+        with:
+          poetry-version: "1.7.1"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "poetry"
+      - name: Install dependencies
+        run: poetry install --all-extras
 
-    - name: Run Pytest with Coverage (Fast Tests Only)
-      timeout-minutes: 60
-      env:
-        GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
-      run: >
-        poetry run coverage run -m pytest
-        --durations=5 --exitfirst
-        -m "not slow and not requires_creds and not linting and not flaky"
+      - name: Run Pytest with Coverage (Fast Tests Only)
+        timeout-minutes: 60
+        env:
+          GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
+        run: >
+          poetry run coverage run -m pytest
+          --durations=5 --exitfirst
+          -m "not slow and not requires_creds and not linting and not flaky"
 
-    - name: Run Pytest with Coverage (Flaky Tests Only)
-      timeout-minutes: 60
-      continue-on-error: true
-      env:
-        GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
-      run: >
-        poetry run coverage run -m pytest
-        --durations=5 --exitfirst
-        -m "flaky and not slow and not requires_creds"
+      - name: Run Pytest with Coverage (Flaky Tests Only)
+        timeout-minutes: 60
+        continue-on-error: true
+        env:
+          GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
+        run: >
+          poetry run coverage run -m pytest
+          --durations=5 --exitfirst
+          -m "flaky and not slow and not requires_creds"
 
-    - name: Print Coverage Report
-      if: always()
-      run: poetry run coverage report
+      - name: Print Coverage Report
+        if: always()
+        run: poetry run coverage report
 
-    - name: Create Coverage Artifacts
-      if: always()
-      run: |
-        poetry run coverage html -d htmlcov
-        poetry run coverage xml -o htmlcov/coverage.xml
+      - name: Create Coverage Artifacts
+        if: always()
+        run: |
+          poetry run coverage html -d htmlcov
+          poetry run coverage xml -o htmlcov/coverage.xml
 
-    - name: Upload coverage to GitHub Artifacts
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: fasttest-coverage
-        path: htmlcov/
+      - name: Upload coverage to GitHub Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fasttest-coverage
+          path: htmlcov/
 
   pytest:
     name: Pytest (All, Python ${{ matrix.python-version }}, ${{ matrix.os }})
@@ -78,14 +78,14 @@ jobs:
     strategy:
       matrix:
         python-version: [
-          '3.10',
-          '3.11',
-          #'3.12', # Currently blocked by Pendulum
-        ]
+            "3.10",
+            "3.11",
+            #'3.12', # Currently blocked by Pendulum
+          ]
         os: [
-          Ubuntu,
-          # Windows,  # For now, we don't include Windows in the test matrix.
-        ]
+            Ubuntu,
+            # Windows,  # For now, we don't include Windows in the test matrix.
+          ]
       fail-fast: false
 
     runs-on: "${{ matrix.os }}-latest"
@@ -94,44 +94,44 @@ jobs:
       # TODO: See if we can fully enforce this within PyAirbyte itself.
       PYTHONIOENCODING: utf-8
     steps:
-    # Common steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    - name: Set up Poetry
-      uses: Gr1N/setup-poetry@v9
-      with:
-        poetry-version: "1.7.1"
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
-        cache: 'poetry'
-    - name: Install dependencies
-      run: poetry install --all-extras
+      # Common steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Poetry
+        uses: Gr1N/setup-poetry@v9
+        with:
+          poetry-version: "1.7.1"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "poetry"
+      - name: Install dependencies
+        run: poetry install --all-extras
 
-    # Job-specific step(s):
-    - name: Run Pytest
-      timeout-minutes: 60
-      env:
-        GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
-      run: >
-        poetry run coverage run -m pytest
-        --durations=10
-        -m "not linting and not super_slow and not flaky"
+      # Job-specific step(s):
+      - name: Run Pytest
+        timeout-minutes: 60
+        env:
+          GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
+        run: >
+          poetry run coverage run -m pytest
+          --durations=10
+          -m "not linting and not super_slow and not flaky"
 
-    - name: Print Coverage Report
-      if: always()
-      run: poetry run coverage report
+      - name: Print Coverage Report
+        if: always()
+        run: poetry run coverage report
 
-    - name: Create Coverage Artifacts
-      if: always()
-      run: |
-        poetry run coverage html -d htmlcov
-        poetry run coverage xml -o htmlcov/coverage.xml
+      - name: Create Coverage Artifacts
+        if: always()
+        run: |
+          poetry run coverage html -d htmlcov
+          poetry run coverage xml -o htmlcov/coverage.xml
 
-    - name: Upload coverage to GitHub Artifacts
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: py${{ matrix.python-version }}-${{ matrix.os }}-test-coverage
-        path: htmlcov/
+      - name: Upload coverage to GitHub Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: py${{ matrix.python-version }}-${{ matrix.os }}-test-coverage
+          path: htmlcov/

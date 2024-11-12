@@ -84,7 +84,9 @@ class GlobalSubstreamCursor(DeclarativeCursor):
         self._partition_router = partition_router
         self._timer = Timer()
         self._lock = threading.Lock()
-        self._slice_semaphore = threading.Semaphore(0)  # Start with 0, indicating no slices being tracked
+        self._slice_semaphore = threading.Semaphore(
+            0
+        )  # Start with 0, indicating no slices being tracked
         self._all_slices_yielded = False
         self._lookback_window: Optional[int] = None
         self._current_partition: Optional[Mapping[str, Any]] = None
@@ -116,7 +118,9 @@ class GlobalSubstreamCursor(DeclarativeCursor):
         )
 
         self.start_slices_generation()
-        for slice, last, state in iterate_with_last_flag_and_state(slice_generator, self._partition_router.get_stream_state):
+        for slice, last, state in iterate_with_last_flag_and_state(
+            slice_generator, self._partition_router.get_stream_state
+        ):
             self._parent_state = state
             self.register_slice(last)
             yield slice
@@ -124,7 +128,8 @@ class GlobalSubstreamCursor(DeclarativeCursor):
 
     def generate_slices_from_partition(self, partition: StreamSlice) -> Iterable[StreamSlice]:
         slice_generator = (
-            StreamSlice(partition=partition, cursor_slice=cursor_slice) for cursor_slice in self._stream_cursor.stream_slices()
+            StreamSlice(partition=partition, cursor_slice=cursor_slice)
+            for cursor_slice in self._stream_cursor.stream_slices()
         )
 
         yield from slice_generator
@@ -199,10 +204,14 @@ class GlobalSubstreamCursor(DeclarativeCursor):
         if hasattr(self._stream_cursor, "set_runtime_lookback_window"):
             self._stream_cursor.set_runtime_lookback_window(lookback_window)
         else:
-            raise ValueError("The cursor class for Global Substream Cursor does not have a set_runtime_lookback_window method")
+            raise ValueError(
+                "The cursor class for Global Substream Cursor does not have a set_runtime_lookback_window method"
+            )
 
     def observe(self, stream_slice: StreamSlice, record: Record) -> None:
-        self._stream_cursor.observe(StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice), record)
+        self._stream_cursor.observe(
+            StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice), record
+        )
 
     def close_slice(self, stream_slice: StreamSlice, *args: Any) -> None:
         """
@@ -220,7 +229,9 @@ class GlobalSubstreamCursor(DeclarativeCursor):
             self._slice_semaphore.acquire()
             if self._all_slices_yielded and self._slice_semaphore._value == 0:
                 self._lookback_window = self._timer.finish()
-                self._stream_cursor.close_slice(StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice), *args)
+                self._stream_cursor.close_slice(
+                    StreamSlice(partition={}, cursor_slice=stream_slice.cursor_slice), *args
+                )
 
     def get_stream_state(self) -> StreamState:
         state: dict[str, Any] = {"state": self._stream_cursor.get_stream_state()}
@@ -322,12 +333,15 @@ class GlobalSubstreamCursor(DeclarativeCursor):
 
     def is_greater_than_or_equal(self, first: Record, second: Record) -> bool:
         return self._stream_cursor.is_greater_than_or_equal(
-            self._convert_record_to_cursor_record(first), self._convert_record_to_cursor_record(second)
+            self._convert_record_to_cursor_record(first),
+            self._convert_record_to_cursor_record(second),
         )
 
     @staticmethod
     def _convert_record_to_cursor_record(record: Record) -> Record:
         return Record(
             record.data,
-            StreamSlice(partition={}, cursor_slice=record.associated_slice.cursor_slice) if record.associated_slice else None,
+            StreamSlice(partition={}, cursor_slice=record.associated_slice.cursor_slice)
+            if record.associated_slice
+            else None,
         )

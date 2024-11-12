@@ -32,7 +32,11 @@ from serpyco_rs import SchemaValidationError
 
 class MockSource(Source):
     def read(
-        self, logger: logging.Logger, config: Mapping[str, Any], catalog: ConfiguredAirbyteCatalog, state: MutableMapping[str, Any] = None
+        self,
+        logger: logging.Logger,
+        config: Mapping[str, Any],
+        catalog: ConfiguredAirbyteCatalog,
+        state: MutableMapping[str, Any] = None,
     ):
         pass
 
@@ -66,12 +70,20 @@ def catalog():
     configured_catalog = {
         "streams": [
             {
-                "stream": {"name": "mock_http_stream", "json_schema": {}, "supported_sync_modes": ["full_refresh"]},
+                "stream": {
+                    "name": "mock_http_stream",
+                    "json_schema": {},
+                    "supported_sync_modes": ["full_refresh"],
+                },
                 "destination_sync_mode": "overwrite",
                 "sync_mode": "full_refresh",
             },
             {
-                "stream": {"name": "mock_stream", "json_schema": {}, "supported_sync_modes": ["full_refresh"]},
+                "stream": {
+                    "name": "mock_stream",
+                    "json_schema": {},
+                    "supported_sync_modes": ["full_refresh"],
+                },
                 "destination_sync_mode": "overwrite",
                 "sync_mode": "full_refresh",
             },
@@ -221,7 +233,10 @@ def abstract_source(mocker):
                     "global": {
                         "shared_state": {"shared_key": "shared_val"},
                         "stream_states": [
-                            {"stream_state": {"created_at": "2009-07-19"}, "stream_descriptor": {"name": "movies", "namespace": "public"}}
+                            {
+                                "stream_state": {"created_at": "2009-07-19"},
+                                "stream_descriptor": {"name": "movies", "namespace": "public"},
+                            }
                         ],
                     },
                 }
@@ -233,7 +248,9 @@ def abstract_source(mocker):
                         shared_state=AirbyteStateBlob({"shared_key": "shared_val"}),
                         stream_states=[
                             AirbyteStreamState(
-                                stream_descriptor=StreamDescriptor(name="movies", namespace="public"),
+                                stream_descriptor=StreamDescriptor(
+                                    name="movies", namespace="public"
+                                ),
                                 stream_state=AirbyteStateBlob({"created_at": "2009-07-19"}),
                             )
                         ],
@@ -297,7 +314,9 @@ def test_read_state(source, incoming_state, expected_state, expected_error):
         with expected_error:
             actual = source.read_state(state_file.name)
             if expected_state and actual:
-                assert AirbyteStateMessageSerializer.dump(actual[0]) == AirbyteStateMessageSerializer.dump(expected_state[0])
+                assert AirbyteStateMessageSerializer.dump(
+                    actual[0]
+                ) == AirbyteStateMessageSerializer.dump(expected_state[0])
 
 
 def test_read_invalid_state(source):
@@ -311,7 +330,11 @@ def test_read_invalid_state(source):
 @pytest.mark.parametrize(
     "source, expected_state",
     [
-        pytest.param(MockAbstractSource(), [], id="test_source_not_implementing_read_returns_per_stream_format"),
+        pytest.param(
+            MockAbstractSource(),
+            [],
+            id="test_source_not_implementing_read_returns_per_stream_format",
+        ),
     ],
 )
 def test_read_state_nonexistent(source, expected_state):
@@ -361,19 +384,34 @@ def test_internal_config(abstract_source, catalog):
     assert not non_http_stream.page_size
     # Test with records limit set to 1
     internal_config = {"some_config": 100, "_limit": 1}
-    records = [r for r in abstract_source.read(logger=logger, config=internal_config, catalog=catalog, state={})]
+    records = [
+        r
+        for r in abstract_source.read(
+            logger=logger, config=internal_config, catalog=catalog, state={}
+        )
+    ]
     # 1 from http stream + 1 from non http stream, 1 for state message for each stream (2x) and 3 for stream status messages for each stream (2x)
     assert len(records) == 1 + 1 + 1 + 1 + 3 + 3
     assert "_limit" not in abstract_source.streams_config
     assert "some_config" in abstract_source.streams_config
     # Test with records limit set to number that exceeds expceted records
     internal_config = {"some_config": 100, "_limit": 20}
-    records = [r for r in abstract_source.read(logger=logger, config=internal_config, catalog=catalog, state={})]
+    records = [
+        r
+        for r in abstract_source.read(
+            logger=logger, config=internal_config, catalog=catalog, state={}
+        )
+    ]
     assert len(records) == 3 + 3 + 1 + 1 + 3 + 3
 
     # Check if page_size paramter is set to http instance only
     internal_config = {"some_config": 100, "_page_size": 2}
-    records = [r for r in abstract_source.read(logger=logger, config=internal_config, catalog=catalog, state={})]
+    records = [
+        r
+        for r in abstract_source.read(
+            logger=logger, config=internal_config, catalog=catalog, state={}
+        )
+    ]
     assert "_page_size" not in abstract_source.streams_config
     assert "some_config" in abstract_source.streams_config
     assert len(records) == 3 + 3 + 1 + 1 + 3 + 3
@@ -397,7 +435,12 @@ def test_internal_config_limit(mocker, abstract_source, catalog):
     internal_config = {"some_config": 100, "_limit": STREAM_LIMIT}
 
     catalog.streams[0].sync_mode = SyncMode.full_refresh
-    records = [r for r in abstract_source.read(logger=logger_mock, config=internal_config, catalog=catalog, state={})]
+    records = [
+        r
+        for r in abstract_source.read(
+            logger=logger_mock, config=internal_config, catalog=catalog, state={}
+        )
+    ]
     assert len(records) == STREAM_LIMIT + SLICE_DEBUG_LOG_COUNT + TRACE_STATUS_COUNT + STATE_COUNT
     logger_info_args = [call[0][0] for call in logger_mock.info.call_args_list]
     # Check if log line matches number of limit
@@ -406,14 +449,21 @@ def test_internal_config_limit(mocker, abstract_source, catalog):
 
     # No limit, check if state record produced for incremental stream
     catalog.streams[0].sync_mode = SyncMode.incremental
-    records = [r for r in abstract_source.read(logger=logger_mock, config={}, catalog=catalog, state={})]
+    records = [
+        r for r in abstract_source.read(logger=logger_mock, config={}, catalog=catalog, state={})
+    ]
     assert len(records) == FULL_RECORDS_NUMBER + SLICE_DEBUG_LOG_COUNT + TRACE_STATUS_COUNT + 1
     assert records[-2].type == Type.STATE
     assert records[-1].type == Type.TRACE
 
     # Set limit and check if state is produced when limit is set for incremental stream
     logger_mock.reset_mock()
-    records = [r for r in abstract_source.read(logger=logger_mock, config=internal_config, catalog=catalog, state={})]
+    records = [
+        r
+        for r in abstract_source.read(
+            logger=logger_mock, config=internal_config, catalog=catalog, state={}
+        )
+    ]
     assert len(records) == STREAM_LIMIT + SLICE_DEBUG_LOG_COUNT + TRACE_STATUS_COUNT + 1
     assert records[-2].type == Type.STATE
     assert records[-1].type == Type.TRACE
@@ -436,8 +486,12 @@ def test_source_config_no_transform(mocker, abstract_source, catalog):
     streams = abstract_source.streams(None)
     http_stream, non_http_stream = streams
     http_stream.get_json_schema.return_value = non_http_stream.get_json_schema.return_value = SCHEMA
-    http_stream.read_records.return_value, non_http_stream.read_records.return_value = [[{"value": 23}] * 5] * 2
-    records = [r for r in abstract_source.read(logger=logger_mock, config={}, catalog=catalog, state={})]
+    http_stream.read_records.return_value, non_http_stream.read_records.return_value = [
+        [{"value": 23}] * 5
+    ] * 2
+    records = [
+        r for r in abstract_source.read(logger=logger_mock, config={}, catalog=catalog, state={})
+    ]
     assert len(records) == 2 * (5 + SLICE_DEBUG_LOG_COUNT + TRACE_STATUS_COUNT + STATE_COUNT)
     assert [r.record.data for r in records if r.type == Type.RECORD] == [{"value": 23}] * 2 * 5
     assert http_stream.get_json_schema.call_count == 5 + GET_JSON_SCHEMA_COUNT_WHEN_FILTERING
@@ -455,8 +509,13 @@ def test_source_config_transform(mocker, abstract_source, catalog):
     http_stream.transformer = TypeTransformer(TransformConfig.DefaultSchemaNormalization)
     non_http_stream.transformer = TypeTransformer(TransformConfig.DefaultSchemaNormalization)
     http_stream.get_json_schema.return_value = non_http_stream.get_json_schema.return_value = SCHEMA
-    http_stream.read_records.return_value, non_http_stream.read_records.return_value = [{"value": 23}], [{"value": 23}]
-    records = [r for r in abstract_source.read(logger=logger_mock, config={}, catalog=catalog, state={})]
+    http_stream.read_records.return_value, non_http_stream.read_records.return_value = (
+        [{"value": 23}],
+        [{"value": 23}],
+    )
+    records = [
+        r for r in abstract_source.read(logger=logger_mock, config={}, catalog=catalog, state={})
+    ]
     assert len(records) == 2 + SLICE_DEBUG_LOG_COUNT + TRACE_STATUS_COUNT + STATE_COUNT
     assert [r.record.data for r in records if r.type == Type.RECORD] == [{"value": "23"}] * 2
 
@@ -471,7 +530,15 @@ def test_source_config_transform_and_no_transform(mocker, abstract_source, catal
     http_stream, non_http_stream = streams
     http_stream.transformer = TypeTransformer(TransformConfig.DefaultSchemaNormalization)
     http_stream.get_json_schema.return_value = non_http_stream.get_json_schema.return_value = SCHEMA
-    http_stream.read_records.return_value, non_http_stream.read_records.return_value = [{"value": 23}], [{"value": 23}]
-    records = [r for r in abstract_source.read(logger=logger_mock, config={}, catalog=catalog, state={})]
+    http_stream.read_records.return_value, non_http_stream.read_records.return_value = (
+        [{"value": 23}],
+        [{"value": 23}],
+    )
+    records = [
+        r for r in abstract_source.read(logger=logger_mock, config={}, catalog=catalog, state={})
+    ]
     assert len(records) == 2 + SLICE_DEBUG_LOG_COUNT + TRACE_STATUS_COUNT + STATE_COUNT
-    assert [r.record.data for r in records if r.type == Type.RECORD] == [{"value": "23"}, {"value": 23}]
+    assert [r.record.data for r in records if r.type == Type.RECORD] == [
+        {"value": "23"},
+        {"value": 23},
+    ]

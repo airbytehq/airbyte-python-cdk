@@ -8,7 +8,10 @@ from typing import Any, Mapping, Optional, Type
 from airbyte_cdk.sources.file_based.availability_strategy.abstract_file_based_availability_strategy import (
     AbstractFileBasedAvailabilityStrategy,
 )
-from airbyte_cdk.sources.file_based.discovery_policy import AbstractDiscoveryPolicy, DefaultDiscoveryPolicy
+from airbyte_cdk.sources.file_based.discovery_policy import (
+    AbstractDiscoveryPolicy,
+    DefaultDiscoveryPolicy,
+)
 from airbyte_cdk.sources.file_based.file_based_source import default_parsers
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
@@ -34,7 +37,10 @@ class FileBasedSourceBuilder(SourceBuilder[InMemoryFilesSource]):
         self._state: Optional[TState] = None
 
     def build(
-        self, configured_catalog: Optional[Mapping[str, Any]], config: Optional[Mapping[str, Any]], state: Optional[TState]
+        self,
+        configured_catalog: Optional[Mapping[str, Any]],
+        config: Optional[Mapping[str, Any]],
+        state: Optional[TState],
     ) -> InMemoryFilesSource:
         if self._file_type is None:
             raise ValueError("file_type is not set")
@@ -65,19 +71,27 @@ class FileBasedSourceBuilder(SourceBuilder[InMemoryFilesSource]):
         self._parsers = parsers
         return self
 
-    def set_availability_strategy(self, availability_strategy: AbstractFileBasedAvailabilityStrategy) -> "FileBasedSourceBuilder":
+    def set_availability_strategy(
+        self, availability_strategy: AbstractFileBasedAvailabilityStrategy
+    ) -> "FileBasedSourceBuilder":
         self._availability_strategy = availability_strategy
         return self
 
-    def set_discovery_policy(self, discovery_policy: AbstractDiscoveryPolicy) -> "FileBasedSourceBuilder":
+    def set_discovery_policy(
+        self, discovery_policy: AbstractDiscoveryPolicy
+    ) -> "FileBasedSourceBuilder":
         self._discovery_policy = discovery_policy
         return self
 
-    def set_validation_policies(self, validation_policies: Mapping[str, AbstractSchemaValidationPolicy]) -> "FileBasedSourceBuilder":
+    def set_validation_policies(
+        self, validation_policies: Mapping[str, AbstractSchemaValidationPolicy]
+    ) -> "FileBasedSourceBuilder":
         self._validation_policies = validation_policies
         return self
 
-    def set_stream_reader(self, stream_reader: AbstractFileBasedStreamReader) -> "FileBasedSourceBuilder":
+    def set_stream_reader(
+        self, stream_reader: AbstractFileBasedStreamReader
+    ) -> "FileBasedSourceBuilder":
         self._stream_reader = stream_reader
         return self
 
@@ -85,7 +99,9 @@ class FileBasedSourceBuilder(SourceBuilder[InMemoryFilesSource]):
         self._cursor_cls = cursor_cls
         return self
 
-    def set_file_write_options(self, file_write_options: Mapping[str, Any]) -> "FileBasedSourceBuilder":
+    def set_file_write_options(
+        self, file_write_options: Mapping[str, Any]
+    ) -> "FileBasedSourceBuilder":
         self._file_write_options = file_write_options
         return self
 

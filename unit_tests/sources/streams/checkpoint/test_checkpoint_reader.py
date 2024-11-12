@@ -50,7 +50,9 @@ def test_incremental_checkpoint_reader_incoming_state():
 
 
 def test_resumable_full_refresh_checkpoint_reader_next():
-    checkpoint_reader = ResumableFullRefreshCheckpointReader(stream_state={"synthetic_page_number": 55})
+    checkpoint_reader = ResumableFullRefreshCheckpointReader(
+        stream_state={"synthetic_page_number": 55}
+    )
 
     checkpoint_reader.observe({"synthetic_page_number": 56})
     assert checkpoint_reader.next() == {"synthetic_page_number": 56}
@@ -97,9 +99,15 @@ def test_full_refresh_checkpoint_reader_substream():
 
 def test_cursor_based_checkpoint_reader_incremental():
     expected_slices = [
-        StreamSlice(cursor_slice={"start_date": "2024-01-01", "end_date": "2024-02-01"}, partition={}),
-        StreamSlice(cursor_slice={"start_date": "2024-02-01", "end_date": "2024-03-01"}, partition={}),
-        StreamSlice(cursor_slice={"start_date": "2024-03-01", "end_date": "2024-04-01"}, partition={}),
+        StreamSlice(
+            cursor_slice={"start_date": "2024-01-01", "end_date": "2024-02-01"}, partition={}
+        ),
+        StreamSlice(
+            cursor_slice={"start_date": "2024-02-01", "end_date": "2024-03-01"}, partition={}
+        ),
+        StreamSlice(
+            cursor_slice={"start_date": "2024-03-01", "end_date": "2024-04-01"}, partition={}
+        ),
     ]
 
     expected_stream_state = {"end_date": "2024-02-01"}
@@ -110,7 +118,9 @@ def test_cursor_based_checkpoint_reader_incremental():
     incremental_cursor.get_stream_state.return_value = expected_stream_state
 
     checkpoint_reader = CursorBasedCheckpointReader(
-        cursor=incremental_cursor, stream_slices=incremental_cursor.stream_slices(), read_state_from_cursor=False
+        cursor=incremental_cursor,
+        stream_slices=incremental_cursor.stream_slices(),
+        read_state_from_cursor=False,
     )
 
     assert checkpoint_reader.next() == expected_slices[0]
@@ -265,7 +275,9 @@ def test_cursor_based_checkpoint_reader_sync_first_parent_slice():
         StreamSlice(cursor_slice={}, partition={"parent_id": "naga"}),
     ]
     rfr_cursor.select_state.side_effect = [
-        {"next_page_token": 3},  # Accounts for the first invocation when checking if partition was already successful
+        {
+            "next_page_token": 3
+        },  # Accounts for the first invocation when checking if partition was already successful
         {"next_page_token": 4},
         {"next_page_token": 4},
         {"__ab_full_refresh_sync_complete": True},
@@ -293,7 +305,9 @@ def test_cursor_based_checkpoint_reader_sync_first_parent_slice():
 def test_cursor_based_checkpoint_reader_resumable_full_refresh_invalid_slice():
     rfr_cursor = Mock()
     rfr_cursor.stream_slices.return_value = [{"invalid": "stream_slice"}]
-    rfr_cursor.select_state.side_effect = [StreamSlice(cursor_slice={"invalid": "stream_slice"}, partition={})]
+    rfr_cursor.select_state.side_effect = [
+        StreamSlice(cursor_slice={"invalid": "stream_slice"}, partition={})
+    ]
 
     checkpoint_reader = CursorBasedCheckpointReader(
         cursor=rfr_cursor, stream_slices=rfr_cursor.stream_slices(), read_state_from_cursor=True
@@ -306,10 +320,30 @@ def test_cursor_based_checkpoint_reader_resumable_full_refresh_invalid_slice():
 def test_legacy_cursor_based_checkpoint_reader_resumable_full_refresh():
     expected_mapping_slices = [
         {"parent_id": 400, "partition": {"parent_id": 400}, "cursor_slice": {}},
-        {"parent_id": 400, "next_page_token": 2, "partition": {"parent_id": 400}, "cursor_slice": {"next_page_token": 2}},
-        {"parent_id": 400, "next_page_token": 2, "partition": {"parent_id": 400}, "cursor_slice": {"next_page_token": 2}},
-        {"parent_id": 400, "next_page_token": 3, "partition": {"parent_id": 400}, "cursor_slice": {"next_page_token": 3}},
-        {"parent_id": 400, "next_page_token": 4, "partition": {"parent_id": 400}, "cursor_slice": {"next_page_token": 4}},
+        {
+            "parent_id": 400,
+            "next_page_token": 2,
+            "partition": {"parent_id": 400},
+            "cursor_slice": {"next_page_token": 2},
+        },
+        {
+            "parent_id": 400,
+            "next_page_token": 2,
+            "partition": {"parent_id": 400},
+            "cursor_slice": {"next_page_token": 2},
+        },
+        {
+            "parent_id": 400,
+            "next_page_token": 3,
+            "partition": {"parent_id": 400},
+            "cursor_slice": {"next_page_token": 3},
+        },
+        {
+            "parent_id": 400,
+            "next_page_token": 4,
+            "partition": {"parent_id": 400},
+            "cursor_slice": {"next_page_token": 4},
+        },
         {
             "parent_id": 400,
             "__ab_full_refresh_sync_complete": True,

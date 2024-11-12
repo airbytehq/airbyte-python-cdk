@@ -92,7 +92,9 @@ class AbstractOauth2Authenticator(AuthBase):
 
         return payload
 
-    def _wrap_refresh_token_exception(self, exception: requests.exceptions.RequestException) -> bool:
+    def _wrap_refresh_token_exception(
+        self, exception: requests.exceptions.RequestException
+    ) -> bool:
         try:
             if exception.response is not None:
                 exception_content = exception.response.json()
@@ -102,7 +104,8 @@ class AbstractOauth2Authenticator(AuthBase):
             return False
         return (
             exception.response.status_code in self._refresh_token_error_status_codes
-            and exception_content.get(self._refresh_token_error_key) in self._refresh_token_error_values
+            and exception_content.get(self._refresh_token_error_key)
+            in self._refresh_token_error_values
         )
 
     @backoff.on_exception(
@@ -115,14 +118,20 @@ class AbstractOauth2Authenticator(AuthBase):
     )
     def _get_refresh_access_token_response(self) -> Any:
         try:
-            response = requests.request(method="POST", url=self.get_token_refresh_endpoint(), data=self.build_refresh_request_body())
+            response = requests.request(
+                method="POST",
+                url=self.get_token_refresh_endpoint(),
+                data=self.build_refresh_request_body(),
+            )
             if response.ok:
                 response_json = response.json()
                 # Add the access token to the list of secrets so it is replaced before logging the response
                 # An argument could be made to remove the prevous access key from the list of secrets, but unmasking values seems like a security incident waiting to happen...
                 access_key = response_json.get(self.get_access_token_name())
                 if not access_key:
-                    raise Exception("Token refresh API response was missing access token {self.get_access_token_name()}")
+                    raise Exception(
+                        "Token refresh API response was missing access token {self.get_access_token_name()}"
+                    )
                 add_to_secrets(access_key)
                 self._log_response(response)
                 return response_json
@@ -136,7 +145,9 @@ class AbstractOauth2Authenticator(AuthBase):
                     raise DefaultBackoffException(request=e.response.request, response=e.response)
             if self._wrap_refresh_token_exception(e):
                 message = "Refresh token is invalid or expired. Please re-authenticate from Sources/<your source>/Settings."
-                raise AirbyteTracedException(internal_message=message, message=message, failure_type=FailureType.config_error)
+                raise AirbyteTracedException(
+                    internal_message=message, message=message, failure_type=FailureType.config_error
+                )
             raise
         except Exception as e:
             raise Exception(f"Error while refreshing access token: {e}") from e
@@ -149,7 +160,9 @@ class AbstractOauth2Authenticator(AuthBase):
         """
         response_json = self._get_refresh_access_token_response()
 
-        return response_json[self.get_access_token_name()], response_json[self.get_expires_in_name()]
+        return response_json[self.get_access_token_name()], response_json[
+            self.get_expires_in_name()
+        ]
 
     def _parse_token_expiration_date(self, value: Union[str, int]) -> pendulum.DateTime:
         """

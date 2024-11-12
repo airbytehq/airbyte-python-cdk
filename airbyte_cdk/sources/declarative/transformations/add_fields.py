@@ -85,12 +85,16 @@ class AddFields(RecordTransformation):
 
     fields: List[AddedFieldDefinition]
     parameters: InitVar[Mapping[str, Any]]
-    _parsed_fields: List[ParsedAddFieldDefinition] = field(init=False, repr=False, default_factory=list)
+    _parsed_fields: List[ParsedAddFieldDefinition] = field(
+        init=False, repr=False, default_factory=list
+    )
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         for add_field in self.fields:
             if len(add_field.path) < 1:
-                raise ValueError(f"Expected a non-zero-length path for the AddFields transformation {add_field}")
+                raise ValueError(
+                    f"Expected a non-zero-length path for the AddFields transformation {add_field}"
+                )
 
             if not isinstance(add_field.value, InterpolatedString):
                 if not isinstance(add_field.value, str):
@@ -106,7 +110,12 @@ class AddFields(RecordTransformation):
                     )
             else:
                 self._parsed_fields.append(
-                    ParsedAddFieldDefinition(add_field.path, add_field.value, value_type=add_field.value_type, parameters={})
+                    ParsedAddFieldDefinition(
+                        add_field.path,
+                        add_field.value,
+                        value_type=add_field.value_type,
+                        parameters={},
+                    )
                 )
 
     def transform(

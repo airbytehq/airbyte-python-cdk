@@ -25,7 +25,11 @@ from airbyte_cdk.models import (
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
-def initialize_processor(config=ProcessingConfigModel(chunk_size=48, chunk_overlap=0, text_fields=None, metadata_fields=None)):
+def initialize_processor(
+    config=ProcessingConfigModel(
+        chunk_size=48, chunk_overlap=0, text_fields=None, metadata_fields=None
+    ),
+):
     catalog = ConfiguredAirbyteCatalog(
         streams=[
             ConfiguredAirbyteStream(
@@ -129,7 +133,9 @@ def test_process_single_chunk_limited_metadata():
 
 
 def test_process_single_chunk_without_namespace():
-    config = ProcessingConfigModel(chunk_size=48, chunk_overlap=0, text_fields=None, metadata_fields=None)
+    config = ProcessingConfigModel(
+        chunk_size=48, chunk_overlap=0, text_fields=None, metadata_fields=None
+    )
     catalog = ConfiguredAirbyteCatalog(
         streams=[
             ConfiguredAirbyteStream(

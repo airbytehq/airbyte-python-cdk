@@ -664,7 +664,9 @@ wait_for_rediscovery_scenario_single_stream = (
             ]
         }
     )
-    .set_expected_records(None)  # When syncing streams concurrently we don't know how many records will be emitted before the sync stops
+    .set_expected_records(
+        None
+    )  # When syncing streams concurrently we don't know how many records will be emitted before the sync stops
     .set_expected_logs(
         {
             "read": [
@@ -703,7 +705,9 @@ wait_for_rediscovery_scenario_multi_stream = (
             ]
         }
     )
-    .set_expected_records(None)  # When syncing streams concurrently we don't know how many records will be emitted before the sync stops
+    .set_expected_records(
+        None
+    )  # When syncing streams concurrently we don't know how many records will be emitted before the sync stops
     .set_expected_logs(
         {
             "read": [

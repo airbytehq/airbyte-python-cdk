@@ -181,19 +181,60 @@ SCHEMA = {
     "record,schema,expected_result",
     [
         pytest.param(COMPLETE_CONFORMING_RECORD, SCHEMA, True, id="record-conforms"),
-        pytest.param(NONCONFORMING_EXTRA_COLUMN_RECORD, SCHEMA, False, id="nonconforming-extra-column"),
-        pytest.param(CONFORMING_WITH_MISSING_COLUMN_RECORD, SCHEMA, True, id="record-conforms-with-missing-column"),
-        pytest.param(CONFORMING_WITH_NARROWER_TYPE_RECORD, SCHEMA, True, id="record-conforms-with-narrower-type"),
+        pytest.param(
+            NONCONFORMING_EXTRA_COLUMN_RECORD, SCHEMA, False, id="nonconforming-extra-column"
+        ),
+        pytest.param(
+            CONFORMING_WITH_MISSING_COLUMN_RECORD,
+            SCHEMA,
+            True,
+            id="record-conforms-with-missing-column",
+        ),
+        pytest.param(
+            CONFORMING_WITH_NARROWER_TYPE_RECORD,
+            SCHEMA,
+            True,
+            id="record-conforms-with-narrower-type",
+        ),
         pytest.param(NONCONFORMING_WIDER_TYPE_RECORD, SCHEMA, False, id="nonconforming-wider-type"),
-        pytest.param(NONCONFORMING_NON_OBJECT_RECORD, SCHEMA, False, id="nonconforming-string-is-not-an-object"),
-        pytest.param(NONCONFORMING_NON_ARRAY_RECORD, SCHEMA, False, id="nonconforming-string-is-not-an-array"),
-        pytest.param(NONCONFORMING_TOO_WIDE_ARRAY_RECORD, SCHEMA, False, id="nonconforming-array-values-too-wide"),
-        pytest.param(CONFORMING_NARROWER_ARRAY_RECORD, SCHEMA, True, id="conforming-array-values-narrower-than-schema"),
-        pytest.param(NONCONFORMING_INVALID_ARRAY_RECORD, SCHEMA, False, id="nonconforming-array-is-not-a-string"),
-        pytest.param(NONCONFORMING_INVALID_OBJECT_RECORD, SCHEMA, False, id="nonconforming-object-is-not-a-string"),
+        pytest.param(
+            NONCONFORMING_NON_OBJECT_RECORD,
+            SCHEMA,
+            False,
+            id="nonconforming-string-is-not-an-object",
+        ),
+        pytest.param(
+            NONCONFORMING_NON_ARRAY_RECORD, SCHEMA, False, id="nonconforming-string-is-not-an-array"
+        ),
+        pytest.param(
+            NONCONFORMING_TOO_WIDE_ARRAY_RECORD,
+            SCHEMA,
+            False,
+            id="nonconforming-array-values-too-wide",
+        ),
+        pytest.param(
+            CONFORMING_NARROWER_ARRAY_RECORD,
+            SCHEMA,
+            True,
+            id="conforming-array-values-narrower-than-schema",
+        ),
+        pytest.param(
+            NONCONFORMING_INVALID_ARRAY_RECORD,
+            SCHEMA,
+            False,
+            id="nonconforming-array-is-not-a-string",
+        ),
+        pytest.param(
+            NONCONFORMING_INVALID_OBJECT_RECORD,
+            SCHEMA,
+            False,
+            id="nonconforming-object-is-not-a-string",
+        ),
     ],
 )
-def test_conforms_to_schema(record: Mapping[str, Any], schema: Mapping[str, Any], expected_result: bool) -> None:
+def test_conforms_to_schema(
+    record: Mapping[str, Any], schema: Mapping[str, Any], expected_result: bool
+) -> None:
     assert conforms_to_schema(record, schema) == expected_result
 
 
@@ -210,13 +251,42 @@ def test_comparable_types() -> None:
     [
         pytest.param({}, {}, {}, id="empty-schemas"),
         pytest.param({"a": None}, {}, None, id="null-value-in-schema"),
-        pytest.param({"a": {"type": "integer"}}, {}, {"a": {"type": "integer"}}, id="single-key-schema1"),
-        pytest.param({}, {"a": {"type": "integer"}}, {"a": {"type": "integer"}}, id="single-key-schema2"),
-        pytest.param({"a": {"type": "integer"}}, {"a": {"type": "integer"}}, {"a": {"type": "integer"}}, id="single-key-both-schemas"),
-        pytest.param({"a": {"type": "integer"}}, {"a": {"type": "number"}}, {"a": {"type": "number"}}, id="single-key-schema2-is-wider"),
-        pytest.param({"a": {"type": "number"}}, {"a": {"type": "integer"}}, {"a": {"type": "number"}}, id="single-key-schema1-is-wider"),
-        pytest.param({"a": {"type": "array"}}, {"a": {"type": "integer"}}, None, id="single-key-with-array-schema1"),
-        pytest.param({"a": {"type": "integer"}}, {"a": {"type": "array"}}, None, id="single-key-with-array-schema2"),
+        pytest.param(
+            {"a": {"type": "integer"}}, {}, {"a": {"type": "integer"}}, id="single-key-schema1"
+        ),
+        pytest.param(
+            {}, {"a": {"type": "integer"}}, {"a": {"type": "integer"}}, id="single-key-schema2"
+        ),
+        pytest.param(
+            {"a": {"type": "integer"}},
+            {"a": {"type": "integer"}},
+            {"a": {"type": "integer"}},
+            id="single-key-both-schemas",
+        ),
+        pytest.param(
+            {"a": {"type": "integer"}},
+            {"a": {"type": "number"}},
+            {"a": {"type": "number"}},
+            id="single-key-schema2-is-wider",
+        ),
+        pytest.param(
+            {"a": {"type": "number"}},
+            {"a": {"type": "integer"}},
+            {"a": {"type": "number"}},
+            id="single-key-schema1-is-wider",
+        ),
+        pytest.param(
+            {"a": {"type": "array"}},
+            {"a": {"type": "integer"}},
+            None,
+            id="single-key-with-array-schema1",
+        ),
+        pytest.param(
+            {"a": {"type": "integer"}},
+            {"a": {"type": "array"}},
+            None,
+            id="single-key-with-array-schema2",
+        ),
         pytest.param(
             {"a": {"type": "object", "properties": {"b": {"type": "integer"}}}},
             {"a": {"type": "object", "properties": {"b": {"type": "integer"}}}},
@@ -259,7 +329,9 @@ def test_comparable_types() -> None:
             {"a": {"type": "integer"}, "b": {"type": "string"}, "c": {"type": "number"}},
             id="",
         ),
-        pytest.param({"a": {"type": "invalid_type"}}, {"b": {"type": "integer"}}, None, id="invalid-type"),
+        pytest.param(
+            {"a": {"type": "invalid_type"}}, {"b": {"type": "integer"}}, None, id="invalid-type"
+        ),
         pytest.param(
             {"a": {"type": "object"}},
             {"a": {"type": "null"}},
@@ -280,7 +352,9 @@ def test_comparable_types() -> None:
         ),
     ],
 )
-def test_merge_schemas(schema1: SchemaType, schema2: SchemaType, expected_result: Optional[SchemaType]) -> None:
+def test_merge_schemas(
+    schema1: SchemaType, schema2: SchemaType, expected_result: Optional[SchemaType]
+) -> None:
     if expected_result is not None:
         assert merge_schemas(schema1, schema2) == expected_result
     else:
@@ -311,7 +385,10 @@ def test_merge_schemas(schema1: SchemaType, schema2: SchemaType, expected_result
         ),
         pytest.param(
             '{"col1 ": " string", "col2":  " integer"}',
-            {"type": "object", "properties": {"col1": {"type": "string"}, "col2": {"type": "integer"}}},
+            {
+                "type": "object",
+                "properties": {"col1": {"type": "string"}, "col2": {"type": "integer"}},
+            },
             None,
             id="valid_extra_spaces",
         ),
@@ -354,7 +431,9 @@ def test_merge_schemas(schema1: SchemaType, schema2: SchemaType, expected_result
     ],
 )
 def test_type_mapping_to_jsonschema(
-    type_mapping: Mapping[str, Any], expected_schema: Optional[Mapping[str, Any]], expected_exc_msg: Optional[str]
+    type_mapping: Mapping[str, Any],
+    expected_schema: Optional[Mapping[str, Any]],
+    expected_exc_msg: Optional[str],
 ) -> None:
     if expected_exc_msg:
         with pytest.raises(ConfigValidationError) as exc:

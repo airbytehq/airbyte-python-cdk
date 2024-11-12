@@ -122,8 +122,12 @@ single_stream_user_input_schema_scenario_schema_is_invalid = (
     .set_catalog(CatalogBuilder().with_stream("stream1", SyncMode.full_refresh).build())
     .set_expected_check_status("FAILED")
     .set_expected_check_error(None, FileBasedSourceError.ERROR_PARSING_USER_PROVIDED_SCHEMA.value)
-    .set_expected_discover_error(ConfigValidationError, FileBasedSourceError.ERROR_PARSING_USER_PROVIDED_SCHEMA.value)
-    .set_expected_read_error(ConfigValidationError, FileBasedSourceError.ERROR_PARSING_USER_PROVIDED_SCHEMA.value)
+    .set_expected_discover_error(
+        ConfigValidationError, FileBasedSourceError.ERROR_PARSING_USER_PROVIDED_SCHEMA.value
+    )
+    .set_expected_read_error(
+        ConfigValidationError, FileBasedSourceError.ERROR_PARSING_USER_PROVIDED_SCHEMA.value
+    )
 ).build()
 
 
@@ -374,11 +378,19 @@ _base_multi_stream_user_input_schema_scenario = (
                 "stream": "stream2",
             },
             {
-                "data": {"col1": "val11c", "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z", "_ab_source_file_url": "c.csv"},
+                "data": {
+                    "col1": "val11c",
+                    "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
+                    "_ab_source_file_url": "c.csv",
+                },
                 "stream": "stream3",
             },
             {
-                "data": {"col1": "val21c", "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z", "_ab_source_file_url": "c.csv"},
+                "data": {
+                    "col1": "val21c",
+                    "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
+                    "_ab_source_file_url": "c.csv",
+                },
                 "stream": "stream3",
             },
         ]
@@ -457,8 +469,12 @@ multi_stream_user_input_schema_scenario_schema_is_invalid = (
     )
     .set_expected_check_status("FAILED")
     .set_expected_check_error(None, FileBasedSourceError.ERROR_PARSING_USER_PROVIDED_SCHEMA.value)
-    .set_expected_discover_error(ConfigValidationError, FileBasedSourceError.ERROR_PARSING_USER_PROVIDED_SCHEMA.value)
-    .set_expected_read_error(ConfigValidationError, FileBasedSourceError.ERROR_PARSING_USER_PROVIDED_SCHEMA.value)
+    .set_expected_discover_error(
+        ConfigValidationError, FileBasedSourceError.ERROR_PARSING_USER_PROVIDED_SCHEMA.value
+    )
+    .set_expected_read_error(
+        ConfigValidationError, FileBasedSourceError.ERROR_PARSING_USER_PROVIDED_SCHEMA.value
+    )
 ).build()
 
 
@@ -590,11 +606,19 @@ multi_stream_user_input_schema_scenario_emit_nonconforming_records = (
                 "stream": "stream2",
             },
             {
-                "data": {"col1": "val11c", "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z", "_ab_source_file_url": "c.csv"},
+                "data": {
+                    "col1": "val11c",
+                    "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
+                    "_ab_source_file_url": "c.csv",
+                },
                 "stream": "stream3",
             },
             {
-                "data": {"col1": "val21c", "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z", "_ab_source_file_url": "c.csv"},
+                "data": {
+                    "col1": "val21c",
+                    "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
+                    "_ab_source_file_url": "c.csv",
+                },
                 "stream": "stream3",
             },
         ]
@@ -728,11 +752,19 @@ multi_stream_user_input_schema_scenario_skip_nonconforming_records = (
             # {"data": {"col1": "val21b", "col2": "val22b", "col3": "val23b", "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
             #           "_ab_source_file_url": "b.csv"}, "stream": "stream2"},
             {
-                "data": {"col1": "val11c", "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z", "_ab_source_file_url": "c.csv"},
+                "data": {
+                    "col1": "val11c",
+                    "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
+                    "_ab_source_file_url": "c.csv",
+                },
                 "stream": "stream3",
             },
             {
-                "data": {"col1": "val21c", "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z", "_ab_source_file_url": "c.csv"},
+                "data": {
+                    "col1": "val21c",
+                    "_ab_source_file_last_modified": "2023-06-05T03:54:07.000000Z",
+                    "_ab_source_file_url": "c.csv",
+                },
                 "stream": "stream3",
             },
         ]

@@ -15,8 +15,17 @@ from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 from airbyte_cdk.sources.streams.concurrent.abstract_stream_facade import AbstractStreamFacade
 from airbyte_cdk.sources.streams.concurrent.adapters import StreamFacade
-from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, Cursor, CursorField, CursorValueType, FinalStateCursor, GapType
-from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import AbstractStreamStateConverter
+from airbyte_cdk.sources.streams.concurrent.cursor import (
+    ConcurrentCursor,
+    Cursor,
+    CursorField,
+    CursorValueType,
+    FinalStateCursor,
+    GapType,
+)
+from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
+    AbstractStreamStateConverter,
+)
 
 DEFAULT_LOOKBACK_SECONDS = 0
 
@@ -43,14 +52,20 @@ class ConcurrentSourceAdapter(AbstractSource, ABC):
         abstract_streams = self._select_abstract_streams(config, catalog)
         concurrent_stream_names = {stream.name for stream in abstract_streams}
         configured_catalog_for_regular_streams = ConfiguredAirbyteCatalog(
-            streams=[stream for stream in catalog.streams if stream.stream.name not in concurrent_stream_names]
+            streams=[
+                stream
+                for stream in catalog.streams
+                if stream.stream.name not in concurrent_stream_names
+            ]
         )
         if abstract_streams:
             yield from self._concurrent_source.read(abstract_streams)
         if configured_catalog_for_regular_streams.streams:
             yield from super().read(logger, config, configured_catalog_for_regular_streams, state)
 
-    def _select_abstract_streams(self, config: Mapping[str, Any], configured_catalog: ConfiguredAirbyteCatalog) -> List[AbstractStream]:
+    def _select_abstract_streams(
+        self, config: Mapping[str, Any], configured_catalog: ConfiguredAirbyteCatalog
+    ) -> List[AbstractStream]:
         """
         Selects streams that can be processed concurrently and returns their abstract representations.
         """
@@ -67,7 +82,11 @@ class ConcurrentSourceAdapter(AbstractSource, ABC):
         return abstract_streams
 
     def convert_to_concurrent_stream(
-        self, logger: logging.Logger, stream: Stream, state_manager: ConnectorStateManager, cursor: Optional[Cursor] = None
+        self,
+        logger: logging.Logger,
+        stream: Stream,
+        state_manager: ConnectorStateManager,
+        cursor: Optional[Cursor] = None,
     ) -> Stream:
         """
         Prepares a stream for concurrent processing by initializing or assigning a cursor,
@@ -106,7 +125,9 @@ class ConcurrentSourceAdapter(AbstractSource, ABC):
 
         if cursor_field_name:
             if not isinstance(cursor_field_name, str):
-                raise ValueError(f"Cursor field type must be a string, but received {type(cursor_field_name).__name__}.")
+                raise ValueError(
+                    f"Cursor field type must be a string, but received {type(cursor_field_name).__name__}."
+                )
 
             return ConcurrentCursor(
                 stream.name,

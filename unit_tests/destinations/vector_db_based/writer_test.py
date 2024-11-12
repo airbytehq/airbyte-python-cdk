@@ -19,11 +19,16 @@ from airbyte_cdk.models import (
 )
 
 
-def _generate_record_message(index: int, stream: str = "example_stream", namespace: Optional[str] = None):
+def _generate_record_message(
+    index: int, stream: str = "example_stream", namespace: Optional[str] = None
+):
     return AirbyteMessage(
         type=Type.RECORD,
         record=AirbyteRecordMessage(
-            stream=stream, namespace=namespace, emitted_at=1234, data={"column_name": f"value {index}", "id": index}
+            stream=stream,
+            namespace=namespace,
+            emitted_at=1234,
+            data={"column_name": f"value {index}", "id": index},
         ),
     )
 
@@ -36,7 +41,11 @@ def generate_stream(name: str = "example_stream", namespace: Optional[str] = Non
         "stream": {
             "name": name,
             "namespace": namespace,
-            "json_schema": {"$schema": "http://json-schema.org/draft-07/schema#", "type": "object", "properties": {}},
+            "json_schema": {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "properties": {},
+            },
             "supported_sync_modes": ["full_refresh", "incremental"],
             "source_defined_cursor": False,
             "default_cursor_field": ["column_name"],
@@ -60,9 +69,13 @@ def test_write(omit_raw_text: bool):
     """
     Basic test for the write method, batcher and document processor.
     """
-    config_model = ProcessingConfigModel(chunk_overlap=0, chunk_size=1000, metadata_fields=None, text_fields=["column_name"])
+    config_model = ProcessingConfigModel(
+        chunk_overlap=0, chunk_size=1000, metadata_fields=None, text_fields=["column_name"]
+    )
 
-    configured_catalog: ConfiguredAirbyteCatalog = ConfiguredAirbyteCatalogSerializer.load({"streams": [generate_stream()]})
+    configured_catalog: ConfiguredAirbyteCatalog = ConfiguredAirbyteCatalogSerializer.load(
+        {"streams": [generate_stream()]}
+    )
     # messages are flushed after 32 records or after a state message, so this will trigger two batches to be processed
     input_messages = [_generate_record_message(i) for i in range(BATCH_SIZE + 5)]
     state_message = AirbyteMessage(type=Type.STATE, state=AirbyteStateMessage())
@@ -73,7 +86,9 @@ def test_write(omit_raw_text: bool):
     mock_embedder = generate_mock_embedder()
 
     mock_indexer = MagicMock()
-    post_sync_log_message = AirbyteMessage(type=Type.LOG, log=AirbyteLogMessage(level=Level.INFO, message="post sync"))
+    post_sync_log_message = AirbyteMessage(
+        type=Type.LOG, log=AirbyteLogMessage(level=Level.INFO, message="post sync")
+    )
     mock_indexer.post_sync.return_value = [post_sync_log_message]
 
     # Create the DestinationLangchain instance
@@ -125,7 +140,9 @@ def test_write_stream_namespace_split():
     * out of the first batch of 32, example_stream, example stream with namespace abd and the first 5 records for example_stream2
     * in the second batch, the remaining 5 records for example_stream2
     """
-    config_model = ProcessingConfigModel(chunk_overlap=0, chunk_size=1000, metadata_fields=None, text_fields=["column_name"])
+    config_model = ProcessingConfigModel(
+        chunk_overlap=0, chunk_size=1000, metadata_fields=None, text_fields=["column_name"]
+    )
 
     configured_catalog: ConfiguredAirbyteCatalog = ConfiguredAirbyteCatalogSerializer.load(
         {
@@ -137,7 +154,9 @@ def test_write_stream_namespace_split():
         }
     )
 
-    input_messages = [_generate_record_message(i, "example_stream", None) for i in range(BATCH_SIZE - 10)]
+    input_messages = [
+        _generate_record_message(i, "example_stream", None) for i in range(BATCH_SIZE - 10)
+    ]
     input_messages.extend([_generate_record_message(i, "example_stream", "abc") for i in range(5)])
     input_messages.extend([_generate_record_message(i, "example_stream2", None) for i in range(10)])
     state_message = AirbyteMessage(type=Type.STATE, state=AirbyteStateMessage())

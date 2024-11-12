@@ -9,8 +9,12 @@ from airbyte_cdk.sources.declarative.interpolation.interpolated_nested_mapping i
 from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_nested_request_input_provider import (
     InterpolatedNestedRequestInputProvider,
 )
-from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_request_input_provider import InterpolatedRequestInputProvider
-from airbyte_cdk.sources.declarative.requesters.request_options.request_options_provider import RequestOptionsProvider
+from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_request_input_provider import (
+    InterpolatedRequestInputProvider,
+)
+from airbyte_cdk.sources.declarative.requesters.request_options.request_options_provider import (
+    RequestOptionsProvider,
+)
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 from deprecated import deprecated
@@ -50,7 +54,9 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
             self.request_body_json = {}
 
         if self.request_body_json and self.request_body_data:
-            raise ValueError("RequestOptionsProvider should only contain either 'request_body_data' or 'request_body_json' not both")
+            raise ValueError(
+                "RequestOptionsProvider should only contain either 'request_body_data' or 'request_body_json' not both"
+            )
 
         self._parameter_interpolator = InterpolatedRequestInputProvider(
             config=self.config, request_inputs=self.request_parameters, parameters=parameters
@@ -73,7 +79,11 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> MutableMapping[str, Any]:
         interpolated_value = self._parameter_interpolator.eval_request_inputs(
-            stream_state, stream_slice, next_page_token, valid_key_types=(str,), valid_value_types=ValidRequestTypes
+            stream_state,
+            stream_slice,
+            next_page_token,
+            valid_key_types=(str,),
+            valid_value_types=ValidRequestTypes,
         )
         if isinstance(interpolated_value, dict):
             return interpolated_value
@@ -86,7 +96,9 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Mapping[str, Any]:
-        return self._headers_interpolator.eval_request_inputs(stream_state, stream_slice, next_page_token)
+        return self._headers_interpolator.eval_request_inputs(
+            stream_state, stream_slice, next_page_token
+        )
 
     def get_request_body_data(
         self,
@@ -110,9 +122,14 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Mapping[str, Any]:
-        return self._body_json_interpolator.eval_request_inputs(stream_state, stream_slice, next_page_token)
+        return self._body_json_interpolator.eval_request_inputs(
+            stream_state, stream_slice, next_page_token
+        )
 
-    @deprecated("This class is temporary and used to incrementally deliver low-code to concurrent", category=ExperimentalClassWarning)
+    @deprecated(
+        "This class is temporary and used to incrementally deliver low-code to concurrent",
+        category=ExperimentalClassWarning,
+    )
     def request_options_contain_stream_state(self) -> bool:
         """
         Temporary helper method used as we move low-code streams to the concurrent framework. This method determines if
@@ -128,7 +145,9 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
         )
 
     @staticmethod
-    def _check_if_interpolation_uses_stream_state(request_input: Optional[Union[RequestInput, NestedMapping]]) -> bool:
+    def _check_if_interpolation_uses_stream_state(
+        request_input: Optional[Union[RequestInput, NestedMapping]],
+    ) -> bool:
         if not request_input:
             return False
         elif isinstance(request_input, str):

@@ -30,7 +30,9 @@ class SourceTestFixture(AbstractSource):
     the need to load static files (ex. spec.yaml, config.json, configured_catalog.json) into the unit-test package.
     """
 
-    def __init__(self, streams: Optional[List[Stream]] = None, authenticator: Optional[AuthBase] = None):
+    def __init__(
+        self, streams: Optional[List[Stream]] = None, authenticator: Optional[AuthBase] = None
+    ):
         self._streams = streams
         self._authenticator = authenticator
 
@@ -151,4 +153,7 @@ class SourceFixtureOauthAuthenticator(Oauth2Authenticator):
     def refresh_access_token(self) -> Tuple[str, int]:
         response = requests.request(method="POST", url=self.get_token_refresh_endpoint(), params={})
         response.raise_for_status()
-        return "some_access_token", 1800  # Mock oauth response values to be used during the data retrieval step
+        return (
+            "some_access_token",
+            1800,
+        )  # Mock oauth response values to be used during the data retrieval step

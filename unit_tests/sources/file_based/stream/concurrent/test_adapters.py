@@ -9,7 +9,9 @@ from unittest.mock import MagicMock, Mock
 import pytest
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, AirbyteStream, Level, SyncMode
 from airbyte_cdk.models import Type as MessageType
-from airbyte_cdk.sources.file_based.availability_strategy import DefaultFileBasedAvailabilityStrategy
+from airbyte_cdk.sources.file_based.availability_strategy import (
+    DefaultFileBasedAvailabilityStrategy,
+)
 from airbyte_cdk.sources.file_based.config.csv_format import CsvFormat
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.discovery_policy import DefaultDiscoveryPolicy
@@ -62,7 +64,9 @@ def test_file_based_stream_partition_generator(sync_mode):
     partitions = list(partition_generator.generate())
     slices = [partition.to_slice() for partition in partitions]
     assert slices == stream_slices
-    stream.stream_slices.assert_called_once_with(sync_mode=_ANY_SYNC_MODE, cursor_field=_ANY_CURSOR_FIELD, stream_state=_ANY_STATE)
+    stream.stream_slices.assert_called_once_with(
+        sync_mode=_ANY_SYNC_MODE, cursor_field=_ANY_CURSOR_FIELD, stream_state=_ANY_STATE
+    )
 
 
 @pytest.mark.parametrize(
@@ -70,12 +74,38 @@ def test_file_based_stream_partition_generator(sync_mode):
     [
         pytest.param(
             TypeTransformer(TransformConfig.NoTransform),
-            [Record({"data": "1"}, Mock(spec=FileBasedStreamPartition, stream_name=Mock(return_value=_STREAM_NAME))), Record({"data": "2"}, Mock(spec=FileBasedStreamPartition, stream_name=Mock(return_value=_STREAM_NAME)))],
+            [
+                Record(
+                    {"data": "1"},
+                    Mock(
+                        spec=FileBasedStreamPartition, stream_name=Mock(return_value=_STREAM_NAME)
+                    ),
+                ),
+                Record(
+                    {"data": "2"},
+                    Mock(
+                        spec=FileBasedStreamPartition, stream_name=Mock(return_value=_STREAM_NAME)
+                    ),
+                ),
+            ],
             id="test_no_transform",
         ),
         pytest.param(
             TypeTransformer(TransformConfig.DefaultSchemaNormalization),
-            [Record({"data": 1}, Mock(spec=FileBasedStreamPartition, stream_name=Mock(return_value=_STREAM_NAME))), Record({"data": 2}, Mock(spec=FileBasedStreamPartition, stream_name=Mock(return_value=_STREAM_NAME)))],
+            [
+                Record(
+                    {"data": 1},
+                    Mock(
+                        spec=FileBasedStreamPartition, stream_name=Mock(return_value=_STREAM_NAME)
+                    ),
+                ),
+                Record(
+                    {"data": 2},
+                    Mock(
+                        spec=FileBasedStreamPartition, stream_name=Mock(return_value=_STREAM_NAME)
+                    ),
+                ),
+            ],
             id="test_default_transform",
         ),
     ],
@@ -83,14 +113,19 @@ def test_file_based_stream_partition_generator(sync_mode):
 def test_file_based_stream_partition(transformer, expected_records):
     stream = Mock()
     stream.name = _STREAM_NAME
-    stream.get_json_schema.return_value = {"type": "object", "properties": {"data": {"type": ["integer"]}}}
+    stream.get_json_schema.return_value = {
+        "type": "object",
+        "properties": {"data": {"type": ["integer"]}},
+    }
     stream.transformer = transformer
     message_repository = InMemoryMessageRepository()
     _slice = None
     sync_mode = SyncMode.full_refresh
     cursor_field = None
     state = None
-    partition = FileBasedStreamPartition(stream, _slice, message_repository, sync_mode, cursor_field, state, _ANY_CURSOR)
+    partition = FileBasedStreamPartition(
+        stream, _slice, message_repository, sync_mode, cursor_field, state, _ANY_CURSOR
+    )
 
     a_log_message = AirbyteMessage(
         type=MessageType.LOG,
@@ -114,7 +149,9 @@ def test_file_based_stream_partition(transformer, expected_records):
     "exception_type, expected_display_message",
     [
         pytest.param(Exception, None, id="test_exception_no_display_message"),
-        pytest.param(ExceptionWithDisplayMessage, "display_message", id="test_exception_no_display_message"),
+        pytest.param(
+            ExceptionWithDisplayMessage, "display_message", id="test_exception_no_display_message"
+        ),
     ],
 )
 def test_file_based_stream_partition_raising_exception(exception_type, expected_display_message):
@@ -124,7 +161,15 @@ def test_file_based_stream_partition_raising_exception(exception_type, expected_
     message_repository = InMemoryMessageRepository()
     _slice = None
 
-    partition = FileBasedStreamPartition(stream, _slice, message_repository, _ANY_SYNC_MODE, _ANY_CURSOR_FIELD, _ANY_STATE, _ANY_CURSOR)
+    partition = FileBasedStreamPartition(
+        stream,
+        _slice,
+        message_repository,
+        _ANY_SYNC_MODE,
+        _ANY_CURSOR_FIELD,
+        _ANY_STATE,
+        _ANY_CURSOR,
+    )
 
     stream.read_records.side_effect = Exception()
 
@@ -139,7 +184,16 @@ def test_file_based_stream_partition_raising_exception(exception_type, expected_
     "_slice, expected_hash",
     [
         pytest.param(
-            {"files": [RemoteFile(uri="1", last_modified=datetime.strptime("2023-06-09T00:00:00Z", "%Y-%m-%dT%H:%M:%SZ"))]},
+            {
+                "files": [
+                    RemoteFile(
+                        uri="1",
+                        last_modified=datetime.strptime(
+                            "2023-06-09T00:00:00Z", "%Y-%m-%dT%H:%M:%SZ"
+                        ),
+                    )
+                ]
+            },
             hash(("stream", "2023-06-09T00:00:00.000000Z_1")),
             id="test_hash_with_slice",
         ),
@@ -149,7 +203,9 @@ def test_file_based_stream_partition_raising_exception(exception_type, expected_
 def test_file_based_stream_partition_hash(_slice, expected_hash):
     stream = Mock()
     stream.name = "stream"
-    partition = FileBasedStreamPartition(stream, _slice, Mock(), _ANY_SYNC_MODE, _ANY_CURSOR_FIELD, _ANY_STATE, _ANY_CURSOR)
+    partition = FileBasedStreamPartition(
+        stream, _slice, Mock(), _ANY_SYNC_MODE, _ANY_CURSOR_FIELD, _ANY_STATE, _ANY_CURSOR
+    )
 
     _hash = partition.__hash__()
     assert _hash == expected_hash
@@ -165,7 +221,9 @@ class StreamFacadeTest(unittest.TestCase):
             supported_sync_modes=[SyncMode.full_refresh],
         )
         self._legacy_stream = DefaultFileBasedStream(
-            cursor=FileBasedFinalStateCursor(stream_config=MagicMock(), stream_namespace=None, message_repository=Mock()),
+            cursor=FileBasedFinalStateCursor(
+                stream_config=MagicMock(), stream_namespace=None, message_repository=Mock()
+            ),
             config=FileBasedStreamConfig(name="stream", format=CsvFormat()),
             catalog_schema={},
             stream_reader=MagicMock(),
@@ -179,7 +237,13 @@ class StreamFacadeTest(unittest.TestCase):
         self._logger = Mock()
         self._slice_logger = Mock()
         self._slice_logger.should_log_slice_message.return_value = False
-        self._facade = FileBasedStreamFacade(self._abstract_stream, self._legacy_stream, self._cursor, self._slice_logger, self._logger)
+        self._facade = FileBasedStreamFacade(
+            self._abstract_stream,
+            self._legacy_stream,
+            self._cursor,
+            self._slice_logger,
+            self._logger,
+        )
         self._source = Mock()
 
         self._stream = Mock()
@@ -201,17 +265,27 @@ class StreamFacadeTest(unittest.TestCase):
         assert self._facade.get_json_schema() == json_schema
         self._abstract_stream.get_json_schema.assert_called_once_with()
 
-    def test_given_cursor_is_noop_when_supports_incremental_then_return_legacy_stream_response(self):
+    def test_given_cursor_is_noop_when_supports_incremental_then_return_legacy_stream_response(
+        self,
+    ):
         assert (
             FileBasedStreamFacade(
-                self._abstract_stream, self._legacy_stream, _ANY_CURSOR, Mock(spec=SliceLogger), Mock(spec=logging.Logger)
+                self._abstract_stream,
+                self._legacy_stream,
+                _ANY_CURSOR,
+                Mock(spec=SliceLogger),
+                Mock(spec=logging.Logger),
             ).supports_incremental
             == self._legacy_stream.supports_incremental
         )
 
     def test_given_cursor_is_not_noop_when_supports_incremental_then_return_true(self):
         assert FileBasedStreamFacade(
-            self._abstract_stream, self._legacy_stream, Mock(spec=Cursor), Mock(spec=SliceLogger), Mock(spec=logging.Logger)
+            self._abstract_stream,
+            self._legacy_stream,
+            Mock(spec=Cursor),
+            Mock(spec=SliceLogger),
+            Mock(spec=logging.Logger),
         ).supports_incremental
 
     def test_full_refresh(self):
@@ -243,7 +317,9 @@ class StreamFacadeTest(unittest.TestCase):
         stream.primary_key = "id"
         stream.cursor_field = "cursor"
 
-        facade = FileBasedStreamFacade.create_from_stream(stream, self._source, self._logger, _ANY_STATE, self._cursor)
+        facade = FileBasedStreamFacade.create_from_stream(
+            stream, self._source, self._logger, _ANY_STATE, self._cursor
+        )
 
         assert facade.name == "stream"
         assert facade.cursor_field == "cursor"
@@ -255,7 +331,9 @@ class StreamFacadeTest(unittest.TestCase):
         stream.primary_key = None
         stream.cursor_field = []
 
-        facade = FileBasedStreamFacade.create_from_stream(stream, self._source, self._logger, _ANY_STATE, self._cursor)
+        facade = FileBasedStreamFacade.create_from_stream(
+            stream, self._source, self._logger, _ANY_STATE, self._cursor
+        )
         assert facade._abstract_stream._primary_key == []
 
     def test_create_from_stream_with_composite_primary_key(self):
@@ -264,7 +342,9 @@ class StreamFacadeTest(unittest.TestCase):
         stream.primary_key = ["id", "name"]
         stream.cursor_field = []
 
-        facade = FileBasedStreamFacade.create_from_stream(stream, self._source, self._logger, _ANY_STATE, self._cursor)
+        facade = FileBasedStreamFacade.create_from_stream(
+            stream, self._source, self._logger, _ANY_STATE, self._cursor
+        )
         assert facade._abstract_stream._primary_key == ["id", "name"]
 
     def test_create_from_stream_with_empty_list_cursor(self):
@@ -272,7 +352,9 @@ class StreamFacadeTest(unittest.TestCase):
         stream.primary_key = "id"
         stream.cursor_field = []
 
-        facade = FileBasedStreamFacade.create_from_stream(stream, self._source, self._logger, _ANY_STATE, self._cursor)
+        facade = FileBasedStreamFacade.create_from_stream(
+            stream, self._source, self._logger, _ANY_STATE, self._cursor
+        )
 
         assert facade.cursor_field == []
 
@@ -282,7 +364,9 @@ class StreamFacadeTest(unittest.TestCase):
         stream.primary_key = [["field", "id"]]
 
         with self.assertRaises(ValueError):
-            FileBasedStreamFacade.create_from_stream(stream, self._source, self._logger, _ANY_STATE, self._cursor)
+            FileBasedStreamFacade.create_from_stream(
+                stream, self._source, self._logger, _ANY_STATE, self._cursor
+            )
 
     def test_create_from_stream_raises_exception_if_primary_key_has_invalid_type(self):
         stream = Mock()
@@ -290,7 +374,9 @@ class StreamFacadeTest(unittest.TestCase):
         stream.primary_key = 123
 
         with self.assertRaises(ValueError):
-            FileBasedStreamFacade.create_from_stream(stream, self._source, self._logger, _ANY_STATE, self._cursor)
+            FileBasedStreamFacade.create_from_stream(
+                stream, self._source, self._logger, _ANY_STATE, self._cursor
+            )
 
     def test_create_from_stream_raises_exception_if_cursor_field_is_nested(self):
         stream = Mock()
@@ -299,7 +385,9 @@ class StreamFacadeTest(unittest.TestCase):
         stream.cursor_field = ["field", "cursor"]
 
         with self.assertRaises(ValueError):
-            FileBasedStreamFacade.create_from_stream(stream, self._source, self._logger, _ANY_STATE, self._cursor)
+            FileBasedStreamFacade.create_from_stream(
+                stream, self._source, self._logger, _ANY_STATE, self._cursor
+            )
 
     def test_create_from_stream_with_cursor_field_as_list(self):
         stream = Mock()
@@ -307,7 +395,9 @@ class StreamFacadeTest(unittest.TestCase):
         stream.primary_key = "id"
         stream.cursor_field = ["cursor"]
 
-        facade = FileBasedStreamFacade.create_from_stream(stream, self._source, self._logger, _ANY_STATE, self._cursor)
+        facade = FileBasedStreamFacade.create_from_stream(
+            stream, self._source, self._logger, _ANY_STATE, self._cursor
+        )
         assert facade.cursor_field == "cursor"
 
     def test_create_from_stream_none_message_repository(self):
@@ -317,12 +407,16 @@ class StreamFacadeTest(unittest.TestCase):
         self._source.message_repository = None
 
         with self.assertRaises(ValueError):
-            FileBasedStreamFacade.create_from_stream(self._stream, self._source, self._logger, {}, self._cursor)
+            FileBasedStreamFacade.create_from_stream(
+                self._stream, self._source, self._logger, {}, self._cursor
+            )
 
     def test_get_error_display_message_no_display_message(self):
         self._stream.get_error_display_message.return_value = "display_message"
 
-        facade = FileBasedStreamFacade.create_from_stream(self._stream, self._source, self._logger, _ANY_STATE, self._cursor)
+        facade = FileBasedStreamFacade.create_from_stream(
+            self._stream, self._source, self._logger, _ANY_STATE, self._cursor
+        )
 
         expected_display_message = None
         e = Exception()
@@ -334,7 +428,9 @@ class StreamFacadeTest(unittest.TestCase):
     def test_get_error_display_message_with_display_message(self):
         self._stream.get_error_display_message.return_value = "display_message"
 
-        facade = FileBasedStreamFacade.create_from_stream(self._stream, self._source, self._logger, _ANY_STATE, self._cursor)
+        facade = FileBasedStreamFacade.create_from_stream(
+            self._stream, self._source, self._logger, _ANY_STATE, self._cursor
+        )
 
         expected_display_message = "display_message"
         e = ExceptionWithDisplayMessage("display_message")
@@ -348,7 +444,9 @@ class StreamFacadeTest(unittest.TestCase):
     "exception, expected_display_message",
     [
         pytest.param(Exception("message"), None, id="test_no_display_message"),
-        pytest.param(ExceptionWithDisplayMessage("message"), "message", id="test_no_display_message"),
+        pytest.param(
+            ExceptionWithDisplayMessage("message"), "message", id="test_no_display_message"
+        ),
     ],
 )
 def test_get_error_display_message(exception, expected_display_message):

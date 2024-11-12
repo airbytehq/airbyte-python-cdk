@@ -1000,6 +1000,20 @@ files = [
 ]
 
 [[package]]
+name = "dunamai"
+version = "1.22.0"
+description = "Dynamic version generation"
+optional = false
+python-versions = ">=3.5"
+files = [
+    {file = "dunamai-1.22.0-py3-none-any.whl", hash = "sha256:eab3894b31e145bd028a74b13491c57db01986a7510482c9b5fff3b4e53d77b7"},
+    {file = "dunamai-1.22.0.tar.gz", hash = "sha256:375a0b21309336f0d8b6bbaea3e038c36f462318c68795166e31f9873fdad676"},
+]
+
+[package.dependencies]
+packaging = ">=20.9"
+
+[[package]]
 name = "emoji"
 version = "2.14.0"
 description = "Emoji for Python"
@@ -5247,4 +5261,4 @@ vector-db-based = ["cohere", "langchain", "openai", "tiktoken"]
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "ea323704b6919c3f47c5f65ff15e14fe3870521a0b71164d29706a71c8debbdf"
+content-hash = "f098ec85ef745d825378e98f5a2140c1748c85e2c15ee48c2b07c5ce28113af9"

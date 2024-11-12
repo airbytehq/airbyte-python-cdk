@@ -4,7 +4,14 @@
 
 from __future__ import annotations
 
-from airbyte_cdk.sources.types import Config, ConnectionDefinition, FieldPointer, Record, StreamSlice, StreamState
+from airbyte_cdk.sources.types import (
+    Config,
+    ConnectionDefinition,
+    FieldPointer,
+    Record,
+    StreamSlice,
+    StreamState,
+)
 
 # Note: This package originally contained class definitions for low-code CDK types, but we promoted them into the Python CDK.
 # We've migrated connectors in the repository to reference the new location, but these assignments are used to retain backwards

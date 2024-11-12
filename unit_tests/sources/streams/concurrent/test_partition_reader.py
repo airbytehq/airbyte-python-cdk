@@ -11,7 +11,10 @@ from airbyte_cdk.sources.concurrent_source.stream_thread_exception import Stream
 from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionReader
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
-from airbyte_cdk.sources.streams.concurrent.partitions.types import PartitionCompleteSentinel, QueueItem
+from airbyte_cdk.sources.streams.concurrent.partitions.types import (
+    PartitionCompleteSentinel,
+    QueueItem,
+)
 
 _RECORDS = [
     Record({"id": 1, "name": "Jack"}, "stream"),
@@ -32,7 +35,9 @@ class PartitionReaderTest(unittest.TestCase):
                 pytest.fail("Only one PartitionCompleteSentinel is expected")
             break
 
-    def test_given_read_partition_successful_when_process_partition_then_queue_records_and_sentinel(self):
+    def test_given_read_partition_successful_when_process_partition_then_queue_records_and_sentinel(
+        self,
+    ):
         partition = self._a_partition(_RECORDS)
         self._partition_reader.process_partition(partition)
 
@@ -40,7 +45,9 @@ class PartitionReaderTest(unittest.TestCase):
 
         assert queue_content == _RECORDS + [PartitionCompleteSentinel(partition)]
 
-    def test_given_exception_when_process_partition_then_queue_records_and_exception_and_sentinel(self):
+    def test_given_exception_when_process_partition_then_queue_records_and_exception_and_sentinel(
+        self,
+    ):
         partition = Mock()
         exception = ValueError()
         partition.read.side_effect = self._read_with_exception(_RECORDS, exception)
@@ -48,7 +55,10 @@ class PartitionReaderTest(unittest.TestCase):
 
         queue_content = self._consume_queue()
 
-        assert queue_content == _RECORDS + [StreamThreadException(exception, partition.stream_name()), PartitionCompleteSentinel(partition)]
+        assert queue_content == _RECORDS + [
+            StreamThreadException(exception, partition.stream_name()),
+            PartitionCompleteSentinel(partition),
+        ]
 
     def _a_partition(self, records: List[Record]) -> Partition:
         partition = Mock(spec=Partition)
@@ -56,7 +66,9 @@ class PartitionReaderTest(unittest.TestCase):
         return partition
 
     @staticmethod
-    def _read_with_exception(records: List[Record], exception: Exception) -> Callable[[], Iterable[Record]]:
+    def _read_with_exception(
+        records: List[Record], exception: Exception
+    ) -> Callable[[], Iterable[Record]]:
         def mocked_function() -> Iterable[Record]:
             yield from records
             raise exception

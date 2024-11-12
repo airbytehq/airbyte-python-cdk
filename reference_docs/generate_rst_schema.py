@@ -20,7 +20,9 @@ def write_master_file(templatedir: str, master_name: str, values: Dict, opts: An
 
 if __name__ == "__main__":
     parser = get_parser()
-    parser.add_argument("--master", metavar="MASTER", default="index", help=__("master document name"))
+    parser.add_argument(
+        "--master", metavar="MASTER", default="index", help=__("master document name")
+    )
     args = parser.parse_args(sys.argv[1:])
 
     rootpath = path.abspath(args.module_path)
@@ -39,8 +41,14 @@ if __name__ == "__main__":
     modules = recurse_tree(rootpath, excludes, args, args.templatedir)
 
     template_values = {
-        "top_modules": [{"path": f"api/{module}", "caption": module.split(".")[1].title()} for module in modules if module.count(".") == 1],
+        "top_modules": [
+            {"path": f"api/{module}", "caption": module.split(".")[1].title()}
+            for module in modules
+            if module.count(".") == 1
+        ],
         "maxdepth": args.maxdepth,
     }
-    write_master_file(templatedir=args.templatedir, master_name=args.master, values=template_values, opts=args)
+    write_master_file(
+        templatedir=args.templatedir, master_name=args.master, values=template_values, opts=args
+    )
     main()

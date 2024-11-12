@@ -30,7 +30,9 @@ class ResumableFullRefreshCursor(DeclarativeCursor):
     def close_slice(self, stream_slice: StreamSlice, *args: Any) -> None:
         # The ResumableFullRefreshCursor doesn't support nested streams yet so receiving a partition is unexpected
         if stream_slice.partition:
-            raise ValueError(f"Stream slice {stream_slice} should not have a partition. Got {stream_slice.partition}.")
+            raise ValueError(
+                f"Stream slice {stream_slice} should not have a partition. Got {stream_slice.partition}."
+            )
         self._cursor = stream_slice.cursor_slice
 
     def should_be_synced(self, record: Record) -> bool:

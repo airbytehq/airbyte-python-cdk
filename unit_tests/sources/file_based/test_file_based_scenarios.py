@@ -159,7 +159,12 @@ from unit_tests.sources.file_based.scenarios.validation_policy_scenarios import 
     wait_for_rediscovery_scenario_multi_stream,
     wait_for_rediscovery_scenario_single_stream,
 )
-from unit_tests.sources.file_based.test_scenarios import verify_check, verify_discover, verify_read, verify_spec
+from unit_tests.sources.file_based.test_scenarios import (
+    verify_check,
+    verify_discover,
+    verify_read,
+    verify_spec,
+)
 
 discover_failure_scenarios = [
     empty_schema_inference_scenario,
@@ -316,7 +321,9 @@ check_scenarios = [
 
 
 @pytest.mark.parametrize("scenario", discover_scenarios, ids=[s.name for s in discover_scenarios])
-def test_file_based_discover(capsys: CaptureFixture[str], tmp_path: PosixPath, scenario: TestScenario[AbstractSource]) -> None:
+def test_file_based_discover(
+    capsys: CaptureFixture[str], tmp_path: PosixPath, scenario: TestScenario[AbstractSource]
+) -> None:
     verify_discover(capsys, tmp_path, scenario)
 
 
@@ -327,10 +334,14 @@ def test_file_based_read(scenario: TestScenario[AbstractSource]) -> None:
 
 
 @pytest.mark.parametrize("scenario", spec_scenarios, ids=[c.name for c in spec_scenarios])
-def test_file_based_spec(capsys: CaptureFixture[str], scenario: TestScenario[AbstractSource]) -> None:
+def test_file_based_spec(
+    capsys: CaptureFixture[str], scenario: TestScenario[AbstractSource]
+) -> None:
     verify_spec(capsys, scenario)
 
 
 @pytest.mark.parametrize("scenario", check_scenarios, ids=[c.name for c in check_scenarios])
-def test_file_based_check(capsys: CaptureFixture[str], tmp_path: PosixPath, scenario: TestScenario[AbstractSource]) -> None:
+def test_file_based_check(
+    capsys: CaptureFixture[str], tmp_path: PosixPath, scenario: TestScenario[AbstractSource]
+) -> None:
     verify_check(capsys, tmp_path, scenario)

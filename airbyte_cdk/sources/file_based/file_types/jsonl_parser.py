@@ -8,15 +8,21 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Union
 
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.exceptions import FileBasedSourceError, RecordParseError
-from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader, FileReadMode
+from airbyte_cdk.sources.file_based.file_based_stream_reader import (
+    AbstractFileBasedStreamReader,
+    FileReadMode,
+)
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
-from airbyte_cdk.sources.file_based.schema_helpers import PYTHON_TYPE_MAPPING, SchemaType, merge_schemas
+from airbyte_cdk.sources.file_based.schema_helpers import (
+    PYTHON_TYPE_MAPPING,
+    SchemaType,
+    merge_schemas,
+)
 from orjson import orjson
 
 
 class JsonlParser(FileTypeParser):
-
     MAX_BYTES_PER_FILE_FOR_SCHEMA_INFERENCE = 1_000_000
     ENCODING = "utf8"
 
@@ -103,7 +109,9 @@ class JsonlParser(FileTypeParser):
                 try:
                     record = orjson.loads(accumulator)
                     if had_json_parsing_error and not has_warned_for_multiline_json_object:
-                        logger.warning(f"File at {file.uri} is using multiline JSON. Performance could be greatly reduced")
+                        logger.warning(
+                            f"File at {file.uri} is using multiline JSON. Performance could be greatly reduced"
+                        )
                         has_warned_for_multiline_json_object = True
 
                     yield record
@@ -112,7 +120,11 @@ class JsonlParser(FileTypeParser):
                 except orjson.JSONDecodeError:
                     had_json_parsing_error = True
 
-                if read_limit and yielded_at_least_once and read_bytes >= self.MAX_BYTES_PER_FILE_FOR_SCHEMA_INFERENCE:
+                if (
+                    read_limit
+                    and yielded_at_least_once
+                    and read_bytes >= self.MAX_BYTES_PER_FILE_FOR_SCHEMA_INFERENCE
+                ):
                     logger.warning(
                         f"Exceeded the maximum number of bytes per file for schema inference ({self.MAX_BYTES_PER_FILE_FOR_SCHEMA_INFERENCE}). "
                         f"Inferring schema from an incomplete set of records."
@@ -120,7 +132,9 @@ class JsonlParser(FileTypeParser):
                     break
 
             if had_json_parsing_error and not yielded_at_least_once:
-                raise RecordParseError(FileBasedSourceError.ERROR_PARSING_RECORD, filename=file.uri, lineno=line)
+                raise RecordParseError(
+                    FileBasedSourceError.ERROR_PARSING_RECORD, filename=file.uri, lineno=line
+                )
 
     @staticmethod
     def _instantiate_accumulator(line: Union[bytes, str]) -> Union[bytes, str]:

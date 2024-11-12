@@ -32,7 +32,7 @@ class MinMaxDatetime:
     parameters: InitVar[Mapping[str, Any]]
     # datetime_format is a unique case where we inherit it from the parent if it is not specified before using the default value
     # which is why we need dedicated getter/setter methods and private dataclass field
-    datetime_format: str = ""
+    datetime_format: str
     _datetime_format: str = field(init=False, repr=False, default="")
     min_datetime: Union[InterpolatedString, str] = ""
     max_datetime: Union[InterpolatedString, str] = ""
@@ -40,10 +40,20 @@ class MinMaxDatetime:
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.datetime = InterpolatedString.create(self.datetime, parameters=parameters or {})
         self._parser = DatetimeParser()
-        self.min_datetime = InterpolatedString.create(self.min_datetime, parameters=parameters) if self.min_datetime else None  # type: ignore
-        self.max_datetime = InterpolatedString.create(self.max_datetime, parameters=parameters) if self.max_datetime else None  # type: ignore
+        self.min_datetime = (
+            InterpolatedString.create(self.min_datetime, parameters=parameters)
+            if self.min_datetime
+            else None
+        )  # type: ignore
+        self.max_datetime = (
+            InterpolatedString.create(self.max_datetime, parameters=parameters)
+            if self.max_datetime
+            else None
+        )  # type: ignore
 
-    def get_datetime(self, config: Mapping[str, Any], **additional_parameters: Mapping[str, Any]) -> dt.datetime:
+    def get_datetime(
+        self, config: Mapping[str, Any], **additional_parameters: Mapping[str, Any]
+    ) -> dt.datetime:
         """
         Evaluates and returns the datetime
         :param config: The user-provided configuration as specified by the source's spec
@@ -55,7 +65,9 @@ class MinMaxDatetime:
         if not datetime_format:
             datetime_format = "%Y-%m-%dT%H:%M:%S.%f%z"
 
-        time = self._parser.parse(str(self.datetime.eval(config, **additional_parameters)), datetime_format)  # type: ignore # datetime is always cast to an interpolated string
+        time = self._parser.parse(
+            str(self.datetime.eval(config, **additional_parameters)), datetime_format
+        )  # type: ignore # datetime is always cast to an interpolated string
 
         if self.min_datetime:
             min_time = str(self.min_datetime.eval(config, **additional_parameters))  # type: ignore # min_datetime is always cast to an interpolated string
@@ -93,6 +105,8 @@ class MinMaxDatetime:
         if isinstance(interpolated_string_or_min_max_datetime, InterpolatedString) or isinstance(
             interpolated_string_or_min_max_datetime, str
         ):
-            return MinMaxDatetime(datetime=interpolated_string_or_min_max_datetime, parameters=parameters)
+            return MinMaxDatetime(
+                datetime=interpolated_string_or_min_max_datetime, parameters=parameters
+            )
         else:
             return interpolated_string_or_min_max_datetime

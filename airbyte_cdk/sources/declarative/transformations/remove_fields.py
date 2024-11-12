@@ -44,7 +44,9 @@ class RemoveFields(RecordTransformation):
     condition: str = ""
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        self._filter_interpolator = InterpolatedBoolean(condition=self.condition, parameters=parameters)
+        self._filter_interpolator = InterpolatedBoolean(
+            condition=self.condition, parameters=parameters
+        )
 
     def transform(
         self,
@@ -63,7 +65,9 @@ class RemoveFields(RecordTransformation):
                 dpath.delete(
                     record,
                     pointer,
-                    afilter=(lambda x: self._filter_interpolator.eval(config or {}, property=x)) if self.condition else None,
+                    afilter=(lambda x: self._filter_interpolator.eval(config or {}, property=x))
+                    if self.condition
+                    else None,
                 )
             except dpath.exceptions.PathNotFound:
                 # if the (potentially nested) property does not exist, silently skip

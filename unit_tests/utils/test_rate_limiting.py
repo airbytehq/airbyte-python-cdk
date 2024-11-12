@@ -21,7 +21,11 @@ def helper_with_exceptions(exception_type):
         (3, 3, 1, exceptions.ChunkedEncodingError),
     ],
 )
-def test_default_backoff_handler(max_tries: int, max_time: int, factor: int, exception_to_raise: Exception):
-    backoff_handler = default_backoff_handler(max_tries=max_tries, max_time=max_time, factor=factor)(helper_with_exceptions)
+def test_default_backoff_handler(
+    max_tries: int, max_time: int, factor: int, exception_to_raise: Exception
+):
+    backoff_handler = default_backoff_handler(
+        max_tries=max_tries, max_time=max_time, factor=factor
+    )(helper_with_exceptions)
     with pytest.raises(exception_to_raise):
         backoff_handler(exception_to_raise)

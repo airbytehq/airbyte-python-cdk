@@ -8,7 +8,10 @@ import pytest
 import requests
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.requesters.error_handlers import HttpResponseFilter
-from airbyte_cdk.sources.streams.http.error_handlers.response_models import ErrorResolution, ResponseAction
+from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
+    ErrorResolution,
+    ResponseAction,
+)
 
 
 @pytest.mark.parametrize(
@@ -23,7 +26,9 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import Erro
             "custom error message",
             {"status_code": 503},
             ErrorResolution(
-                response_action=ResponseAction.FAIL, failure_type=FailureType.transient_error, error_message="custom error message"
+                response_action=ResponseAction.FAIL,
+                failure_type=FailureType.transient_error,
+                error_message="custom error message",
             ),
             id="test_http_code_matches",
         ),
@@ -51,7 +56,9 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import Erro
             "",
             {"status_code": 429},
             ErrorResolution(
-                response_action=ResponseAction.RETRY, failure_type=FailureType.transient_error, error_message="Too many requests."
+                response_action=ResponseAction.RETRY,
+                failure_type=FailureType.transient_error,
+                error_message="Too many requests.",
             ),
             id="test_http_code_matches_retry_action",
         ),
@@ -64,7 +71,9 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import Erro
             "error message was: {{ response.failure }}",
             {"status_code": 404, "json": {"the_body": "do_i_match", "failure": "i failed you"}},
             ErrorResolution(
-                response_action=ResponseAction.FAIL, failure_type=FailureType.system_error, error_message="error message was: i failed you"
+                response_action=ResponseAction.FAIL,
+                failure_type=FailureType.system_error,
+                error_message="error message was: i failed you",
             ),
             id="test_predicate_matches_json",
         ),
@@ -77,7 +86,9 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import Erro
             "error from header: {{ headers.warning }}",
             {"status_code": 404, "headers": {"the_key": "header_match", "warning": "this failed"}},
             ErrorResolution(
-                response_action=ResponseAction.FAIL, failure_type=FailureType.system_error, error_message="error from header: this failed"
+                response_action=ResponseAction.FAIL,
+                failure_type=FailureType.system_error,
+                error_message="error from header: this failed",
             ),
             id="test_predicate_matches_headers",
         ),
@@ -103,7 +114,11 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import Erro
             '{{ headers.error == "invalid_input" or response.reason == "bad request"}}',
             "",
             "",
-            {"status_code": 403, "headers": {"error": "authentication_error"}, "json": {"reason": "permission denied"}},
+            {
+                "status_code": 403,
+                "headers": {"error": "authentication_error"},
+                "json": {"reason": "permission denied"},
+            },
             None,
             id="test_response_does_not_match_filter",
         ),
@@ -115,7 +130,11 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import Erro
             "",
             "check permissions",
             {"status_code": 403},
-            ErrorResolution(response_action=ResponseAction.FAIL, failure_type=FailureType.config_error, error_message="check permissions"),
+            ErrorResolution(
+                response_action=ResponseAction.FAIL,
+                failure_type=FailureType.config_error,
+                error_message="check permissions",
+            ),
             id="test_http_code_matches_failure_type_config_error",
         ),
         pytest.param(
@@ -126,7 +145,11 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import Erro
             "",
             "check permissions",
             {"status_code": 403},
-            ErrorResolution(response_action=ResponseAction.FAIL, failure_type=FailureType.system_error, error_message="check permissions"),
+            ErrorResolution(
+                response_action=ResponseAction.FAIL,
+                failure_type=FailureType.system_error,
+                error_message="check permissions",
+            ),
             id="test_http_code_matches_failure_type_system_error",
         ),
         pytest.param(
@@ -137,7 +160,11 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import Erro
             "",
             "rate limits",
             {"status_code": 500},
-            ErrorResolution(response_action=ResponseAction.FAIL, failure_type=FailureType.transient_error, error_message="rate limits"),
+            ErrorResolution(
+                response_action=ResponseAction.FAIL,
+                failure_type=FailureType.transient_error,
+                error_message="rate limits",
+            ),
             id="test_http_code_matches_failure_type_transient_error",
         ),
         pytest.param(
@@ -148,7 +175,11 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import Erro
             "",
             "rate limits",
             {"status_code": 500},
-            ErrorResolution(response_action=ResponseAction.RETRY, failure_type=FailureType.transient_error, error_message="rate limits"),
+            ErrorResolution(
+                response_action=ResponseAction.RETRY,
+                failure_type=FailureType.transient_error,
+                error_message="rate limits",
+            ),
             id="test_http_code_matches_failure_type_config_error_action_retry_uses_default_failure_type",
         ),
         pytest.param(
@@ -160,14 +191,24 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import Erro
             "rate limits",
             {"status_code": 500},
             ErrorResolution(
-                response_action=ResponseAction.RATE_LIMITED, failure_type=FailureType.transient_error, error_message="rate limits"
+                response_action=ResponseAction.RATE_LIMITED,
+                failure_type=FailureType.transient_error,
+                error_message="rate limits",
             ),
             id="test_http_code_matches_response_action_rate_limited",
         ),
     ],
 )
 def test_matches(
-    requests_mock, action, failure_type, http_codes, predicate, error_contains, error_message, response, expected_error_resolution
+    requests_mock,
+    action,
+    failure_type,
+    http_codes,
+    predicate,
+    error_contains,
+    error_message,
+    response,
+    expected_error_resolution,
 ):
     requests_mock.register_uri(
         "GET",

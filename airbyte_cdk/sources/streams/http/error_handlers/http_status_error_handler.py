@@ -8,9 +8,14 @@ from typing import Mapping, Optional, Union
 
 import requests
 from airbyte_cdk.models import FailureType
-from airbyte_cdk.sources.streams.http.error_handlers.default_error_mapping import DEFAULT_ERROR_MAPPING
+from airbyte_cdk.sources.streams.http.error_handlers.default_error_mapping import (
+    DEFAULT_ERROR_MAPPING,
+)
 from airbyte_cdk.sources.streams.http.error_handlers.error_handler import ErrorHandler
-from airbyte_cdk.sources.streams.http.error_handlers.response_models import ErrorResolution, ResponseAction
+from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
+    ErrorResolution,
+    ResponseAction,
+)
 
 
 class HttpStatusErrorHandler(ErrorHandler):
@@ -39,7 +44,9 @@ class HttpStatusErrorHandler(ErrorHandler):
     def max_time(self) -> Optional[int]:
         return self._max_time
 
-    def interpret_response(self, response_or_exception: Optional[Union[requests.Response, Exception]] = None) -> ErrorResolution:
+    def interpret_response(
+        self, response_or_exception: Optional[Union[requests.Response, Exception]] = None
+    ) -> ErrorResolution:
         """
         Interpret the response and return the corresponding response action, failure type, and error message.
 
@@ -48,12 +55,16 @@ class HttpStatusErrorHandler(ErrorHandler):
         """
 
         if isinstance(response_or_exception, Exception):
-            mapped_error: Optional[ErrorResolution] = self._error_mapping.get(response_or_exception.__class__)
+            mapped_error: Optional[ErrorResolution] = self._error_mapping.get(
+                response_or_exception.__class__
+            )
 
             if mapped_error is not None:
                 return mapped_error
             else:
-                self._logger.error(f"Unexpected exception in error handler: {response_or_exception}")
+                self._logger.error(
+                    f"Unexpected exception in error handler: {response_or_exception}"
+                )
                 return ErrorResolution(
                     response_action=ResponseAction.RETRY,
                     failure_type=FailureType.system_error,

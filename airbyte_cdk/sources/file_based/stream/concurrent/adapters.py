@@ -7,7 +7,14 @@ import logging
 from functools import cache, lru_cache
 from typing import TYPE_CHECKING, Any, Iterable, List, Mapping, MutableMapping, Optional, Union
 
-from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, ConfiguredAirbyteStream, Level, SyncMode, Type
+from airbyte_cdk.models import (
+    AirbyteLogMessage,
+    AirbyteMessage,
+    ConfiguredAirbyteStream,
+    Level,
+    SyncMode,
+    Type,
+)
 from airbyte_cdk.sources import AbstractSource
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.file_based.availability_strategy import (
@@ -26,7 +33,10 @@ from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.concurrent.abstract_stream_facade import AbstractStreamFacade
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.exceptions import ExceptionWithDisplayMessage
-from airbyte_cdk.sources.streams.concurrent.helpers import get_cursor_field_from_stream, get_primary_key_from_stream
+from airbyte_cdk.sources.streams.concurrent.helpers import (
+    get_cursor_field_from_stream,
+    get_primary_key_from_stream,
+)
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
 from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
@@ -36,7 +46,9 @@ from airbyte_cdk.sources.utils.slice_logger import SliceLogger
 from deprecated.classic import deprecated
 
 if TYPE_CHECKING:
-    from airbyte_cdk.sources.file_based.stream.concurrent.cursor import AbstractConcurrentFileBasedCursor
+    from airbyte_cdk.sources.file_based.stream.concurrent.cursor import (
+        AbstractConcurrentFileBasedCursor,
+    )
 
 """
 This module contains adapters to help enabling concurrency on File-based Stream objects without needing to migrate to AbstractStream
@@ -72,7 +84,9 @@ class FileBasedStreamFacade(AbstractStreamFacade[DefaultStream], AbstractFileBas
                 partition_generator=FileBasedStreamPartitionGenerator(
                     stream,
                     message_repository,
-                    SyncMode.full_refresh if isinstance(cursor, FileBasedFinalStateCursor) else SyncMode.incremental,
+                    SyncMode.full_refresh
+                    if isinstance(cursor, FileBasedFinalStateCursor)
+                    else SyncMode.incremental,
                     [cursor_field] if cursor_field is not None else None,
                     state,
                     cursor,
@@ -138,7 +152,10 @@ class FileBasedStreamFacade(AbstractStreamFacade[DefaultStream], AbstractFileBas
 
     @property
     def primary_key(self) -> PrimaryKeyType:
-        return self._legacy_stream.config.primary_key or self.get_parser().get_parser_defined_primary_key(self._legacy_stream.config)
+        return (
+            self._legacy_stream.config.primary_key
+            or self.get_parser().get_parser_defined_primary_key(self._legacy_stream.config)
+        )
 
     def get_parser(self) -> FileTypeParser:
         return self._legacy_stream.get_parser()
@@ -185,7 +202,10 @@ class FileBasedStreamFacade(AbstractStreamFacade[DefaultStream], AbstractFileBas
                 # This shouldn't happen if the ConcurrentCursor was used
                 state = "unknown; no state attribute was available on the cursor"
             yield AirbyteMessage(
-                type=Type.LOG, log=AirbyteLogMessage(level=Level.ERROR, message=f"Cursor State at time of exception: {state}")
+                type=Type.LOG,
+                log=AirbyteLogMessage(
+                    level=Level.ERROR, message=f"Cursor State at time of exception: {state}"
+                ),
             )
             raise exc
 
@@ -227,16 +247,30 @@ class FileBasedStreamPartition(Partition):
             ):
                 if isinstance(record_data, Mapping):
                     data_to_return = dict(record_data)
-                    self._stream.transformer.transform(data_to_return, self._stream.get_json_schema())
+                    self._stream.transformer.transform(
+                        data_to_return, self._stream.get_json_schema()
+                    )
                     yield Record(data_to_return, self)
-                elif isinstance(record_data, AirbyteMessage) and record_data.type == Type.RECORD and record_data.record is not None:
+                elif (
+                    isinstance(record_data, AirbyteMessage)
+                    and record_data.type == Type.RECORD
+                    and record_data.record is not None
+                ):
                     # `AirbyteMessage`s of type `Record` should also be yielded so they are enqueued
                     # If stream is flagged for file_transfer the record should data in file key
-                    record_message_data = record_data.record.file if self._use_file_transfer() else record_data.record.data
+                    record_message_data = (
+                        record_data.record.file
+                        if self._use_file_transfer()
+                        else record_data.record.data
+                    )
                     if not record_message_data:
                         raise ExceptionWithDisplayMessage("A record without data was found")
                     else:
-                        yield Record(data=record_message_data, partition=self, is_file_transfer_message=self._use_file_transfer())
+                        yield Record(
+                            data=record_message_data,
+                            partition=self,
+                            is_file_transfer_message=self._use_file_transfer(),
+                        )
                 else:
                     self._message_repository.emit_message(record_data)
         except Exception as e:
@@ -305,7 +339,9 @@ class FileBasedStreamPartitionGenerator(PartitionGenerator):
 
     def generate(self) -> Iterable[FileBasedStreamPartition]:
         pending_partitions = []
-        for _slice in self._stream.stream_slices(sync_mode=self._sync_mode, cursor_field=self._cursor_field, stream_state=self._state):
+        for _slice in self._stream.stream_slices(
+            sync_mode=self._sync_mode, cursor_field=self._cursor_field, stream_state=self._state
+        ):
             if _slice is not None:
                 for file in _slice.get("files", []):
                     pending_partitions.append(

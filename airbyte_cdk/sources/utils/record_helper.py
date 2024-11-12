@@ -5,7 +5,12 @@ import time
 from collections.abc import Mapping as ABCMapping
 from typing import Any, Mapping, Optional
 
-from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, AirbyteRecordMessage, AirbyteTraceMessage
+from airbyte_cdk.models import (
+    AirbyteLogMessage,
+    AirbyteMessage,
+    AirbyteRecordMessage,
+    AirbyteTraceMessage,
+)
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.models.file_transfer_record_message import AirbyteFileTransferRecordMessage
 from airbyte_cdk.sources.streams.core import StreamData
@@ -32,7 +37,9 @@ def stream_data_to_airbyte_message(
             # docs/connector-development/cdk-python/schemas.md for details.
             transformer.transform(data, schema)  # type: ignore
             if is_file_transfer_message:
-                message = AirbyteFileTransferRecordMessage(stream=stream_name, file=data, emitted_at=now_millis, data={})
+                message = AirbyteFileTransferRecordMessage(
+                    stream=stream_name, file=data, emitted_at=now_millis, data={}
+                )
             else:
                 message = AirbyteRecordMessage(stream=stream_name, data=data, emitted_at=now_millis)
             return AirbyteMessage(type=MessageType.RECORD, record=message)
@@ -41,4 +48,6 @@ def stream_data_to_airbyte_message(
         case AirbyteLogMessage():
             return AirbyteMessage(type=MessageType.LOG, log=data_or_message)
         case _:
-            raise ValueError(f"Unexpected type for data_or_message: {type(data_or_message)}: {data_or_message}")
+            raise ValueError(
+                f"Unexpected type for data_or_message: {type(data_or_message)}: {data_or_message}"
+            )

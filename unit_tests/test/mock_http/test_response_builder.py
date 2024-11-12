@@ -38,17 +38,25 @@ def _record_builder(
     record_id_path: Optional[Path] = None,
     record_cursor_path: Optional[Union[FieldPath, NestedPath]] = None,
 ) -> RecordBuilder:
-    return create_record_builder(deepcopy(response_template), records_path, record_id_path, record_cursor_path)
+    return create_record_builder(
+        deepcopy(response_template), records_path, record_id_path, record_cursor_path
+    )
 
 
 def _any_record_builder() -> RecordBuilder:
-    return create_record_builder({"record_path": [{"a_record": "record value"}]}, FieldPath("record_path"))
+    return create_record_builder(
+        {"record_path": [{"a_record": "record value"}]}, FieldPath("record_path")
+    )
 
 
 def _response_builder(
-    response_template: Dict[str, Any], records_path: Union[FieldPath, NestedPath], pagination_strategy: Optional[PaginationStrategy] = None
+    response_template: Dict[str, Any],
+    records_path: Union[FieldPath, NestedPath],
+    pagination_strategy: Optional[PaginationStrategy] = None,
 ) -> HttpResponseBuilder:
-    return create_response_builder(deepcopy(response_template), records_path, pagination_strategy=pagination_strategy)
+    return create_response_builder(
+        deepcopy(response_template), records_path, pagination_strategy=pagination_strategy
+    )
 
 
 def _body(response: HttpResponse) -> Dict[str, Any]:
@@ -57,13 +65,19 @@ def _body(response: HttpResponse) -> Dict[str, Any]:
 
 class RecordBuilderTest(TestCase):
     def test_given_with_id_when_build_then_set_id(self) -> None:
-        builder = _record_builder({_RECORDS_FIELD: [{_ID_FIELD: "an id"}]}, FieldPath(_RECORDS_FIELD), FieldPath(_ID_FIELD))
+        builder = _record_builder(
+            {_RECORDS_FIELD: [{_ID_FIELD: "an id"}]},
+            FieldPath(_RECORDS_FIELD),
+            FieldPath(_ID_FIELD),
+        )
         record = builder.with_id("another id").build()
         assert record[_ID_FIELD] == "another id"
 
     def test_given_nested_id_when_build_then_set_id(self) -> None:
         builder = _record_builder(
-            {_RECORDS_FIELD: [{"nested": {_ID_FIELD: "id"}}]}, FieldPath(_RECORDS_FIELD), NestedPath(["nested", _ID_FIELD])
+            {_RECORDS_FIELD: [{"nested": {_ID_FIELD: "id"}}]},
+            FieldPath(_RECORDS_FIELD),
+            NestedPath(["nested", _ID_FIELD]),
         )
         record = builder.with_id("another id").build()
         assert record["nested"][_ID_FIELD] == "another id"
@@ -75,11 +89,17 @@ class RecordBuilderTest(TestCase):
 
     def test_given_no_id_in_template_for_path_when_build_then_raise_error(self) -> None:
         with pytest.raises(ValueError):
-            _record_builder({_RECORDS_FIELD: [{"record without id": "should fail"}]}, FieldPath(_RECORDS_FIELD), FieldPath(_ID_FIELD))
+            _record_builder(
+                {_RECORDS_FIELD: [{"record without id": "should fail"}]},
+                FieldPath(_RECORDS_FIELD),
+                FieldPath(_ID_FIELD),
+            )
 
     def test_given_with_cursor_when_build_then_set_id(self) -> None:
         builder = _record_builder(
-            {_RECORDS_FIELD: [{_CURSOR_FIELD: "a cursor"}]}, FieldPath(_RECORDS_FIELD), record_cursor_path=FieldPath(_CURSOR_FIELD)
+            {_RECORDS_FIELD: [{_CURSOR_FIELD: "a cursor"}]},
+            FieldPath(_RECORDS_FIELD),
+            record_cursor_path=FieldPath(_CURSOR_FIELD),
         )
         record = builder.with_cursor("another cursor").build()
         assert record[_CURSOR_FIELD] == "another cursor"
@@ -119,7 +139,9 @@ class RecordBuilderTest(TestCase):
 
 class HttpResponseBuilderTest(TestCase):
     def test_given_records_in_template_but_no_with_records_when_build_then_no_records(self) -> None:
-        builder = _response_builder({_RECORDS_FIELD: [{"a_record_field": "a record value"}]}, FieldPath(_RECORDS_FIELD))
+        builder = _response_builder(
+            {_RECORDS_FIELD: [{"a_record_field": "a record value"}]}, FieldPath(_RECORDS_FIELD)
+        )
         response = builder.build()
         assert len(_body(response)[_RECORDS_FIELD]) == 0
 
@@ -148,7 +170,9 @@ class HttpResponseBuilderTest(TestCase):
         builder = _response_builder(
             {"has_more_pages": False} | _SOME_RECORDS,
             FieldPath(_RECORDS_FIELD),
-            pagination_strategy=FieldUpdatePaginationStrategy(FieldPath("has_more_pages"), "yes more page"),
+            pagination_strategy=FieldUpdatePaginationStrategy(
+                FieldPath("has_more_pages"), "yes more page"
+            ),
         )
 
         response = builder.with_pagination().build()
@@ -166,10 +190,14 @@ class UtilMethodsTest(TestCase):
         template = find_template("test-resource", __file__)
         assert template == {"test-source template": "this is a template for test-resource"}
 
-    def test_given_cwd_doesnt_have_unit_tests_as_parent_when_from_resource_file__then_raise_error(self) -> None:
+    def test_given_cwd_doesnt_have_unit_tests_as_parent_when_from_resource_file__then_raise_error(
+        self,
+    ) -> None:
         with pytest.raises(ValueError):
             find_template("test-resource", str(FilePath(__file__).parent.parent.parent.parent))
 
-    def test_given_records_path_invalid_when_create_builders_from_resource_then_raise_exception(self) -> None:
+    def test_given_records_path_invalid_when_create_builders_from_resource_then_raise_exception(
+        self,
+    ) -> None:
         with pytest.raises(ValueError):
             create_record_builder(_A_RESPONSE_TEMPLATE, NestedPath(["invalid", "record", "path"]))

@@ -30,7 +30,11 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             self._primary_key,
             self._cursor_field,
             self._logger,
-            FinalStateCursor(stream_name=self._name, stream_namespace=None, message_repository=self._message_repository),
+            FinalStateCursor(
+                stream_name=self._name,
+                stream_namespace=None,
+                message_repository=self._message_repository,
+            ),
         )
 
     def test_get_json_schema(self):
@@ -91,7 +95,11 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             ["composite_key_1", "composite_key_2"],
             self._cursor_field,
             self._logger,
-            FinalStateCursor(stream_name=self._name, stream_namespace=None, message_repository=self._message_repository),
+            FinalStateCursor(
+                stream_name=self._name,
+                stream_namespace=None,
+                message_repository=self._message_repository,
+            ),
         )
 
         expected_airbyte_stream = AirbyteStream(
@@ -123,7 +131,11 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             ["id_a", "id_b"],
             self._cursor_field,
             self._logger,
-            FinalStateCursor(stream_name=self._name, stream_namespace=None, message_repository=self._message_repository),
+            FinalStateCursor(
+                stream_name=self._name,
+                stream_namespace=None,
+                message_repository=self._message_repository,
+            ),
         )
 
         expected_airbyte_stream = AirbyteStream(
@@ -155,7 +167,11 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             self._primary_key,
             "date",
             self._logger,
-            FinalStateCursor(stream_name=self._name, stream_namespace=None, message_repository=self._message_repository),
+            FinalStateCursor(
+                stream_name=self._name,
+                stream_namespace=None,
+                message_repository=self._message_repository,
+            ),
         )
 
         expected_airbyte_stream = AirbyteStream(
@@ -181,7 +197,11 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             self._primary_key,
             self._cursor_field,
             self._logger,
-            FinalStateCursor(stream_name=self._name, stream_namespace=None, message_repository=self._message_repository),
+            FinalStateCursor(
+                stream_name=self._name,
+                stream_namespace=None,
+                message_repository=self._message_repository,
+            ),
             namespace="test",
         )
         expected_airbyte_stream = AirbyteStream(

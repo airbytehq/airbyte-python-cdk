@@ -19,14 +19,19 @@ class InterpolatedRequestInputProvider:
     parameters: InitVar[Mapping[str, Any]]
     request_inputs: Optional[Union[str, Mapping[str, str]]] = field(default=None)
     config: Config = field(default_factory=dict)
-    _interpolator: Optional[Union[InterpolatedString, InterpolatedMapping]] = field(init=False, repr=False, default=None)
-    _request_inputs: Optional[Union[str, Mapping[str, str]]] = field(init=False, repr=False, default=None)
+    _interpolator: Optional[Union[InterpolatedString, InterpolatedMapping]] = field(
+        init=False, repr=False, default=None
+    )
+    _request_inputs: Optional[Union[str, Mapping[str, str]]] = field(
+        init=False, repr=False, default=None
+    )
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-
         self._request_inputs = self.request_inputs or {}
         if isinstance(self._request_inputs, str):
-            self._interpolator = InterpolatedString(self._request_inputs, default="", parameters=parameters)
+            self._interpolator = InterpolatedString(
+                self._request_inputs, default="", parameters=parameters
+            )
         else:
             self._interpolator = InterpolatedMapping(self._request_inputs, parameters=parameters)
 
@@ -48,9 +53,16 @@ class InterpolatedRequestInputProvider:
         :param valid_value_types: A tuple of types that the interpolator should allow
         :return: The request inputs to set on an outgoing HTTP request
         """
-        kwargs = {"stream_state": stream_state, "stream_slice": stream_slice, "next_page_token": next_page_token}
+        kwargs = {
+            "stream_state": stream_state,
+            "stream_slice": stream_slice,
+            "next_page_token": next_page_token,
+        }
         interpolated_value = self._interpolator.eval(  # type: ignore # self._interpolator is always initialized with a value and will not be None
-            self.config, valid_key_types=valid_key_types, valid_value_types=valid_value_types, **kwargs
+            self.config,
+            valid_key_types=valid_key_types,
+            valid_value_types=valid_value_types,
+            **kwargs,
         )
 
         if isinstance(interpolated_value, dict):

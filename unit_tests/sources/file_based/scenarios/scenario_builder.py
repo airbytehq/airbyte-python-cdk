@@ -33,7 +33,10 @@ class SourceBuilder(ABC, Generic[SourceType]):
 
     @abstractmethod
     def build(
-        self, configured_catalog: Optional[Mapping[str, Any]], config: Optional[Mapping[str, Any]], state: Optional[TState]
+        self,
+        configured_catalog: Optional[Mapping[str, Any]],
+        config: Optional[Mapping[str, Any]],
+        state: Optional[TState],
     ) -> SourceType:
         raise NotImplementedError()
 
@@ -140,7 +143,9 @@ class TestScenarioBuilder(Generic[SourceType]):
         self._config = config
         return self
 
-    def set_expected_spec(self, expected_spec: Mapping[str, Any]) -> "TestScenarioBuilder[SourceType]":
+    def set_expected_spec(
+        self, expected_spec: Mapping[str, Any]
+    ) -> "TestScenarioBuilder[SourceType]":
         self._expected_spec = expected_spec
         return self
 
@@ -148,35 +153,51 @@ class TestScenarioBuilder(Generic[SourceType]):
         self._catalog = catalog
         return self
 
-    def set_expected_check_status(self, expected_check_status: str) -> "TestScenarioBuilder[SourceType]":
+    def set_expected_check_status(
+        self, expected_check_status: str
+    ) -> "TestScenarioBuilder[SourceType]":
         self._expected_check_status = expected_check_status
         return self
 
-    def set_expected_catalog(self, expected_catalog: Mapping[str, Any]) -> "TestScenarioBuilder[SourceType]":
+    def set_expected_catalog(
+        self, expected_catalog: Mapping[str, Any]
+    ) -> "TestScenarioBuilder[SourceType]":
         self._expected_catalog = expected_catalog
         return self
 
-    def set_expected_logs(self, expected_logs: Mapping[str, List[Mapping[str, Any]]]) -> "TestScenarioBuilder[SourceType]":
+    def set_expected_logs(
+        self, expected_logs: Mapping[str, List[Mapping[str, Any]]]
+    ) -> "TestScenarioBuilder[SourceType]":
         self._expected_logs = expected_logs
         return self
 
-    def set_expected_records(self, expected_records: Optional[List[Mapping[str, Any]]]) -> "TestScenarioBuilder[SourceType]":
+    def set_expected_records(
+        self, expected_records: Optional[List[Mapping[str, Any]]]
+    ) -> "TestScenarioBuilder[SourceType]":
         self._expected_records = expected_records
         return self
 
-    def set_incremental_scenario_config(self, incremental_scenario_config: IncrementalScenarioConfig) -> "TestScenarioBuilder[SourceType]":
+    def set_incremental_scenario_config(
+        self, incremental_scenario_config: IncrementalScenarioConfig
+    ) -> "TestScenarioBuilder[SourceType]":
         self._incremental_scenario_config = incremental_scenario_config
         return self
 
-    def set_expected_check_error(self, error: Optional[Type[Exception]], message: str) -> "TestScenarioBuilder[SourceType]":
+    def set_expected_check_error(
+        self, error: Optional[Type[Exception]], message: str
+    ) -> "TestScenarioBuilder[SourceType]":
         self._expected_check_error = error, message
         return self
 
-    def set_expected_discover_error(self, error: Type[Exception], message: str) -> "TestScenarioBuilder[SourceType]":
+    def set_expected_discover_error(
+        self, error: Type[Exception], message: str
+    ) -> "TestScenarioBuilder[SourceType]":
         self._expected_discover_error = error, message
         return self
 
-    def set_expected_read_error(self, error: Type[Exception], message: str) -> "TestScenarioBuilder[SourceType]":
+    def set_expected_read_error(
+        self, error: Type[Exception], message: str
+    ) -> "TestScenarioBuilder[SourceType]":
         self._expected_read_error = error, message
         return self
 
@@ -184,11 +205,15 @@ class TestScenarioBuilder(Generic[SourceType]):
         self._log_levels = levels
         return self
 
-    def set_source_builder(self, source_builder: SourceBuilder[SourceType]) -> "TestScenarioBuilder[SourceType]":
+    def set_source_builder(
+        self, source_builder: SourceBuilder[SourceType]
+    ) -> "TestScenarioBuilder[SourceType]":
         self.source_builder = source_builder
         return self
 
-    def set_expected_analytics(self, expected_analytics: Optional[List[AirbyteAnalyticsTraceMessage]]) -> "TestScenarioBuilder[SourceType]":
+    def set_expected_analytics(
+        self, expected_analytics: Optional[List[AirbyteAnalyticsTraceMessage]]
+    ) -> "TestScenarioBuilder[SourceType]":
         self._expected_analytics = expected_analytics
         return self
 
@@ -200,12 +225,15 @@ class TestScenarioBuilder(Generic[SourceType]):
             raise ValueError("source_builder is not set")
         if self._incremental_scenario_config and self._incremental_scenario_config.input_state:
             state = [
-                AirbyteStateMessageSerializer.load(s) if isinstance(s, dict) else s for s in self._incremental_scenario_config.input_state
+                AirbyteStateMessageSerializer.load(s) if isinstance(s, dict) else s
+                for s in self._incremental_scenario_config.input_state
             ]
         else:
             state = None
         source = self.source_builder.build(
-            self._configured_catalog(SyncMode.incremental if self._incremental_scenario_config else SyncMode.full_refresh),
+            self._configured_catalog(
+                SyncMode.incremental if self._incremental_scenario_config else SyncMode.full_refresh
+            ),
             self._config,
             state,
         )

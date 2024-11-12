@@ -9,5 +9,5 @@ cd "$(dirname "${0}")/.." || exit 1
 {
   git diff --name-only --diff-filter=d --relative ':(exclude)unit_tests'
   git diff --name-only --diff-filter=d --staged --relative ':(exclude)unit_tests'
-  git diff --name-only --diff-filter=d master... --relative ':(exclude)unit_tests'
+  git diff --name-only --diff-filter=d main... --relative ':(exclude)unit_tests'
 } | grep -E '\.py$' | sort | uniq | xargs mypy --config-file mypy.ini --install-types --non-interactive

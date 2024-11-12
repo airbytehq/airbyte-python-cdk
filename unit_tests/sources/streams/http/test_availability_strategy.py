@@ -104,9 +104,10 @@ def test_http_availability_raises_unhandled_error(mocker):
     req.status_code = 404
     mocker.patch.object(requests.Session, "send", return_value=req)
 
-    assert (False, "Not found. The requested resource was not found on the server.") == HttpAvailabilityStrategy().check_availability(
-        http_stream, logger
-    )
+    assert (
+        False,
+        "Not found. The requested resource was not found on the server.",
+    ) == HttpAvailabilityStrategy().check_availability(http_stream, logger)
 
 
 def test_send_handles_retries_when_checking_availability(mocker, caplog):
@@ -122,7 +123,9 @@ def test_send_handles_retries_when_checking_availability(mocker, caplog):
     mock_send = mocker.patch.object(requests.Session, "send", side_effect=[req_1, req_2, req_3])
 
     with caplog.at_level(logging.INFO):
-        stream_is_available, _ = HttpAvailabilityStrategy().check_availability(stream=http_stream, logger=logger)
+        stream_is_available, _ = HttpAvailabilityStrategy().check_availability(
+            stream=http_stream, logger=logger
+        )
 
     assert stream_is_available
     assert mock_send.call_count == 3
@@ -147,7 +150,9 @@ def test_http_availability_strategy_on_empty_stream(mocker, records_as_list):
         empty_stream.read_records.return_value = iter([])
 
     logger = logging.getLogger("airbyte.test-source")
-    stream_is_available, _ = HttpAvailabilityStrategy().check_availability(stream=empty_stream, logger=logger)
+    stream_is_available, _ = HttpAvailabilityStrategy().check_availability(
+        stream=empty_stream, logger=logger
+    )
 
     assert stream_is_available
     assert empty_stream.read_records.called

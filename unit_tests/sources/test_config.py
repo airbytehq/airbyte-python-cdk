@@ -62,7 +62,11 @@ class TestBaseConfig:
                                 "type": "string",
                                 "default": "option2",
                             },
-                            "sequence": {"items": {"type": "string"}, "title": "Sequence", "type": "array"},
+                            "sequence": {
+                                "items": {"type": "string"},
+                                "title": "Sequence",
+                                "type": "array",
+                            },
                         },
                         "required": ["sequence"],
                         "title": "Choice2",
@@ -73,7 +77,10 @@ class TestBaseConfig:
             },
             "items": {
                 "items": {
-                    "properties": {"field1": {"title": "Field1", "type": "string"}, "field2": {"title": "Field2", "type": "integer"}},
+                    "properties": {
+                        "field1": {"title": "Field1", "type": "string"},
+                        "field2": {"title": "Field2", "type": "integer"},
+                    },
                     "required": ["field1", "field2"],
                     "title": "InnerClass",
                     "type": "object",

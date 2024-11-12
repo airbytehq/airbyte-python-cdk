@@ -16,14 +16,36 @@ config = {"option": "OPTION"}
 @pytest.mark.parametrize(
     "test_name, input_request_params, expected_request_params",
     [
-        ("test_static_param", {"a_static_request_param": "a_static_value"}, {"a_static_request_param": "a_static_value"}),
-        ("test_value_depends_on_state", {"read_from_state": "{{ stream_state['date'] }}"}, {"read_from_state": "2021-01-01"}),
-        ("test_value_depends_on_stream_slice", {"read_from_slice": "{{ stream_slice['start_date'] }}"}, {"read_from_slice": "2020-01-01"}),
-        ("test_value_depends_on_next_page_token", {"read_from_token": "{{ next_page_token['offset'] }}"}, {"read_from_token": "12345"}),
-        ("test_value_depends_on_config", {"read_from_config": "{{ config['option'] }}"}, {"read_from_config": "OPTION"}),
+        (
+            "test_static_param",
+            {"a_static_request_param": "a_static_value"},
+            {"a_static_request_param": "a_static_value"},
+        ),
+        (
+            "test_value_depends_on_state",
+            {"read_from_state": "{{ stream_state['date'] }}"},
+            {"read_from_state": "2021-01-01"},
+        ),
+        (
+            "test_value_depends_on_stream_slice",
+            {"read_from_slice": "{{ stream_slice['start_date'] }}"},
+            {"read_from_slice": "2020-01-01"},
+        ),
+        (
+            "test_value_depends_on_next_page_token",
+            {"read_from_token": "{{ next_page_token['offset'] }}"},
+            {"read_from_token": "12345"},
+        ),
+        (
+            "test_value_depends_on_config",
+            {"read_from_config": "{{ config['option'] }}"},
+            {"read_from_config": "OPTION"},
+        ),
         (
             "test_parameter_is_interpolated",
-            {"{{ stream_state['date'] }} - {{stream_slice['start_date']}} - {{next_page_token['offset']}} - {{config['option']}}": "ABC"},
+            {
+                "{{ stream_state['date'] }} - {{stream_slice['start_date']}} - {{next_page_token['offset']}} - {{config['option']}}": "ABC"
+            },
             {"2021-01-01 - 2020-01-01 - 12345 - OPTION": "ABC"},
         ),
         ("test_boolean_false_value", {"boolean_false": "{{ False }}"}, {"boolean_false": "False"}),
@@ -34,9 +56,13 @@ config = {"option": "OPTION"}
     ],
 )
 def test_interpolated_request_params(test_name, input_request_params, expected_request_params):
-    provider = InterpolatedRequestOptionsProvider(config=config, request_parameters=input_request_params, parameters={})
+    provider = InterpolatedRequestOptionsProvider(
+        config=config, request_parameters=input_request_params, parameters={}
+    )
 
-    actual_request_params = provider.get_request_params(stream_state=state, stream_slice=stream_slice, next_page_token=next_page_token)
+    actual_request_params = provider.get_request_params(
+        stream_state=state, stream_slice=stream_slice, next_page_token=next_page_token
+    )
 
     assert actual_request_params == expected_request_params
 
@@ -44,11 +70,31 @@ def test_interpolated_request_params(test_name, input_request_params, expected_r
 @pytest.mark.parametrize(
     "test_name, input_request_json, expected_request_json",
     [
-        ("test_static_json", {"a_static_request_param": "a_static_value"}, {"a_static_request_param": "a_static_value"}),
-        ("test_value_depends_on_state", {"read_from_state": "{{ stream_state['date'] }}"}, {"read_from_state": "2021-01-01"}),
-        ("test_value_depends_on_stream_slice", {"read_from_slice": "{{ stream_slice['start_date'] }}"}, {"read_from_slice": "2020-01-01"}),
-        ("test_value_depends_on_next_page_token", {"read_from_token": "{{ next_page_token['offset'] }}"}, {"read_from_token": 12345}),
-        ("test_value_depends_on_config", {"read_from_config": "{{ config['option'] }}"}, {"read_from_config": "OPTION"}),
+        (
+            "test_static_json",
+            {"a_static_request_param": "a_static_value"},
+            {"a_static_request_param": "a_static_value"},
+        ),
+        (
+            "test_value_depends_on_state",
+            {"read_from_state": "{{ stream_state['date'] }}"},
+            {"read_from_state": "2021-01-01"},
+        ),
+        (
+            "test_value_depends_on_stream_slice",
+            {"read_from_slice": "{{ stream_slice['start_date'] }}"},
+            {"read_from_slice": "2020-01-01"},
+        ),
+        (
+            "test_value_depends_on_next_page_token",
+            {"read_from_token": "{{ next_page_token['offset'] }}"},
+            {"read_from_token": 12345},
+        ),
+        (
+            "test_value_depends_on_config",
+            {"read_from_config": "{{ config['option'] }}"},
+            {"read_from_config": "OPTION"},
+        ),
         (
             "test_interpolated_keys",
             {"{{ stream_state['date'] }}": 123, "{{ config['option'] }}": "ABC"},
@@ -59,8 +105,16 @@ def test_interpolated_request_params(test_name, input_request_params, expected_r
         ("test_number_falsy_value", {"number_falsy": "{{ 0.0 }}"}, {"number_falsy": 0.0}),
         ("test_string_falsy_value", {"string_falsy": "{{ '' }}"}, {}),
         ("test_none_value", {"none_value": "{{ None }}"}, {}),
-        ("test_string", """{"nested": { "key": "{{ config['option'] }}" }}""", {"nested": {"key": "OPTION"}}),
-        ("test_nested_objects", {"nested": {"key": "{{ config['option'] }}"}}, {"nested": {"key": "OPTION"}}),
+        (
+            "test_string",
+            """{"nested": { "key": "{{ config['option'] }}" }}""",
+            {"nested": {"key": "OPTION"}},
+        ),
+        (
+            "test_nested_objects",
+            {"nested": {"key": "{{ config['option'] }}"}},
+            {"nested": {"key": "OPTION"}},
+        ),
         (
             "test_nested_objects_interpolated keys",
             {"nested": {"{{ stream_state['date'] }}": "{{ config['option'] }}"}},
@@ -69,9 +123,13 @@ def test_interpolated_request_params(test_name, input_request_params, expected_r
     ],
 )
 def test_interpolated_request_json(test_name, input_request_json, expected_request_json):
-    provider = InterpolatedRequestOptionsProvider(config=config, request_body_json=input_request_json, parameters={})
+    provider = InterpolatedRequestOptionsProvider(
+        config=config, request_body_json=input_request_json, parameters={}
+    )
 
-    actual_request_json = provider.get_request_body_json(stream_state=state, stream_slice=stream_slice, next_page_token=next_page_token)
+    actual_request_json = provider.get_request_body_json(
+        stream_state=state, stream_slice=stream_slice, next_page_token=next_page_token
+    )
 
     assert actual_request_json == expected_request_json
 
@@ -79,17 +137,37 @@ def test_interpolated_request_json(test_name, input_request_json, expected_reque
 @pytest.mark.parametrize(
     "test_name, input_request_data, expected_request_data",
     [
-        ("test_static_map_data", {"a_static_request_param": "a_static_value"}, {"a_static_request_param": "a_static_value"}),
-        ("test_map_depends_on_stream_slice", {"read_from_slice": "{{ stream_slice['start_date'] }}"}, {"read_from_slice": "2020-01-01"}),
-        ("test_map_depends_on_config", {"read_from_config": "{{ config['option'] }}"}, {"read_from_config": "OPTION"}),
+        (
+            "test_static_map_data",
+            {"a_static_request_param": "a_static_value"},
+            {"a_static_request_param": "a_static_value"},
+        ),
+        (
+            "test_map_depends_on_stream_slice",
+            {"read_from_slice": "{{ stream_slice['start_date'] }}"},
+            {"read_from_slice": "2020-01-01"},
+        ),
+        (
+            "test_map_depends_on_config",
+            {"read_from_config": "{{ config['option'] }}"},
+            {"read_from_config": "OPTION"},
+        ),
         ("test_defaults_to_empty_dict", None, {}),
-        ("test_interpolated_keys", {"{{ stream_state['date'] }} - {{ next_page_token['offset'] }}": "ABC"}, {"2021-01-01 - 12345": "ABC"}),
+        (
+            "test_interpolated_keys",
+            {"{{ stream_state['date'] }} - {{ next_page_token['offset'] }}": "ABC"},
+            {"2021-01-01 - 12345": "ABC"},
+        ),
     ],
 )
 def test_interpolated_request_data(test_name, input_request_data, expected_request_data):
-    provider = InterpolatedRequestOptionsProvider(config=config, request_body_data=input_request_data, parameters={})
+    provider = InterpolatedRequestOptionsProvider(
+        config=config, request_body_data=input_request_data, parameters={}
+    )
 
-    actual_request_data = provider.get_request_body_data(stream_state=state, stream_slice=stream_slice, next_page_token=next_page_token)
+    actual_request_data = provider.get_request_body_data(
+        stream_state=state, stream_slice=stream_slice, next_page_token=next_page_token
+    )
 
     assert actual_request_data == expected_request_data
 
@@ -98,34 +176,89 @@ def test_error_on_create_for_both_request_json_and_data():
     request_json = {"body_key": "{{ stream_slice['start_date'] }}"}
     request_data = "interpolate_me=5&invalid={{ config['option'] }}"
     with pytest.raises(ValueError):
-        InterpolatedRequestOptionsProvider(config=config, request_body_json=request_json, request_body_data=request_data, parameters={})
+        InterpolatedRequestOptionsProvider(
+            config=config,
+            request_body_json=request_json,
+            request_body_data=request_data,
+            parameters={},
+        )
 
 
 @pytest.mark.parametrize(
     "request_option_type,request_input,contains_state",
     [
-        pytest.param("request_parameter", {"start": "{{ stream_state.get('start_date') }}"}, True, id="test_request_parameter_has_state"),
-        pytest.param("request_parameter", {"start": "{{ slice_interval.get('start_date') }}"}, False, id="test_request_parameter_no_state"),
-        pytest.param("request_header", {"start": "{{ stream_state.get('start_date') }}"}, True, id="test_request_header_has_state"),
-        pytest.param("request_header", {"start": "{{ slice_interval.get('start_date') }}"}, False, id="test_request_header_no_state"),
-        pytest.param("request_body_data", "[{'query': {'type': 'timestamp', 'value': stream_state.get('start_date')}}]", True, id="test_request_body_data_has_state"),
-        pytest.param("request_body_data", "[{'query': {'type': 'timestamp', 'value': stream_interval.get('start_date')}}]", False, id="test_request_body_data_no_state"),
-        pytest.param("request_body_json", {"start": "{{ stream_state.get('start_date') }}"}, True, id="test_request_body_json_has_state"),
-        pytest.param("request_body_json", {"start": "{{ slice_interval.get('start_date') }}"}, False, id="test_request_request_body_json_no_state"),
-    ]
+        pytest.param(
+            "request_parameter",
+            {"start": "{{ stream_state.get('start_date') }}"},
+            True,
+            id="test_request_parameter_has_state",
+        ),
+        pytest.param(
+            "request_parameter",
+            {"start": "{{ slice_interval.get('start_date') }}"},
+            False,
+            id="test_request_parameter_no_state",
+        ),
+        pytest.param(
+            "request_header",
+            {"start": "{{ stream_state.get('start_date') }}"},
+            True,
+            id="test_request_header_has_state",
+        ),
+        pytest.param(
+            "request_header",
+            {"start": "{{ slice_interval.get('start_date') }}"},
+            False,
+            id="test_request_header_no_state",
+        ),
+        pytest.param(
+            "request_body_data",
+            "[{'query': {'type': 'timestamp', 'value': stream_state.get('start_date')}}]",
+            True,
+            id="test_request_body_data_has_state",
+        ),
+        pytest.param(
+            "request_body_data",
+            "[{'query': {'type': 'timestamp', 'value': stream_interval.get('start_date')}}]",
+            False,
+            id="test_request_body_data_no_state",
+        ),
+        pytest.param(
+            "request_body_json",
+            {"start": "{{ stream_state.get('start_date') }}"},
+            True,
+            id="test_request_body_json_has_state",
+        ),
+        pytest.param(
+            "request_body_json",
+            {"start": "{{ slice_interval.get('start_date') }}"},
+            False,
+            id="test_request_request_body_json_no_state",
+        ),
+    ],
 )
 def test_request_options_contain_stream_state(request_option_type, request_input, contains_state):
     request_options_provider: InterpolatedRequestOptionsProvider
     match request_option_type:
         case "request_parameter":
-            request_options_provider = InterpolatedRequestOptionsProvider(config=config, request_parameters=request_input, parameters={})
+            request_options_provider = InterpolatedRequestOptionsProvider(
+                config=config, request_parameters=request_input, parameters={}
+            )
         case "request_header":
-            request_options_provider = InterpolatedRequestOptionsProvider(config=config, request_headers=request_input, parameters={})
+            request_options_provider = InterpolatedRequestOptionsProvider(
+                config=config, request_headers=request_input, parameters={}
+            )
         case "request_body_data":
-            request_options_provider = InterpolatedRequestOptionsProvider(config=config, request_body_data=request_input, parameters={})
+            request_options_provider = InterpolatedRequestOptionsProvider(
+                config=config, request_body_data=request_input, parameters={}
+            )
         case "request_body_json":
-            request_options_provider = InterpolatedRequestOptionsProvider(config=config, request_body_json=request_input, parameters={})
+            request_options_provider = InterpolatedRequestOptionsProvider(
+                config=config, request_body_json=request_input, parameters={}
+            )
         case _:
-            request_options_provider = InterpolatedRequestOptionsProvider(config=config, parameters={})
+            request_options_provider = InterpolatedRequestOptionsProvider(
+                config=config, parameters={}
+            )
 
     assert request_options_provider.request_options_contain_stream_state() == contains_state

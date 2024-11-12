@@ -77,13 +77,17 @@ class CatalogProvider:
             )
 
         matching_streams: list[ConfiguredAirbyteStream] = [
-            stream for stream in self.configured_catalog.streams if stream.stream.name == stream_name
+            stream
+            for stream in self.configured_catalog.streams
+            if stream.stream.name == stream_name
         ]
         if not matching_streams:
             raise exc.AirbyteStreamNotFoundError(
                 stream_name=stream_name,
                 context={
-                    "available_streams": [stream.stream.name for stream in self.configured_catalog.streams],
+                    "available_streams": [
+                        stream.stream.name for stream in self.configured_catalog.streams
+                    ],
                 },
             )
 
@@ -121,12 +125,17 @@ class CatalogProvider:
         if not pks:
             return []
 
-        normalized_pks: list[list[str]] = [[LowerCaseNormalizer.normalize(c) for c in pk] for pk in pks]
+        normalized_pks: list[list[str]] = [
+            [LowerCaseNormalizer.normalize(c) for c in pk] for pk in pks
+        ]
 
         for pk_nodes in normalized_pks:
             if len(pk_nodes) != 1:
                 raise exc.AirbyteError(
-                    message=("Nested primary keys are not supported. " "Each PK column should have exactly one node. "),
+                    message=(
+                        "Nested primary keys are not supported. "
+                        "Each PK column should have exactly one node. "
+                    ),
                     context={
                         "stream_name": stream_name,
                         "primary_key_nodes": pk_nodes,

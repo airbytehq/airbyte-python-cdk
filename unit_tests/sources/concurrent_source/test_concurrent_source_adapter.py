@@ -28,7 +28,13 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
 class _MockSource(ConcurrentSourceAdapter):
-    def __init__(self, concurrent_source, _streams_to_is_concurrent, logger, raise_exception_on_missing_stream=True):
+    def __init__(
+        self,
+        concurrent_source,
+        _streams_to_is_concurrent,
+        logger,
+        raise_exception_on_missing_stream=True,
+    ):
         super().__init__(concurrent_source)
         self._streams_to_is_concurrent = _streams_to_is_concurrent
         self._logger = logger
@@ -36,14 +42,14 @@ class _MockSource(ConcurrentSourceAdapter):
 
     message_repository = InMemoryMessageRepository()
 
-    def check_connection(self, logger: logging.Logger, config: Mapping[str, Any]) -> Tuple[bool, Optional[Any]]:
+    def check_connection(
+        self, logger: logging.Logger, config: Mapping[str, Any]
+    ) -> Tuple[bool, Optional[Any]]:
         raise NotImplementedError
 
     def streams(self, config: Mapping[str, Any]) -> List[Stream]:
         return [
-            self.convert_to_concurrent_stream(self._logger, s, Mock())
-            if is_concurrent
-            else s
+            self.convert_to_concurrent_stream(self._logger, s, Mock()) if is_concurrent else s
             for s, is_concurrent in self._streams_to_is_concurrent.items()
         ]
 
@@ -74,10 +80,14 @@ def test_concurrent_source_adapter(as_stream_status, remove_stack_trace):
     unavailable_stream = _mock_stream("s3", [{"data": 3}], False)
     concurrent_stream.name = "s2"
     logger = Mock()
-    adapter = _MockSource(concurrent_source, {regular_stream: False, concurrent_stream: True}, logger)
+    adapter = _MockSource(
+        concurrent_source, {regular_stream: False, concurrent_stream: True}, logger
+    )
     with pytest.raises(AirbyteTracedException):
         messages = []
-        for message in adapter.read(logger, {}, _configured_catalog([regular_stream, concurrent_stream, unavailable_stream])):
+        for message in adapter.read(
+            logger, {}, _configured_catalog([regular_stream, concurrent_stream, unavailable_stream])
+        ):
             messages.append(message)
 
     records = [m for m in messages if m.type == MessageType.RECORD]
@@ -106,7 +116,10 @@ def test_concurrent_source_adapter(as_stream_status, remove_stack_trace):
     expected_status = [as_stream_status("s3", AirbyteStreamStatus.INCOMPLETE)]
 
     assert len(unavailable_stream_trace_messages) == 1
-    assert unavailable_stream_trace_messages[0].trace.stream_status == expected_status[0].trace.stream_status
+    assert (
+        unavailable_stream_trace_messages[0].trace.stream_status
+        == expected_status[0].trace.stream_status
+    )
 
 
 def _mock_stream(name: str, data=[], available: bool = True):
@@ -154,16 +167,24 @@ def test_read_nonexistent_concurrent_stream_emit_incomplete_stream_status(
     concurrent_source.read.return_value = []
 
     adapter = _MockSource(concurrent_source, {s1: True}, logger)
-    expected_status = [as_stream_status("this_stream_doesnt_exist_in_the_source", AirbyteStreamStatus.INCOMPLETE)]
+    expected_status = [
+        as_stream_status("this_stream_doesnt_exist_in_the_source", AirbyteStreamStatus.INCOMPLETE)
+    ]
 
     adapter.raise_exception_on_missing_stream = raise_exception_on_missing_stream
 
     if not raise_exception_on_missing_stream:
-        messages = [remove_stack_trace(message) for message in adapter.read(logger, {}, _configured_catalog([s2]))]
+        messages = [
+            remove_stack_trace(message)
+            for message in adapter.read(logger, {}, _configured_catalog([s2]))
+        ]
         assert messages[0].trace.stream_status == expected_status[0].trace.stream_status
     else:
         with pytest.raises(AirbyteTracedException) as exc_info:
-            messages = [remove_stack_trace(message) for message in adapter.read(logger, {}, _configured_catalog([s2]))]
+            messages = [
+                remove_stack_trace(message)
+                for message in adapter.read(logger, {}, _configured_catalog([s2]))
+            ]
             assert messages == expected_status
         assert exc_info.value.failure_type == FailureType.config_error
         assert "not found in the source" in exc_info.value.message

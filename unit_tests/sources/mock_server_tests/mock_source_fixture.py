@@ -34,7 +34,6 @@ class FixtureAvailabilityStrategy(HttpAvailabilityStrategy):
 
 
 class IntegrationStream(HttpStream, ABC):
-
     url_base = "https://api.airbyte-test.com/v1/"
     primary_key = "id"
     page_size = 100
@@ -132,10 +131,17 @@ class Planets(IncrementalIntegrationStream):
         stream_slice: Optional[Mapping[str, Any]] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> MutableMapping[str, Any]:
-        return {"start_date": stream_slice.get("start_date"), "end_date": stream_slice.get("end_date")}
+        return {
+            "start_date": stream_slice.get("start_date"),
+            "end_date": stream_slice.get("end_date"),
+        }
 
     def stream_slices(
-        self, *, sync_mode: SyncMode, cursor_field: Optional[List[str]] = None, stream_state: Optional[Mapping[str, Any]] = None
+        self,
+        *,
+        sync_mode: SyncMode,
+        cursor_field: Optional[List[str]] = None,
+        stream_state: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[Optional[Mapping[str, Any]]]:
         start_date = pendulum.parse(self.start_date)
 
@@ -207,10 +213,17 @@ class Legacies(IntegrationStream):
         stream_slice: Optional[Mapping[str, Any]] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> MutableMapping[str, Any]:
-        return {"start_date": stream_slice.get("start_date"), "end_date": stream_slice.get("end_date")}
+        return {
+            "start_date": stream_slice.get("start_date"),
+            "end_date": stream_slice.get("end_date"),
+        }
 
     def stream_slices(
-        self, *, sync_mode: SyncMode, cursor_field: Optional[List[str]] = None, stream_state: Optional[Mapping[str, Any]] = None
+        self,
+        *,
+        sync_mode: SyncMode,
+        cursor_field: Optional[List[str]] = None,
+        stream_state: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[Optional[Mapping[str, Any]]]:
         start_date = pendulum.parse(self.start_date)
 
@@ -252,7 +265,11 @@ class Dividers(IntegrationStream):
         }
 
     def stream_slices(
-        self, *, sync_mode: SyncMode, cursor_field: Optional[List[str]] = None, stream_state: Optional[Mapping[str, Any]] = None
+        self,
+        *,
+        sync_mode: SyncMode,
+        cursor_field: Optional[List[str]] = None,
+        stream_state: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[Optional[Mapping[str, Any]]]:
         return [{"divide_category": "dukes"}, {"divide_category": "mentats"}]
 
@@ -330,20 +347,40 @@ class JusticeSongs(HttpStream, CheckpointMixin, ABC):
         stream_state: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[StreamData]:
         next_page_token = stream_slice
-        request_headers = self.request_headers(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token)
-        request_params = self.request_params(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token)
+        request_headers = self.request_headers(
+            stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
+        )
+        request_params = self.request_params(
+            stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
+        )
 
         request, response = self._http_client.send_request(
             http_method=self.http_method,
             url=self._join_url(
                 self.url_base,
-                self.path(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token),
+                self.path(
+                    stream_state=stream_state,
+                    stream_slice=stream_slice,
+                    next_page_token=next_page_token,
+                ),
             ),
-            request_kwargs=self.request_kwargs(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token),
+            request_kwargs=self.request_kwargs(
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
+            ),
             headers=request_headers,
             params=request_params,
-            json=self.request_body_json(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token),
-            data=self.request_body_data(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token),
+            json=self.request_body_json(
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
+            ),
+            data=self.request_body_data(
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
+            ),
             dedupe_query_params=True,
         )
         yield from self.parse_response(response=response)
@@ -360,7 +397,9 @@ class JusticeSongs(HttpStream, CheckpointMixin, ABC):
 
 
 class SourceFixture(AbstractSource):
-    def check_connection(self, logger: logging.Logger, config: Mapping[str, Any]) -> Tuple[bool, any]:
+    def check_connection(
+        self, logger: logging.Logger, config: Mapping[str, Any]
+    ) -> Tuple[bool, any]:
         return True, None
 
     def streams(self, config: Mapping[str, Any]) -> List[Stream]:

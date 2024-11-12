@@ -53,7 +53,9 @@ class IncrementalCheckpointReader(CheckpointReader):
     before syncing data.
     """
 
-    def __init__(self, stream_state: Mapping[str, Any], stream_slices: Iterable[Optional[Mapping[str, Any]]]):
+    def __init__(
+        self, stream_state: Mapping[str, Any], stream_slices: Iterable[Optional[Mapping[str, Any]]]
+    ):
         self._state: Optional[Mapping[str, Any]] = stream_state
         self._stream_slices = iter(stream_slices)
         self._has_slices = False
@@ -87,7 +89,12 @@ class CursorBasedCheckpointReader(CheckpointReader):
     that belongs to the Concurrent CDK.
     """
 
-    def __init__(self, cursor: Cursor, stream_slices: Iterable[Optional[Mapping[str, Any]]], read_state_from_cursor: bool = False):
+    def __init__(
+        self,
+        cursor: Cursor,
+        stream_slices: Iterable[Optional[Mapping[str, Any]]],
+        read_state_from_cursor: bool = False,
+    ):
         self._cursor = cursor
         self._stream_slices = iter(stream_slices)
         # read_state_from_cursor is used to delineate that partitions should determine when to stop syncing dynamically according
@@ -153,7 +160,11 @@ class CursorBasedCheckpointReader(CheckpointReader):
                         next_slice = self.read_and_convert_slice()
                         state_for_slice = self._cursor.select_state(next_slice)
                         has_more = state_for_slice == FULL_REFRESH_COMPLETE_STATE
-                return StreamSlice(cursor_slice=state_for_slice or {}, partition=next_slice.partition, extra_fields=next_slice.extra_fields)
+                return StreamSlice(
+                    cursor_slice=state_for_slice or {},
+                    partition=next_slice.partition,
+                    extra_fields=next_slice.extra_fields,
+                )
             else:
                 state_for_slice = self._cursor.select_state(self.current_slice)
                 if state_for_slice == FULL_REFRESH_COMPLETE_STATE:
@@ -173,7 +184,9 @@ class CursorBasedCheckpointReader(CheckpointReader):
                     )
                 # The reader continues to process the current partition if it's state is still in progress
                 return StreamSlice(
-                    cursor_slice=state_for_slice or {}, partition=self.current_slice.partition, extra_fields=self.current_slice.extra_fields
+                    cursor_slice=state_for_slice or {},
+                    partition=self.current_slice.partition,
+                    extra_fields=self.current_slice.extra_fields,
                 )
         else:
             # Unlike RFR cursors that iterate dynamically according to how stream state is updated, most cursors operate
@@ -218,8 +231,17 @@ class LegacyCursorBasedCheckpointReader(CursorBasedCheckpointReader):
     }
     """
 
-    def __init__(self, cursor: Cursor, stream_slices: Iterable[Optional[Mapping[str, Any]]], read_state_from_cursor: bool = False):
-        super().__init__(cursor=cursor, stream_slices=stream_slices, read_state_from_cursor=read_state_from_cursor)
+    def __init__(
+        self,
+        cursor: Cursor,
+        stream_slices: Iterable[Optional[Mapping[str, Any]]],
+        read_state_from_cursor: bool = False,
+    ):
+        super().__init__(
+            cursor=cursor,
+            stream_slices=stream_slices,
+            read_state_from_cursor=read_state_from_cursor,
+        )
 
     def next(self) -> Optional[Mapping[str, Any]]:
         try:
@@ -228,7 +250,9 @@ class LegacyCursorBasedCheckpointReader(CursorBasedCheckpointReader):
             if "partition" in dict(self.current_slice):
                 raise ValueError("Stream is configured to use invalid stream slice key 'partition'")
             elif "cursor_slice" in dict(self.current_slice):
-                raise ValueError("Stream is configured to use invalid stream slice key 'cursor_slice'")
+                raise ValueError(
+                    "Stream is configured to use invalid stream slice key 'cursor_slice'"
+                )
 
             # We convert StreamSlice to a regular mapping because legacy connectors operate on the basic Mapping object. We
             # also duplicate all fields at the top level for backwards compatibility for existing Python sources

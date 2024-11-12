@@ -11,7 +11,11 @@ from abc import ABC, abstractmethod
 from typing import Any, Generic, Mapping, Optional, Protocol, TypeVar
 
 import yaml
-from airbyte_cdk.models import AirbyteConnectionStatus, ConnectorSpecification, ConnectorSpecificationSerializer
+from airbyte_cdk.models import (
+    AirbyteConnectionStatus,
+    ConnectorSpecification,
+    ConnectorSpecificationSerializer,
+)
 
 
 def load_optional_package_file(package: str, filename: str) -> Optional[bytes]:
@@ -53,7 +57,9 @@ class BaseConnector(ABC, Generic[TConfig]):
         try:
             return json.loads(contents)
         except json.JSONDecodeError as error:
-            raise ValueError(f"Could not read json file {file_path}: {error}. Please ensure that it is a valid JSON.")
+            raise ValueError(
+                f"Could not read json file {file_path}: {error}. Please ensure that it is a valid JSON."
+            )
 
     @staticmethod
     def write_config(config: TConfig, config_path: str) -> None:
@@ -72,7 +78,9 @@ class BaseConnector(ABC, Generic[TConfig]):
         json_spec = load_optional_package_file(package, "spec.json")
 
         if yaml_spec and json_spec:
-            raise RuntimeError("Found multiple spec files in the package. Only one of spec.yaml or spec.json should be provided.")
+            raise RuntimeError(
+                "Found multiple spec files in the package. Only one of spec.yaml or spec.json should be provided."
+            )
 
         if yaml_spec:
             spec_obj = yaml.load(yaml_spec, Loader=yaml.SafeLoader)
@@ -80,7 +88,9 @@ class BaseConnector(ABC, Generic[TConfig]):
             try:
                 spec_obj = json.loads(json_spec)
             except json.JSONDecodeError as error:
-                raise ValueError(f"Could not read json spec file: {error}. Please ensure that it is a valid JSON.")
+                raise ValueError(
+                    f"Could not read json spec file: {error}. Please ensure that it is a valid JSON."
+                )
         else:
             raise FileNotFoundError("Unable to find spec.yaml or spec.json in the package.")
 
@@ -96,17 +106,17 @@ class BaseConnector(ABC, Generic[TConfig]):
 
 class _WriteConfigProtocol(Protocol):
     @staticmethod
-    def write_config(config: Mapping[str, Any], config_path: str) -> None:
-        ...
+    def write_config(config: Mapping[str, Any], config_path: str) -> None: ...
 
 
 class DefaultConnectorMixin:
     # can be overridden to change an input config
-    def configure(self: _WriteConfigProtocol, config: Mapping[str, Any], temp_dir: str) -> Mapping[str, Any]:
+    def configure(
+        self: _WriteConfigProtocol, config: Mapping[str, Any], temp_dir: str
+    ) -> Mapping[str, Any]:
         config_path = os.path.join(temp_dir, "config.json")
         self.write_config(config, config_path)
         return config
 
 
-class Connector(DefaultConnectorMixin, BaseConnector[Mapping[str, Any]], ABC):
-    ...
+class Connector(DefaultConnectorMixin, BaseConnector[Mapping[str, Any]], ABC): ...

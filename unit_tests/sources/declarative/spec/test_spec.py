@@ -16,13 +16,25 @@ from airbyte_cdk.sources.declarative.spec.spec import Spec
             ConnectorSpecification(connectionSpecification={"client_id": "my_client_id"}),
         ),
         (
-            Spec(connection_specification={"client_id": "my_client_id"}, parameters={}, documentation_url="https://airbyte.io"),
-            ConnectorSpecification(connectionSpecification={"client_id": "my_client_id"}, documentationUrl="https://airbyte.io"),
+            Spec(
+                connection_specification={"client_id": "my_client_id"},
+                parameters={},
+                documentation_url="https://airbyte.io",
+            ),
+            ConnectorSpecification(
+                connectionSpecification={"client_id": "my_client_id"},
+                documentationUrl="https://airbyte.io",
+            ),
         ),
         (
-            Spec(connection_specification={"client_id": "my_client_id"}, parameters={}, advanced_auth=AuthFlow(auth_flow_type="oauth2.0")),
+            Spec(
+                connection_specification={"client_id": "my_client_id"},
+                parameters={},
+                advanced_auth=AuthFlow(auth_flow_type="oauth2.0"),
+            ),
             ConnectorSpecification(
-                connectionSpecification={"client_id": "my_client_id"}, advanced_auth=AdvancedAuth(auth_flow_type=AuthFlowType.oauth2_0)
+                connectionSpecification={"client_id": "my_client_id"},
+                advanced_auth=AdvancedAuth(auth_flow_type=AuthFlowType.oauth2_0),
             ),
         ),
     ],

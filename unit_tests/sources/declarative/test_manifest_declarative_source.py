@@ -59,7 +59,10 @@ class TestManifestDeclarativeSource:
         test_path = os.path.dirname(module_path)
         spec_root = test_path.split("/sources/declarative")[0]
 
-        spec = {"documentationUrl": "https://airbyte.com/#yaml-from-external", "connectionSpecification": EXTERNAL_CONNECTION_SPECIFICATION}
+        spec = {
+            "documentationUrl": "https://airbyte.com/#yaml-from-external",
+            "connectionSpecification": EXTERNAL_CONNECTION_SPECIFICATION,
+        }
 
         yaml_path = os.path.join(spec_root, "spec.yaml")
         with open(yaml_path, "w") as f:
@@ -75,7 +78,11 @@ class TestManifestDeclarativeSource:
             "streams": [
                 {
                     "type": "DeclarativeStream",
-                    "$parameters": {"name": "lists", "primary_key": "id", "url_base": "https://api.sendgrid.com"},
+                    "$parameters": {
+                        "name": "lists",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
                     "schema_loader": {
                         "name": "{{ parameters.stream_name }}",
                         "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
@@ -84,7 +91,11 @@ class TestManifestDeclarativeSource:
                         "paginator": {
                             "type": "DefaultPaginator",
                             "page_size": 10,
-                            "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "page_size"},
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
                             "page_token_option": {"type": "RequestPath"},
                             "pagination_strategy": {
                                 "type": "CursorPagination",
@@ -94,7 +105,10 @@ class TestManifestDeclarativeSource:
                         },
                         "requester": {
                             "path": "/v3/marketing/lists",
-                            "authenticator": {"type": "BearerAuthenticator", "api_token": "{{ config.apikey }}"},
+                            "authenticator": {
+                                "type": "BearerAuthenticator",
+                                "api_token": "{{ config.apikey }}",
+                            },
                             "request_parameters": {"page_size": "{{ 10 }}"},
                         },
                         "record_selector": {"extractor": {"field_path": ["result"]}},
@@ -102,7 +116,11 @@ class TestManifestDeclarativeSource:
                 },
                 {
                     "type": "DeclarativeStream",
-                    "$parameters": {"name": "stream_with_custom_requester", "primary_key": "id", "url_base": "https://api.sendgrid.com"},
+                    "$parameters": {
+                        "name": "stream_with_custom_requester",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
                     "schema_loader": {
                         "name": "{{ parameters.stream_name }}",
                         "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
@@ -111,7 +129,11 @@ class TestManifestDeclarativeSource:
                         "paginator": {
                             "type": "DefaultPaginator",
                             "page_size": 10,
-                            "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "page_size"},
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
                             "page_token_option": {"type": "RequestPath"},
                             "pagination_strategy": {
                                 "type": "CursorPagination",
@@ -140,7 +162,10 @@ class TestManifestDeclarativeSource:
         assert len(streams) == 2
         assert isinstance(streams[0], DeclarativeStream)
         assert isinstance(streams[1], DeclarativeStream)
-        assert source.resolved_manifest["description"] == "This is a sample source connector that is very valid."
+        assert (
+            source.resolved_manifest["description"]
+            == "This is a sample source connector that is very valid."
+        )
 
     def test_manifest_with_spec(self):
         manifest = {
@@ -154,13 +179,23 @@ class TestManifestDeclarativeSource:
                     "paginator": {
                         "type": "DefaultPaginator",
                         "page_size": 10,
-                        "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "page_size"},
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "page_size",
+                        },
                         "page_token_option": {"type": "RequestPath"},
-                        "pagination_strategy": {"type": "CursorPagination", "cursor_value": "{{ response._metadata.next }}"},
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ response._metadata.next }}",
+                        },
                     },
                     "requester": {
                         "path": "/v3/marketing/lists",
-                        "authenticator": {"type": "BearerAuthenticator", "api_token": "{{ config.apikey }}"},
+                        "authenticator": {
+                            "type": "BearerAuthenticator",
+                            "api_token": "{{ config.apikey }}",
+                        },
                         "request_parameters": {"page_size": "{{ 10 }}"},
                     },
                     "record_selector": {"extractor": {"field_path": ["result"]}},
@@ -169,7 +204,11 @@ class TestManifestDeclarativeSource:
             "streams": [
                 {
                     "type": "DeclarativeStream",
-                    "$parameters": {"name": "lists", "primary_key": "id", "url_base": "https://api.sendgrid.com"},
+                    "$parameters": {
+                        "name": "lists",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
                     "schema_loader": {
                         "name": "{{ parameters.stream_name }}",
                         "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
@@ -178,13 +217,23 @@ class TestManifestDeclarativeSource:
                         "paginator": {
                             "type": "DefaultPaginator",
                             "page_size": 10,
-                            "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "page_size"},
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
                             "page_token_option": {"type": "RequestPath"},
-                            "pagination_strategy": {"type": "CursorPagination", "cursor_value": "{{ response._metadata.next }}"},
+                            "pagination_strategy": {
+                                "type": "CursorPagination",
+                                "cursor_value": "{{ response._metadata.next }}",
+                            },
                         },
                         "requester": {
                             "path": "/v3/marketing/lists",
-                            "authenticator": {"type": "BearerAuthenticator", "api_token": "{{ config.apikey }}"},
+                            "authenticator": {
+                                "type": "BearerAuthenticator",
+                                "api_token": "{{ config.apikey }}",
+                            },
                             "request_parameters": {"page_size": "{{ 10 }}"},
                         },
                         "record_selector": {"extractor": {"field_path": ["result"]}},
@@ -201,7 +250,13 @@ class TestManifestDeclarativeSource:
                     "required": ["api_key"],
                     "additionalProperties": False,
                     "properties": {
-                        "api_key": {"type": "string", "airbyte_secret": True, "title": "API Key", "description": "Test API Key", "order": 0}
+                        "api_key": {
+                            "type": "string",
+                            "airbyte_secret": True,
+                            "title": "API Key",
+                            "description": "Test API Key",
+                            "order": 0,
+                        }
                     },
                 },
             },
@@ -233,13 +288,23 @@ class TestManifestDeclarativeSource:
                     "paginator": {
                         "type": "DefaultPaginator",
                         "page_size": 10,
-                        "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "page_size"},
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "page_size",
+                        },
                         "page_token_option": {"type": "RequestPath"},
-                        "pagination_strategy": {"type": "CursorPagination", "cursor_value": "{{ response._metadata.next }}"},
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ response._metadata.next }}",
+                        },
                     },
                     "requester": {
                         "path": "/v3/marketing/lists",
-                        "authenticator": {"type": "BearerAuthenticator", "api_token": "{{ config.apikey }}"},
+                        "authenticator": {
+                            "type": "BearerAuthenticator",
+                            "api_token": "{{ config.apikey }}",
+                        },
                         "request_parameters": {"page_size": "{{ 10 }}"},
                     },
                     "record_selector": {"extractor": {"field_path": ["result"]}},
@@ -248,7 +313,11 @@ class TestManifestDeclarativeSource:
             "streams": [
                 {
                     "type": "DeclarativeStream",
-                    "$parameters": {"name": "lists", "primary_key": "id", "url_base": "https://api.sendgrid.com"},
+                    "$parameters": {
+                        "name": "lists",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
                     "schema_loader": {
                         "name": "{{ parameters.stream_name }}",
                         "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
@@ -257,13 +326,23 @@ class TestManifestDeclarativeSource:
                         "paginator": {
                             "type": "DefaultPaginator",
                             "page_size": 10,
-                            "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "page_size"},
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
                             "page_token_option": {"type": "RequestPath"},
-                            "pagination_strategy": {"type": "CursorPagination", "cursor_value": "{{ response._metadata.next }}"},
+                            "pagination_strategy": {
+                                "type": "CursorPagination",
+                                "cursor_value": "{{ response._metadata.next }}",
+                            },
                         },
                         "requester": {
                             "path": "/v3/marketing/lists",
-                            "authenticator": {"type": "BearerAuthenticator", "api_token": "{{ config.apikey }}"},
+                            "authenticator": {
+                                "type": "BearerAuthenticator",
+                                "api_token": "{{ config.apikey }}",
+                            },
                             "request_parameters": {"page_size": "{{ 10 }}"},
                         },
                         "record_selector": {"extractor": {"field_path": ["result"]}},
@@ -291,13 +370,23 @@ class TestManifestDeclarativeSource:
                     "paginator": {
                         "type": "DefaultPaginator",
                         "page_size": 10,
-                        "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "page_size"},
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "page_size",
+                        },
                         "page_token_option": {"type": "RequestPath"},
-                        "pagination_strategy": {"type": "CursorPagination", "cursor_value": "{{ response._metadata.next }}"},
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ response._metadata.next }}",
+                        },
                     },
                     "requester": {
                         "path": "/v3/marketing/lists",
-                        "authenticator": {"type": "BearerAuthenticator", "api_token": "{{ config.apikey }}"},
+                        "authenticator": {
+                            "type": "BearerAuthenticator",
+                            "api_token": "{{ config.apikey }}",
+                        },
                         "request_parameters": {"page_size": 10},
                     },
                     "record_selector": {"extractor": {"field_path": ["result"]}},
@@ -306,7 +395,11 @@ class TestManifestDeclarativeSource:
             "streams": [
                 {
                     "type": "DeclarativeStream",
-                    "$parameters": {"name": "lists", "primary_key": "id", "url_base": "https://api.sendgrid.com"},
+                    "$parameters": {
+                        "name": "lists",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
                     "schema_loader": {
                         "name": "{{ parameters.stream_name }}",
                         "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
@@ -315,13 +408,23 @@ class TestManifestDeclarativeSource:
                         "paginator": {
                             "type": "DefaultPaginator",
                             "page_size": 10,
-                            "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "page_size"},
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
                             "page_token_option": {"type": "RequestPath"},
-                            "pagination_strategy": {"type": "CursorPagination", "cursor_value": "{{ response._metadata.next }}"},
+                            "pagination_strategy": {
+                                "type": "CursorPagination",
+                                "cursor_value": "{{ response._metadata.next }}",
+                            },
                         },
                         "requester": {
                             "path": "/v3/marketing/lists",
-                            "authenticator": {"type": "BearerAuthenticator", "api_token": "{{ config.apikey }}"},
+                            "authenticator": {
+                                "type": "BearerAuthenticator",
+                                "api_token": "{{ config.apikey }}",
+                            },
                             "request_parameters": {"page_size": 10},
                         },
                         "record_selector": {"extractor": {"field_path": ["result"]}},
@@ -346,13 +449,23 @@ class TestManifestDeclarativeSource:
                     "paginator": {
                         "type": "DefaultPaginator",
                         "page_size": 10,
-                        "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "page_size"},
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "page_size",
+                        },
                         "page_token_option": {"type": "RequestPath"},
-                        "pagination_strategy": {"type": "CursorPagination", "cursor_value": "{{ response._metadata.next }}"},
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ response._metadata.next }}",
+                        },
                     },
                     "requester": {
                         "path": "/v3/marketing/lists",
-                        "authenticator": {"type": "BearerAuthenticator", "api_token": "{{ config.apikey }}"},
+                        "authenticator": {
+                            "type": "BearerAuthenticator",
+                            "api_token": "{{ config.apikey }}",
+                        },
                         "request_parameters": {"page_size": 10},
                     },
                     "record_selector": {"extractor": {"field_path": ["result"]}},
@@ -361,7 +474,11 @@ class TestManifestDeclarativeSource:
             "streams": [
                 {
                     "type": "DeclarativeStream",
-                    "$parameters": {"name": "lists", "primary_key": "id", "url_base": "https://api.sendgrid.com"},
+                    "$parameters": {
+                        "name": "lists",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
                     "schema_loader": {
                         "name": "{{ parameters.stream_name }}",
                         "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
@@ -370,13 +487,23 @@ class TestManifestDeclarativeSource:
                         "paginator": {
                             "type": "DefaultPaginator",
                             "page_size": 10,
-                            "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "page_size"},
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
                             "page_token_option": {"type": "RequestPath"},
-                            "pagination_strategy": {"type": "CursorPagination", "cursor_value": "{{ response._metadata.next }}"},
+                            "pagination_strategy": {
+                                "type": "CursorPagination",
+                                "cursor_value": "{{ response._metadata.next }}",
+                            },
                         },
                         "requester": {
                             "path": "/v3/marketing/lists",
-                            "authenticator": {"type": "BearerAuthenticator", "api_token": "{{ config.apikey }}"},
+                            "authenticator": {
+                                "type": "BearerAuthenticator",
+                                "api_token": "{{ config.apikey }}",
+                            },
                             "request_parameters": {"page_size": 10},
                         },
                         "record_selector": {"extractor": {"field_path": ["result"]}},
@@ -389,7 +516,11 @@ class TestManifestDeclarativeSource:
             ManifestDeclarativeSource(source_config=manifest)
 
     def test_source_with_missing_streams_fails(self):
-        manifest = {"version": "0.29.3", "definitions": None, "check": {"type": "CheckStream", "stream_names": ["lists"]}}
+        manifest = {
+            "version": "0.29.3",
+            "definitions": None,
+            "check": {"type": "CheckStream", "stream_names": ["lists"]},
+        }
         with pytest.raises(ValidationError):
             ManifestDeclarativeSource(source_config=manifest)
 
@@ -404,13 +535,23 @@ class TestManifestDeclarativeSource:
                     "paginator": {
                         "type": "DefaultPaginator",
                         "page_size": 10,
-                        "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "page_size"},
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "page_size",
+                        },
                         "page_token_option": {"type": "RequestPath"},
-                        "pagination_strategy": {"type": "CursorPagination", "cursor_value": "{{ response._metadata.next }}"},
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ response._metadata.next }}",
+                        },
                     },
                     "requester": {
                         "path": "/v3/marketing/lists",
-                        "authenticator": {"type": "BearerAuthenticator", "api_token": "{{ config.apikey }}"},
+                        "authenticator": {
+                            "type": "BearerAuthenticator",
+                            "api_token": "{{ config.apikey }}",
+                        },
                         "request_parameters": {"page_size": 10},
                     },
                     "record_selector": {"extractor": {"field_path": ["result"]}},
@@ -419,7 +560,11 @@ class TestManifestDeclarativeSource:
             "streams": [
                 {
                     "type": "DeclarativeStream",
-                    "$parameters": {"name": "lists", "primary_key": "id", "url_base": "https://api.sendgrid.com"},
+                    "$parameters": {
+                        "name": "lists",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
                     "schema_loader": {
                         "name": "{{ parameters.stream_name }}",
                         "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
@@ -428,13 +573,23 @@ class TestManifestDeclarativeSource:
                         "paginator": {
                             "type": "DefaultPaginator",
                             "page_size": 10,
-                            "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "page_size"},
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
                             "page_token_option": {"type": "RequestPath"},
-                            "pagination_strategy": {"type": "CursorPagination", "cursor_value": "{{ response._metadata.next }}"},
+                            "pagination_strategy": {
+                                "type": "CursorPagination",
+                                "cursor_value": "{{ response._metadata.next }}",
+                            },
                         },
                         "requester": {
                             "path": "/v3/marketing/lists",
-                            "authenticator": {"type": "BearerAuthenticator", "api_token": "{{ config.apikey }}"},
+                            "authenticator": {
+                                "type": "BearerAuthenticator",
+                                "api_token": "{{ config.apikey }}",
+                            },
                             "request_parameters": {"page_size": 10},
                         },
                         "record_selector": {"extractor": {"field_path": ["result"]}},
@@ -449,9 +604,18 @@ class TestManifestDeclarativeSource:
     @pytest.mark.parametrize(
         "cdk_version, manifest_version, expected_error",
         [
-            pytest.param("0.35.0", "0.30.0", None, id="manifest_version_less_than_cdk_package_should_run"),
-            pytest.param("1.5.0", "0.29.0", None, id="manifest_version_less_than_cdk_major_package_should_run"),
-            pytest.param("0.29.0", "0.29.0", None, id="manifest_version_matching_cdk_package_should_run"),
+            pytest.param(
+                "0.35.0", "0.30.0", None, id="manifest_version_less_than_cdk_package_should_run"
+            ),
+            pytest.param(
+                "1.5.0",
+                "0.29.0",
+                None,
+                id="manifest_version_less_than_cdk_major_package_should_run",
+            ),
+            pytest.param(
+                "0.29.0", "0.29.0", None, id="manifest_version_matching_cdk_package_should_run"
+            ),
             pytest.param(
                 "0.29.0",
                 "0.25.0",
@@ -464,12 +628,30 @@ class TestManifestDeclarativeSource:
                 ValidationError,
                 id="manifest_version_before_beta_that_uses_package_later_major_version_than_beta_0.29.0_cdk_package_should_throw_error",
             ),
-            pytest.param("0.34.0", "0.35.0", ValidationError, id="manifest_version_greater_than_cdk_package_should_throw_error"),
-            pytest.param("0.29.0", "-1.5.0", ValidationError, id="manifest_version_has_invalid_major_format"),
-            pytest.param("0.29.0", "0.invalid.0", ValidationError, id="manifest_version_has_invalid_minor_format"),
-            pytest.param("0.29.0", "0.29.0.1", ValidationError, id="manifest_version_has_extra_version_parts"),
-            pytest.param("0.29.0", "5.0", ValidationError, id="manifest_version_has_too_few_version_parts"),
-            pytest.param("0.29.0:dev", "0.29.0", ValidationError, id="manifest_version_has_extra_release"),
+            pytest.param(
+                "0.34.0",
+                "0.35.0",
+                ValidationError,
+                id="manifest_version_greater_than_cdk_package_should_throw_error",
+            ),
+            pytest.param(
+                "0.29.0", "-1.5.0", ValidationError, id="manifest_version_has_invalid_major_format"
+            ),
+            pytest.param(
+                "0.29.0",
+                "0.invalid.0",
+                ValidationError,
+                id="manifest_version_has_invalid_minor_format",
+            ),
+            pytest.param(
+                "0.29.0", "0.29.0.1", ValidationError, id="manifest_version_has_extra_version_parts"
+            ),
+            pytest.param(
+                "0.29.0", "5.0", ValidationError, id="manifest_version_has_too_few_version_parts"
+            ),
+            pytest.param(
+                "0.29.0:dev", "0.29.0", ValidationError, id="manifest_version_has_extra_release"
+            ),
         ],
     )
     @patch("importlib.metadata.version")
@@ -483,7 +665,11 @@ class TestManifestDeclarativeSource:
             "streams": [
                 {
                     "type": "DeclarativeStream",
-                    "$parameters": {"name": "lists", "primary_key": "id", "url_base": "https://api.sendgrid.com"},
+                    "$parameters": {
+                        "name": "lists",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
                     "schema_loader": {
                         "name": "{{ parameters.stream_name }}",
                         "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
@@ -492,7 +678,11 @@ class TestManifestDeclarativeSource:
                         "paginator": {
                             "type": "DefaultPaginator",
                             "page_size": 10,
-                            "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "page_size"},
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
                             "page_token_option": {"type": "RequestPath"},
                             "pagination_strategy": {
                                 "type": "CursorPagination",
@@ -502,7 +692,10 @@ class TestManifestDeclarativeSource:
                         },
                         "requester": {
                             "path": "/v3/marketing/lists",
-                            "authenticator": {"type": "BearerAuthenticator", "api_token": "{{ config.apikey }}"},
+                            "authenticator": {
+                                "type": "BearerAuthenticator",
+                                "api_token": "{{ config.apikey }}",
+                            },
                             "request_parameters": {"page_size": "{{ 10 }}"},
                         },
                         "record_selector": {"extractor": {"field_path": ["result"]}},
@@ -510,7 +703,11 @@ class TestManifestDeclarativeSource:
                 },
                 {
                     "type": "DeclarativeStream",
-                    "$parameters": {"name": "stream_with_custom_requester", "primary_key": "id", "url_base": "https://api.sendgrid.com"},
+                    "$parameters": {
+                        "name": "stream_with_custom_requester",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
                     "schema_loader": {
                         "name": "{{ parameters.stream_name }}",
                         "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
@@ -519,7 +716,11 @@ class TestManifestDeclarativeSource:
                         "paginator": {
                             "type": "DefaultPaginator",
                             "page_size": 10,
-                            "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "page_size"},
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
                             "page_token_option": {"type": "RequestPath"},
                             "pagination_strategy": {
                                 "type": "CursorPagination",
@@ -557,7 +758,11 @@ class TestManifestDeclarativeSource:
             "streams": [
                 {
                     "type": "DeclarativeStream",
-                    "$parameters": {"name": "lists", "primary_key": "id", "url_base": "https://api.sendgrid.com"},
+                    "$parameters": {
+                        "name": "lists",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
                     "schema_loader": {
                         "name": "{{ parameters.stream_name }}",
                         "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
@@ -581,13 +786,23 @@ class TestManifestDeclarativeSource:
                     "paginator": {
                         "type": "DefaultPaginator",
                         "page_size": 10,
-                        "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "page_size"},
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "page_size",
+                        },
                         "page_token_option": {"type": "RequestPath"},
-                        "pagination_strategy": {"type": "CursorPagination", "cursor_value": "{{ response._metadata.next }}"},
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ response._metadata.next }}",
+                        },
                     },
                     "requester": {
                         "path": "/v3/marketing/lists",
-                        "authenticator": {"type": "BearerAuthenticator", "api_token": "{{ config.apikey }}"},
+                        "authenticator": {
+                            "type": "BearerAuthenticator",
+                            "api_token": "{{ config.apikey }}",
+                        },
                         "request_parameters": {"page_size": "{{ 10 }}"},
                     },
                     "record_selector": {"extractor": {"field_path": ["result"]}},
@@ -596,7 +811,11 @@ class TestManifestDeclarativeSource:
             "streams": [
                 {
                     "type": "DeclarativeStream",
-                    "$parameters": {"name": "lists", "primary_key": "id", "url_base": "https://api.sendgrid.com"},
+                    "$parameters": {
+                        "name": "lists",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
                     "schema_loader": {
                         "name": "{{ parameters.stream_name }}",
                         "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
@@ -605,13 +824,23 @@ class TestManifestDeclarativeSource:
                         "paginator": {
                             "type": "DefaultPaginator",
                             "page_size": 10,
-                            "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "page_size"},
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
                             "page_token_option": {"type": "RequestPath"},
-                            "pagination_strategy": {"type": "CursorPagination", "cursor_value": "{{ response._metadata.next }}"},
+                            "pagination_strategy": {
+                                "type": "CursorPagination",
+                                "cursor_value": "{{ response._metadata.next }}",
+                            },
                         },
                         "requester": {
                             "path": "/v3/marketing/lists",
-                            "authenticator": {"type": "BearerAuthenticator", "api_token": "{{ config.apikey }}"},
+                            "authenticator": {
+                                "type": "BearerAuthenticator",
+                                "api_token": "{{ config.apikey }}",
+                            },
                             "request_parameters": {"page_size": "{{ 10 }}"},
                         },
                         "record_selector": {"extractor": {"field_path": ["result"]}},
@@ -638,13 +867,23 @@ class TestManifestDeclarativeSource:
                     "paginator": {
                         "type": "DefaultPaginator",
                         "page_size": 10,
-                        "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "page_size"},
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "page_size",
+                        },
                         "page_token_option": {"type": "RequestPath"},
-                        "pagination_strategy": {"type": "CursorPagination", "cursor_value": "{{ response._metadata.next }}"},
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ response._metadata.next }}",
+                        },
                     },
                     "requester": {
                         "path": "/v3/marketing/lists",
-                        "authenticator": {"type": "BearerAuthenticator", "api_token": "{{ config.apikey }}"},
+                        "authenticator": {
+                            "type": "BearerAuthenticator",
+                            "api_token": "{{ config.apikey }}",
+                        },
                         "request_parameters": {"page_size": 10},
                     },
                     "record_selector": {"extractor": {"field_path": ["result"]}},
@@ -669,13 +908,23 @@ class TestManifestDeclarativeSource:
                     "paginator": {
                         "type": "DefaultPaginator",
                         "page_size": 10,
-                        "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "page_size"},
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "page_size",
+                        },
                         "page_token_option": {"type": "RequestPath"},
-                        "pagination_strategy": {"type": "CursorPagination", "cursor_value": "{{ response._metadata.next }}"},
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ response._metadata.next }}",
+                        },
                     },
                     "requester": {
                         "path": "/v3/marketing/lists",
-                        "authenticator": {"type": "BearerAuthenticator", "api_token": "{{ config.apikey }}"},
+                        "authenticator": {
+                            "type": "BearerAuthenticator",
+                            "api_token": "{{ config.apikey }}",
+                        },
                         "request_parameters": {"page_size": "10"},
                     },
                     "record_selector": {"extractor": {"field_path": ["result"]}},
@@ -684,7 +933,11 @@ class TestManifestDeclarativeSource:
             "streams": [
                 {
                     "type": "DeclarativeStream",
-                    "$parameters": {"name": "lists", "primary_key": "id", "url_base": "https://api.sendgrid.com"},
+                    "$parameters": {
+                        "name": "lists",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
                     "schema_loader": {
                         "name": "{{ parameters.stream_name }}",
                         "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
@@ -693,7 +946,11 @@ class TestManifestDeclarativeSource:
                         "paginator": {
                             "type": "DefaultPaginator",
                             "page_size": 10,
-                            "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "page_size"},
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
                             "page_token_option": {"type": "RequestPath"},
                             "pagination_strategy": {
                                 "type": "CursorPagination",
@@ -703,7 +960,10 @@ class TestManifestDeclarativeSource:
                         },
                         "requester": {
                             "path": "/v3/marketing/lists",
-                            "authenticator": {"type": "BearerAuthenticator", "api_token": "{{ config.apikey }}"},
+                            "authenticator": {
+                                "type": "BearerAuthenticator",
+                                "api_token": "{{ config.apikey }}",
+                            },
                             "request_parameters": {"page_size": "{{ 10 }}"},
                         },
                         "record_selector": {"extractor": {"field_path": ["result"]}},
@@ -711,7 +971,11 @@ class TestManifestDeclarativeSource:
                 },
                 {
                     "type": "DeclarativeStream",
-                    "$parameters": {"name": "stream_with_custom_requester", "primary_key": "id", "url_base": "https://api.sendgrid.com"},
+                    "$parameters": {
+                        "name": "stream_with_custom_requester",
+                        "primary_key": "id",
+                        "url_base": "https://api.sendgrid.com",
+                    },
                     "schema_loader": {
                         "name": "{{ parameters.stream_name }}",
                         "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
@@ -720,7 +984,11 @@ class TestManifestDeclarativeSource:
                         "paginator": {
                             "type": "DefaultPaginator",
                             "page_size": 10,
-                            "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "page_size"},
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
                             "page_token_option": {"type": "RequestPath"},
                             "pagination_strategy": {
                                 "type": "CursorPagination",
@@ -749,11 +1017,17 @@ class TestManifestDeclarativeSource:
 
 
 def request_log_message(request: dict) -> AirbyteMessage:
-    return AirbyteMessage(type=Type.LOG, log=AirbyteLogMessage(level=Level.INFO, message=f"request:{json.dumps(request)}"))
+    return AirbyteMessage(
+        type=Type.LOG,
+        log=AirbyteLogMessage(level=Level.INFO, message=f"request:{json.dumps(request)}"),
+    )
 
 
 def response_log_message(response: dict) -> AirbyteMessage:
-    return AirbyteMessage(type=Type.LOG, log=AirbyteLogMessage(level=Level.INFO, message=f"response:{json.dumps(response)}"))
+    return AirbyteMessage(
+        type=Type.LOG,
+        log=AirbyteLogMessage(level=Level.INFO, message=f"response:{json.dumps(response)}"),
+    )
 
 
 def _create_request():
@@ -817,7 +1091,10 @@ def _create_page(response_body):
                                     "api_token": "{{ config['api_key'] }}",
                                 },
                             },
-                            "record_selector": {"type": "RecordSelector", "extractor": {"type": "DpathExtractor", "field_path": ["rates"]}},
+                            "record_selector": {
+                                "type": "RecordSelector",
+                                "extractor": {"type": "DpathExtractor", "field_path": ["rates"]},
+                            },
                             "paginator": {"type": "NoPagination"},
                         },
                     }
@@ -827,7 +1104,13 @@ def _create_page(response_body):
                         "$schema": "http://json-schema.org/draft-07/schema#",
                         "type": "object",
                         "required": ["api_key"],
-                        "properties": {"api_key": {"type": "string", "title": "API Key", "airbyte_secret": True}},
+                        "properties": {
+                            "api_key": {
+                                "type": "string",
+                                "title": "API Key",
+                                "airbyte_secret": True,
+                            }
+                        },
                         "additionalProperties": True,
                     },
                     "documentation_url": "https://example.org",
@@ -867,7 +1150,13 @@ def _create_page(response_body):
                         "transformations": [
                             {
                                 "type": "AddFields",
-                                "fields": [{"type": "AddedFieldDefinition", "path": ["added_field_key"], "value": "added_field_value"}],
+                                "fields": [
+                                    {
+                                        "type": "AddedFieldDefinition",
+                                        "path": ["added_field_key"],
+                                        "value": "added_field_value",
+                                    }
+                                ],
                             }
                         ],
                         "retriever": {
@@ -886,7 +1175,10 @@ def _create_page(response_body):
                                     "api_token": "{{ config['api_key'] }}",
                                 },
                             },
-                            "record_selector": {"type": "RecordSelector", "extractor": {"type": "DpathExtractor", "field_path": ["rates"]}},
+                            "record_selector": {
+                                "type": "RecordSelector",
+                                "extractor": {"type": "DpathExtractor", "field_path": ["rates"]},
+                            },
                             "paginator": {"type": "NoPagination"},
                         },
                     }
@@ -896,7 +1188,13 @@ def _create_page(response_body):
                         "$schema": "http://json-schema.org/draft-07/schema#",
                         "type": "object",
                         "required": ["api_key"],
-                        "properties": {"api_key": {"type": "string", "title": "API Key", "airbyte_secret": True}},
+                        "properties": {
+                            "api_key": {
+                                "type": "string",
+                                "title": "API Key",
+                                "airbyte_secret": True,
+                            }
+                        },
                         "additionalProperties": True,
                     },
                     "documentation_url": "https://example.org",
@@ -908,7 +1206,10 @@ def _create_page(response_body):
                 _create_page({"rates": [{"USD": 2}], "_metadata": {"next": "next"}}),
             )
             * 10,
-            [{"ABC": 0, "added_field_key": "added_field_value"}, {"AED": 1, "added_field_key": "added_field_value"}],
+            [
+                {"ABC": 0, "added_field_key": "added_field_value"},
+                {"AED": 1, "added_field_key": "added_field_value"},
+            ],
             [call({}, {})],
         ),
         (
@@ -950,11 +1251,17 @@ def _create_page(response_body):
                                     "api_token": "{{ config['api_key'] }}",
                                 },
                             },
-                            "record_selector": {"type": "RecordSelector", "extractor": {"type": "DpathExtractor", "field_path": ["rates"]}},
+                            "record_selector": {
+                                "type": "RecordSelector",
+                                "extractor": {"type": "DpathExtractor", "field_path": ["rates"]},
+                            },
                             "paginator": {
                                 "type": "DefaultPaginator",
                                 "page_size": 2,
-                                "page_size_option": {"inject_into": "request_parameter", "field_name": "page_size"},
+                                "page_size_option": {
+                                    "inject_into": "request_parameter",
+                                    "field_name": "page_size",
+                                },
                                 "page_token_option": {"inject_into": "path", "type": "RequestPath"},
                                 "pagination_strategy": {
                                     "type": "CursorPagination",
@@ -970,7 +1277,13 @@ def _create_page(response_body):
                         "$schema": "http://json-schema.org/draft-07/schema#",
                         "type": "object",
                         "required": ["api_key"],
-                        "properties": {"api_key": {"type": "string", "title": "API Key", "airbyte_secret": True}},
+                        "properties": {
+                            "api_key": {
+                                "type": "string",
+                                "title": "API Key",
+                                "airbyte_secret": True,
+                            }
+                        },
                         "additionalProperties": True,
                     },
                     "documentation_url": "https://example.org",
@@ -1000,7 +1313,11 @@ def _create_page(response_body):
                             "type": "InlineSchemaLoader",
                             "schema": {
                                 "$schema": "http://json-schema.org/schema#",
-                                "properties": {"ABC": {"type": "number"}, "AED": {"type": "number"}, "partition": {"type": "number"}},
+                                "properties": {
+                                    "ABC": {"type": "number"},
+                                    "AED": {"type": "number"},
+                                    "partition": {"type": "number"},
+                                },
                                 "type": "object",
                             },
                         },
@@ -1020,8 +1337,15 @@ def _create_page(response_body):
                                     "api_token": "{{ config['api_key'] }}",
                                 },
                             },
-                            "partition_router": {"type": "ListPartitionRouter", "values": ["0", "1"], "cursor_field": "partition"},
-                            "record_selector": {"type": "RecordSelector", "extractor": {"type": "DpathExtractor", "field_path": ["rates"]}},
+                            "partition_router": {
+                                "type": "ListPartitionRouter",
+                                "values": ["0", "1"],
+                                "cursor_field": "partition",
+                            },
+                            "record_selector": {
+                                "type": "RecordSelector",
+                                "extractor": {"type": "DpathExtractor", "field_path": ["rates"]},
+                            },
                             "paginator": {"type": "NoPagination"},
                         },
                     }
@@ -1031,7 +1355,13 @@ def _create_page(response_body):
                         "$schema": "http://json-schema.org/draft-07/schema#",
                         "type": "object",
                         "required": ["api_key"],
-                        "properties": {"api_key": {"type": "string", "title": "API Key", "airbyte_secret": True}},
+                        "properties": {
+                            "api_key": {
+                                "type": "string",
+                                "title": "API Key",
+                                "airbyte_secret": True,
+                            }
+                        },
                         "additionalProperties": True,
                     },
                     "documentation_url": "https://example.org",
@@ -1039,14 +1369,28 @@ def _create_page(response_body):
                 },
             },
             (
-                _create_page({"rates": [{"ABC": 0, "partition": 0}, {"AED": 1, "partition": 0}], "_metadata": {"next": "next"}}),
-                _create_page({"rates": [{"ABC": 2, "partition": 1}], "_metadata": {"next": "next"}}),
+                _create_page(
+                    {
+                        "rates": [{"ABC": 0, "partition": 0}, {"AED": 1, "partition": 0}],
+                        "_metadata": {"next": "next"},
+                    }
+                ),
+                _create_page(
+                    {"rates": [{"ABC": 2, "partition": 1}], "_metadata": {"next": "next"}}
+                ),
             ),
             [{"ABC": 0, "partition": 0}, {"AED": 1, "partition": 0}, {"ABC": 2, "partition": 1}],
             [
                 call({"states": []}, {"partition": "0"}, None),
                 call(
-                    {"states": [{"partition": {"partition": "0"}, "cursor": {"__ab_full_refresh_sync_complete": True}}]},
+                    {
+                        "states": [
+                            {
+                                "partition": {"partition": "0"},
+                                "cursor": {"__ab_full_refresh_sync_complete": True},
+                            }
+                        ]
+                    },
                     {"partition": "1"},
                     None,
                 ),
@@ -1067,7 +1411,11 @@ def _create_page(response_body):
                             "type": "InlineSchemaLoader",
                             "schema": {
                                 "$schema": "http://json-schema.org/schema#",
-                                "properties": {"ABC": {"type": "number"}, "AED": {"type": "number"}, "partition": {"type": "number"}},
+                                "properties": {
+                                    "ABC": {"type": "number"},
+                                    "AED": {"type": "number"},
+                                    "partition": {"type": "number"},
+                                },
                                 "type": "object",
                             },
                         },
@@ -1087,12 +1435,22 @@ def _create_page(response_body):
                                     "api_token": "{{ config['api_key'] }}",
                                 },
                             },
-                            "partition_router": {"type": "ListPartitionRouter", "values": ["0", "1"], "cursor_field": "partition"},
-                            "record_selector": {"type": "RecordSelector", "extractor": {"type": "DpathExtractor", "field_path": ["rates"]}},
+                            "partition_router": {
+                                "type": "ListPartitionRouter",
+                                "values": ["0", "1"],
+                                "cursor_field": "partition",
+                            },
+                            "record_selector": {
+                                "type": "RecordSelector",
+                                "extractor": {"type": "DpathExtractor", "field_path": ["rates"]},
+                            },
                             "paginator": {
                                 "type": "DefaultPaginator",
                                 "page_size": 2,
-                                "page_size_option": {"inject_into": "request_parameter", "field_name": "page_size"},
+                                "page_size_option": {
+                                    "inject_into": "request_parameter",
+                                    "field_name": "page_size",
+                                },
                                 "page_token_option": {"inject_into": "path", "type": "RequestPath"},
                                 "pagination_strategy": {
                                     "type": "CursorPagination",
@@ -1108,7 +1466,13 @@ def _create_page(response_body):
                         "$schema": "http://json-schema.org/draft-07/schema#",
                         "type": "object",
                         "required": ["api_key"],
-                        "properties": {"api_key": {"type": "string", "title": "API Key", "airbyte_secret": True}},
+                        "properties": {
+                            "api_key": {
+                                "type": "string",
+                                "title": "API Key",
+                                "airbyte_secret": True,
+                            }
+                        },
                         "additionalProperties": True,
                     },
                     "documentation_url": "https://example.org",
@@ -1116,16 +1480,33 @@ def _create_page(response_body):
                 },
             },
             (
-                _create_page({"rates": [{"ABC": 0, "partition": 0}, {"AED": 1, "partition": 0}], "_metadata": {"next": "next"}}),
+                _create_page(
+                    {
+                        "rates": [{"ABC": 0, "partition": 0}, {"AED": 1, "partition": 0}],
+                        "_metadata": {"next": "next"},
+                    }
+                ),
                 _create_page({"rates": [{"USD": 3, "partition": 0}], "_metadata": {}}),
                 _create_page({"rates": [{"ABC": 2, "partition": 1}], "_metadata": {}}),
             ),
-            [{"ABC": 0, "partition": 0}, {"AED": 1, "partition": 0}, {"USD": 3, "partition": 0}, {"ABC": 2, "partition": 1}],
+            [
+                {"ABC": 0, "partition": 0},
+                {"AED": 1, "partition": 0},
+                {"USD": 3, "partition": 0},
+                {"ABC": 2, "partition": 1},
+            ],
             [
                 call({"states": []}, {"partition": "0"}, None),
                 call({"states": []}, {"partition": "0"}, {"next_page_token": "next"}),
                 call(
-                    {"states": [{"partition": {"partition": "0"}, "cursor": {"__ab_full_refresh_sync_complete": True}}]},
+                    {
+                        "states": [
+                            {
+                                "partition": {"partition": "0"},
+                                "cursor": {"__ab_full_refresh_sync_complete": True},
+                            }
+                        ]
+                    },
                     {"partition": "1"},
                     None,
                 ),
@@ -1133,10 +1514,14 @@ def _create_page(response_body):
         ),
     ],
 )
-def test_read_manifest_declarative_source(test_name, manifest, pages, expected_records, expected_calls):
+def test_read_manifest_declarative_source(
+    test_name, manifest, pages, expected_records, expected_calls
+):
     _stream_name = "Rates"
     with patch.object(SimpleRetriever, "_fetch_next_page", side_effect=pages) as mock_retriever:
-        output_data = [message.record.data for message in _run_read(manifest, _stream_name) if message.record]
+        output_data = [
+            message.record.data for message in _run_read(manifest, _stream_name) if message.record
+        ]
         assert output_data == expected_records
         mock_retriever.assert_has_calls(expected_calls)
 
@@ -1144,7 +1529,11 @@ def test_read_manifest_declarative_source(test_name, manifest, pages, expected_r
 def test_only_parent_streams_use_cache():
     applications_stream = {
         "type": "DeclarativeStream",
-        "$parameters": {"name": "applications", "primary_key": "id", "url_base": "https://harvest.greenhouse.io/v1/"},
+        "$parameters": {
+            "name": "applications",
+            "primary_key": "id",
+            "url_base": "https://harvest.greenhouse.io/v1/",
+        },
         "schema_loader": {
             "name": "{{ parameters.stream_name }}",
             "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
@@ -1153,7 +1542,11 @@ def test_only_parent_streams_use_cache():
             "paginator": {
                 "type": "DefaultPaginator",
                 "page_size": 10,
-                "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "per_page"},
+                "page_size_option": {
+                    "type": "RequestOption",
+                    "inject_into": "request_parameter",
+                    "field_name": "per_page",
+                },
                 "page_token_option": {"type": "RequestPath"},
                 "pagination_strategy": {
                     "type": "CursorPagination",
@@ -1164,7 +1557,10 @@ def test_only_parent_streams_use_cache():
             },
             "requester": {
                 "path": "applications",
-                "authenticator": {"type": "BasicHttpAuthenticator", "username": "{{ config['api_key'] }}"},
+                "authenticator": {
+                    "type": "BasicHttpAuthenticator",
+                    "username": "{{ config['api_key'] }}",
+                },
             },
             "record_selector": {"extractor": {"type": "DpathExtractor", "field_path": []}},
         },
@@ -1177,7 +1573,11 @@ def test_only_parent_streams_use_cache():
             deepcopy(applications_stream),
             {
                 "type": "DeclarativeStream",
-                "$parameters": {"name": "applications_interviews", "primary_key": "id", "url_base": "https://harvest.greenhouse.io/v1/"},
+                "$parameters": {
+                    "name": "applications_interviews",
+                    "primary_key": "id",
+                    "url_base": "https://harvest.greenhouse.io/v1/",
+                },
                 "schema_loader": {
                     "name": "{{ parameters.stream_name }}",
                     "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
@@ -1186,7 +1586,11 @@ def test_only_parent_streams_use_cache():
                     "paginator": {
                         "type": "DefaultPaginator",
                         "page_size": 10,
-                        "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "per_page"},
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "per_page",
+                        },
                         "page_token_option": {"type": "RequestPath"},
                         "pagination_strategy": {
                             "type": "CursorPagination",
@@ -1197,12 +1601,19 @@ def test_only_parent_streams_use_cache():
                     },
                     "requester": {
                         "path": "applications_interviews",
-                        "authenticator": {"type": "BasicHttpAuthenticator", "username": "{{ config['api_key'] }}"},
+                        "authenticator": {
+                            "type": "BasicHttpAuthenticator",
+                            "username": "{{ config['api_key'] }}",
+                        },
                     },
                     "record_selector": {"extractor": {"type": "DpathExtractor", "field_path": []}},
                     "partition_router": {
                         "parent_stream_configs": [
-                            {"parent_key": "id", "partition_field": "parent_id", "stream": deepcopy(applications_stream)}
+                            {
+                                "parent_key": "id",
+                                "partition_field": "parent_id",
+                                "stream": deepcopy(applications_stream),
+                            }
                         ],
                         "type": "SubstreamPartitionRouter",
                     },
@@ -1210,7 +1621,11 @@ def test_only_parent_streams_use_cache():
             },
             {
                 "type": "DeclarativeStream",
-                "$parameters": {"name": "jobs", "primary_key": "id", "url_base": "https://harvest.greenhouse.io/v1/"},
+                "$parameters": {
+                    "name": "jobs",
+                    "primary_key": "id",
+                    "url_base": "https://harvest.greenhouse.io/v1/",
+                },
                 "schema_loader": {
                     "name": "{{ parameters.stream_name }}",
                     "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
@@ -1219,7 +1634,11 @@ def test_only_parent_streams_use_cache():
                     "paginator": {
                         "type": "DefaultPaginator",
                         "page_size": 10,
-                        "page_size_option": {"type": "RequestOption", "inject_into": "request_parameter", "field_name": "per_page"},
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "per_page",
+                        },
                         "page_token_option": {"type": "RequestPath"},
                         "pagination_strategy": {
                             "type": "CursorPagination",
@@ -1230,7 +1649,10 @@ def test_only_parent_streams_use_cache():
                     },
                     "requester": {
                         "path": "jobs",
-                        "authenticator": {"type": "BasicHttpAuthenticator", "username": "{{ config['api_key'] }}"},
+                        "authenticator": {
+                            "type": "BasicHttpAuthenticator",
+                            "username": "{{ config['api_key'] }}",
+                        },
                     },
                     "record_selector": {"extractor": {"type": "DpathExtractor", "field_path": []}},
                 },
@@ -1252,8 +1674,15 @@ def test_only_parent_streams_use_cache():
     assert not streams[1].retriever.requester.use_cache
 
     # Parent stream created for substream
-    assert streams[1].retriever.stream_slicer._partition_router.parent_stream_configs[0].stream.name == "applications"
-    assert streams[1].retriever.stream_slicer._partition_router.parent_stream_configs[0].stream.retriever.requester.use_cache
+    assert (
+        streams[1].retriever.stream_slicer._partition_router.parent_stream_configs[0].stream.name
+        == "applications"
+    )
+    assert (
+        streams[1]
+        .retriever.stream_slicer._partition_router.parent_stream_configs[0]
+        .stream.retriever.requester.use_cache
+    )
 
     # Main stream without caching
     assert streams[2].name == "jobs"
@@ -1265,7 +1694,9 @@ def _run_read(manifest: Mapping[str, Any], stream_name: str) -> List[AirbyteMess
     catalog = ConfiguredAirbyteCatalog(
         streams=[
             ConfiguredAirbyteStream(
-                stream=AirbyteStream(name=stream_name, json_schema={}, supported_sync_modes=[SyncMode.full_refresh]),
+                stream=AirbyteStream(
+                    name=stream_name, json_schema={}, supported_sync_modes=[SyncMode.full_refresh]
+                ),
                 sync_mode=SyncMode.full_refresh,
                 destination_sync_mode=DestinationSyncMode.append,
             )
@@ -1311,6 +1742,7 @@ def test_declarative_component_schema_valid_ref_links():
         return invalid_refs
 
     yaml_file_path = (
-        Path(__file__).resolve().parent.parent.parent.parent / "airbyte_cdk/sources/declarative/declarative_component_schema.yaml"
+        Path(__file__).resolve().parent.parent.parent.parent
+        / "airbyte_cdk/sources/declarative/declarative_component_schema.yaml"
     )
     assert not validate_refs(yaml_file_path)

@@ -3,7 +3,7 @@ name: Generate Docs
 on:
   push:
     branches:
-    - main
+      - main
   pull_request: {}
 
 jobs:
@@ -11,32 +11,32 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    - name: Set up Poetry
-      uses: Gr1N/setup-poetry@v9
-      with:
-        poetry-version: "1.7.1"
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
-        cache: 'poetry'
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Set up Poetry
+        uses: Gr1N/setup-poetry@v9
+        with:
+          poetry-version: "1.7.1"
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "poetry"
 
-    - name: Install dependencies
-      run: poetry install --all-extras
+      - name: Install dependencies
+        run: poetry install --all-extras
 
-    - name: Generate documentation
-      run: |
-        set -e
-        poetry run poe docs-generate
-        if [ ! -d "docs/generated" ]; then
-          echo "Error: Documentation generation failed - docs/generated directory not found"
-          exit 1
-        fi
+      - name: Generate documentation
+        run: |
+          set -e
+          poetry run poe docs-generate
+          if [ ! -d "docs/generated" ]; then
+            echo "Error: Documentation generation failed - docs/generated directory not found"
+            exit 1
+          fi
 
-    - name: Upload artifact
-      uses: actions/upload-pages-artifact@v3
-      with:
-        # Upload generated documentation
-        path: 'docs/generated'
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # Upload generated documentation
+          path: "docs/generated"

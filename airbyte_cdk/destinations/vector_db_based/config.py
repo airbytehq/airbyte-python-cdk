@@ -17,7 +17,11 @@ class SeparatorSplitterConfigModel(BaseModel):
         title="Separators",
         description='List of separator strings to split text fields by. The separator itself needs to be wrapped in double quotes, e.g. to split by the dot character, use ".". To split by a newline, use "\\n".',
     )
-    keep_separator: bool = Field(default=False, title="Keep separator", description="Whether to keep the separator in the resulting chunks")
+    keep_separator: bool = Field(
+        default=False,
+        title="Keep separator",
+        description="Whether to keep the separator in the resulting chunks",
+    )
 
     class Config(OneOfOptionConfig):
         title = "By Separator"
@@ -68,18 +72,20 @@ class CodeSplitterConfigModel(BaseModel):
 
     class Config(OneOfOptionConfig):
         title = "By Programming Language"
-        description = (
-            "Split the text by suitable delimiters based on the programming language. This is useful for splitting code into chunks."
-        )
+        description = "Split the text by suitable delimiters based on the programming language. This is useful for splitting code into chunks."
         discriminator = "mode"
 
 
-TextSplitterConfigModel = Union[SeparatorSplitterConfigModel, MarkdownHeaderSplitterConfigModel, CodeSplitterConfigModel]
+TextSplitterConfigModel = Union[
+    SeparatorSplitterConfigModel, MarkdownHeaderSplitterConfigModel, CodeSplitterConfigModel
+]
 
 
 class FieldNameMappingConfigModel(BaseModel):
     from_field: str = Field(title="From field name", description="The field name in the source")
-    to_field: str = Field(title="To field name", description="The field name to use in the destination")
+    to_field: str = Field(
+        title="To field name", description="The field name to use in the destination"
+    )
 
 
 class ProcessingConfigModel(BaseModel):
@@ -132,9 +138,7 @@ class OpenAIEmbeddingConfigModel(BaseModel):
 
     class Config(OneOfOptionConfig):
         title = "OpenAI"
-        description = (
-            "Use the OpenAI API to embed text. This option is using the text-embedding-ada-002 model with 1536 embedding dimensions."
-        )
+        description = "Use the OpenAI API to embed text. This option is using the text-embedding-ada-002 model with 1536 embedding dimensions."
         discriminator = "mode"
 
 
@@ -142,7 +146,10 @@ class OpenAICompatibleEmbeddingConfigModel(BaseModel):
     mode: Literal["openai_compatible"] = Field("openai_compatible", const=True)
     api_key: str = Field(title="API key", default="", airbyte_secret=True)
     base_url: str = Field(
-        ..., title="Base URL", description="The base URL for your OpenAI-compatible service", examples=["https://your-service-name.com"]
+        ...,
+        title="Base URL",
+        description="The base URL for your OpenAI-compatible service",
+        examples=["https://your-service-name.com"],
     )
     model_name: str = Field(
         title="Model name",
@@ -151,7 +158,9 @@ class OpenAICompatibleEmbeddingConfigModel(BaseModel):
         examples=["text-embedding-ada-002"],
     )
     dimensions: int = Field(
-        title="Embedding dimensions", description="The number of dimensions the embedding model is generating", examples=[1536, 384]
+        title="Embedding dimensions",
+        description="The number of dimensions the embedding model is generating",
+        examples=[1536, 384],
     )
 
     class Config(OneOfOptionConfig):
@@ -199,10 +208,16 @@ class FakeEmbeddingConfigModel(BaseModel):
 class FromFieldEmbeddingConfigModel(BaseModel):
     mode: Literal["from_field"] = Field("from_field", const=True)
     field_name: str = Field(
-        ..., title="Field name", description="Name of the field in the record that contains the embedding", examples=["embedding", "vector"]
+        ...,
+        title="Field name",
+        description="Name of the field in the record that contains the embedding",
+        examples=["embedding", "vector"],
     )
     dimensions: int = Field(
-        ..., title="Embedding dimensions", description="The number of dimensions the embedding model is generating", examples=[1536, 384]
+        ...,
+        title="Embedding dimensions",
+        description="The number of dimensions the embedding model is generating",
+        examples=[1536, 384],
     )
 
     class Config(OneOfOptionConfig):
@@ -241,7 +256,14 @@ class VectorDBConfigModel(BaseModel):
         FakeEmbeddingConfigModel,
         AzureOpenAIEmbeddingConfigModel,
         OpenAICompatibleEmbeddingConfigModel,
-    ] = Field(..., title="Embedding", description="Embedding configuration", discriminator="mode", group="embedding", type="object")
+    ] = Field(
+        ...,
+        title="Embedding",
+        description="Embedding configuration",
+        discriminator="mode",
+        group="embedding",
+        type="object",
+    )
     processing: ProcessingConfigModel
     omit_raw_text: bool = Field(
         default=False,

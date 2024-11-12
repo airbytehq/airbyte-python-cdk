@@ -75,22 +75,32 @@ class JwtAuthenticator(DeclarativeAuthenticator):
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._secret_key = InterpolatedString.create(self.secret_key, parameters=parameters)
-        self._algorithm = JwtAlgorithm(self.algorithm) if isinstance(self.algorithm, str) else self.algorithm
+        self._algorithm = (
+            JwtAlgorithm(self.algorithm) if isinstance(self.algorithm, str) else self.algorithm
+        )
         self._base64_encode_secret_key = (
             InterpolatedBoolean(self.base64_encode_secret_key, parameters=parameters)
             if isinstance(self.base64_encode_secret_key, str)
             else self.base64_encode_secret_key
         )
         self._token_duration = self.token_duration
-        self._header_prefix = InterpolatedString.create(self.header_prefix, parameters=parameters) if self.header_prefix else None
+        self._header_prefix = (
+            InterpolatedString.create(self.header_prefix, parameters=parameters)
+            if self.header_prefix
+            else None
+        )
         self._kid = InterpolatedString.create(self.kid, parameters=parameters) if self.kid else None
         self._typ = InterpolatedString.create(self.typ, parameters=parameters) if self.typ else None
         self._cty = InterpolatedString.create(self.cty, parameters=parameters) if self.cty else None
         self._iss = InterpolatedString.create(self.iss, parameters=parameters) if self.iss else None
         self._sub = InterpolatedString.create(self.sub, parameters=parameters) if self.sub else None
         self._aud = InterpolatedString.create(self.aud, parameters=parameters) if self.aud else None
-        self._additional_jwt_headers = InterpolatedMapping(self.additional_jwt_headers or {}, parameters=parameters)
-        self._additional_jwt_payload = InterpolatedMapping(self.additional_jwt_payload or {}, parameters=parameters)
+        self._additional_jwt_headers = InterpolatedMapping(
+            self.additional_jwt_headers or {}, parameters=parameters
+        )
+        self._additional_jwt_payload = InterpolatedMapping(
+            self.additional_jwt_payload or {}, parameters=parameters
+        )
 
     def _get_jwt_headers(self) -> dict[str, Any]:
         """ "
@@ -98,7 +108,9 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         """
         headers = self._additional_jwt_headers.eval(self.config)
         if any(prop in headers for prop in ["kid", "alg", "typ", "cty"]):
-            raise ValueError("'kid', 'alg', 'typ', 'cty' are reserved headers and should not be set as part of 'additional_jwt_headers'")
+            raise ValueError(
+                "'kid', 'alg', 'typ', 'cty' are reserved headers and should not be set as part of 'additional_jwt_headers'"
+            )
 
         if self._kid:
             headers["kid"] = self._kid.eval(self.config)
@@ -139,7 +151,11 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         Returns the secret key used to sign the JWT.
         """
         secret_key: str = self._secret_key.eval(self.config)
-        return base64.b64encode(secret_key.encode()).decode() if self._base64_encode_secret_key else secret_key
+        return (
+            base64.b64encode(secret_key.encode()).decode()
+            if self._base64_encode_secret_key
+            else secret_key
+        )
 
     def _get_signed_token(self) -> Union[str, Any]:
         """
@@ -167,4 +183,8 @@ class JwtAuthenticator(DeclarativeAuthenticator):
 
     @property
     def token(self) -> str:
-        return f"{self._get_header_prefix()} {self._get_signed_token()}" if self._get_header_prefix() else self._get_signed_token()
+        return (
+            f"{self._get_header_prefix()} {self._get_signed_token()}"
+            if self._get_header_prefix()
+            else self._get_signed_token()
+        )

@@ -8,7 +8,15 @@ import logging
 from functools import lru_cache
 from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Tuple, Union
 
-from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, AirbyteStream, ConfiguredAirbyteStream, Level, SyncMode, Type
+from airbyte_cdk.models import (
+    AirbyteLogMessage,
+    AirbyteMessage,
+    AirbyteStream,
+    ConfiguredAirbyteStream,
+    Level,
+    SyncMode,
+    Type,
+)
 from airbyte_cdk.sources import AbstractSource, Source
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository
@@ -16,15 +24,23 @@ from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.availability_strategy import AvailabilityStrategy
 from airbyte_cdk.sources.streams.concurrent.abstract_stream_facade import AbstractStreamFacade
-from airbyte_cdk.sources.streams.concurrent.availability_strategy import AbstractAvailabilityStrategy, AlwaysAvailableAvailabilityStrategy
+from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
+    AbstractAvailabilityStrategy,
+    AlwaysAvailableAvailabilityStrategy,
+)
 from airbyte_cdk.sources.streams.concurrent.cursor import Cursor, FinalStateCursor
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.exceptions import ExceptionWithDisplayMessage
-from airbyte_cdk.sources.streams.concurrent.helpers import get_cursor_field_from_stream, get_primary_key_from_stream
+from airbyte_cdk.sources.streams.concurrent.helpers import (
+    get_cursor_field_from_stream,
+    get_primary_key_from_stream,
+)
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
 from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
-from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import DateTimeStreamStateConverter
+from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
+    DateTimeStreamStateConverter,
+)
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.sources.utils.schema_helpers import InternalConfig
@@ -75,7 +91,9 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
                 partition_generator=StreamPartitionGenerator(
                     stream,
                     message_repository,
-                    SyncMode.full_refresh if isinstance(cursor, FinalStateCursor) else SyncMode.incremental,
+                    SyncMode.full_refresh
+                    if isinstance(cursor, FinalStateCursor)
+                    else SyncMode.incremental,
                     [cursor_field] if cursor_field is not None else None,
                     state,
                     cursor,
@@ -97,14 +115,23 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
 
     @property
     def state(self) -> MutableMapping[str, Any]:
-        raise NotImplementedError("This should not be called as part of the Concurrent CDK code. Please report the problem to Airbyte")
+        raise NotImplementedError(
+            "This should not be called as part of the Concurrent CDK code. Please report the problem to Airbyte"
+        )
 
     @state.setter
     def state(self, value: Mapping[str, Any]) -> None:
         if "state" in dir(self._legacy_stream):
             self._legacy_stream.state = value  # type: ignore  # validating `state` is attribute of stream using `if` above
 
-    def __init__(self, stream: DefaultStream, legacy_stream: Stream, cursor: Cursor, slice_logger: SliceLogger, logger: logging.Logger):
+    def __init__(
+        self,
+        stream: DefaultStream,
+        legacy_stream: Stream,
+        cursor: Cursor,
+        slice_logger: SliceLogger,
+        logger: logging.Logger,
+    ):
         """
         :param stream: The underlying AbstractStream
         """
@@ -141,7 +168,10 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
                 # This shouldn't happen if the ConcurrentCursor was used
                 state = "unknown; no state attribute was available on the cursor"
             yield AirbyteMessage(
-                type=Type.LOG, log=AirbyteLogMessage(level=Level.ERROR, message=f"Cursor State at time of exception: {state}")
+                type=Type.LOG,
+                log=AirbyteLogMessage(
+                    level=Level.ERROR, message=f"Cursor State at time of exception: {state}"
+                ),
             )
             raise exc
 
@@ -180,7 +210,9 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
     def supports_incremental(self) -> bool:
         return self._legacy_stream.supports_incremental
 
-    def check_availability(self, logger: logging.Logger, source: Optional["Source"] = None) -> Tuple[bool, Optional[str]]:
+    def check_availability(
+        self, logger: logging.Logger, source: Optional["Source"] = None
+    ) -> Tuple[bool, Optional[str]]:
         """
         Verifies the stream is available. Delegates to the underlying AbstractStream and ignores the parameters
         :param logger: (ignored)
@@ -264,7 +296,9 @@ class StreamPartition(Partition):
             ):
                 if isinstance(record_data, Mapping):
                     data_to_return = dict(record_data)
-                    self._stream.transformer.transform(data_to_return, self._stream.get_json_schema())
+                    self._stream.transformer.transform(
+                        data_to_return, self._stream.get_json_schema()
+                    )
                     yield Record(data_to_return, self)
                 else:
                     self._message_repository.emit_message(record_data)
@@ -329,9 +363,17 @@ class StreamPartitionGenerator(PartitionGenerator):
         self._cursor = cursor
 
     def generate(self) -> Iterable[Partition]:
-        for s in self._stream.stream_slices(sync_mode=self._sync_mode, cursor_field=self._cursor_field, stream_state=self._state):
+        for s in self._stream.stream_slices(
+            sync_mode=self._sync_mode, cursor_field=self._cursor_field, stream_state=self._state
+        ):
             yield StreamPartition(
-                self._stream, copy.deepcopy(s), self.message_repository, self._sync_mode, self._cursor_field, self._state, self._cursor
+                self._stream,
+                copy.deepcopy(s),
+                self.message_repository,
+                self._sync_mode,
+                self._cursor_field,
+                self._state,
+                self._cursor,
             )
 
 
@@ -382,8 +424,16 @@ class CursorPartitionGenerator(PartitionGenerator):
         :return: An iterable of StreamPartition objects.
         """
 
-        start_boundary = self._slice_boundary_fields[self._START_BOUNDARY] if self._slice_boundary_fields else "start"
-        end_boundary = self._slice_boundary_fields[self._END_BOUNDARY] if self._slice_boundary_fields else "end"
+        start_boundary = (
+            self._slice_boundary_fields[self._START_BOUNDARY]
+            if self._slice_boundary_fields
+            else "start"
+        )
+        end_boundary = (
+            self._slice_boundary_fields[self._END_BOUNDARY]
+            if self._slice_boundary_fields
+            else "end"
+        )
 
         for slice_start, slice_end in self._cursor.generate_slices():
             stream_slice = StreamSlice(
@@ -405,12 +455,17 @@ class CursorPartitionGenerator(PartitionGenerator):
             )
 
 
-@deprecated("Availability strategy has been soft deprecated. Do not use. Class is subject to removal", category=ExperimentalClassWarning)
+@deprecated(
+    "Availability strategy has been soft deprecated. Do not use. Class is subject to removal",
+    category=ExperimentalClassWarning,
+)
 class AvailabilityStrategyFacade(AvailabilityStrategy):
     def __init__(self, abstract_availability_strategy: AbstractAvailabilityStrategy):
         self._abstract_availability_strategy = abstract_availability_strategy
 
-    def check_availability(self, stream: Stream, logger: logging.Logger, source: Optional["Source"] = None) -> Tuple[bool, Optional[str]]:
+    def check_availability(
+        self, stream: Stream, logger: logging.Logger, source: Optional["Source"] = None
+    ) -> Tuple[bool, Optional[str]]:
         """
         Checks stream availability.
 

@@ -2,7 +2,9 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
-from airbyte_cdk.sources.declarative.transformations.keys_to_lower_transformation import KeysToLowerTransformation
+from airbyte_cdk.sources.declarative.transformations.keys_to_lower_transformation import (
+    KeysToLowerTransformation,
+)
 
 _ANY_VALUE = -1
 

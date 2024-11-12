@@ -54,7 +54,9 @@ class CompositeErrorHandler(ErrorHandler):
     def max_time(self) -> Optional[int]:
         return max([error_handler.max_time or 0 for error_handler in self.error_handlers])
 
-    def interpret_response(self, response_or_exception: Optional[Union[requests.Response, Exception]]) -> ErrorResolution:
+    def interpret_response(
+        self, response_or_exception: Optional[Union[requests.Response, Exception]]
+    ) -> ErrorResolution:
         matched_error_resolution = None
         for error_handler in self.error_handlers:
             matched_error_resolution = error_handler.interpret_response(response_or_exception)

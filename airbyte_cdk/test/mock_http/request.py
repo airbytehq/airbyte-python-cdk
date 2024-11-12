@@ -24,7 +24,9 @@ class HttpRequest:
         if not self._parsed_url.query and query_params:
             self._parsed_url = urlparse(f"{url}?{self._encode_qs(query_params)}")
         elif self._parsed_url.query and query_params:
-            raise ValueError("If query params are provided as part of the url, `query_params` should be empty")
+            raise ValueError(
+                "If query params are provided as part of the url, `query_params` should be empty"
+            )
 
         self._headers = headers or {}
         self._body = body
@@ -62,7 +64,9 @@ class HttpRequest:
         return False
 
     @staticmethod
-    def _to_mapping(body: Optional[Union[str, bytes, Mapping[str, Any]]]) -> Optional[Mapping[str, Any]]:
+    def _to_mapping(
+        body: Optional[Union[str, bytes, Mapping[str, Any]]],
+    ) -> Optional[Mapping[str, Any]]:
         if isinstance(body, Mapping):
             return body
         elif isinstance(body, bytes):
@@ -84,7 +88,9 @@ class HttpRequest:
         return f"{self._parsed_url} with headers {self._headers} and body {self._body!r})"
 
     def __repr__(self) -> str:
-        return f"HttpRequest(request={self._parsed_url}, headers={self._headers}, body={self._body!r})"
+        return (
+            f"HttpRequest(request={self._parsed_url}, headers={self._headers}, body={self._body!r})"
+        )
 
     def __eq__(self, other: Any) -> bool:
         if isinstance(other, HttpRequest):

@@ -8,9 +8,16 @@ import pytest
 import requests
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.requesters.error_handlers import HttpResponseFilter
-from airbyte_cdk.sources.declarative.requesters.error_handlers.composite_error_handler import CompositeErrorHandler
-from airbyte_cdk.sources.declarative.requesters.error_handlers.default_error_handler import DefaultErrorHandler
-from airbyte_cdk.sources.streams.http.error_handlers.response_models import ErrorResolution, ResponseAction
+from airbyte_cdk.sources.declarative.requesters.error_handlers.composite_error_handler import (
+    CompositeErrorHandler,
+)
+from airbyte_cdk.sources.declarative.requesters.error_handlers.default_error_handler import (
+    DefaultErrorHandler,
+)
+from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
+    ErrorResolution,
+    ResponseAction,
+)
 
 SOME_BACKOFF_TIME = 60
 
@@ -86,7 +93,9 @@ SOME_BACKOFF_TIME = 60
         ),
     ],
 )
-def test_composite_error_handler(test_name, first_handler_behavior, second_handler_behavior, expected_behavior):
+def test_composite_error_handler(
+    test_name, first_handler_behavior, second_handler_behavior, expected_behavior
+):
     first_error_handler = MagicMock()
     first_error_handler.interpret_response.return_value = first_handler_behavior
     second_error_handler = MagicMock()
@@ -94,7 +103,10 @@ def test_composite_error_handler(test_name, first_handler_behavior, second_handl
     retriers = [first_error_handler, second_error_handler]
     retrier = CompositeErrorHandler(error_handlers=retriers, parameters={})
     response_mock = MagicMock()
-    response_mock.ok = first_handler_behavior.response_action == ResponseAction.SUCCESS or second_handler_behavior == ResponseAction.SUCCESS
+    response_mock.ok = (
+        first_handler_behavior.response_action == ResponseAction.SUCCESS
+        or second_handler_behavior == ResponseAction.SUCCESS
+    )
     assert retrier.interpret_response(response_mock) == expected_behavior
 
 
@@ -131,25 +143,40 @@ def test_error_handler_compatibility_simple():
     default_error_handler = DefaultErrorHandler(
         config={},
         parameters={},
-        response_filters=[HttpResponseFilter(action=ResponseAction.IGNORE, http_codes={403}, config={}, parameters={})],
+        response_filters=[
+            HttpResponseFilter(
+                action=ResponseAction.IGNORE, http_codes={403}, config={}, parameters={}
+            )
+        ],
     )
     composite_error_handler = CompositeErrorHandler(
         error_handlers=[
             DefaultErrorHandler(
-                response_filters=[HttpResponseFilter(action=ResponseAction.IGNORE, http_codes={403}, parameters={}, config={})],
+                response_filters=[
+                    HttpResponseFilter(
+                        action=ResponseAction.IGNORE, http_codes={403}, parameters={}, config={}
+                    )
+                ],
                 parameters={},
                 config={},
             )
         ],
         parameters={},
     )
-    assert default_error_handler.interpret_response(response_mock).response_action == expected_action
-    assert composite_error_handler.interpret_response(response_mock).response_action == expected_action
+    assert (
+        default_error_handler.interpret_response(response_mock).response_action == expected_action
+    )
+    assert (
+        composite_error_handler.interpret_response(response_mock).response_action == expected_action
+    )
 
 
 @pytest.mark.parametrize(
     "test_name, status_code, expected_action",
-    [("test_first_filter", 403, ResponseAction.IGNORE), ("test_second_filter", 404, ResponseAction.FAIL)],
+    [
+        ("test_first_filter", 403, ResponseAction.IGNORE),
+        ("test_second_filter", 404, ResponseAction.FAIL),
+    ],
 )
 def test_error_handler_compatibility_multiple_filters(test_name, status_code, expected_action):
     response_mock = create_response(status_code)
@@ -157,8 +184,12 @@ def test_error_handler_compatibility_multiple_filters(test_name, status_code, ex
         error_handlers=[
             DefaultErrorHandler(
                 response_filters=[
-                    HttpResponseFilter(action=ResponseAction.IGNORE, http_codes={403}, parameters={}, config={}),
-                    HttpResponseFilter(action=ResponseAction.FAIL, http_codes={404}, parameters={}, config={}),
+                    HttpResponseFilter(
+                        action=ResponseAction.IGNORE, http_codes={403}, parameters={}, config={}
+                    ),
+                    HttpResponseFilter(
+                        action=ResponseAction.FAIL, http_codes={404}, parameters={}, config={}
+                    ),
                 ],
                 parameters={},
                 config={},
@@ -169,22 +200,34 @@ def test_error_handler_compatibility_multiple_filters(test_name, status_code, ex
     composite_error_handler_with_single_filters = CompositeErrorHandler(
         error_handlers=[
             DefaultErrorHandler(
-                response_filters=[HttpResponseFilter(action=ResponseAction.IGNORE, http_codes={403}, parameters={}, config={})],
+                response_filters=[
+                    HttpResponseFilter(
+                        action=ResponseAction.IGNORE, http_codes={403}, parameters={}, config={}
+                    )
+                ],
                 parameters={},
                 config={},
             ),
             DefaultErrorHandler(
-                response_filters=[HttpResponseFilter(action=ResponseAction.FAIL, http_codes={404}, parameters={}, config={})],
+                response_filters=[
+                    HttpResponseFilter(
+                        action=ResponseAction.FAIL, http_codes={404}, parameters={}, config={}
+                    )
+                ],
                 parameters={},
                 config={},
             ),
         ],
         parameters={},
     )
-    actual_action_multiple_filters = error_handler_with_multiple_filters.interpret_response(response_mock).response_action
+    actual_action_multiple_filters = error_handler_with_multiple_filters.interpret_response(
+        response_mock
+    ).response_action
     assert actual_action_multiple_filters == expected_action
 
-    actual_action_single_filters = composite_error_handler_with_single_filters.interpret_response(response_mock).response_action
+    actual_action_single_filters = composite_error_handler_with_single_filters.interpret_response(
+        response_mock
+    ).response_action
     assert actual_action_single_filters == expected_action
 
 
@@ -212,7 +255,11 @@ def test_max_time_is_max_of_underlying_handlers(test_name, max_times, expected_m
     composite_error_handler = CompositeErrorHandler(
         error_handlers=[
             DefaultErrorHandler(
-                response_filters=[HttpResponseFilter(action=ResponseAction.IGNORE, http_codes={403}, parameters={}, config={})],
+                response_filters=[
+                    HttpResponseFilter(
+                        action=ResponseAction.IGNORE, http_codes={403}, parameters={}, config={}
+                    )
+                ],
                 max_time=max_time,
                 parameters={},
                 config={},

@@ -17,7 +17,10 @@ from airbyte_cdk.models import (
     StreamDescriptor,
     SyncMode,
 )
-from airbyte_cdk.sources.declarative.incremental.per_partition_cursor import PerPartitionCursor, StreamSlice
+from airbyte_cdk.sources.declarative.incremental.per_partition_cursor import (
+    PerPartitionCursor,
+    StreamSlice,
+)
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.types import Record
@@ -55,7 +58,16 @@ class ManifestBuilder:
         }
         return self
 
-    def with_incremental_sync(self, stream_name, start_datetime, end_datetime, datetime_format, cursor_field, step, cursor_granularity):
+    def with_incremental_sync(
+        self,
+        stream_name,
+        start_datetime,
+        end_datetime,
+        datetime_format,
+        cursor_field,
+        step,
+        cursor_granularity,
+    ):
         self._incremental_sync[stream_name] = {
             "type": "DatetimeBasedCursor",
             "start_datetime": start_datetime,
@@ -79,7 +91,11 @@ class ManifestBuilder:
                     "primary_key": [],
                     "schema_loader": {
                         "type": "InlineSchemaLoader",
-                        "schema": {"$schema": "http://json-schema.org/schema#", "properties": {"id": {"type": "string"}}, "type": "object"},
+                        "schema": {
+                            "$schema": "http://json-schema.org/schema#",
+                            "properties": {"id": {"type": "string"}},
+                            "type": "object",
+                        },
                     },
                     "retriever": {
                         "type": "SimpleRetriever",
@@ -89,7 +105,10 @@ class ManifestBuilder:
                             "path": "/exchangerates_data/latest",
                             "http_method": "GET",
                         },
-                        "record_selector": {"type": "RecordSelector", "extractor": {"type": "DpathExtractor", "field_path": []}},
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
                     },
                 },
                 "Rates": {
@@ -98,7 +117,11 @@ class ManifestBuilder:
                     "primary_key": [],
                     "schema_loader": {
                         "type": "InlineSchemaLoader",
-                        "schema": {"$schema": "http://json-schema.org/schema#", "properties": {}, "type": "object"},
+                        "schema": {
+                            "$schema": "http://json-schema.org/schema#",
+                            "properties": {},
+                            "type": "object",
+                        },
                     },
                     "retriever": {
                         "type": "SimpleRetriever",
@@ -108,7 +131,10 @@ class ManifestBuilder:
                             "path": "/exchangerates_data/latest",
                             "http_method": "GET",
                         },
-                        "record_selector": {"type": "RecordSelector", "extractor": {"type": "DpathExtractor", "field_path": []}},
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
                     },
                 },
             },
@@ -128,9 +154,13 @@ class ManifestBuilder:
         for stream_name, incremental_sync_definition in self._incremental_sync.items():
             manifest["definitions"][stream_name]["incremental_sync"] = incremental_sync_definition
         for stream_name, partition_router_definition in self._partition_router.items():
-            manifest["definitions"][stream_name]["retriever"]["partition_router"] = partition_router_definition
+            manifest["definitions"][stream_name]["retriever"]["partition_router"] = (
+                partition_router_definition
+            )
         for stream_name, partition_router_definition in self._substream_partition_router.items():
-            manifest["definitions"][stream_name]["retriever"]["partition_router"] = partition_router_definition
+            manifest["definitions"][stream_name]["retriever"]["partition_router"] = (
+                partition_router_definition
+            )
         return manifest
 
 
@@ -189,9 +219,16 @@ def test_given_record_for_partition_when_read_then_update_state():
     stream_instance = source.streams({})[0]
     list(stream_instance.stream_slices(sync_mode=SYNC_MODE))
 
-    stream_slice = StreamSlice(partition={"partition_field": "1"}, cursor_slice={"start_time": "2022-01-01", "end_time": "2022-01-31"})
+    stream_slice = StreamSlice(
+        partition={"partition_field": "1"},
+        cursor_slice={"start_time": "2022-01-01", "end_time": "2022-01-31"},
+    )
     with patch.object(
-        SimpleRetriever, "_read_pages", side_effect=[[Record({"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, stream_slice)]]
+        SimpleRetriever,
+        "_read_pages",
+        side_effect=[
+            [Record({"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, stream_slice)]
+        ],
     ):
         list(
             stream_instance.read_records(
@@ -241,7 +278,9 @@ def test_substream_without_input_state():
 
     stream_instance = test_source.streams({})[1]
 
-    parent_stream_slice = StreamSlice(partition={}, cursor_slice={"start_time": "2022-01-01", "end_time": "2022-01-31"})
+    parent_stream_slice = StreamSlice(
+        partition={}, cursor_slice={"start_time": "2022-01-01", "end_time": "2022-01-31"}
+    )
 
     # This mocks the resulting records of the Rates stream which acts as the parent stream of the SubstreamPartitionRouter being tested
     with patch.object(
@@ -316,18 +355,38 @@ def test_partition_limitation(caplog):
 
     records_list = [
         [
-            Record({"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, partition_slices[0]),
-            Record({"a record key": "a record value", CURSOR_FIELD: "2022-01-16"}, partition_slices[0]),
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, partition_slices[0]
+            ),
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-01-16"}, partition_slices[0]
+            ),
         ],
-        [Record({"a record key": "a record value", CURSOR_FIELD: "2022-02-15"}, partition_slices[0])],
-        [Record({"a record key": "a record value", CURSOR_FIELD: "2022-01-16"}, partition_slices[1])],
+        [
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-02-15"}, partition_slices[0]
+            )
+        ],
+        [
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-01-16"}, partition_slices[1]
+            )
+        ],
         [],
         [],
-        [Record({"a record key": "a record value", CURSOR_FIELD: "2022-02-17"}, partition_slices[2])],
+        [
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-02-17"}, partition_slices[2]
+            )
+        ],
     ]
 
     configured_stream = ConfiguredAirbyteStream(
-        stream=AirbyteStream(name="Rates", json_schema={}, supported_sync_modes=[SyncMode.full_refresh, SyncMode.incremental]),
+        stream=AirbyteStream(
+            name="Rates",
+            json_schema={},
+            supported_sync_modes=[SyncMode.full_refresh, SyncMode.incremental],
+        ),
         sync_mode=SyncMode.incremental,
         destination_sync_mode=DestinationSyncMode.append,
     )
@@ -369,12 +428,14 @@ def test_partition_limitation(caplog):
 
     # Check if the warning was logged
     logged_messages = [record.message for record in caplog.records if record.levelname == "WARNING"]
-    warning_message = (
-        'The maximum number of partitions has been reached. Dropping the oldest partition: {"partition_field":"1"}. Over limit: 1.'
-    )
+    warning_message = 'The maximum number of partitions has been reached. Dropping the oldest partition: {"partition_field":"1"}. Over limit: 1.'
     assert warning_message in logged_messages
 
-    final_state = [orjson.loads(orjson.dumps(message.state.stream.stream_state)) for message in output if message.state]
+    final_state = [
+        orjson.loads(orjson.dumps(message.state.stream.stream_state))
+        for message in output
+        if message.state
+    ]
     assert final_state[-1] == {
         "lookback_window": 1,
         "state": {"cursor_field": "2022-02-17"},
@@ -414,28 +475,70 @@ def test_perpartition_with_fallback(caplog):
         .build()
     )
 
-    partition_slices = [StreamSlice(partition={"partition_field": str(i)}, cursor_slice={}) for i in range(1, 7)]
+    partition_slices = [
+        StreamSlice(partition={"partition_field": str(i)}, cursor_slice={}) for i in range(1, 7)
+    ]
 
     records_list = [
         [
-            Record({"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, partition_slices[0]),
-            Record({"a record key": "a record value", CURSOR_FIELD: "2022-01-16"}, partition_slices[0]),
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, partition_slices[0]
+            ),
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-01-16"}, partition_slices[0]
+            ),
         ],
-        [Record({"a record key": "a record value", CURSOR_FIELD: "2022-02-15"}, partition_slices[0])],
-        [Record({"a record key": "a record value", CURSOR_FIELD: "2022-01-16"}, partition_slices[1])],
+        [
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-02-15"}, partition_slices[0]
+            )
+        ],
+        [
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-01-16"}, partition_slices[1]
+            )
+        ],
         [],
         [],
-        [Record({"a record key": "a record value", CURSOR_FIELD: "2022-02-17"}, partition_slices[2])],
-        [Record({"a record key": "a record value", CURSOR_FIELD: "2022-01-17"}, partition_slices[3])],
-        [Record({"a record key": "a record value", CURSOR_FIELD: "2022-02-19"}, partition_slices[3])],
+        [
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-02-17"}, partition_slices[2]
+            )
+        ],
+        [
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-01-17"}, partition_slices[3]
+            )
+        ],
+        [
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-02-19"}, partition_slices[3]
+            )
+        ],
         [],
-        [Record({"a record key": "a record value", CURSOR_FIELD: "2022-02-18"}, partition_slices[4])],
-        [Record({"a record key": "a record value", CURSOR_FIELD: "2022-01-13"}, partition_slices[3])],
-        [Record({"a record key": "a record value", CURSOR_FIELD: "2022-02-18"}, partition_slices[3])],
+        [
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-02-18"}, partition_slices[4]
+            )
+        ],
+        [
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-01-13"}, partition_slices[3]
+            )
+        ],
+        [
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-02-18"}, partition_slices[3]
+            )
+        ],
     ]
 
     configured_stream = ConfiguredAirbyteStream(
-        stream=AirbyteStream(name="Rates", json_schema={}, supported_sync_modes=[SyncMode.full_refresh, SyncMode.incremental]),
+        stream=AirbyteStream(
+            name="Rates",
+            json_schema={},
+            supported_sync_modes=[SyncMode.full_refresh, SyncMode.incremental],
+        ),
         sync_mode=SyncMode.incremental,
         destination_sync_mode=DestinationSyncMode.append,
     )
@@ -488,8 +591,16 @@ def test_perpartition_with_fallback(caplog):
         assert expected_message in logged_messages
 
     # Proceed with existing assertions
-    final_state = [orjson.loads(orjson.dumps(message.state.stream.stream_state)) for message in output if message.state]
-    assert final_state[-1] == {"use_global_cursor": True, "state": {"cursor_field": "2022-02-19"}, "lookback_window": 1}
+    final_state = [
+        orjson.loads(orjson.dumps(message.state.stream.stream_state))
+        for message in output
+        if message.state
+    ]
+    assert final_state[-1] == {
+        "use_global_cursor": True,
+        "state": {"cursor_field": "2022-02-19"},
+        "lookback_window": 1,
+    }
 
 
 def test_per_partition_cursor_within_limit(caplog):
@@ -514,22 +625,64 @@ def test_per_partition_cursor_within_limit(caplog):
         .build()
     )
 
-    partition_slices = [StreamSlice(partition={"partition_field": str(i)}, cursor_slice={}) for i in range(1, 4)]
+    partition_slices = [
+        StreamSlice(partition={"partition_field": str(i)}, cursor_slice={}) for i in range(1, 4)
+    ]
 
     records_list = [
-        [Record({"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, partition_slices[0])],
-        [Record({"a record key": "a record value", CURSOR_FIELD: "2022-02-20"}, partition_slices[0])],
-        [Record({"a record key": "a record value", CURSOR_FIELD: "2022-03-25"}, partition_slices[0])],
-        [Record({"a record key": "a record value", CURSOR_FIELD: "2022-01-16"}, partition_slices[1])],
-        [Record({"a record key": "a record value", CURSOR_FIELD: "2022-02-18"}, partition_slices[1])],
-        [Record({"a record key": "a record value", CURSOR_FIELD: "2022-03-28"}, partition_slices[1])],
-        [Record({"a record key": "a record value", CURSOR_FIELD: "2022-01-17"}, partition_slices[2])],
-        [Record({"a record key": "a record value", CURSOR_FIELD: "2022-02-19"}, partition_slices[2])],
-        [Record({"a record key": "a record value", CURSOR_FIELD: "2022-03-29"}, partition_slices[2])],
+        [
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, partition_slices[0]
+            )
+        ],
+        [
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-02-20"}, partition_slices[0]
+            )
+        ],
+        [
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-03-25"}, partition_slices[0]
+            )
+        ],
+        [
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-01-16"}, partition_slices[1]
+            )
+        ],
+        [
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-02-18"}, partition_slices[1]
+            )
+        ],
+        [
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-03-28"}, partition_slices[1]
+            )
+        ],
+        [
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-01-17"}, partition_slices[2]
+            )
+        ],
+        [
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-02-19"}, partition_slices[2]
+            )
+        ],
+        [
+            Record(
+                {"a record key": "a record value", CURSOR_FIELD: "2022-03-29"}, partition_slices[2]
+            )
+        ],
     ]
 
     configured_stream = ConfiguredAirbyteStream(
-        stream=AirbyteStream(name="Rates", json_schema={}, supported_sync_modes=[SyncMode.full_refresh, SyncMode.incremental]),
+        stream=AirbyteStream(
+            name="Rates",
+            json_schema={},
+            supported_sync_modes=[SyncMode.full_refresh, SyncMode.incremental],
+        ),
         sync_mode=SyncMode.incremental,
         destination_sync_mode=DestinationSyncMode.append,
     )
@@ -549,7 +702,11 @@ def test_per_partition_cursor_within_limit(caplog):
     assert len(logged_warnings) == 0
 
     # Proceed with existing assertions
-    final_state = [orjson.loads(orjson.dumps(message.state.stream.stream_state)) for message in output if message.state]
+    final_state = [
+        orjson.loads(orjson.dumps(message.state.stream.stream_state))
+        for message in output
+        if message.state
+    ]
     assert final_state[-1] == {
         "lookback_window": 1,
         "state": {"cursor_field": "2022-03-29"},

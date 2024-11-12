@@ -57,7 +57,9 @@ class NoPagination(Paginator):
     ) -> Mapping[str, Any]:
         return {}
 
-    def next_page_token(self, response: requests.Response, last_page_size: int, last_record: Optional[Record]) -> Mapping[str, Any]:
+    def next_page_token(
+        self, response: requests.Response, last_page_size: int, last_record: Optional[Record]
+    ) -> Mapping[str, Any]:
         return {}
 
     def reset(self, reset_value: Optional[Any] = None) -> None:

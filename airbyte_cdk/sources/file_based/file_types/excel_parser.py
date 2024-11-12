@@ -8,9 +8,19 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Union
 
 import pandas as pd
-from airbyte_cdk.sources.file_based.config.file_based_stream_config import ExcelFormat, FileBasedStreamConfig
-from airbyte_cdk.sources.file_based.exceptions import ConfigValidationError, FileBasedSourceError, RecordParseError
-from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader, FileReadMode
+from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
+    ExcelFormat,
+    FileBasedStreamConfig,
+)
+from airbyte_cdk.sources.file_based.exceptions import (
+    ConfigValidationError,
+    FileBasedSourceError,
+    RecordParseError,
+)
+from airbyte_cdk.sources.file_based.file_based_stream_reader import (
+    AbstractFileBasedStreamReader,
+    FileReadMode,
+)
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
@@ -63,7 +73,11 @@ class ExcelParser(FileTypeParser):
                 fields[column] = self.dtype_to_json_type(prev_frame_column_type, df_type)
 
         schema = {
-            field: ({"type": "string", "format": "date-time"} if fields[field] == "date-time" else {"type": fields[field]})
+            field: (
+                {"type": "string", "format": "date-time"}
+                if fields[field] == "date-time"
+                else {"type": fields[field]}
+            )
             for field in fields
         }
         return schema
@@ -101,11 +115,15 @@ class ExcelParser(FileTypeParser):
                 # DataFrame.to_dict() method returns datetime values in pandas.Timestamp values, which are not serializable by orjson
                 # DataFrame.to_json() returns string with datetime values serialized to iso8601 with microseconds to align with pydantic behavior
                 # see PR description: https://github.com/airbytehq/airbyte/pull/44444/
-                yield from orjson.loads(df.to_json(orient="records", date_format="iso", date_unit="us"))
+                yield from orjson.loads(
+                    df.to_json(orient="records", date_format="iso", date_unit="us")
+                )
 
         except Exception as exc:
             # Raise a RecordParseError if any exception occurs during parsing
-            raise RecordParseError(FileBasedSourceError.ERROR_PARSING_RECORD, filename=file.uri) from exc
+            raise RecordParseError(
+                FileBasedSourceError.ERROR_PARSING_RECORD, filename=file.uri
+            ) from exc
 
     @property
     def file_read_mode(self) -> FileReadMode:
@@ -133,7 +151,7 @@ class ExcelParser(FileTypeParser):
         if current_type == "string":
             # Previous column values were of the string type, no need to look further.
             return current_type
-        if dtype == object:
+        if dtype is object:
             return "string"
         if dtype in number_types and (not current_type or current_type == "number"):
             return "number"

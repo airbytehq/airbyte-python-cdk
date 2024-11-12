@@ -5,7 +5,9 @@ from typing import List, Optional, Union
 from airbyte_cdk.sources.streams import Stream
 
 
-def get_primary_key_from_stream(stream_primary_key: Optional[Union[str, List[str], List[List[str]]]]) -> List[str]:
+def get_primary_key_from_stream(
+    stream_primary_key: Optional[Union[str, List[str], List[List[str]]]],
+) -> List[str]:
     if stream_primary_key is None:
         return []
     elif isinstance(stream_primary_key, str):
@@ -22,7 +24,9 @@ def get_primary_key_from_stream(stream_primary_key: Optional[Union[str, List[str
 def get_cursor_field_from_stream(stream: Stream) -> Optional[str]:
     if isinstance(stream.cursor_field, list):
         if len(stream.cursor_field) > 1:
-            raise ValueError(f"Nested cursor fields are not supported. Got {stream.cursor_field} for {stream.name}")
+            raise ValueError(
+                f"Nested cursor fields are not supported. Got {stream.cursor_field} for {stream.name}"
+            )
         elif len(stream.cursor_field) == 0:
             return None
         else:

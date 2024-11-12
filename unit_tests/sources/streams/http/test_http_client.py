@@ -9,8 +9,17 @@ import requests
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.streams.call_rate import CachedLimiterSession, LimiterSession
 from airbyte_cdk.sources.streams.http import HttpClient
-from airbyte_cdk.sources.streams.http.error_handlers import BackoffStrategy, ErrorResolution, HttpStatusErrorHandler, ResponseAction
-from airbyte_cdk.sources.streams.http.exceptions import DefaultBackoffException, RequestBodyException, UserDefinedBackoffException
+from airbyte_cdk.sources.streams.http.error_handlers import (
+    BackoffStrategy,
+    ErrorResolution,
+    HttpStatusErrorHandler,
+    ResponseAction,
+)
+from airbyte_cdk.sources.streams.http.exceptions import (
+    DefaultBackoffException,
+    RequestBodyException,
+    UserDefinedBackoffException,
+)
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 from requests_cache import CachedRequest
@@ -121,7 +130,12 @@ def test_duplicate_request_params_are_deduped(deduplicate_query_params, url, par
 
     if expected_url is None:
         with pytest.raises(ValueError):
-            http_client._create_prepared_request(http_method="get", url=url, dedupe_query_params=deduplicate_query_params, params=params)
+            http_client._create_prepared_request(
+                http_method="get",
+                url=url,
+                dedupe_query_params=deduplicate_query_params,
+                params=params,
+            )
     else:
         prepared_request = http_client._create_prepared_request(
             http_method="get", url=url, dedupe_query_params=deduplicate_query_params, params=params
@@ -134,7 +148,10 @@ def test_create_prepared_response_given_given_both_json_and_data_raises_request_
 
     with pytest.raises(RequestBodyException):
         http_client._create_prepared_request(
-            http_method="get", url="https://test_base_url.com/v1/endpoint", json={"test": "json"}, data={"test": "data"}
+            http_method="get",
+            url="https://test_base_url.com/v1/endpoint",
+            json={"test": "json"},
+            data={"test": "data"},
         )
 
 
@@ -155,7 +172,9 @@ def test_create_prepared_response_given_either_json_or_data_returns_valid_reques
 
 
 def test_connection_pool():
-    http_client = HttpClient(name="test", logger=MagicMock(), authenticator=TokenAuthenticator("test-token"))
+    http_client = HttpClient(
+        name="test", logger=MagicMock(), authenticator=TokenAuthenticator("test-token")
+    )
     assert http_client._session.adapters["https://"]._pool_connections == 20
 
 
@@ -179,7 +198,12 @@ def test_send_raises_airbyte_traced_exception_with_fail_response_action():
         name="test",
         logger=MagicMock(),
         error_handler=HttpStatusErrorHandler(
-            logger=MagicMock(), error_mapping={400: ErrorResolution(ResponseAction.FAIL, FailureType.system_error, "test error message")}
+            logger=MagicMock(),
+            error_mapping={
+                400: ErrorResolution(
+                    ResponseAction.FAIL, FailureType.system_error, "test error message"
+                )
+            },
         ),
         session=mocked_session,
     )
@@ -205,12 +229,19 @@ def test_send_ignores_with_ignore_reponse_action_and_returns_response():
         name="test",
         logger=mocked_logger,
         error_handler=HttpStatusErrorHandler(
-            logger=MagicMock(), error_mapping={300: ErrorResolution(ResponseAction.IGNORE, FailureType.system_error, "test ignore message")}
+            logger=MagicMock(),
+            error_mapping={
+                300: ErrorResolution(
+                    ResponseAction.IGNORE, FailureType.system_error, "test ignore message"
+                )
+            },
         ),
         session=mocked_session,
     )
 
-    prepared_request = http_client._create_prepared_request(http_method="get", url="https://test_base_url.com/v1/endpoint")
+    prepared_request = http_client._create_prepared_request(
+        http_method="get", url="https://test_base_url.com/v1/endpoint"
+    )
 
     returned_response = http_client._send(prepared_request, {})
 
@@ -227,17 +258,29 @@ class CustomBackoffStrategy(BackoffStrategy):
         return self._backoff_time_value
 
 
-@pytest.mark.parametrize("backoff_time_value, exception_type", [(0.1, UserDefinedBackoffException), (None, DefaultBackoffException)])
-def test_raises_backoff_exception_with_retry_response_action(mocker, backoff_time_value, exception_type):
+@pytest.mark.parametrize(
+    "backoff_time_value, exception_type",
+    [(0.1, UserDefinedBackoffException), (None, DefaultBackoffException)],
+)
+def test_raises_backoff_exception_with_retry_response_action(
+    mocker, backoff_time_value, exception_type
+):
     http_client = HttpClient(
         name="test",
         logger=MagicMock(),
         error_handler=HttpStatusErrorHandler(
-            logger=MagicMock(), error_mapping={408: ErrorResolution(ResponseAction.FAIL, FailureType.system_error, "test retry message")}
+            logger=MagicMock(),
+            error_mapping={
+                408: ErrorResolution(
+                    ResponseAction.FAIL, FailureType.system_error, "test retry message"
+                )
+            },
         ),
         backoff_strategy=CustomBackoffStrategy(backoff_time_value=backoff_time_value),
     )
-    prepared_request = http_client._create_prepared_request(http_method="get", url="https://test_base_url.com/v1/endpoint")
+    prepared_request = http_client._create_prepared_request(
+        http_method="get", url="https://test_base_url.com/v1/endpoint"
+    )
     mocked_response = MagicMock(spec=requests.Response)
     mocked_response.status_code = 408
     mocked_response.headers = {}
@@ -247,20 +290,32 @@ def test_raises_backoff_exception_with_retry_response_action(mocker, backoff_tim
     mocker.patch.object(
         http_client._error_handler,
         "interpret_response",
-        return_value=ErrorResolution(ResponseAction.RETRY, FailureType.system_error, "test retry message"),
+        return_value=ErrorResolution(
+            ResponseAction.RETRY, FailureType.system_error, "test retry message"
+        ),
     )
 
     with pytest.raises(exception_type):
         http_client._send(prepared_request, {})
 
 
-@pytest.mark.parametrize("backoff_time_value, exception_type", [(0.1, UserDefinedBackoffException), (None, DefaultBackoffException)])
-def test_raises_backoff_exception_with_response_with_unmapped_error(mocker, backoff_time_value, exception_type):
+@pytest.mark.parametrize(
+    "backoff_time_value, exception_type",
+    [(0.1, UserDefinedBackoffException), (None, DefaultBackoffException)],
+)
+def test_raises_backoff_exception_with_response_with_unmapped_error(
+    mocker, backoff_time_value, exception_type
+):
     http_client = HttpClient(
         name="test",
         logger=MagicMock(),
         error_handler=HttpStatusErrorHandler(
-            logger=MagicMock(), error_mapping={408: ErrorResolution(ResponseAction.FAIL, FailureType.system_error, "test retry message")}
+            logger=MagicMock(),
+            error_mapping={
+                408: ErrorResolution(
+                    ResponseAction.FAIL, FailureType.system_error, "test retry message"
+                )
+            },
         ),
         backoff_strategy=CustomBackoffStrategy(backoff_time_value=backoff_time_value),
     )
@@ -301,7 +356,12 @@ def test_send_request_given_retry_response_action_retries_and_returns_valid_resp
         name="test",
         logger=MagicMock(),
         error_handler=HttpStatusErrorHandler(
-            logger=MagicMock(), error_mapping={408: ErrorResolution(ResponseAction.RETRY, FailureType.system_error, "test retry message")}
+            logger=MagicMock(),
+            error_mapping={
+                408: ErrorResolution(
+                    ResponseAction.RETRY, FailureType.system_error, "test retry message"
+                )
+            },
         ),
         session=mocked_session,
     )
@@ -318,12 +378,16 @@ def test_session_request_exception_raises_backoff_exception():
     error_handler = HttpStatusErrorHandler(
         logger=MagicMock(),
         error_mapping={
-            requests.exceptions.RequestException: ErrorResolution(ResponseAction.RETRY, FailureType.system_error, "test retry message")
+            requests.exceptions.RequestException: ErrorResolution(
+                ResponseAction.RETRY, FailureType.system_error, "test retry message"
+            )
         },
     )
     mocked_session = MagicMock(spec=requests.Session)
     mocked_session.send.side_effect = requests.RequestException
-    http_client = HttpClient(name="test", logger=MagicMock(), error_handler=error_handler, session=mocked_session)
+    http_client = HttpClient(
+        name="test", logger=MagicMock(), error_handler=error_handler, session=mocked_session
+    )
     prepared_request = requests.PreparedRequest()
 
     with pytest.raises(DefaultBackoffException):
@@ -337,7 +401,9 @@ def test_that_response_was_cached(requests_mock):
 
     cached_http_client._session.cache.clear()
 
-    prepared_request = cached_http_client._create_prepared_request(http_method="GET", url="https://google.com/")
+    prepared_request = cached_http_client._create_prepared_request(
+        http_method="GET", url="https://google.com/"
+    )
 
     requests_mock.register_uri("GET", "https://google.com/", json='{"test": "response"}')
 
@@ -353,14 +419,20 @@ def test_that_response_was_cached(requests_mock):
 
 
 def test_send_handles_response_action_given_session_send_raises_request_exception():
-    error_resolution = ErrorResolution(ResponseAction.FAIL, FailureType.system_error, "test fail message")
+    error_resolution = ErrorResolution(
+        ResponseAction.FAIL, FailureType.system_error, "test fail message"
+    )
 
-    custom_error_handler = HttpStatusErrorHandler(logger=MagicMock(), error_mapping={requests.RequestException: error_resolution})
+    custom_error_handler = HttpStatusErrorHandler(
+        logger=MagicMock(), error_mapping={requests.RequestException: error_resolution}
+    )
 
     mocked_session = MagicMock(spec=requests.Session)
     mocked_session.send.side_effect = requests.RequestException
 
-    http_client = HttpClient(name="test", logger=MagicMock(), error_handler=custom_error_handler, session=mocked_session)
+    http_client = HttpClient(
+        name="test", logger=MagicMock(), error_handler=custom_error_handler, session=mocked_session
+    )
     prepared_request = requests.PreparedRequest()
 
     with pytest.raises(AirbyteTracedException) as e:
@@ -392,7 +464,12 @@ def test_send_request_given_request_exception_and_retry_response_action_retries_
         name="test",
         logger=MagicMock(),
         error_handler=HttpStatusErrorHandler(
-            logger=MagicMock(), error_mapping={408: ErrorResolution(ResponseAction.RETRY, FailureType.system_error, "test retry message")}
+            logger=MagicMock(),
+            error_mapping={
+                408: ErrorResolution(
+                    ResponseAction.RETRY, FailureType.system_error, "test retry message"
+                )
+            },
         ),
         session=mocked_session,
     )
@@ -427,7 +504,9 @@ def test_disable_retries():
 
     with patch.object(requests.Session, "send", return_value=mocked_response) as mocked_send:
         with pytest.raises(UserDefinedBackoffException):
-            http_client.send_request(http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={})
+            http_client.send_request(
+                http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={}
+            )
         assert mocked_send.call_count == 1
 
 
@@ -438,7 +517,10 @@ def test_default_max_retries():
             return 0.001
 
     http_client = HttpClient(
-        name="test", logger=MagicMock(), error_handler=HttpStatusErrorHandler(logger=MagicMock()), backoff_strategy=BackoffStrategy()
+        name="test",
+        logger=MagicMock(),
+        error_handler=HttpStatusErrorHandler(logger=MagicMock()),
+        backoff_strategy=BackoffStrategy(),
     )
 
     mocked_response = MagicMock(spec=requests.Response)
@@ -450,7 +532,9 @@ def test_default_max_retries():
 
     with patch.object(requests.Session, "send", return_value=mocked_response) as mocked_send:
         with pytest.raises(UserDefinedBackoffException):
-            http_client.send_request(http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={})
+            http_client.send_request(
+                http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={}
+            )
         assert mocked_send.call_count == 6
 
 
@@ -478,7 +562,9 @@ def test_backoff_strategy_max_retries():
 
     with patch.object(requests.Session, "send", return_value=mocked_response) as mocked_send:
         with pytest.raises(UserDefinedBackoffException):
-            http_client.send_request(http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={})
+            http_client.send_request(
+                http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={}
+            )
         assert mocked_send.call_count == retries + 1
 
 
@@ -486,7 +572,11 @@ def test_backoff_strategy_max_retries():
 def test_backoff_strategy_max_time():
     error_handler = HttpStatusErrorHandler(
         logger=MagicMock(),
-        error_mapping={requests.RequestException: ErrorResolution(ResponseAction.RETRY, FailureType.system_error, "test retry message")},
+        error_mapping={
+            requests.RequestException: ErrorResolution(
+                ResponseAction.RETRY, FailureType.system_error, "test retry message"
+            )
+        },
         max_retries=10,
         max_time=timedelta(seconds=2),
     )
@@ -495,7 +585,12 @@ def test_backoff_strategy_max_time():
         def backoff_time(self, *args, **kwargs):
             return 1
 
-    http_client = HttpClient(name="test", logger=MagicMock(), error_handler=error_handler, backoff_strategy=BackoffStrategy())
+    http_client = HttpClient(
+        name="test",
+        logger=MagicMock(),
+        error_handler=error_handler,
+        backoff_strategy=BackoffStrategy(),
+    )
 
     mocked_response = MagicMock(spec=requests.Response)
     mocked_response.status_code = 429
@@ -506,7 +601,9 @@ def test_backoff_strategy_max_time():
 
     with patch.object(requests.Session, "send", return_value=mocked_response) as mocked_send:
         with pytest.raises(UserDefinedBackoffException):
-            http_client.send_request(http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={})
+            http_client.send_request(
+                http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={}
+            )
         assert mocked_send.call_count == 2
 
 
@@ -517,7 +614,10 @@ def test_send_emit_stream_status_with_rate_limit_reason(capsys):
             return 0.001
 
     http_client = HttpClient(
-        name="test", logger=MagicMock(), error_handler=HttpStatusErrorHandler(logger=MagicMock()), backoff_strategy=BackoffStrategy()
+        name="test",
+        logger=MagicMock(),
+        error_handler=HttpStatusErrorHandler(logger=MagicMock()),
+        backoff_strategy=BackoffStrategy(),
     )
 
     mocked_response = MagicMock(spec=requests.Response)
@@ -529,18 +629,23 @@ def test_send_emit_stream_status_with_rate_limit_reason(capsys):
 
     with patch.object(requests.Session, "send", return_value=mocked_response) as mocked_send:
         with pytest.raises(UserDefinedBackoffException):
-            http_client.send_request(http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={})
+            http_client.send_request(
+                http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={}
+            )
 
         trace_messages = capsys.readouterr().out.split()
         assert len(trace_messages) == mocked_send.call_count
 
 
 @pytest.mark.parametrize(
-    "exit_on_rate_limit, expected_call_count, expected_error", [[True, 6, DefaultBackoffException], [False, 38, OverflowError]]
+    "exit_on_rate_limit, expected_call_count, expected_error",
+    [[True, 6, DefaultBackoffException], [False, 38, OverflowError]],
 )
 @pytest.mark.usefixtures("mock_sleep")
 def test_backoff_strategy_endless(exit_on_rate_limit, expected_call_count, expected_error):
-    http_client = HttpClient(name="test", logger=MagicMock(), error_handler=HttpStatusErrorHandler(logger=MagicMock()))
+    http_client = HttpClient(
+        name="test", logger=MagicMock(), error_handler=HttpStatusErrorHandler(logger=MagicMock())
+    )
 
     mocked_response = MagicMock(spec=requests.Response)
     mocked_response.status_code = 429
@@ -552,7 +657,10 @@ def test_backoff_strategy_endless(exit_on_rate_limit, expected_call_count, expec
     with patch.object(requests.Session, "send", return_value=mocked_response) as mocked_send:
         with pytest.raises(expected_error):
             http_client.send_request(
-                http_method="get", url="https://test_base_url.com/v1/endpoint", request_kwargs={}, exit_on_rate_limit=exit_on_rate_limit
+                http_method="get",
+                url="https://test_base_url.com/v1/endpoint",
+                request_kwargs={},
+                exit_on_rate_limit=exit_on_rate_limit,
             )
         assert mocked_send.call_count == expected_call_count
 
@@ -561,10 +669,24 @@ def test_given_different_headers_then_response_is_not_cached(requests_mock):
     http_client = HttpClient(name="test", logger=MagicMock(), use_cache=True)
     first_request_headers = {"header_key": "first"}
     second_request_headers = {"header_key": "second"}
-    requests_mock.register_uri("GET", "https://google.com/", request_headers=first_request_headers, json={"test": "first response"})
-    requests_mock.register_uri("GET", "https://google.com/", request_headers=second_request_headers, json={"test": "second response"})
+    requests_mock.register_uri(
+        "GET",
+        "https://google.com/",
+        request_headers=first_request_headers,
+        json={"test": "first response"},
+    )
+    requests_mock.register_uri(
+        "GET",
+        "https://google.com/",
+        request_headers=second_request_headers,
+        json={"test": "second response"},
+    )
 
-    http_client.send_request("GET", "https://google.com/", headers=first_request_headers, request_kwargs={})
-    _, second_response = http_client.send_request("GET", "https://google.com/", headers=second_request_headers, request_kwargs={})
+    http_client.send_request(
+        "GET", "https://google.com/", headers=first_request_headers, request_kwargs={}
+    )
+    _, second_response = http_client.send_request(
+        "GET", "https://google.com/", headers=second_request_headers, request_kwargs={}
+    )
 
     assert second_response.json()["test"] == "second response"

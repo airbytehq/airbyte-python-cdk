@@ -15,14 +15,18 @@ def test_counter_init():
 
 def test_counter_start_event():
     with create_timer("Counter") as timer:
-        with mock.patch("airbyte_cdk.utils.event_timing.EventTimer.start_event") as mock_start_event:
+        with mock.patch(
+            "airbyte_cdk.utils.event_timing.EventTimer.start_event"
+        ) as mock_start_event:
             timer.start_event("test_event")
             mock_start_event.assert_called_with("test_event")
 
 
 def test_counter_finish_event():
     with create_timer("Counter") as timer:
-        with mock.patch("airbyte_cdk.utils.event_timing.EventTimer.finish_event") as mock_finish_event:
+        with mock.patch(
+            "airbyte_cdk.utils.event_timing.EventTimer.finish_event"
+        ) as mock_finish_event:
             timer.finish_event("test_event")
             mock_finish_event.assert_called_with("test_event")
 

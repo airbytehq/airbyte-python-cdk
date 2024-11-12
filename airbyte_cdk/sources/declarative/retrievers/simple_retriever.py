@@ -6,7 +6,18 @@ import json
 from dataclasses import InitVar, dataclass, field
 from functools import partial
 from itertools import islice
-from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optional, Set, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Iterable,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+)
 
 import requests
 from airbyte_cdk.models import AirbyteMessage
@@ -14,10 +25,15 @@ from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelecto
 from airbyte_cdk.sources.declarative.incremental import ResumableFullRefreshCursor
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
-from airbyte_cdk.sources.declarative.partition_routers.single_partition_router import SinglePartitionRouter
+from airbyte_cdk.sources.declarative.partition_routers.single_partition_router import (
+    SinglePartitionRouter,
+)
 from airbyte_cdk.sources.declarative.requesters.paginators.no_pagination import NoPagination
 from airbyte_cdk.sources.declarative.requesters.paginators.paginator import Paginator
-from airbyte_cdk.sources.declarative.requesters.request_options import DefaultRequestOptionsProvider, RequestOptionsProvider
+from airbyte_cdk.sources.declarative.requesters.request_options import (
+    DefaultRequestOptionsProvider,
+    RequestOptionsProvider,
+)
 from airbyte_cdk.sources.declarative.requesters.requester import Requester
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
@@ -62,8 +78,12 @@ class SimpleRetriever(Retriever):
     primary_key: Optional[Union[str, List[str], List[List[str]]]]
     _primary_key: str = field(init=False, repr=False, default="")
     paginator: Optional[Paginator] = None
-    stream_slicer: StreamSlicer = field(default_factory=lambda: SinglePartitionRouter(parameters={}))
-    request_option_provider: RequestOptionsProvider = field(default_factory=lambda: DefaultRequestOptionsProvider(parameters={}))
+    stream_slicer: StreamSlicer = field(
+        default_factory=lambda: SinglePartitionRouter(parameters={})
+    )
+    request_option_provider: RequestOptionsProvider = field(
+        default_factory=lambda: DefaultRequestOptionsProvider(parameters={})
+    )
     cursor: Optional[DeclarativeCursor] = None
     ignore_stream_slicer_parameters_on_paginated_requests: bool = False
 
@@ -73,7 +93,11 @@ class SimpleRetriever(Retriever):
         self._last_page_size: int = 0
         self._last_record: Optional[Record] = None
         self._parameters = parameters
-        self._name = InterpolatedString(self._name, parameters=parameters) if isinstance(self._name, str) else self._name
+        self._name = (
+            InterpolatedString(self._name, parameters=parameters)
+            if isinstance(self._name, str)
+            else self._name
+        )
 
         # This mapping is used during a resumable full refresh syncs to indicate whether a partition has started syncing
         # records. Partitions serve as the key and map to True if they already began processing records
@@ -84,7 +108,11 @@ class SimpleRetriever(Retriever):
         """
         :return: Stream name
         """
-        return str(self._name.eval(self.config)) if isinstance(self._name, InterpolatedString) else self._name
+        return (
+            str(self._name.eval(self.config))
+            if isinstance(self._name, InterpolatedString)
+            else self._name
+        )
 
     @name.setter
     def name(self, value: str) -> None:
@@ -118,10 +146,20 @@ class SimpleRetriever(Retriever):
         """
         # FIXME we should eventually remove the usage of stream_state as part of the interpolation
         mappings = [
-            paginator_method(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token),
+            paginator_method(
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
+            ),
         ]
         if not next_page_token or not self.ignore_stream_slicer_parameters_on_paginated_requests:
-            mappings.append(stream_slicer_method(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token))
+            mappings.append(
+                stream_slicer_method(
+                    stream_state=stream_state,
+                    stream_slice=stream_slice,
+                    next_page_token=next_page_token,
+                )
+            )
         return combine_mappings(mappings)
 
     def _request_headers(
@@ -271,20 +309,35 @@ class SimpleRetriever(Retriever):
         return self._paginator.next_page_token(response, self._last_page_size, self._last_record)
 
     def _fetch_next_page(
-        self, stream_state: Mapping[str, Any], stream_slice: StreamSlice, next_page_token: Optional[Mapping[str, Any]] = None
+        self,
+        stream_state: Mapping[str, Any],
+        stream_slice: StreamSlice,
+        next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Optional[requests.Response]:
         return self.requester.send_request(
             path=self._paginator_path(),
             stream_state=stream_state,
             stream_slice=stream_slice,
             next_page_token=next_page_token,
-            request_headers=self._request_headers(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token),
-            request_params=self._request_params(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token),
+            request_headers=self._request_headers(
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
+            ),
+            request_params=self._request_params(
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
+            ),
             request_body_data=self._request_body_data(
-                stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
             ),
             request_body_json=self._request_body_json(
-                stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
             ),
         )
 
@@ -323,10 +376,14 @@ class SimpleRetriever(Retriever):
         if not response:
             next_page_token: Mapping[str, Any] = {FULL_REFRESH_SYNC_COMPLETE_KEY: True}
         else:
-            next_page_token = self._next_page_token(response) or {FULL_REFRESH_SYNC_COMPLETE_KEY: True}
+            next_page_token = self._next_page_token(response) or {
+                FULL_REFRESH_SYNC_COMPLETE_KEY: True
+            }
 
         if self.cursor:
-            self.cursor.close_slice(StreamSlice(cursor_slice=next_page_token, partition=stream_slice.partition))
+            self.cursor.close_slice(
+                StreamSlice(cursor_slice=next_page_token, partition=stream_slice.partition)
+            )
 
         # Always return an empty generator just in case no records were ever yielded
         yield from []
@@ -383,7 +440,9 @@ class SimpleRetriever(Retriever):
                 # Latest record read, not necessarily within slice boundaries.
                 # TODO Remove once all custom components implement `observe` method.
                 # https://github.com/airbytehq/airbyte-internal-issues/issues/6955
-                most_recent_record_from_slice = self._get_most_recent_record(most_recent_record_from_slice, current_record, _slice)
+                most_recent_record_from_slice = self._get_most_recent_record(
+                    most_recent_record_from_slice, current_record, _slice
+                )
                 yield stream_data
 
             if self.cursor:
@@ -391,13 +450,20 @@ class SimpleRetriever(Retriever):
         return
 
     def _get_most_recent_record(
-        self, current_most_recent: Optional[Record], current_record: Optional[Record], stream_slice: StreamSlice
+        self,
+        current_most_recent: Optional[Record],
+        current_record: Optional[Record],
+        stream_slice: StreamSlice,
     ) -> Optional[Record]:
         if self.cursor and current_record:
             if not current_most_recent:
                 return current_record
             else:
-                return current_most_recent if self.cursor.is_greater_than_or_equal(current_most_recent, current_record) else current_record
+                return (
+                    current_most_recent
+                    if self.cursor.is_greater_than_or_equal(current_most_recent, current_record)
+                    else current_record
+                )
         else:
             return None
 
@@ -482,20 +548,35 @@ class SimpleRetrieverTestReadDecorator(SimpleRetriever):
         return islice(super().stream_slices(), self.maximum_number_of_slices)
 
     def _fetch_next_page(
-        self, stream_state: Mapping[str, Any], stream_slice: StreamSlice, next_page_token: Optional[Mapping[str, Any]] = None
+        self,
+        stream_state: Mapping[str, Any],
+        stream_slice: StreamSlice,
+        next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Optional[requests.Response]:
         return self.requester.send_request(
             path=self._paginator_path(),
             stream_state=stream_state,
             stream_slice=stream_slice,
             next_page_token=next_page_token,
-            request_headers=self._request_headers(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token),
-            request_params=self._request_params(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token),
+            request_headers=self._request_headers(
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
+            ),
+            request_params=self._request_params(
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
+            ),
             request_body_data=self._request_body_data(
-                stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
             ),
             request_body_json=self._request_body_json(
-                stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
             ),
             log_formatter=lambda response: format_http_message(
                 response,

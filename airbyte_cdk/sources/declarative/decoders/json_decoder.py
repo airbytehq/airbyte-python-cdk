@@ -37,7 +37,9 @@ class JsonDecoder(Decoder):
             else:
                 yield from body_json
         except requests.exceptions.JSONDecodeError:
-            logger.warning(f"Response cannot be parsed into json: {response.status_code=}, {response.text=}")
+            logger.warning(
+                f"Response cannot be parsed into json: {response.status_code=}, {response.text=}"
+            )
             yield {}
 
 

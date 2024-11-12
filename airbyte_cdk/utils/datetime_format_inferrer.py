@@ -29,7 +29,10 @@ class DatetimeFormatInferrer:
             "%Y-%m",
             "%d-%m-%Y",
         ]
-        self._timestamp_heuristic_ranges = [range(1_000_000_000, 2_000_000_000), range(1_000_000_000_000, 2_000_000_000_000)]
+        self._timestamp_heuristic_ranges = [
+            range(1_000_000_000, 2_000_000_000),
+            range(1_000_000_000_000, 2_000_000_000_000),
+        ]
 
     def _can_be_datetime(self, value: Any) -> bool:
         """Checks if the value can be a datetime.

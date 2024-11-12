@@ -27,7 +27,12 @@ class Writer:
     """
 
     def __init__(
-        self, processing_config: ProcessingConfigModel, indexer: Indexer, embedder: Embedder, batch_size: int, omit_raw_text: bool
+        self,
+        processing_config: ProcessingConfigModel,
+        indexer: Indexer,
+        embedder: Embedder,
+        batch_size: int,
+        omit_raw_text: bool,
     ) -> None:
         self.processing_config = processing_config
         self.indexer = indexer
@@ -54,7 +59,9 @@ class Writer:
             self.indexer.delete(ids, namespace, stream)
 
         for (namespace, stream), chunks in self.chunks.items():
-            embeddings = self.embedder.embed_documents([self._convert_to_document(chunk) for chunk in chunks])
+            embeddings = self.embedder.embed_documents(
+                [self._convert_to_document(chunk) for chunk in chunks]
+            )
             for i, document in enumerate(chunks):
                 document.embedding = embeddings[i]
                 if self.omit_raw_text:
@@ -63,7 +70,9 @@ class Writer:
 
         self._init_batch()
 
-    def write(self, configured_catalog: ConfiguredAirbyteCatalog, input_messages: Iterable[AirbyteMessage]) -> Iterable[AirbyteMessage]:
+    def write(
+        self, configured_catalog: ConfiguredAirbyteCatalog, input_messages: Iterable[AirbyteMessage]
+    ) -> Iterable[AirbyteMessage]:
         self.processor = DocumentProcessor(self.processing_config, configured_catalog)
         self.indexer.pre_sync(configured_catalog)
         for message in input_messages:
@@ -76,7 +85,9 @@ class Writer:
                 record_chunks, record_id_to_delete = self.processor.process(message.record)
                 self.chunks[(message.record.namespace, message.record.stream)].extend(record_chunks)
                 if record_id_to_delete is not None:
-                    self.ids_to_delete[(message.record.namespace, message.record.stream)].append(record_id_to_delete)
+                    self.ids_to_delete[(message.record.namespace, message.record.stream)].append(
+                        record_id_to_delete
+                    )
                 self.number_of_chunks += len(record_chunks)
                 if self.number_of_chunks >= self.batch_size:
                     self._process_batch()

@@ -11,13 +11,23 @@ import pytest as pytest
 import requests
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
-from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies import ConstantBackoffStrategy, ExponentialBackoffStrategy
-from airbyte_cdk.sources.declarative.requesters.error_handlers.default_error_handler import DefaultErrorHandler
+from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies import (
+    ConstantBackoffStrategy,
+    ExponentialBackoffStrategy,
+)
+from airbyte_cdk.sources.declarative.requesters.error_handlers.default_error_handler import (
+    DefaultErrorHandler,
+)
 from airbyte_cdk.sources.declarative.requesters.error_handlers.error_handler import ErrorHandler
 from airbyte_cdk.sources.declarative.requesters.http_requester import HttpMethod, HttpRequester
-from airbyte_cdk.sources.declarative.requesters.request_options import InterpolatedRequestOptionsProvider
+from airbyte_cdk.sources.declarative.requesters.request_options import (
+    InterpolatedRequestOptionsProvider,
+)
 from airbyte_cdk.sources.message import MessageRepository
-from airbyte_cdk.sources.streams.http.exceptions import RequestBodyException, UserDefinedBackoffException
+from airbyte_cdk.sources.streams.http.exceptions import (
+    RequestBodyException,
+    UserDefinedBackoffException,
+)
 from airbyte_cdk.sources.types import Config
 from requests import PreparedRequest
 
@@ -99,12 +109,24 @@ def test_http_requester():
     )
 
     assert requester.get_url_base() == "https://airbyte.io/"
-    assert requester.get_path(stream_state={}, stream_slice=stream_slice, next_page_token={}) == "v1/1234"
+    assert (
+        requester.get_path(stream_state={}, stream_slice=stream_slice, next_page_token={})
+        == "v1/1234"
+    )
     assert requester.get_authenticator() == authenticator
     assert requester.get_method() == http_method
-    assert requester.get_request_params(stream_state={}, stream_slice=None, next_page_token=None) == request_params
-    assert requester.get_request_body_data(stream_state={}, stream_slice=None, next_page_token=None) == request_body_data
-    assert requester.get_request_body_json(stream_state={}, stream_slice=None, next_page_token=None) == request_body_json
+    assert (
+        requester.get_request_params(stream_state={}, stream_slice=None, next_page_token=None)
+        == request_params
+    )
+    assert (
+        requester.get_request_body_data(stream_state={}, stream_slice=None, next_page_token=None)
+        == request_body_data
+    )
+    assert (
+        requester.get_request_body_json(stream_state={}, stream_slice=None, next_page_token=None)
+        == request_body_json
+    )
 
 
 @pytest.mark.parametrize(
@@ -200,14 +222,50 @@ def test_basic_send_request():
     [
         # merging data params from the three sources
         ({"field": "value"}, None, None, None, None, None, None, "field=value"),
-        ({"field": "value"}, None, {"field2": "value"}, None, None, None, None, "field=value&field2=value"),
-        ({"field": "value"}, None, {"field2": "value"}, None, {"authfield": "val"}, None, None, "field=value&field2=value&authfield=val"),
+        (
+            {"field": "value"},
+            None,
+            {"field2": "value"},
+            None,
+            None,
+            None,
+            None,
+            "field=value&field2=value",
+        ),
+        (
+            {"field": "value"},
+            None,
+            {"field2": "value"},
+            None,
+            {"authfield": "val"},
+            None,
+            None,
+            "field=value&field2=value&authfield=val",
+        ),
         ({"field": "value"}, None, {"field": "value"}, None, None, None, ValueError, None),
         ({"field": "value"}, None, None, None, {"field": "value"}, None, ValueError, None),
-        ({"field": "value"}, None, {"field2": "value"}, None, {"field": "value"}, None, ValueError, None),
+        (
+            {"field": "value"},
+            None,
+            {"field2": "value"},
+            None,
+            {"field": "value"},
+            None,
+            ValueError,
+            None,
+        ),
         # merging json params from the three sources
         (None, {"field": "value"}, None, None, None, None, None, '{"field": "value"}'),
-        (None, {"field": "value"}, None, {"field2": "value"}, None, None, None, '{"field": "value", "field2": "value"}'),
+        (
+            None,
+            {"field": "value"},
+            None,
+            {"field2": "value"},
+            None,
+            None,
+            None,
+            '{"field": "value", "field2": "value"}',
+        ),
         (
             None,
             {"field": "value"},
@@ -221,15 +279,67 @@ def test_basic_send_request():
         (None, {"field": "value"}, None, {"field": "value"}, None, None, ValueError, None),
         (None, {"field": "value"}, None, None, None, {"field": "value"}, ValueError, None),
         # raise on mixed data and json params
-        ({"field": "value"}, {"field": "value"}, None, None, None, None, RequestBodyException, None),
-        ({"field": "value"}, None, None, {"field": "value"}, None, None, RequestBodyException, None),
-        (None, None, {"field": "value"}, {"field": "value"}, None, None, RequestBodyException, None),
-        (None, None, None, None, {"field": "value"}, {"field": "value"}, RequestBodyException, None),
-        ({"field": "value"}, None, None, None, None, {"field": "value"}, RequestBodyException, None),
+        (
+            {"field": "value"},
+            {"field": "value"},
+            None,
+            None,
+            None,
+            None,
+            RequestBodyException,
+            None,
+        ),
+        (
+            {"field": "value"},
+            None,
+            None,
+            {"field": "value"},
+            None,
+            None,
+            RequestBodyException,
+            None,
+        ),
+        (
+            None,
+            None,
+            {"field": "value"},
+            {"field": "value"},
+            None,
+            None,
+            RequestBodyException,
+            None,
+        ),
+        (
+            None,
+            None,
+            None,
+            None,
+            {"field": "value"},
+            {"field": "value"},
+            RequestBodyException,
+            None,
+        ),
+        (
+            {"field": "value"},
+            None,
+            None,
+            None,
+            None,
+            {"field": "value"},
+            RequestBodyException,
+            None,
+        ),
     ],
 )
 def test_send_request_data_json(
-    provider_data, provider_json, param_data, param_json, authenticator_data, authenticator_json, expected_exception, expected_body
+    provider_data,
+    provider_json,
+    param_data,
+    param_json,
+    authenticator_data,
+    authenticator_json,
+    expected_exception,
+    expected_body,
 ):
     options_provider = MagicMock()
     options_provider.get_request_body_data.return_value = provider_data
@@ -246,7 +356,11 @@ def test_send_request_data_json(
         requester.send_request(request_body_data=param_data, request_body_json=param_json)
         sent_request: PreparedRequest = requester._http_client._session.send.call_args_list[0][0][0]
         if expected_body is not None:
-            assert sent_request.body == expected_body.decode("UTF-8") if not isinstance(expected_body, str) else expected_body
+            assert (
+                sent_request.body == expected_body.decode("UTF-8")
+                if not isinstance(expected_body, str)
+                else expected_body
+            )
 
 
 @pytest.mark.parametrize(
@@ -267,7 +381,9 @@ def test_send_request_data_json(
         ("field=value", None, {"abc": "def"}, ValueError, None),
     ],
 )
-def test_send_request_string_data(provider_data, param_data, authenticator_data, expected_exception, expected_body):
+def test_send_request_string_data(
+    provider_data, param_data, authenticator_data, expected_exception, expected_body
+):
     options_provider = MagicMock()
     options_provider.get_request_body_data.return_value = provider_data
     authenticator = MagicMock()
@@ -289,7 +405,13 @@ def test_send_request_string_data(provider_data, param_data, authenticator_data,
     [
         # merging headers from the three sources
         ({"header": "value"}, None, None, None, {"header": "value"}),
-        ({"header": "value"}, {"header2": "value"}, None, None, {"header": "value", "header2": "value"}),
+        (
+            {"header": "value"},
+            {"header2": "value"},
+            None,
+            None,
+            {"header": "value", "header2": "value"},
+        ),
         (
             {"header": "value"},
             {"header2": "value"},
@@ -303,9 +425,16 @@ def test_send_request_string_data(provider_data, param_data, authenticator_data,
         ({"header": "value"}, {"header2": "value"}, {"header": "value"}, ValueError, None),
     ],
 )
-def test_send_request_headers(provider_headers, param_headers, authenticator_headers, expected_exception, expected_headers):
+def test_send_request_headers(
+    provider_headers, param_headers, authenticator_headers, expected_exception, expected_headers
+):
     # headers set by the requests framework, do not validate
-    default_headers = {"User-Agent": mock.ANY, "Accept-Encoding": mock.ANY, "Accept": mock.ANY, "Connection": mock.ANY}
+    default_headers = {
+        "User-Agent": mock.ANY,
+        "Accept-Encoding": mock.ANY,
+        "Accept": mock.ANY,
+        "Connection": mock.ANY,
+    }
     options_provider = MagicMock()
     options_provider.get_request_headers.return_value = provider_headers
     authenticator = MagicMock()
@@ -326,15 +455,29 @@ def test_send_request_headers(provider_headers, param_headers, authenticator_hea
     [
         # merging params from the three sources
         ({"param": "value"}, None, None, None, {"param": "value"}),
-        ({"param": "value"}, {"param2": "value"}, None, None, {"param": "value", "param2": "value"}),
-        ({"param": "value"}, {"param2": "value"}, {"authparam": "val"}, None, {"param": "value", "param2": "value", "authparam": "val"}),
+        (
+            {"param": "value"},
+            {"param2": "value"},
+            None,
+            None,
+            {"param": "value", "param2": "value"},
+        ),
+        (
+            {"param": "value"},
+            {"param2": "value"},
+            {"authparam": "val"},
+            None,
+            {"param": "value", "param2": "value", "authparam": "val"},
+        ),
         # raise on conflicting params
         ({"param": "value"}, {"param": "value"}, None, ValueError, None),
         ({"param": "value"}, None, {"param": "value"}, ValueError, None),
         ({"param": "value"}, {"param2": "value"}, {"param": "value"}, ValueError, None),
     ],
 )
-def test_send_request_params(provider_params, param_params, authenticator_params, expected_exception, expected_params):
+def test_send_request_params(
+    provider_params, param_params, authenticator_params, expected_exception, expected_params
+):
     options_provider = MagicMock()
     options_provider.get_request_params.return_value = provider_params
     authenticator = MagicMock()
@@ -356,7 +499,9 @@ def test_send_request_params(provider_params, param_params, authenticator_params
     "request_parameters, config, expected_query_params",
     [
         pytest.param(
-            {"k": '{"updatedDateFrom": "2023-08-20T00:00:00Z", "updatedDateTo": "2023-08-20T23:59:59Z"}'},
+            {
+                "k": '{"updatedDateFrom": "2023-08-20T00:00:00Z", "updatedDateTo": "2023-08-20T23:59:59Z"}'
+            },
             {},
             "k=%7B%22updatedDateFrom%22%3A+%222023-08-20T00%3A00%3A00Z%22%2C+%22updatedDateTo%22%3A+%222023-08-20T23%3A59%3A59Z%22%7D",
             id="test-request-parameter-dictionary",
@@ -375,7 +520,12 @@ def test_send_request_params(provider_params, param_params, authenticator_params
         ),
         pytest.param(
             {"k": '{{ config["k"] }}'},
-            {"k": {"updatedDateFrom": "2023-08-20T00:00:00Z", "updatedDateTo": "2023-08-20T23:59:59Z"}},
+            {
+                "k": {
+                    "updatedDateFrom": "2023-08-20T00:00:00Z",
+                    "updatedDateTo": "2023-08-20T23:59:59Z",
+                }
+            },
             # {'updatedDateFrom': '2023-08-20T00:00:00Z', 'updatedDateTo': '2023-08-20T23:59:59Z'}
             "k=%7B%27updatedDateFrom%27%3A+%272023-08-20T00%3A00%3A00Z%27%2C+%27updatedDateTo%27%3A+%272023-08-20T23%3A59%3A59Z%27%7D",
             id="test-request-parameter-from-config-object",
@@ -437,7 +587,12 @@ def test_request_param_interpolation(request_parameters, config, expected_query_
     "request_parameters, config, invalid_value_for_key",
     [
         pytest.param(
-            {"k": {"updatedDateFrom": "2023-08-20T00:00:00Z", "updatedDateTo": "2023-08-20T23:59:59Z"}},
+            {
+                "k": {
+                    "updatedDateFrom": "2023-08-20T00:00:00Z",
+                    "updatedDateTo": "2023-08-20T23:59:59Z",
+                }
+            },
             {},
             "k",
             id="test-request-parameter-object-of-the-updated-info",
@@ -450,7 +605,9 @@ def test_request_param_interpolation(request_parameters, config, expected_query_
         ),
     ],
 )
-def test_request_param_interpolation_with_incorrect_values(request_parameters, config, invalid_value_for_key):
+def test_request_param_interpolation_with_incorrect_values(
+    request_parameters, config, invalid_value_for_key
+):
     options_provider = InterpolatedRequestOptionsProvider(
         config=config,
         request_parameters=request_parameters,
@@ -464,7 +621,8 @@ def test_request_param_interpolation_with_incorrect_values(request_parameters, c
         requester.send_request()
 
     assert (
-        error.value.args[0] == f"Invalid value for `{invalid_value_for_key}` parameter. The values of request params cannot be an object."
+        error.value.args[0]
+        == f"Invalid value for `{invalid_value_for_key}` parameter. The values of request params cannot be an object."
     )
 
 
@@ -472,7 +630,9 @@ def test_request_param_interpolation_with_incorrect_values(request_parameters, c
     "request_body_data, config, expected_request_body_data",
     [
         pytest.param(
-            {"k": '{"updatedDateFrom": "2023-08-20T00:00:00Z", "updatedDateTo": "2023-08-20T23:59:59Z"}'},
+            {
+                "k": '{"updatedDateFrom": "2023-08-20T00:00:00Z", "updatedDateTo": "2023-08-20T23:59:59Z"}'
+            },
             {},
             # k={"updatedDateFrom": "2023-08-20T00:00:00Z", "updatedDateTo": "2023-08-20T23:59:59Z"}
             "k=%7B%22updatedDateFrom%22%3A+%222023-08-20T00%3A00%3A00Z%22%2C+%22updatedDateTo%22%3A+%222023-08-20T23%3A59%3A59Z%22%7D",
@@ -504,7 +664,12 @@ def test_request_param_interpolation_with_incorrect_values(request_parameters, c
         ),
         pytest.param(
             {"k": '{{ config["k"] }}'},
-            {"k": {"updatedDateFrom": "2023-08-20T00:00:00Z", "updatedDateTo": "2023-08-20T23:59:59Z"}},
+            {
+                "k": {
+                    "updatedDateFrom": "2023-08-20T00:00:00Z",
+                    "updatedDateTo": "2023-08-20T23:59:59Z",
+                }
+            },
             # k={'updatedDateFrom': '2023-08-20T00:00:00Z', 'updatedDateTo': '2023-08-20T23:59:59Z'}
             "k=%7B%27updatedDateFrom%27%3A+%272023-08-20T00%3A00%3A00Z%27%2C+%27updatedDateTo%27%3A+%272023-08-20T23%3A59%3A59Z%27%7D",
             id="test-request-body-from-config-object",
@@ -534,7 +699,9 @@ def test_request_param_interpolation_with_incorrect_values(request_parameters, c
             id="test-key-with-list-is-not-interpolated",
         ),
         pytest.param(
-            {"k": "{'updatedDateFrom': '2023-08-20T00:00:00Z', 'updatedDateTo': '2023-08-20T23:59:59Z'}"},
+            {
+                "k": "{'updatedDateFrom': '2023-08-20T00:00:00Z', 'updatedDateTo': '2023-08-20T23:59:59Z'}"
+            },
             {},
             # k={'updatedDateFrom': '2023-08-20T00:00:00Z', 'updatedDateTo': '2023-08-20T23:59:59Z'}
             "k=%7B%27updatedDateFrom%27%3A+%272023-08-20T00%3A00%3A00Z%27%2C+%27updatedDateTo%27%3A+%272023-08-20T23%3A59%3A59Z%27%7D",
@@ -571,8 +738,16 @@ def test_request_body_interpolation(request_body_data, config, expected_request_
     ],
 )
 def test_send_request_path(requester_path, param_path, expected_path):
-    requester = create_requester(config={"config_key": "config_value"}, path=requester_path, parameters={"param_key": "param_value"})
-    requester.send_request(stream_slice={"start": "2012"}, next_page_token={"next_page_token": "pagetoken"}, path=param_path)
+    requester = create_requester(
+        config={"config_key": "config_value"},
+        path=requester_path,
+        parameters={"param_key": "param_value"},
+    )
+    requester.send_request(
+        stream_slice={"start": "2012"},
+        next_page_token={"next_page_token": "pagetoken"},
+        path=param_path,
+    )
     sent_request: PreparedRequest = requester._http_client._session.send.call_args_list[0][0][0]
     parsed_url = urlparse(sent_request.url)
     assert parsed_url.path == expected_path
@@ -615,17 +790,42 @@ def test_send_request_stream_slice_next_page_token():
     "test_name, base_url, path, expected_full_url",
     [
         ("test_no_slashes", "https://airbyte.io", "my_endpoint", "https://airbyte.io/my_endpoint"),
-        ("test_trailing_slash_on_base_url", "https://airbyte.io/", "my_endpoint", "https://airbyte.io/my_endpoint"),
+        (
+            "test_trailing_slash_on_base_url",
+            "https://airbyte.io/",
+            "my_endpoint",
+            "https://airbyte.io/my_endpoint",
+        ),
         (
             "test_trailing_slash_on_base_url_and_leading_slash_on_path",
             "https://airbyte.io/",
             "/my_endpoint",
             "https://airbyte.io/my_endpoint",
         ),
-        ("test_leading_slash_on_path", "https://airbyte.io", "/my_endpoint", "https://airbyte.io/my_endpoint"),
-        ("test_trailing_slash_on_path", "https://airbyte.io", "/my_endpoint/", "https://airbyte.io/my_endpoint/"),
-        ("test_nested_path_no_leading_slash", "https://airbyte.io", "v1/my_endpoint", "https://airbyte.io/v1/my_endpoint"),
-        ("test_nested_path_with_leading_slash", "https://airbyte.io", "/v1/my_endpoint", "https://airbyte.io/v1/my_endpoint"),
+        (
+            "test_leading_slash_on_path",
+            "https://airbyte.io",
+            "/my_endpoint",
+            "https://airbyte.io/my_endpoint",
+        ),
+        (
+            "test_trailing_slash_on_path",
+            "https://airbyte.io",
+            "/my_endpoint/",
+            "https://airbyte.io/my_endpoint/",
+        ),
+        (
+            "test_nested_path_no_leading_slash",
+            "https://airbyte.io",
+            "v1/my_endpoint",
+            "https://airbyte.io/v1/my_endpoint",
+        ),
+        (
+            "test_nested_path_with_leading_slash",
+            "https://airbyte.io",
+            "/v1/my_endpoint",
+            "https://airbyte.io/v1/my_endpoint",
+        ),
     ],
 )
 def test_join_url(test_name, base_url, path, expected_full_url):
@@ -655,8 +855,12 @@ def test_request_attempt_count_is_tracked_across_retries(http_requester_factory)
     request_mock.url = "https://example.com/deals"
     request_mock.method = "GET"
     request_mock.body = {}
-    backoff_strategy = ConstantBackoffStrategy(parameters={}, config={}, backoff_time_in_seconds=0.1)
-    error_handler = DefaultErrorHandler(parameters={}, config={}, max_retries=1, backoff_strategies=[backoff_strategy])
+    backoff_strategy = ConstantBackoffStrategy(
+        parameters={}, config={}, backoff_time_in_seconds=0.1
+    )
+    error_handler = DefaultErrorHandler(
+        parameters={}, config={}, max_retries=1, backoff_strategies=[backoff_strategy]
+    )
     http_requester = http_requester_factory(error_handler=error_handler)
     http_requester._http_client._session.send = MagicMock()
     response = requests.Response()
@@ -666,7 +870,10 @@ def test_request_attempt_count_is_tracked_across_retries(http_requester_factory)
     with pytest.raises(UserDefinedBackoffException):
         http_requester._http_client._send_with_retry(request=request_mock, request_kwargs={})
 
-    assert http_requester._http_client._request_attempt_count.get(request_mock) == http_requester._http_client._max_retries + 1
+    assert (
+        http_requester._http_client._request_attempt_count.get(request_mock)
+        == http_requester._http_client._max_retries + 1
+    )
 
 
 @pytest.mark.usefixtures("mock_sleep")
@@ -677,7 +884,9 @@ def test_request_attempt_count_with_exponential_backoff_strategy(http_requester_
     request_mock.method = "GET"
     request_mock.body = {}
     backoff_strategy = ExponentialBackoffStrategy(parameters={}, config={}, factor=0.01)
-    error_handler = DefaultErrorHandler(parameters={}, config={}, max_retries=2, backoff_strategies=[backoff_strategy])
+    error_handler = DefaultErrorHandler(
+        parameters={}, config={}, max_retries=2, backoff_strategies=[backoff_strategy]
+    )
     http_requester = http_requester_factory(error_handler=error_handler)
     http_requester._http_client._session.send = MagicMock()
     response = requests.Response()
@@ -687,4 +896,7 @@ def test_request_attempt_count_with_exponential_backoff_strategy(http_requester_
     with pytest.raises(UserDefinedBackoffException):
         http_requester._http_client._send_with_retry(request=request_mock, request_kwargs={})
 
-    assert http_requester._http_client._request_attempt_count.get(request_mock) == http_requester._http_client._max_retries + 1
+    assert (
+        http_requester._http_client._request_attempt_count.get(request_mock)
+        == http_requester._http_client._max_retries + 1
+    )

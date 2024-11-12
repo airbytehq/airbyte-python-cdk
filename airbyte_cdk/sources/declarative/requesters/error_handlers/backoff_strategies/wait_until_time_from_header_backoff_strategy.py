@@ -10,8 +10,12 @@ from typing import Any, Mapping, Optional, Union
 
 import requests
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
-from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.header_helper import get_numeric_value_from_header
-from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategy import BackoffStrategy
+from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.header_helper import (
+    get_numeric_value_from_header,
+)
+from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategy import (
+    BackoffStrategy,
+)
 from airbyte_cdk.sources.types import Config
 
 
@@ -35,12 +39,16 @@ class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.header = InterpolatedString.create(self.header, parameters=parameters)
-        self.regex = InterpolatedString.create(self.regex, parameters=parameters) if self.regex else None
+        self.regex = (
+            InterpolatedString.create(self.regex, parameters=parameters) if self.regex else None
+        )
         if not isinstance(self.min_wait, InterpolatedString):
             self.min_wait = InterpolatedString.create(str(self.min_wait), parameters=parameters)
 
     def backoff_time(
-        self, response_or_exception: Optional[Union[requests.Response, requests.RequestException]], attempt_count: int
+        self,
+        response_or_exception: Optional[Union[requests.Response, requests.RequestException]],
+        attempt_count: int,
     ) -> Optional[float]:
         now = time.time()
         header = self.header.eval(self.config)  # type: ignore # header is always cast to an interpolated string
@@ -55,7 +63,9 @@ class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
         min_wait = self.min_wait.eval(self.config)  # type: ignore # header is always cast to an interpolated string
         if wait_until is None or not wait_until:
             return float(min_wait) if min_wait else None
-        if (isinstance(wait_until, str) and wait_until.isnumeric()) or isinstance(wait_until, numbers.Number):
+        if (isinstance(wait_until, str) and wait_until.isnumeric()) or isinstance(
+            wait_until, numbers.Number
+        ):
             wait_time = float(wait_until) - now
         else:
             return float(min_wait)

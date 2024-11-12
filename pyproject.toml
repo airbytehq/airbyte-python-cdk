@@ -1,16 +1,15 @@
 [build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning>=1.0.0,<2.0.0"]
+build-backend = "poetry_dynamic_versioning.backend"
 
 [tool.poetry]
 name = "airbyte-cdk"
-version = "6.5.2"
 description = "A framework for writing Airbyte Connectors."
 authors = ["Airbyte <contact@airbyte.io>"]
 license = "MIT"
 readme = "README.md"
-homepage = "https://github.com/airbytehq/airbyte"
-repository = "https://github.com/airbytehq/airbyte"
+homepage = "https://airbyte.com"
+repository = "https://github.com/airbytehq/airbyte-python-cdk"
 documentation = "https://docs.airbyte.io/"
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -22,6 +21,11 @@ classifiers = [
 ]
 keywords = ["airbyte", "connector-development-kit", "cdk"]
 
+# Python CDK uses dynamic versioning: https://github.com/mtkennerly/poetry-dynamic-versioning
+version = "0.0.0"  # Version will be calculated dynamically.
+
+[tool.poetry-dynamic-versioning]
+enable = true
 
 [tool.poetry.dependencies]
 python = "^3.10"
@@ -30,6 +34,7 @@ backoff = "*"
 cachetools = "*"
 Deprecated = "~1.2"
 dpath = "^2.1.6"
+dunamai = "^1.22.0"
 genson = "1.2.2"
 isodate = "~0.6.1"
 Jinja2 = "~3.1.2"
@@ -98,11 +103,14 @@ sphinx-docs = ["Sphinx", "sphinx-rtd-theme"]
 vector-db-based = ["langchain", "openai", "cohere", "tiktoken"]
 sql = ["sqlalchemy"]
 
+[tool.isort]
+skip = ["__init__.py"]  # TODO: Remove after this is fixed: https://github.com/airbytehq/airbyte-python-cdk/issues/12
+
 [tool.ruff]
-# Setting python version to at least 3.10 avoids `from __future__ import annotations`.
+exclude = ["__init__.py"]  # TODO: Remove after this is fixed: https://github.com/airbytehq/airbyte-python-cdk/issues/12
+
 target-version = "py310"
-# This is consistent with airbytehq/airbyte root pyproject.toml Black rule defined.
-line-length = 140
+line-length = 100
 
 [tool.poe.tasks]
 # Build tasks

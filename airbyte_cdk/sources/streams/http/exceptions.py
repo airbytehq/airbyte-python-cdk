@@ -15,10 +15,10 @@ class BaseBackoffException(requests.exceptions.HTTPError):
         response: Optional[Union[requests.Response, Exception]],
         error_message: str = "",
     ):
-
         if isinstance(response, requests.Response):
             error_message = (
-                error_message or f"Request URL: {request.url}, Response Code: {response.status_code}, Response Text: {response.text}"
+                error_message
+                or f"Request URL: {request.url}, Response Code: {response.status_code}, Response Text: {response.text}"
             )
             super().__init__(error_message, request=request, response=response)
         else:

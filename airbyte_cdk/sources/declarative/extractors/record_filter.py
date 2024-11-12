@@ -5,7 +5,11 @@ import datetime
 from dataclasses import InitVar, dataclass
 from typing import Any, Iterable, Mapping, Optional, Union
 
-from airbyte_cdk.sources.declarative.incremental import DatetimeBasedCursor, GlobalSubstreamCursor, PerPartitionWithGlobalCursor
+from airbyte_cdk.sources.declarative.incremental import (
+    DatetimeBasedCursor,
+    GlobalSubstreamCursor,
+    PerPartitionWithGlobalCursor,
+)
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 
@@ -24,7 +28,9 @@ class RecordFilter:
     condition: str = ""
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        self._filter_interpolator = InterpolatedBoolean(condition=self.condition, parameters=parameters)
+        self._filter_interpolator = InterpolatedBoolean(
+            condition=self.condition, parameters=parameters
+        )
 
     def filter_records(
         self,
@@ -68,7 +74,9 @@ class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
 
     @property
     def _start_date_from_config(self) -> datetime.datetime:
-        return self._date_time_based_cursor._start_datetime.get_datetime(self._date_time_based_cursor.config)
+        return self._date_time_based_cursor._start_datetime.get_datetime(
+            self._date_time_based_cursor.config
+        )
 
     @property
     def _end_datetime(self) -> datetime.datetime:
@@ -81,20 +89,29 @@ class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[Mapping[str, Any]]:
-        state_value = self._get_state_value(stream_state, stream_slice or StreamSlice(partition={}, cursor_slice={}))
+        state_value = self._get_state_value(
+            stream_state, stream_slice or StreamSlice(partition={}, cursor_slice={})
+        )
         filter_date: datetime.datetime = self._get_filter_date(state_value)
         records = (
             record
             for record in records
-            if self._end_datetime >= self._date_time_based_cursor.parse_date(record[self._cursor_field]) >= filter_date
+            if self._end_datetime
+            >= self._date_time_based_cursor.parse_date(record[self._cursor_field])
+            >= filter_date
         )
         if self.condition:
             records = super().filter_records(
-                records=records, stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
+                records=records,
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
             )
         yield from records
 
-    def _get_state_value(self, stream_state: StreamState, stream_slice: StreamSlice) -> Optional[str]:
+    def _get_state_value(
+        self, stream_state: StreamState, stream_slice: StreamSlice
+    ) -> Optional[str]:
         """
         Return cursor_value or None in case it was not found.
         Cursor_value may be empty if:

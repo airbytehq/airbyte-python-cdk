@@ -13,7 +13,10 @@ from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDate
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.interpolation.jinja import JinjaInterpolation
-from airbyte_cdk.sources.declarative.requesters.request_option import RequestOption, RequestOptionType
+from airbyte_cdk.sources.declarative.requesters.request_option import (
+    RequestOption,
+    RequestOptionType,
+)
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from isodate import Duration, duration_isoformat, parse_duration
@@ -72,27 +75,41 @@ class DatetimeBasedCursor(DeclarativeCursor):
     cursor_datetime_formats: List[str] = field(default_factory=lambda: [])
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        if (self.step and not self.cursor_granularity) or (not self.step and self.cursor_granularity):
+        if (self.step and not self.cursor_granularity) or (
+            not self.step and self.cursor_granularity
+        ):
             raise ValueError(
                 f"If step is defined, cursor_granularity should be as well and vice-versa. "
                 f"Right now, step is `{self.step}` and cursor_granularity is `{self.cursor_granularity}`"
             )
         self._start_datetime = MinMaxDatetime.create(self.start_datetime, parameters)
-        self._end_datetime = None if not self.end_datetime else MinMaxDatetime.create(self.end_datetime, parameters)
+        self._end_datetime = (
+            None if not self.end_datetime else MinMaxDatetime.create(self.end_datetime, parameters)
+        )
 
         self._timezone = datetime.timezone.utc
         self._interpolation = JinjaInterpolation()
 
         self._step = (
-            self._parse_timedelta(InterpolatedString.create(self.step, parameters=parameters).eval(self.config))
+            self._parse_timedelta(
+                InterpolatedString.create(self.step, parameters=parameters).eval(self.config)
+            )
             if self.step
             else datetime.timedelta.max
         )
         self._cursor_granularity = self._parse_timedelta(self.cursor_granularity)
         self.cursor_field = InterpolatedString.create(self.cursor_field, parameters=parameters)
-        self._lookback_window = InterpolatedString.create(self.lookback_window, parameters=parameters) if self.lookback_window else None
-        self._partition_field_start = InterpolatedString.create(self.partition_field_start or "start_time", parameters=parameters)
-        self._partition_field_end = InterpolatedString.create(self.partition_field_end or "end_time", parameters=parameters)
+        self._lookback_window = (
+            InterpolatedString.create(self.lookback_window, parameters=parameters)
+            if self.lookback_window
+            else None
+        )
+        self._partition_field_start = InterpolatedString.create(
+            self.partition_field_start or "start_time", parameters=parameters
+        )
+        self._partition_field_end = InterpolatedString.create(
+            self.partition_field_end or "end_time", parameters=parameters
+        )
         self._parser = DatetimeParser()
 
         # If datetime format is not specified then start/end datetime should inherit it from the stream slicer
@@ -114,7 +131,9 @@ class DatetimeBasedCursor(DeclarativeCursor):
 
         :param stream_state: The state of the stream as returned by get_stream_state
         """
-        self._cursor = stream_state.get(self.cursor_field.eval(self.config)) if stream_state else None  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
+        self._cursor = (
+            stream_state.get(self.cursor_field.eval(self.config)) if stream_state else None
+        )  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
 
     def observe(self, stream_slice: StreamSlice, record: Record) -> None:
         """
@@ -131,28 +150,38 @@ class DatetimeBasedCursor(DeclarativeCursor):
 
         start_field = self._partition_field_start.eval(self.config)
         end_field = self._partition_field_end.eval(self.config)
-        is_highest_observed_cursor_value = not self._highest_observed_cursor_field_value or self.parse_date(
-            record_cursor_value
-        ) > self.parse_date(self._highest_observed_cursor_field_value)
+        is_highest_observed_cursor_value = (
+            not self._highest_observed_cursor_field_value
+            or self.parse_date(record_cursor_value)
+            > self.parse_date(self._highest_observed_cursor_field_value)
+        )
         if (
-            self._is_within_daterange_boundaries(record, stream_slice.get(start_field), stream_slice.get(end_field))  # type: ignore # we know that stream_slices for these cursors will use a string representing an unparsed date
+            self._is_within_daterange_boundaries(
+                record, stream_slice.get(start_field), stream_slice.get(end_field)
+            )  # type: ignore # we know that stream_slices for these cursors will use a string representing an unparsed date
             and is_highest_observed_cursor_value
         ):
             self._highest_observed_cursor_field_value = record_cursor_value
 
     def close_slice(self, stream_slice: StreamSlice, *args: Any) -> None:
         if stream_slice.partition:
-            raise ValueError(f"Stream slice {stream_slice} should not have a partition. Got {stream_slice.partition}.")
+            raise ValueError(
+                f"Stream slice {stream_slice} should not have a partition. Got {stream_slice.partition}."
+            )
         cursor_value_str_by_cursor_value_datetime = dict(
             map(
                 # we need to ensure the cursor value is preserved as is in the state else the CATs might complain of something like
                 # 2023-01-04T17:30:19.000Z' <= '2023-01-04T17:30:19.000000Z'
                 lambda datetime_str: (self.parse_date(datetime_str), datetime_str),  # type: ignore # because of the filter on the next line, this will only be called with a str
-                filter(lambda item: item, [self._cursor, self._highest_observed_cursor_field_value]),
+                filter(
+                    lambda item: item, [self._cursor, self._highest_observed_cursor_field_value]
+                ),
             )
         )
         self._cursor = (
-            cursor_value_str_by_cursor_value_datetime[max(cursor_value_str_by_cursor_value_datetime.keys())]
+            cursor_value_str_by_cursor_value_datetime[
+                max(cursor_value_str_by_cursor_value_datetime.keys())
+            ]
             if cursor_value_str_by_cursor_value_datetime
             else None
         )
@@ -175,11 +204,19 @@ class DatetimeBasedCursor(DeclarativeCursor):
         # through each slice and does not belong to a specific slice. We just return stream state as it is.
         return self.get_stream_state()
 
-    def _calculate_earliest_possible_value(self, end_datetime: datetime.datetime) -> datetime.datetime:
-        lookback_delta = self._parse_timedelta(self._lookback_window.eval(self.config) if self._lookback_window else "P0D")
-        earliest_possible_start_datetime = min(self._start_datetime.get_datetime(self.config), end_datetime)
+    def _calculate_earliest_possible_value(
+        self, end_datetime: datetime.datetime
+    ) -> datetime.datetime:
+        lookback_delta = self._parse_timedelta(
+            self._lookback_window.eval(self.config) if self._lookback_window else "P0D"
+        )
+        earliest_possible_start_datetime = min(
+            self._start_datetime.get_datetime(self.config), end_datetime
+        )
         try:
-            cursor_datetime = self._calculate_cursor_datetime_from_state(self.get_stream_state()) - lookback_delta
+            cursor_datetime = (
+                self._calculate_cursor_datetime_from_state(self.get_stream_state()) - lookback_delta
+            )
         except OverflowError:
             # cursor_datetime defers to the minimum date if it does not exist in the state. Trying to subtract
             # a timedelta from the minimum datetime results in an OverflowError
@@ -200,7 +237,9 @@ class DatetimeBasedCursor(DeclarativeCursor):
             return now
         return min(self._end_datetime.get_datetime(self.config), now)
 
-    def _calculate_cursor_datetime_from_state(self, stream_state: Mapping[str, Any]) -> datetime.datetime:
+    def _calculate_cursor_datetime_from_state(
+        self, stream_state: Mapping[str, Any]
+    ) -> datetime.datetime:
         if self.cursor_field.eval(self.config, stream_state=stream_state) in stream_state:  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
             return self.parse_date(stream_state[self.cursor_field.eval(self.config)])  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
         return datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
@@ -209,7 +248,10 @@ class DatetimeBasedCursor(DeclarativeCursor):
         return self._parser.format(dt, self.datetime_format)
 
     def _partition_daterange(
-        self, start: datetime.datetime, end: datetime.datetime, step: Union[datetime.timedelta, Duration]
+        self,
+        start: datetime.datetime,
+        end: datetime.datetime,
+        step: Union[datetime.timedelta, Duration],
     ) -> List[StreamSlice]:
         start_field = self._partition_field_start.eval(self.config)
         end_field = self._partition_field_end.eval(self.config)
@@ -220,7 +262,11 @@ class DatetimeBasedCursor(DeclarativeCursor):
             end_date = self._get_date(next_start - self._cursor_granularity, end, min)
             dates.append(
                 StreamSlice(
-                    partition={}, cursor_slice={start_field: self._format_datetime(start), end_field: self._format_datetime(end_date)}
+                    partition={},
+                    cursor_slice={
+                        start_field: self._format_datetime(start),
+                        end_field: self._format_datetime(end_date),
+                    },
                 )
             )
             start = next_start
@@ -231,7 +277,9 @@ class DatetimeBasedCursor(DeclarativeCursor):
             return start < end
         return start <= end
 
-    def _evaluate_next_start_date_safely(self, start: datetime.datetime, step: datetime.timedelta) -> datetime.datetime:
+    def _evaluate_next_start_date_safely(
+        self, start: datetime.datetime, step: datetime.timedelta
+    ) -> datetime.datetime:
         """
         Given that we set the default step at datetime.timedelta.max, we will generate an OverflowError when evaluating the next start_date
         This method assumes that users would never enter a step that would generate an overflow. Given that would be the case, the code
@@ -308,7 +356,9 @@ class DatetimeBasedCursor(DeclarativeCursor):
         # Never update kwargs
         return {}
 
-    def _get_request_options(self, option_type: RequestOptionType, stream_slice: Optional[StreamSlice]) -> Mapping[str, Any]:
+    def _get_request_options(
+        self, option_type: RequestOptionType, stream_slice: Optional[StreamSlice]
+    ) -> Mapping[str, Any]:
         options: MutableMapping[str, Any] = {}
         if not stream_slice:
             return options
@@ -317,7 +367,9 @@ class DatetimeBasedCursor(DeclarativeCursor):
                 self._partition_field_start.eval(self.config)
             )
         if self.end_time_option and self.end_time_option.inject_into == option_type:
-            options[self.end_time_option.field_name.eval(config=self.config)] = stream_slice.get(self._partition_field_end.eval(self.config))  # type: ignore # field_name is always casted to an interpolated string
+            options[self.end_time_option.field_name.eval(config=self.config)] = stream_slice.get(
+                self._partition_field_end.eval(self.config)
+            )  # type: ignore # field_name is always casted to an interpolated string
         return options
 
     def should_be_synced(self, record: Record) -> bool:
@@ -330,11 +382,18 @@ class DatetimeBasedCursor(DeclarativeCursor):
             )
             return True
         latest_possible_cursor_value = self.select_best_end_datetime()
-        earliest_possible_cursor_value = self._calculate_earliest_possible_value(latest_possible_cursor_value)
-        return self._is_within_daterange_boundaries(record, earliest_possible_cursor_value, latest_possible_cursor_value)
+        earliest_possible_cursor_value = self._calculate_earliest_possible_value(
+            latest_possible_cursor_value
+        )
+        return self._is_within_daterange_boundaries(
+            record, earliest_possible_cursor_value, latest_possible_cursor_value
+        )
 
     def _is_within_daterange_boundaries(
-        self, record: Record, start_datetime_boundary: Union[datetime.datetime, str], end_datetime_boundary: Union[datetime.datetime, str]
+        self,
+        record: Record,
+        start_datetime_boundary: Union[datetime.datetime, str],
+        end_datetime_boundary: Union[datetime.datetime, str],
     ) -> bool:
         cursor_field = self.cursor_field.eval(self.config)  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
         record_cursor_value = record.get(cursor_field)
@@ -348,7 +407,9 @@ class DatetimeBasedCursor(DeclarativeCursor):
             start_datetime_boundary = self.parse_date(start_datetime_boundary)
         if isinstance(end_datetime_boundary, str):
             end_datetime_boundary = self.parse_date(end_datetime_boundary)
-        return start_datetime_boundary <= self.parse_date(record_cursor_value) <= end_datetime_boundary
+        return (
+            start_datetime_boundary <= self.parse_date(record_cursor_value) <= end_datetime_boundary
+        )
 
     def _send_log(self, level: Level, message: str) -> None:
         if self.message_repository:
@@ -378,8 +439,12 @@ class DatetimeBasedCursor(DeclarativeCursor):
         :param lookback_window_in_seconds: The lookback duration in seconds to potentially update to.
         """
         runtime_lookback_window = duration_isoformat(timedelta(seconds=lookback_window_in_seconds))
-        config_lookback = parse_duration(self._lookback_window.eval(self.config) if self._lookback_window else "P0D")
+        config_lookback = parse_duration(
+            self._lookback_window.eval(self.config) if self._lookback_window else "P0D"
+        )
 
         # Check if the new runtime lookback window is greater than the current config lookback
         if parse_duration(runtime_lookback_window) > config_lookback:
-            self._lookback_window = InterpolatedString.create(runtime_lookback_window, parameters={})
+            self._lookback_window = InterpolatedString.create(
+                runtime_lookback_window, parameters={}
+            )

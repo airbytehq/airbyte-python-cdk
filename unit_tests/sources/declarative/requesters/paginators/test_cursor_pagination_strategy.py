@@ -8,7 +8,9 @@ import pytest
 import requests
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
-from airbyte_cdk.sources.declarative.requesters.paginators.strategies.cursor_pagination_strategy import CursorPaginationStrategy
+from airbyte_cdk.sources.declarative.requesters.paginators.strategies.cursor_pagination_strategy import (
+    CursorPaginationStrategy,
+)
 
 
 @pytest.mark.parametrize(
@@ -68,7 +70,13 @@ def test_cursor_pagination_strategy(template_string, stop_condition, expected_to
     response = requests.Response()
     link_str = '<https://adventure.io/api/v1/records?page=2&per_page=100>; rel="next"'
     response.headers = {"has_more": True, "next": "ready_to_go", "link": link_str}
-    response_body = {"_metadata": {"content": "content_value"}, "accounts": [], "end": 99, "total": 200, "characters": {}}
+    response_body = {
+        "_metadata": {"content": "content_value"},
+        "accounts": [],
+        "end": 99,
+        "total": 200,
+        "characters": {},
+    }
     response._content = json.dumps(response_body).encode("utf-8")
     last_record = {"id": 1, "more_records": True}
 

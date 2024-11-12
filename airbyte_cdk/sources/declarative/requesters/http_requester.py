@@ -9,7 +9,10 @@ from typing import Any, Callable, Mapping, MutableMapping, Optional, Union
 from urllib.parse import urljoin
 
 import requests
-from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator, NoAuth
+from airbyte_cdk.sources.declarative.auth.declarative_authenticator import (
+    DeclarativeAuthenticator,
+    NoAuth,
+)
 from airbyte_cdk.sources.declarative.decoders import Decoder
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
@@ -62,13 +65,19 @@ class HttpRequester(Requester):
         self._url_base = InterpolatedString.create(self.url_base, parameters=parameters)
         self._path = InterpolatedString.create(self.path, parameters=parameters)
         if self.request_options_provider is None:
-            self._request_options_provider = InterpolatedRequestOptionsProvider(config=self.config, parameters=parameters)
+            self._request_options_provider = InterpolatedRequestOptionsProvider(
+                config=self.config, parameters=parameters
+            )
         elif isinstance(self.request_options_provider, dict):
-            self._request_options_provider = InterpolatedRequestOptionsProvider(config=self.config, **self.request_options_provider)
+            self._request_options_provider = InterpolatedRequestOptionsProvider(
+                config=self.config, **self.request_options_provider
+            )
         else:
             self._request_options_provider = self.request_options_provider
         self._authenticator = self.authenticator or NoAuth(parameters=parameters)
-        self._http_method = HttpMethod[self.http_method] if isinstance(self.http_method, str) else self.http_method
+        self._http_method = (
+            HttpMethod[self.http_method] if isinstance(self.http_method, str) else self.http_method
+        )
         self.error_handler = self.error_handler
         self._parameters = parameters
 
@@ -103,9 +112,17 @@ class HttpRequester(Requester):
         return os.path.join(self._url_base.eval(self.config), "")
 
     def get_path(
-        self, *, stream_state: Optional[StreamState], stream_slice: Optional[StreamSlice], next_page_token: Optional[Mapping[str, Any]]
+        self,
+        *,
+        stream_state: Optional[StreamState],
+        stream_slice: Optional[StreamSlice],
+        next_page_token: Optional[Mapping[str, Any]],
     ) -> str:
-        kwargs = {"stream_state": stream_state, "stream_slice": stream_slice, "next_page_token": next_page_token}
+        kwargs = {
+            "stream_state": stream_state,
+            "stream_slice": stream_slice,
+            "next_page_token": next_page_token,
+        }
         path = str(self._path.eval(self.config, **kwargs))
         return path.lstrip("/")
 
@@ -144,7 +161,9 @@ class HttpRequester(Requester):
     ) -> Union[Mapping[str, Any], str]:
         return (
             self._request_options_provider.get_request_body_data(
-                stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
             )
             or {}
         )
@@ -181,7 +200,11 @@ class HttpRequester(Requester):
         """
         return combine_mappings(
             [
-                requester_method(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token),
+                requester_method(
+                    stream_state=stream_state,
+                    stream_slice=stream_slice,
+                    next_page_token=next_page_token,
+                ),
                 auth_options_method(),
                 extra_options,
             ]
@@ -223,14 +246,21 @@ class HttpRequester(Requester):
         E.g: you might want to define query parameters for paging if next_page_token is not None.
         """
         options = self._get_request_options(
-            stream_state, stream_slice, next_page_token, self.get_request_params, self.get_authenticator().get_request_params, extra_params
+            stream_state,
+            stream_slice,
+            next_page_token,
+            self.get_request_params,
+            self.get_authenticator().get_request_params,
+            extra_params,
         )
         if isinstance(options, str):
             raise ValueError("Request params cannot be a string")
 
         for k, v in options.items():
             if isinstance(v, (dict,)):
-                raise ValueError(f"Invalid value for `{k}` parameter. The values of request params cannot be an object.")
+                raise ValueError(
+                    f"Invalid value for `{k}` parameter. The values of request params cannot be an object."
+                )
 
         return options
 
@@ -301,18 +331,30 @@ class HttpRequester(Requester):
         request_body_json: Optional[Mapping[str, Any]] = None,
         log_formatter: Optional[Callable[[requests.Response], Any]] = None,
     ) -> Optional[requests.Response]:
-
         request, response = self._http_client.send_request(
             http_method=self.get_method().value,
             url=self._join_url(
                 self.get_url_base(),
-                path or self.get_path(stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token),
+                path
+                or self.get_path(
+                    stream_state=stream_state,
+                    stream_slice=stream_slice,
+                    next_page_token=next_page_token,
+                ),
             ),
             request_kwargs={"stream": self.stream_response},
-            headers=self._request_headers(stream_state, stream_slice, next_page_token, request_headers),
-            params=self._request_params(stream_state, stream_slice, next_page_token, request_params),
-            json=self._request_body_json(stream_state, stream_slice, next_page_token, request_body_json),
-            data=self._request_body_data(stream_state, stream_slice, next_page_token, request_body_data),
+            headers=self._request_headers(
+                stream_state, stream_slice, next_page_token, request_headers
+            ),
+            params=self._request_params(
+                stream_state, stream_slice, next_page_token, request_params
+            ),
+            json=self._request_body_json(
+                stream_state, stream_slice, next_page_token, request_body_json
+            ),
+            data=self._request_body_data(
+                stream_state, stream_slice, next_page_token, request_body_data
+            ),
             dedupe_query_params=True,
             log_formatter=log_formatter,
             exit_on_rate_limit=self._exit_on_rate_limit,

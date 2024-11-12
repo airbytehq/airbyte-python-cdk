@@ -102,7 +102,10 @@ class TestConnectorSpec:
 
     @pytest.fixture
     def use_yaml_spec(self):
-        spec = {"documentationUrl": "https://airbyte.com/#yaml", "connectionSpecification": self.CONNECTION_SPECIFICATION}
+        spec = {
+            "documentationUrl": "https://airbyte.com/#yaml",
+            "connectionSpecification": self.CONNECTION_SPECIFICATION,
+        }
 
         yaml_path = os.path.join(SPEC_ROOT, "spec.yaml")
         with open(yaml_path, "w") as f:

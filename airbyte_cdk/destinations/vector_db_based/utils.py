@@ -10,7 +10,11 @@ from airbyte_cdk.models import AirbyteRecordMessage, AirbyteStream
 
 
 def format_exception(exception: Exception) -> str:
-    return str(exception) + "\n" + "".join(traceback.TracebackException.from_exception(exception).format())
+    return (
+        str(exception)
+        + "\n"
+        + "".join(traceback.TracebackException.from_exception(exception).format())
+    )
 
 
 def create_chunks(iterable: Iterable[Any], batch_size: int) -> Iterator[Tuple[Any, ...]]:
@@ -26,4 +30,6 @@ def create_stream_identifier(stream: Union[AirbyteStream, AirbyteRecordMessage])
     if isinstance(stream, AirbyteStream):
         return str(stream.name if stream.namespace is None else f"{stream.namespace}_{stream.name}")
     else:
-        return str(stream.stream if stream.namespace is None else f"{stream.namespace}_{stream.stream}")
+        return str(
+            stream.stream if stream.namespace is None else f"{stream.namespace}_{stream.stream}"
+        )

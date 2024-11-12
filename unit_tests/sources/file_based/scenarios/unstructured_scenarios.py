@@ -19,7 +19,10 @@ json_schema = {
             "type": ["null", "string"],
             "description": "Content of the file as markdown. Might be null if the file could not be parsed",
         },
-        "document_key": {"type": ["null", "string"], "description": "Unique identifier of the document, e.g. the file path"},
+        "document_key": {
+            "type": ["null", "string"],
+            "description": "Unique identifier of the document, e.g. the file path",
+        },
         "_ab_source_file_parse_error": {
             "type": ["null", "string"],
             "description": "Error message if the file could not be parsed even though the file is supported",
@@ -50,7 +53,8 @@ simple_markdown_scenario = (
             {
                 "a.md": {
                     "contents": bytes(
-                        "# Title 1\n\n## Title 2\n\n### Title 3\n\n#### Title 4\n\n##### Title 5\n\n###### Title 6\n\n", "UTF-8"
+                        "# Title 1\n\n## Title 2\n\n### Title 3\n\n#### Title 4\n\n##### Title 5\n\n###### Title 6\n\n",
+                        "UTF-8",
                     ),
                     "last_modified": "2023-06-05T03:54:07.000Z",
                 },

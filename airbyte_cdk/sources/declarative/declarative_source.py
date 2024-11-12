@@ -20,7 +20,9 @@ class DeclarativeSource(AbstractSource):
     def connection_checker(self) -> ConnectionChecker:
         """Returns the ConnectionChecker to use for the `check` operation"""
 
-    def check_connection(self, logger: logging.Logger, config: Mapping[str, Any]) -> Tuple[bool, Any]:
+    def check_connection(
+        self, logger: logging.Logger, config: Mapping[str, Any]
+    ) -> Tuple[bool, Any]:
         """
         :param logger: The source logger
         :param config: The user-provided configuration as specified by the source's spec.
