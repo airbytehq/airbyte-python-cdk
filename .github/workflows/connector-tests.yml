@@ -89,25 +89,26 @@ jobs:
         if: ${{ matrix.cdk_extra != 'n/a' && needs.cdk_changes.outputs[matrix.cdk_extra] == 'false' }}
         run: |
           echo "Aborting job as specified extra not changed: ${{matrix.cdk_extra}} = ${{ needs.cdk_changes.outputs[matrix.cdk_extra] }}"
+          echo "> Skipped '${{matrix.connector}}' (no relevant changes)" >> $GITHUB_STEP_SUMMARY
           echo "status=cancelled" >> $GITHUB_OUTPUT
-          exit 1
+          exit 0
         continue-on-error: true
       # Get the monorepo so we can test the connectors
       - name: Checkout CDK
-        if: steps.no_changes.outcome != 'failure'
+        if: steps.no_changes.conclusion != 'cancelled'
         uses: actions/checkout@v4
         with:
           path: airbyte-python-cdk
       - name: Checkout Airbyte Monorepo
         uses: actions/checkout@v4
-        if: steps.no_changes.outcome != 'failure'
+        if: steps.no_changes.conclusion != 'cancelled'
         with:
           repository: airbytehq/airbyte
           # TODO: Revert to `master` after Airbyte CI released:
           ref: aj/airbyte-ci/update-python-local-cdk-code
           path: airbyte
       - name: Test Connector
-        if: steps.no_changes.outcome != 'failure'
+        if: steps.no_changes.conclusion != 'cancelled'
         timeout-minutes: 90
         env:
           GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
@@ -127,32 +128,24 @@ jobs:
       # Upload the job output to the artifacts
       - name: Upload Job Output
         id: upload_job_output
-        if: always() && steps.no_changes.outcome != 'failure'
+        if: always() && steps.no_changes.conclusion != 'cancelled'
         uses: actions/upload-artifact@v4
         with:
           name: ${{matrix.connector}}-job-output
           path: airbyte/airbyte-ci/connectors/pipelines/pipeline_reports
 
       - name: Evaluate Job Output
-        if: always()
+        if: always() && steps.no_changes.conclusion != 'cancelled'
         run: |
-          if [ "${{steps.no_changes.outcome}}" == "failure" ]; then
-            echo "> Skipped '${{matrix.connector}}' (no changes)" >> $GITHUB_STEP_SUMMARY
-            exit 0
-          fi
-
           # save job output json file as ci step output
           json_output_file=$(find airbyte/airbyte-ci/connectors/pipelines/pipeline_reports -name 'output.json' -print -quit)
           job_output=$(cat $json_output_file)
-          echo "job_output=$job_output" >> $GITHUB_OUTPUT
           succes=$(echo $job_output | jq -r '.success')
           failed_jobs=$(echo $job_output | jq -r '.failed_steps')
-          echo -e "succes=${success}\nfailed_jobs=${failed_jobs}" >> $GITHUB_OUTPUT
           echo "## Job Output for ${{matrix.connector}}" >> $GITHUB_STEP_SUMMARY
           echo "- Success: ${success}" >> $GITHUB_STEP_SUMMARY
           echo "- Failed Jobs: ${failed_jobs}" >> $GITHUB_STEP_SUMMARY
+          echo -e "\n[Download Job Output](${{steps.upload_job_output.outputs.artifact-url}})" >> $GITHUB_STEP_SUMMARY
           if [ "$succes" != "true" ]; then
-            echo "status=failed" >> $GITHUB_OUTPUT
             exit 1
           fi
-          echo -e "\n[Download Job Output](${{steps.upload_job_output.outputs.artifact-url}})" >> $GITHUB_STEP_SUMMARY
