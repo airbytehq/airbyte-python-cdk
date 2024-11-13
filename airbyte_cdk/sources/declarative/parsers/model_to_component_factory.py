@@ -634,7 +634,7 @@ class ModelToComponentFactory:
             )
 
         return LegacyToPerPartitionStateMigration(
-            partition_router, # type: ignore # was already checked above
+            partition_router,  # type: ignore # was already checked above
             declarative_stream.incremental_sync,  # type: ignore # was already checked. Migration can be applied only to incremental streams.
             config,
             declarative_stream.parameters,  # type: ignore # different type is expected here Mapping[str, Any], got Dict[str, Any]
