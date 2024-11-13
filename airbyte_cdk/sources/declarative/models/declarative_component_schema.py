@@ -4,10 +4,9 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic.v1 import BaseModel, Extra, Field
-from typing_extensions import Literal
 
 
 class AuthFlowType(Enum):
@@ -632,6 +631,7 @@ class HttpResponseFilter(BaseModel):
         description="Match the response if its HTTP code is included in this list.",
         examples=[[420, 429], [500]],
         title="HTTP Codes",
+        unique_items=True,
     )
     predicate: Optional[str] = Field(
         None,
