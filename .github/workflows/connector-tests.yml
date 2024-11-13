@@ -68,7 +68,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - connector: source-faker
+          - connector: source-hardcoded-records
             cdk_extra: n/a
           - connector: source-shopify
             cdk_extra: n/a
