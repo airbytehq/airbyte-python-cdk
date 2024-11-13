@@ -5,7 +5,7 @@
 import logging
 from dataclasses import InitVar, dataclass
 from gzip import decompress
-from typing import Any, Generator, Mapping, MutableMapping, List
+from typing import Any, Generator, Mapping, MutableMapping, List, Optional
 
 import requests
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
@@ -86,7 +86,7 @@ class JsonlDecoder(Decoder):
 
 @dataclass
 class GzipJsonDecoder(JsonDecoder):
-    encoding: str = "utf-8"
+    encoding: Optional[str] = "utf-8"
 
     def decode(self, response: requests.Response) -> Generator[MutableMapping[str, Any], None, None]:
         raw_string = decompress(response.content).decode(encoding=self.encoding)

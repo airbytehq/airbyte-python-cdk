@@ -4,7 +4,7 @@ from typing import Any, Mapping
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.migrations.state_migration import StateMigration
-from airbyte_cdk.sources.declarative.models import DatetimeBasedCursor, SubstreamPartitionRouter
+from airbyte_cdk.sources.declarative.models import DatetimeBasedCursor, SubstreamPartitionRouter, CustomPartitionRouter, CustomIncrementalSync
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import ParentStreamConfig
 
 
@@ -31,8 +31,8 @@ class LegacyToPerPartitionStateMigration(StateMigration):
 
     def __init__(
         self,
-        partition_router: SubstreamPartitionRouter,
-        cursor: DatetimeBasedCursor,
+        partition_router: CustomPartitionRouter | SubstreamPartitionRouter,
+        cursor: CustomIncrementalSync | DatetimeBasedCursor,
         config: Mapping[str, Any],
         parameters: Mapping[str, Any],
     ):
