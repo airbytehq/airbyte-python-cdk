@@ -29,7 +29,7 @@ version = "0.0.0"  # Version will be calculated dynamically.
 enable = true
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^3.10,<3.13"
 airbyte-protocol-models-dataclasses = "^0.13"
 backoff = "*"
 cachetools = "*"
@@ -73,7 +73,7 @@ nltk = { version = "3.9", optional = true }
 # This will ensure that even when you run poetry install or pip install, the compatible version of numpy will always be chosen.
 # airbyte-ci will try to install latest version when --use-local-cdk is used, resulting in the conflict.
 numpy = "<2"
-unstructured = { version = "0.10.27", extras = ["docx", "pptx"], optional = true }
+unstructured = { version = "^0.16.5", extras = ["docx", "pptx"], optional = true }
 "unstructured.pytesseract" = { version = ">=0.3.12", optional = true }
 pyjwt = "^2.8.0"
 cryptography = "^42.0.5"
