@@ -3,7 +3,7 @@
 #
 import codecs
 import logging
-from dataclasses import InitVar, dataclass, field
+from dataclasses import InitVar, dataclass
 from gzip import decompress
 from typing import Any, Generator, Mapping, MutableMapping, List, Optional
 
