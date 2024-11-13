@@ -359,7 +359,7 @@ class UnstructuredParser(FileTypeParser):
         # if possible, try to leverage the file name to detect the file type
         # if the file name is not available, use the file content
         file_type = detect_filetype(
-            filename=remote_file.uri,
+            file_path=remote_file.uri,
         )
         if file_type is not None and not file_type == FileType.UNK:
             return file_type
@@ -383,7 +383,9 @@ class UnstructuredParser(FileTypeParser):
 
     def _convert_to_markdown(self, el: Dict[str, Any]) -> str:
         if dpath.get(el, "type") == "Title":
-            heading_str = "#" * (dpath.get(el, "metadata/category_depth", default=1) or 1)
+            heading_str = "#" * int(
+                dpath.get(el, "metadata/category_depth", default=1) or 1,
+            )
             return f"{heading_str} {dpath.get(el, 'text')}"
         elif dpath.get(el, "type") == "ListItem":
             return f"- {dpath.get(el, 'text')}"
