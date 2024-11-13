@@ -9,7 +9,6 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
 import backoff
 import dpath
-from numpy import cast
 import requests
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
@@ -30,6 +29,9 @@ from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
 from airbyte_cdk.utils import is_cloud_environment
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 from unstructured.file_utils.filetype import (
+    EXT_TO_FILETYPE,
+    FILETYPE_TO_MIMETYPE,
+    STR_TO_FILETYPE,
     FileType,
     detect_filetype,
 )
@@ -184,7 +186,6 @@ class UnstructuredParser(FileTypeParser):
                 remote_file,
                 self._get_file_type_error_message(filetype),
             )
-        filetype = cast(FileType, filetype)  # for mypy
         if filetype in {FileType.MD, filetype is FileType.TXT}:
             file_content: bytes = file_handle.read()
             decoded_content: str = optional_decode(file_content)
@@ -298,7 +299,7 @@ class UnstructuredParser(FileTypeParser):
 
         data = self._params_to_dict(format.parameters, strategy)
 
-        file_data = {"files": ("filename", file_handle, filetype.mime_type)}
+        file_data = {"files": ("filename", file_handle, FILETYPE_TO_MIMETYPE[filetype])}
 
         response = requests.post(
             f"{format.api_url}/general/v0/general", headers=headers, data=data, files=file_data
@@ -368,8 +369,8 @@ class UnstructuredParser(FileTypeParser):
         2. Use the file name if available
         3. Use the file content
         """
-        if remote_file.mime_type:
-            return FileType.from_mime_type(remote_file.mime_type)
+        if remote_file.mime_type and remote_file.mime_type in STR_TO_FILETYPE:
+            return STR_TO_FILETYPE[remote_file.mime_type]
 
         # set name to none, otherwise unstructured will try to get the modified date from the local file system
         if hasattr(file, "name"):
@@ -381,21 +382,26 @@ class UnstructuredParser(FileTypeParser):
         file_type: FileType | None = None
         try:
             file_type = detect_filetype(
-                file_path=remote_file.uri,
+                filename=remote_file.uri,
             )
         except Exception:
             # Path doesn't exist locally. Try something else...
             pass
 
-        if file_type is not None and not file_type == FileType.UNK:
+        if file_type and file_type != FileType.UNK:
             return file_type
 
         type_based_on_content = detect_filetype(file=file)
+        file.seek(0)  # detect_filetype is reading to read the file content, so we need to reset
 
-        # detect_filetype is reading to read the file content
-        file.seek(0)
+        if type_based_on_content and type_based_on_content != FileType.UNK:
+            return type_based_on_content
 
-        return type_based_on_content
+        extension = "." + remote_file.uri.split(".")[-1].lower()
+        if extension in EXT_TO_FILETYPE:
+            return EXT_TO_FILETYPE[extension]
+
+        return None
 
     def _supported_file_types(self) -> List[Any]:
         return [FileType.MD, FileType.PDF, FileType.DOCX, FileType.PPTX, FileType.TXT]
@@ -412,9 +418,7 @@ class UnstructuredParser(FileTypeParser):
 
     def _convert_to_markdown(self, el: Dict[str, Any]) -> str:
         if dpath.get(el, "type") == "Title":
-            heading_str = "#" * int(
-                dpath.get(el, "metadata/category_depth", default=1) or 1,
-            )
+            heading_str = "#" * (dpath.get(el, "metadata/category_depth", default=1) or 1)
             return f"{heading_str} {dpath.get(el, 'text')}"
         elif dpath.get(el, "type") == "ListItem":
             return f"- {dpath.get(el, 'text')}"
