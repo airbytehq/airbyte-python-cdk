@@ -9,6 +9,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
 import backoff
 import dpath
+from numpy import cast
 import requests
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
@@ -174,20 +175,33 @@ class UnstructuredParser(FileTypeParser):
             # check whether unstructured library is actually available for better error message and to ensure proper typing (can't be None after this point)
             raise Exception("unstructured library is not available")
 
-        filetype = self._get_filetype(file_handle, remote_file)
+        filetype: FileType | None = self._get_filetype(file_handle, remote_file)
 
-        if filetype == FileType.MD or filetype == FileType.TXT:
+        if filetype is None or filetype not in self._supported_file_types():
+            raise self._create_parse_error(
+                remote_file,
+                self._get_file_type_error_message(filetype),
+            )
+        filetype = cast(FileType, filetype)  # for mypy
+        if filetype in {FileType.MD, filetype is FileType.TXT}:
             file_content: bytes = file_handle.read()
             decoded_content: str = optional_decode(file_content)
             return decoded_content
-        if filetype not in self._supported_file_types():
-            raise self._create_parse_error(remote_file, self._get_file_type_error_message(filetype))
         if format.processing.mode == "local":
-            return self._read_file_locally(file_handle, filetype, format.strategy, remote_file)
+            return self._read_file_locally(
+                file_handle,
+                filetype,
+                format.strategy,
+                remote_file,
+            )
         elif format.processing.mode == "api":
             try:
                 result: str = self._read_file_remotely_with_retries(
-                    file_handle, format.processing, filetype, format.strategy, remote_file
+                    file_handle,
+                    format.processing,
+                    filetype,
+                    format.strategy,
+                    remote_file,
                 )
             except Exception as e:
                 # If a parser error happens during remotely processing the file, this means the file is corrupted. This case is handled by the parse_records method, so just rethrow.
