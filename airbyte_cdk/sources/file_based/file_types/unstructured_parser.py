@@ -107,9 +107,11 @@ class UnstructuredParser(FileTypeParser):
         format = _extract_format(config)
         with stream_reader.open_file(file, self.file_read_mode, None, logger) as file_handle:
             filetype = self._get_filetype(file_handle, file)
-
             if filetype not in self._supported_file_types() and not format.skip_unprocessable_files:
-                raise self._create_parse_error(file, self._get_file_type_error_message(filetype))
+                raise self._create_parse_error(
+                    file,
+                    self._get_file_type_error_message(filetype),
+                )
 
             return {
                 "content": {
@@ -348,7 +350,11 @@ class UnstructuredParser(FileTypeParser):
 
         return self._render_markdown([element.to_dict() for element in elements])
 
-    def _create_parse_error(self, remote_file: RemoteFile, message: str) -> RecordParseError:
+    def _create_parse_error(
+        self,
+        remote_file: RemoteFile,
+        message: str,
+    ) -> RecordParseError:
         return RecordParseError(
             FileBasedSourceError.ERROR_PARSING_RECORD, filename=remote_file.uri, message=message
         )
@@ -388,9 +394,12 @@ class UnstructuredParser(FileTypeParser):
     def _supported_file_types(self) -> List[Any]:
         return [FileType.MD, FileType.PDF, FileType.DOCX, FileType.PPTX, FileType.TXT]
 
-    def _get_file_type_error_message(self, file_type: FileType) -> str:
+    def _get_file_type_error_message(
+        self,
+        file_type: FileType | None,
+    ) -> str:
         supported_file_types = ", ".join([str(type) for type in self._supported_file_types()])
-        return f"File type {file_type} is not supported. Supported file types are {supported_file_types}"
+        return f"File type {file_type or 'None'!s} is not supported. Supported file types are {supported_file_types}"
 
     def _render_markdown(self, elements: List[Any]) -> str:
         return "\n\n".join((self._convert_to_markdown(el) for el in elements))
