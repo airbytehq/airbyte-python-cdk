@@ -7,7 +7,6 @@ from airbyte_cdk.sources.declarative.migrations.state_migration import StateMigr
 from airbyte_cdk.sources.declarative.models import (
     DatetimeBasedCursor,
     SubstreamPartitionRouter,
-    CustomPartitionRouter,
     CustomIncrementalSync,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import ParentStreamConfig
