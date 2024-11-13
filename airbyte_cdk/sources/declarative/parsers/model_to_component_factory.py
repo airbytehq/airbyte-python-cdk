@@ -632,7 +632,7 @@ class ModelToComponentFactory:
             partition_router,
             declarative_stream.incremental_sync,  # type: ignore # was already checked. Migration can be applied only to incremental streams.
             config,
-            declarative_stream.parameters, # type: ignore
+            declarative_stream.parameters,  # type: ignore
         )  # type: ignore # The retriever type was already checked
 
     def create_session_token_authenticator(

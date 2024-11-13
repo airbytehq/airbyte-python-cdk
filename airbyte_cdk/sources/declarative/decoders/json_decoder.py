@@ -25,7 +25,9 @@ class JsonDecoder(Decoder):
     def is_stream_response(self) -> bool:
         return False
 
-    def decode(self, response: requests.Response) -> Generator[MutableMapping[str, Any], None, None]:
+    def decode(
+        self, response: requests.Response
+    ) -> Generator[MutableMapping[str, Any], None, None]:
         """
         Given the response is an empty string or an emtpy list, the function will return a generator with an empty mapping.
         """
@@ -61,7 +63,9 @@ class IterableDecoder(Decoder):
     def is_stream_response(self) -> bool:
         return True
 
-    def decode(self, response: requests.Response) -> Generator[MutableMapping[str, Any], None, None]:
+    def decode(
+        self, response: requests.Response
+    ) -> Generator[MutableMapping[str, Any], None, None]:
         for line in response.iter_lines():
             yield {"record": line.decode()}
 
@@ -77,7 +81,9 @@ class JsonlDecoder(Decoder):
     def is_stream_response(self) -> bool:
         return True
 
-    def decode(self, response: requests.Response) -> Generator[MutableMapping[str, Any], None, None]:
+    def decode(
+        self, response: requests.Response
+    ) -> Generator[MutableMapping[str, Any], None, None]:
         # TODO???: set delimiter? usually it is `\n` but maybe it would be useful to set optional?
         #  https://github.com/airbytehq/airbyte-internal-issues/issues/8436
         for record in response.iter_lines():
@@ -88,6 +94,8 @@ class JsonlDecoder(Decoder):
 class GzipJsonDecoder(JsonDecoder):
     encoding: Optional[str] = "utf-8"
 
-    def decode(self, response: requests.Response) -> Generator[MutableMapping[str, Any], None, None]:
+    def decode(
+        self, response: requests.Response
+    ) -> Generator[MutableMapping[str, Any], None, None]:
         raw_string = decompress(response.content).decode(encoding=self.encoding)
         yield from self.parse_body_json(orjson.loads(raw_string))
