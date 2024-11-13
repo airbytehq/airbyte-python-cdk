@@ -142,9 +142,10 @@ jobs:
           job_output=$(cat ${json_output_file})
           success=$(echo ${job_output} | jq -r '.success')
           failed_jobs=$(echo ${job_output} | jq -r '.failed_steps')
+          run_duration=$(echo ${job_output} | jq -r '.run_duration')
           echo "## Job Output for ${{matrix.connector}}" >> $GITHUB_STEP_SUMMARY
           echo "- Success: ${success}" >> $GITHUB_STEP_SUMMARY
-          echo "- Test Duration: $(printf "%.0f" $run_duration)s" >> $GITHUB_STEP_SUMMARY
+          echo "- Test Duration: $(printf "%.0f" ${run_duration})s" >> $GITHUB_STEP_SUMMARY
           echo "- Failed Checks: ${failed_jobs}" >> $GITHUB_STEP_SUMMARY
           echo -e "\n[Download Job Output](${{steps.upload_job_output.outputs.artifact-url}})" >> $GITHUB_STEP_SUMMARY
           if [ "${success}" != "true" ]; then
