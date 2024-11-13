@@ -2,6 +2,7 @@
 requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning>=1.0.0,<2.0.0"]
 build-backend = "poetry_dynamic_versioning.backend"
 
+
 [tool.poetry]
 name = "airbyte-cdk"
 description = "A framework for writing Airbyte Connectors."
@@ -50,7 +51,7 @@ python-ulid = "^3.0.0"
 PyYAML = "^6.0.1"
 requests = "*"
 requests_cache = "*"
-wcmatch = "8.4"
+wcmatch = "10.0"
 # Extras depedencies
 avro = { version = "~1.11.2", optional = true }
 cohere = { version = "4.21", optional = true }

@@ -1,4 +1,15 @@
-name: Connectors Tests
+name: Test Connectors
+on:
+  workflow_dispatch:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+  # TODO: Consider moving to run these only after the "PyTest (Fast)" workflow is successful.
+  # workflow_run:
+  #   workflows: [PyTest (Fast)]
+  #   types:
+  #     - completed
 
 concurrency:
   # This is the name of the concurrency group. It is used to prevent concurrent runs of the same workflow.
@@ -11,12 +22,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
 
-on:
-  workflow_dispatch:
-  pull_request:
-    types:
-      - opened
-      - synchronize
 jobs:
   cdk_changes:
     name: Get Changes
@@ -51,21 +56,6 @@ jobs:
       vector-db-based: ${{ steps.changes.outputs.vector-db-based }}
       sql: ${{ steps.changes.outputs.sql }}
 
-    #   # The Connector CI Tests is a status check emitted by airbyte-ci
-    #   # We make it pass once we have determined that there are no changes to the connectors
-    #   - name: "Skip Connectors CI tests"
-    #     if: steps.changes.outputs.src != 'true' && github.event_name == 'pull_request'
-    #     run: |
-    #       curl --request POST \
-    #       --url https://api.github.com/repos/${{ github.repository }}/statuses/${{ github.event.pull_request.head.sha }} \
-    #       --header 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
-    #       --header 'content-type: application/json' \
-    #       --data '{
-    #         "state": "success",
-    #         "context": "CDK Changes - Connectors Tests",
-    #         "target_url": "${{ github.event.workflow_run.html_url }}"
-    #         }' \
-
   connectors_ci:
     needs: cdk_changes
     # We only run the Connectors CI job if there are changes to the connectors on a non-forked PR
@@ -78,6 +68,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - connector: source-hardcoded-records
+            cdk_extra: n/a
           - connector: source-shopify
             cdk_extra: n/a
           # Currently not passing CI (unrelated)
@@ -89,9 +81,7 @@ jobs:
             cdk_extra: vector-db-based
           - connector: destination-motherduck
             cdk_extra: sql
-    if: >
-      ( github.event_name == 'pull_request' && needs.cdk_changes.outputs.src == 'true' && github.event.pull_request.head.repo.fork != true
-      ) || github.event_name == 'workflow_dispatch'
+
     name: "Check: '${{matrix.connector}}' (skip=${{needs.cdk_changes.outputs[matrix.cdk_extra] == 'false'}})"
     steps:
       - name: Abort if extra not changed (${{matrix.cdk_extra}})
@@ -99,24 +89,68 @@ jobs:
         if: ${{ matrix.cdk_extra != 'n/a' && needs.cdk_changes.outputs[matrix.cdk_extra] == 'false' }}
         run: |
           echo "Aborting job as specified extra not changed: ${{matrix.cdk_extra}} = ${{ needs.cdk_changes.outputs[matrix.cdk_extra] }}"
+          echo "> Skipped '${{matrix.connector}}' (no relevant changes)" >> $GITHUB_STEP_SUMMARY
           echo "status=cancelled" >> $GITHUB_OUTPUT
-          exit 1
+          exit 0
         continue-on-error: true
       # Get the monorepo so we can test the connectors
+      - name: Checkout CDK
+        if: steps.no_changes.outputs.status != 'cancelled'
+        uses: actions/checkout@v4
+        with:
+          path: airbyte-python-cdk
       - name: Checkout Airbyte Monorepo
         uses: actions/checkout@v4
-        if: steps.no_changes.outcome != 'failure'
+        if: steps.no_changes.outputs.status != 'cancelled'
         with:
           repository: airbytehq/airbyte
-          ref: master
+          # TODO: Revert to `master` after Airbyte CI released:
+          ref: aj/airbyte-ci/update-python-local-cdk-code
+          path: airbyte
       - name: Test Connector
-        if: steps.no_changes.outcome != 'failure'
+        if: steps.no_changes.outputs.status != 'cancelled'
         timeout-minutes: 90
         env:
           GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
+          POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
+        # TODO: Revert below to use `tools.airbyte-ci-binary.install` after Airbyte CI released:
         run: |
-          make tools.airbyte-ci-binary.install
-          airbyte-ci connectors \
+          cd airbyte
+          make tools.airbyte-ci-dev.install
+          airbyte-ci-dev connectors \
           --name ${{matrix.connector}} \
-          test
-          --global-status-check-context='Connectors Test: ${{matrix.connector}}'"
+          --use-local-cdk \
+          test \
+          --fail-fast \
+          --skip-step qa_checks \
+          --skip-step connector_live_tests
+
+      # Upload the job output to the artifacts
+      - name: Upload Job Output
+        id: upload_job_output
+        if: always() && steps.no_changes.outputs.status != 'cancelled'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{matrix.connector}}-job-output
+          path: airbyte/airbyte-ci/connectors/pipelines/pipeline_reports
+
+      - name: Evaluate Job Output
+        if: always() && steps.no_changes.outputs.status != 'cancelled'
+        run: |
+          # save job output json file as ci step output
+          json_output_file=$(find airbyte/airbyte-ci/connectors/pipelines/pipeline_reports -name 'output.json' -print -quit)
+          job_output=$(cat ${json_output_file})
+          success=$(echo ${job_output} | jq -r '.success')
+          failed_step=$(echo ${job_output} | jq -r '.failed_steps | select(length > 0) | .[0] // "None"')
+          run_duration=$(echo ${job_output} | jq -r '.run_duration')
+          echo "## Job Output for ${{matrix.connector}}" >> $GITHUB_STEP_SUMMARY
+          echo "- Success: ${success}" >> $GITHUB_STEP_SUMMARY
+          echo "- Test Duration: $(printf "%.0f" ${run_duration})s" >> $GITHUB_STEP_SUMMARY
+          if [ "${success}" != "true" ]; then
+            echo "- Failed Step: ${failed_step}" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo -e "\n[Download Job Output](${{steps.upload_job_output.outputs.artifact-url}})" >> $GITHUB_STEP_SUMMARY
+          if [ "${success}" != "true" ]; then
+            echo "::error::Test failed for connector '${{ matrix.connector }}' on step '${failed_step}'. Check the logs for more details."
+            exit 1
+          fi

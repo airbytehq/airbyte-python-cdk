@@ -13,7 +13,7 @@ LOCAL_OUTPUT_DIR_PATH = "airbyte_cdk/sources/declarative/models"
 
 
 PIP_DEPENDENCIES = [
-    "datamodel_code_generator==0.11.19",
+    "datamodel_code_generator==0.26.3",
 ]
 
 
@@ -73,6 +73,8 @@ async def main():
                     "--enum-field-as-literal",
                     "one",
                     "--set-default-enum-member",
+                    "--use-double-quotes",
+                    "--remove-special-field-name-prefix",
                 ],
                 use_entrypoint=True,
             )
