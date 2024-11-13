@@ -141,14 +141,16 @@ jobs:
           json_output_file=$(find airbyte/airbyte-ci/connectors/pipelines/pipeline_reports -name 'output.json' -print -quit)
           job_output=$(cat ${json_output_file})
           success=$(echo ${job_output} | jq -r '.success')
-          failed_jobs=$(echo ${job_output} | jq -r '.failed_steps')
+          failed_step=$(echo ${job_output} | jq -r '.failed_steps | select(length > 0) | .[0] // "None"')
           run_duration=$(echo ${job_output} | jq -r '.run_duration')
           echo "## Job Output for ${{matrix.connector}}" >> $GITHUB_STEP_SUMMARY
           echo "- Success: ${success}" >> $GITHUB_STEP_SUMMARY
           echo "- Test Duration: $(printf "%.0f" ${run_duration})s" >> $GITHUB_STEP_SUMMARY
-          echo "- Failed Checks: ${failed_jobs}" >> $GITHUB_STEP_SUMMARY
+          if [ "${success}" != "true" ]; then
+            echo "- Failed Step: ${failed_step}" >> $GITHUB_STEP_SUMMARY
+          fi
           echo -e "\n[Download Job Output](${{steps.upload_job_output.outputs.artifact-url}})" >> $GITHUB_STEP_SUMMARY
           if [ "${success}" != "true" ]; then
-            # Throw failure if tests failed
+            echo "::error::Test failed for connector '${{ matrix.connector }}' on step '${failed_step}'. Check the logs for more details."
             exit 1
           fi
