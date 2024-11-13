@@ -5,7 +5,7 @@
 import logging
 from dataclasses import InitVar, dataclass
 from gzip import decompress
-from typing import Any, Generator, Mapping, MutableMapping
+from typing import Any, Generator, Mapping, MutableMapping, List
 
 import requests
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
@@ -40,7 +40,7 @@ class JsonDecoder(Decoder):
 
     @staticmethod
     def parse_body_json(
-        body_json: Mapping[str, Any] | list,
+        body_json: MutableMapping[str, Any] | List[MutableMapping[str, Any]],
     ) -> Generator[MutableMapping[str, Any], None, None]:
         if not isinstance(body_json, list):
             body_json = [body_json]
