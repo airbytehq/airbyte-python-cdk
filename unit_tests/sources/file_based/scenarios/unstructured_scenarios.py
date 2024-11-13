@@ -10,7 +10,6 @@ from unit_tests.sources.file_based.scenarios.scenario_builder import TestScenari
 
 # import nltk data for pdf parser
 nltk.download("punkt")
-nltk.download("wordnet")
 nltk.download("averaged_perceptron_tagger")
 
 json_schema = {
