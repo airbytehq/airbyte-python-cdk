@@ -378,9 +378,15 @@ class UnstructuredParser(FileTypeParser):
         # detect_filetype is either using the file name or file content
         # if possible, try to leverage the file name to detect the file type
         # if the file name is not available, use the file content
-        file_type = detect_filetype(
-            file_path=remote_file.uri,
-        )
+        file_type: FileType | None = None
+        try:
+            file_type = detect_filetype(
+                file_path=remote_file.uri,
+            )
+        except Exception:
+            # Path doesn't exist locally. Try something else...
+            pass
+
         if file_type is not None and not file_type == FileType.UNK:
             return file_type
 
