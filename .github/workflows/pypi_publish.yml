@@ -41,7 +41,7 @@ jobs:
           file_glob: true
 
       - name: Publish to PyPI (${{vars.PYPI_PUBLISH_URL}})
-        uses: pypa/gh-action-pypi-publish@v1
+        uses: pypa/gh-action-pypi-publish@v1.12.2
         with:
           # Can be toggled at the repository level between `https://upload.pypi.org/legacy/` and `https://test.pypi.org/legacy/`
           repository-url: ${{vars.PYPI_PUBLISH_URL}}
