@@ -95,7 +95,7 @@ jobs:
         continue-on-error: true
       # Get the monorepo so we can test the connectors
       - name: Checkout CDK
-        if: steps.no_changes.conclusion != 'cancelled'
+        if: steps.no_changes.outputs.status != 'cancelled'
         uses: actions/checkout@v4
         with:
           path: airbyte-python-cdk
