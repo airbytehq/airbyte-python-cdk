@@ -4,16 +4,25 @@ from unittest.mock import Mock
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, Type
 from airbyte_cdk.sources.declarative.retrievers import Retriever
-from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import DeclarativePartitionFactory
+from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
+    DeclarativePartitionFactory,
+)
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import StreamSlice
 
 _STREAM_NAME = "a_stream_name"
-_JSON_SCHEMA= {"type": "object", "properties": {}}
-_A_STREAM_SLICE = StreamSlice(partition={"partition_key": "partition_value"}, cursor_slice={"cursor_key": "cursor_value"})
-_ANOTHER_STREAM_SLICE = StreamSlice(partition={"partition_key": "another_partition_value"}, cursor_slice={"cursor_key": "cursor_value"})
-_AIRBYTE_LOG_MESSAGE = AirbyteMessage(type=Type.LOG, log=AirbyteLogMessage(level=Level.DEBUG, message="a log message"))
+_JSON_SCHEMA = {"type": "object", "properties": {}}
+_A_STREAM_SLICE = StreamSlice(
+    partition={"partition_key": "partition_value"}, cursor_slice={"cursor_key": "cursor_value"}
+)
+_ANOTHER_STREAM_SLICE = StreamSlice(
+    partition={"partition_key": "another_partition_value"},
+    cursor_slice={"cursor_key": "cursor_value"},
+)
+_AIRBYTE_LOG_MESSAGE = AirbyteMessage(
+    type=Type.LOG, log=AirbyteLogMessage(level=Level.DEBUG, message="a log message")
+)
 _A_RECORD = {"record_field": "record_value"}
 
 
