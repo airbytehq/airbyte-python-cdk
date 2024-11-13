@@ -1,11 +1,11 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-
+import codecs
 import logging
 from dataclasses import InitVar, dataclass, field
 from gzip import decompress
-from typing import Any, Generator, Mapping, MutableMapping, List
+from typing import Any, Generator, Mapping, MutableMapping, List, Optional
 
 import requests
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
@@ -92,10 +92,19 @@ class JsonlDecoder(Decoder):
 
 @dataclass
 class GzipJsonDecoder(JsonDecoder):
-    encoding: str = field(default="utf-8")
+    encoding: Optional[str]
+
+    def __post_init__(self, parameters: Mapping[str, Any]) -> None:
+        if self.encoding:
+            try:
+                codecs.lookup(self.encoding)
+            except LookupError:
+                raise ValueError(
+                    f"Invalid encoding '{self.encoding}'. Please check provided encoding"
+                )
 
     def decode(
         self, response: requests.Response
     ) -> Generator[MutableMapping[str, Any], None, None]:
-        raw_string = decompress(response.content).decode(encoding=self.encoding)
+        raw_string = decompress(response.content).decode(encoding=self.encoding or "utf-8")
         yield from self.parse_body_json(orjson.loads(raw_string))

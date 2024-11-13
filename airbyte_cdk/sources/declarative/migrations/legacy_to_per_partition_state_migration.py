@@ -52,8 +52,10 @@ class LegacyToPerPartitionStateMigration(StateMigration):
             self._cursor.cursor_field, parameters=self._parameters
         ).eval(self._config)
 
-    def _get_partition_field(self, partition_router: SubstreamPartitionRouter) -> str:
-        parent_stream_config = partition_router.parent_stream_configs[0]
+    def _get_partition_field(
+        self, partition_router: CustomPartitionRouter | SubstreamPartitionRouter
+    ) -> str:
+        parent_stream_config = partition_router.parent_stream_configs[0]  # type: ignore # custom partition will introduce this atribute if needed
 
         # Retrieve the partition field with a condition, as properties are returned as a dictionary for custom components.
         partition_field = (
@@ -69,7 +71,7 @@ class LegacyToPerPartitionStateMigration(StateMigration):
             return False
 
         # There is exactly one parent stream
-        number_of_parent_streams = len(self._partition_router.parent_stream_configs)
+        number_of_parent_streams = len(self._partition_router.parent_stream_configs)  # type: ignore # custom partition will introduce this attribute if needed
         if number_of_parent_streams != 1:
             # There should be exactly one parent stream
             return False
