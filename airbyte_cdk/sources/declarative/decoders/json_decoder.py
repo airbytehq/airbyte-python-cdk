@@ -9,7 +9,7 @@ from typing import Any, Generator, Mapping, MutableMapping, List, Optional
 
 import requests
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
-from orjson import orjson
+import orjson
 
 logger = logging.getLogger("airbyte")
 
