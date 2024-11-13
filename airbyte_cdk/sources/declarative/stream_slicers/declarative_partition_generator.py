@@ -20,6 +20,11 @@ class DeclarativePartitionFactory:
         retriever_factory: Callable[[], Retriever],
         message_repository: MessageRepository,
     ) -> None:
+        """
+        The DeclarativePartitionFactory takes a retriever_factory and not a retriever directly. The reason is that out components are not
+        thread safe and classes like `DefaultPaginator` would not behave the way we want if multiple threads were to call their methods.
+        In order to avoid these problems, we will create one retriever per thread which should make the processing thread-safe.
+        """
         self._stream_name = stream_name
         self._json_schema = json_schema
         self._retriever_factory = retriever_factory
@@ -54,7 +59,6 @@ class DeclarativePartition(Partition):
     def read(self) -> Iterable[Record]:
         for stream_data in self._retriever.read_records(self._json_schema, self._stream_slice):
             if isinstance(stream_data, Mapping):
-                # TODO validate if this is necessary: self._stream.transformer.transform(data_to_return, self._stream.get_json_schema())
                 yield Record(stream_data, self)
             else:
                 self._message_repository.emit_message(stream_data)
