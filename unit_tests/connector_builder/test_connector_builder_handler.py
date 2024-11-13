@@ -39,6 +39,7 @@ from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteMessageSerializer,
     AirbyteRecordMessage,
+    AirbyteStateBlob,
     AirbyteStateMessage,
     AirbyteStream,
     AirbyteStreamState,
@@ -75,7 +76,8 @@ _A_STATE = [
     AirbyteStateMessage(
         type="STREAM",
         stream=AirbyteStreamState(
-            stream_descriptor=StreamDescriptor(name=_stream_name), stream_state={"key": "value"}
+            stream_descriptor=StreamDescriptor(name=_stream_name),
+            stream_state=AirbyteStateBlob({"key": "value"}),
         ),
     )
 ]
@@ -85,15 +87,17 @@ _A_PER_PARTITION_STATE = [
         type="STREAM",
         stream=AirbyteStreamState(
             stream_descriptor=StreamDescriptor(name=_stream_name),
-            stream_state={
-                "states": [
-                    {
-                        "partition": {"key": "value"},
-                        "cursor": {"item_id": 0},
-                    },
-                ],
-                "parent_state": {},
-            },
+            stream_state=AirbyteStateBlob(
+                {
+                    "states": [
+                        {
+                            "partition": {"key": "value"},
+                            "cursor": {"item_id": 0},
+                        },
+                    ],
+                    "parent_state": {},
+                }
+            ),
         ),
     )
 ]
