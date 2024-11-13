@@ -341,7 +341,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
     def _retriever_factory(
         self, stream_config: ComponentDefinition, source_config: Config, stream_state: StreamState
     ) -> Callable[[], Retriever]:
-        def _factory_method():
+        def _factory_method() -> Retriever:
             declarative_stream = self._constructor.create_component(
                 DeclarativeStreamModel,
                 stream_config,
