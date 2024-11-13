@@ -7,6 +7,7 @@ import dataclasses
 import json
 import logging
 import os
+from typing import Literal
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -569,7 +570,7 @@ def test_read():
         )
 
 
-def test_config_update():
+def test_config_update() -> None:
     manifest = copy.deepcopy(MANIFEST)
     manifest["definitions"]["retriever"]["requester"]["authenticator"] = {
         "type": "OAuthAuthenticator",
@@ -632,7 +633,7 @@ def test_read_returns_error_response(mock_from_exception):
             return connector_specification
 
         @property
-        def check_config_against_spec(self):
+        def check_config_against_spec(self) -> Literal[False]:
             return False
 
     stack_trace = "a stack trace"
