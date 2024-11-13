@@ -36,7 +36,7 @@ class LegacyToPerPartitionStateMigration(StateMigration):
 
     def __init__(
         self,
-        partition_router: CustomPartitionRouter | SubstreamPartitionRouter,
+        partition_router: SubstreamPartitionRouter,
         cursor: CustomIncrementalSync | DatetimeBasedCursor,
         config: Mapping[str, Any],
         parameters: Mapping[str, Any],
@@ -53,9 +53,9 @@ class LegacyToPerPartitionStateMigration(StateMigration):
         ).eval(self._config)
 
     def _get_partition_field(
-        self, partition_router: CustomPartitionRouter | SubstreamPartitionRouter
+        self, partition_router: SubstreamPartitionRouter
     ) -> str:
-        parent_stream_config = partition_router.parent_stream_configs[0]  # type: ignore # custom partition will introduce this atribute if needed
+        parent_stream_config = partition_router.parent_stream_configs[0]
 
         # Retrieve the partition field with a condition, as properties are returned as a dictionary for custom components.
         partition_field = (
