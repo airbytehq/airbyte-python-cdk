@@ -5,13 +5,29 @@
 
 version: 2
 updates:
-  - package-ecosystem: "pip"
+  - package-ecosystem: pip
     directory: "/" # Location of package manifests
+    commit-message:
+      prefix: "chore(deps): "
     schedule:
-      interval: "weekly"
+      interval: daily
+    labels:
+      - chore
+    open-pull-requests-limit: 8  # default is 5
 
-  - package-ecosystem: "github-actions"
-    # Workflow files stored in the default location of `.github/workflows`. (You don't need to specify `/.github/workflows` for `directory`. You can use `directory: "/"`.)
+  - package-ecosystem: github-actions
+    open-pull-requests-limit: 5  # default is 5
     directory: "/"
+    commit-message:
+      prefix: "ci(deps): "
     schedule:
-      interval: "weekly"
+      interval: daily
+    labels:
+      - ci
+    groups:
+      # allow combining github-actions updates into a single PR
+      minor-and-patch:
+        applies-to: version-updates
+        update-types:
+        - patch
+        - minor
