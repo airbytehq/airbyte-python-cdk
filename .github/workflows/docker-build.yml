@@ -1,22 +1,37 @@
-name: SCD Docker Build (Dev Images)
+name: SDM Docker Build (Test)
 
 on:
   push:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
-  docker_publish:
-    name: Build and Publish `source-declarative-manifest` Docker Image
+  docker_build:
+    name: Build and Publish source-declarative-manifest Docker Image
     runs-on: ubuntu-latest
     permissions:
-      id-token: write # IMPORTANT: this permission is mandatory for trusted publishing
-      contents: write # Needed to upload artifacts to the release
-    env: {}
+      id-token: write
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - run: |
-          docker login
-          docker build -t airbyte/source-declarative-manifest:${{ github.sha }} .
-          docker push airbyte/source-declarative-manifest:${{ github.sha }}
+      
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}  # Only push on main
+          tags: airbyte/source-declarative-manifest:test-${{ github.sha }}
+
+      - name: Test image
+        run: |
+          docker pull airbyte/source-declarative-manifest:test-${{ github.sha }}
+          docker run airbyte/source-declarative-manifest:test-${{ github.sha }} spec
