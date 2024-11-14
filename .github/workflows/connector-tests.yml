@@ -81,6 +81,12 @@ jobs:
             cdk_extra: vector-db-based
           - connector: destination-motherduck
             cdk_extra: sql
+          # TODO: These are manifest connectors and won't work as expectd until we
+          #       add `--use-local-cdk` support for manifest connectors
+          - connector: source-the-guardian-api
+            cdk_extra: n/a
+          - connector: source-pokeapi
+            cdk_extra: n/a
 
     name: "Check: '${{matrix.connector}}' (skip=${{needs.cdk_changes.outputs[matrix.cdk_extra] == 'false'}})"
     steps:
