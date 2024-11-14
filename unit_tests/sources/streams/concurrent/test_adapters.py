@@ -143,6 +143,7 @@ def test_stream_partition(transformer, expected_records):
 def test_stream_partition_raising_exception(exception_type, expected_display_message):
     stream = Mock()
     stream.get_error_display_message.return_value = expected_display_message
+    stream.name = _STREAM_NAME
 
     message_repository = InMemoryMessageRepository()
     _slice = None
@@ -169,10 +170,10 @@ def test_stream_partition_raising_exception(exception_type, expected_display_mes
     [
         pytest.param(
             {"partition": 1, "k": "v"},
-            hash(("stream", '{"k": "v", "partition": 1}')),
+            1088629586613270006,
             id="test_hash_with_slice",
         ),
-        pytest.param(None, hash("stream"), id="test_hash_no_slice"),
+        pytest.param(None, 5149571505982114308, id="test_hash_no_slice"),
     ],
 )
 def test_stream_partition_hash(_slice, expected_hash):
