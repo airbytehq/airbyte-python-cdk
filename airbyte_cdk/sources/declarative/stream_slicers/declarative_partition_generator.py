@@ -21,8 +21,8 @@ class DeclarativePartitionFactory:
         message_repository: MessageRepository,
     ) -> None:
         """
-        The DeclarativePartitionFactory takes a retriever_factory and not a retriever directly. The reason is that out components are not
-        thread safe and classes like `DefaultPaginator` would not behave the way we want if multiple threads were to call their methods.
+        The DeclarativePartitionFactory takes a retriever_factory and not a retriever directly. The reason is that our components are not
+        thread safe and classes like `DefaultPaginator` may not work because multiple threads can access and modify a shared field across each other.
         In order to avoid these problems, we will create one retriever per thread which should make the processing thread-safe.
         """
         self._stream_name = stream_name
