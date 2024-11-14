@@ -64,7 +64,9 @@ class ConcurrentCursorStateTest(TestCase):
         self._message_repository = Mock(spec=MessageRepository)
         self._state_manager = Mock(spec=ConnectorStateManager)
 
-    def _cursor_with_slice_boundary_fields(self, is_sequential_state: bool = True) -> ConcurrentCursor:
+    def _cursor_with_slice_boundary_fields(
+        self, is_sequential_state: bool = True
+    ) -> ConcurrentCursor:
         return ConcurrentCursor(
             _A_STREAM_NAME,
             _A_STREAM_NAMESPACE,
@@ -128,7 +130,10 @@ class ConcurrentCursorStateTest(TestCase):
             _A_STREAM_NAME,
             _A_STREAM_NAMESPACE,
             {
-                "slices": [{"end": 0, "most_recent_cursor_value": 0, "start": 0}, {"end": 30, "start": 12}],
+                "slices": [
+                    {"end": 0, "most_recent_cursor_value": 0, "start": 0},
+                    {"end": 30, "start": 12},
+                ],
                 "state_type": "date-range",
             },
         )
