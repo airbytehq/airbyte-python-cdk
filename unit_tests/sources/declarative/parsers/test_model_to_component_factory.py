@@ -3017,6 +3017,7 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
                 {
                     "start": pendulum.parse(config["start_time"]),
                     "end": pendulum.parse(stream_state["updated_at"]),
+                    "most_recent_cursor_value": pendulum.parse(stream_state["updated_at"]),
                 },
             ],
             "state_type": "date-range",
@@ -3028,6 +3029,7 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
                 {
                     "start": pendulum.parse(config["start_time"]),
                     "end": pendulum.parse(config["start_time"]),
+                    "most_recent_cursor_value": pendulum.parse(config["start_time"]),
                 },
             ],
             "state_type": "date-range",
@@ -3261,6 +3263,7 @@ def test_create_concurrent_cursor_uses_min_max_datetime_format_if_defined():
             {
                 "start": expected_start,
                 "end": expected_start,
+                "most_recent_cursor_value": expected_start,
             },
         ],
         "state_type": "date-range",
