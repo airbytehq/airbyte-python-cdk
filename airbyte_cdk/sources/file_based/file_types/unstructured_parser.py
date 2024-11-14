@@ -162,6 +162,15 @@ class UnstructuredParser(FileTypeParser):
                     logger.warn(f"File {file.uri} cannot be parsed. Skipping it.")
                 else:
                     raise e
+            except Exception as e:
+                exception_str = str(e)
+                logger.warn(f"File {file.uri} caused an error during parsing: {exception_str}.")
+                yield {
+                    "content": None,
+                    "document_key": file.uri,
+                    "_ab_source_file_parse_error": exception_str,
+                }
+                logger.warn(f"File {file.uri} cannot be parsed. Skipping it.")
 
     def _read_file(
         self,
@@ -186,7 +195,7 @@ class UnstructuredParser(FileTypeParser):
                 remote_file,
                 self._get_file_type_error_message(filetype),
             )
-        if filetype in {FileType.MD, filetype is FileType.TXT}:
+        if filetype in {FileType.MD, FileType.TXT}:
             file_content: bytes = file_handle.read()
             decoded_content: str = optional_decode(file_content)
             return decoded_content
