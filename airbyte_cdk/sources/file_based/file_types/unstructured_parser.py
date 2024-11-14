@@ -45,8 +45,9 @@ try:
     nltk.data.find("tokenizers/punkt.zip")
     nltk.data.find("tokenizers/punkt_tab.zip")
 except LookupError:
-    nltk.download('punkt')
-    nltk.download('punkt_tab')
+    nltk.download("punkt")
+    nltk.download("punkt_tab")
+
 
 def optional_decode(contents: Union[str, bytes]) -> str:
     if isinstance(contents, bytes):
