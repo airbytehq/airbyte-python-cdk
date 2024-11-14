@@ -45,25 +45,3 @@ jobs:
         with:
           # Can be toggled at the repository level between `https://upload.pypi.org/legacy/` and `https://test.pypi.org/legacy/`
           repository-url: ${{vars.PYPI_PUBLISH_URL}}
-
-  # TODO: Need to test this on the other workflow first, then update here when we have
-  #       something that works.
-  docker_publish:
-    name: Build and Publish `source-declarative-manifest` Docker Image
-    runs-on: ubuntu-latest
-    needs: [build]
-    permissions:
-      id-token: write # IMPORTANT: this permission is mandatory for trusted publishing
-      contents: write # Needed to upload artifacts to the release
-    environment:
-      name: Docker Hub
-      url: "https://hub.docker.com/r/airbytehq/airbyte-cdk"
-    env:
-      # TODO: Clean this up with a real version tag, remove the 'refs/tags/v' prefix
-      VERSION: ${{ github.ref }}
-    if: startsWith(github.ref, 'refs/tags/v')
-    steps:
-      - run: |
-          docker login
-          docker build -t airbyte/source-declarative-manifest:${VERSION} .
-          docker push airbyte/source-declarative-manifest:${VERSION}
