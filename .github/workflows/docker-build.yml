@@ -1,10 +1,19 @@
-name: SDM Docker Build (Test)
+name: SDM Docker Build
 
 on:
   push:
     branches:
       - main
+    paths:
+      - 'airbyte_cdk/**'  # Any CDK changes could affect SDM
+      - '.github/workflows/docker-build.yml'
+      - 'Dockerfile'
   workflow_dispatch:
+    inputs:
+      version-tag:
+        description: "Version tag for the image (e.g. 0.1.0)"
+        required: false
+        type: string
 
 jobs:
   docker_build:
@@ -28,10 +37,13 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}  # Only push on main
-          tags: airbyte/source-declarative-manifest:test-${{ github.sha }}
+          push: true
+          tags: |
+            airbyte/source-declarative-manifest:latest
+            airbyte/source-declarative-manifest:${{ github.sha }}
+            ${{ github.event.inputs.version-tag != '' && format('airbyte/source-declarative-manifest:{0}', github.event.inputs.version-tag) || '' }}
 
       - name: Test image
         run: |
-          docker pull airbyte/source-declarative-manifest:test-${{ github.sha }}
-          docker run airbyte/source-declarative-manifest:test-${{ github.sha }} spec
+          docker pull airbyte/source-declarative-manifest:${{ github.sha }}
+          docker run airbyte/source-declarative-manifest:${{ github.sha }} spec
