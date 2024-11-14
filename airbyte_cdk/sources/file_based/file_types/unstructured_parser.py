@@ -35,11 +35,18 @@ from unstructured.file_utils.filetype import (
     FileType,
     detect_filetype,
 )
+import nltk
 
 unstructured_partition_pdf = None
 unstructured_partition_docx = None
 unstructured_partition_pptx = None
 
+try:
+    nltk.data.find("tokenizers/punkt.zip")
+    nltk.data.find("tokenizers/punkt_tab.zip")
+except LookupError:
+    nltk.download('punkt')
+    nltk.download('punkt_tab')
 
 def optional_decode(contents: Union[str, bytes]) -> str:
     if isinstance(contents, bytes):
@@ -164,13 +171,8 @@ class UnstructuredParser(FileTypeParser):
                     raise e
             except Exception as e:
                 exception_str = str(e)
-                logger.warn(f"File {file.uri} caused an error during parsing: {exception_str}.")
-                yield {
-                    "content": None,
-                    "document_key": file.uri,
-                    "_ab_source_file_parse_error": exception_str,
-                }
-                logger.warn(f"File {file.uri} cannot be parsed. Skipping it.")
+                logger.error(f"File {file.uri} caused an error during parsing: {exception_str}.")
+                raise e
 
     def _read_file(
         self,
