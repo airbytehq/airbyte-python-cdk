@@ -12,4 +12,5 @@ dist
 .mypy_cache
 .venv
 .pytest_cache
+.idea
 **/__pycache__
