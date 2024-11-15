@@ -49,6 +49,7 @@ pyrate-limiter = "~3.1.0"
 python-dateutil = "*"
 python-ulid = "^3.0.0"
 PyYAML = "^6.0.1"
+rapidfuzz = "^3.10.1"
 requests = "*"
 requests_cache = "*"
 wcmatch = "10.0"
@@ -103,6 +104,10 @@ file-based = ["avro", "fastavro", "pyarrow", "unstructured", "pdf2image", "pdfmi
 sphinx-docs = ["Sphinx", "sphinx-rtd-theme"]
 vector-db-based = ["langchain", "openai", "cohere", "tiktoken"]
 sql = ["sqlalchemy"]
+
+[tool.poetry.scripts]
+
+source-declarative-manifest = "airbyte_cdk.cli.source_declarative_manifest:run"
 
 [tool.isort]
 skip = ["__init__.py"]  # TODO: Remove after this is fixed: https://github.com/airbytehq/airbyte-python-cdk/issues/12

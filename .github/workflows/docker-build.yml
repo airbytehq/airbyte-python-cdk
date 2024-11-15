@@ -1,0 +1,64 @@
+name: SDM Docker Build
+
+on:
+  push:
+    branches:
+      - main
+      - christo/sdm-test # (dev/test branch)
+    paths:
+      - 'airbyte_cdk/**'
+      - '.github/workflows/docker-build.yml'
+      - 'Dockerfile'
+  workflow_dispatch:
+    inputs:
+      version-tag:
+        description: "Version tag for the image (optional)"
+        required: false
+        type: string
+
+jobs:
+  docker_build:
+    name: Build and Publish SDM Docker Image
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write  # Required for trusted publishing
+      contents: write  # Required for artifact uploads
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build Docker image
+        run: |
+          docker build -t airbyte/source-declarative-manifest:build-test .
+
+      - name: Test image
+        run: |
+          docker run airbyte/source-declarative-manifest:build-test spec
+
+      - name: Login to Docker Hub
+        if: ${{ success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/christo/sdm-test' || github.event_name == 'workflow_dispatch') }}
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_PASSWORD }}
+
+      - name: Push to Docker Hub
+        if: ${{ success() && (github.ref == 'refs/heads/main'  || github.ref == 'refs/heads/christo/sdm-test'|| github.event_name == 'workflow_dispatch') }}
+        run: |
+          # Always tag with commit SHA
+          docker tag airbyte/source-declarative-manifest:build-test airbyte/source-declarative-manifest:${{ github.sha }}
+          docker push airbyte/source-declarative-manifest:${{ github.sha }}
+
+          # Tag as latest if on main branch
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            docker tag airbyte/source-declarative-manifest:build-test airbyte/source-declarative-manifest:latest
+            docker push airbyte/source-declarative-manifest:latest
+          fi
+
+          # Add version tag if provided
+          if [[ -n "${{ github.event.inputs.version-tag }}" ]]; then
+            docker tag airbyte/source-declarative-manifest:build-test airbyte/source-declarative-manifest:${{ github.event.inputs.version-tag }}
+            docker push airbyte/source-declarative-manifest:${{ github.event.inputs.version-tag }}
+          fi
