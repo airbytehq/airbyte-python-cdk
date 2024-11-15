@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - christo/sdm-test (dev/test branch)
     paths:
       - 'airbyte_cdk/**'
       - '.github/workflows/docker-build.yml'
@@ -49,13 +50,13 @@ jobs:
           # Always tag with commit SHA
           docker tag airbyte/source-declarative-manifest:build-test airbyte/source-declarative-manifest:${{ github.sha }}
           docker push airbyte/source-declarative-manifest:${{ github.sha }}
-          
+
           # Tag as latest if on main branch
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             docker tag airbyte/source-declarative-manifest:build-test airbyte/source-declarative-manifest:latest
             docker push airbyte/source-declarative-manifest:latest
           fi
-          
+
           # Add version tag if provided
           if [[ -n "${{ github.event.inputs.version-tag }}" ]]; then
             docker tag airbyte/source-declarative-manifest:build-test airbyte/source-declarative-manifest:${{ github.event.inputs.version-tag }}
