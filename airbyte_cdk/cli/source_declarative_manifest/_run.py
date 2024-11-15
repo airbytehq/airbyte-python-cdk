@@ -20,9 +20,10 @@ import json
 import pkgutil
 import sys
 import traceback
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
-from typing import Any, List, Mapping, Optional
+from typing import Any
 
 from airbyte_cdk.entrypoint import AirbyteEntrypoint, launch
 from airbyte_cdk.models import (
@@ -51,11 +52,11 @@ class SourceLocalYaml(YamlDeclarativeSource):
 
     def __init__(
         self,
-        catalog: Optional[ConfiguredAirbyteCatalog],
-        config: Optional[Mapping[str, Any]],
+        catalog: ConfiguredAirbyteCatalog | None,
+        config: Mapping[str, Any] | None,
         state: TState,
-        **kwargs,
-    ):
+        **kwargs: Any,
+    ) -> None:
         """
         HACK!
             Problem: YamlDeclarativeSource relies on the calling module name/path to find the yaml file.
@@ -68,23 +69,26 @@ class SourceLocalYaml(YamlDeclarativeSource):
                 When all manifest connectors are updated to use the source-declarative-manifest as the base image.
         """
         super().__init__(
-            catalog=catalog, config=config, state=state, **{"path_to_yaml": "manifest.yaml"}
+            catalog=catalog,
+            config=config,
+            state=state,
+            path_to_yaml="manifest.yaml",
         )
 
 
-def _is_local_manifest_command(args: List[str]) -> bool:
+def _is_local_manifest_command(args: list[str]) -> bool:
     # Check for a local manifest.yaml file
     return Path("/airbyte/integration_code/source_declarative_manifest/manifest.yaml").exists()
 
 
-def handle_command(args: List[str]) -> None:
+def handle_command(args: list[str]) -> None:
     if _is_local_manifest_command(args):
         handle_local_manifest_command(args)
     else:
         handle_remote_manifest_command(args)
 
 
-def _get_local_yaml_source(args: List[str]) -> SourceLocalYaml:
+def _get_local_yaml_source(args: list[str]) -> SourceLocalYaml:
     try:
         config, catalog, state = _parse_inputs_into_config_catalog_state(args)
         return SourceLocalYaml(config=config, catalog=catalog, state=state)
@@ -109,12 +113,15 @@ def _get_local_yaml_source(args: List[str]) -> SourceLocalYaml:
         raise error
 
 
-def handle_local_manifest_command(args: List[str]) -> None:
+def handle_local_manifest_command(args: list[str]) -> None:
     source = _get_local_yaml_source(args)
-    launch(source, args)
+    launch(
+        source=source,
+        args=args,
+    )
 
 
-def handle_remote_manifest_command(args: List[str]) -> None:
+def handle_remote_manifest_command(args: list[str]) -> None:
     """Overrides the spec command to return the generalized spec for the declarative manifest source.
 
     This is different from a typical low-code, but built and published separately source built as a ManifestDeclarativeSource,
@@ -133,10 +140,13 @@ def handle_remote_manifest_command(args: List[str]) -> None:
         print(AirbyteEntrypoint.airbyte_message_to_string(message))
     else:
         source = create_declarative_source(args)
-        launch(source, args)
+        launch(
+            source=source,
+            args=args,
+        )
 
 
-def create_declarative_source(args: List[str]) -> ConcurrentDeclarativeSource:
+def create_declarative_source(args: list[str]) -> ConcurrentDeclarativeSource:
     """Creates the source with the injected config.
 
     This essentially does what other low-code sources do at build time, but at runtime,
@@ -177,8 +187,12 @@ def create_declarative_source(args: List[str]) -> ConcurrentDeclarativeSource:
 
 
 def _parse_inputs_into_config_catalog_state(
-    args: List[str],
-) -> (Optional[Mapping[str, Any]], Optional[ConfiguredAirbyteCatalog], List[AirbyteStateMessage]):
+    args: list[str],
+) -> tuple[
+    Mapping[str, Any] | None,
+    ConfiguredAirbyteCatalog | None,
+    list[AirbyteStateMessage],
+]:
     parsed_args = AirbyteEntrypoint.parse_args(args)
     config = (
         ConcurrentDeclarativeSource.read_config(parsed_args.config)
@@ -200,5 +214,5 @@ def _parse_inputs_into_config_catalog_state(
 
 
 def run() -> None:
-    args = sys.argv[1:]
+    args: list[str] = sys.argv[1:]
     handle_command(args)
