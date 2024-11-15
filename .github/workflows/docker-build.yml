@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - christo/sdm-test (dev/test branch)
+      - christo/sdm-test # (dev/test branch)
     paths:
       - 'airbyte_cdk/**'
       - '.github/workflows/docker-build.yml'
