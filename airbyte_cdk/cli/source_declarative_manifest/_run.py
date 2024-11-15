@@ -23,7 +23,7 @@ import traceback
 from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from airbyte_cdk.entrypoint import AirbyteEntrypoint, launch
 from airbyte_cdk.models import (
@@ -133,6 +133,11 @@ def handle_remote_manifest_command(args: list[str]) -> None:
             "airbyte_cdk.cli.source_declarative_manifest",
             "spec.json",
         )
+        if json_spec is None:
+            raise FileNotFoundError(
+                "Could not find `spec.json` file for source-declarative-manifest"
+            )
+
         spec_obj = json.loads(json_spec)
         spec = ConnectorSpecificationSerializer.load(spec_obj)
 
@@ -163,7 +168,7 @@ def create_declarative_source(args: list[str]) -> ConcurrentDeclarativeSource:
             config=config,
             catalog=catalog,
             state=state,
-            source_config=config.get("__injected_declarative_manifest"),
+            source_config=cast(dict[str, Any], config["__injected_declarative_manifest"]),
         )
     except Exception as error:
         print(
