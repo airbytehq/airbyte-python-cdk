@@ -69,7 +69,6 @@ from airbyte_cdk.sources.declarative.extractors import (
     DpathExtractor,
     RecordFilter,
     RecordSelector,
-    ResponseToFileExtractor,
 )
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
@@ -2024,16 +2023,34 @@ class ModelToComponentFactory:
             name=f"job polling - {name}",
         )
         job_download_components_name = f"job download - {name}"
+        download_decoder = (
+            self._create_component_from_model(model=model.download_decoder, config=config)
+            if model.download_decoder
+            else JsonDecoder(parameters={})
+        )
+        download_extractor = (
+            self._create_component_from_model(
+                model=model.download_extractor,
+                config=config,
+                decoder=download_decoder,
+                parameters=model.parameters,
+            )
+            if model.download_extractor
+            else DpathExtractor(
+                [], config=config, decoder=download_decoder, parameters=model.parameters
+            )
+        )
         download_requester = self._create_component_from_model(
             model=model.download_requester,
-            decoder=decoder,
+            decoder=download_decoder,
             config=config,
             name=job_download_components_name,
         )
         download_retriever = SimpleRetriever(
             requester=download_requester,
             record_selector=RecordSelector(
-                extractor=ResponseToFileExtractor(),
+                # extractor=ResponseToFileExtractor(),# old one
+                extractor=download_extractor,
                 record_filter=None,
                 transformations=[],
                 schema_normalization=TypeTransformer(TransformConfig.NoTransform),
