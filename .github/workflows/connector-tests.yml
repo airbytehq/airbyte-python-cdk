@@ -81,8 +81,8 @@ jobs:
             cdk_extra: vector-db-based
           - connector: destination-motherduck
             cdk_extra: sql
-          # TODO: These are manifest connectors and won't work as expectd until we
-          #       add `--use-local-cdk` support for manifest connectors
+          # TODO: These are manifest connectors and won't work as expected until we
+          #       add `--use-local-cdk` support for manifest connectors.
           - connector: source-the-guardian-api
             cdk_extra: n/a
           - connector: source-pokeapi

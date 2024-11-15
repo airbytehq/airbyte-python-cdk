@@ -1,4 +1,18 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+"""Defines the `source-declarative-manifest` connector, which installs alongside CDK.
+
+This file was originally imported from the dedicated connector directory, under the
+`airbyte` monorepo.
+
+Usage:
+
+```
+pipx install airbyte-cdk
+source-declarative-manifest --help
+source-declarative-manifest spec
+...
+```
+"""
 
 
 from __future__ import annotations
