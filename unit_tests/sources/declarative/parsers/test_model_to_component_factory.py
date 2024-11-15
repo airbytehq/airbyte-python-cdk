@@ -3055,7 +3055,7 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
         "lookback_window": "P3D",
     }
 
-    concurrent_cursor, stream_state_converter = (
+    concurrent_cursor = (
         connector_builder_factory.create_concurrent_cursor_from_datetime_based_cursor(
             state_manager=connector_state_manager,
             model_type=DatetimeBasedCursorModel,
@@ -3087,6 +3087,7 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
     assert concurrent_cursor._end_provider() == expected_end
     assert concurrent_cursor._concurrent_state == expected_concurrent_state
 
+    stream_state_converter = concurrent_cursor._connector_state_converter
     assert isinstance(stream_state_converter, CustomFormatConcurrentStreamStateConverter)
     assert stream_state_converter._datetime_format == expected_datetime_format
     assert stream_state_converter._is_sequential_state
@@ -3187,7 +3188,7 @@ def test_create_concurrent_cursor_from_datetime_based_cursor(
                 stream_state={},
             )
     else:
-        concurrent_cursor, stream_state_converter = (
+        concurrent_cursor = (
             connector_builder_factory.create_concurrent_cursor_from_datetime_based_cursor(
                 state_manager=connector_state_manager,
                 model_type=DatetimeBasedCursorModel,
@@ -3244,7 +3245,7 @@ def test_create_concurrent_cursor_uses_min_max_datetime_format_if_defined():
         "lookback_window": "P3D",
     }
 
-    concurrent_cursor, stream_state_converter = (
+    concurrent_cursor = (
         connector_builder_factory.create_concurrent_cursor_from_datetime_based_cursor(
             state_manager=connector_state_manager,
             model_type=DatetimeBasedCursorModel,

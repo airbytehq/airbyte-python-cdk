@@ -479,20 +479,19 @@ def test_group_streams():
     synchronous_streams = source._synchronous_streams
 
     # 2 incremental streams
-    assert len(concurrent_streams) == 2
-    concurrent_stream_0, concurrent_stream_1 = concurrent_streams
+    assert len(concurrent_streams) == 3
+    concurrent_stream_0, concurrent_stream_1, concurrent_stream_2 = concurrent_streams
     assert isinstance(concurrent_stream_0, DefaultStream)
     assert concurrent_stream_0.name == "party_members"
     assert isinstance(concurrent_stream_1, DefaultStream)
-    assert concurrent_stream_1.name == "locations"
+    assert concurrent_stream_1.name == "palaces"
+    assert isinstance(concurrent_stream_2, DefaultStream)
+    assert concurrent_stream_2.name == "locations"
 
     # 1 full refresh stream, 1 substream
-    assert len(synchronous_streams) == 2
-    synchronous_stream_0, synchronous_stream_1 = synchronous_streams
-    assert isinstance(synchronous_stream_0, DeclarativeStream)
-    assert synchronous_stream_0.name == "palaces"
-    assert isinstance(synchronous_stream_1, DeclarativeStream)
-    assert synchronous_stream_1.name == "party_members_skills"
+    assert len(synchronous_streams) == 1
+    assert isinstance(synchronous_streams[0], DeclarativeStream)
+    assert synchronous_streams[0].name == "party_members_skills"
 
 
 @freezegun.freeze_time(time_to_freeze=datetime(2024, 9, 1, 0, 0, 0, 0, tzinfo=timezone.utc))
@@ -539,7 +538,7 @@ def test_create_concurrent_cursor():
     assert party_members_cursor._lookback_window == timedelta(days=5)
     assert party_members_cursor._cursor_granularity == timedelta(days=1)
 
-    locations_stream = source._concurrent_streams[1]
+    locations_stream = source._concurrent_streams[2]
     assert isinstance(locations_stream, DefaultStream)
     locations_cursor = locations_stream.cursor
 
@@ -754,7 +753,7 @@ def test_read_with_concurrent_and_synchronous_streams():
     assert len(palaces_states) == 1
     assert (
         palaces_states[0].stream.stream_state.__dict__
-        == AirbyteStateBlob(__ab_full_refresh_sync_complete=True).__dict__
+        == AirbyteStateBlob(__ab_no_cursor_state_message=True).__dict__
     )
 
     # Expects 3 records, 3 slices, 3 records in slice
@@ -1275,8 +1274,8 @@ def test_streams_with_stream_state_interpolation_should_be_synchronous():
         state=None,
     )
 
-    assert len(source._concurrent_streams) == 0
-    assert len(source._synchronous_streams) == 4
+    assert len(source._concurrent_streams) == 1
+    assert len(source._synchronous_streams) == 3
 
 
 def test_given_partition_routing_and_incremental_sync_then_stream_is_not_concurrent():
@@ -1571,5 +1570,6 @@ def get_states_for_stream(
 
 
 def disable_emitting_sequential_state_messages(source: ConcurrentDeclarativeSource) -> None:
-    for concurrent_streams in source._concurrent_streams:  # type: ignore  # This is the easiest way to disable behavior from the test
-        concurrent_streams.cursor._connector_state_converter._is_sequential_state = False  # type: ignore  # see above
+    for concurrent_stream in source._concurrent_streams:  # type: ignore  # This is the easiest way to disable behavior from the test
+        if isinstance(concurrent_stream.cursor, ConcurrentCursor):
+            concurrent_stream.cursor._connector_state_converter._is_sequential_state = False  # type: ignore  # see above
