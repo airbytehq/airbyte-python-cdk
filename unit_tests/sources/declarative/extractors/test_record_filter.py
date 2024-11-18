@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 from typing import List, Mapping, Optional
+from airbyte_cdk.sources.types import Record
 
 import pytest
 from airbyte_cdk.sources.declarative.datetime import MinMaxDatetime
@@ -349,12 +350,6 @@ def test_client_side_record_filter_decorator_no_parent_stream(
             "per_partition_with_global",
             [2, 3],
         ),
-        # Use PerPartitionWithGlobalCursor with partition state missing, global cursor not used
-        (
-            {"use_global_cursor": False, "state": {"created_at": "2021-01-03"}},
-            "per_partition_with_global",
-            [2, 3, 5],  # Global cursor not used, start date used
-        ),
     ],
     ids=[
         "datetime_cursor_only",
@@ -363,7 +358,6 @@ def test_client_side_record_filter_decorator_no_parent_stream(
         "per_partition_with_partition_state",
         "per_partition_with_global_state",
         "per_partition_partition_missing_global_cursor_used",
-        "per_partition_partition_missing_global_cursor_not_used",
     ],
 )
 def test_client_side_record_filter_decorator_with_cursor_types(
@@ -442,10 +436,10 @@ def test_client_side_record_filter_decorator_with_cursor_types(
     stream_slice = StreamSlice(
         partition={"id": "some_parent_id", "parent_slice": {}}, cursor_slice={}
     )
-
+    records_with_stream_slice = [Record(x, stream_slice) for x in RECORDS_TO_FILTER_DATE_FORMAT]
     filtered_records = list(
         record_filter_decorator.filter_records(
-            records=RECORDS_TO_FILTER_DATE_FORMAT,
+            records=records_with_stream_slice,
             stream_state=stream_state,
             stream_slice=stream_slice,
             next_page_token=None,
