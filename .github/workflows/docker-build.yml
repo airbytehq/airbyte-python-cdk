@@ -4,10 +4,8 @@ on:
   push:
     branches:
       - main
-      - christo/sdm-test # (dev/test branch)
     paths:
-      - 'airbyte_cdk/**'
-      - '.github/workflows/docker-build.yml'
+      - 'airbyte_cdk/pyproject.toml' # To only publish on CDK version change
       - 'Dockerfile'
   workflow_dispatch:
     inputs:
