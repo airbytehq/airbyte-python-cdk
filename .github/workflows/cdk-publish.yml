@@ -71,17 +71,16 @@ jobs:
 
       - name: Get CDK version
         run: |
-          cdk_version="$(poetry version --short)"
+          cdk_version="$(poetry version --short | tr -d '[:space:]')"
           echo "CDK_VERSION=$cdk_version" >> $GITHUB_ENV
 
       - name: Check if tag already exists
         run: |
           tag="airbyte/source-declarative-manifest:${{ env.CDK_VERSION}}-${{ github.run_number }}"
-          if docker manifest inspect $tag > /dev/null 2>&1; then
+          if DOCKER_CLI_EXPERIMENTAL=enabled docker manifest inspect "$tag" > /dev/null 2>&1; then
             echo "The tag $tag already exists on Dockerhub. Skipping publish to prevent overwrite."
             exit 1
           fi
-
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
