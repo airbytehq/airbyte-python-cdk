@@ -14,6 +14,9 @@ from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
 from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
     AbstractStreamStateConverter,
 )
+import logging
+
+LOGGER = logging.getLogger("airbyte")
 
 
 def _extract_value(mapping: Mapping[str, Any], path: List[str]) -> Any:
@@ -409,3 +412,12 @@ class ConcurrentCursor(Cursor):
             return lower + step
         except OverflowError:
             return self._end_provider()
+
+    def should_be_synced(self, record: Record) -> bool:
+        record_cursor_value = self._extract_cursor_value(record)  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
+        if not record_cursor_value:
+            LOGGER.warning(
+                f"Could not find cursor field `{self.cursor_field.cursor_field_key}` in record. The incremental sync will assume it needs to be synced"
+            )
+            return True
+        return self.start <= record_cursor_value <= self._end_provider()
