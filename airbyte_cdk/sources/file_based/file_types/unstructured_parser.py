@@ -35,10 +35,18 @@ from unstructured.file_utils.filetype import (
     FileType,
     detect_filetype,
 )
+import nltk
 
 unstructured_partition_pdf = None
 unstructured_partition_docx = None
 unstructured_partition_pptx = None
+
+try:
+    nltk.data.find("tokenizers/punkt.zip")
+    nltk.data.find("tokenizers/punkt_tab.zip")
+except LookupError:
+    nltk.download("punkt")
+    nltk.download("punkt_tab")
 
 
 def optional_decode(contents: Union[str, bytes]) -> str:
@@ -162,6 +170,10 @@ class UnstructuredParser(FileTypeParser):
                     logger.warn(f"File {file.uri} cannot be parsed. Skipping it.")
                 else:
                     raise e
+            except Exception as e:
+                exception_str = str(e)
+                logger.error(f"File {file.uri} caused an error during parsing: {exception_str}.")
+                raise e
 
     def _read_file(
         self,
@@ -186,7 +198,7 @@ class UnstructuredParser(FileTypeParser):
                 remote_file,
                 self._get_file_type_error_message(filetype),
             )
-        if filetype in {FileType.MD, filetype is FileType.TXT}:
+        if filetype in {FileType.MD, FileType.TXT}:
             file_content: bytes = file_handle.read()
             decoded_content: str = optional_decode(file_content)
             return decoded_content
@@ -418,7 +430,12 @@ class UnstructuredParser(FileTypeParser):
 
     def _convert_to_markdown(self, el: Dict[str, Any]) -> str:
         if dpath.get(el, "type") == "Title":
-            heading_str = "#" * (dpath.get(el, "metadata/category_depth", default=1) or 1)
+            category_depth = dpath.get(el, "metadata/category_depth", default=1) or 1
+            if not isinstance(category_depth, int):
+                category_depth = (
+                    int(category_depth) if isinstance(category_depth, (str, float)) else 1
+                )
+            heading_str = "#" * category_depth
             return f"{heading_str} {dpath.get(el, 'text')}"
         elif dpath.get(el, "type") == "ListItem":
             return f"- {dpath.get(el, 'text')}"
