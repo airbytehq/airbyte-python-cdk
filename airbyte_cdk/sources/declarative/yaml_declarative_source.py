@@ -19,11 +19,10 @@ class YamlDeclarativeSource(ConcurrentDeclarativeSource[List[AirbyteStateMessage
     def __init__(
         self,
         path_to_yaml: str,
+        debug: bool = False,
         catalog: Optional[ConfiguredAirbyteCatalog] = None,
         config: Optional[Mapping[str, Any]] = None,
         state: Optional[List[AirbyteStateMessage]] = None,
-        *,
-        debug: bool = False,
     ) -> None:
         """
         :param path_to_yaml: Path to the yaml file describing the source
