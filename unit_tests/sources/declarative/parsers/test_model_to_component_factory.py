@@ -3075,11 +3075,11 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
     assert concurrent_cursor._lookback_window == expected_lookback_window
 
     assert (
-        concurrent_cursor.slice_boundary_fields[ConcurrentCursor._START_BOUNDARY]
+        concurrent_cursor._slice_boundary_fields[ConcurrentCursor._START_BOUNDARY]
         == expected_start_boundary
     )
     assert (
-        concurrent_cursor.slice_boundary_fields[ConcurrentCursor._END_BOUNDARY]
+        concurrent_cursor._slice_boundary_fields[ConcurrentCursor._END_BOUNDARY]
         == expected_end_boundary
     )
 
@@ -3098,14 +3098,14 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
     [
         pytest.param(
             {"partition_field_start": None},
-            "slice_boundary_fields",
+            "_slice_boundary_fields",
             ("start_time", "custom_end"),
             None,
             id="test_no_partition_field_start",
         ),
         pytest.param(
             {"partition_field_end": None},
-            "slice_boundary_fields",
+            "_slice_boundary_fields",
             ("custom_start", "end_time"),
             None,
             id="test_no_partition_field_end",

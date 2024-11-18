@@ -38,14 +38,12 @@ from airbyte_cdk.sources.streams.concurrent.helpers import (
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
 from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
-from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
-    DateTimeStreamStateConverter,
-)
 from airbyte_cdk.sources.streams.core import StreamData
-from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.sources.utils.schema_helpers import InternalConfig
 from airbyte_cdk.sources.utils.slice_logger import SliceLogger
 from deprecated.classic import deprecated
+
+from airbyte_cdk.utils.slice_hasher import SliceHasher
 
 """
 This module contains adapters to help enabling concurrency on Stream objects without needing to migrate to AbstractStream
@@ -270,6 +268,7 @@ class StreamPartition(Partition):
         self._sync_mode = sync_mode
         self._cursor_field = cursor_field
         self._state = state
+        self._hash = SliceHasher.hash(self._stream.name, self._slice)
 
     def read(self) -> Iterable[Record]:
         """
@@ -309,12 +308,7 @@ class StreamPartition(Partition):
         return self._slice
 
     def __hash__(self) -> int:
-        if self._slice:
-            # Convert the slice to a string so that it can be hashed
-            s = json.dumps(self._slice, sort_keys=True, cls=SliceEncoder)
-            return hash((self._stream.name, s))
-        else:
-            return hash(self._stream.name)
+        return self._hash
 
     def stream_name(self) -> str:
         return self._stream.name
@@ -356,83 +350,6 @@ class StreamPartitionGenerator(PartitionGenerator):
             yield StreamPartition(
                 self._stream,
                 copy.deepcopy(s),
-                self.message_repository,
-                self._sync_mode,
-                self._cursor_field,
-                self._state,
-            )
-
-
-class CursorPartitionGenerator(PartitionGenerator):
-    """
-    This class generates partitions using the concurrent cursor and iterates through state slices to generate partitions.
-
-    It is used when synchronizing a stream in incremental or full-refresh mode where state information is maintained
-    across partitions. Each partition represents a subset of the stream's data and is determined by the cursor's state.
-    """
-
-    _START_BOUNDARY = 0
-    _END_BOUNDARY = 1
-
-    def __init__(
-        self,
-        stream: Stream,
-        message_repository: MessageRepository,
-        cursor: Cursor,
-        connector_state_converter: DateTimeStreamStateConverter,
-        cursor_field: Optional[List[str]],
-        slice_boundary_fields: Optional[Tuple[str, str]],
-    ):
-        """
-        Initialize the CursorPartitionGenerator with a stream, sync mode, and cursor.
-
-        :param stream: The stream to delegate to for partition generation.
-        :param message_repository: The message repository to use to emit non-record messages.
-        :param sync_mode: The synchronization mode.
-        :param cursor: A Cursor object that maintains the state and the cursor field.
-        """
-        self._stream = stream
-        self.message_repository = message_repository
-        self._sync_mode = SyncMode.full_refresh
-        self._cursor = cursor
-        self._cursor_field = cursor_field
-        self._state = self._cursor.state
-        self._slice_boundary_fields = slice_boundary_fields
-        self._connector_state_converter = connector_state_converter
-
-    def generate(self) -> Iterable[Partition]:
-        """
-        Generate partitions based on the slices in the cursor's state.
-
-        This method iterates through the list of slices found in the cursor's state, and for each slice, it generates
-        a `StreamPartition` object.
-
-        :return: An iterable of StreamPartition objects.
-        """
-
-        start_boundary = (
-            self._slice_boundary_fields[self._START_BOUNDARY]
-            if self._slice_boundary_fields
-            else "start"
-        )
-        end_boundary = (
-            self._slice_boundary_fields[self._END_BOUNDARY]
-            if self._slice_boundary_fields
-            else "end"
-        )
-
-        for slice_start, slice_end in self._cursor.generate_slices():
-            stream_slice = StreamSlice(
-                partition={},
-                cursor_slice={
-                    start_boundary: self._connector_state_converter.output_format(slice_start),
-                    end_boundary: self._connector_state_converter.output_format(slice_end),
-                },
-            )
-
-            yield StreamPartition(
-                self._stream,
-                copy.deepcopy(stream_slice),
                 self.message_repository,
                 self._sync_mode,
                 self._cursor_field,
