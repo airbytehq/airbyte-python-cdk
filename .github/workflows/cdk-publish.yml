@@ -38,9 +38,11 @@ jobs:
         continue-on-error: true # Prevent security scan from failing the build
         with:
           image-ref: airbyte/source-declarative-manifest:build-test
-          format: table
+          format: 'table,sarif'
+          output: 'trivy-results.sarif'
           exit-code: 1
-          severity: CRITICAL
+          severity: 'CRITICAL,HIGH'
+          timeout: '5m'
 
   publish:
     name: Publish SDM Docker Image
