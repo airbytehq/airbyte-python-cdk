@@ -7,7 +7,7 @@ import logging
 import pkgutil
 from copy import deepcopy
 from importlib import metadata
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Union
+from typing import Any, Dict, Iterator, List, Mapping, Optional
 from packaging.version import Version, InvalidVersion
 
 import yaml
