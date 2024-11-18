@@ -249,7 +249,7 @@ class TestConcurrentReadProcessor(unittest.TestCase):
         ]
         assert messages == expected_messages
 
-        partition.close.assert_called_once()
+        self._stream.cursor.close_partition.assert_called_once()
 
     @freezegun.freeze_time("2020-01-01T00:00:00")
     def test_handle_on_partition_complete_sentinel_yields_status_message_if_the_stream_is_done(
@@ -298,14 +298,14 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             )
         ]
         assert messages == expected_messages
-        self._a_closed_partition.close.assert_called_once()
+        self._another_stream.cursor.close_partition.assert_called_once()
 
     @freezegun.freeze_time("2020-01-01T00:00:00")
     def test_given_exception_on_partition_complete_sentinel_then_yield_error_trace_message_and_stream_is_incomplete(
         self,
     ) -> None:
         self._a_closed_partition.stream_name.return_value = self._stream.name
-        self._a_closed_partition.close.side_effect = ValueError
+        self._stream.cursor.close_partition.side_effect = ValueError
 
         handler = ConcurrentReadProcessor(
             [self._stream],
@@ -375,7 +375,7 @@ class TestConcurrentReadProcessor(unittest.TestCase):
 
         expected_messages = []
         assert messages == expected_messages
-        partition.close.assert_called_once()
+        self._stream.cursor.close_partition.assert_called_once()
 
     @freezegun.freeze_time("2020-01-01T00:00:00")
     def test_on_record_no_status_message_no_repository_messge(self):
@@ -733,7 +733,7 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             )
         )
 
-        assert self._an_open_partition.close.call_count == 0
+        assert self._stream.cursor.close_partition.call_count == 0
 
     def test_is_done_is_false_if_there_are_any_instances_to_read_from(self):
         stream_instances_to_read_from = [self._stream]

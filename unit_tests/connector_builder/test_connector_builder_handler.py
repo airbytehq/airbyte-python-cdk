@@ -7,6 +7,7 @@ import dataclasses
 import json
 import logging
 import os
+from typing import Literal
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -38,6 +39,7 @@ from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteMessageSerializer,
     AirbyteRecordMessage,
+    AirbyteStateBlob,
     AirbyteStateMessage,
     AirbyteStream,
     AirbyteStreamState,
@@ -74,7 +76,8 @@ _A_STATE = [
     AirbyteStateMessage(
         type="STREAM",
         stream=AirbyteStreamState(
-            stream_descriptor=StreamDescriptor(name=_stream_name), stream_state={"key": "value"}
+            stream_descriptor=StreamDescriptor(name=_stream_name),
+            stream_state=AirbyteStateBlob({"key": "value"}),
         ),
     )
 ]
@@ -84,15 +87,17 @@ _A_PER_PARTITION_STATE = [
         type="STREAM",
         stream=AirbyteStreamState(
             stream_descriptor=StreamDescriptor(name=_stream_name),
-            stream_state={
-                "states": [
-                    {
-                        "partition": {"key": "value"},
-                        "cursor": {"item_id": 0},
-                    },
-                ],
-                "parent_state": {},
-            },
+            stream_state=AirbyteStateBlob(
+                {
+                    "states": [
+                        {
+                            "partition": {"key": "value"},
+                            "cursor": {"item_id": 0},
+                        },
+                    ],
+                    "parent_state": {},
+                }
+            ),
         ),
     )
 ]
@@ -569,7 +574,7 @@ def test_read():
         )
 
 
-def test_config_update():
+def test_config_update() -> None:
     manifest = copy.deepcopy(MANIFEST)
     manifest["definitions"]["retriever"]["requester"]["authenticator"] = {
         "type": "OAuthAuthenticator",
@@ -632,7 +637,7 @@ def test_read_returns_error_response(mock_from_exception):
             return connector_specification
 
         @property
-        def check_config_against_spec(self):
+        def check_config_against_spec(self) -> Literal[False]:
             return False
 
     stack_trace = "a stack trace"

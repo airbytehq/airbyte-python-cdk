@@ -4,7 +4,11 @@ from typing import Any, Mapping
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.migrations.state_migration import StateMigration
-from airbyte_cdk.sources.declarative.models import DatetimeBasedCursor, SubstreamPartitionRouter
+from airbyte_cdk.sources.declarative.models import (
+    DatetimeBasedCursor,
+    SubstreamPartitionRouter,
+    CustomIncrementalSync,
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import ParentStreamConfig
 
 
@@ -32,7 +36,7 @@ class LegacyToPerPartitionStateMigration(StateMigration):
     def __init__(
         self,
         partition_router: SubstreamPartitionRouter,
-        cursor: DatetimeBasedCursor,
+        cursor: CustomIncrementalSync | DatetimeBasedCursor,
         config: Mapping[str, Any],
         parameters: Mapping[str, Any],
     ):
@@ -64,7 +68,7 @@ class LegacyToPerPartitionStateMigration(StateMigration):
             return False
 
         # There is exactly one parent stream
-        number_of_parent_streams = len(self._partition_router.parent_stream_configs)
+        number_of_parent_streams = len(self._partition_router.parent_stream_configs)  # type: ignore # custom partition will introduce this attribute if needed
         if number_of_parent_streams != 1:
             # There should be exactly one parent stream
             return False

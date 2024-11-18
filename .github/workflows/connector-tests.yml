@@ -72,6 +72,8 @@ jobs:
             cdk_extra: n/a
           - connector: source-shopify
             cdk_extra: n/a
+          - connector: source-chargebee
+            cdk_extra: n/a
           # Currently not passing CI (unrelated)
           # - connector: source-zendesk-support
           #   cdk_extra: n/a

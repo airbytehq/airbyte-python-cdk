@@ -11,9 +11,11 @@ from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
+from airbyte_cdk.sources.streams.concurrent.partitions.stream_slicer import StreamSlicer
 from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
     AbstractStreamStateConverter,
 )
+from airbyte_cdk.sources.types import StreamSlice
 
 
 def _extract_value(mapping: Mapping[str, Any], path: List[str]) -> Any:
@@ -61,7 +63,7 @@ class CursorField:
         return cursor_value  # type: ignore  # we assume that the value the path points at is a comparable
 
 
-class Cursor(ABC):
+class Cursor(StreamSlicer, ABC):
     @property
     @abstractmethod
     def state(self) -> MutableMapping[str, Any]: ...
@@ -88,12 +90,12 @@ class Cursor(ABC):
         """
         raise NotImplementedError()
 
-    def generate_slices(self) -> Iterable[Tuple[Any, Any]]:
+    def stream_slices(self) -> Iterable[StreamSlice]:
         """
         Default placeholder implementation of generate_slices.
         Subclasses can override this method to provide actual behavior.
         """
-        yield from ()
+        yield StreamSlice(partition={}, cursor_slice={})
 
 
 class FinalStateCursor(Cursor):
@@ -184,8 +186,15 @@ class ConcurrentCursor(Cursor):
         return self._cursor_field
 
     @property
-    def slice_boundary_fields(self) -> Optional[Tuple[str, str]]:
-        return self._slice_boundary_fields
+    def _slice_boundary_fields_wrapper(self) -> Tuple[str, str]:
+        return (
+            self._slice_boundary_fields
+            if self._slice_boundary_fields
+            else (
+                self._connector_state_converter.START_KEY,
+                self._connector_state_converter.END_KEY,
+            )
+        )
 
     def _get_concurrent_state(
         self, state: MutableMapping[str, Any]
@@ -299,7 +308,7 @@ class ConcurrentCursor(Cursor):
         """
         self._emit_state_message()
 
-    def generate_slices(self) -> Iterable[Tuple[CursorValueType, CursorValueType]]:
+    def stream_slices(self) -> Iterable[StreamSlice]:
         """
         Generating slices based on a few parameters:
         * lookback_window: Buffer to remove from END_KEY of the highest slice
@@ -368,7 +377,7 @@ class ConcurrentCursor(Cursor):
 
     def _split_per_slice_range(
         self, lower: CursorValueType, upper: CursorValueType, upper_is_end: bool
-    ) -> Iterable[Tuple[CursorValueType, CursorValueType]]:
+    ) -> Iterable[StreamSlice]:
         if lower >= upper:
             return
 
@@ -377,10 +386,22 @@ class ConcurrentCursor(Cursor):
 
         lower = max(lower, self._start) if self._start else lower
         if not self._slice_range or self._evaluate_upper_safely(lower, self._slice_range) >= upper:
-            if self._cursor_granularity and not upper_is_end:
-                yield lower, upper - self._cursor_granularity
-            else:
-                yield lower, upper
+            start_value, end_value = (
+                (lower, upper - self._cursor_granularity)
+                if self._cursor_granularity and not upper_is_end
+                else (lower, upper)
+            )
+            yield StreamSlice(
+                partition={},
+                cursor_slice={
+                    self._slice_boundary_fields_wrapper[
+                        self._START_BOUNDARY
+                    ]: self._connector_state_converter.output_format(start_value),
+                    self._slice_boundary_fields_wrapper[
+                        self._END_BOUNDARY
+                    ]: self._connector_state_converter.output_format(end_value),
+                },
+            )
         else:
             stop_processing = False
             current_lower_boundary = lower
@@ -389,12 +410,24 @@ class ConcurrentCursor(Cursor):
                     self._evaluate_upper_safely(current_lower_boundary, self._slice_range), upper
                 )
                 has_reached_upper_boundary = current_upper_boundary >= upper
-                if self._cursor_granularity and (
-                    not upper_is_end or not has_reached_upper_boundary
-                ):
-                    yield current_lower_boundary, current_upper_boundary - self._cursor_granularity
-                else:
-                    yield current_lower_boundary, current_upper_boundary
+
+                start_value, end_value = (
+                    (current_lower_boundary, current_upper_boundary - self._cursor_granularity)
+                    if self._cursor_granularity
+                    and (not upper_is_end or not has_reached_upper_boundary)
+                    else (current_lower_boundary, current_upper_boundary)
+                )
+                yield StreamSlice(
+                    partition={},
+                    cursor_slice={
+                        self._slice_boundary_fields_wrapper[
+                            self._START_BOUNDARY
+                        ]: self._connector_state_converter.output_format(start_value),
+                        self._slice_boundary_fields_wrapper[
+                            self._END_BOUNDARY
+                        ]: self._connector_state_converter.output_format(end_value),
+                    },
+                )
                 current_lower_boundary = current_upper_boundary
                 if current_upper_boundary >= upper:
                     stop_processing = True

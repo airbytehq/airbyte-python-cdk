@@ -124,6 +124,13 @@ class AbstractStreamStateConverter(ABC):
         """
         ...
 
+    @abstractmethod
+    def output_format(self, value: Any) -> Any:
+        """
+        Convert the cursor value type to a JSON valid type.
+        """
+        ...
+
     def merge_intervals(
         self, intervals: List[MutableMapping[str, Any]]
     ) -> List[MutableMapping[str, Any]]:
