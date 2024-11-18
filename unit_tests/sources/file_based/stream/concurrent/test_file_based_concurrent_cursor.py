@@ -214,7 +214,6 @@ def test_add_file(
                 SyncMode.full_refresh,
                 FileBasedConcurrentCursor.CURSOR_FIELD,
                 initial_state,
-                cursor,
             )
             for uri, timestamp in pending_files
         ]

@@ -58,6 +58,7 @@ from airbyte_cdk.sources.declarative.datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.decoders import (
     Decoder,
+    GzipJsonDecoder,
     IterableDecoder,
     JsonDecoder,
     JsonlDecoder,
@@ -135,6 +136,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     CustomBackoffStrategy as CustomBackoffStrategyModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomDecoder as CustomDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CustomErrorHandler as CustomErrorHandlerModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -181,6 +185,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ExponentialBackoffStrategy as ExponentialBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    GzipJsonDecoder as GzipJsonDecoderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     HttpRequester as HttpRequesterModel,
@@ -402,6 +409,7 @@ class ModelToComponentFactory:
             CursorPaginationModel: self.create_cursor_pagination,
             CustomAuthenticatorModel: self.create_custom_component,
             CustomBackoffStrategyModel: self.create_custom_component,
+            CustomDecoderModel: self.create_custom_component,
             CustomErrorHandlerModel: self.create_custom_component,
             CustomIncrementalSyncModel: self.create_custom_component,
             CustomRecordExtractorModel: self.create_custom_component,
@@ -425,6 +433,7 @@ class ModelToComponentFactory:
             InlineSchemaLoaderModel: self.create_inline_schema_loader,
             JsonDecoderModel: self.create_json_decoder,
             JsonlDecoderModel: self.create_jsonl_decoder,
+            GzipJsonDecoderModel: self.create_gzipjson_decoder,
             KeysToLowerModel: self.create_keys_to_lower_transformation,
             IterableDecoderModel: self.create_iterable_decoder,
             XmlDecoderModel: self.create_xml_decoder,
@@ -619,11 +628,16 @@ class ModelToComponentFactory:
                 "LegacyToPerPartitionStateMigrations can only be applied with a parent stream configuration."
             )
 
+        if not hasattr(declarative_stream, "incremental_sync"):
+            raise ValueError(
+                "LegacyToPerPartitionStateMigrations can only be applied with an incremental_sync configuration."
+            )
+
         return LegacyToPerPartitionStateMigration(
-            declarative_stream.retriever.partition_router,
-            declarative_stream.incremental_sync,
+            partition_router,  # type: ignore # was already checked above
+            declarative_stream.incremental_sync,  # type: ignore # was already checked. Migration can be applied only to incremental streams.
             config,
-            declarative_stream.parameters,
+            declarative_stream.parameters,  # type: ignore # different type is expected here Mapping[str, Any], got Dict[str, Any]
         )  # type: ignore # The retriever type was already checked
 
     def create_session_token_authenticator(
@@ -1547,6 +1561,12 @@ class ModelToComponentFactory:
     @staticmethod
     def create_xml_decoder(model: XmlDecoderModel, config: Config, **kwargs: Any) -> XmlDecoder:
         return XmlDecoder(parameters={})
+
+    @staticmethod
+    def create_gzipjson_decoder(
+        model: GzipJsonDecoderModel, config: Config, **kwargs: Any
+    ) -> GzipJsonDecoder:
+        return GzipJsonDecoder(parameters={}, encoding=model.encoding)
 
     @staticmethod
     def create_json_file_schema_loader(

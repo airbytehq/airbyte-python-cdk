@@ -41,21 +41,6 @@ class Partition(ABC):
         pass
 
     @abstractmethod
-    def close(self) -> None:
-        """
-        Closes the partition.
-        """
-        pass
-
-    @abstractmethod
-    def is_closed(self) -> bool:
-        """
-        Returns whether the partition is closed.
-        :return:
-        """
-        pass
-
-    @abstractmethod
     def __hash__(self) -> int:
         """
         Returns a hash of the partition.

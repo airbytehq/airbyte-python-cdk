@@ -124,7 +124,12 @@ def test_file_based_stream_partition(transformer, expected_records):
     cursor_field = None
     state = None
     partition = FileBasedStreamPartition(
-        stream, _slice, message_repository, sync_mode, cursor_field, state, _ANY_CURSOR
+        stream,
+        _slice,
+        message_repository,
+        sync_mode,
+        cursor_field,
+        state,
     )
 
     a_log_message = AirbyteMessage(
@@ -168,7 +173,6 @@ def test_file_based_stream_partition_raising_exception(exception_type, expected_
         _ANY_SYNC_MODE,
         _ANY_CURSOR_FIELD,
         _ANY_STATE,
-        _ANY_CURSOR,
     )
 
     stream.read_records.side_effect = Exception()
@@ -204,7 +208,12 @@ def test_file_based_stream_partition_hash(_slice, expected_hash):
     stream = Mock()
     stream.name = "stream"
     partition = FileBasedStreamPartition(
-        stream, _slice, Mock(), _ANY_SYNC_MODE, _ANY_CURSOR_FIELD, _ANY_STATE, _ANY_CURSOR
+        stream,
+        _slice,
+        Mock(),
+        _ANY_SYNC_MODE,
+        _ANY_CURSOR_FIELD,
+        _ANY_STATE,
     )
 
     _hash = partition.__hash__()
