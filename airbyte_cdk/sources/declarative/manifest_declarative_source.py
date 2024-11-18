@@ -8,7 +8,7 @@ import pkgutil
 import re
 from copy import deepcopy
 from importlib import metadata
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Tuple
 
 import yaml
 from airbyte_cdk.models import (
@@ -94,7 +94,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         return self._source_config
 
     @property
-    def message_repository(self) -> Union[None, MessageRepository]:
+    def message_repository(self) -> MessageRepository:
         return self._message_repository
 
     @property

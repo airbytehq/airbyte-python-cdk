@@ -82,7 +82,11 @@ class DateTimeStreamStateConverter(AbstractStreamStateConverter):
         # The start and end are the same to avoid confusion as to whether the records for this slice
         # were actually synced
         slices = [
-            {self.START_KEY: start if start is not None else sync_start, self.END_KEY: sync_start}
+            {
+                self.START_KEY: start if start is not None else sync_start,
+                self.END_KEY: sync_start,
+                self.MOST_RECENT_RECORD_KEY: sync_start,
+            }
         ]
 
         return sync_start, {

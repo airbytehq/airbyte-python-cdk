@@ -687,6 +687,29 @@ class XmlDecoder(BaseModel):
     type: Literal["XmlDecoder"]
 
 
+class CustomDecoder(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    type: Literal["CustomDecoder"]
+    class_name: str = Field(
+        ...,
+        description="Fully-qualified name of the class that will be implementing the custom decoding. Has to be a sub class of Decoder. The format is `source_<name>.<package>.<class_name>`.",
+        examples=["source_amazon_ads.components.GzipJsonlDecoder"],
+        title="Class Name",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class GzipJsonDecoder(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    type: Literal["GzipJsonDecoder"]
+    encoding: Optional[str] = "utf-8"
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class MinMaxDatetime(BaseModel):
     type: Literal["MinMaxDatetime"]
     datetime: str = Field(
@@ -1620,7 +1643,16 @@ class SimpleRetriever(BaseModel):
         description="PartitionRouter component that describes how to partition the stream, enabling incremental syncs and checkpointing.",
         title="Partition Router",
     )
-    decoder: Optional[Union[JsonDecoder, JsonlDecoder, IterableDecoder, XmlDecoder]] = Field(
+    decoder: Optional[
+        Union[
+            CustomDecoder,
+            JsonDecoder,
+            JsonlDecoder,
+            IterableDecoder,
+            XmlDecoder,
+            GzipJsonDecoder,
+        ]
+    ] = Field(
         None,
         description="Component decoding the response so records can be extracted.",
         title="Decoder",
@@ -1680,7 +1712,16 @@ class AsyncRetriever(BaseModel):
         description="PartitionRouter component that describes how to partition the stream, enabling incremental syncs and checkpointing.",
         title="Partition Router",
     )
-    decoder: Optional[Union[JsonDecoder, JsonlDecoder, IterableDecoder, XmlDecoder]] = Field(
+    decoder: Optional[
+        Union[
+            CustomDecoder,
+            JsonDecoder,
+            JsonlDecoder,
+            IterableDecoder,
+            XmlDecoder,
+            GzipJsonDecoder,
+        ]
+    ] = Field(
         None,
         description="Component decoding the response so records can be extracted.",
         title="Decoder",
