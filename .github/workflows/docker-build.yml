@@ -1,4 +1,4 @@
-name: SDM Docker Build
+name: Source Declarative Manifest - Docker Build
 
 on:
   push:
@@ -29,13 +29,11 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Build Docker image
-        run: |
-          docker build -t airbyte/source-declarative-manifest:build-test .
+      - name: Set up QEMU for mulit-platform builds
+        uses: docker/setup-qemu-action@v3
 
-      - name: Test image
-        run: |
-          docker run airbyte/source-declarative-manifest:build-test spec
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Login to Docker Hub
         if: ${{ success() && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/christo/sdm-test' || github.event_name == 'workflow_dispatch') }}
@@ -44,21 +42,35 @@ jobs:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_PASSWORD }}
 
-      - name: Push to Docker Hub
-        if: ${{ success() && (github.ref == 'refs/heads/main'  || github.ref == 'refs/heads/christo/sdm-test'|| github.event_name == 'workflow_dispatch') }}
+      - name: Build test image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          load: true
+          tags: airbyte/source-declarative-manifest:build-test
+
+      - name: Test image
         run: |
-          # Always tag with commit SHA
-          docker tag airbyte/source-declarative-manifest:build-test airbyte/source-declarative-manifest:${{ github.sha }}
-          docker push airbyte/source-declarative-manifest:${{ github.sha }}
+          docker run airbyte/source-declarative-manifest:build-test spec 
 
-          # Tag as latest if on main branch
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            docker tag airbyte/source-declarative-manifest:build-test airbyte/source-declarative-manifest:latest
-            docker push airbyte/source-declarative-manifest:latest
-          fi
+      - name: Scan for vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        continue-on-error: true # Prevent security scan from failing the build
+        with:
+          image-ref: airbyte/source-declarative-manifest:build-test
+          format: table
+          exit-code: 1
+          severity: CRITICAL
 
-          # Add version tag if provided
-          if [[ -n "${{ github.event.inputs.version-tag }}" ]]; then
-            docker tag airbyte/source-declarative-manifest:build-test airbyte/source-declarative-manifest:${{ github.event.inputs.version-tag }}
-            docker push airbyte/source-declarative-manifest:${{ github.event.inputs.version-tag }}
-          fi
+      - name: Build and push
+        if: ${{ success() && (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') }}
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            airbyte/source-declarative-manifest:${{ github.sha }}
+            ${{ github.ref == 'refs/heads/main' && 'airbyte/source-declarative-manifest:latest' || '' }}
+            ${{ github.event.inputs.version-tag != '' && format('airbyte/source-declarative-manifest:{0}', github.event.inputs.version-tag) || '' }}
