@@ -69,7 +69,7 @@ jobs:
 
       - name: Get CDK version
         run: |
-          cdk_version=$(poetry version --short)
+          cdk_version="$(poetry version --short)"
           echo "CDK_VERSION=$cdk_version" >> $GITHUB_ENV
 
       - name: Check if tag already exists
