@@ -26,7 +26,11 @@ class PaginationStopCondition(ABC):
 
 
 class CursorStopCondition(PaginationStopCondition):
-    def __init__(self, cursor: DeclarativeCursor | ConcurrentCursor):
+    def __init__(
+        self,
+        cursor: DeclarativeCursor
+        | ConcurrentCursor,  # migrate to use both old and concurrent versions
+    ):
         self._cursor = cursor
 
     def is_met(self, record: Record) -> bool:
