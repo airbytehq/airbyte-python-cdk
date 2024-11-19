@@ -2834,7 +2834,7 @@ interpolation:
         - "'{{ day_delta(-1) }}' -> '2021-08-31:00:00.000000+0000'"
         - "'{{ day_delta(25, format='%Y-%m-%d') }}' -> '2021-09-02'"
     - title: duration
-      description: Converts an ISO8601 duratioin to datetime.timedelta.
+      description: Converts an ISO8601 duration to datetime timedelta.
       arguments:
         duration_string: "A string representing an ISO8601 duration. See https://www.digi.com/resources/documentation/digidocs//90001488-13/reference/r_iso_8601_duration_format.htm for more details."
       return_type: datetime.timedelta
