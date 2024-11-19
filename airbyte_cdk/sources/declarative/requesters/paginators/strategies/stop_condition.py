@@ -51,8 +51,8 @@ class StopConditionPaginationStrategyDecorator(PaginationStrategy):
             return None
         return self._delegate.next_page_token(response, last_page_size, last_record)
 
-    def reset(self) -> None:
-        self._delegate.reset()
+    def reset(self, reset_value: Optional[Any] = None) -> None:
+        self._delegate.reset(reset_value)
 
     def get_page_size(self) -> Optional[int]:
         return self._delegate.get_page_size()
