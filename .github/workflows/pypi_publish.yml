@@ -77,14 +77,20 @@ jobs:
       - name: Set Version (workflow_dispatch)
         if: github.event_name == 'workflow_dispatch'
         run: |
-          echo "Version set to ${{ github.event.inputs.version }}"
+          echo "Version input set to ${{ github.event.inputs.version }}"
+          # Remove the 'v' prefix if it exists
+          VERSION=${VERSION#v}
           echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
 
       - name: Set Version (tag)
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          echo "Version set to ${{ github.ref_name }}"
-          echo "VERSION=${{ github.ref_name }}" >> $GITHUB_ENV
+          echo "Version ref set to '${{ github.ref_name }}'"
+          VERSION=${{ github.ref_name }}
+          # Remove the 'v' prefix if it exists
+          VERSION=${VERSION#v}
+          echo "Setting version to '$VERSION'"
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
 
       # We need to download the build artifact again because the previous job was on a different runner
       - name: Download Build Artifact
