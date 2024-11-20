@@ -79,8 +79,10 @@ jobs:
         run: |
           echo "Version input set to ${{ github.event.inputs.version }}"
           # Remove the 'v' prefix if it exists
+          VERSION=${{ github.event.inputs.version }}
           VERSION=${VERSION#v}
-          echo "VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+          echo "Setting version to '$VERSION'"
+          echo "VERSION=${VERSION}" >> $GITHUB_ENV
 
       - name: Set Version (tag)
         if: startsWith(github.ref, 'refs/tags/v')
