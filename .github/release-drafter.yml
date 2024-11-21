@@ -15,6 +15,7 @@ categories:
       - "chore"
       - "ci"
       - "refactor"
+      - "testing"
   - title: "Documentation 📖"
     label: "docs"
 change-template: "- $TITLE (#$NUMBER)"
@@ -38,6 +39,9 @@ autolabeler:
   - label: "chore"
     title:
       - '/^chore(\(.*\))?\:/i'
+  - label: "testing"
+    title:
+      - '/^tests(\(.*\))?\:/i'
   - label: "ci"
     title:
       - '/^ci(\(.*\))?\:/i'
