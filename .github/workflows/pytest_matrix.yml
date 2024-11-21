@@ -13,11 +13,13 @@ on:
       - main
     paths:
       - 'airbyte_cdk/**'
+      - 'unit_tests/**'
       - 'poetry.lock'
       - 'pyproject.toml'
   pull_request:
     paths:
       - 'airbyte_cdk/**'
+      - 'unit_tests/**'
       - 'poetry.lock'
       - 'pyproject.toml'
 
