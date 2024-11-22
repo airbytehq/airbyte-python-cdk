@@ -36,6 +36,7 @@ jobs:
           echo "DETECTED_VERSION=${DETECTED_VERSION}" >> $GITHUB_ENV
 
       - name: Validate and set VERSION from tag ('${{ github.ref_name }}') and input (${{ github.event.inputs.version || 'none' }})
+        id: set_version
         if: github.event_name == 'workflow_dispatch'
         run: |
           INPUT_VERSION=${{ github.event.inputs.version }}
@@ -89,6 +90,9 @@ jobs:
           path: |
             /tmp/baipp/dist/*.whl
             /tmp/baipp/dist/*.tar.gz
+    outputs:
+      VERSION: ${{ steps.set_version.outputs.VERSION }}
+      IS_PRERELEASE: ${{ steps.set_version.outputs.IS_PRERELEASE }}
 
   publish_sdm:
     name: Publish SDM to DockerHub
