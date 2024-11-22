@@ -77,6 +77,7 @@ jobs:
           fetch-depth: 0
 
       - uses: hynek/build-and-inspect-python-package@v2
+        name: Build package with version ref '${{ env.VERSION }}'
         env:
           # Pass in the evaluated version from the previous step
           # More info: https://github.com/mtkennerly/poetry-dynamic-versioning#user-content-environment-variables
