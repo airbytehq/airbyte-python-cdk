@@ -16,4 +16,6 @@ COPY airbyte_cdk ./airbyte_cdk
 # Build and install the package
 RUN pip install dist/*.whl
 
-ENTRYPOINT ["poetry", "run", "source-declarative-manifest"]
+# Set the entrypoint
+ENV AIRBYTE_ENTRYPOINT="source-declarative-manifest"
+ENTRYPOINT ["source-declarative-manifest"]
