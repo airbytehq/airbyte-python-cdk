@@ -44,7 +44,7 @@ jobs:
           # Exit with success if both detected and input versions are empty
           if [ -z "${DETECTED_VERSION:-}" ] && [ -z "${INPUT_VERSION:-}" ]; then
             echo "No version detected or input. Will publish to SHA tag instead."
-            echo 'VERSION=""' >> $GITHUB_ENV
+            echo 'VERSION=' >> $GITHUB_ENV
             exit 0
           fi
           # Remove the 'v' prefix if it exists
@@ -78,11 +78,11 @@ jobs:
           fetch-depth: 0
 
       - uses: hynek/build-and-inspect-python-package@v2
-        name: Build package with version ref '${{ env.VERSION }}'
+        name: Build package with version ref '${{ env.VERSION || '0.0.0dev0' }}'
         env:
           # Pass in the evaluated version from the previous step
           # More info: https://github.com/mtkennerly/poetry-dynamic-versioning#user-content-environment-variables
-          POETRY_DYNAMIC_VERSIONING_BYPASS: ${{ env.VERSION }}
+          POETRY_DYNAMIC_VERSIONING_BYPASS: ${{ env.VERSION || '0.0.0dev0'}}
 
       - uses: actions/upload-artifact@v4
         with:
