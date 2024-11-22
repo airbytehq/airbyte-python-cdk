@@ -57,9 +57,9 @@ jobs:
           DETECTED_VERSION=${{ github.ref_name }}
           echo "Version ref set to '${DETECTED_VERSION}'"
           # Remove the 'v' prefix if it exists
-          DETECTED_VERSION=${VERSION#v}
+          DETECTED_VERSION="${DETECTED_VERSION#v}"
           echo "Setting version to '$DETECTED_VERSION'"
-          echo "DETECTED_VERSION=${VERSION}" >> $GITHUB_ENV
+          echo "DETECTED_VERSION=${DETECTED_VERSION}" >> $GITHUB_ENV
 
       - name: Set Version (workflow_dispatch)
         if: github.event_name == 'workflow_dispatch'
@@ -67,15 +67,15 @@ jobs:
           INPUT_VERSION=${{ github.event.inputs.version }}
           echo "Version input set to '${INPUT_VERSION}'"
           # Exit with success if both detected and input versions are empty
-          if [ -z "$DETECTED_VERSION" ] && [ -z "$INPUT_VERSION" ]; then
+          if [ -z "${DETECTED_VERSION:-}" ] && [ -z "${INPUT_VERSION:-}" ]; then
             echo "No version detected or input. Will publish to SHA tag instead."
             echo 'VERSION=""' >> $GITHUB_ENV
             exit 0
           fi
           # Remove the 'v' prefix if it exists
-          INPUT_VERSION=${INPUT_VERSION#v}
+          INPUT_VERSION="${INPUT_VERSION#v}"
           # Fail if detected version is non-empty and different from the input version
-          if [ -n "$DETECTED_VERSION" ] [ -n "$INPUT_VERSION" ] && [ "$DETECTED_VERSION" != "$VERSION" ]; then
+          if [ -n "${DETECTED_VERSION:-}" ] && [ -n "${INPUT_VERSION:-}" ] && [ "${DETECTED_VERSION}" != "${INPUT_VERSION}" ]; then
             echo "Error: Version input '${INPUT_VERSION}' does not match detected version '${DETECTED_VERSION}'."
             exit 1
           fi
@@ -94,7 +94,6 @@ jobs:
           else
             echo "IS_PRERELEASE=true" >> $GITHUB_ENV
           fi
-
       # We need to download the build artifact again because the previous job was on a different runner
       - name: Download Build Artifact
         uses: actions/download-artifact@v4
