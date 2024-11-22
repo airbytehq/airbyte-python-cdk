@@ -80,7 +80,7 @@ jobs:
             exit 1
           fi
           # Set the version to the input version if non-empty, otherwise the detected version
-          VERSION=${INPUT_VERSION:-$DETECTED_VERSION}
+          VERSION="${INPUT_VERSION:-$DETECTED_VERSION}"
           # Fail if the version is still empty
           if [ -z "$VERSION" ]; then
             echo "Error: VERSION is not set. Ensure the tag follows the format 'refs/tags/vX.Y.Z'."
