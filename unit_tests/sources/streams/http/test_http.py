@@ -29,6 +29,10 @@ from airbyte_cdk.sources.streams.http.exceptions import (
 from airbyte_cdk.sources.streams.http.http_client import MessageRepresentationAirbyteTracedErrors
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
 
+from airbyte_cdk.utils.airbyte_secrets_utils import (
+    update_secrets,
+)
+
 
 class StubBasicReadHttpStream(HttpStream):
     url_base = "https://test_base_url.com"
@@ -227,6 +231,43 @@ def test_4xx_error_codes_http_stream(mocker, http_code):
 
     with pytest.raises(MessageRepresentationAirbyteTracedErrors):
         list(stream.read_records(SyncMode.full_refresh))
+
+
+@pytest.mark.parametrize("http_code", [400, 401, 403])
+def test_error_codes_http_stream_error_resolution_with_response_secrets_filtered(mocker, http_code):
+    stream = StubCustomBackoffHttpStream()
+
+    # expected assertion values
+    expected_header_secret_replaced = "'authorisation_header': '__****__'"
+    expected_content_str_secret_replaced = "this str contains **** secret"
+
+    # mocking the response
+    res = requests.Response()
+    res.status_code = http_code
+    res._content = (
+        b'{"error": "test error message", "secret_info": "this str contains SECRET_VALUE secret"}'
+    )
+    res.headers = {
+        # simple non-secret header
+        "regular_header": "some_header_value",
+        # secret header
+        "authorisation_header": "__SECRET_X_VALUE__",
+    }
+
+    # updating secrets to be filtered
+    update_secrets(["SECRET_X_VALUE", "SECRET_VALUE"])
+
+    # patch the `send` > response
+    mocker.patch.object(requests.Session, "send", return_value=res)
+
+    # proceed
+    with pytest.raises(MessageRepresentationAirbyteTracedErrors) as err:
+        list(stream.read_records(SyncMode.full_refresh))
+
+    # we expect the header secrets are obscured
+    assert expected_header_secret_replaced in str(err._excinfo)
+    # we expect the response body values (any of them) are obscured
+    assert expected_content_str_secret_replaced in str(err._excinfo)
 
 
 class AutoFailFalseHttpStream(StubBasicReadHttpStream):

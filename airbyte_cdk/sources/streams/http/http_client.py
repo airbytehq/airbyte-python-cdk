@@ -52,6 +52,8 @@ from requests.auth import AuthBase
 
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
 
+from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
+
 
 class MessageRepresentationAirbyteTracedErrors(AirbyteTracedException):
     """
@@ -361,7 +363,10 @@ class HttpClient:
 
         if error_resolution.response_action == ResponseAction.FAIL:
             if response is not None:
-                error_message = f"'{request.method}' request to '{request.url}' failed with status code '{response.status_code}' and error message '{self._error_message_parser.parse_response_error_message(response)}'"
+                filtered_response_message = filter_secrets(
+                    f"Request (body): '{request.body}'. Response (body): '{self._error_message_parser.get_response_body(response)}'. Response (headers): '{response.headers}'."
+                )
+                error_message = f"'{request.method}' request to '{request.url}' failed with status code '{response.status_code}' and error message: '{self._error_message_parser.parse_response_error_message(response)}'. {filtered_response_message}"
             else:
                 error_message = (
                     f"'{request.method}' request to '{request.url}' failed with exception: '{exc}'"
