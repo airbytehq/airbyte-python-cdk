@@ -1495,3 +1495,68 @@ def test_close_partition_with_slice_range_granularity_concurrent_cursor_from_dat
         },
     )
     assert state_manager.update_state_for_stream.call_count == 3
+
+
+@pytest.mark.parametrize(
+    "record, should_be_synced",
+    [
+        [
+            Record(
+                data={_A_CURSOR_FIELD_KEY: 10},
+                partition=_partition(
+                    {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
+                ),
+            ),
+            True,
+        ],
+        [
+            Record(
+                data={_A_CURSOR_FIELD_KEY: 9},
+                partition=_partition(
+                    {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
+                ),
+            ),
+            False,
+        ],
+        [
+            Record(
+                data={_A_CURSOR_FIELD_KEY: 21},
+                partition=_partition(
+                    {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
+                ),
+            ),
+            False,
+        ],
+        [
+            Record(
+                data={"not_a_cursor_field": "some_data"},
+                partition=_partition(
+                    {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
+                ),
+            ),
+            True,
+        ],
+    ],
+    ids=[
+        "with_cursor_field_inside_range",
+        "with_cursor_field_lower_than_range",
+        "with_cursor_field_higher_than_range",
+        "no_cursor",
+    ],
+)
+@freezegun.freeze_time(time_to_freeze=datetime.fromtimestamp(20, timezone.utc))
+def test_should_be_synced(record: Record, should_be_synced: bool):
+    cursor = ConcurrentCursor(
+        _A_STREAM_NAME,
+        _A_STREAM_NAMESPACE,
+        {},
+        Mock(spec=MessageRepository),
+        Mock(spec=ConnectorStateManager),
+        EpochValueConcurrentStreamStateConverter(True),
+        CursorField(_A_CURSOR_FIELD_KEY),
+        _SLICE_BOUNDARY_FIELDS,
+        datetime.fromtimestamp(10, timezone.utc),
+        EpochValueConcurrentStreamStateConverter.get_end_provider(),
+        _NO_LOOKBACK_WINDOW,
+    )
+    assert cursor.should_be_synced(record) == should_be_synced
