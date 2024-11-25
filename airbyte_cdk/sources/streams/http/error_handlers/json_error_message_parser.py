@@ -2,7 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Any, Mapping, Optional
+from typing import Optional
 
 import requests
 from airbyte_cdk.sources.streams.http.error_handlers import ErrorMessageParser
@@ -34,28 +34,6 @@ class JsonErrorMessageParser(ErrorMessageParser):
             return self._try_get_error(new_value)
         return None
 
-    def get_response_body(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
-        """
-        Extracts and returns the response body from a given HTTP response.
-        This method attempts to parse the response body as JSON. If the response
-        body cannot be parsed as JSON, it attempts to decode the response content
-        as a UTF-8 string. If both attempts fail, it returns None.
-
-        Args:
-            response (requests.Response): The HTTP response object.
-        Returns:
-            Optional[Mapping[str, Any]]: The parsed JSON response body, the decoded
-            response content as a string, or None if both parsing attempts fail.
-        """
-
-        try:
-            return response.json()
-        except requests.exceptions.JSONDecodeError:
-            try:
-                return response.content.decode("utf-8")
-            except Exception:
-                return None
-
     def parse_response_error_message(self, response: requests.Response) -> Optional[str]:
         """
         Parses the raw response object from a failed request into a user-friendly error message.
@@ -63,5 +41,11 @@ class JsonErrorMessageParser(ErrorMessageParser):
         :param response:
         :return: A user-friendly message that indicates the cause of the error
         """
-        parsed_response = self.get_response_body(response)
-        return self._try_get_error(parsed_response)
+        try:
+            body = response.json()
+            return self._try_get_error(body)
+        except requests.exceptions.JSONDecodeError:
+            try:
+                return response.content.decode("utf-8")
+            except Exception:
+                return None

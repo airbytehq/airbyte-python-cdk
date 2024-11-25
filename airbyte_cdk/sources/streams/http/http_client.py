@@ -51,6 +51,7 @@ from airbyte_cdk.utils.stream_status_utils import (
 )
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 from requests.auth import AuthBase
+from airbyte_cdk.sources.utils.types import JsonType
 
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
 
@@ -335,6 +336,29 @@ class HttpClient:
 
         return response  # type: ignore # will either return a valid response of type requests.Response or raise an exception
 
+    def _get_response_body(self, response: requests.Response) -> Optional[JsonType]:
+        """
+        Extracts and returns the body of an HTTP response.
+
+        This method attempts to parse the response body as JSON. If the response
+        body is not valid JSON, it falls back to decoding the response content
+        as a UTF-8 string. If both attempts fail, it returns None.
+
+        Args:
+            response (requests.Response): The HTTP response object.
+
+        Returns:
+            Optional[JsonType]: The parsed JSON object as a string, the decoded
+            response content as a string, or None if both parsing attempts fail.
+        """
+        try:
+            return str(response.json())
+        except requests.exceptions.JSONDecodeError:
+            try:
+                return response.content.decode("utf-8")
+            except Exception:
+                return None
+
     def _handle_error_resolution(
         self,
         response: Optional[requests.Response],
@@ -364,7 +388,7 @@ class HttpClient:
         if error_resolution.response_action == ResponseAction.FAIL:
             if response is not None:
                 filtered_response_message = filter_secrets(
-                    f"Request (body): '{request.body}'. Response (body): '{self._error_message_parser.get_response_body(response)}'. Response (headers): '{response.headers}'."
+                    f"Request (body): '{str(request.body)}'. Response (body): '{self._get_response_body(response)}'. Response (headers): '{response.headers}'."
                 )
                 error_message = f"'{request.method}' request to '{request.url}' failed with status code '{response.status_code}' and error message: '{self._error_message_parser.parse_response_error_message(response)}'. {filtered_response_message}"
             else:
