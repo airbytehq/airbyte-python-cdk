@@ -447,8 +447,9 @@ class ConcurrentCursor(Cursor):
             return self._end_provider()
 
     def should_be_synced(self, record: Record) -> bool:
-        record_cursor_value:  CursorValueType = self._extract_cursor_value(record)  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
-        if not record_cursor_value:
+        try:
+            record_cursor_value: CursorValueType = self._extract_cursor_value(record)  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
+        except ValueError:
             LOGGER.warning(
                 f"Could not find cursor field `{self.cursor_field.cursor_field_key}` in record. The incremental sync will assume it needs to be synced"
             )
