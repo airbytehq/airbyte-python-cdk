@@ -2,6 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
+
 import logging
 import os
 import urllib
@@ -51,8 +53,6 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 from requests.auth import AuthBase
 
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
-
-from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 
 
 class MessageRepresentationAirbyteTracedErrors(AirbyteTracedException):
