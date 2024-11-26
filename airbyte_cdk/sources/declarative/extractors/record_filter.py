@@ -10,7 +10,7 @@ from airbyte_cdk.sources.declarative.incremental import (
     PerPartitionWithGlobalCursor,
 )
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
-from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
+from airbyte_cdk.sources.types import Config, StreamSlice, StreamState, Record
 
 
 @dataclass
@@ -77,7 +77,9 @@ class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
         records = (
             record
             for record in records
-            if (self._substream_cursor or self._date_time_based_cursor).should_be_synced(record)
+            if (self._substream_cursor or self._date_time_based_cursor).should_be_synced(
+                Record(data=record, associated_slice=stream_slice)
+            )
         )
         if self.condition:
             records = super().filter_records(

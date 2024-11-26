@@ -10,7 +10,7 @@ import pytest
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
 from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionReader
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
-from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
+from airbyte_cdk.sources.types import Record
 from airbyte_cdk.sources.streams.concurrent.partitions.types import (
     PartitionCompleteSentinel,
     QueueItem,

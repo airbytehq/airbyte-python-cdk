@@ -11,6 +11,7 @@ from unit_tests.sources.streams.concurrent.scenarios.stream_facade_builder impor
     StreamFacadeSourceBuilder,
 )
 from unit_tests.sources.streams.concurrent.scenarios.utils import MockStream
+from airbyte_cdk.sources.types import StreamSlice
 
 _stream1 = MockStream(
     [
@@ -345,11 +346,11 @@ test_incremental_stream_with_slice_boundaries = (
                 MockStream(
                     [
                         (
-                            {"from": 0, "to": 1},
+                            StreamSlice(partition={"from": 0, "to": 1}, cursor_slice={}),
                             [{"id": "1", "cursor_field": 0}, {"id": "2", "cursor_field": 1}],
                         ),
                         (
-                            {"from": 1, "to": 2},
+                            StreamSlice(partition={"from": 1, "to": 2}, cursor_slice={}),
                             [{"id": "3", "cursor_field": 2}, {"id": "4", "cursor_field": 3}],
                         ),
                     ],
@@ -440,8 +441,14 @@ test_incremental_stream_with_many_slices_but_without_slice_boundaries = (
             [
                 MockStream(
                     [
-                        ({"parent_id": 1}, [{"id": "1", "cursor_field": 0}]),
-                        ({"parent_id": 309}, [{"id": "3", "cursor_field": 0}]),
+                        (
+                            StreamSlice(partition={"parent_id": 1}, cursor_slice={}),
+                            [{"id": "1", "cursor_field": 0}],
+                        ),
+                        (
+                            StreamSlice(partition={"parent_id": 309}, cursor_slice={}),
+                            [{"id": "3", "cursor_field": 0}],
+                        ),
                     ],
                     "stream1",
                     cursor_field="cursor_field",

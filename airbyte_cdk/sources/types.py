@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from typing import Any, ItemsView, Iterator, KeysView, List, Mapping, Optional, ValuesView
+import orjson
 
 # A FieldPointer designates a path to a field inside a mapping. For example, retrieving ["k1", "k1.2"] in the object {"k1" :{"k1.2":
 # "hello"}] returns "hello"
@@ -15,9 +16,17 @@ StreamState = Mapping[str, Any]
 
 
 class Record(Mapping[str, Any]):
-    def __init__(self, data: Mapping[str, Any], associated_slice: Optional[StreamSlice]):
+    def __init__(
+        self,
+        data: Mapping[str, Any],
+        associated_slice: Optional[StreamSlice] = None,
+        stream_name: Optional[str] = None,
+        is_file_transfer_message: bool = False,
+    ):
         self._data = data
         self._associated_slice = associated_slice
+        self.stream_name = stream_name
+        self.is_file_transfer_message = is_file_transfer_message
 
     @property
     def data(self) -> Mapping[str, Any]:
@@ -139,3 +148,6 @@ class StreamSlice(Mapping[str, Any]):
 
     def __json_serializable__(self) -> Any:
         return self._stream_slice
+
+    def __hash__(self):
+        return hash(orjson.dumps(self._stream_slice))

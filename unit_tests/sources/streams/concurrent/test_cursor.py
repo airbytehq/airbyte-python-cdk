@@ -21,7 +21,7 @@ from airbyte_cdk.sources.streams.concurrent.cursor import (
     CursorValueType,
 )
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
-from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
+from airbyte_cdk.sources.types import Record
 from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
     ConcurrencyCompatibleStateType,
 )
@@ -58,7 +58,10 @@ def _partition(
 def _record(
     cursor_value: CursorValueType, partition: Optional[Partition] = Mock(spec=Partition)
 ) -> Record:
-    return Record(data={_A_CURSOR_FIELD_KEY: cursor_value}, partition=partition)
+    return Record(
+        data={_A_CURSOR_FIELD_KEY: cursor_value},
+        associated_slice=partition.to_slice(),
+    )
 
 
 class ConcurrentCursorStateTest(TestCase):
@@ -102,7 +105,10 @@ class ConcurrentCursorStateTest(TestCase):
         cursor = self._cursor_with_slice_boundary_fields()
         cursor.close_partition(
             _partition(
-                {_LOWER_SLICE_BOUNDARY_FIELD: 12, _UPPER_SLICE_BOUNDARY_FIELD: 30},
+                StreamSlice(
+                    partition={_LOWER_SLICE_BOUNDARY_FIELD: 12, _UPPER_SLICE_BOUNDARY_FIELD: 30},
+                    cursor_slice={},
+                ),
             )
         )
 
@@ -121,7 +127,10 @@ class ConcurrentCursorStateTest(TestCase):
         cursor = self._cursor_with_slice_boundary_fields(is_sequential_state=False)
         cursor.close_partition(
             _partition(
-                {_LOWER_SLICE_BOUNDARY_FIELD: 12, _UPPER_SLICE_BOUNDARY_FIELD: 30},
+                StreamSlice(
+                    partition={_LOWER_SLICE_BOUNDARY_FIELD: 12, _UPPER_SLICE_BOUNDARY_FIELD: 30},
+                    cursor_slice={},
+                ),
             )
         )
 
@@ -145,7 +154,10 @@ class ConcurrentCursorStateTest(TestCase):
     ) -> None:
         self._cursor_with_slice_boundary_fields().close_partition(
             _partition(
-                {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 30},
+                StreamSlice(
+                    partition={_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 30},
+                    cursor_slice={},
+                ),
             )
         )
 
@@ -165,7 +177,12 @@ class ConcurrentCursorStateTest(TestCase):
         cursor.observe(_record(_A_VERY_HIGH_CURSOR_VALUE))
 
         cursor.close_partition(
-            _partition({_LOWER_SLICE_BOUNDARY_FIELD: 12, _UPPER_SLICE_BOUNDARY_FIELD: 30})
+            _partition(
+                StreamSlice(
+                    partition={_LOWER_SLICE_BOUNDARY_FIELD: 12, _UPPER_SLICE_BOUNDARY_FIELD: 30},
+                    cursor_slice={},
+                )
+            )
         )
 
         assert (
@@ -215,7 +232,9 @@ class ConcurrentCursorStateTest(TestCase):
     ) -> None:
         cursor = self._cursor_with_slice_boundary_fields()
         with pytest.raises(KeyError):
-            cursor.close_partition(_partition({"not_matching_key": "value"}))
+            cursor.close_partition(
+                _partition(StreamSlice(partition={"not_matching_key": "value"}, cursor_slice={}))
+            )
 
     @freezegun.freeze_time(time_to_freeze=datetime.fromtimestamp(50, timezone.utc))
     def test_given_no_state_when_generate_slices_then_create_slice_from_start_to_end(self):
@@ -729,10 +748,16 @@ class ConcurrentCursorStateTest(TestCase):
     ) -> None:
         cursor = self._cursor_with_slice_boundary_fields(is_sequential_state=False)
         first_partition = _partition(
-            {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
+            StreamSlice(
+                partition={_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10},
+                cursor_slice={},
+            )
         )
         second_partition = _partition(
-            {_LOWER_SLICE_BOUNDARY_FIELD: 10, _UPPER_SLICE_BOUNDARY_FIELD: 20}
+            StreamSlice(
+                partition={_LOWER_SLICE_BOUNDARY_FIELD: 10, _UPPER_SLICE_BOUNDARY_FIELD: 20},
+                cursor_slice={},
+            )
         )
         cursor.observe(_record(5, partition=first_partition))
         cursor.close_partition(first_partition)
@@ -750,10 +775,16 @@ class ConcurrentCursorStateTest(TestCase):
     ) -> None:
         cursor = self._cursor_with_slice_boundary_fields(is_sequential_state=False)
         first_partition = _partition(
-            {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
+            StreamSlice(
+                partition={_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10},
+                cursor_slice={},
+            )
         )
         second_partition = _partition(
-            {_LOWER_SLICE_BOUNDARY_FIELD: 10, _UPPER_SLICE_BOUNDARY_FIELD: 20}
+            StreamSlice(
+                partition={_LOWER_SLICE_BOUNDARY_FIELD: 10, _UPPER_SLICE_BOUNDARY_FIELD: 20},
+                cursor_slice={},
+            )
         )
         cursor.observe(_record(5, partition=first_partition))
         cursor.close_partition(first_partition)
@@ -772,7 +803,12 @@ class ConcurrentCursorStateTest(TestCase):
         Not sure what is the value of this behavior but I'm simply documenting how it is today
         """
         cursor = self._cursor_with_slice_boundary_fields(is_sequential_state=False)
-        partition = _partition({_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10})
+        partition = _partition(
+            StreamSlice(
+                partition={_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10},
+                cursor_slice={},
+            )
+        )
         cursor.observe(_record(15, partition=partition))
         cursor.close_partition(partition)
 
@@ -785,7 +821,12 @@ class ConcurrentCursorStateTest(TestCase):
         self,
     ) -> None:
         cursor = self._cursor_with_slice_boundary_fields(is_sequential_state=True)
-        partition = _partition({_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10})
+        partition = _partition(
+            StreamSlice(
+                partition={_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10},
+                cursor_slice={},
+            )
+        )
         cursor.observe(_record(7, partition=partition))
         cursor.close_partition(partition)
 
@@ -798,10 +839,16 @@ class ConcurrentCursorStateTest(TestCase):
     ) -> None:
         cursor = self._cursor_with_slice_boundary_fields(is_sequential_state=True)
         first_partition = _partition(
-            {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
+            StreamSlice(
+                partition={_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10},
+                cursor_slice={},
+            )
         )
         third_partition = _partition(
-            {_LOWER_SLICE_BOUNDARY_FIELD: 20, _UPPER_SLICE_BOUNDARY_FIELD: 30}
+            StreamSlice(
+                partition={_LOWER_SLICE_BOUNDARY_FIELD: 20, _UPPER_SLICE_BOUNDARY_FIELD: 30},
+                cursor_slice={},
+            )
         )  # second partition has failed
         cursor.observe(_record(7, partition=first_partition))
         cursor.close_partition(first_partition)
@@ -865,7 +912,10 @@ class ConcurrentCursorStateTest(TestCase):
         # simulate the case where at least the first slice fails but others succeed
         cursor.close_partition(
             _partition(
-                {_LOWER_SLICE_BOUNDARY_FIELD: 40, _UPPER_SLICE_BOUNDARY_FIELD: 50},
+                StreamSlice(
+                    partition={_LOWER_SLICE_BOUNDARY_FIELD: 40, _UPPER_SLICE_BOUNDARY_FIELD: 50},
+                    cursor_slice={},
+                )
             )
         )
 
@@ -1126,15 +1176,18 @@ def test_observe_concurrent_cursor_from_datetime_based_cursor():
     )
 
     partition = _partition(
-        {
-            _LOWER_SLICE_BOUNDARY_FIELD: "2024-08-01T00:00:00.000000+0000",
-            _UPPER_SLICE_BOUNDARY_FIELD: "2024-09-01T00:00:00.000000+0000",
-        },
+        StreamSlice(
+            partition={
+                _LOWER_SLICE_BOUNDARY_FIELD: "2024-08-01T00:00:00.000000+0000",
+                _UPPER_SLICE_BOUNDARY_FIELD: "2024-09-01T00:00:00.000000+0000",
+            },
+            cursor_slice={},
+        ),
         _stream_name="gods",
     )
 
     record_1 = Record(
-        partition=partition,
+        associated_slice=partition.to_slice(),
         data={
             "id": "999",
             "updated_at": "2024-08-23T00:00:00.000000+0000",
@@ -1143,7 +1196,7 @@ def test_observe_concurrent_cursor_from_datetime_based_cursor():
         },
     )
     record_2 = Record(
-        partition=partition,
+        associated_slice=partition.to_slice(),
         data={
             "id": "1000",
             "updated_at": "2024-08-22T00:00:00.000000+0000",
@@ -1152,7 +1205,7 @@ def test_observe_concurrent_cursor_from_datetime_based_cursor():
         },
     )
     record_3 = Record(
-        partition=partition,
+        associated_slice=partition.to_slice(),
         data={
             "id": "500",
             "updated_at": "2024-08-24T00:00:00.000000+0000",
@@ -1162,15 +1215,21 @@ def test_observe_concurrent_cursor_from_datetime_based_cursor():
     )
 
     concurrent_cursor.observe(record_1)
-    actual_most_recent_record = concurrent_cursor._most_recent_cursor_value_per_partition[partition]
+    actual_most_recent_record = concurrent_cursor._most_recent_cursor_value_per_partition[
+        partition.to_slice()
+    ]
     assert actual_most_recent_record == concurrent_cursor._extract_cursor_value(record_1)
 
     concurrent_cursor.observe(record_2)
-    actual_most_recent_record = concurrent_cursor._most_recent_cursor_value_per_partition[partition]
+    actual_most_recent_record = concurrent_cursor._most_recent_cursor_value_per_partition[
+        partition.to_slice()
+    ]
     assert actual_most_recent_record == concurrent_cursor._extract_cursor_value(record_1)
 
     concurrent_cursor.observe(record_3)
-    actual_most_recent_record = concurrent_cursor._most_recent_cursor_value_per_partition[partition]
+    actual_most_recent_record = concurrent_cursor._most_recent_cursor_value_per_partition[
+        partition.to_slice()
+    ]
     assert actual_most_recent_record == concurrent_cursor._extract_cursor_value(record_3)
 
 
@@ -1214,15 +1273,18 @@ def test_close_partition_concurrent_cursor_from_datetime_based_cursor():
     )
 
     partition = _partition(
-        {
-            _LOWER_SLICE_BOUNDARY_FIELD: "2024-08-01T00:00:00.000000+0000",
-            _UPPER_SLICE_BOUNDARY_FIELD: "2024-09-01T00:00:00.000000+0000",
-        },
+        StreamSlice(
+            partition={
+                _LOWER_SLICE_BOUNDARY_FIELD: "2024-08-01T00:00:00.000000+0000",
+                _UPPER_SLICE_BOUNDARY_FIELD: "2024-09-01T00:00:00.000000+0000",
+            },
+            cursor_slice={},
+        ),
         _stream_name="gods",
     )
 
     record_1 = Record(
-        partition=partition,
+        associated_slice=partition.to_slice(),
         data={
             "id": "999",
             "updated_at": "2024-08-23T00:00:00.000000+0000",
@@ -1300,21 +1362,27 @@ def test_close_partition_with_slice_range_concurrent_cursor_from_datetime_based_
     )
 
     partition_0 = _partition(
-        {
-            "start_time": "2024-07-01T00:00:00.000000+0000",
-            "end_time": "2024-07-16T00:00:00.000000+0000",
-        },
+        StreamSlice(
+            partition={
+                "start_time": "2024-07-01T00:00:00.000000+0000",
+                "end_time": "2024-07-16T00:00:00.000000+0000",
+            },
+            cursor_slice={},
+        ),
         _stream_name="gods",
     )
     partition_3 = _partition(
-        {
-            "start_time": "2024-08-15T00:00:00.000000+0000",
-            "end_time": "2024-08-30T00:00:00.000000+0000",
-        },
+        StreamSlice(
+            partition={
+                "start_time": "2024-08-15T00:00:00.000000+0000",
+                "end_time": "2024-08-30T00:00:00.000000+0000",
+            },
+            cursor_slice={},
+        ),
         _stream_name="gods",
     )
     record_1 = Record(
-        partition=partition_0,
+        associated_slice=partition_0.to_slice(),
         data={
             "id": "1000",
             "updated_at": "2024-07-05T00:00:00.000000+0000",
@@ -1323,7 +1391,7 @@ def test_close_partition_with_slice_range_concurrent_cursor_from_datetime_based_
         },
     )
     record_2 = Record(
-        partition=partition_3,
+        associated_slice=partition_3.to_slice(),
         data={
             "id": "999",
             "updated_at": "2024-08-20T00:00:00.000000+0000",
@@ -1416,28 +1484,37 @@ def test_close_partition_with_slice_range_granularity_concurrent_cursor_from_dat
     )
 
     partition_0 = _partition(
-        {
-            "start_time": "2024-07-01T00:00:00.000000+0000",
-            "end_time": "2024-07-15T00:00:00.000000+0000",
-        },
+        StreamSlice(
+            partition={
+                "start_time": "2024-07-01T00:00:00.000000+0000",
+                "end_time": "2024-07-15T00:00:00.000000+0000",
+            },
+            cursor_slice={},
+        ),
         _stream_name="gods",
     )
     partition_1 = _partition(
-        {
-            "start_time": "2024-07-16T00:00:00.000000+0000",
-            "end_time": "2024-07-31T00:00:00.000000+0000",
-        },
+        StreamSlice(
+            partition={
+                "start_time": "2024-07-16T00:00:00.000000+0000",
+                "end_time": "2024-07-31T00:00:00.000000+0000",
+            },
+            cursor_slice={},
+        ),
         _stream_name="gods",
     )
     partition_3 = _partition(
-        {
-            "start_time": "2024-08-15T00:00:00.000000+0000",
-            "end_time": "2024-08-29T00:00:00.000000+0000",
-        },
+        StreamSlice(
+            partition={
+                "start_time": "2024-08-15T00:00:00.000000+0000",
+                "end_time": "2024-08-29T00:00:00.000000+0000",
+            },
+            cursor_slice={},
+        ),
         _stream_name="gods",
     )
     record_1 = Record(
-        partition=partition_0,
+        associated_slice=partition_0.to_slice(),
         data={
             "id": "1000",
             "updated_at": "2024-07-05T00:00:00.000000+0000",
@@ -1446,7 +1523,7 @@ def test_close_partition_with_slice_range_granularity_concurrent_cursor_from_dat
         },
     )
     record_2 = Record(
-        partition=partition_1,
+        associated_slice=partition_1.to_slice(),
         data={
             "id": "2000",
             "updated_at": "2024-07-25T00:00:00.000000+0000",
@@ -1455,7 +1532,7 @@ def test_close_partition_with_slice_range_granularity_concurrent_cursor_from_dat
         },
     )
     record_3 = Record(
-        partition=partition_3,
+        associated_slice=partition_3.to_slice(),
         data={
             "id": "999",
             "updated_at": "2024-08-20T00:00:00.000000+0000",
@@ -1503,36 +1580,36 @@ def test_close_partition_with_slice_range_granularity_concurrent_cursor_from_dat
         [
             Record(
                 data={_A_CURSOR_FIELD_KEY: 10},
-                partition=_partition(
+                associated_slice=_partition(
                     {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
-                ),
+                ).to_slice(),
             ),
             True,
         ],
         [
             Record(
                 data={_A_CURSOR_FIELD_KEY: 9},
-                partition=_partition(
+                associated_slice=_partition(
                     {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
-                ),
+                ).to_slice(),
             ),
             False,
         ],
         [
             Record(
                 data={_A_CURSOR_FIELD_KEY: 21},
-                partition=_partition(
+                associated_slice=_partition(
                     {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
-                ),
+                ).to_slice(),
             ),
             False,
         ],
         [
             Record(
                 data={"not_a_cursor_field": "some_data"},
-                partition=_partition(
+                associated_slice=_partition(
                     {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
-                ),
+                ).to_slice(),
             ),
             True,
         ],

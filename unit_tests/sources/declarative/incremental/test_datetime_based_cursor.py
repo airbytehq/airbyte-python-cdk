@@ -708,7 +708,7 @@ def test_close_slice(test_name, previous_cursor, stream_slice, observed_records,
     )
     cursor.set_initial_state({cursor_field: previous_cursor})
     for record_data in observed_records:
-        record = Record(record_data, stream_slice)
+        record = Record(data=record_data, associated_slice=stream_slice)
         cursor.observe(stream_slice, record)
     cursor.close_slice(stream_slice)
     updated_state = cursor.get_stream_state()

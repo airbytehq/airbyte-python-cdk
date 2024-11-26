@@ -16,6 +16,8 @@ from unit_tests.sources.streams.concurrent.scenarios.stream_facade_builder impor
 )
 from unit_tests.sources.streams.concurrent.scenarios.utils import MockStream
 
+from airbyte_cdk.sources.types import StreamSlice
+
 _NO_SLICE_BOUNDARIES = None
 _NO_INPUT_STATE = []
 test_incremental_stream_without_slice_boundaries_no_input_state = (
@@ -29,11 +31,11 @@ test_incremental_stream_without_slice_boundaries_no_input_state = (
                 MockStream(
                     [
                         (
-                            {"from": 0, "to": 1},
+                            StreamSlice(partition={"from": 0, "to": 1}, cursor_slice={}),
                             [{"id": "1", "cursor_field": 0}, {"id": "2", "cursor_field": 1}],
                         ),
                         (
-                            {"from": 1, "to": 2},
+                            StreamSlice(partition={"from": 1, "to": 2}, cursor_slice={}),
                             [{"id": "3", "cursor_field": 2}, {"id": "4", "cursor_field": 3}],
                         ),
                     ],
@@ -69,11 +71,11 @@ test_incremental_stream_with_slice_boundaries_no_input_state = (
                 MockStream(
                     [
                         (
-                            {"from": 0, "to": 1},
+                            StreamSlice(partition={"from": 0, "to": 1}, cursor_slice={}),
                             [{"id": "1", "cursor_field": 0}, {"id": "2", "cursor_field": 1}],
                         ),
                         (
-                            {"from": 1, "to": 2},
+                            StreamSlice(partition={"from": 1, "to": 2}, cursor_slice={}),
                             [{"id": "3", "cursor_field": 2}, {"id": "4", "cursor_field": 3}],
                         ),
                     ],
@@ -120,11 +122,11 @@ test_incremental_stream_without_slice_boundaries_with_legacy_state = (
                 MockStream(
                     [
                         (
-                            {"from": 0, "to": 1},
+                            StreamSlice(partition={"from": 0, "to": 1}, cursor_slice={}),
                             [{"id": "1", "cursor_field": 0}, {"id": "2", "cursor_field": 1}],
                         ),
                         (
-                            {"from": 1, "to": 2},
+                            StreamSlice(partition={"from": 1, "to": 2}, cursor_slice={}),
                             [{"id": "3", "cursor_field": 2}, {"id": "4", "cursor_field": 3}],
                         ),
                     ],
@@ -160,11 +162,11 @@ test_incremental_stream_with_slice_boundaries_with_legacy_state = (
                 MockStream(
                     [
                         (
-                            {"from": 0, "to": 1},
+                            StreamSlice(partition={"from": 0, "to": 1}, cursor_slice={}),
                             [{"id": "1", "cursor_field": 0}, {"id": "2", "cursor_field": 1}],
                         ),
                         (
-                            {"from": 1, "to": 2},
+                            StreamSlice(partition={"from": 1, "to": 2}, cursor_slice={}),
                             [{"id": "3", "cursor_field": 2}, {"id": "4", "cursor_field": 3}],
                         ),
                     ],
@@ -221,11 +223,11 @@ test_incremental_stream_without_slice_boundaries_with_concurrent_state = (
                 MockStream(
                     [
                         (
-                            {"from": 0, "to": 1},
+                            StreamSlice(partition={"from": 0, "to": 1}, cursor_slice={}),
                             [{"id": "1", "cursor_field": 0}, {"id": "2", "cursor_field": 1}],
                         ),
                         (
-                            {"from": 1, "to": 2},
+                            StreamSlice(partition={"from": 1, "to": 2}, cursor_slice={}),
                             [{"id": "3", "cursor_field": 2}, {"id": "4", "cursor_field": 3}],
                         ),
                     ],
@@ -261,11 +263,11 @@ test_incremental_stream_with_slice_boundaries_with_concurrent_state = (
                 MockStream(
                     [
                         (
-                            {"from": 0, "to": 1},
+                            StreamSlice(partition={"from": 0, "to": 1}, cursor_slice={}),
                             [{"id": "1", "cursor_field": 0}, {"id": "2", "cursor_field": 1}],
                         ),
                         (
-                            {"from": 1, "to": 2},
+                            StreamSlice(partition={"from": 1, "to": 2}, cursor_slice={}),
                             [{"id": "3", "cursor_field": 2}, {"id": "4", "cursor_field": 3}],
                         ),
                     ],

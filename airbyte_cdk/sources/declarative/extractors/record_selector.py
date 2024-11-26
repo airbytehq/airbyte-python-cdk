@@ -85,7 +85,7 @@ class RecordSelector(HttpSelector):
         transformed_data = self._transform(filtered_data, stream_state, stream_slice)
         normalized_data = self._normalize_by_schema(transformed_data, schema=records_schema)
         for data in normalized_data:
-            yield Record(data, stream_slice)
+            yield Record(data=data, associated_slice=stream_slice)
 
     def _normalize_by_schema(
         self, records: Iterable[Mapping[str, Any]], schema: Optional[Mapping[str, Any]]
