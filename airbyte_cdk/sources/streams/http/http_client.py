@@ -72,7 +72,6 @@ class MessageRepresentationAirbyteTracedErrors(AirbyteTracedException):
             return self.internal_message
         return ""
 
-
 class HttpClient:
     _DEFAULT_MAX_RETRY: int = 5
     _DEFAULT_MAX_TIME: int = 60 * 10
@@ -357,7 +356,7 @@ class HttpClient:
             try:
                 return response.content.decode("utf-8")
             except Exception:
-                return None
+                return "The Content of the Response couldn't be decoded."
 
     def _handle_error_resolution(
         self,
@@ -396,11 +395,16 @@ class HttpClient:
                     f"'{request.method}' request to '{request.url}' failed with exception: '{exc}'"
                 )
 
-            raise MessageRepresentationAirbyteTracedErrors(
+            exception = MessageRepresentationAirbyteTracedErrors(
                 internal_message=error_message,
                 message=error_resolution.error_message or error_message,
                 failure_type=error_resolution.failure_type,
             )
+            
+            # ensure the exception message is emitted before raised
+            exception.emit_message()
+            
+            raise exception
 
         elif error_resolution.response_action == ResponseAction.IGNORE:
             if response is not None:
