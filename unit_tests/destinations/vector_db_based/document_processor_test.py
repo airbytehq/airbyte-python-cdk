@@ -193,6 +193,7 @@ def test_complex_text_fields():
         "non.*.existing",
     ]
     processor.metadata_fields = ["non_text", "non_text_2", "id"]
+    processor.omit_field_names_from_embeddings = False
 
     chunks, _ = processor.process(record)
 
@@ -212,6 +213,54 @@ b: abc"""
         "_ab_stream": "namespace1_stream1",
     }
 
+def test_complex_text_fields_omit_field_names():
+    processor = initialize_processor()
+
+    record = AirbyteRecordMessage(
+        stream="stream1",
+        namespace="namespace1",
+        data={
+            "id": 1,
+            "nested": {
+                "texts": [
+                    {"text": "This is the text"},
+                    {"text": "And another"},
+                ]
+            },
+            "non_text": "a",
+            "non_text_2": 1,
+            "text": "This is the regular text",
+            "other_nested": {"non_text": {"a": "xyz", "b": "abc"}},
+        },
+        emitted_at=1234,
+    )
+
+    processor.text_fields = [
+        "nested.texts.*.text",
+        "text",
+        "other_nested.non_text",
+        "non.*.existing",
+    ]
+    processor.metadata_fields = ["non_text", "non_text_2", "id"]
+    processor.omit_field_names_from_embeddings = True
+
+    chunks, _ = processor.process(record)
+
+    assert len(chunks) == 1
+    assert (
+        chunks[0].page_content
+        == """This is the text
+And another
+This is the regular text
+xyz
+abc"""
+    )
+    assert chunks[0].metadata == {
+        "id": 1,
+        "non_text": "a",
+        "non_text_2": 1,
+        "_ab_stream": "namespace1_stream1",
+    }
 
 def test_no_text_fields():
     processor = initialize_processor()

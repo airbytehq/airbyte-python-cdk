@@ -166,11 +166,17 @@ class DocumentProcessor:
         if self.omit_field_names_from_embeddings == False:
             text = stringify_dict(relevant_fields)
         else:
-            text = ""
-            for key, value in relevant_fields.items():
-                text += f"{value}\n"
+            text = self._extract_values_from_dict(relevant_fields)
         metadata = self._extract_metadata(record)
         return Document(page_content=text, metadata=metadata)
+
+    def _extract_values_from_dict(self, data):
+        if isinstance(data, dict):
+            return "\n".join(self._extract_values_from_dict(value) for value in data.values())
+        elif isinstance(data, list):
+            return "\n".join(self._extract_values_from_dict(item) for item in data)
+        else:
+            return str(data)
 
     def _extract_relevant_fields(
         self, record: AirbyteRecordMessage, fields: Optional[List[str]]
