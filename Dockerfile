@@ -14,9 +14,14 @@ RUN poetry config virtualenvs.create false \
 RUN pip install dist/*.whl
 
 # Recreate the original structure
-RUN echo 'from airbyte_cdk.cli.source_declarative_manifest._run import run\n\nif __name__ == "__main__":\n    run()' > main.py \
-    && mkdir -p source_declarative_manifest \
+RUN mkdir -p source_declarative_manifest \
+    && echo 'from source_declarative_manifest.run import run\n\nif __name__ == "__main__":\n    run()' > main.py \
+    && touch source_declarative_manifest/__init__.py \
+    && cp /usr/local/lib/python3.10/site-packages/airbyte_cdk/cli/source_declarative_manifest/_run.py source_declarative_manifest/run.py \
     && cp /usr/local/lib/python3.10/site-packages/airbyte_cdk/cli/source_declarative_manifest/spec.json source_declarative_manifest/
+
+# Remove unnecessary build files
+RUN rm -rf dist/ pyproject.toml poetry.lock README.md
 
 # Set the entrypoint
 ENV AIRBYTE_ENTRYPOINT="python /airbyte/integration_code/main.py"
