@@ -10,12 +10,14 @@ COPY dist/*.whl ./dist/
 RUN poetry config virtualenvs.create false \
     && poetry install --only main --no-interaction --no-ansi || true
 
-# Copy source code
-COPY airbyte_cdk ./airbyte_cdk
-
 # Build and install the package
 RUN pip install dist/*.whl
 
+# Recreate the original structure
+RUN echo 'from airbyte_cdk.cli.source_declarative_manifest._run import run\n\nif __name__ == "__main__":\n    run()' > main.py \
+    && mkdir -p source_declarative_manifest \
+    && cp /usr/local/lib/python3.10/site-packages/airbyte_cdk/cli/source_declarative_manifest/spec.json source_declarative_manifest/
+
 # Set the entrypoint
-ENV AIRBYTE_ENTRYPOINT="source-declarative-manifest"
-ENTRYPOINT ["source-declarative-manifest"]
+ENV AIRBYTE_ENTRYPOINT="python /airbyte/integration_code/main.py"
+ENTRYPOINT ["python", "/airbyte/integration_code/main.py"]
