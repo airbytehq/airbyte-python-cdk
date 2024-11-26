@@ -125,6 +125,7 @@ class DocumentProcessor:
         self.text_fields = config.text_fields
         self.metadata_fields = config.metadata_fields
         self.field_name_mappings = config.field_name_mappings
+        self.omit_field_names_from_embeddings = config.omit_field_names_from_embeddings
         self.logger = logging.getLogger("airbyte.document_processor")
 
     def process(self, record: AirbyteRecordMessage) -> Tuple[List[Chunk], Optional[str]]:
@@ -162,7 +163,12 @@ class DocumentProcessor:
         relevant_fields = self._extract_relevant_fields(record, self.text_fields)
         if len(relevant_fields) == 0:
             return None
-        text = stringify_dict(relevant_fields)
+        if self.omit_field_names_from_embeddings == False:
+            text = stringify_dict(relevant_fields)
+        else:
+            text = ""
+            for key, value in relevant_fields.items():
+                text += f"{value}\n"
         metadata = self._extract_metadata(record)
         return Document(page_content=text, metadata=metadata)
 

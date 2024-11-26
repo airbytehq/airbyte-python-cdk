@@ -108,6 +108,12 @@ class ProcessingConfigModel(BaseModel):
         always_show=True,
         examples=["text", "user.name", "users.*.name"],
     )
+    omit_field_names_from_embeddings: bool = Field(
+        default=False,
+        title="Omit field names from embeddings",
+        description="Do not include the field names in the text that gets embedded. By default field names are embedded e.g 'user: name, user.email: email@email.com'. If set to true, only the values are embedded e.g. 'name, email@email.com'.",
+        always_show=True,
+    )
     metadata_fields: Optional[List[str]] = Field(
         default=[],
         title="Fields to store as metadata",
