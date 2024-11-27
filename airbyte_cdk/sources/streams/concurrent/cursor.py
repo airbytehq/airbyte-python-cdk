@@ -449,6 +449,12 @@ class ConcurrentCursor(Cursor):
             return self._end_provider()
 
     def should_be_synced(self, record: Record) -> bool:
+        """
+        Determines if a record should be synced based on its cursor value.
+        :param record: The record to evaluate
+
+        :return: True if the record's cursor value falls within the sync boundaries
+        """
         try:
             record_cursor_value: CursorValueType = self._extract_cursor_value(record)  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
         except ValueError:
