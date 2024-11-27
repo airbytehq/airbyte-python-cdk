@@ -396,16 +396,14 @@ class HttpClient:
                     f"'{request.method}' request to '{request.url}' failed with exception: '{exc}'"
                 )
 
-            exception = MessageRepresentationAirbyteTracedErrors(
+            # ensure the exception message is emitted before raised
+            self._logger.error(error_message)
+
+            raise MessageRepresentationAirbyteTracedErrors(
                 internal_message=error_message,
                 message=error_resolution.error_message or error_message,
                 failure_type=error_resolution.failure_type,
             )
-
-            # ensure the exception message is emitted before raised
-            exception.emit_message()
-
-            raise exception
 
         elif error_resolution.response_action == ResponseAction.IGNORE:
             if response is not None:
