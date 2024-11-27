@@ -479,7 +479,7 @@ class SimpleRetriever(Retriever):
         elif isinstance(stream_data, (dict, Mapping)):
             return Record(data=dict(stream_data), associated_slice=stream_slice)
         elif isinstance(stream_data, AirbyteMessage) and stream_data.record:
-            return Record(data=stream_data.record.data, associated_slice=stream_slice) # type:ignore # AirbyteMessage always has record.data
+            return Record(data=stream_data.record.data, associated_slice=stream_slice)  # type:ignore # AirbyteMessage always has record.data
         return None
 
     # stream_slices is defined with arguments on http stream and fixing this has a long tail of dependencies. Will be resolved by the decoupling of http stream and simple retriever
