@@ -244,7 +244,7 @@ def test_json_schema_generation():
                     },
                     "omit_field_names_from_embeddings": {
                         "title": "Omit field names from embeddings",
-                        "description": "Do not include the field names in the text that gets embedded. By default field names are embedded e.g 'user: name, user.email: email@email.com'. If set to true, only the values are embedded e.g. 'name, email@email.com'.",
+                        "description": "Do not include the field names in the text that gets embedded. By default field names are embedded (e.g., 'user.name: John Doe \n user.email: john@example.com'). If set to true, only the values are embedded (e.g., 'John Doe \n john@example.com').",
                         "default": False,
                         "always_show": True,
                         "type": "boolean",

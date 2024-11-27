@@ -232,6 +232,9 @@ def test_complex_text_fields_omit_field_names():
             "non_text_2": 1,
             "text": "This is the regular text",
             "other_nested": {"non_text": {"a": "xyz", "b": "abc"}},
+            "empty_list": [],
+            "empty_dict": {},
+            "large_nested": {"a": {"b": {"c": {"d": {"e": {"f": {"g": "h"}}}}}}},
         },
         emitted_at=1234,
     )
@@ -241,6 +244,9 @@ def test_complex_text_fields_omit_field_names():
         "text",
         "other_nested.non_text",
         "non.*.existing",
+        "large_nested",
+        "empty_list",
+        "empty_dict",
     ]
     processor.metadata_fields = ["non_text", "non_text_2", "id"]
     processor.omit_field_names_from_embeddings = True
@@ -254,7 +260,8 @@ def test_complex_text_fields_omit_field_names():
 And another
 This is the regular text
 xyz
-abc"""
+abc
+h"""
     )
     assert chunks[0].metadata == {
         "id": 1,
