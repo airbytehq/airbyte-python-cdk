@@ -213,6 +213,7 @@ b: abc"""
         "_ab_stream": "namespace1_stream1",
     }
 
+
 def test_complex_text_fields_omit_field_names():
     processor = initialize_processor()
 
@@ -261,6 +262,7 @@ abc"""
         "non_text_2": 1,
         "_ab_stream": "namespace1_stream1",
     }
+
 
 def test_no_text_fields():
     processor = initialize_processor()

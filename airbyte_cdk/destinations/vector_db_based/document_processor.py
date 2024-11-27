@@ -5,7 +5,7 @@
 import json
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
 import dpath
 from airbyte_cdk.destinations.vector_db_based.config import (
@@ -163,14 +163,14 @@ class DocumentProcessor:
         relevant_fields = self._extract_relevant_fields(record, self.text_fields)
         if len(relevant_fields) == 0:
             return None
-        if self.omit_field_names_from_embeddings == False:
+        if not self.omit_field_names_from_embeddings:
             text = stringify_dict(relevant_fields)
         else:
             text = self._extract_values_from_dict(relevant_fields)
         metadata = self._extract_metadata(record)
         return Document(page_content=text, metadata=metadata)
 
-    def _extract_values_from_dict(self, data):
+    def _extract_values_from_dict(self, data: Union[dict, list, Any]) -> str:
         if isinstance(data, dict):
             return "\n".join(self._extract_values_from_dict(value) for value in data.values())
         elif isinstance(data, list):
