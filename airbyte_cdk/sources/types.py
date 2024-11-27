@@ -149,5 +149,5 @@ class StreamSlice(Mapping[str, Any]):
     def __json_serializable__(self) -> Any:
         return self._stream_slice
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(orjson.dumps(self._stream_slice))
