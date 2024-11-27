@@ -30,7 +30,7 @@ enable = true
 
 [tool.poetry.dependencies]
 python = "^3.10,<3.13"
-airbyte-protocol-models-dataclasses = "^0.13"
+airbyte-protocol-models-dataclasses = "^0.14"
 backoff = "*"
 cachetools = "*"
 Deprecated = "~1.2"
