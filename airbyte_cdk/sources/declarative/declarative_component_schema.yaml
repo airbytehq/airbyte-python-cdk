@@ -1975,7 +1975,7 @@ definitions:
       oauth_connector_input_specification:
         title: DeclarativeOAuth Connector Specification
         description: |-
-          The DeclarativeOAuth specific blob. 
+          The DeclarativeOAuth specific blob.
           Pertains to the fields defined by the connector relating to the OAuth flow.
 
           Interpolation capabilities:
@@ -1991,7 +1991,6 @@ definitions:
 
           Examples:
             - The TikTok Marketing DeclarativeOAuth spec:
-            
             {
               "oauth_connector_input_specification": {
                 "type": "object",
