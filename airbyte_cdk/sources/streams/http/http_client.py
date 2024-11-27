@@ -72,6 +72,7 @@ class MessageRepresentationAirbyteTracedErrors(AirbyteTracedException):
             return self.internal_message
         return ""
 
+
 class HttpClient:
     _DEFAULT_MAX_RETRY: int = 5
     _DEFAULT_MAX_TIME: int = 60 * 10
@@ -400,10 +401,10 @@ class HttpClient:
                 message=error_resolution.error_message or error_message,
                 failure_type=error_resolution.failure_type,
             )
-            
+
             # ensure the exception message is emitted before raised
             exception.emit_message()
-            
+
             raise exception
 
         elif error_resolution.response_action == ResponseAction.IGNORE:
