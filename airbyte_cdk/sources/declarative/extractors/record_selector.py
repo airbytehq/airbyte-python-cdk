@@ -125,6 +125,9 @@ class RecordSelector(HttpSelector):
         for record in records:
             for transformation in self.transformations:
                 transformation.transform(
-                    record, config=self.config, stream_state=stream_state, stream_slice=stream_slice
-                )  # type: ignore  # record has type Mapping[str, Any], but Dict[str, Any] expected
+                    record,  # type: ignore  # record has type Mapping[str, Any], but Dict[str, Any] expected
+                    config=self.config,
+                    stream_state=stream_state,
+                    stream_slice=stream_slice,
+                )
             yield record
