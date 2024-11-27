@@ -166,14 +166,16 @@ class DocumentProcessor:
         text = self._generate_text_from_fields(relevant_fields)
         metadata = self._extract_metadata(record)
         return Document(page_content=text, metadata=metadata)
-    
+
     def _generate_text_from_fields(self, fields: Dict[str, Any]) -> str:
         if self.omit_field_names_from_embeddings:
             return self._extract_values_from_dict(fields)
         else:
             return stringify_dict(fields)
 
-    def _extract_values_from_dict(self, data: Union[Dict[Any, Any], List[Any], Any], join_char: str = '\n') -> str:
+    def _extract_values_from_dict(
+        self, data: Union[Dict[Any, Any], List[Any], Any], join_char: str = "\n"
+    ) -> str:
         if data is None:
             return ""
         elif isinstance(data, dict):
