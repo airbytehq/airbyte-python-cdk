@@ -5,6 +5,7 @@
 from datetime import datetime, timezone
 
 import pytest
+
 from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
     ConcurrencyCompatibleStateType,

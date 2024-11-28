@@ -29,7 +29,7 @@ version = "0.0.0"  # Version will be calculated dynamically.
 enable = true
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^3.10,<3.13"
 airbyte-protocol-models-dataclasses = "^0.13"
 backoff = "*"
 cachetools = "*"
@@ -40,7 +40,7 @@ genson = "1.3.0"
 isodate = "~0.6.1"
 Jinja2 = "~3.1.2"
 jsonref = "~0.2"
-jsonschema = "~3.2.0"
+jsonschema = "~4.17.3"  # 4.18 has some significant breaking changes: https://github.com/python-jsonschema/jsonschema/releases/tag/v4.18.0
 pandas = "2.2.2"
 pendulum = "<3.0.0"
 psutil = "6.1.0"
@@ -49,6 +49,7 @@ pyrate-limiter = "~3.1.0"
 python-dateutil = "*"
 python-ulid = "^3.0.0"
 PyYAML = "^6.0.1"
+rapidfuzz = "^3.10.1"
 requests = "*"
 requests_cache = "*"
 wcmatch = "10.0"
@@ -69,7 +70,7 @@ python-snappy = { version = "0.7.3", optional = true }
 Sphinx = { version = "~4.2", optional = true }
 sphinx-rtd-theme = { version = "~1.0", optional = true }
 tiktoken = { version = "0.8.0", optional = true }
-nltk = { version = "3.8.1", optional = true }
+nltk = { version = "3.9.1", optional = true }
 # This will ensure that even when you run poetry install or pip install, the compatible version of numpy will always be chosen.
 # airbyte-ci will try to install latest version when --use-local-cdk is used, resulting in the conflict.
 numpy = "<2"
@@ -104,6 +105,10 @@ sphinx-docs = ["Sphinx", "sphinx-rtd-theme"]
 vector-db-based = ["langchain", "openai", "cohere", "tiktoken"]
 sql = ["sqlalchemy"]
 
+[tool.poetry.scripts]
+
+source-declarative-manifest = "airbyte_cdk.cli.source_declarative_manifest:run"
+
 [tool.isort]
 skip = ["__init__.py"]  # TODO: Remove after this is fixed: https://github.com/airbytehq/airbyte-python-cdk/issues/12
 
@@ -112,6 +117,9 @@ exclude = ["__init__.py"]  # TODO: Remove after this is fixed: https://github.co
 
 target-version = "py310"
 line-length = 100
+
+[tool.ruff.lint]
+select = ["I"]
 
 [tool.poe.tasks]
 # Build tasks

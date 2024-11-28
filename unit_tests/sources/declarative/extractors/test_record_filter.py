@@ -5,6 +5,7 @@ from typing import List, Mapping, Optional
 from airbyte_cdk.sources.types import Record
 
 import pytest
+
 from airbyte_cdk.sources.declarative.datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,

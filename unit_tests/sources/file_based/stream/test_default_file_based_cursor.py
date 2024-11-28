@@ -7,6 +7,8 @@ from typing import Any, List, Mapping
 from unittest.mock import MagicMock
 
 import pytest
+from freezegun import freeze_time
+
 from airbyte_cdk.sources.file_based.config.csv_format import CsvFormat
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
     FileBasedStreamConfig,
@@ -16,7 +18,6 @@ from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.stream.cursor.default_file_based_cursor import (
     DefaultFileBasedCursor,
 )
-from freezegun import freeze_time
 
 
 @pytest.mark.parametrize(

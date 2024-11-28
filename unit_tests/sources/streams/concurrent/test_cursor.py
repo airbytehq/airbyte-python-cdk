@@ -10,6 +10,7 @@ from unittest.mock import Mock
 
 import freezegun
 import pytest
+from isodate import parse_duration
 
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
@@ -30,7 +31,6 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_sta
     IsoMillisConcurrentStreamStateConverter,
 )
 from airbyte_cdk.sources.types import StreamSlice
-from isodate import parse_duration
 
 _A_STREAM_NAME = "a stream name"
 _A_STREAM_NAMESPACE = "a stream namespace"

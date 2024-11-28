@@ -9,6 +9,7 @@ from unittest import TestCase, mock
 from unittest.mock import MagicMock, Mock, call
 
 import pytest
+
 from airbyte_cdk import AirbyteTracedException, StreamSlice
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.async_job.job import AsyncJob, AsyncJobStatus

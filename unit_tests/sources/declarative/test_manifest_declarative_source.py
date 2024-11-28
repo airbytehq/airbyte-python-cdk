@@ -14,6 +14,8 @@ from unittest.mock import call, patch
 import pytest
 import requests
 import yaml
+from jsonschema.exceptions import ValidationError
+
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
@@ -28,7 +30,6 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
-from jsonschema.exceptions import ValidationError
 
 logger = logging.getLogger("airbyte")
 
@@ -644,7 +645,22 @@ class TestManifestDeclarativeSource:
                 id="manifest_version_has_invalid_minor_format",
             ),
             pytest.param(
-                "0.29.0", "0.29.0.1", ValidationError, id="manifest_version_has_extra_version_parts"
+                "0.29.0",
+                "0.29.0rc1",
+                None,
+                id="manifest_version_is_release_candidate",
+            ),
+            pytest.param(
+                "0.29.0rc1",
+                "0.29.0",
+                None,
+                id="cdk_version_is_release_candidate",
+            ),
+            pytest.param(
+                "0.29.0",
+                "0.29.0.0.3",  # packaging library does not complain and the parts are ignored during comparisons.
+                None,
+                id="manifest_version_has_extra_version_parts",
             ),
             pytest.param(
                 "0.29.0", "5.0", ValidationError, id="manifest_version_has_too_few_version_parts"
@@ -655,7 +671,13 @@ class TestManifestDeclarativeSource:
         ],
     )
     @patch("importlib.metadata.version")
-    def test_manifest_versions(self, version, cdk_version, manifest_version, expected_error):
+    def test_manifest_versions(
+        self,
+        version,
+        cdk_version,
+        manifest_version,
+        expected_error,
+    ) -> None:
         # Used to mock the metadata.version() for test scenarios which normally returns the actual version of the airbyte-cdk package
         version.return_value = cdk_version
 

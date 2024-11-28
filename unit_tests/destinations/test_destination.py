@@ -10,6 +10,8 @@ from typing import Any, Dict, Iterable, List, Mapping, Union
 from unittest.mock import ANY
 
 import pytest
+from orjson import orjson
+
 from airbyte_cdk.destinations import Destination
 from airbyte_cdk.destinations import destination as destination_module
 from airbyte_cdk.models import (
@@ -29,7 +31,6 @@ from airbyte_cdk.models import (
     SyncMode,
     Type,
 )
-from orjson import orjson
 
 
 @pytest.fixture(name="destination")

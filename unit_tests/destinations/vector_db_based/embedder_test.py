@@ -5,6 +5,7 @@
 from unittest.mock import MagicMock, call
 
 import pytest
+
 from airbyte_cdk.destinations.vector_db_based.config import (
     AzureOpenAIEmbeddingConfigModel,
     CohereEmbeddingConfigModel,

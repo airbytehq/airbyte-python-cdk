@@ -12,8 +12,8 @@ from airbyte_cdk.models import (
     AirbyteRecordMessage,
     AirbyteStateMessage,
     ConfiguredAirbyteCatalog,
+    Type,
 )
-from airbyte_cdk.models import Type
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource

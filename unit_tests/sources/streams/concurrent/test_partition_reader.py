@@ -7,6 +7,7 @@ from typing import Callable, Iterable, List
 from unittest.mock import Mock
 
 import pytest
+
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
 from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionReader
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition

@@ -6,6 +6,7 @@ import json
 import time
 
 import pytest
+
 from airbyte_cdk.config_observation import (
     ConfigObserver,
     ObservedDict,

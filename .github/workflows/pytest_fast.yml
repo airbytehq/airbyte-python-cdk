@@ -4,15 +4,7 @@ on:
   push:
     branches:
       - main
-    paths:
-      - 'airbyte_cdk/**'
-      - 'poetry.lock'
-      - 'pyproject.toml'
   pull_request:
-    paths:
-      - 'airbyte_cdk/**'
-      - 'poetry.lock'
-      - 'pyproject.toml'
 
 jobs:
   pytest-fast:

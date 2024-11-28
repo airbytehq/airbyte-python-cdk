@@ -6,6 +6,8 @@ import logging
 
 import pytest
 import requests
+from requests import Response
+
 from airbyte_cdk.sources.declarative.auth.token import (
     ApiKeyAuthenticator,
     BasicHttpAuthenticator,
@@ -16,7 +18,6 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
     RequestOptionType,
 )
-from requests import Response
 
 LOGGER = logging.getLogger(__name__)
 

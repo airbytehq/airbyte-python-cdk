@@ -5,9 +5,9 @@ from typing import Any, Mapping
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.migrations.state_migration import StateMigration
 from airbyte_cdk.sources.declarative.models import (
+    CustomIncrementalSync,
     DatetimeBasedCursor,
     SubstreamPartitionRouter,
-    CustomIncrementalSync,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import ParentStreamConfig
 

@@ -6,6 +6,8 @@ from datetime import timedelta
 from typing import Any, Dict, Iterable, Mapping, Optional
 
 import requests
+from requests import Response
+
 from airbyte_cdk import AirbyteMessage
 from airbyte_cdk.logger import lazy_log
 from airbyte_cdk.models import FailureType, Type
@@ -23,7 +25,6 @@ from airbyte_cdk.sources.declarative.requesters.requester import Requester
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.utils import AirbyteTracedException
-from requests import Response
 
 LOGGER = logging.getLogger("airbyte")
 

@@ -8,6 +8,7 @@ from datetime import datetime
 import freezegun
 import jwt
 import pytest
+
 from airbyte_cdk.sources.declarative.auth.jwt import JwtAuthenticator
 
 LOGGER = logging.getLogger(__name__)

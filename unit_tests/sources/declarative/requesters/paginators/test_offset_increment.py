@@ -7,6 +7,7 @@ from typing import Any, Optional
 
 import pytest
 import requests
+
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.offset_increment import (
     OffsetIncrement,
 )

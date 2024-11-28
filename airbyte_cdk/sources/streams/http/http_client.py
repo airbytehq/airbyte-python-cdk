@@ -11,6 +11,8 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 import orjson
 import requests
 import requests_cache
+from requests.auth import AuthBase
+
 from airbyte_cdk.models import (
     AirbyteMessageSerializer,
     AirbyteStreamStatus,
@@ -48,7 +50,6 @@ from airbyte_cdk.utils.stream_status_utils import (
     as_airbyte_message as stream_status_as_airbyte_message,
 )
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from requests.auth import AuthBase
 
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
 
