@@ -10,7 +10,7 @@ from airbyte_cdk.sources.declarative.incremental import (
     PerPartitionWithGlobalCursor,
 )
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
-from airbyte_cdk.sources.types import Config, StreamSlice, StreamState, Record
+from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 
 
 @dataclass

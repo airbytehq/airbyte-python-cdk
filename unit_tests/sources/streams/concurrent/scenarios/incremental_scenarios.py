@@ -5,6 +5,7 @@ from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
     ConcurrencyCompatibleStateType,
 )
+from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.test.state_builder import StateBuilder
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 from unit_tests.sources.file_based.scenarios.scenario_builder import (
@@ -15,8 +16,6 @@ from unit_tests.sources.streams.concurrent.scenarios.stream_facade_builder impor
     StreamFacadeSourceBuilder,
 )
 from unit_tests.sources.streams.concurrent.scenarios.utils import MockStream
-
-from airbyte_cdk.sources.types import StreamSlice
 
 _NO_SLICE_BOUNDARIES = None
 _NO_INPUT_STATE = []

@@ -22,7 +22,6 @@ from airbyte_cdk.sources.streams.concurrent.cursor import (
     CursorValueType,
 )
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
-from airbyte_cdk.sources.types import Record
 from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
     ConcurrencyCompatibleStateType,
 )
@@ -30,7 +29,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_sta
     EpochValueConcurrentStreamStateConverter,
     IsoMillisConcurrentStreamStateConverter,
 )
-from airbyte_cdk.sources.types import StreamSlice
+from airbyte_cdk.sources.types import Record, StreamSlice
 
 _A_STREAM_NAME = "a stream name"
 _A_STREAM_NAMESPACE = "a stream namespace"

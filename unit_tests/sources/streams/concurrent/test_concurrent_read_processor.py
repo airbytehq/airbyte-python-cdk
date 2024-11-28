@@ -33,8 +33,8 @@ from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStrea
 from airbyte_cdk.sources.streams.concurrent.partition_enqueuer import PartitionEnqueuer
 from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionReader
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
-from airbyte_cdk.sources.types import Record
 from airbyte_cdk.sources.streams.concurrent.partitions.types import PartitionCompleteSentinel
+from airbyte_cdk.sources.types import Record
 from airbyte_cdk.sources.utils.slice_logger import SliceLogger
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 

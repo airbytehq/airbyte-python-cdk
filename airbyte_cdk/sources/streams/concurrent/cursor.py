@@ -3,6 +3,7 @@
 #
 
 import functools
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optional, Protocol, Tuple
 
@@ -10,13 +11,11 @@ from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
-from airbyte_cdk.sources.types import Record
 from airbyte_cdk.sources.streams.concurrent.partitions.stream_slicer import StreamSlicer
 from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
     AbstractStreamStateConverter,
 )
-from airbyte_cdk.sources.types import StreamSlice
-import logging
+from airbyte_cdk.sources.types import Record, StreamSlice
 
 LOGGER = logging.getLogger("airbyte")
 

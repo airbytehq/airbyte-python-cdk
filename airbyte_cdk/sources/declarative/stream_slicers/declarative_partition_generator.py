@@ -6,9 +6,8 @@ from airbyte_cdk.sources.declarative.retrievers import Retriever
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
-from airbyte_cdk.sources.types import Record
 from airbyte_cdk.sources.streams.concurrent.partitions.stream_slicer import StreamSlicer
-from airbyte_cdk.sources.types import StreamSlice
+from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.utils.slice_hasher import SliceHasher
 
 

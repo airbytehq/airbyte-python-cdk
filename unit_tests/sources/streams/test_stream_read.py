@@ -34,8 +34,8 @@ from airbyte_cdk.sources.streams.concurrent.cursor import Cursor, FinalStateCurs
 from airbyte_cdk.sources.streams.concurrent.partition_enqueuer import PartitionEnqueuer
 from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionReader
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
-from airbyte_cdk.sources.types import Record
 from airbyte_cdk.sources.streams.core import CheckpointMixin, StreamData
+from airbyte_cdk.sources.types import Record
 from airbyte_cdk.sources.utils.schema_helpers import InternalConfig
 from airbyte_cdk.sources.utils.slice_logger import DebugSliceLogger
 

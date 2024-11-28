@@ -39,8 +39,8 @@ from airbyte_cdk.sources.streams.concurrent.helpers import (
 )
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
-from airbyte_cdk.sources.types import Record
 from airbyte_cdk.sources.streams.core import StreamData
+from airbyte_cdk.sources.types import Record
 from airbyte_cdk.sources.utils.schema_helpers import InternalConfig
 from airbyte_cdk.sources.utils.slice_logger import SliceLogger
 from airbyte_cdk.utils.slice_hasher import SliceHasher

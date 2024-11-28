@@ -6,11 +6,12 @@ from abc import ABC, abstractmethod
 from typing import Any, Optional
 
 import requests
-from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
+
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
     PaginationStrategy,
 )
+from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
 from airbyte_cdk.sources.types import Record
 
 

@@ -2,7 +2,6 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 from typing import List, Mapping, Optional
-from airbyte_cdk.sources.types import Record
 
 import pytest
 
@@ -25,6 +24,7 @@ from airbyte_cdk.sources.declarative.models import (
 )
 from airbyte_cdk.sources.declarative.partition_routers import SubstreamPartitionRouter
 from airbyte_cdk.sources.declarative.types import StreamSlice
+from airbyte_cdk.sources.types import Record
 
 DATE_FORMAT = "%Y-%m-%d"
 RECORDS_TO_FILTER_DATE_FORMAT = [

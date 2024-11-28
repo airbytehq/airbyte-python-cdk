@@ -4,7 +4,6 @@
 
 import logging
 
-
 from airbyte_cdk.sources.message import InMemoryMessageRepository
 from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
     AlwaysAvailableAvailabilityStrategy,

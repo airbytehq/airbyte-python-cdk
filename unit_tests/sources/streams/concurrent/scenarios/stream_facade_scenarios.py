@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
+from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 from unit_tests.sources.file_based.scenarios.scenario_builder import (
     IncrementalScenarioConfig,
@@ -11,7 +12,6 @@ from unit_tests.sources.streams.concurrent.scenarios.stream_facade_builder impor
     StreamFacadeSourceBuilder,
 )
 from unit_tests.sources.streams.concurrent.scenarios.utils import MockStream
-from airbyte_cdk.sources.types import StreamSlice
 
 _stream1 = MockStream(
     [
