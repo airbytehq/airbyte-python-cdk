@@ -151,4 +151,4 @@ class StreamSlice(Mapping[str, Any]):
         return self._stream_slice
 
     def __hash__(self) -> int:
-        return hash(orjson.dumps(self._stream_slice))
+        return hash(orjson.dumps(self._stream_slice, option=orjson.OPT_SORT_KEYS))
