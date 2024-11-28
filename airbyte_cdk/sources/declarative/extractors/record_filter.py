@@ -78,6 +78,7 @@ class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
             record
             for record in records
             if (self._substream_cursor or self._date_time_based_cursor).should_be_synced(
+                # Record is created on the fly to align with cursors interface; stream name is ignored as we don't need it here
                 Record(data=record, associated_slice=stream_slice)
             )
         )
