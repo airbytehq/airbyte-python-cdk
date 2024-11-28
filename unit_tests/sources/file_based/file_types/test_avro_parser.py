@@ -6,6 +6,7 @@ import datetime
 import uuid
 
 import pytest
+
 from airbyte_cdk.sources.file_based.config.avro_format import AvroFormat
 from airbyte_cdk.sources.file_based.file_types import AvroParser
 

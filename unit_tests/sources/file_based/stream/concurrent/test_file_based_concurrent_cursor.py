@@ -6,13 +6,14 @@ from typing import Any, Dict, List, MutableMapping, Optional, Tuple
 from unittest.mock import MagicMock
 
 import pytest
+from freezegun import freeze_time
+
 from airbyte_cdk.models import AirbyteStateMessage, SyncMode
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.stream.concurrent.adapters import FileBasedStreamPartition
 from airbyte_cdk.sources.file_based.stream.concurrent.cursor import FileBasedConcurrentCursor
 from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
-from freezegun import freeze_time
 
 DATE_TIME_FORMAT = FileBasedConcurrentCursor.DATE_TIME_FORMAT
 MOCK_DAYS_TO_SYNC_IF_HISTORY_IS_FULL = 3

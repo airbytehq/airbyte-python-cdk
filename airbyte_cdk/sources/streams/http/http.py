@@ -9,6 +9,9 @@ from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optio
 from urllib.parse import urljoin
 
 import requests
+from deprecated import deprecated
+from requests.auth import AuthBase
+
 from airbyte_cdk.models import AirbyteMessage, FailureType, SyncMode
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.message.repository import InMemoryMessageRepository
@@ -33,8 +36,6 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
 from airbyte_cdk.sources.streams.http.http_client import HttpClient
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.sources.utils.types import JsonType
-from deprecated import deprecated
-from requests.auth import AuthBase
 
 # list of all possible HTTP methods which can be used for sending of request bodies
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")

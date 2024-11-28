@@ -25,6 +25,9 @@ from typing import (
     get_type_hints,
 )
 
+from isodate import parse_duration
+from pydantic.v1 import BaseModel
+
 from airbyte_cdk.models import FailureType, Level
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator
@@ -367,8 +370,6 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_sta
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
-from isodate import parse_duration
-from pydantic.v1 import BaseModel
 
 ComponentDefinition = Mapping[str, Any]
 

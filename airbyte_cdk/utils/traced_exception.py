@@ -5,6 +5,8 @@ import time
 import traceback
 from typing import Optional
 
+from orjson import orjson
+
 from airbyte_cdk.models import (
     AirbyteConnectionStatus,
     AirbyteErrorTraceMessage,
@@ -18,7 +20,6 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
-from orjson import orjson
 
 
 class AirbyteTracedException(Exception):

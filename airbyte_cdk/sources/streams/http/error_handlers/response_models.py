@@ -5,9 +5,10 @@ from enum import Enum
 from typing import Optional, Union
 
 import requests
+from requests import HTTPError
+
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
-from requests import HTTPError
 
 
 class ResponseAction(Enum):

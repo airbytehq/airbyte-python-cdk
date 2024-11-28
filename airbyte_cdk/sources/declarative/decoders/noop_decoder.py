@@ -4,6 +4,7 @@ import logging
 from typing import Any, Generator, Mapping
 
 import requests
+
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
 
 logger = logging.getLogger("airbyte")

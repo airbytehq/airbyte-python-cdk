@@ -5,6 +5,7 @@
 from unittest.mock import MagicMock
 
 import pytest
+
 from airbyte_cdk.sources.declarative.migrations.legacy_to_per_partition_state_migration import (
     LegacyToPerPartitionStateMigration,
 )
@@ -13,14 +14,12 @@ from airbyte_cdk.sources.declarative.models import (
     CustomRetriever,
     DatetimeBasedCursor,
     DeclarativeStream,
-)
-from airbyte_cdk.sources.declarative.models import (
-    LegacyToPerPartitionStateMigration as LegacyToPerPartitionStateMigrationModel,
-)
-from airbyte_cdk.sources.declarative.models import (
     ParentStreamConfig,
     SimpleRetriever,
     SubstreamPartitionRouter,
+)
+from airbyte_cdk.sources.declarative.models import (
+    LegacyToPerPartitionStateMigration as LegacyToPerPartitionStateMigrationModel,
 )
 from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer import (
     ManifestComponentTransformer,

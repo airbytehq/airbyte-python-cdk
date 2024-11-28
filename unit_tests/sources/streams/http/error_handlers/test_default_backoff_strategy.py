@@ -3,6 +3,7 @@
 from typing import Optional, Union
 
 import requests
+
 from airbyte_cdk.sources.streams.http.error_handlers import BackoffStrategy, DefaultBackoffStrategy
 
 _ANY_ATTEMPT_COUNT = 123

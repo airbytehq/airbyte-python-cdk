@@ -6,6 +6,7 @@ from dataclasses import InitVar, dataclass
 from typing import Any, Mapping, MutableMapping, Optional, Union
 
 import requests
+
 from airbyte_cdk.sources.declarative.requesters.paginators.paginator import Paginator
 from airbyte_cdk.sources.types import Record, StreamSlice, StreamState
 

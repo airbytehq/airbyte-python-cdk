@@ -7,6 +7,8 @@ from typing import Any, Iterator, List, Mapping
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+from orjson import orjson
+
 from airbyte_cdk.connector_builder.message_grouper import MessageGrouper
 from airbyte_cdk.connector_builder.models import (
     HttpRequest,
@@ -29,7 +31,6 @@ from airbyte_cdk.models import (
     StreamDescriptor,
 )
 from airbyte_cdk.models import Type as MessageType
-from orjson import orjson
 from unit_tests.connector_builder.utils import create_configured_catalog
 
 _NO_PK = [[]]

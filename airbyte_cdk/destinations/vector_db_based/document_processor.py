@@ -8,6 +8,10 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import dpath
+from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
+from langchain.utils import stringify_dict
+from langchain_core.documents.base import Document
+
 from airbyte_cdk.destinations.vector_db_based.config import (
     ProcessingConfigModel,
     SeparatorSplitterConfigModel,
@@ -21,9 +25,6 @@ from airbyte_cdk.models import (
     DestinationSyncMode,
 )
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException, FailureType
-from langchain.text_splitter import Language, RecursiveCharacterTextSplitter
-from langchain.utils import stringify_dict
-from langchain_core.documents.base import Document
 
 METADATA_STREAM_FIELD = "_ab_stream"
 METADATA_RECORD_ID_FIELD = "_ab_record_id"

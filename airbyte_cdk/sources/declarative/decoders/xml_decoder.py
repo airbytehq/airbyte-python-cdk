@@ -9,6 +9,7 @@ from xml.parsers.expat import ExpatError
 
 import requests
 import xmltodict
+
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
 
 logger = logging.getLogger("airbyte")

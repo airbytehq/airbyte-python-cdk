@@ -5,6 +5,7 @@
 from typing import Optional, Union
 
 import requests
+
 from airbyte_cdk.sources.declarative.requesters.error_handlers.http_response_filter import (
     HttpResponseFilter,
 )

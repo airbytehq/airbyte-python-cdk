@@ -3,6 +3,7 @@
 #
 
 import pytest
+
 from airbyte_cdk.sources.declarative.parsers.custom_exceptions import (
     CircularReferenceException,
     UndefinedReferenceException,

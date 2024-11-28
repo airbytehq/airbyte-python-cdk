@@ -10,6 +10,9 @@ from typing import Any, List, Mapping, Optional, Union
 
 import dpath
 import pendulum
+from isodate import Duration
+from pendulum import DateTime
+
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder
 from airbyte_cdk.sources.declarative.exceptions import ReadException
@@ -18,8 +21,6 @@ from airbyte_cdk.sources.declarative.requesters.requester import Requester
 from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.sources.types import Config
-from isodate import Duration
-from pendulum import DateTime
 
 
 class TokenProvider:

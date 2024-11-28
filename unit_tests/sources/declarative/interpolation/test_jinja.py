@@ -5,10 +5,11 @@
 import datetime
 
 import pytest
-from airbyte_cdk import StreamSlice
-from airbyte_cdk.sources.declarative.interpolation.jinja import JinjaInterpolation
 from freezegun import freeze_time
 from jinja2.exceptions import TemplateSyntaxError
+
+from airbyte_cdk import StreamSlice
+from airbyte_cdk.sources.declarative.interpolation.jinja import JinjaInterpolation
 
 interpolation = JinjaInterpolation()
 

@@ -5,6 +5,8 @@
 from enum import Enum
 from typing import Any, List, Mapping, Optional, Union
 
+from pydantic.v1 import BaseModel, Field, validator
+
 from airbyte_cdk.sources.file_based.config.avro_format import AvroFormat
 from airbyte_cdk.sources.file_based.config.csv_format import CsvFormat
 from airbyte_cdk.sources.file_based.config.excel_format import ExcelFormat
@@ -13,7 +15,6 @@ from airbyte_cdk.sources.file_based.config.parquet_format import ParquetFormat
 from airbyte_cdk.sources.file_based.config.unstructured_format import UnstructuredFormat
 from airbyte_cdk.sources.file_based.exceptions import ConfigValidationError, FileBasedSourceError
 from airbyte_cdk.sources.file_based.schema_helpers import type_mapping_to_jsonschema
-from pydantic.v1 import BaseModel, Field, validator
 
 PrimaryKeyType = Optional[Union[str, List[str]]]
 

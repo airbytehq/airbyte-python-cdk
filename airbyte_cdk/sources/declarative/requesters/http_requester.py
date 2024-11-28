@@ -9,6 +9,7 @@ from typing import Any, Callable, Mapping, MutableMapping, Optional, Union
 from urllib.parse import urljoin
 
 import requests
+
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import (
     DeclarativeAuthenticator,
     NoAuth,
