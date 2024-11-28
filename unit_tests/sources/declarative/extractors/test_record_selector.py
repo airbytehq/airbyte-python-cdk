@@ -117,7 +117,7 @@ def test_record_filter(test_name, field_path, filter_template, body, expected_da
         )
     )
     assert actual_records == [
-        Record(data=data, associated_slice=stream_slice) for data in expected_data
+        Record(data=data, associated_slice=stream_slice, stream_name="") for data in expected_data
     ]
 
     calls = []

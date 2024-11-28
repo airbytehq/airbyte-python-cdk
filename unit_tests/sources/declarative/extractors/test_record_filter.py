@@ -438,7 +438,8 @@ def test_client_side_record_filter_decorator_with_cursor_types(
         partition={"id": "some_parent_id", "parent_slice": {}}, cursor_slice={}
     )
     records_with_stream_slice = [
-        Record(data=x, associated_slice=stream_slice) for x in RECORDS_TO_FILTER_DATE_FORMAT
+        Record(data=x, associated_slice=stream_slice, stream_name="test_stream")
+        for x in RECORDS_TO_FILTER_DATE_FORMAT
     ]
     filtered_records = list(
         record_filter_decorator.filter_records(

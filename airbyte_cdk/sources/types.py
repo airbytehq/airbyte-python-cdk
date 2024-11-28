@@ -20,8 +20,8 @@ class Record(Mapping[str, Any]):
     def __init__(
         self,
         data: Mapping[str, Any],
+        stream_name: str,
         associated_slice: Optional[StreamSlice] = None,
-        stream_name: Optional[str] = None,
         is_file_transfer_message: bool = False,
     ):
         self._data = data

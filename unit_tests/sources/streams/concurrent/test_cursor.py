@@ -60,6 +60,7 @@ def _record(
     return Record(
         data={_A_CURSOR_FIELD_KEY: cursor_value},
         associated_slice=partition.to_slice(),
+        stream_name=_A_STREAM_NAME,
     )
 
 
@@ -1193,6 +1194,7 @@ def test_observe_concurrent_cursor_from_datetime_based_cursor():
             "name": "kratos",
             "mythology": "greek",
         },
+        stream_name="gods",
     )
     record_2 = Record(
         associated_slice=partition.to_slice(),
@@ -1202,6 +1204,7 @@ def test_observe_concurrent_cursor_from_datetime_based_cursor():
             "name": "odin",
             "mythology": "norse",
         },
+        stream_name="gods",
     )
     record_3 = Record(
         associated_slice=partition.to_slice(),
@@ -1211,6 +1214,7 @@ def test_observe_concurrent_cursor_from_datetime_based_cursor():
             "name": "freya",
             "mythology": "norse",
         },
+        stream_name="gods",
     )
 
     concurrent_cursor.observe(record_1)
@@ -1290,6 +1294,7 @@ def test_close_partition_concurrent_cursor_from_datetime_based_cursor():
             "name": "kratos",
             "mythology": "greek",
         },
+        stream_name="gods",
     )
     concurrent_cursor.observe(record_1)
 
@@ -1388,6 +1393,7 @@ def test_close_partition_with_slice_range_concurrent_cursor_from_datetime_based_
             "name": "loki",
             "mythology": "norse",
         },
+        stream_name="gods",
     )
     record_2 = Record(
         associated_slice=partition_3.to_slice(),
@@ -1397,6 +1403,7 @@ def test_close_partition_with_slice_range_concurrent_cursor_from_datetime_based_
             "name": "kratos",
             "mythology": "greek",
         },
+        stream_name="gods",
     )
 
     concurrent_cursor.observe(record_1)
@@ -1520,6 +1527,7 @@ def test_close_partition_with_slice_range_granularity_concurrent_cursor_from_dat
             "name": "loki",
             "mythology": "norse",
         },
+        stream_name="gods",
     )
     record_2 = Record(
         associated_slice=partition_1.to_slice(),
@@ -1529,6 +1537,7 @@ def test_close_partition_with_slice_range_granularity_concurrent_cursor_from_dat
             "name": "freya",
             "mythology": "norse",
         },
+        stream_name="gods",
     )
     record_3 = Record(
         associated_slice=partition_3.to_slice(),
@@ -1538,6 +1547,7 @@ def test_close_partition_with_slice_range_granularity_concurrent_cursor_from_dat
             "name": "kratos",
             "mythology": "greek",
         },
+        stream_name="gods",
     )
 
     concurrent_cursor.observe(record_1)
@@ -1579,6 +1589,7 @@ def test_close_partition_with_slice_range_granularity_concurrent_cursor_from_dat
         [
             Record(
                 data={_A_CURSOR_FIELD_KEY: 10},
+                stream_name="test_stream",
                 associated_slice=_partition(
                     {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
                 ).to_slice(),
@@ -1588,6 +1599,7 @@ def test_close_partition_with_slice_range_granularity_concurrent_cursor_from_dat
         [
             Record(
                 data={_A_CURSOR_FIELD_KEY: 9},
+                stream_name="test_stream",
                 associated_slice=_partition(
                     {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
                 ).to_slice(),
@@ -1597,6 +1609,7 @@ def test_close_partition_with_slice_range_granularity_concurrent_cursor_from_dat
         [
             Record(
                 data={_A_CURSOR_FIELD_KEY: 21},
+                stream_name="test_stream",
                 associated_slice=_partition(
                     {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
                 ).to_slice(),
@@ -1606,6 +1619,7 @@ def test_close_partition_with_slice_range_granularity_concurrent_cursor_from_dat
         [
             Record(
                 data={"not_a_cursor_field": "some_data"},
+                stream_name="test_stream",
                 associated_slice=_partition(
                     {_LOWER_SLICE_BOUNDARY_FIELD: 0, _UPPER_SLICE_BOUNDARY_FIELD: 10}
                 ).to_slice(),

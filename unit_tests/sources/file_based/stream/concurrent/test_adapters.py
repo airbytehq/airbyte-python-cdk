@@ -298,6 +298,7 @@ class StreamFacadeTest(unittest.TestCase):
             Record(
                 data=data,
                 associated_slice=partition,
+                stream_name="test_stream",
             )
             for data in expected_stream_data
         ]
@@ -314,6 +315,7 @@ class StreamFacadeTest(unittest.TestCase):
             Record(
                 data=data,
                 associated_slice="stream",
+                stream_name="test_stream",
             )
             for data in expected_stream_data
         ]

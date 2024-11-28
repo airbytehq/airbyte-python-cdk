@@ -326,6 +326,7 @@ class PerPartitionCursor(DeclarativeCursor):
     def _convert_record_to_cursor_record(record: Record) -> Record:
         return Record(
             data=record.data,
+            stream_name=record.stream_name,
             associated_slice=StreamSlice(
                 partition={}, cursor_slice=record.associated_slice.cursor_slice
             )

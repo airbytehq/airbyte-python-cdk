@@ -333,11 +333,14 @@ def test_partition_limitation(caplog):
     In this test, we set the maximum number of partitions to 2 and provide 3 partitions.
     We verify that the state only retains information for the two most recent partitions.
     """
+    stream_name = "Rates"
     source = ManifestDeclarativeSource(
         source_config=ManifestBuilder()
-        .with_list_partition_router("Rates", "partition_field", ["1", "2", "3"])
+        .with_list_partition_router(
+            stream_name=stream_name, cursor_field="partition_field", partitions=["1", "2", "3"]
+        )
         .with_incremental_sync(
-            "Rates",
+            stream_name=stream_name,
             start_datetime="2022-01-01",
             end_datetime="2022-02-28",
             datetime_format="%Y-%m-%d",
@@ -357,27 +360,37 @@ def test_partition_limitation(caplog):
     records_list = [
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, partition_slices[0]
+                data={"a record key": "a record value", CURSOR_FIELD: "2022-01-15"},
+                associated_slice=partition_slices[0],
+                stream_name=stream_name,
             ),
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-01-16"}, partition_slices[0]
+                data={"a record key": "a record value", CURSOR_FIELD: "2022-01-16"},
+                associated_slice=partition_slices[0],
+                stream_name=stream_name,
             ),
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-02-15"}, partition_slices[0]
+                data={"a record key": "a record value", CURSOR_FIELD: "2022-02-15"},
+                associated_slice=partition_slices[0],
+                stream_name=stream_name,
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-01-16"}, partition_slices[1]
+                data={"a record key": "a record value", CURSOR_FIELD: "2022-01-16"},
+                associated_slice=partition_slices[1],
+                stream_name=stream_name,
             )
         ],
         [],
         [],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-02-17"}, partition_slices[2]
+                data={"a record key": "a record value", CURSOR_FIELD: "2022-02-17"},
+                associated_slice=partition_slices[2],
+                stream_name=stream_name,
             )
         ],
     ]
@@ -461,11 +474,12 @@ def test_perpartition_with_fallback(caplog):
 
     This test also checks that the appropriate warning logs are emitted when the partition limit is exceeded.
     """
+    stream_name = "Rates"
     source = ManifestDeclarativeSource(
         source_config=ManifestBuilder()
         .with_list_partition_router("Rates", "partition_field", ["1", "2", "3", "4", "5", "6"])
         .with_incremental_sync(
-            "Rates",
+            stream_name=stream_name,
             start_datetime="2022-01-01",
             end_datetime="2022-02-28",
             datetime_format="%Y-%m-%d",
@@ -483,60 +497,80 @@ def test_perpartition_with_fallback(caplog):
     records_list = [
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-01-15"}, partition_slices[0]
+                data={"a record key": "a record value", CURSOR_FIELD: "2022-01-15"},
+                associated_slice=partition_slices[0],
+                stream_name=stream_name,
             ),
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-01-16"}, partition_slices[0]
+                data={"a record key": "a record value", CURSOR_FIELD: "2022-01-16"},
+                associated_slice=partition_slices[0],
+                stream_name=stream_name,
             ),
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-02-15"}, partition_slices[0]
+                data={"a record key": "a record value", CURSOR_FIELD: "2022-02-15"},
+                associated_slice=partition_slices[0],
+                stream_name=stream_name,
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-01-16"}, partition_slices[1]
-            )
-        ],
-        [],
-        [],
-        [
-            Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-02-17"}, partition_slices[2]
-            )
-        ],
-        [
-            Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-01-17"}, partition_slices[3]
-            )
-        ],
-        [
-            Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-02-19"}, partition_slices[3]
+                data={"a record key": "a record value", CURSOR_FIELD: "2022-01-16"},
+                associated_slice=partition_slices[1],
+                stream_name=stream_name,
             )
         ],
         [],
+        [],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-02-18"}, partition_slices[4]
+                data={"a record key": "a record value", CURSOR_FIELD: "2022-02-17"},
+                associated_slice=partition_slices[2],
+                stream_name=stream_name,
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-01-13"}, partition_slices[3]
+                data={"a record key": "a record value", CURSOR_FIELD: "2022-01-17"},
+                associated_slice=partition_slices[3],
+                stream_name=stream_name,
             )
         ],
         [
             Record(
-                {"a record key": "a record value", CURSOR_FIELD: "2022-02-18"}, partition_slices[3]
+                data={"a record key": "a record value", CURSOR_FIELD: "2022-02-19"},
+                associated_slice=partition_slices[3],
+                stream_name=stream_name,
+            )
+        ],
+        [],
+        [
+            Record(
+                data={"a record key": "a record value", CURSOR_FIELD: "2022-02-18"},
+                associated_slice=partition_slices[4],
+                stream_name=stream_name,
+            )
+        ],
+        [
+            Record(
+                data={"a record key": "a record value", CURSOR_FIELD: "2022-01-13"},
+                associated_slice=partition_slices[3],
+                stream_name=stream_name,
+            )
+        ],
+        [
+            Record(
+                data={"a record key": "a record value", CURSOR_FIELD: "2022-02-18"},
+                associated_slice=partition_slices[3],
+                stream_name=stream_name,
             )
         ],
     ]
 
     configured_stream = ConfiguredAirbyteStream(
         stream=AirbyteStream(
-            name="Rates",
+            name=stream_name,
             json_schema={},
             supported_sync_modes=[SyncMode.full_refresh, SyncMode.incremental],
         ),
@@ -549,7 +583,7 @@ def test_perpartition_with_fallback(caplog):
         AirbyteStateMessage(
             type=AirbyteStateType.STREAM,
             stream=AirbyteStreamState(
-                stream_descriptor=StreamDescriptor(name="Rates", namespace=None),
+                stream_descriptor=StreamDescriptor(name=stream_name, namespace=None),
                 stream_state=AirbyteStateBlob(
                     {
                         "states": [

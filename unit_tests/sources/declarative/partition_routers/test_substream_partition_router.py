@@ -128,7 +128,7 @@ class MockStream(DeclarativeStream):
             result = self._records
         else:
             result = [
-                Record(data=r, associated_slice=stream_slice)
+                Record(data=r, associated_slice=stream_slice, stream_name=self.name)
                 for r in self._records
                 if r["slice"] == stream_slice["slice"]
             ]
@@ -856,16 +856,40 @@ def test_substream_using_resumable_full_refresh_parent_stream(use_incremental_de
                     cursor=ResumableFullRefreshCursor(parameters={}),
                     record_pages=[
                         [
-                            Record(data={"id": "makoto_yuki"}, associated_slice=mock_slices[0]),
-                            Record(data={"id": "yukari_takeba"}, associated_slice=mock_slices[0]),
+                            Record(
+                                data={"id": "makoto_yuki"},
+                                associated_slice=mock_slices[0],
+                                stream_name="test_stream",
+                            ),
+                            Record(
+                                data={"id": "yukari_takeba"},
+                                associated_slice=mock_slices[0],
+                                stream_name="test_stream",
+                            ),
                         ],
                         [
-                            Record(data={"id": "mitsuru_kirijo"}, associated_slice=mock_slices[1]),
-                            Record(data={"id": "akihiko_sanada"}, associated_slice=mock_slices[1]),
+                            Record(
+                                data={"id": "mitsuru_kirijo"},
+                                associated_slice=mock_slices[1],
+                                stream_name="test_stream",
+                            ),
+                            Record(
+                                data={"id": "akihiko_sanada"},
+                                associated_slice=mock_slices[1],
+                                stream_name="test_stream",
+                            ),
                         ],
                         [
-                            Record(data={"id": "junpei_iori"}, associated_slice=mock_slices[2]),
-                            Record(data={"id": "fuuka_yamagishi"}, associated_slice=mock_slices[2]),
+                            Record(
+                                data={"id": "junpei_iori"},
+                                associated_slice=mock_slices[2],
+                                stream_name="test_stream",
+                            ),
+                            Record(
+                                data={"id": "fuuka_yamagishi"},
+                                associated_slice=mock_slices[2],
+                                stream_name="test_stream",
+                            ),
                         ],
                     ],
                     name="persona_3_characters",
@@ -968,29 +992,38 @@ def test_substream_using_resumable_full_refresh_parent_stream_slices(use_increme
                     record_pages=[
                         [
                             Record(
-                                data={"id": "makoto_yuki"}, associated_slice=mock_parent_slices[0]
+                                data={"id": "makoto_yuki"},
+                                associated_slice=mock_parent_slices[0],
+                                stream_name="test_stream",
                             ),
                             Record(
-                                data={"id": "yukari_takeba"}, associated_slice=mock_parent_slices[0]
+                                data={"id": "yukari_takeba"},
+                                associated_slice=mock_parent_slices[0],
+                                stream_name="test_stream",
                             ),
                         ],
                         [
                             Record(
                                 data={"id": "mitsuru_kirijo"},
                                 associated_slice=mock_parent_slices[1],
+                                stream_name="test_stream",
                             ),
                             Record(
                                 data={"id": "akihiko_sanada"},
                                 associated_slice=mock_parent_slices[1],
+                                stream_name="test_stream",
                             ),
                         ],
                         [
                             Record(
-                                data={"id": "junpei_iori"}, associated_slice=mock_parent_slices[2]
+                                data={"id": "junpei_iori"},
+                                associated_slice=mock_parent_slices[2],
+                                stream_name="test_stream",
                             ),
                             Record(
                                 data={"id": "fuuka_yamagishi"},
                                 associated_slice=mock_parent_slices[2],
+                                stream_name="test_stream",
                             ),
                         ],
                     ],
