@@ -2,8 +2,6 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from airbyte_cdk.utils.airbyte_secrets_utils import update_secrets
-
 import json
 import logging
 from http import HTTPStatus
@@ -30,6 +28,7 @@ from airbyte_cdk.sources.streams.http.exceptions import (
 )
 from airbyte_cdk.sources.streams.http.http_client import MessageRepresentationAirbyteTracedErrors
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
+from airbyte_cdk.utils.airbyte_secrets_utils import update_secrets
 
 
 class StubBasicReadHttpStream(HttpStream):

@@ -2,8 +2,6 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
-
 import logging
 import os
 import urllib
@@ -47,13 +45,13 @@ from airbyte_cdk.sources.streams.http.rate_limiting import (
     rate_limit_default_backoff_handler,
     user_defined_backoff_handler,
 )
+from airbyte_cdk.sources.utils.types import JsonType
+from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
 from airbyte_cdk.utils.stream_status_utils import (
     as_airbyte_message as stream_status_as_airbyte_message,
 )
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from requests.auth import AuthBase
-from airbyte_cdk.sources.utils.types import JsonType
 
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
 
