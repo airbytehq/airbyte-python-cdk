@@ -4,6 +4,7 @@
 
 import pytest
 import requests
+
 from airbyte_cdk.sources.http_logger import format_http_message
 
 A_TITLE = "a title"

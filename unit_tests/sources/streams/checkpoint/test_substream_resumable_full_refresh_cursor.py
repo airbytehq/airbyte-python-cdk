@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 import pytest
+
 from airbyte_cdk.sources.streams.checkpoint.substream_resumable_full_refresh_cursor import (
     SubstreamResumableFullRefreshCursor,
 )

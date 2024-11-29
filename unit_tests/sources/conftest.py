@@ -5,6 +5,7 @@
 import datetime
 
 import pytest
+
 from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteStreamStatus,

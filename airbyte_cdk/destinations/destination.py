@@ -9,6 +9,8 @@ import sys
 from abc import ABC, abstractmethod
 from typing import Any, Iterable, List, Mapping
 
+from orjson import orjson
+
 from airbyte_cdk.connector import Connector
 from airbyte_cdk.exception_handler import init_uncaught_exception_handler
 from airbyte_cdk.models import (
@@ -20,7 +22,6 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.sources.utils.schema_helpers import check_config_against_spec_or_exit
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from orjson import orjson
 
 logger = logging.getLogger("airbyte")
 

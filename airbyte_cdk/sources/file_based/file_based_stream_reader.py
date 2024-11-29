@@ -10,9 +10,10 @@ from io import IOBase
 from os import makedirs, path
 from typing import Any, Dict, Iterable, List, Optional, Set
 
+from wcmatch.glob import GLOBSTAR, globmatch
+
 from airbyte_cdk.sources.file_based.config.abstract_file_based_spec import AbstractFileBasedSpec
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
-from wcmatch.glob import GLOBSTAR, globmatch
 
 
 class FileReadMode(Enum):

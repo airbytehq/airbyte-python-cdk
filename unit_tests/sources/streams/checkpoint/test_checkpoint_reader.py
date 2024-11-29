@@ -3,6 +3,7 @@
 from unittest.mock import Mock
 
 import pytest
+
 from airbyte_cdk.sources.streams.checkpoint import (
     CursorBasedCheckpointReader,
     FullRefreshCheckpointReader,

@@ -3,6 +3,7 @@
 #
 
 import pytest
+
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
 
 

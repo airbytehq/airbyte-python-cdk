@@ -5,6 +5,8 @@
 import logging
 from unittest.mock import MagicMock, patch
 
+from orjson import orjson
+
 from airbyte_cdk.models import (
     AirbyteStateBlob,
     AirbyteStateMessage,
@@ -24,7 +26,6 @@ from airbyte_cdk.sources.declarative.incremental.per_partition_cursor import (
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.sources.types import Record
-from orjson import orjson
 
 CURSOR_FIELD = "cursor_field"
 SYNC_MODE = SyncMode.incremental

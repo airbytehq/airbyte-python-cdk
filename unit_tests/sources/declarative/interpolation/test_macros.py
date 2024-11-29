@@ -5,6 +5,7 @@
 import datetime
 
 import pytest
+
 from airbyte_cdk.sources.declarative.interpolation.macros import macros
 
 

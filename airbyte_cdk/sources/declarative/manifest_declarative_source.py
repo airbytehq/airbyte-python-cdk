@@ -8,9 +8,12 @@ import pkgutil
 from copy import deepcopy
 from importlib import metadata
 from typing import Any, Dict, Iterator, List, Mapping, Optional
-from packaging.version import Version, InvalidVersion
 
 import yaml
+from jsonschema.exceptions import ValidationError
+from jsonschema.validators import validate
+from packaging.version import InvalidVersion, Version
+
 from airbyte_cdk.models import (
     AirbyteConnectionStatus,
     AirbyteMessage,
@@ -44,8 +47,6 @@ from airbyte_cdk.sources.utils.slice_logger import (
     DebugSliceLogger,
     SliceLogger,
 )
-from jsonschema.exceptions import ValidationError
-from jsonschema.validators import validate
 
 
 class ManifestDeclarativeSource(DeclarativeSource):

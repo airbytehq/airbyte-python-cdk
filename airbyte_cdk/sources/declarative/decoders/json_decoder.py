@@ -5,11 +5,12 @@ import codecs
 import logging
 from dataclasses import InitVar, dataclass
 from gzip import decompress
-from typing import Any, Generator, Mapping, MutableMapping, List, Optional
+from typing import Any, Generator, List, Mapping, MutableMapping, Optional
 
-import requests
-from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
 import orjson
+import requests
+
+from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
 
 logger = logging.getLogger("airbyte")
 

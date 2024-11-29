@@ -8,6 +8,7 @@ from unittest import TestCase
 import pytest
 import requests
 import requests_mock
+
 from airbyte_cdk.sources.declarative.extractors import ResponseToFileExtractor
 
 

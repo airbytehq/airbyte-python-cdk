@@ -7,6 +7,7 @@ import logging
 from typing import Dict
 
 import pytest
+
 from airbyte_cdk.logger import AirbyteLogFormatter
 
 

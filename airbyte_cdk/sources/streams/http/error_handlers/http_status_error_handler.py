@@ -7,6 +7,7 @@ from datetime import timedelta
 from typing import Mapping, Optional, Union
 
 import requests
+
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.streams.http.error_handlers.default_error_mapping import (
     DEFAULT_ERROR_MAPPING,

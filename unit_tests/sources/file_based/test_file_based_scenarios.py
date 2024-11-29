@@ -6,8 +6,9 @@ from pathlib import PosixPath
 
 import pytest
 from _pytest.capture import CaptureFixture
-from airbyte_cdk.sources.abstract_source import AbstractSource
 from freezegun import freeze_time
+
+from airbyte_cdk.sources.abstract_source import AbstractSource
 from unit_tests.sources.file_based.scenarios.avro_scenarios import (
     avro_all_types_scenario,
     avro_file_with_double_as_number_scenario,

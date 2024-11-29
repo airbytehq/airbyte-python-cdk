@@ -9,6 +9,8 @@ from typing import Any, Iterable, Mapping, Optional
 
 import pytest
 import requests
+from requests import Request
+
 from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.streams.call_rate import (
     APIBudget,
@@ -22,7 +24,6 @@ from airbyte_cdk.sources.streams.call_rate import (
 from airbyte_cdk.sources.streams.http import HttpStream
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
-from requests import Request
 
 
 class StubDummyHttpStream(HttpStream):

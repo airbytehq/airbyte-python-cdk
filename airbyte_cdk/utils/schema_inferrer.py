@@ -5,10 +5,11 @@
 from collections import defaultdict
 from typing import Any, Dict, List, Mapping, Optional
 
-from airbyte_cdk.models import AirbyteRecordMessage
 from genson import SchemaBuilder, SchemaNode
 from genson.schema.strategies.object import Object
 from genson.schema.strategies.scalar import Number
+
+from airbyte_cdk.models import AirbyteRecordMessage
 
 # schema keywords
 _TYPE = "type"

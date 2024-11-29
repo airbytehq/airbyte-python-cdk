@@ -3,11 +3,12 @@
 #
 
 import pytest
-from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
+
 from airbyte_cdk.cli.source_declarative_manifest._run import (
     create_declarative_source,
     handle_command,
 )
+from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 
 REMOTE_MANIFEST_SPEC_SUBSTRING = '"required":["__injected_declarative_manifest"]'
 

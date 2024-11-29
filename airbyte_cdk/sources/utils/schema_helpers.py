@@ -10,11 +10,12 @@ import pkgutil
 from typing import Any, ClassVar, Dict, List, Mapping, MutableMapping, Optional, Tuple
 
 import jsonref
-from airbyte_cdk.models import ConnectorSpecification, FailureType
-from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 from jsonschema import RefResolver, validate
 from jsonschema.exceptions import ValidationError
 from pydantic.v1 import BaseModel, Field
+
+from airbyte_cdk.models import ConnectorSpecification, FailureType
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
 class JsonFileLoader:

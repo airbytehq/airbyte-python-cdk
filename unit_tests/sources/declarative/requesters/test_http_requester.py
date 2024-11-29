@@ -9,6 +9,8 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest as pytest
 import requests
+from requests import PreparedRequest
+
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies import (
@@ -29,7 +31,6 @@ from airbyte_cdk.sources.streams.http.exceptions import (
     UserDefinedBackoffException,
 )
 from airbyte_cdk.sources.types import Config
-from requests import PreparedRequest
 
 
 @pytest.fixture

@@ -5,6 +5,7 @@
 from typing import List
 
 import pytest
+
 from airbyte_cdk.models import AirbyteMessage, AirbyteStreamStatus, Type
 
 

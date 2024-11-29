@@ -5,6 +5,7 @@
 from typing import Any, Mapping, Optional
 
 import pytest
+
 from airbyte_cdk.sources.file_based.exceptions import ConfigValidationError, SchemaInferenceError
 from airbyte_cdk.sources.file_based.schema_helpers import (
     ComparableType,

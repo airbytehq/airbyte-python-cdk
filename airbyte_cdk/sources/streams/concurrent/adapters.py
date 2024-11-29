@@ -8,6 +8,8 @@ import logging
 from functools import lru_cache
 from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Tuple, Union
 
+from deprecated.classic import deprecated
+
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
@@ -41,8 +43,6 @@ from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.utils.schema_helpers import InternalConfig
 from airbyte_cdk.sources.utils.slice_logger import SliceLogger
-from deprecated.classic import deprecated
-
 from airbyte_cdk.utils.slice_hasher import SliceHasher
 
 """

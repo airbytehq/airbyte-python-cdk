@@ -8,6 +8,8 @@ from abc import ABC
 from collections import Counter
 from typing import Any, Iterator, List, Mapping, Optional, Tuple, Type, Union
 
+from pydantic.v1.error_wrappers import ValidationError
+
 from airbyte_cdk.logger import AirbyteLogFormatter, init_logger
 from airbyte_cdk.models import (
     AirbyteMessage,
@@ -60,7 +62,6 @@ from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
 from airbyte_cdk.utils.analytics_message import create_analytics_message
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from pydantic.v1.error_wrappers import ValidationError
 
 DEFAULT_CONCURRENCY = 100
 MAX_CONCURRENCY = 100

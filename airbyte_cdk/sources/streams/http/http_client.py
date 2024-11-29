@@ -13,6 +13,8 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 import orjson
 import requests
 import requests_cache
+from requests.auth import AuthBase
+
 from airbyte_cdk.models import (
     AirbyteMessageSerializer,
     AirbyteStreamStatus,

@@ -14,6 +14,9 @@ from pathlib import Path
 
 import jsonref
 import pytest
+from pytest import fixture
+from pytest import raises as pytest_raises
+
 from airbyte_cdk.models import ConnectorSpecification, ConnectorSpecificationSerializer, FailureType
 from airbyte_cdk.sources.utils.schema_helpers import (
     InternalConfig,
@@ -21,8 +24,6 @@ from airbyte_cdk.sources.utils.schema_helpers import (
     check_config_against_spec_or_exit,
 )
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from pytest import fixture
-from pytest import raises as pytest_raises
 
 logger = logging.getLogger("airbyte")
 
