@@ -178,6 +178,8 @@ class ConcurrentCursor(Cursor):
         self._most_recent_cursor_value_per_partition: MutableMapping[StreamSlice, Any] = {}
         self._has_closed_at_least_one_slice = False
         self._cursor_granularity = cursor_granularity
+        # Flag to track if the logger has been triggered (per stream)
+        self._should_be_synced_logger_triggered = False
 
     @property
     def state(self) -> MutableMapping[str, Any]:
@@ -457,8 +459,10 @@ class ConcurrentCursor(Cursor):
         try:
             record_cursor_value: CursorValueType = self._extract_cursor_value(record)  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
         except ValueError:
-            LOGGER.warning(
-                f"Could not find cursor field `{self.cursor_field.cursor_field_key}` in record. The incremental sync will assume it needs to be synced"
-            )
+            if not self._should_be_synced_logger_triggered:
+                LOGGER.warning(
+                    f"Could not find cursor field `{self.cursor_field.cursor_field_key}` in record. The incremental sync will assume it needs to be synced"
+                )
+                self._should_be_synced_logger_triggered = True
             return True
         return self.start <= record_cursor_value <= self._end_provider()
