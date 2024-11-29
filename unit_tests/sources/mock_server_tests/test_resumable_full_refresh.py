@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 from unittest import TestCase
 
 import freezegun
+
 from airbyte_cdk.models import (
     AirbyteStateBlob,
     AirbyteStreamStatus,

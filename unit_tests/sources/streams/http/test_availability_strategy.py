@@ -9,6 +9,7 @@ from typing import Any, Iterable, Mapping, Optional
 
 import pytest
 import requests
+
 from airbyte_cdk.sources.streams.http.availability_strategy import HttpAvailabilityStrategy
 from airbyte_cdk.sources.streams.http.http import HttpStream
 

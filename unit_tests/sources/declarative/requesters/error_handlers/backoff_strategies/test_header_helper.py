@@ -6,6 +6,7 @@ import re
 from unittest.mock import MagicMock
 
 import pytest
+
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.header_helper import (
     get_numeric_value_from_header,
 )
@@ -23,21 +24,21 @@ from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategie
             "test_get_numeric_value_with_regex",
             {"header": "61,60"},
             "header",
-            re.compile("([-+]?\d+)"),
+            re.compile(r"([-+]?\d+)"),
             61,
         ),  # noqa
         (
             "test_get_numeric_value_with_regex_no_header",
             {"header": "61,60"},
             "notheader",
-            re.compile("([-+]?\d+)"),
+            re.compile(r"([-+]?\d+)"),
             None,
         ),  # noqa
         (
             "test_get_numeric_value_with_regex_not_matching",
             {"header": "abc61,60"},
             "header",
-            re.compile("([-+]?\d+)"),
+            re.compile(r"([-+]?\d+)"),
             None,
         ),  # noqa
     ],

@@ -6,6 +6,7 @@ import datetime
 import decimal
 
 import pyarrow as pa
+
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 from unit_tests.sources.file_based.in_memory_files_source import TemporaryParquetFilesStreamReader
 from unit_tests.sources.file_based.scenarios.file_based_source_builder import FileBasedSourceBuilder

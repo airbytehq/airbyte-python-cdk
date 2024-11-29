@@ -7,11 +7,14 @@ import dataclasses
 import json
 import logging
 import os
+from typing import Literal
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+from orjson import orjson
+
 from airbyte_cdk import connector_builder
 from airbyte_cdk.connector_builder.connector_builder_handler import (
     DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE,
@@ -38,6 +41,7 @@ from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteMessageSerializer,
     AirbyteRecordMessage,
+    AirbyteStateBlob,
     AirbyteStateMessage,
     AirbyteStream,
     AirbyteStreamState,
@@ -49,15 +53,14 @@ from airbyte_cdk.models import (
     Level,
     StreamDescriptor,
     SyncMode,
+    Type,
 )
-from airbyte_cdk.models import Type
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.declarative.retrievers import SimpleRetrieverTestReadDecorator
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets, update_secrets
-from orjson import orjson
 from unit_tests.connector_builder.utils import create_configured_catalog
 
 _stream_name = "stream_with_custom_requester"
@@ -74,7 +77,8 @@ _A_STATE = [
     AirbyteStateMessage(
         type="STREAM",
         stream=AirbyteStreamState(
-            stream_descriptor=StreamDescriptor(name=_stream_name), stream_state={"key": "value"}
+            stream_descriptor=StreamDescriptor(name=_stream_name),
+            stream_state=AirbyteStateBlob({"key": "value"}),
         ),
     )
 ]
@@ -84,15 +88,17 @@ _A_PER_PARTITION_STATE = [
         type="STREAM",
         stream=AirbyteStreamState(
             stream_descriptor=StreamDescriptor(name=_stream_name),
-            stream_state={
-                "states": [
-                    {
-                        "partition": {"key": "value"},
-                        "cursor": {"item_id": 0},
-                    },
-                ],
-                "parent_state": {},
-            },
+            stream_state=AirbyteStateBlob(
+                {
+                    "states": [
+                        {
+                            "partition": {"key": "value"},
+                            "cursor": {"item_id": 0},
+                        },
+                    ],
+                    "parent_state": {},
+                }
+            ),
         ),
     )
 ]
@@ -569,7 +575,7 @@ def test_read():
         )
 
 
-def test_config_update():
+def test_config_update() -> None:
     manifest = copy.deepcopy(MANIFEST)
     manifest["definitions"]["retriever"]["requester"]["authenticator"] = {
         "type": "OAuthAuthenticator",
@@ -632,7 +638,7 @@ def test_read_returns_error_response(mock_from_exception):
             return connector_specification
 
         @property
-        def check_config_against_spec(self):
+        def check_config_against_spec(self) -> Literal[False]:
             return False
 
     stack_trace = "a stack trace"

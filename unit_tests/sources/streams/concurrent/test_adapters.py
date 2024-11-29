@@ -1,18 +1,17 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-import datetime
 import logging
 import unittest
 from unittest.mock import Mock
 
 import pytest
+
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, AirbyteStream, Level, SyncMode
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.message import InMemoryMessageRepository
 from airbyte_cdk.sources.streams.concurrent.adapters import (
     AvailabilityStrategyFacade,
-    CursorPartitionGenerator,
     StreamFacade,
     StreamPartition,
     StreamPartitionGenerator,
@@ -25,11 +24,7 @@ from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
 from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
 from airbyte_cdk.sources.streams.concurrent.exceptions import ExceptionWithDisplayMessage
 from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
-from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
-    CustomFormatConcurrentStreamStateConverter,
-)
 from airbyte_cdk.sources.streams.core import Stream
-from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.sources.utils.slice_logger import SliceLogger
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 
@@ -76,7 +71,7 @@ def test_stream_partition_generator(sync_mode):
     stream.stream_slices.return_value = stream_slices
 
     partition_generator = StreamPartitionGenerator(
-        stream, message_repository, _ANY_SYNC_MODE, _ANY_CURSOR_FIELD, _ANY_STATE, _ANY_CURSOR
+        stream, message_repository, _ANY_SYNC_MODE, _ANY_CURSOR_FIELD, _ANY_STATE
     )
 
     partitions = list(partition_generator.generate())
@@ -115,9 +110,7 @@ def test_stream_partition(transformer, expected_records):
     sync_mode = SyncMode.full_refresh
     cursor_field = None
     state = None
-    partition = StreamPartition(
-        stream, _slice, message_repository, sync_mode, cursor_field, state, _ANY_CURSOR
-    )
+    partition = StreamPartition(stream, _slice, message_repository, sync_mode, cursor_field, state)
 
     a_log_message = AirbyteMessage(
         type=MessageType.LOG,
@@ -151,6 +144,7 @@ def test_stream_partition(transformer, expected_records):
 def test_stream_partition_raising_exception(exception_type, expected_display_message):
     stream = Mock()
     stream.get_error_display_message.return_value = expected_display_message
+    stream.name = _STREAM_NAME
 
     message_repository = InMemoryMessageRepository()
     _slice = None
@@ -162,7 +156,6 @@ def test_stream_partition_raising_exception(exception_type, expected_display_mes
         _ANY_SYNC_MODE,
         _ANY_CURSOR_FIELD,
         _ANY_STATE,
-        _ANY_CURSOR,
     )
 
     stream.read_records.side_effect = Exception()
@@ -178,17 +171,17 @@ def test_stream_partition_raising_exception(exception_type, expected_display_mes
     [
         pytest.param(
             {"partition": 1, "k": "v"},
-            hash(("stream", '{"k": "v", "partition": 1}')),
+            1088629586613270006,
             id="test_hash_with_slice",
         ),
-        pytest.param(None, hash("stream"), id="test_hash_no_slice"),
+        pytest.param(None, 5149571505982114308, id="test_hash_no_slice"),
     ],
 )
 def test_stream_partition_hash(_slice, expected_hash):
     stream = Mock()
     stream.name = "stream"
     partition = StreamPartition(
-        stream, _slice, Mock(), _ANY_SYNC_MODE, _ANY_CURSOR_FIELD, _ANY_STATE, _ANY_CURSOR
+        stream, _slice, Mock(), _ANY_SYNC_MODE, _ANY_CURSOR_FIELD, _ANY_STATE
     )
 
     _hash = partition.__hash__()
@@ -445,43 +438,3 @@ def test_get_error_display_message(exception, expected_display_message):
     display_message = facade.get_error_display_message(exception)
 
     assert display_message == expected_display_message
-
-
-def test_cursor_partition_generator():
-    stream = Mock()
-    cursor = Mock()
-    message_repository = Mock()
-    connector_state_converter = CustomFormatConcurrentStreamStateConverter(
-        datetime_format="%Y-%m-%dT%H:%M:%S"
-    )
-    cursor_field = Mock()
-    slice_boundary_fields = ("start", "end")
-
-    expected_slices = [
-        StreamSlice(
-            partition={},
-            cursor_slice={"start": "2024-01-01T00:00:00", "end": "2024-01-02T00:00:00"},
-        )
-    ]
-    cursor.generate_slices.return_value = [
-        (datetime.datetime(year=2024, month=1, day=1), datetime.datetime(year=2024, month=1, day=2))
-    ]
-
-    partition_generator = CursorPartitionGenerator(
-        stream,
-        message_repository,
-        cursor,
-        connector_state_converter,
-        cursor_field,
-        slice_boundary_fields,
-    )
-
-    partitions = list(partition_generator.generate())
-    generated_slices = [partition.to_slice() for partition in partitions]
-
-    assert all(
-        isinstance(partition, StreamPartition) for partition in partitions
-    ), "Not all partitions are instances of StreamPartition"
-    assert (
-        generated_slices == expected_slices
-    ), f"Expected {expected_slices}, but got {generated_slices}"

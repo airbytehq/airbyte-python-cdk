@@ -5,9 +5,10 @@
 from dataclasses import InitVar, dataclass
 from typing import Annotated, Any, Dict, List, Mapping, Optional, Union
 
-from airbyte_cdk.models.file_transfer_record_message import AirbyteFileTransferRecordMessage
 from airbyte_protocol_dataclasses.models import *  # noqa: F403  # Allow '*'
 from serpyco_rs.metadata import Alias
+
+from airbyte_cdk.models.file_transfer_record_message import AirbyteFileTransferRecordMessage
 
 # ruff: noqa: F405  # ignore fuzzy import issues with 'import *'
 

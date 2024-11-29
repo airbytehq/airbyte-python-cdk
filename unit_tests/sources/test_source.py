@@ -9,6 +9,9 @@ from contextlib import nullcontext as does_not_raise
 from typing import Any, List, Mapping, MutableMapping, Optional, Tuple, Union
 
 import pytest
+from orjson import orjson
+from serpyco_rs import SchemaValidationError
+
 from airbyte_cdk.models import (
     AirbyteGlobalState,
     AirbyteStateBlob,
@@ -26,8 +29,6 @@ from airbyte_cdk.sources import AbstractSource, Source
 from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.streams.http.http import HttpStream
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
-from orjson import orjson
-from serpyco_rs import SchemaValidationError
 
 
 class MockSource(Source):

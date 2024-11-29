@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Mapping, Optional
 
 import dpath
 import dpath.exceptions
+
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.types import Config, FieldPointer, StreamSlice, StreamState

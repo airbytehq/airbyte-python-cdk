@@ -5,6 +5,7 @@
 from typing import Any, Mapping
 
 import pytest
+
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import ValidationPolicy
 from airbyte_cdk.sources.file_based.exceptions import StopSyncPerValidationPolicy
 from airbyte_cdk.sources.file_based.schema_validation_policies import (

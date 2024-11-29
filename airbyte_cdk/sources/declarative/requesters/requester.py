@@ -7,6 +7,7 @@ from enum import Enum
 from typing import Any, Callable, Mapping, MutableMapping, Optional, Union
 
 import requests
+
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.requesters.request_options.request_options_provider import (
     RequestOptionsProvider,

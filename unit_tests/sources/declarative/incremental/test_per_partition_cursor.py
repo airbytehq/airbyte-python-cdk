@@ -6,6 +6,7 @@ from collections import OrderedDict
 from unittest.mock import Mock
 
 import pytest
+
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.sources.declarative.incremental.per_partition_cursor import (
     PerPartitionCursor,

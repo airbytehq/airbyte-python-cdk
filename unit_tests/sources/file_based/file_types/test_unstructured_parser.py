@@ -9,6 +9,9 @@ from unittest.mock import MagicMock, call, mock_open, patch
 
 import pytest
 import requests
+from unstructured.documents.elements import ElementMetadata, Formula, ListItem, Text, Title
+from unstructured.file_utils.filetype import FileType
+
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.config.unstructured_format import (
@@ -20,8 +23,6 @@ from airbyte_cdk.sources.file_based.exceptions import RecordParseError
 from airbyte_cdk.sources.file_based.file_types import UnstructuredParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from unstructured.documents.elements import ElementMetadata, Formula, ListItem, Text, Title
-from unstructured.file_utils.filetype import FileType
 
 FILE_URI = "path/to/file.xyz"
 

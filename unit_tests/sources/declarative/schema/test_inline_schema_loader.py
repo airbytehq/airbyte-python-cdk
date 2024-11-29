@@ -3,6 +3,7 @@
 #
 
 import pytest
+
 from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader
 
 

@@ -6,6 +6,7 @@ from typing import Any, Iterable, List, Mapping, Optional, Tuple, Union
 from unittest.mock import Mock
 
 import freezegun
+
 from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteRecordMessage,

@@ -72,6 +72,8 @@ jobs:
             cdk_extra: n/a
           - connector: source-shopify
             cdk_extra: n/a
+          - connector: source-chargebee
+            cdk_extra: n/a
           # Currently not passing CI (unrelated)
           # - connector: source-zendesk-support
           #   cdk_extra: n/a
@@ -81,6 +83,12 @@ jobs:
             cdk_extra: vector-db-based
           - connector: destination-motherduck
             cdk_extra: sql
+          # TODO: These are manifest connectors and won't work as expected until we
+          #       add `--use-local-cdk` support for manifest connectors.
+          - connector: source-the-guardian-api
+            cdk_extra: n/a
+          - connector: source-pokeapi
+            cdk_extra: n/a
 
     name: "Check: '${{matrix.connector}}' (skip=${{needs.cdk_changes.outputs[matrix.cdk_extra] == 'false'}})"
     steps:

@@ -6,6 +6,7 @@ from dataclasses import InitVar, dataclass, field
 from typing import Any, Dict, Mapping, Optional, Union
 
 import requests
+
 from airbyte_cdk.sources.declarative.decoders import (
     Decoder,
     JsonDecoder,

@@ -10,8 +10,9 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 import pandas as pd
 import requests
-from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from numpy import nan
+
+from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 
 EMPTY_STR: str = ""
 DEFAULT_ENCODING: str = "utf-8"

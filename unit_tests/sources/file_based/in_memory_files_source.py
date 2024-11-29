@@ -16,6 +16,9 @@ import avro.schema as avro_schema
 import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
+from avro import datafile
+from pydantic.v1 import AnyUrl
+
 from airbyte_cdk.models import ConfiguredAirbyteCatalog, ConfiguredAirbyteCatalogSerializer
 from airbyte_cdk.sources.file_based.availability_strategy import (
     AbstractFileBasedAvailabilityStrategy,
@@ -42,8 +45,6 @@ from airbyte_cdk.sources.file_based.stream.cursor import (
     DefaultFileBasedCursor,
 )
 from airbyte_cdk.sources.source import TState
-from avro import datafile
-from pydantic.v1 import AnyUrl
 
 
 class InMemoryFilesSource(FileBasedSource):

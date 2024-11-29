@@ -5,6 +5,7 @@
 from typing import Dict, List
 
 import pytest
+
 from airbyte_cdk.models import AirbyteRecordMessage
 from airbyte_cdk.utils.datetime_format_inferrer import DatetimeFormatInferrer
 

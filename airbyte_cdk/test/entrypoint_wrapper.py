@@ -23,6 +23,10 @@ from io import StringIO
 from pathlib import Path
 from typing import Any, List, Mapping, Optional, Union
 
+from orjson import orjson
+from pydantic import ValidationError as V2ValidationError
+from serpyco_rs import SchemaValidationError
+
 from airbyte_cdk.entrypoint import AirbyteEntrypoint
 from airbyte_cdk.exception_handler import assemble_uncaught_exception
 from airbyte_cdk.logger import AirbyteLogFormatter
@@ -40,9 +44,6 @@ from airbyte_cdk.models import (
     Type,
 )
 from airbyte_cdk.sources import Source
-from orjson import orjson
-from pydantic import ValidationError as V2ValidationError
-from serpyco_rs import SchemaValidationError
 
 
 class EntrypointOutput:

@@ -3,6 +3,7 @@
 from typing import Any, Mapping, Optional, Type, Union
 
 import pytest
+
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
 
 

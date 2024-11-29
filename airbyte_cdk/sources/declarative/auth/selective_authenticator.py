@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, List, Mapping
 
 import dpath
+
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 
 
