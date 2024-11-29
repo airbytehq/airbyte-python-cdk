@@ -10,6 +10,7 @@ from unittest import mock
 from unittest.mock import Mock
 
 import pytest
+
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.file_based.availability_strategy import (

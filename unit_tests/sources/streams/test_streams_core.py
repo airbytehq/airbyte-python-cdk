@@ -8,6 +8,7 @@ from unittest import mock
 
 import pytest
 import requests
+
 from airbyte_cdk.models import AirbyteStream, SyncMode
 from airbyte_cdk.sources.streams import CheckpointMixin, Stream
 from airbyte_cdk.sources.streams.checkpoint import (

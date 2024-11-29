@@ -5,6 +5,8 @@
 from unittest.mock import MagicMock
 
 import pytest
+from requests import RequestException, Response
+
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.requesters.error_handlers.default_http_response_filter import (
     DefaultHttpResponseFilter,
@@ -13,7 +15,6 @@ from airbyte_cdk.sources.streams.http.error_handlers.default_error_mapping impor
     DEFAULT_ERROR_MAPPING,
 )
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
-from requests import RequestException, Response
 
 
 @pytest.mark.parametrize(

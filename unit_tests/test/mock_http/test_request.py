@@ -3,6 +3,7 @@
 from unittest import TestCase
 
 import pytest
+
 from airbyte_cdk.test.mock_http.request import ANY_QUERY_PARAMS, HttpRequest
 
 

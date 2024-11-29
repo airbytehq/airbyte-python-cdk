@@ -7,6 +7,7 @@ from dataclasses import InitVar, dataclass
 from typing import TYPE_CHECKING, Any, Iterable, List, Mapping, Optional, Union
 
 import dpath
+
 from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString

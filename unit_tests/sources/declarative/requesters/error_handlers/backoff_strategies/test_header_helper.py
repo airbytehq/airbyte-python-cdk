@@ -6,6 +6,7 @@ import re
 from unittest.mock import MagicMock
 
 import pytest
+
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.header_helper import (
     get_numeric_value_from_header,
 )

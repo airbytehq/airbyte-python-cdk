@@ -4,6 +4,7 @@
 from unittest.mock import patch
 
 import pytest
+
 from airbyte_cdk.sources.declarative.schema.json_file_schema_loader import (
     JsonFileSchemaLoader,
     _default_file_path,

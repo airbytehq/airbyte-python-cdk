@@ -6,6 +6,7 @@ from typing import Any, List, Mapping, Optional, Sequence, Tuple, Union
 
 import dpath
 import pendulum
+
 from airbyte_cdk.config_observation import (
     create_connector_config_control_message,
     emit_configuration_as_airbyte_control_message,

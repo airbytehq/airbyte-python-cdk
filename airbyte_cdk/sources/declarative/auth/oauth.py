@@ -6,6 +6,7 @@ from dataclasses import InitVar, dataclass, field
 from typing import Any, List, Mapping, Optional, Union
 
 import pendulum
+
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString

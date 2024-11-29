@@ -6,9 +6,10 @@ import codecs
 from enum import Enum
 from typing import Any, Dict, List, Optional, Set, Union
 
-from airbyte_cdk.utils.oneof_option_config import OneOfOptionConfig
 from pydantic.v1 import BaseModel, Field, root_validator, validator
 from pydantic.v1.error_wrappers import ValidationError
+
+from airbyte_cdk.utils.oneof_option_config import OneOfOptionConfig
 
 
 class InferenceType(Enum):

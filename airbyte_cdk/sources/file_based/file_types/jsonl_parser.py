@@ -6,6 +6,8 @@ import json
 import logging
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Union
 
+from orjson import orjson
+
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.exceptions import FileBasedSourceError, RecordParseError
 from airbyte_cdk.sources.file_based.file_based_stream_reader import (
@@ -19,7 +21,6 @@ from airbyte_cdk.sources.file_based.schema_helpers import (
     SchemaType,
     merge_schemas,
 )
-from orjson import orjson
 
 
 class JsonlParser(FileTypeParser):

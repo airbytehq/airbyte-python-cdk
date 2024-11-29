@@ -6,6 +6,7 @@ from typing import Optional
 from unittest.mock import ANY, MagicMock, call
 
 import pytest
+
 from airbyte_cdk.destinations.vector_db_based import ProcessingConfigModel, Writer
 from airbyte_cdk.models import (
     AirbyteLogMessage,

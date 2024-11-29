@@ -7,6 +7,7 @@ from unittest.mock import Mock, call
 
 import freezegun
 import pytest
+
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
@@ -15,9 +16,11 @@ from airbyte_cdk.models import (
     AirbyteStreamStatus,
     AirbyteStreamStatusTraceMessage,
     AirbyteTraceMessage,
+    StreamDescriptor,
+    SyncMode,
+    TraceType,
 )
 from airbyte_cdk.models import Level as LogLevel
-from airbyte_cdk.models import StreamDescriptor, SyncMode, TraceType
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.concurrent_source.concurrent_read_processor import ConcurrentReadProcessor
 from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentinel import (

@@ -5,6 +5,8 @@
 from dataclasses import InitVar, dataclass, field
 from typing import Any, Mapping, MutableMapping, Optional, Union
 
+from deprecated import deprecated
+
 from airbyte_cdk.sources.declarative.interpolation.interpolated_nested_mapping import NestedMapping
 from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_nested_request_input_provider import (
     InterpolatedNestedRequestInputProvider,
@@ -17,7 +19,6 @@ from airbyte_cdk.sources.declarative.requesters.request_options.request_options_
 )
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
-from deprecated import deprecated
 
 RequestInput = Union[str, Mapping[str, str]]
 ValidRequestTypes = (str, list)

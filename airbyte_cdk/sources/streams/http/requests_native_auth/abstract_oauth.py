@@ -10,12 +10,13 @@ from typing import Any, List, Mapping, MutableMapping, Optional, Tuple, Union
 import backoff
 import pendulum
 import requests
+from requests.auth import AuthBase
+
 from airbyte_cdk.models import FailureType, Level
 from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.airbyte_secrets_utils import add_to_secrets
-from requests.auth import AuthBase
 
 from ..exceptions import DefaultBackoffException
 

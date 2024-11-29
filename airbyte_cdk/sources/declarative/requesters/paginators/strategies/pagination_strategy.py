@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 import requests
+
 from airbyte_cdk.sources.types import Record
 
 

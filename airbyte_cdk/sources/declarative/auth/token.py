@@ -8,6 +8,8 @@ from dataclasses import InitVar, dataclass
 from typing import Any, Mapping, Union
 
 import requests
+from cachetools import TTLCache, cached
+
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.auth.token_provider import TokenProvider
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
@@ -16,7 +18,6 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOptionType,
 )
 from airbyte_cdk.sources.types import Config
-from cachetools import TTLCache, cached
 
 
 @dataclass

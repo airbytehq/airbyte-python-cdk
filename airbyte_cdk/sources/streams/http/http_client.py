@@ -11,6 +11,8 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 import orjson
 import requests
 import requests_cache
+from requests.auth import AuthBase
+
 from airbyte_cdk.models import (
     AirbyteMessageSerializer,
     AirbyteStreamStatus,
@@ -43,12 +45,13 @@ from airbyte_cdk.sources.streams.http.rate_limiting import (
     rate_limit_default_backoff_handler,
     user_defined_backoff_handler,
 )
+from airbyte_cdk.sources.utils.types import JsonType
+from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
 from airbyte_cdk.utils.stream_status_utils import (
     as_airbyte_message as stream_status_as_airbyte_message,
 )
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from requests.auth import AuthBase
 
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
 
@@ -333,6 +336,29 @@ class HttpClient:
 
         return response  # type: ignore # will either return a valid response of type requests.Response or raise an exception
 
+    def _get_response_body(self, response: requests.Response) -> Optional[JsonType]:
+        """
+        Extracts and returns the body of an HTTP response.
+
+        This method attempts to parse the response body as JSON. If the response
+        body is not valid JSON, it falls back to decoding the response content
+        as a UTF-8 string. If both attempts fail, it returns None.
+
+        Args:
+            response (requests.Response): The HTTP response object.
+
+        Returns:
+            Optional[JsonType]: The parsed JSON object as a string, the decoded
+            response content as a string, or None if both parsing attempts fail.
+        """
+        try:
+            return str(response.json())
+        except requests.exceptions.JSONDecodeError:
+            try:
+                return response.content.decode("utf-8")
+            except Exception:
+                return "The Content of the Response couldn't be decoded."
+
     def _handle_error_resolution(
         self,
         response: Optional[requests.Response],
@@ -361,11 +387,17 @@ class HttpClient:
 
         if error_resolution.response_action == ResponseAction.FAIL:
             if response is not None:
-                error_message = f"'{request.method}' request to '{request.url}' failed with status code '{response.status_code}' and error message '{self._error_message_parser.parse_response_error_message(response)}'"
+                filtered_response_message = filter_secrets(
+                    f"Request (body): '{str(request.body)}'. Response (body): '{self._get_response_body(response)}'. Response (headers): '{response.headers}'."
+                )
+                error_message = f"'{request.method}' request to '{request.url}' failed with status code '{response.status_code}' and error message: '{self._error_message_parser.parse_response_error_message(response)}'. {filtered_response_message}"
             else:
                 error_message = (
                     f"'{request.method}' request to '{request.url}' failed with exception: '{exc}'"
                 )
+
+            # ensure the exception message is emitted before raised
+            self._logger.error(error_message)
 
             raise MessageRepresentationAirbyteTracedErrors(
                 internal_message=error_message,

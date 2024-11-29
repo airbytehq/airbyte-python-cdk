@@ -7,6 +7,7 @@ from functools import partial
 from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Union
 
 import pytest as pytest
+
 from airbyte_cdk.models import AirbyteMessage, AirbyteRecordMessage, SyncMode, Type
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.incremental import (

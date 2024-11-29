@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import Mock
 
 import pytest
+
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, AirbyteStream, Level, SyncMode
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.message import InMemoryMessageRepository

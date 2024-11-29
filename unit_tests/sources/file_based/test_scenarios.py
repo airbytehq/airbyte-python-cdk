@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Mapping, Optional, Union
 import pytest
 from _pytest.capture import CaptureFixture
 from _pytest.reports import ExceptionInfo
+
 from airbyte_cdk.entrypoint import launch
 from airbyte_cdk.models import (
     AirbyteAnalyticsTraceMessage,

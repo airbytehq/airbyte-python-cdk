@@ -6,6 +6,7 @@ import logging
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 import fastavro
+
 from airbyte_cdk.sources.file_based.config.avro_format import AvroFormat
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.exceptions import FileBasedSourceError, RecordParseError

@@ -118,6 +118,9 @@ exclude = ["__init__.py"]  # TODO: Remove after this is fixed: https://github.co
 target-version = "py310"
 line-length = 100
 
+[tool.ruff.lint]
+select = ["I"]
+
 [tool.poe.tasks]
 # Build tasks
 assemble = {cmd = "bin/generate-component-manifest-dagger.sh", help = "Generate component manifest files."}

@@ -11,6 +11,9 @@ import freezegun
 import pendulum
 import pytest
 import requests
+from requests import Response
+from requests.exceptions import RequestException
+
 from airbyte_cdk.models import FailureType, OrchestratorType, Type
 from airbyte_cdk.sources.streams.http.requests_native_auth import (
     BasicHttpAuthenticator,
@@ -20,8 +23,6 @@ from airbyte_cdk.sources.streams.http.requests_native_auth import (
     TokenAuthenticator,
 )
 from airbyte_cdk.utils import AirbyteTracedException
-from requests import Response
-from requests.exceptions import RequestException
 
 LOGGER = logging.getLogger(__name__)
 

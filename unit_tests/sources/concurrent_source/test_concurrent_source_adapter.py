@@ -8,6 +8,7 @@ from unittest.mock import Mock
 
 import freezegun
 import pytest
+
 from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteRecordMessage,

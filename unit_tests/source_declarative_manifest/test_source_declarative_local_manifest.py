@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pytest
 from jsonschema import ValidationError
+
 from airbyte_cdk.cli.source_declarative_manifest import _run
 
 POKEAPI_JSON_SPEC_SUBSTRING = '"required":["pokemon_name"]'

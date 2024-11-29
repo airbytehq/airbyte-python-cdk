@@ -7,6 +7,7 @@ from unittest.mock import Mock, call
 
 import pytest
 import requests
+
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder
 from airbyte_cdk.sources.declarative.extractors.dpath_extractor import DpathExtractor
 from airbyte_cdk.sources.declarative.extractors.record_filter import RecordFilter

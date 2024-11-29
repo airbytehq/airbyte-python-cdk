@@ -7,6 +7,7 @@ from unittest import TestCase
 from unittest.mock import Mock
 
 import pytest
+
 from airbyte_cdk.test.mock_http.response import HttpResponse
 from airbyte_cdk.test.mock_http.response_builder import (
     FieldPath,

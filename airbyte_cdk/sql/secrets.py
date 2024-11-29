@@ -6,8 +6,9 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING, Any
 
-from airbyte_cdk.sql import exceptions as exc
 from pydantic_core import CoreSchema, core_schema
+
+from airbyte_cdk.sql import exceptions as exc
 
 if TYPE_CHECKING:
     from pydantic import GetCoreSchemaHandler, GetJsonSchemaHandler, ValidationInfo

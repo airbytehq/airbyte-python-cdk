@@ -13,6 +13,7 @@ from unittest import TestCase, mock
 from unittest.mock import Mock
 
 import pytest
+
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.file_based.config.csv_format import (
     DEFAULT_FALSE_VALUES,

@@ -3,6 +3,7 @@
 #
 
 import pytest
+
 from airbyte_cdk.sources.streams.http.availability_strategy import HttpAvailabilityStrategy
 
 
