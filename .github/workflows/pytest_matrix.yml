@@ -69,6 +69,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: "poetry"
       - name: Install dependencies
+        if: steps.changes.outputs.src == 'true'
         run: poetry install --all-extras
 
       # Job-specific step(s):
