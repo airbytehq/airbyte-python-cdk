@@ -2054,7 +2054,7 @@ class ModelToComponentFactory:
             )
             if model.download_extractor
             else DpathExtractor(
-                [], config=config, decoder=download_decoder, parameters=model.parameters
+                [], config=config, decoder=download_decoder, parameters=model.parameters or {},
             )
         )
         download_requester = self._create_component_from_model(
