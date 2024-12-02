@@ -11,6 +11,7 @@ from airbyte_cdk.sources.declarative.incremental.declarative_cursor import Decla
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
     PaginationStrategy,
 )
+from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
 from airbyte_cdk.sources.types import Record
 
 
@@ -26,7 +27,11 @@ class PaginationStopCondition(ABC):
 
 
 class CursorStopCondition(PaginationStopCondition):
-    def __init__(self, cursor: DeclarativeCursor):
+    def __init__(
+        self,
+        cursor: DeclarativeCursor
+        | ConcurrentCursor,  # migrate to use both old and concurrent versions
+    ):
         self._cursor = cursor
 
     def is_met(self, record: Record) -> bool:
@@ -47,8 +52,8 @@ class StopConditionPaginationStrategyDecorator(PaginationStrategy):
             return None
         return self._delegate.next_page_token(response, last_page_size, last_record)
 
-    def reset(self) -> None:
-        self._delegate.reset()
+    def reset(self, reset_value: Optional[Any] = None) -> None:
+        self._delegate.reset(reset_value)
 
     def get_page_size(self) -> Optional[int]:
         return self._delegate.get_page_size()

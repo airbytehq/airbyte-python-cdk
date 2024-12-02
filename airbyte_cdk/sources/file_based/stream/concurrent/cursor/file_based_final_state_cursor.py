@@ -16,7 +16,7 @@ from airbyte_cdk.sources.file_based.types import StreamState
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
-from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
+from airbyte_cdk.sources.types import Record
 
 if TYPE_CHECKING:
     from airbyte_cdk.sources.file_based.stream.concurrent.adapters import FileBasedStreamPartition
