@@ -137,16 +137,7 @@ jobs:
           --skip-step qa_checks \
           --skip-step connector_live_tests
 
-      # Upload the job output to the artifacts
-      - name: Upload Job Output
-        id: upload_job_output
-        if: always() && steps.no_changes.outputs.status != 'cancelled'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{matrix.connector}}-job-output
-          path: airbyte/airbyte-ci/connectors/pipelines/pipeline_reports
-
-      - name: Evaluate Job Output
+      - name: Evaluate Test Output
         if: always() && steps.no_changes.outputs.status != 'cancelled'
         run: |
           # save job output json file as ci step output
@@ -166,3 +157,12 @@ jobs:
             echo "::error::Test failed for connector '${{ matrix.connector }}' on step '${failed_step}'. Check the logs for more details."
             exit 1
           fi
+
+      # Upload the job output to the artifacts
+      - name: Upload Job Output
+        id: upload_job_output
+        if: always() && steps.no_changes.outputs.status != 'cancelled'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{matrix.connector}}-job-output
+          path: airbyte/airbyte-ci/connectors/pipelines/pipeline_reports
