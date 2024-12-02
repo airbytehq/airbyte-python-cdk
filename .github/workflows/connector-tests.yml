@@ -96,7 +96,11 @@ jobs:
         id: no_changes
         if: ${{ needs.cdk_changes.outputs['src'] == 'false' || matrix.cdk_extra != 'n/a' && needs.cdk_changes.outputs[matrix.cdk_extra] == 'false' }}
         run: |
-          echo "Aborting job as specified extra not changed: ${{matrix.cdk_extra}} = ${{ needs.cdk_changes.outputs[matrix.cdk_extra] }}"
+          echo "Aborting job."
+          echo "Source code changed: ${{ needs.cdk_changes.outputs['src'] }}"
+          if [ "${{ matrix.cdk_extra }}" != "n/a" ]; then
+            echo "Extra not changed: ${{ matrix.cdk_extra }} = ${{ needs.cdk_changes.outputs[matrix.cdk_extra] }}"
+          fi
           echo "> Skipped '${{matrix.connector}}' (no relevant changes)" >> $GITHUB_STEP_SUMMARY
           echo "status=cancelled" >> $GITHUB_OUTPUT
           exit 0
