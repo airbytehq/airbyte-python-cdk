@@ -74,16 +74,18 @@ jobs:
             cdk_extra: n/a
           - connector: source-chargebee
             cdk_extra: n/a
-          - connector: source-zendesk-support
-            cdk_extra: n/a
           - connector: source-s3
             cdk_extra: file-based
           - connector: destination-pinecone
             cdk_extra: vector-db-based
           - connector: destination-motherduck
             cdk_extra: sql
-          # # TODO: These are manifest connectors and won't work as expected until we
-          # #       add `--use-local-cdk` support for manifest connectors.
+          # ZenDesk currently failing (as of 2024-12-02)
+          # TODO: Re-enable once fixed
+          # - connector: source-zendesk-support
+          #   cdk_extra: n/a
+          # TODO: These are manifest connectors and won't work as expected until we
+          #       add `--use-local-cdk` support for manifest connectors.
           # - connector: source-the-guardian-api
           #   cdk_extra: n/a
           # - connector: source-pokeapi
