@@ -76,7 +76,7 @@ def large_event_response_fixture():
 @pytest.mark.limit_memory("20 MB")
 def test_response_to_file_extractor_memory_usage(requests_mock, large_events_response):
     lines_in_response, file_path = large_events_response
-    extractor = ResponseToFileExtractor()
+    extractor = ResponseToFileExtractor({})
 
     url = "https://for-all-mankind.nasa.com/api/v1/users/users1"
     requests_mock.get(url, body=open(file_path, "rb"))
