@@ -5,7 +5,18 @@
 import functools
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optional, Protocol, Tuple
+from typing import (
+    Any,
+    Callable,
+    Iterable,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Protocol,
+    Tuple,
+    Union,
+)
 
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository
@@ -175,7 +186,7 @@ class ConcurrentCursor(Cursor):
         self.start, self._concurrent_state = self._get_concurrent_state(stream_state)
         self._lookback_window = lookback_window
         self._slice_range = slice_range
-        self._most_recent_cursor_value_per_partition: MutableMapping[StreamSlice, Any] = {}
+        self._most_recent_cursor_value_per_partition: MutableMapping[Union[StreamSlice, Mapping[str, Any], None], Any] = {}
         self._has_closed_at_least_one_slice = False
         self._cursor_granularity = cursor_granularity
         # Flag to track if the logger has been triggered (per stream)
