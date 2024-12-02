@@ -2022,6 +2022,7 @@ class ModelToComponentFactory:
             model=model.record_selector,
             config=config,
             decoder=decoder,
+            name=name,
             transformations=transformations,
             client_side_incremental_sync=client_side_incremental_sync,
         )
