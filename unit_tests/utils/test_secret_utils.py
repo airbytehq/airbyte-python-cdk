@@ -3,6 +3,7 @@
 #
 
 import pytest
+
 from airbyte_cdk.utils.airbyte_secrets_utils import (
     add_to_secrets,
     filter_secrets,

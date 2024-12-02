@@ -5,6 +5,7 @@
 from typing import Optional, Union
 
 import requests
+
 from airbyte_cdk.sources.message import LogMessage
 
 

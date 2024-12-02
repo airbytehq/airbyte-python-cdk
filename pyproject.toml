@@ -30,7 +30,7 @@ enable = true
 
 [tool.poetry.dependencies]
 python = "^3.10,<3.13"
-airbyte-protocol-models-dataclasses = "^0.13"
+airbyte-protocol-models-dataclasses = "^0.14"
 backoff = "*"
 cachetools = "*"
 Deprecated = "~1.2"
@@ -94,6 +94,7 @@ poethepoet = "^0.24.2"
 pyproject-flake8 = "^6.1.0"
 pytest = "^7"
 pytest-memray = "^1.6.0"
+pympler = "*"
 pytest-cov = "*"
 pytest-httpserver = "*"
 pytest-mock = "*"
@@ -117,6 +118,9 @@ exclude = ["__init__.py"]  # TODO: Remove after this is fixed: https://github.co
 
 target-version = "py310"
 line-length = 100
+
+[tool.ruff.lint]
+select = ["I"]
 
 [tool.poe.tasks]
 # Build tasks

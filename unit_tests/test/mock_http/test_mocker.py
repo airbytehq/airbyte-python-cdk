@@ -4,6 +4,7 @@ from unittest import TestCase
 
 import pytest
 import requests
+
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 
 # Ensure that the scheme is HTTP as requests only partially supports other schemes

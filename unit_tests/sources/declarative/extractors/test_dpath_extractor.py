@@ -7,6 +7,7 @@ from typing import Dict, List, Union
 
 import pytest
 import requests
+
 from airbyte_cdk import Decoder
 from airbyte_cdk.sources.declarative.decoders.json_decoder import (
     IterableDecoder,

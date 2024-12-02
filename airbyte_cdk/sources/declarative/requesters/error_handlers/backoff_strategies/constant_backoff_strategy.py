@@ -6,6 +6,7 @@ from dataclasses import InitVar, dataclass
 from typing import Any, Mapping, Optional, Union
 
 import requests
+
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.streams.http.error_handlers import BackoffStrategy
 from airbyte_cdk.sources.types import Config

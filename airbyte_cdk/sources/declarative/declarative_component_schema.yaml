@@ -1972,6 +1972,173 @@ definitions:
           - app_id:
               type: string
               path_in_connector_config: ["info", "app_id"]
+      oauth_connector_input_specification:
+        title: DeclarativeOAuth Connector Specification
+        description: |-
+          The DeclarativeOAuth specific blob.
+          Pertains to the fields defined by the connector relating to the OAuth flow.
+
+          Interpolation capabilities:
+          - The variables placeholders are declared as `{my_var}`.
+          - The nested resolution variables like `{{my_nested_var}}` is allowed as well.
+
+          - The allowed interpolation context is:
+            + base64Encoder - encode to `base64`, {base64Encoder:{my_var_a}:{my_var_b}}
+            + base64Decorer - decode from `base64` encoded string, {base64Decoder:{my_string_variable_or_string_value}}
+            + urlEncoder - encode the input string to URL-like format, {urlEncoder:https://test.host.com/endpoint}
+            + urlDecorer - decode the input url-encoded string into text format, {urlDecoder:https%3A%2F%2Fairbyte.io}
+            + codeChallengeS256 - get the `codeChallenge` encoded value to provide additional data-provider specific authorisation values, {codeChallengeS256:{state_value}}
+
+          Examples:
+            - The TikTok Marketing DeclarativeOAuth spec:
+            {
+              "oauth_connector_input_specification": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "consent_url": "https://ads.tiktok.com/marketing_api/auth?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{state_key}={{state_key}}",
+                    "access_token_url": "https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/",
+                    "access_token_params": {
+                        "{auth_code_key}": "{{auth_code_key}}",
+                        "{client_id_key}": "{{client_id_key}}",
+                        "{client_secret_key}": "{{client_secret_key}}"
+                    },
+                    "access_token_headers": {
+                        "Content-Type": "application/json",
+                        "Accept": "application/json"
+                    },
+                    "extract_output": ["data.access_token"],
+                    "client_id_key": "app_id",
+                    "client_secret_key": "secret",
+                    "auth_code_key": "auth_code"
+                }
+              }
+            }
+        type: object
+        additionalProperties: true
+        required:
+          - consent_url
+          - access_token_url
+          - extract_output
+        properties:
+          consent_url:
+            title: DeclarativeOAuth Consent URL
+            type: string
+            description: |-
+              The DeclarativeOAuth Specific string URL string template to initiate the authentication.
+              The placeholders are replaced during the processing to provide neccessary values.
+            examples:
+              - consent_url: https://domain.host.com/marketing_api/auth?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{state_key}={{state_key}}
+              - consent_url: https://endpoint.host.com/oauth2/authorize?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{scope_key}={urlEncoder:{{scope_key}}}&{state_key}={{state_key}}&subdomain={subdomain}
+          scope:
+            title: (Optional) DeclarativeOAuth Scope
+            type: string
+            description: |-
+              The DeclarativeOAuth Specific string of the scopes needed to be grant for authenticated user.
+            examples:
+              - scope: user:read user:read_orders workspaces:read
+          access_token_url:
+            title: DeclarativeOAuth Access Token URL
+            type: string
+            description: |-
+              The DeclarativeOAuth Specific URL templated string to obtain the `access_token`, `refresh_token` etc.
+              The placeholders are replaced during the processing to provide neccessary values.
+            examples:
+              - access_token_url: https://auth.host.com/oauth2/token?{client_id_key}={{client_id_key}}&{client_secret_key}={{client_secret_key}}&{auth_code_key}={{auth_code_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}} 
+          access_token_headers:
+            title: (Optional) DeclarativeOAuth Access Token Headers
+            type: object
+            additionalProperties: true
+            description: |-
+              The DeclarativeOAuth Specific optional headers to inject while exchanging the `auth_code` to `access_token` during `completeOAuthFlow` step.
+            examples:
+              - access_token_headers: {
+                  "Authorization": "Basic {base64Encoder:{client_id}:{client_secret}}"
+                }
+          access_token_params:
+            title: (Optional) DeclarativeOAuth Access Token Query Params (Json Encoded)
+            type: object
+            additionalProperties: true
+            description: |-
+              The DeclarativeOAuth Specific optional query parameters to inject while exchanging the `auth_code` to `access_token` during `completeOAuthFlow` step.
+              When this property is provided, the query params will be encoded as `Json` and included in the outgoing API request.
+            examples:
+              - access_token_params: {
+                  "{auth_code_key}": "{{auth_code_key}}",
+                  "{client_id_key}": "{{client_id_key}}",
+                  "{client_secret_key}": "{{client_secret_key}}"
+                }
+          extract_output:
+            title: DeclarativeOAuth Extract Output
+            type: array
+            items:
+              type: string
+            description: |-
+              The DeclarativeOAuth Specific list of strings to indicate which keys should be extracted and returned back to the input config.                
+            examples:
+              - extract_output: ["access_token", "refresh_token", "other_field"]
+          state:
+            title: (Optional) DeclarativeOAuth Configurable State Query Param
+            type: object
+            additionalProperties: true
+            required:
+              - min
+              - max
+            description: |-
+              The DeclarativeOAuth Specific object to provide the criteria of how the `state` query param should be constructed,
+              including length and complexity.                
+            properties:
+              min:
+                type: integer
+              max:
+                type: integer
+            examples:
+              - state: {
+                  "min": 7,
+                  "max": 128,
+                }
+          client_id_key:
+            title: (Optional) DeclarativeOAuth Client ID Key Override
+            type: string
+            description: |-
+              The DeclarativeOAuth Specific optional override to provide the custom `client_id` key name, if required by data-provider.
+            examples:
+              - client_id_key: "my_custom_client_id_key_name"
+          client_secret_key:
+            title: (Optional) DeclarativeOAuth Client Secret Key Override
+            type: string
+            description: |-
+              The DeclarativeOAuth Specific optional override to provide the custom `client_secret` key name, if required by data-provider.
+            examples:
+              - client_secret_key: "my_custom_client_secret_key_name"
+          scope_key:
+            title: (Optional) DeclarativeOAuth Scope Key Override
+            type: string
+            description: |-
+              The DeclarativeOAuth Specific optional override to provide the custom `scope` key name, if required by data-provider.
+            examples:
+              - scope_key: "my_custom_scope_key_key_name"
+          state_key:
+            title: (Optional) DeclarativeOAuth State Key Override
+            type: string
+            description: |-
+              The DeclarativeOAuth Specific optional override to provide the custom `state` key name, if required by data-provider.                
+            examples:
+              - state_key: "my_custom_state_key_key_name"
+          auth_code_key:
+            title: (Optional) DeclarativeOAuth Auth Code Key Override
+            type: string
+            description: |-
+              The DeclarativeOAuth Specific optional override to provide the custom `code` key name to something like `auth_code` or `custom_auth_code`, if required by data-provider.                
+            examples:
+              - auth_code_key: "my_custom_auth_code_key_name"
+          redirect_uri_key:
+            title: (Optional) DeclarativeOAuth Redirect URI Key Override
+            type: string
+            description: |-
+              The DeclarativeOAuth Specific optional override to provide the custom `redirect_uri` key name to something like `callback_uri`, if required by data-provider.
+            examples:
+              - redirect_uri_key: "my_custom_redirect_uri_key_name"
       complete_oauth_output_specification:
         title: "OAuth output specification"
         description: |-

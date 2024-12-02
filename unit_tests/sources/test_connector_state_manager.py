@@ -6,6 +6,7 @@ from contextlib import nullcontext as does_not_raise
 from typing import List
 
 import pytest
+
 from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteStateBlob,

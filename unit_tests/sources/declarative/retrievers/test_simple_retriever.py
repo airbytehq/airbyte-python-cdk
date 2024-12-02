@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 import requests
+
 from airbyte_cdk import YamlDeclarativeSource
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, SyncMode, Type
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import NoAuth
@@ -161,15 +162,16 @@ def test_simple_retriever_with_request_response_logs(mock_http_stream):
 def test_simple_retriever_resumable_full_refresh_cursor_page_increment(
     initial_state, expected_reset_value, expected_next_page
 ):
+    stream_name = "stream_name"
     expected_records = [
-        Record(data={"id": "abc"}, associated_slice=None),
-        Record(data={"id": "def"}, associated_slice=None),
-        Record(data={"id": "ghi"}, associated_slice=None),
-        Record(data={"id": "jkl"}, associated_slice=None),
-        Record(data={"id": "mno"}, associated_slice=None),
-        Record(data={"id": "123"}, associated_slice=None),
-        Record(data={"id": "456"}, associated_slice=None),
-        Record(data={"id": "789"}, associated_slice=None),
+        Record(data={"id": "abc"}, associated_slice=None, stream_name=stream_name),
+        Record(data={"id": "def"}, associated_slice=None, stream_name=stream_name),
+        Record(data={"id": "ghi"}, associated_slice=None, stream_name=stream_name),
+        Record(data={"id": "jkl"}, associated_slice=None, stream_name=stream_name),
+        Record(data={"id": "mno"}, associated_slice=None, stream_name=stream_name),
+        Record(data={"id": "123"}, associated_slice=None, stream_name=stream_name),
+        Record(data={"id": "456"}, associated_slice=None, stream_name=stream_name),
+        Record(data={"id": "789"}, associated_slice=None, stream_name=stream_name),
     ]
 
     response = requests.Response()
@@ -214,7 +216,7 @@ def test_simple_retriever_resumable_full_refresh_cursor_page_increment(
         stream_slicer.set_initial_state(initial_state)
 
     retriever = SimpleRetriever(
-        name="stream_name",
+        name=stream_name,
         primary_key=primary_key,
         requester=requester,
         paginator=paginator,
@@ -262,14 +264,14 @@ def test_simple_retriever_resumable_full_refresh_cursor_reset_cursor_pagination(
     initial_state, expected_reset_value, expected_next_page, requests_mock
 ):
     expected_records = [
-        Record(data={"name": "ed_baldwin"}, associated_slice=None),
-        Record(data={"name": "danielle_poole"}, associated_slice=None),
-        Record(data={"name": "tracy_stevens"}, associated_slice=None),
-        Record(data={"name": "deke_slayton"}, associated_slice=None),
-        Record(data={"name": "molly_cobb"}, associated_slice=None),
-        Record(data={"name": "gordo_stevens"}, associated_slice=None),
-        Record(data={"name": "margo_madison"}, associated_slice=None),
-        Record(data={"name": "ellen_waverly"}, associated_slice=None),
+        Record(data={"name": "ed_baldwin"}, associated_slice=None, stream_name="users"),
+        Record(data={"name": "danielle_poole"}, associated_slice=None, stream_name="users"),
+        Record(data={"name": "tracy_stevens"}, associated_slice=None, stream_name="users"),
+        Record(data={"name": "deke_slayton"}, associated_slice=None, stream_name="users"),
+        Record(data={"name": "molly_cobb"}, associated_slice=None, stream_name="users"),
+        Record(data={"name": "gordo_stevens"}, associated_slice=None, stream_name="users"),
+        Record(data={"name": "margo_madison"}, associated_slice=None, stream_name="users"),
+        Record(data={"name": "ellen_waverly"}, associated_slice=None, stream_name="users"),
     ]
 
     content = """
@@ -363,8 +365,8 @@ primary_key: []
 
 def test_simple_retriever_resumable_full_refresh_cursor_reset_skip_completed_stream():
     expected_records = [
-        Record(data={"id": "abc"}, associated_slice=None),
-        Record(data={"id": "def"}, associated_slice=None),
+        Record(data={"id": "abc"}, associated_slice=None, stream_name="test_stream"),
+        Record(data={"id": "def"}, associated_slice=None, stream_name="test_stream"),
     ]
 
     response = requests.Response()

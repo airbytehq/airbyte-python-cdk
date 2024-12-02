@@ -10,7 +10,7 @@ from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
 )
 from airbyte_cdk.sources.streams.concurrent.cursor import FinalStateCursor
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
-from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
+from airbyte_cdk.sources.types import Record
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 from unit_tests.sources.file_based.scenarios.scenario_builder import TestScenarioBuilder
 from unit_tests.sources.streams.concurrent.scenarios.thread_based_concurrent_stream_source_builder import (
@@ -29,8 +29,14 @@ _id_only_stream = DefaultStream(
                 "stream1",
                 None,
                 [
-                    Record({"id": "1"}, InMemoryPartition("partition1", "stream1", None, [])),
-                    Record({"id": "2"}, InMemoryPartition("partition1", "stream1", None, [])),
+                    Record(
+                        data={"id": "1"},
+                        stream_name="stream1",
+                    ),
+                    Record(
+                        data={"id": "2"},
+                        stream_name="stream1",
+                    ),
                 ],
             )
         ]
@@ -58,7 +64,16 @@ _id_only_stream_with_slice_logger = DefaultStream(
                 "partition1",
                 "stream1",
                 None,
-                [Record({"id": "1"}, "stream1"), Record({"id": "2"}, "stream1")],
+                [
+                    Record(
+                        data={"id": "1"},
+                        stream_name="stream1",
+                    ),
+                    Record(
+                        data={"id": "2"},
+                        stream_name="stream1",
+                    ),
+                ],
             )
         ]
     ),
@@ -86,8 +101,14 @@ _id_only_stream_with_primary_key = DefaultStream(
                 "stream1",
                 None,
                 [
-                    Record({"id": "1"}, InMemoryPartition("partition1", "stream1", None, [])),
-                    Record({"id": "2"}, InMemoryPartition("partition1", "stream1", None, [])),
+                    Record(
+                        data={"id": "1"},
+                        stream_name="stream1",
+                    ),
+                    Record(
+                        data={"id": "2"},
+                        stream_name="stream1",
+                    ),
                 ],
             )
         ]
@@ -116,8 +137,14 @@ _id_only_stream_multiple_partitions = DefaultStream(
                 "stream1",
                 {"p": "1"},
                 [
-                    Record({"id": "1"}, InMemoryPartition("partition1", "stream1", None, [])),
-                    Record({"id": "2"}, InMemoryPartition("partition1", "stream1", None, [])),
+                    Record(
+                        data={"id": "1"},
+                        stream_name="stream1",
+                    ),
+                    Record(
+                        data={"id": "2"},
+                        stream_name="stream1",
+                    ),
                 ],
             ),
             InMemoryPartition(
@@ -125,8 +152,14 @@ _id_only_stream_multiple_partitions = DefaultStream(
                 "stream1",
                 {"p": "2"},
                 [
-                    Record({"id": "3"}, InMemoryPartition("partition1", "stream1", None, [])),
-                    Record({"id": "4"}, InMemoryPartition("partition1", "stream1", None, [])),
+                    Record(
+                        data={"id": "3"},
+                        stream_name="stream1",
+                    ),
+                    Record(
+                        data={"id": "4"},
+                        stream_name="stream1",
+                    ),
                 ],
             ),
         ]
@@ -155,8 +188,14 @@ _id_only_stream_multiple_partitions_concurrency_level_two = DefaultStream(
                 "stream1",
                 {"p": "1"},
                 [
-                    Record({"id": "1"}, InMemoryPartition("partition1", "stream1", None, [])),
-                    Record({"id": "2"}, InMemoryPartition("partition1", "stream1", None, [])),
+                    Record(
+                        data={"id": "1"},
+                        stream_name="stream1",
+                    ),
+                    Record(
+                        data={"id": "2"},
+                        stream_name="stream1",
+                    ),
                 ],
             ),
             InMemoryPartition(
@@ -164,8 +203,14 @@ _id_only_stream_multiple_partitions_concurrency_level_two = DefaultStream(
                 "stream1",
                 {"p": "2"},
                 [
-                    Record({"id": "3"}, InMemoryPartition("partition1", "stream1", None, [])),
-                    Record({"id": "4"}, InMemoryPartition("partition1", "stream1", None, [])),
+                    Record(
+                        data={"id": "3"},
+                        stream_name="stream1",
+                    ),
+                    Record(
+                        data={"id": "4"},
+                        stream_name="stream1",
+                    ),
                 ],
             ),
         ]
@@ -194,7 +239,10 @@ _stream_raising_exception = DefaultStream(
                 "stream1",
                 None,
                 [
-                    Record({"id": "1"}, InMemoryPartition("partition1", "stream1", None, [])),
+                    Record(
+                        data={"id": "1"},
+                        stream_name="stream1",
+                    ),
                     ValueError("test exception"),
                 ],
             )
@@ -326,12 +374,12 @@ test_concurrent_cdk_multiple_streams = (
                                 None,
                                 [
                                     Record(
-                                        {"id": "10", "key": "v1"},
-                                        InMemoryPartition("partition1", "stream2", None, []),
+                                        data={"id": "10", "key": "v1"},
+                                        stream_name="stream2",
                                     ),
                                     Record(
-                                        {"id": "20", "key": "v2"},
-                                        InMemoryPartition("partition1", "stream2", None, []),
+                                        data={"id": "20", "key": "v2"},
+                                        stream_name="stream2",
                                     ),
                                 ],
                             )

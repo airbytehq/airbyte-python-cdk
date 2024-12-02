@@ -4,8 +4,9 @@
 
 from typing import List, Union
 
-from airbyte_cdk.sources.config import BaseConfig
 from pydantic.v1 import BaseModel, Field
+
+from airbyte_cdk.sources.config import BaseConfig
 
 
 class InnerClass(BaseModel):

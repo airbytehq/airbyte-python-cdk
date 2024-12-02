@@ -11,6 +11,8 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 import orjson
 import requests
 import requests_cache
+from requests.auth import AuthBase
+
 from airbyte_cdk.models import (
     AirbyteMessageSerializer,
     AirbyteStreamStatus,
@@ -43,12 +45,13 @@ from airbyte_cdk.sources.streams.http.rate_limiting import (
     rate_limit_default_backoff_handler,
     user_defined_backoff_handler,
 )
+from airbyte_cdk.sources.utils.types import JsonType
+from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
 from airbyte_cdk.utils.stream_status_utils import (
     as_airbyte_message as stream_status_as_airbyte_message,
 )
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from requests.auth import AuthBase
 
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
 
@@ -73,6 +76,7 @@ class MessageRepresentationAirbyteTracedErrors(AirbyteTracedException):
 class HttpClient:
     _DEFAULT_MAX_RETRY: int = 5
     _DEFAULT_MAX_TIME: int = 60 * 10
+    _ACTIONS_TO_RETRY_ON = {ResponseAction.RETRY, ResponseAction.RATE_LIMITED}
 
     def __init__(
         self,
@@ -333,6 +337,40 @@ class HttpClient:
 
         return response  # type: ignore # will either return a valid response of type requests.Response or raise an exception
 
+    def _get_response_body(self, response: requests.Response) -> Optional[JsonType]:
+        """
+        Extracts and returns the body of an HTTP response.
+
+        This method attempts to parse the response body as JSON. If the response
+        body is not valid JSON, it falls back to decoding the response content
+        as a UTF-8 string. If both attempts fail, it returns None.
+
+        Args:
+            response (requests.Response): The HTTP response object.
+
+        Returns:
+            Optional[JsonType]: The parsed JSON object as a string, the decoded
+            response content as a string, or None if both parsing attempts fail.
+        """
+        try:
+            return str(response.json())
+        except requests.exceptions.JSONDecodeError:
+            try:
+                return response.content.decode("utf-8")
+            except Exception:
+                return "The Content of the Response couldn't be decoded."
+
+    def _evict_key(self, prepared_request: requests.PreparedRequest) -> None:
+        """
+        Addresses high memory consumption when enabling concurrency in https://github.com/airbytehq/oncall/issues/6821.
+
+        The `_request_attempt_count` attribute keeps growing as multiple requests are made using the same `http_client`.
+        To mitigate this issue, we evict keys for completed requests once we confirm that no further retries are needed.
+        This helps manage memory usage more efficiently while maintaining the necessary logic for retry attempts.
+        """
+        if prepared_request in self._request_attempt_count:
+            del self._request_attempt_count[prepared_request]
+
     def _handle_error_resolution(
         self,
         response: Optional[requests.Response],
@@ -341,6 +379,9 @@ class HttpClient:
         error_resolution: ErrorResolution,
         exit_on_rate_limit: Optional[bool] = False,
     ) -> None:
+        if error_resolution.response_action not in self._ACTIONS_TO_RETRY_ON:
+            self._evict_key(request)
+
         # Emit stream status RUNNING with the reason RATE_LIMITED to log that the rate limit has been reached
         if error_resolution.response_action == ResponseAction.RATE_LIMITED:
             # TODO: Update to handle with message repository when concurrent message repository is ready
@@ -361,11 +402,17 @@ class HttpClient:
 
         if error_resolution.response_action == ResponseAction.FAIL:
             if response is not None:
-                error_message = f"'{request.method}' request to '{request.url}' failed with status code '{response.status_code}' and error message '{self._error_message_parser.parse_response_error_message(response)}'"
+                filtered_response_message = filter_secrets(
+                    f"Request (body): '{str(request.body)}'. Response (body): '{self._get_response_body(response)}'. Response (headers): '{response.headers}'."
+                )
+                error_message = f"'{request.method}' request to '{request.url}' failed with status code '{response.status_code}' and error message: '{self._error_message_parser.parse_response_error_message(response)}'. {filtered_response_message}"
             else:
                 error_message = (
                     f"'{request.method}' request to '{request.url}' failed with exception: '{exc}'"
                 )
+
+            # ensure the exception message is emitted before raised
+            self._logger.error(error_message)
 
             raise MessageRepresentationAirbyteTracedErrors(
                 internal_message=error_message,

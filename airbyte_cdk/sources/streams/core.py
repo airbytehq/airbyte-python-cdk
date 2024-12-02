@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from functools import cached_property, lru_cache
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, MutableMapping, Optional, Union
 
+from deprecated import deprecated
+
 import airbyte_cdk.sources.utils.casing as casing
 from airbyte_cdk.models import (
     AirbyteMessage,
@@ -35,7 +37,6 @@ from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.sources.utils.schema_helpers import InternalConfig, ResourceSchemaLoader
 from airbyte_cdk.sources.utils.slice_logger import DebugSliceLogger, SliceLogger
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
-from deprecated import deprecated
 
 # A stream's read method can return one of the following types:
 # Mapping[str, Any]: The content of an AirbyteRecordMessage

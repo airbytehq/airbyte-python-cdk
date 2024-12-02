@@ -5,6 +5,7 @@
 import json
 
 import pytest
+
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 
 SIMPLE_SCHEMA = {"type": "object", "properties": {"value": {"type": "string"}}}

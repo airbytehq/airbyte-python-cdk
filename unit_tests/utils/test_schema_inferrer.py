@@ -5,6 +5,7 @@
 from typing import List, Mapping
 
 import pytest
+
 from airbyte_cdk.models import AirbyteRecordMessage
 from airbyte_cdk.utils.schema_inferrer import SchemaInferrer, SchemaValidationException
 

@@ -10,6 +10,8 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 import freezegun
 import isodate
 import pendulum
+from deprecated.classic import deprecated
+
 from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteRecordMessage,
@@ -38,7 +40,6 @@ from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.utils import AirbyteTracedException
-from deprecated.classic import deprecated
 
 _CONFIG = {"start_date": "2024-07-01T00:00:00.000Z"}
 

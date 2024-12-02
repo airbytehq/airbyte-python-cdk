@@ -20,6 +20,8 @@ from typing import (
 from unittest.mock import Mock
 
 import pytest
+from pytest import fixture
+
 from airbyte_cdk.models import (
     AirbyteCatalog,
     AirbyteConnectionStatus,
@@ -44,8 +46,8 @@ from airbyte_cdk.models import (
     StreamDescriptor,
     SyncMode,
     TraceType,
+    Type,
 )
-from airbyte_cdk.models import Type
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources import AbstractSource
 from airbyte_cdk.sources.message import MessageRepository
@@ -53,7 +55,6 @@ from airbyte_cdk.sources.streams import IncrementalMixin, Stream
 from airbyte_cdk.sources.utils.record_helper import stream_data_to_airbyte_message
 from airbyte_cdk.utils.airbyte_secrets_utils import update_secrets
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from pytest import fixture
 
 logger = logging.getLogger("airbyte")
 

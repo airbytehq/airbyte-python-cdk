@@ -6,6 +6,8 @@ from abc import abstractmethod
 from functools import cache, cached_property, lru_cache
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Type
 
+from deprecated import deprecated
+
 from airbyte_cdk import AirbyteMessage
 from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.file_based.availability_strategy import (
@@ -30,7 +32,6 @@ from airbyte_cdk.sources.file_based.stream.cursor import AbstractFileBasedCursor
 from airbyte_cdk.sources.file_based.types import StreamSlice
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.checkpoint import Cursor
-from deprecated import deprecated
 
 
 class AbstractFileBasedStream(Stream):

@@ -5,6 +5,7 @@ import base64
 import hashlib
 
 import pytest
+
 from airbyte_cdk.sources.declarative.interpolation.jinja import JinjaInterpolation
 
 interpolation = JinjaInterpolation()

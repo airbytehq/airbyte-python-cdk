@@ -17,11 +17,6 @@ on:
       - 'poetry.lock'
       - 'pyproject.toml'
   pull_request:
-    paths:
-      - 'airbyte_cdk/**'
-      - 'unit_tests/**'
-      - 'poetry.lock'
-      - 'pyproject.toml'
 
 jobs:
   pytest:
@@ -52,21 +47,35 @@ jobs:
       # Common steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      - id: changes
+        uses: dorny/paths-filter@v3.0.2
+        with:
+          filters: |
+            src:
+              - 'airbyte_cdk/**'
+              - 'unit_tests/**'
+              - 'bin/**'
+              - 'poetry.lock'
+              - 'pyproject.toml'
       - name: Set up Poetry
         uses: Gr1N/setup-poetry@v9
+        if: steps.changes.outputs.src == 'true'
         with:
           poetry-version: "1.7.1"
       - name: Set up Python
         uses: actions/setup-python@v5
+        if: steps.changes.outputs.src == 'true'
         with:
           python-version: ${{ matrix.python-version }}
           cache: "poetry"
       - name: Install dependencies
+        if: steps.changes.outputs.src == 'true'
         run: poetry install --all-extras
 
       # Job-specific step(s):
       - name: Run Pytest
         timeout-minutes: 60
+        if: steps.changes.outputs.src == 'true'
         env:
           GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
         run: >
@@ -75,17 +84,17 @@ jobs:
           -m "not linting and not super_slow and not flaky"
 
       - name: Print Coverage Report
-        if: always()
+        if: always() && steps.changes.outputs.src == 'true'
         run: poetry run coverage report
 
       - name: Create Coverage Artifacts
-        if: always()
+        if: always() && steps.changes.outputs.src == 'true'
         run: |
           poetry run coverage html -d htmlcov
           poetry run coverage xml -o htmlcov/coverage.xml
 
       - name: Upload coverage to GitHub Artifacts
-        if: always()
+        if: always() && steps.changes.outputs.src == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: py${{ matrix.python-version }}-${{ matrix.os }}-test-coverage

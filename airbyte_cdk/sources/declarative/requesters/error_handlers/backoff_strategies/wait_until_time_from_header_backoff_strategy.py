@@ -9,6 +9,7 @@ from dataclasses import InitVar, dataclass
 from typing import Any, Mapping, Optional, Union
 
 import requests
+
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.header_helper import (
     get_numeric_value_from_header,

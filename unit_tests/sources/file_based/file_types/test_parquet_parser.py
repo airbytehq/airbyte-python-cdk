@@ -10,6 +10,8 @@ from unittest.mock import Mock
 
 import pyarrow as pa
 import pytest
+from pyarrow import Scalar
+
 from airbyte_cdk.sources.file_based.config.csv_format import CsvFormat
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
     FileBasedStreamConfig,
@@ -19,7 +21,6 @@ from airbyte_cdk.sources.file_based.config.jsonl_format import JsonlFormat
 from airbyte_cdk.sources.file_based.config.parquet_format import ParquetFormat
 from airbyte_cdk.sources.file_based.file_types import ParquetParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
-from pyarrow import Scalar
 
 _default_parquet_format = ParquetFormat()
 _decimal_as_float_parquet_format = ParquetFormat(decimal_as_float=True)

@@ -4,6 +4,7 @@ from unittest import TestCase
 
 import requests
 import requests_mock
+
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
     ResponseAction,

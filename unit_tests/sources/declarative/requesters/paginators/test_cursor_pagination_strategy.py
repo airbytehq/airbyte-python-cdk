@@ -6,6 +6,7 @@ import json
 
 import pytest
 import requests
+
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.cursor_pagination_strategy import (

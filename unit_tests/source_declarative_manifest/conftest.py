@@ -2,8 +2,9 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
-import pytest
 import os
+
+import pytest
 import yaml
 
 
