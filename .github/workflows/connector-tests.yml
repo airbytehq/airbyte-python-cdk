@@ -74,6 +74,8 @@ jobs:
             cdk_extra: n/a
           - connector: source-chargebee
             cdk_extra: n/a
+          - connector: source-zendesk-support
+            cdk_extra: n/a
           - connector: source-s3
             cdk_extra: file-based
           - connector: destination-pinecone
