@@ -80,7 +80,7 @@ from airbyte_cdk.sources.declarative.spec.spec import Spec as component_spec
                 connection_specification={},
                 parameters={},
                 advanced_auth=component_auth_flow(
-                    auth_flow_type="oauth2.0",
+                    auth_flow_type=component_auth_flow_type.oauth2_0,
                     predicate_key=None,
                     predicate_value=None,
                     oauth_config_specification=component_declarative_oauth_config_spec(
