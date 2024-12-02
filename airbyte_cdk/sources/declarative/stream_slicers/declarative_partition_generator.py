@@ -6,9 +6,8 @@ from airbyte_cdk.sources.declarative.retrievers import Retriever
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
-from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
 from airbyte_cdk.sources.streams.concurrent.partitions.stream_slicer import StreamSlicer
-from airbyte_cdk.sources.types import StreamSlice
+from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.utils.slice_hasher import SliceHasher
 
 
@@ -59,7 +58,11 @@ class DeclarativePartition(Partition):
     def read(self) -> Iterable[Record]:
         for stream_data in self._retriever.read_records(self._json_schema, self._stream_slice):
             if isinstance(stream_data, Mapping):
-                yield Record(stream_data, self)
+                yield Record(
+                    data=stream_data,
+                    stream_name=self.stream_name(),
+                    associated_slice=self._stream_slice,
+                )
             else:
                 self._message_repository.emit_message(stream_data)
 

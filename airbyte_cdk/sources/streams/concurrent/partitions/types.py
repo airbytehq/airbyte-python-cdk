@@ -8,7 +8,7 @@ from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentin
     PartitionGenerationCompletedSentinel,
 )
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
-from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
+from airbyte_cdk.sources.types import Record
 
 
 class PartitionCompleteSentinel:

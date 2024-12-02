@@ -5,7 +5,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Iterable, Mapping, Optional
 
-from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
+from airbyte_cdk.sources.types import Record
 
 
 class Partition(ABC):

@@ -1792,6 +1792,7 @@ class ModelToComponentFactory:
         self,
         model: RecordSelectorModel,
         config: Config,
+        name: str,
         *,
         transformations: List[RecordTransformation],
         decoder: Optional[Decoder] = None,
@@ -1822,6 +1823,7 @@ class ModelToComponentFactory:
 
         return RecordSelector(
             extractor=extractor,
+            name=name,
             config=config,
             record_filter=record_filter,
             transformations=transformations,
@@ -1892,6 +1894,7 @@ class ModelToComponentFactory:
         )
         record_selector = self._create_component_from_model(
             model=model.record_selector,
+            name=name,
             config=config,
             decoder=decoder,
             transformations=transformations,
@@ -2063,6 +2066,7 @@ class ModelToComponentFactory:
             requester=download_requester,
             record_selector=RecordSelector(
                 extractor=download_extractor,
+                name=name,
                 record_filter=None,
                 transformations=[],
                 schema_normalization=TypeTransformer(TransformConfig.NoTransform),

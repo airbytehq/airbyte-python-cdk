@@ -709,7 +709,7 @@ def test_close_slice(test_name, previous_cursor, stream_slice, observed_records,
     )
     cursor.set_initial_state({cursor_field: previous_cursor})
     for record_data in observed_records:
-        record = Record(record_data, stream_slice)
+        record = Record(data=record_data, associated_slice=stream_slice, stream_name="test_stream")
         cursor.observe(stream_slice, record)
     cursor.close_slice(stream_slice)
     updated_state = cursor.get_stream_state()
@@ -741,9 +741,13 @@ def test_compares_cursor_values_by_chronological_order():
     _slice = StreamSlice(
         partition={}, cursor_slice={"start_time": "01-01-2023", "end_time": "01-04-2023"}
     )
-    first_record = Record({cursor_field: "21-02-2023"}, _slice)
+    first_record = Record(
+        data={cursor_field: "21-02-2023"}, associated_slice=_slice, stream_name="test_stream"
+    )
     cursor.observe(_slice, first_record)
-    second_record = Record({cursor_field: "01-03-2023"}, _slice)
+    second_record = Record(
+        data={cursor_field: "01-03-2023"}, associated_slice=_slice, stream_name="test_stream"
+    )
     cursor.observe(_slice, second_record)
     cursor.close_slice(_slice)
 
@@ -768,7 +772,9 @@ def test_given_different_format_and_slice_is_highest_when_close_slice_then_state
         },
     )
     record_cursor_value = "2023-01-03"
-    record = Record({cursor_field: record_cursor_value}, _slice)
+    record = Record(
+        data={cursor_field: record_cursor_value}, associated_slice=_slice, stream_name="test_stream"
+    )
     cursor.observe(_slice, record)
     cursor.close_slice(_slice)
 

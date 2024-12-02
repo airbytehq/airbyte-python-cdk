@@ -194,9 +194,7 @@ class PerPartitionWithGlobalCursor(DeclarativeCursor):
         )
 
     def should_be_synced(self, record: Record) -> bool:
-        return self._global_cursor.should_be_synced(
-            record
-        ) or self._per_partition_cursor.should_be_synced(record)
+        return self._get_active_cursor().should_be_synced(record)
 
     def is_greater_than_or_equal(self, first: Record, second: Record) -> bool:
         return self._global_cursor.is_greater_than_or_equal(first, second)
