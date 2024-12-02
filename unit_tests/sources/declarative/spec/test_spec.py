@@ -5,9 +5,13 @@
 import pytest
 
 from airbyte_cdk.models import (
-    AdvancedAuth,
-    AuthFlowType,
-    ConnectorSpecification,
+    AdvancedAuth as model_advanced_auth,
+)
+from airbyte_cdk.models import (
+    AuthFlowType as model_auth_flow_type,
+)
+from airbyte_cdk.models import (
+    ConnectorSpecification as model_connector_spec,
 )
 from airbyte_cdk.models import (
     OAuthConfigSpecification as model_declarative_oauth_spec,
@@ -19,7 +23,10 @@ from airbyte_cdk.models import (
     State as model_declarative_oauth_state,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    AuthFlow,
+    AuthFlow as component_auth_flow,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    AuthFlowType as component_auth_flow_type,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     OAuthConfigSpecification as component_declarative_oauth_config_spec,
@@ -30,45 +37,49 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     State as component_declarative_oauth_state,
 )
-from airbyte_cdk.sources.declarative.spec.spec import Spec
+from airbyte_cdk.sources.declarative.spec.spec import Spec as component_spec
 
 
 @pytest.mark.parametrize(
     "spec, expected_connection_specification",
     [
         (
-            Spec(connection_specification={"client_id": "my_client_id"}, parameters={}),
-            ConnectorSpecification(connectionSpecification={"client_id": "my_client_id"}),
+            component_spec(connection_specification={"client_id": "my_client_id"}, parameters={}),
+            model_connector_spec(connectionSpecification={"client_id": "my_client_id"}),
         ),
         (
-            Spec(
+            component_spec(
                 connection_specification={"client_id": "my_client_id"},
                 parameters={},
                 documentation_url="https://airbyte.io",
             ),
-            ConnectorSpecification(
+            model_connector_spec(
                 connectionSpecification={"client_id": "my_client_id"},
                 documentationUrl="https://airbyte.io",
             ),
         ),
         (
-            Spec(
+            component_spec(
                 connection_specification={"client_id": "my_client_id"},
                 parameters={},
-                advanced_auth=AuthFlow(
-                    auth_flow_type="oauth2.0",
+                advanced_auth=component_auth_flow(
+                    auth_flow_type=component_auth_flow_type.oauth2_0,
+                    predicate_key=None,
+                    predicate_value=None,
                 ),
             ),
-            ConnectorSpecification(
+            model_connector_spec(
                 connectionSpecification={"client_id": "my_client_id"},
-                advanced_auth=AdvancedAuth(auth_flow_type=AuthFlowType.oauth2_0),
+                advanced_auth=model_advanced_auth(
+                    auth_flow_type=model_auth_flow_type.oauth2_0,
+                ),
             ),
         ),
         (
-            Spec(
+            component_spec(
                 connection_specification={},
                 parameters={},
-                advanced_auth=AuthFlow(
+                advanced_auth=component_auth_flow(
                     auth_flow_type="oauth2.0",
                     predicate_key=None,
                     predicate_value=None,
@@ -95,10 +106,10 @@ from airbyte_cdk.sources.declarative.spec.spec import Spec
                     ),
                 ),
             ),
-            ConnectorSpecification(
+            model_connector_spec(
                 connectionSpecification={},
-                advanced_auth=AdvancedAuth(
-                    auth_flow_type=AuthFlowType.oauth2_0,
+                advanced_auth=model_advanced_auth(
+                    auth_flow_type=model_auth_flow_type.oauth2_0,
                     predicate_key=None,
                     predicate_value=None,
                     oauth_config_specification=model_declarative_oauth_spec(
