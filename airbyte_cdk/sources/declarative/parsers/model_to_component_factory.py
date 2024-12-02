@@ -1456,7 +1456,7 @@ class ModelToComponentFactory:
         model: ResponseToFileExtractorModel,
         needs_decompression: Optional[bool] = True,
         **kwargs: Any,
-    ):
+    ) -> ResponseToFileExtractor:
         return ResponseToFileExtractor(
             needs_decompression=needs_decompression, parameters=model.parameters or {}
         )
