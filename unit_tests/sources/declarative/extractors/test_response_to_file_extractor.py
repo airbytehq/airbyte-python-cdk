@@ -14,7 +14,7 @@ from airbyte_cdk.sources.declarative.extractors import ResponseToFileExtractor
 
 class ResponseToFileExtractorTest(TestCase):
     def setUp(self) -> None:
-        self._extractor = ResponseToFileExtractor()
+        self._extractor = ResponseToFileExtractor({})
         self._http_mocker = requests_mock.Mocker()
         self._http_mocker.__enter__()
 
