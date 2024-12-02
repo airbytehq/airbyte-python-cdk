@@ -4,12 +4,31 @@
 
 import pytest
 
-from airbyte_cdk.models import AdvancedAuth, AuthFlowType, ConnectorSpecification
+from airbyte_cdk.models import (
+    AdvancedAuth,
+    AuthFlowType,
+    ConnectorSpecification,
+)
+from airbyte_cdk.models import (
+    OAuthConfigSpecification as model_declarative_oauth_spec,
+)
+from airbyte_cdk.models import (
+    OauthConnectorInputSpecification as model_declarative_oauth_connector_input_spec,
+)
+from airbyte_cdk.models import (
+    State as model_declarative_oauth_state,
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     AuthFlow,
-    OAuthConfigSpecification,
-    OauthConnectorInputSpecification,
-    State,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    OAuthConfigSpecification as component_declarative_oauth_config_spec,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    OauthConnectorInputSpecification as component_declarative_oauth_connector_input_spec,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    State as component_declarative_oauth_state,
 )
 from airbyte_cdk.sources.declarative.spec.spec import Spec
 
@@ -45,76 +64,70 @@ from airbyte_cdk.sources.declarative.spec.spec import Spec
                 advanced_auth=AdvancedAuth(auth_flow_type=AuthFlowType.oauth2_0),
             ),
         ),
+        (
+            Spec(
+                connection_specification={},
+                parameters={},
+                advanced_auth=AuthFlow(
+                    auth_flow_type="oauth2.0",
+                    predicate_key=None,
+                    predicate_value=None,
+                    oauth_config_specification=component_declarative_oauth_config_spec(
+                        oauth_connector_input_specification=component_declarative_oauth_connector_input_spec(
+                            consent_url="https://domain.host.com/endpoint/oauth?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{state_key}={{state_key}}",
+                            scope="reports:read campaigns:read",
+                            access_token_headers={"Content-Type": "application/json"},
+                            access_token_params={"{auth_code_key}": "{{auth_code_key}}"},
+                            access_token_url="https://domain.host.com/endpoint/v1/oauth2/access_token/",
+                            extract_output=["data.access_token"],
+                            state=component_declarative_oauth_state(min=7, max=27),
+                            client_id_key="my_client_id_key",
+                            client_secret_key="my_client_secret_key",
+                            scope_key="my_scope_key",
+                            state_key="my_state_key",
+                            auth_code_key="my_auth_code_key",
+                            redirect_uri_key="callback_uri",
+                        ),
+                        oauth_user_input_from_connector_config_specification=None,
+                        complete_oauth_output_specification=None,
+                        complete_oauth_server_input_specification=None,
+                        complete_oauth_server_output_specification=None,
+                    ),
+                ),
+            ),
+            ConnectorSpecification(
+                connectionSpecification={},
+                advanced_auth=AdvancedAuth(
+                    auth_flow_type=AuthFlowType.oauth2_0,
+                    predicate_key=None,
+                    predicate_value=None,
+                    oauth_config_specification=model_declarative_oauth_spec(
+                        oauth_connector_input_specification=model_declarative_oauth_connector_input_spec(
+                            consent_url="https://domain.host.com/endpoint/oauth?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{state_key}={{state_key}}",
+                            scope="reports:read campaigns:read",
+                            access_token_headers={"Content-Type": "application/json"},
+                            access_token_params={"{auth_code_key}": "{{auth_code_key}}"},
+                            access_token_url="https://domain.host.com/endpoint/v1/oauth2/access_token/",
+                            extract_output=["data.access_token"],
+                            state=model_declarative_oauth_state(min=7, max=27),
+                            client_id_key="my_client_id_key",
+                            client_secret_key="my_client_secret_key",
+                            scope_key="my_scope_key",
+                            state_key="my_state_key",
+                            auth_code_key="my_auth_code_key",
+                            redirect_uri_key="callback_uri",
+                        ),
+                    ),
+                ),
+            ),
+        ),
     ],
     ids=[
         "test_only_connection_specification",
         "test_with_doc_url",
         "test_auth_flow",
+        "test_declarative_oauth_flow",
     ],
 )
-def test_spec(spec, expected_connection_specification):
+def test_spec(spec, expected_connection_specification) -> None:
     assert spec.generate_spec() == expected_connection_specification
-
-
-@pytest.mark.parametrize(
-    "input_oauth_object, expected_spec",
-    [
-        (
-            OAuthConfigSpecification(
-                oauth_connector_input_specification=OauthConnectorInputSpecification(
-                    consent_url="https://domain.host.com/endpoint/oauth?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{state_key}={{state_key}}",
-                    scope="reports:read campaigns:read",
-                    access_token_headers={
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                    },
-                    access_token_params={
-                        "{auth_code_key}": "{{auth_code_key}}",
-                        "{client_id_key}": "{{client_id_key}}",
-                        "{client_secret_key}": "{{client_secret_key}}",
-                    },
-                    access_token_url="https://domain.host.com/endpoint/v1/oauth2/access_token/",
-                    extract_output=["data.access_token"],
-                    state=State(min=7, max=27),
-                    client_id_key="my_client_id_key",
-                    client_secret_key="my_client_secret_key",
-                    scope_key="my_scope_key",
-                    state_key="my_state_key",
-                    auth_code_key="my_auth_code_key",
-                    redirect_uri_key="callback_uri",
-                )
-            ),
-            {
-                "oauth_user_input_from_connector_config_specification": None,
-                "oauth_connector_input_specification": {
-                    "consent_url": "https://domain.host.com/endpoint/oauth?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{state_key}={{state_key}}",
-                    "scope": "reports:read campaigns:read",
-                    "access_token_url": "https://domain.host.com/endpoint/v1/oauth2/access_token/",
-                    "access_token_headers": {
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                    },
-                    "access_token_params": {
-                        "{auth_code_key}": "{{auth_code_key}}",
-                        "{client_id_key}": "{{client_id_key}}",
-                        "{client_secret_key}": "{{client_secret_key}}",
-                    },
-                    "extract_output": ["data.access_token"],
-                    "state": {"min": 7, "max": 27},
-                    "client_id_key": "my_client_id_key",
-                    "client_secret_key": "my_client_secret_key",
-                    "scope_key": "my_scope_key",
-                    "state_key": "my_state_key",
-                    "auth_code_key": "my_auth_code_key",
-                    "redirect_uri_key": "callback_uri",
-                },
-                "complete_oauth_output_specification": None,
-                "complete_oauth_server_input_specification": None,
-                "complete_oauth_server_output_specification": None,
-            },
-        )
-    ],
-    ids=["test_declarative_oauth_flow"],
-)
-def test_with_declarative_oauth_flow_spec(input_oauth_object, expected_spec) -> None:
-    assert input_oauth_object.dict() == expected_spec
