@@ -8,6 +8,7 @@ from argparse import Namespace
 from typing import Any, Iterable, Mapping, MutableMapping
 
 import pytest
+
 from airbyte_cdk import AirbyteEntrypoint
 from airbyte_cdk.logger import AirbyteLogFormatter
 from airbyte_cdk.models import (

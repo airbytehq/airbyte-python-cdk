@@ -7,6 +7,7 @@ from unittest.mock import Mock, call
 
 import freezegun
 import pytest
+
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
@@ -15,9 +16,11 @@ from airbyte_cdk.models import (
     AirbyteStreamStatus,
     AirbyteStreamStatusTraceMessage,
     AirbyteTraceMessage,
+    StreamDescriptor,
+    SyncMode,
+    TraceType,
 )
 from airbyte_cdk.models import Level as LogLevel
-from airbyte_cdk.models import StreamDescriptor, SyncMode, TraceType
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.concurrent_source.concurrent_read_processor import ConcurrentReadProcessor
 from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentinel import (
@@ -30,8 +33,8 @@ from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStrea
 from airbyte_cdk.sources.streams.concurrent.partition_enqueuer import PartitionEnqueuer
 from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionReader
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
-from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
 from airbyte_cdk.sources.streams.concurrent.partitions.types import PartitionCompleteSentinel
+from airbyte_cdk.sources.types import Record
 from airbyte_cdk.sources.utils.slice_logger import SliceLogger
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
@@ -82,6 +85,7 @@ class TestConcurrentReadProcessor(unittest.TestCase):
         self._record = Mock(spec=Record)
         self._record.partition = self._partition
         self._record.data = self._record_data
+        self._record.stream_name = _STREAM_NAME
         self._record.is_file_transfer_message = False
 
     def test_stream_is_not_done_initially(self):

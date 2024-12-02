@@ -1,6 +1,6 @@
 # CDK Migration Guide
 
-## Upgrading to 6.x.x
+## Upgrading to 6.0.0
 
 Version 6.x.x of the CDK introduces concurrent processing of low-code incremental streams. This is breaking because non-manifest only connectors must update their self-managed `run.py` and `source.py` files. This section is intended to clarify how to upgrade a low-code connector to use the Concurrent CDK to sync incremental streams.
 

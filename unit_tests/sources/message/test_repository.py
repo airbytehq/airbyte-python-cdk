@@ -5,6 +5,7 @@
 from unittest.mock import Mock
 
 import pytest
+
 from airbyte_cdk.models import (
     AirbyteControlConnectorConfigMessage,
     AirbyteControlMessage,

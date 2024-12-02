@@ -9,6 +9,7 @@ from typing import Any, Dict
 from unittest.mock import MagicMock, Mock
 
 import pytest
+
 from airbyte_cdk.sources.file_based.exceptions import RecordParseError
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
 from airbyte_cdk.sources.file_based.file_types import JsonlParser

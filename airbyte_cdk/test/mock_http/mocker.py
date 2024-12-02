@@ -7,6 +7,7 @@ from types import TracebackType
 from typing import Callable, List, Optional, Union
 
 import requests_mock
+
 from airbyte_cdk.test.mock_http import HttpRequest, HttpRequestMatcher, HttpResponse
 
 

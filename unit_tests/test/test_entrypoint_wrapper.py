@@ -7,6 +7,8 @@ from typing import Any, Iterator, List, Mapping, Optional
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
+from orjson import orjson
+
 from airbyte_cdk.models import (
     AirbyteAnalyticsTraceMessage,
     AirbyteCatalog,
@@ -31,7 +33,6 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.abstract_source import AbstractSource
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput, discover, read
 from airbyte_cdk.test.state_builder import StateBuilder
-from orjson import orjson
 
 
 def _a_state_message(stream_name: str, stream_state: Mapping[str, Any]) -> AirbyteMessage:

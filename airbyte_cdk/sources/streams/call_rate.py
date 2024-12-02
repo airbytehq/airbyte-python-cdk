@@ -14,9 +14,8 @@ from urllib import parse
 
 import requests
 import requests_cache
-from pyrate_limiter import InMemoryBucket, Limiter
+from pyrate_limiter import InMemoryBucket, Limiter, RateItem, TimeClock
 from pyrate_limiter import Rate as PyRateRate
-from pyrate_limiter import RateItem, TimeClock
 from pyrate_limiter.exceptions import BucketFullException
 
 # prevents mypy from complaining about missing session attributes in LimiterMixin

@@ -10,6 +10,8 @@ from urllib.parse import unquote
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+from pyarrow import DictionaryArray, Scalar
+
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
     FileBasedStreamConfig,
     ParquetFormat,
@@ -26,7 +28,6 @@ from airbyte_cdk.sources.file_based.file_based_stream_reader import (
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
-from pyarrow import DictionaryArray, Scalar
 
 
 class ParquetParser(FileTypeParser):

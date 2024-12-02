@@ -6,6 +6,7 @@ from abc import abstractmethod
 from typing import Any, Iterable, Mapping, Optional
 
 import requests
+
 from airbyte_cdk.sources.types import Record, StreamSlice, StreamState
 
 

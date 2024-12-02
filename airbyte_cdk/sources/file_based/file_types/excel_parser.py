@@ -8,6 +8,11 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Union
 
 import pandas as pd
+from numpy import datetime64, issubdtype
+from numpy import dtype as dtype_
+from orjson import orjson
+from pydantic.v1 import BaseModel
+
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
     ExcelFormat,
     FileBasedStreamConfig,
@@ -24,11 +29,6 @@ from airbyte_cdk.sources.file_based.file_based_stream_reader import (
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
-from numpy import datetime64
-from numpy import dtype as dtype_
-from numpy import issubdtype
-from orjson import orjson
-from pydantic.v1 import BaseModel
 
 
 class ExcelParser(FileTypeParser):

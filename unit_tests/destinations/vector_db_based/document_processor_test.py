@@ -6,6 +6,7 @@ from typing import Any, List, Mapping, Optional
 from unittest.mock import MagicMock
 
 import pytest
+
 from airbyte_cdk.destinations.vector_db_based.config import (
     CodeSplitterConfigModel,
     FieldNameMappingConfigModel,

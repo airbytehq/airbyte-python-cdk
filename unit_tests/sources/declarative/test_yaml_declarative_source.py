@@ -7,9 +7,10 @@ import os
 import tempfile
 
 import pytest
+from yaml.parser import ParserError
+
 from airbyte_cdk.sources.declarative.parsers.custom_exceptions import UndefinedReferenceException
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
-from yaml.parser import ParserError
 
 logger = logging.getLogger("airbyte")
 

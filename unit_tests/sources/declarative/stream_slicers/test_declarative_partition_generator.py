@@ -56,7 +56,7 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
         records = list(partition.read())
 
         assert len(records) == 1
-        assert records[0].partition == partition
+        assert records[0].associated_slice == _A_STREAM_SLICE
         assert records[0].data == _A_RECORD
 
     def test_given_not_a_record_when_read_then_send_to_message_repository(self) -> None:

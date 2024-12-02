@@ -6,6 +6,7 @@ from dataclasses import InitVar, dataclass
 from typing import Any, List, Mapping, Optional, Union
 
 import requests
+
 from airbyte_cdk.sources.streams.http.error_handlers import ErrorHandler
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
     ErrorResolution,

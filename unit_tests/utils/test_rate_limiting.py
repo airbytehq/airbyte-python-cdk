@@ -3,8 +3,9 @@
 #
 
 import pytest
-from airbyte_cdk.sources.streams.http.rate_limiting import default_backoff_handler
 from requests import exceptions
+
+from airbyte_cdk.sources.streams.http.rate_limiting import default_backoff_handler
 
 
 def helper_with_exceptions(exception_type):

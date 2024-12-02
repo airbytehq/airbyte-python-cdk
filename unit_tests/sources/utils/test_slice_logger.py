@@ -5,6 +5,7 @@
 import logging
 
 import pytest
+
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.utils.slice_logger import AlwaysLogSliceLogger, DebugSliceLogger

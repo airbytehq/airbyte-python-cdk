@@ -7,6 +7,11 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Optional, Union, cast
 
+from langchain.embeddings.cohere import CohereEmbeddings
+from langchain.embeddings.fake import FakeEmbeddings
+from langchain.embeddings.localai import LocalAIEmbeddings
+from langchain.embeddings.openai import OpenAIEmbeddings
+
 from airbyte_cdk.destinations.vector_db_based.config import (
     AzureOpenAIEmbeddingConfigModel,
     CohereEmbeddingConfigModel,
@@ -19,10 +24,6 @@ from airbyte_cdk.destinations.vector_db_based.config import (
 from airbyte_cdk.destinations.vector_db_based.utils import create_chunks, format_exception
 from airbyte_cdk.models import AirbyteRecordMessage
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException, FailureType
-from langchain.embeddings.cohere import CohereEmbeddings
-from langchain.embeddings.fake import FakeEmbeddings
-from langchain.embeddings.localai import LocalAIEmbeddings
-from langchain.embeddings.openai import OpenAIEmbeddings
 
 
 @dataclass

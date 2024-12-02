@@ -9,7 +9,16 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
 import backoff
 import dpath
+import nltk
 import requests
+from unstructured.file_utils.filetype import (
+    EXT_TO_FILETYPE,
+    FILETYPE_TO_MIMETYPE,
+    STR_TO_FILETYPE,
+    FileType,
+    detect_filetype,
+)
+
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.config.unstructured_format import (
@@ -28,14 +37,6 @@ from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
 from airbyte_cdk.utils import is_cloud_environment
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from unstructured.file_utils.filetype import (
-    EXT_TO_FILETYPE,
-    FILETYPE_TO_MIMETYPE,
-    STR_TO_FILETYPE,
-    FileType,
-    detect_filetype,
-)
-import nltk
 
 unstructured_partition_pdf = None
 unstructured_partition_docx = None

@@ -4,6 +4,8 @@
 from dataclasses import InitVar, dataclass, field
 from typing import Any, Callable, Iterable, Mapping, Optional
 
+from deprecated.classic import deprecated
+
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import (
     AsyncJobOrchestrator,
@@ -17,7 +19,6 @@ from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from deprecated.classic import deprecated
 
 
 @deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)

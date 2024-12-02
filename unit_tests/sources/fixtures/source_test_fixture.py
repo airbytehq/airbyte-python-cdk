@@ -8,6 +8,8 @@ from abc import ABC
 from typing import Any, Iterable, List, Mapping, Optional, Tuple, Union
 
 import requests
+from requests.auth import AuthBase
+
 from airbyte_cdk.models import (
     AirbyteStream,
     ConfiguredAirbyteCatalog,
@@ -20,7 +22,6 @@ from airbyte_cdk.sources import AbstractSource
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.http import HttpStream
 from airbyte_cdk.sources.streams.http.requests_native_auth import Oauth2Authenticator
-from requests.auth import AuthBase
 
 
 class SourceTestFixture(AbstractSource):

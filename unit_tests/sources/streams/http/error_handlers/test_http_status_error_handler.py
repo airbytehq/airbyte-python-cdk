@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 import requests
+
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.streams.http.error_handlers import (
     ErrorResolution,

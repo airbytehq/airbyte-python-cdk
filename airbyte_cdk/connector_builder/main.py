@@ -6,6 +6,8 @@
 import sys
 from typing import Any, List, Mapping, Optional, Tuple
 
+from orjson import orjson
+
 from airbyte_cdk.connector import BaseConnector
 from airbyte_cdk.connector_builder.connector_builder_handler import (
     TestReadLimits,
@@ -25,7 +27,6 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.source import Source
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from orjson import orjson
 
 
 def get_config_and_catalog_from_args(

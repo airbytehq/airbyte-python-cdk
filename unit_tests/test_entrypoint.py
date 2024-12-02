@@ -13,6 +13,8 @@ from unittest.mock import MagicMock, patch
 import freezegun
 import pytest
 import requests
+from orjson import orjson
+
 from airbyte_cdk import AirbyteEntrypoint
 from airbyte_cdk import entrypoint as entrypoint_module
 from airbyte_cdk.models import (
@@ -44,7 +46,6 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.connector_state_manager import HashableStreamDescriptor
 from airbyte_cdk.utils import AirbyteTracedException
-from orjson import orjson
 
 
 class MockSource(Source):

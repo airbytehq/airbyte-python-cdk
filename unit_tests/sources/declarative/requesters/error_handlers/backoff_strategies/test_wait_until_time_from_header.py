@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies.wait_until_time_from_header_backoff_strategy import (
     WaitUntilTimeFromHeaderBackoffStrategy,
 )
