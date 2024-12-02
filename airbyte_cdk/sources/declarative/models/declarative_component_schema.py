@@ -567,6 +567,12 @@ class DpathExtractor(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class ResponseToFileExtractor(BaseModel):
+    type: Literal["ResponseToFileExtractor"]
+    needs_decompression: bool
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class ExponentialBackoffStrategy(BaseModel):
     type: Literal["ExponentialBackoffStrategy"]
     factor: Optional[Union[float, str]] = Field(
@@ -1676,9 +1682,9 @@ class AsyncRetriever(BaseModel):
         ...,
         description="Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.",
     )
-    download_extractor: Optional[Union[CustomRecordExtractor, DpathExtractor]] = Field(
-        None, description="Responsible for fetching the records from provided urls."
-    )
+    download_extractor: Optional[
+        Union[CustomRecordExtractor, DpathExtractor, ResponseToFileExtractor]
+    ] = Field(None, description="Responsible for fetching the records from provided urls.")
     creation_requester: Union[CustomRequester, HttpRequester] = Field(
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to create the async server-side job.",

@@ -1331,6 +1331,23 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  ResponseToFileExtractor:
+    title: CSV To File Extractor
+    description: Record extractor that downloads a headless
+    type: object
+    required:
+      - type
+      - needs_decompression
+    properties:
+      type:
+        type: string
+        enum: [ResponseToFileExtractor]
+      needs_decompression:
+        type: boolean
+        default: true
+      $parameters:
+        type: object
+        additionalProperties: true
   ExponentialBackoffStrategy:
     title: Exponential Backoff
     description: Backoff strategy with an exponential backoff interval. The interval is defined as factor * 2^attempt_count.
@@ -2518,6 +2535,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/CustomRecordExtractor"
           - "$ref": "#/definitions/DpathExtractor"
+          - "$ref": "#/definitions/ResponseToFileExtractor"
       creation_requester:
         description: Requester component that describes how to prepare HTTP requests to send to the source API to create the async server-side job.
         anyOf:

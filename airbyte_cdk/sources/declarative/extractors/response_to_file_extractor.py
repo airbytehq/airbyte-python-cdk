@@ -6,6 +6,7 @@ import os
 import uuid
 import zlib
 from contextlib import closing
+from dataclasses import InitVar, dataclass
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 import pandas as pd
@@ -19,6 +20,7 @@ DEFAULT_ENCODING: str = "utf-8"
 DOWNLOAD_CHUNK_SIZE: int = 1024 * 10
 
 
+@dataclass
 class ResponseToFileExtractor(RecordExtractor):
     """
     This class is used when having very big HTTP responses (usually streamed) which would require too much memory so we use disk space as
@@ -28,7 +30,10 @@ class ResponseToFileExtractor(RecordExtractor):
     a first iteration so we will only support CSV parsing using pandas as salesforce and sendgrid were doing.
     """
 
-    def __init__(self) -> None:
+    parameters: InitVar[Mapping[str, Any]]
+    needs_decompression: bool = True
+
+    def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.logger = logging.getLogger("airbyte")
 
     def _get_response_encoding(self, headers: Dict[str, Any]) -> str:
@@ -89,21 +94,18 @@ class ResponseToFileExtractor(RecordExtractor):
         """
         # set filepath for binary data from response
         decompressor = zlib.decompressobj(zlib.MAX_WBITS | 32)
-        needs_decompression = True  # we will assume at first that the response is compressed and change the flag if not
 
         tmp_file = str(uuid.uuid4())
         with closing(response) as response, open(tmp_file, "wb") as data_file:
             response_encoding = self._get_response_encoding(dict(response.headers or {}))
             for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):
                 try:
-                    if needs_decompression:
+                    if self.needs_decompression:
                         data_file.write(decompressor.decompress(chunk))
-                        needs_decompression = True
                     else:
                         data_file.write(self._filter_null_bytes(chunk))
                 except zlib.error:
                     data_file.write(self._filter_null_bytes(chunk))
-                    needs_decompression = False
 
         # check the file exists
         if os.path.isfile(tmp_file):

@@ -72,6 +72,7 @@ from airbyte_cdk.sources.declarative.extractors import (
     DpathExtractor,
     RecordFilter,
     RecordSelector,
+    ResponseToFileExtractor,
 )
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
@@ -270,6 +271,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     RequestPath as RequestPathModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ResponseToFileExtractor as ResponseToFileExtractorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SelectiveAuthenticator as SelectiveAuthenticatorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -426,6 +430,7 @@ class ModelToComponentFactory:
             DefaultErrorHandlerModel: self.create_default_error_handler,
             DefaultPaginatorModel: self.create_default_paginator,
             DpathExtractorModel: self.create_dpath_extractor,
+            ResponseToFileExtractorModel: self.create_response_to_file_extractor,
             ExponentialBackoffStrategyModel: self.create_exponential_backoff_strategy,
             SessionTokenAuthenticatorModel: self.create_session_token_authenticator,
             HttpRequesterModel: self.create_http_requester,
@@ -1446,6 +1451,16 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
+    def create_response_to_file_extractor(
+        self,
+        model: ResponseToFileExtractorModel,
+        needs_decompression: Optional[bool] = True,
+        **kwargs: Any,
+    ):
+        return ResponseToFileExtractor(
+            needs_decompression=needs_decompression, parameters=model.parameters or {}
+        )
+
     @staticmethod
     def create_exponential_backoff_strategy(
         model: ExponentialBackoffStrategyModel, config: Config
@@ -2050,7 +2065,6 @@ class ModelToComponentFactory:
         download_retriever = SimpleRetriever(
             requester=download_requester,
             record_selector=RecordSelector(
-                # extractor=ResponseToFileExtractor(),# old one
                 extractor=download_extractor,
                 record_filter=None,
                 transformations=[],
