@@ -74,21 +74,18 @@ jobs:
             cdk_extra: n/a
           - connector: source-chargebee
             cdk_extra: n/a
-          # Currently not passing CI (unrelated)
-          # - connector: source-zendesk-support
-          #   cdk_extra: n/a
           - connector: source-s3
             cdk_extra: file-based
           - connector: destination-pinecone
             cdk_extra: vector-db-based
           - connector: destination-motherduck
             cdk_extra: sql
-          # TODO: These are manifest connectors and won't work as expected until we
-          #       add `--use-local-cdk` support for manifest connectors.
-          - connector: source-the-guardian-api
-            cdk_extra: n/a
-          - connector: source-pokeapi
-            cdk_extra: n/a
+          # # TODO: These are manifest connectors and won't work as expected until we
+          # #       add `--use-local-cdk` support for manifest connectors.
+          # - connector: source-the-guardian-api
+          #   cdk_extra: n/a
+          # - connector: source-pokeapi
+          #   cdk_extra: n/a
 
     name: "Check: '${{matrix.connector}}' (skip=${{needs.cdk_changes.outputs[matrix.cdk_extra] == 'false'}})"
     steps:
@@ -112,8 +109,7 @@ jobs:
         if: steps.no_changes.outputs.status != 'cancelled'
         with:
           repository: airbytehq/airbyte
-          # TODO: Revert to `master` after Airbyte CI released:
-          ref: aj/airbyte-ci/update-python-local-cdk-code
+          ref: master
           path: airbyte
       - name: Test Connector
         if: steps.no_changes.outputs.status != 'cancelled'
