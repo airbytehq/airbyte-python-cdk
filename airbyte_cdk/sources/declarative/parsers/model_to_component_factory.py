@@ -1454,12 +1454,9 @@ class ModelToComponentFactory:
     def create_response_to_file_extractor(
         self,
         model: ResponseToFileExtractorModel,
-        needs_decompression: Optional[bool] = True,
         **kwargs: Any,
     ) -> ResponseToFileExtractor:
-        return ResponseToFileExtractor(
-            needs_decompression=needs_decompression, parameters=model.parameters or {}
-        )
+        return ResponseToFileExtractor(parameters=model.parameters or {})
 
     @staticmethod
     def create_exponential_backoff_strategy(

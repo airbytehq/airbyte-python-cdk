@@ -31,7 +31,6 @@ class ResponseToFileExtractor(RecordExtractor):
     """
 
     parameters: InitVar[Mapping[str, Any]]
-    needs_decompression: bool = True
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.logger = logging.getLogger("airbyte")
@@ -94,18 +93,21 @@ class ResponseToFileExtractor(RecordExtractor):
         """
         # set filepath for binary data from response
         decompressor = zlib.decompressobj(zlib.MAX_WBITS | 32)
+        needs_decompression = True  # we will assume at first that the response is compressed and change the flag if not
 
         tmp_file = str(uuid.uuid4())
         with closing(response) as response, open(tmp_file, "wb") as data_file:
             response_encoding = self._get_response_encoding(dict(response.headers or {}))
             for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):
                 try:
-                    if self.needs_decompression:
+                    if needs_decompression:
                         data_file.write(decompressor.decompress(chunk))
+                        needs_decompression = True
                     else:
                         data_file.write(self._filter_null_bytes(chunk))
                 except zlib.error:
                     data_file.write(self._filter_null_bytes(chunk))
+                    needs_decompression = False
 
         # check the file exists
         if os.path.isfile(tmp_file):

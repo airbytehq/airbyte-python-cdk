@@ -569,7 +569,6 @@ class DpathExtractor(BaseModel):
 
 class ResponseToFileExtractor(BaseModel):
     type: Literal["ResponseToFileExtractor"]
-    needs_decompression: bool
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 

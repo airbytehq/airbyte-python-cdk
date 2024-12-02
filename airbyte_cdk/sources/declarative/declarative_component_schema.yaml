@@ -1333,18 +1333,14 @@ definitions:
         additionalProperties: true
   ResponseToFileExtractor:
     title: CSV To File Extractor
-    description: Record extractor that downloads a headless
+    description: A record extractor designed for handling large responses that may exceed memory limits (to prevent OOM issues). It downloads a CSV file to disk, reads the data from disk, and deletes the file once it has been fully processed.
     type: object
     required:
       - type
-      - needs_decompression
     properties:
       type:
         type: string
         enum: [ResponseToFileExtractor]
-      needs_decompression:
-        type: boolean
-        default: true
       $parameters:
         type: object
         additionalProperties: true
