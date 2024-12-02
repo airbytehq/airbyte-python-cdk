@@ -41,8 +41,8 @@ from airbyte_cdk.sources.streams.concurrent.helpers import (
 )
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
-from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
 from airbyte_cdk.sources.streams.core import StreamData
+from airbyte_cdk.sources.types import Record
 from airbyte_cdk.sources.utils.schema_helpers import InternalConfig
 from airbyte_cdk.sources.utils.slice_logger import SliceLogger
 
@@ -248,7 +248,7 @@ class FileBasedStreamPartition(Partition):
                     self._stream.transformer.transform(
                         data_to_return, self._stream.get_json_schema()
                     )
-                    yield Record(data_to_return, self)
+                    yield Record(data=data_to_return, stream_name=self.stream_name())
                 elif (
                     isinstance(record_data, AirbyteMessage)
                     and record_data.type == Type.RECORD
@@ -266,7 +266,7 @@ class FileBasedStreamPartition(Partition):
                     else:
                         yield Record(
                             data=record_message_data,
-                            partition=self,
+                            stream_name=self.stream_name(),
                             is_file_transfer_message=self._use_file_transfer(),
                         )
                 else:

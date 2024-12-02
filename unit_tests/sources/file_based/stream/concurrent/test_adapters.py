@@ -31,7 +31,7 @@ from airbyte_cdk.sources.file_based.stream.concurrent.cursor import FileBasedFin
 from airbyte_cdk.sources.message import InMemoryMessageRepository
 from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
 from airbyte_cdk.sources.streams.concurrent.exceptions import ExceptionWithDisplayMessage
-from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
+from airbyte_cdk.sources.types import Record
 from airbyte_cdk.sources.utils.slice_logger import SliceLogger
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 
@@ -77,16 +77,12 @@ def test_file_based_stream_partition_generator(sync_mode):
             TypeTransformer(TransformConfig.NoTransform),
             [
                 Record(
-                    {"data": "1"},
-                    Mock(
-                        spec=FileBasedStreamPartition, stream_name=Mock(return_value=_STREAM_NAME)
-                    ),
+                    data={"data": "1"},
+                    stream_name=_STREAM_NAME,
                 ),
                 Record(
-                    {"data": "2"},
-                    Mock(
-                        spec=FileBasedStreamPartition, stream_name=Mock(return_value=_STREAM_NAME)
-                    ),
+                    data={"data": "2"},
+                    stream_name=_STREAM_NAME,
                 ),
             ],
             id="test_no_transform",
@@ -95,16 +91,12 @@ def test_file_based_stream_partition_generator(sync_mode):
             TypeTransformer(TransformConfig.DefaultSchemaNormalization),
             [
                 Record(
-                    {"data": 1},
-                    Mock(
-                        spec=FileBasedStreamPartition, stream_name=Mock(return_value=_STREAM_NAME)
-                    ),
+                    data={"data": 1},
+                    stream_name=_STREAM_NAME,
                 ),
                 Record(
-                    {"data": 2},
-                    Mock(
-                        spec=FileBasedStreamPartition, stream_name=Mock(return_value=_STREAM_NAME)
-                    ),
+                    data={"data": 2},
+                    stream_name=_STREAM_NAME,
                 ),
             ],
             id="test_default_transform",
@@ -302,7 +294,14 @@ class StreamFacadeTest(unittest.TestCase):
         expected_stream_data = [{"data": 1}, {"data": 2}]
 
         partition = Mock()
-        records = [Record(data, partition) for data in expected_stream_data]
+        records = [
+            Record(
+                data=data,
+                associated_slice=partition,
+                stream_name="test_stream",
+            )
+            for data in expected_stream_data
+        ]
         partition.read.return_value = records
         self._abstract_stream.generate_partitions.return_value = [partition]
 
@@ -312,7 +311,14 @@ class StreamFacadeTest(unittest.TestCase):
 
     def test_read_records(self):
         expected_stream_data = [{"data": 1}, {"data": 2}]
-        records = [Record(data, "stream") for data in expected_stream_data]
+        records = [
+            Record(
+                data=data,
+                associated_slice="stream",
+                stream_name="test_stream",
+            )
+            for data in expected_stream_data
+        ]
         partition = Mock()
         partition.read.return_value = records
         self._abstract_stream.generate_partitions.return_value = [partition]

@@ -3,6 +3,7 @@
 #
 
 import functools
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optional, Protocol, Tuple
 
@@ -10,12 +11,13 @@ from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
-from airbyte_cdk.sources.streams.concurrent.partitions.record import Record
 from airbyte_cdk.sources.streams.concurrent.partitions.stream_slicer import StreamSlicer
 from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
     AbstractStreamStateConverter,
 )
-from airbyte_cdk.sources.types import StreamSlice
+from airbyte_cdk.sources.types import Record, StreamSlice
+
+LOGGER = logging.getLogger("airbyte")
 
 
 def _extract_value(mapping: Mapping[str, Any], path: List[str]) -> Any:
@@ -173,9 +175,11 @@ class ConcurrentCursor(Cursor):
         self.start, self._concurrent_state = self._get_concurrent_state(stream_state)
         self._lookback_window = lookback_window
         self._slice_range = slice_range
-        self._most_recent_cursor_value_per_partition: MutableMapping[Partition, Any] = {}
+        self._most_recent_cursor_value_per_partition: MutableMapping[StreamSlice, Any] = {}
         self._has_closed_at_least_one_slice = False
         self._cursor_granularity = cursor_granularity
+        # Flag to track if the logger has been triggered (per stream)
+        self._should_be_synced_logger_triggered = False
 
     @property
     def state(self) -> MutableMapping[str, Any]:
@@ -210,12 +214,12 @@ class ConcurrentCursor(Cursor):
 
     def observe(self, record: Record) -> None:
         most_recent_cursor_value = self._most_recent_cursor_value_per_partition.get(
-            record.partition
+            record.associated_slice
         )
         cursor_value = self._extract_cursor_value(record)
 
         if most_recent_cursor_value is None or most_recent_cursor_value < cursor_value:
-            self._most_recent_cursor_value_per_partition[record.partition] = cursor_value
+            self._most_recent_cursor_value_per_partition[record.associated_slice] = cursor_value
 
     def _extract_cursor_value(self, record: Record) -> Any:
         return self._connector_state_converter.parse_value(self._cursor_field.extract_value(record))
@@ -231,7 +235,9 @@ class ConcurrentCursor(Cursor):
         self._has_closed_at_least_one_slice = True
 
     def _add_slice_to_state(self, partition: Partition) -> None:
-        most_recent_cursor_value = self._most_recent_cursor_value_per_partition.get(partition)
+        most_recent_cursor_value = self._most_recent_cursor_value_per_partition.get(
+            partition.to_slice()
+        )
 
         if self._slice_boundary_fields:
             if "slices" not in self.state:
@@ -442,3 +448,21 @@ class ConcurrentCursor(Cursor):
             return lower + step
         except OverflowError:
             return self._end_provider()
+
+    def should_be_synced(self, record: Record) -> bool:
+        """
+        Determines if a record should be synced based on its cursor value.
+        :param record: The record to evaluate
+
+        :return: True if the record's cursor value falls within the sync boundaries
+        """
+        try:
+            record_cursor_value: CursorValueType = self._extract_cursor_value(record)  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
+        except ValueError:
+            if not self._should_be_synced_logger_triggered:
+                LOGGER.warning(
+                    f"Could not find cursor field `{self.cursor_field.cursor_field_key}` in record. The incremental sync will assume it needs to be synced"
+                )
+                self._should_be_synced_logger_triggered = True
+            return True
+        return self.start <= record_cursor_value <= self._end_provider()

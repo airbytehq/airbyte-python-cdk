@@ -3,13 +3,14 @@
 #
 
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Iterable, List, Mapping, Optional
+from typing import Any, Iterable, List, Mapping, Optional, Union
 
 import requests
 
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.extractors.record_filter import RecordFilter
+from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.models import SchemaNormalization
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
@@ -38,11 +39,34 @@ class RecordSelector(HttpSelector):
     config: Config
     parameters: InitVar[Mapping[str, Any]]
     schema_normalization: TypeTransformer
+    name: str
+    _name: Union[InterpolatedString, str] = field(init=False, repr=False, default="")
     record_filter: Optional[RecordFilter] = None
     transformations: List[RecordTransformation] = field(default_factory=lambda: [])
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._parameters = parameters
+        self._name = (
+            InterpolatedString(self._name, parameters=parameters)
+            if isinstance(self._name, str)
+            else self._name
+        )
+
+    @property  # type: ignore
+    def name(self) -> str:
+        """
+        :return: Stream name
+        """
+        return (
+            str(self._name.eval(self.config))
+            if isinstance(self._name, InterpolatedString)
+            else self._name
+        )
+
+    @name.setter
+    def name(self, value: str) -> None:
+        if not isinstance(value, property):
+            self._name = value
 
     def select_records(
         self,
@@ -86,7 +110,7 @@ class RecordSelector(HttpSelector):
         transformed_data = self._transform(filtered_data, stream_state, stream_slice)
         normalized_data = self._normalize_by_schema(transformed_data, schema=records_schema)
         for data in normalized_data:
-            yield Record(data, stream_slice)
+            yield Record(data=data, stream_name=self.name, associated_slice=stream_slice)
 
     def _normalize_by_schema(
         self, records: Iterable[Mapping[str, Any]], schema: Optional[Mapping[str, Any]]
@@ -126,6 +150,9 @@ class RecordSelector(HttpSelector):
         for record in records:
             for transformation in self.transformations:
                 transformation.transform(
-                    record, config=self.config, stream_state=stream_state, stream_slice=stream_slice
-                )  # type: ignore  # record has type Mapping[str, Any], but Dict[str, Any] expected
+                    record,  # type: ignore  # record has type Mapping[str, Any], but Dict[str, Any] expected
+                    config=self.config,
+                    stream_state=stream_state,
+                    stream_slice=stream_slice,
+                )
             yield record

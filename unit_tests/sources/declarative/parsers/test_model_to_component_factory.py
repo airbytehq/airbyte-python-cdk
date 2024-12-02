@@ -1309,6 +1309,7 @@ def test_create_record_selector(test_name, record_selector, expected_runtime_sel
 
     selector = factory.create_component(
         model_type=RecordSelectorModel,
+        name="test_stream",
         component_definition=selector_manifest,
         decoder=None,
         transformations=[],

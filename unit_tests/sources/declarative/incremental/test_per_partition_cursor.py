@@ -277,9 +277,13 @@ def test_when_get_stream_state_then_delegate_to_underlying_cursor(
     cursor = PerPartitionCursor(mocked_cursor_factory, mocked_partition_router)
     first_slice = list(cursor.stream_slices())[0]
 
-    cursor.should_be_synced(Record({}, first_slice))
+    cursor.should_be_synced(
+        Record(data={}, associated_slice=first_slice, stream_name="test_stream")
+    )
 
-    underlying_cursor.should_be_synced.assert_called_once_with(Record({}, first_slice.cursor_slice))
+    underlying_cursor.should_be_synced.assert_called_once_with(
+        Record(data={}, associated_slice=first_slice.cursor_slice, stream_name="test_stream")
+    )
 
 
 def test_close_slice(mocked_cursor_factory, mocked_partition_router):
@@ -398,8 +402,12 @@ def test_when_is_greater_than_or_equal_then_return_underlying_cursor_response(
     stream_slice = StreamSlice(partition={"partition key": "first partition"}, cursor_slice={})
     mocked_partition_router.stream_slices.return_value = [stream_slice]
     cursor = PerPartitionCursor(mocked_cursor_factory, mocked_partition_router)
-    first_record = Record({"first": "value"}, stream_slice)
-    second_record = Record({"second": "value"}, stream_slice)
+    first_record = Record(
+        data={"first": "value"}, associated_slice=stream_slice, stream_name="test_stream"
+    )
+    second_record = Record(
+        data={"second": "value"}, associated_slice=stream_slice, stream_name="test_stream"
+    )
     list(cursor.stream_slices())  # generate internal state
 
     result = cursor.is_greater_than_or_equal(first_record, second_record)
