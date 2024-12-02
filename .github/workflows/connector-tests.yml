@@ -94,7 +94,7 @@ jobs:
     steps:
       - name: Abort if extra not changed (${{matrix.cdk_extra}})
         id: no_changes
-        if: ${{ matrix.cdk_extra != 'n/a' && needs.cdk_changes.outputs[matrix.cdk_extra] == 'false' }}
+        if: ${{ needs.cdk_changes.outputs['src'] == 'false' || matrix.cdk_extra != 'n/a' && needs.cdk_changes.outputs[matrix.cdk_extra] == 'false' }}
         run: |
           echo "Aborting job as specified extra not changed: ${{matrix.cdk_extra}} = ${{ needs.cdk_changes.outputs[matrix.cdk_extra] }}"
           echo "> Skipped '${{matrix.connector}}' (no relevant changes)" >> $GITHUB_STEP_SUMMARY
