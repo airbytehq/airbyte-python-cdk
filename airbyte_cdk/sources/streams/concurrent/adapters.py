@@ -50,7 +50,10 @@ This module contains adapters to help enabling concurrency on Stream objects wit
 """
 
 
-@deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)
+@deprecated(
+    "This class is experimental. Use at your own risk.",
+    category=ExperimentalClassWarning,
+)
 class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
     """
     The StreamFacade is a Stream that wraps an AbstractStream and exposes it as a Stream.

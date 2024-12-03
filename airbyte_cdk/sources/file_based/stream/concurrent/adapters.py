@@ -56,7 +56,10 @@ This module contains adapters to help enabling concurrency on File-based Stream 
 """
 
 
-@deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)
+@deprecated(
+    "This class is experimental. Use at your own risk.",
+    category=ExperimentalClassWarning,
+)
 class FileBasedStreamFacade(AbstractStreamFacade[DefaultStream], AbstractFileBasedStream):
     @classmethod
     def create_from_stream(

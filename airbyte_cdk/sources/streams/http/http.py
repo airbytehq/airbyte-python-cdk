@@ -121,8 +121,8 @@ class HttpStream(Stream, CheckpointMixin, ABC):
 
     @property
     @deprecated(
-        "Deprecated as of CDK version 3.0.0. ",
-        "You should set error_handler explicitly in HttpStream.get_error_handler() instead.",
+        "Deprecated as of CDK version 3.0.0. "
+        "You should set error_handler explicitly in HttpStream.get_error_handler() instead."
     )
     def raise_on_http_errors(self) -> bool:
         """
