@@ -15,8 +15,8 @@ from functools import wraps
 from typing import Any, DefaultDict, Iterable, List, Mapping, Optional
 from urllib.parse import urlparse
 
+import orjson
 import requests
-from orjson import orjson
 from requests import PreparedRequest, Response, Session
 
 from airbyte_cdk.connector import TConfig
@@ -250,12 +250,18 @@ class AirbyteEntrypoint(object):
     ) -> AirbyteMessage:
         match message.type:
             case Type.RECORD:
+                if message.record is None:
+                    raise ValueError("Record message must have a record attribute")
+
                 stream_message_count[
                     HashableStreamDescriptor(
                         name=message.record.stream, namespace=message.record.namespace
                     )
                 ] += 1.0  # type: ignore[union-attr] # record has `stream` and `namespace`
             case Type.STATE:
+                if message.state is None:
+                    raise ValueError("State message must have a state attribute")
+
                 stream_descriptor = message_utils.get_stream_descriptor(message)
 
                 # Set record count from the counter onto the state message
