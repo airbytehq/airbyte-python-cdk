@@ -7,7 +7,7 @@ import logging
 import logging.config
 from typing import Any, Callable, Mapping, Optional, Tuple
 
-from orjson import orjson
+import orjson
 
 from airbyte_cdk.models import (
     AirbyteLogMessage,

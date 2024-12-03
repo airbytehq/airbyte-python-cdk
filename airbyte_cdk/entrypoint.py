@@ -15,8 +15,8 @@ from functools import wraps
 from typing import Any, DefaultDict, Iterable, List, Mapping, Optional
 from urllib.parse import urlparse
 
+import orjson
 import requests
-from orjson import orjson
 from requests import PreparedRequest, Response, Session
 
 from airbyte_cdk.connector import TConfig

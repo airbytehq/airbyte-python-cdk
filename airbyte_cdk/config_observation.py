@@ -10,7 +10,7 @@ import time
 from copy import copy
 from typing import Any, List, MutableMapping
 
-from orjson import orjson
+import orjson
 
 from airbyte_cdk.models import (
     AirbyteControlConnectorConfigMessage,

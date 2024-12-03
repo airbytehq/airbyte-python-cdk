@@ -4,9 +4,9 @@ import copy
 from typing import Any, List, Mapping, MutableMapping, Optional, Union
 from unittest.mock import MagicMock
 
+import orjson
 import pytest
 import requests_mock
-from orjson import orjson
 
 from airbyte_cdk.models import (
     AirbyteMessage,

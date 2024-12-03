@@ -3,8 +3,8 @@
 #
 
 
+import orjson
 import pytest
-from orjson import orjson
 
 from airbyte_cdk.models import (
     AirbyteErrorTraceMessage,

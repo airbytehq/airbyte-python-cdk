@@ -12,7 +12,7 @@ from io import IOBase
 from typing import Any, Callable, Dict, Generator, Iterable, List, Mapping, Optional, Set, Tuple
 from uuid import uuid4
 
-from orjson import orjson
+import orjson
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.file_based.config.csv_format import (

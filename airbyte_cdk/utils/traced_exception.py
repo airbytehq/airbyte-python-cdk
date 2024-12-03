@@ -5,7 +5,7 @@ import time
 import traceback
 from typing import Optional
 
-from orjson import orjson
+import orjson
 
 from airbyte_cdk.models import (
     AirbyteConnectionStatus,

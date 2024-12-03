@@ -25,7 +25,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
-from orjson import orjson
+import orjson
 
 from airbyte_cdk.entrypoint import AirbyteEntrypoint, launch
 from airbyte_cdk.models import (

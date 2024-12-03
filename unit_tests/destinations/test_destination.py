@@ -9,8 +9,8 @@ from os import PathLike
 from typing import Any, Dict, Iterable, List, Mapping, Union
 from unittest.mock import ANY
 
+import orjson
 import pytest
-from orjson import orjson
 
 from airbyte_cdk.destinations import Destination
 from airbyte_cdk.destinations import destination as destination_module

@@ -7,10 +7,10 @@ from io import IOBase
 from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Union
 
+import orjson
 import pandas as pd
 from numpy import datetime64, issubdtype
 from numpy import dtype as dtype_
-from orjson import orjson
 from pydantic.v1 import BaseModel
 
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import (

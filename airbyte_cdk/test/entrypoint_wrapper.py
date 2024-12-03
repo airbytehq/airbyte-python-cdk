@@ -23,7 +23,7 @@ from io import StringIO
 from pathlib import Path
 from typing import Any, List, Mapping, Optional, Union
 
-from orjson import orjson
+import orjson
 from pydantic import ValidationError as V2ValidationError
 from serpyco_rs import SchemaValidationError
 
