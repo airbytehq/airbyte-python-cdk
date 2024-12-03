@@ -92,8 +92,8 @@ class CheckpointMixin(ABC):
 
 
 @deprecated(
-    "Deprecated as of CDK version 0.87.0. ",
-    "Deprecated in favor of the CheckpointMixin which offers similar functionality.",
+    "Deprecated as of CDK version 0.87.0. "
+    "Deprecated in favor of the `CheckpointMixin` which offers similar functionality."
 )
 class IncrementalMixin(CheckpointMixin, ABC):
     """Mixin to make stream incremental.
