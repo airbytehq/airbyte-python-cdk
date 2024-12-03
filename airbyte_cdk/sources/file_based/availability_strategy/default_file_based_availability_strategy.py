@@ -2,6 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from __future__ import annotations
+
 import logging
 import traceback
 from typing import TYPE_CHECKING, Optional, Tuple
@@ -25,7 +27,7 @@ if TYPE_CHECKING:
 
 
 class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy):
-    def __init__(self, stream_reader: AbstractFileBasedStreamReader):
+    def __init__(self, stream_reader: AbstractFileBasedStreamReader) -> None:
         self.stream_reader = stream_reader
 
     def check_availability(  # type: ignore[override]
