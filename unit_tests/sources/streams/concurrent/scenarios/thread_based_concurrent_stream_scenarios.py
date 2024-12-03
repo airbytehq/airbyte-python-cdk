@@ -310,6 +310,7 @@ test_concurrent_cdk_single_stream = (
                     },
                     "name": "stream1",
                     "supported_sync_modes": ["full_refresh"],
+                    "is_resumable": False,
                 }
             ]
         }
@@ -349,6 +350,7 @@ test_concurrent_cdk_single_stream_with_primary_key = (
                     "name": "stream1",
                     "supported_sync_modes": ["full_refresh"],
                     "source_defined_primary_key": [["id"]],
+                    "is_resumable": False,
                 }
             ]
         }
@@ -427,6 +429,7 @@ test_concurrent_cdk_multiple_streams = (
                     },
                     "name": "stream1",
                     "supported_sync_modes": ["full_refresh"],
+                    "is_resumable": False,
                 },
                 {
                     "json_schema": {
@@ -438,6 +441,7 @@ test_concurrent_cdk_multiple_streams = (
                     },
                     "name": "stream2",
                     "supported_sync_modes": ["full_refresh"],
+                    "is_resumable": False,
                 },
             ]
         }
@@ -476,6 +480,7 @@ test_concurrent_cdk_partition_raises_exception = (
                     },
                     "name": "stream1",
                     "supported_sync_modes": ["full_refresh"],
+                    "is_resumable": False,
                 }
             ]
         }
@@ -516,6 +521,7 @@ test_concurrent_cdk_single_stream_multiple_partitions = (
                     },
                     "name": "stream1",
                     "supported_sync_modes": ["full_refresh"],
+                    "is_resumable": False,
                 }
             ]
         }
@@ -556,6 +562,7 @@ test_concurrent_cdk_single_stream_multiple_partitions_concurrency_level_two = (
                     },
                     "name": "stream1",
                     "supported_sync_modes": ["full_refresh"],
+                    "is_resumable": False,
                 }
             ]
         }
