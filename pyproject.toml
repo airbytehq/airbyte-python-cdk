@@ -140,7 +140,7 @@ format-fix = {sequence = ["_format-fix-ruff", "_format-fix-prettier"], help = "F
 
 # Linting/Typing check tasks
 _lint-ruff = {cmd = "poetry run ruff check .", help = "Lint with Ruff."}
-type-check = {cmd = "bin/run-mypy-on-modified-files.sh", help = "Type check modified files with mypy."}
+type-check = {cmd = "poetry run mypy", help = "Type check modified files with mypy."}
 lint = {sequence = ["_lint-ruff", "type-check"], help = "Lint all code. Includes type checking.", ignore_fail = "return_non_zero"}
 
 # Lockfile check task
