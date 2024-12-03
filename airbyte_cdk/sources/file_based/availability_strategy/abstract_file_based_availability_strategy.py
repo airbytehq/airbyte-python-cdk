@@ -2,6 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from __future__ import annotations
+
 import logging
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Optional, Tuple
