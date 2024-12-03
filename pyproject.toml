@@ -99,6 +99,7 @@ pytest-cov = "*"
 pytest-httpserver = "*"
 pytest-mock = "*"
 requests-mock = "*"
+types-requests = "^2.32.0.20241016"
 
 [tool.poetry.extras]
 file-based = ["avro", "fastavro", "pyarrow", "unstructured", "pdf2image", "pdfminer.six", "unstructured.pytesseract", "pytesseract", "markdown", "python-calamine", "python-snappy"]
