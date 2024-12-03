@@ -75,4 +75,4 @@ jobs:
       # Job-specific step(s):
 
       - name: Run mypy
-        run: poetry run mypy --config-file mypy.ini --install-types --non-interactive
+        run: poetry run mypy --config-file mypy.ini --non-interactive airbyte_cdk
