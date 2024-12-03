@@ -90,9 +90,6 @@ class Writer:
                     )
                 ].extend(record_chunks)
                 if record_id_to_delete is not None:
-                    if message.record is None:
-                        raise ValueError("Record messages cannot have null `record` property.")
-
                     self.ids_to_delete[
                         (  # type: ignore [index] # expected "tuple[str, str]", got "tuple[str | Any | None, str | Any]"
                             message.record.namespace,  # type: ignore [union-attr] # record not None
