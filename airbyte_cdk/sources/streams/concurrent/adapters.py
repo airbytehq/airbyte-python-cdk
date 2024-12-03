@@ -8,7 +8,7 @@ import logging
 from functools import lru_cache
 from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Tuple, Union
 
-from deprecated.classic import deprecated
+from typing_extensions import deprecated
 
 from airbyte_cdk.models import (
     AirbyteLogMessage,

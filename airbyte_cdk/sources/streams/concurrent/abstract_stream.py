@@ -5,7 +5,7 @@
 from abc import ABC, abstractmethod
 from typing import Any, Iterable, Mapping, Optional
 
-from deprecated.classic import deprecated
+from typing_extensions import deprecated
 
 from airbyte_cdk.models import AirbyteStream
 from airbyte_cdk.sources.source import ExperimentalClassWarning

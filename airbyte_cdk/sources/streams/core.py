@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from functools import cached_property, lru_cache
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, MutableMapping, Optional, Union
 
-from deprecated import deprecated
+from typing_extensions import deprecated
 
 import airbyte_cdk.sources.utils.casing as casing
 from airbyte_cdk.models import (
@@ -92,8 +92,8 @@ class CheckpointMixin(ABC):
 
 
 @deprecated(
-    version="0.87.0",
-    reason="Deprecated in favor of the CheckpointMixin which offers similar functionality",
+    "Deprecated as of CDK version 0.87.0. ",
+    "Deprecated in favor of the CheckpointMixin which offers similar functionality.",
 )
 class IncrementalMixin(CheckpointMixin, ABC):
     """Mixin to make stream incremental.
@@ -117,9 +117,8 @@ class StreamClassification:
 
 # Moved to class declaration since get_updated_state is called on every record for incremental syncs, and thus the @deprecated decorator as well.
 @deprecated(
-    version="0.1.49",
-    reason="Deprecated method get_updated_state, You should use explicit state property instead, see IncrementalMixin docs.",
-    action="ignore",
+    "Deprecated as of CDK version 0.1.49. ",
+    "Deprecated method get_updated_state, You should use explicit state property instead, see IncrementalMixin docs.",
 )
 class Stream(ABC):
     """

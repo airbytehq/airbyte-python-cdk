@@ -9,8 +9,8 @@ from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optio
 from urllib.parse import urljoin
 
 import requests
-from deprecated import deprecated
 from requests.auth import AuthBase
+from typing_extensions import deprecated
 
 from airbyte_cdk.models import AirbyteMessage, FailureType, SyncMode
 from airbyte_cdk.models import Type as MessageType
@@ -121,8 +121,8 @@ class HttpStream(Stream, CheckpointMixin, ABC):
 
     @property
     @deprecated(
-        version="3.0.0",
-        reason="You should set error_handler explicitly in HttpStream.get_error_handler() instead.",
+        "Deprecated as of CDK version 3.0.0. ",
+        "You should set error_handler explicitly in HttpStream.get_error_handler() instead.",
     )
     def raise_on_http_errors(self) -> bool:
         """
@@ -132,8 +132,8 @@ class HttpStream(Stream, CheckpointMixin, ABC):
 
     @property
     @deprecated(
-        version="3.0.0",
-        reason="You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead.",
+        "Deprecated as of CDK version 3.0.0. "
+        "You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead."
     )
     def max_retries(self) -> Union[int, None]:
         """
@@ -143,8 +143,8 @@ class HttpStream(Stream, CheckpointMixin, ABC):
 
     @property
     @deprecated(
-        version="3.0.0",
-        reason="You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead.",
+        "Deprecated as of CDK version 3.0.0. "
+        "You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead."
     )
     def max_time(self) -> Union[int, None]:
         """
@@ -154,8 +154,8 @@ class HttpStream(Stream, CheckpointMixin, ABC):
 
     @property
     @deprecated(
-        version="3.0.0",
-        reason="You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead.",
+        "Deprecated as of CDK version 3.0.0. "
+        "You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead."
     )
     def retry_factor(self) -> float:
         """
@@ -603,8 +603,8 @@ class HttpSubStream(HttpStream, ABC):
 
 
 @deprecated(
-    version="3.0.0",
-    reason="You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead.",
+    "Deprecated as of CDK version 3.0.0."
+    "You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead."
 )
 class HttpStreamAdapterBackoffStrategy(BackoffStrategy):
     def __init__(self, stream: HttpStream):
@@ -619,8 +619,8 @@ class HttpStreamAdapterBackoffStrategy(BackoffStrategy):
 
 
 @deprecated(
-    version="3.0.0",
-    reason="You should set error_handler explicitly in HttpStream.get_error_handler() instead.",
+    "Deprecated as of CDK version 3.0.0. "
+    "You should set error_handler explicitly in HttpStream.get_error_handler() instead."
 )
 class HttpStreamAdapterHttpStatusErrorHandler(HttpStatusErrorHandler):
     def __init__(self, stream: HttpStream, **kwargs):  # type: ignore # noqa

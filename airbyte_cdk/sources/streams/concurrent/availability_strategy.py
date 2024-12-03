@@ -6,7 +6,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Optional
 
-from deprecated.classic import deprecated
+from typing_extensions import deprecated
 
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 

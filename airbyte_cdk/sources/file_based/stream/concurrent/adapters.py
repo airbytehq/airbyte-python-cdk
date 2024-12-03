@@ -7,7 +7,7 @@ import logging
 from functools import cache, lru_cache
 from typing import TYPE_CHECKING, Any, Iterable, List, Mapping, MutableMapping, Optional, Union
 
-from deprecated.classic import deprecated
+from typing_extensions import deprecated
 
 from airbyte_cdk.models import (
     AirbyteLogMessage,
@@ -143,7 +143,7 @@ class FileBasedStreamFacade(AbstractStreamFacade[DefaultStream], AbstractFileBas
         return self._legacy_stream.supports_incremental
 
     @property
-    @deprecated(version="3.7.0")
+    @deprecated("Deprecated as of CDK version 3.7.0.")
     def availability_strategy(self) -> AbstractFileBasedAvailabilityStrategy:
         return self._legacy_stream.availability_strategy
 
