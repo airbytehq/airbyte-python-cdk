@@ -232,9 +232,7 @@ class ConcurrentCursor(Cursor):
         try:
             cursor_value = self._extract_cursor_value(record)
 
-            if record.associated_slice is not None and (
-                most_recent_cursor_value is None or most_recent_cursor_value < cursor_value
-            ):
+            if most_recent_cursor_value is None or most_recent_cursor_value < cursor_value:
                 self._most_recent_cursor_value_per_partition[record.associated_slice] = cursor_value
         except ValueError:
             self._log_for_record_without_cursor_value()
