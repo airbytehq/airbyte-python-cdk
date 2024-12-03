@@ -473,7 +473,7 @@ class ConcurrentCursor(Cursor):
         :return: True if the record's cursor value falls within the sync boundaries
         """
         try:
-            record_cursor_value: CursorValueType = self._extract_cursor_value(record)  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
+            record_cursor_value: CursorValueType = self._extract_cursor_value(record)
         except ValueError:
             self._log_for_record_without_cursor_value()
             return True

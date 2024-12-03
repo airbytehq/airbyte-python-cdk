@@ -116,7 +116,7 @@ def duration(datestring: str) -> Union[datetime.timedelta, isodate.Duration]:
     Usage:
     `"{{ now_utc() - duration('P1D') }}"`
     """
-    return parse_duration(datestring)  # type: ignore # mypy thinks this returns Any for some reason
+    return parse_duration(datestring)
 
 
 def format_datetime(

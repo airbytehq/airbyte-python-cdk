@@ -22,7 +22,7 @@ from requests import PreparedRequest, Response, Session
 from airbyte_cdk.connector import TConfig
 from airbyte_cdk.exception_handler import init_uncaught_exception_handler
 from airbyte_cdk.logger import init_logger
-from airbyte_cdk.models import (  # type: ignore [attr-defined]
+from airbyte_cdk.models import (
     AirbyteConnectionStatus,
     AirbyteMessage,
     AirbyteMessageSerializer,
@@ -281,7 +281,7 @@ class AirbyteEntrypoint(object):
 
     @staticmethod
     def airbyte_message_to_string(airbyte_message: AirbyteMessage) -> str:
-        return orjson.dumps(AirbyteMessageSerializer.dump(airbyte_message)).decode()  # type: ignore[no-any-return] # orjson.dumps(message).decode() always returns string
+        return orjson.dumps(AirbyteMessageSerializer.dump(airbyte_message)).decode()
 
     @classmethod
     def extract_state(cls, args: List[str]) -> Optional[Any]:

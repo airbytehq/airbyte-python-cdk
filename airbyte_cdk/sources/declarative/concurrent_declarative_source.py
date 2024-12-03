@@ -128,7 +128,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             initial_number_of_partitions_to_generate=initial_number_of_partitions_to_generate,
             logger=self.logger,
             slice_logger=self._slice_logger,
-            message_repository=self.message_repository,  # type: ignore  # message_repository is always instantiated with a value by factory
+            message_repository=self.message_repository,
         )
 
     def read(

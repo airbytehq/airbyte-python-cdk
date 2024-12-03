@@ -141,7 +141,7 @@ class EpochValueConcurrentStreamStateConverter(DateTimeStreamStateConverter):
             raise ValueError(
                 f"DateTime object was expected but got {type(dt_object)} from pendulum.parse({timestamp})"
             )
-        return dt_object  # type: ignore  # we are manually type checking because pendulum.parse may return different types
+        return dt_object
 
 
 class IsoMillisConcurrentStreamStateConverter(DateTimeStreamStateConverter):
@@ -178,7 +178,7 @@ class IsoMillisConcurrentStreamStateConverter(DateTimeStreamStateConverter):
             raise ValueError(
                 f"DateTime object was expected but got {type(dt_object)} from pendulum.parse({timestamp})"
             )
-        return dt_object  # type: ignore  # we are manually type checking because pendulum.parse may return different types
+        return dt_object
 
 
 class CustomFormatConcurrentStreamStateConverter(IsoMillisConcurrentStreamStateConverter):

@@ -71,7 +71,7 @@ class MessageGrouper:
 
         is_nested_key = isinstance(field[0], str)
         if is_nested_key:
-            return [field]  # type: ignore  # the type of field is expected to be List[str] here
+            return [field]
 
         raise ValueError(f"Unknown type for cursor field `{field}")
 
@@ -234,7 +234,7 @@ class MessageGrouper:
                 at_least_one_page_in_group = False
             elif message.type == MessageType.LOG and message.log.message.startswith(  # type: ignore[union-attr] # None doesn't have 'message'
                 SliceLogger.SLICE_LOG_PREFIX
-            ):  # type: ignore[union-attr] # AirbyteMessage with MessageType.LOG has log.message
+            ):
                 # parsing the first slice
                 current_slice_descriptor = self._parse_slice_description(message.log.message)  # type: ignore[union-attr] # AirbyteMessage with MessageType.LOG has log.message
             elif message.type == MessageType.LOG:
@@ -281,7 +281,7 @@ class MessageGrouper:
             elif (
                 message.type == MessageType.CONTROL
                 and message.control.type == OrchestratorType.CONNECTOR_CONFIG  # type: ignore[union-attr] # None doesn't have 'type'
-            ):  # type: ignore[union-attr] # AirbyteMessage with MessageType.CONTROL has control.type
+            ):
                 yield message.control
             elif message.type == MessageType.STATE:
                 latest_state_message = message.state  # type: ignore[assignment]
@@ -356,7 +356,7 @@ class MessageGrouper:
                 request=current_page_request,
                 response=current_page_response,
                 records=deepcopy(current_page_records),  # type: ignore [arg-type]
-            )  # type: ignore
+            )
         )
         current_page_records.clear()
 

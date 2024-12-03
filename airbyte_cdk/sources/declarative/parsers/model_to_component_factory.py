@@ -397,7 +397,7 @@ class ModelToComponentFactory:
         self._disable_retries = disable_retries
         self._disable_cache = disable_cache
         self._disable_resumable_full_refresh = disable_resumable_full_refresh
-        self._message_repository = message_repository or InMemoryMessageRepository(  # type: ignore
+        self._message_repository = message_repository or InMemoryMessageRepository(
             self._evaluate_log_level(emit_connector_builder_messages)
         )
 
@@ -645,7 +645,7 @@ class ModelToComponentFactory:
             declarative_stream.incremental_sync,  # type: ignore # was already checked. Migration can be applied only to incremental streams.
             config,
             declarative_stream.parameters,  # type: ignore # different type is expected here Mapping[str, Any], got Dict[str, Any]
-        )  # type: ignore # The retriever type was already checked
+        )
 
     def create_session_token_authenticator(
         self, model: SessionTokenAuthenticatorModel, config: Config, name: str, **kwargs: Any
@@ -675,7 +675,7 @@ class ModelToComponentFactory:
             return ModelToComponentFactory.create_bearer_authenticator(
                 BearerAuthenticatorModel(type="BearerAuthenticator", api_token=""),  # type: ignore # $parameters has a default value
                 config,
-                token_provider=token_provider,  # type: ignore # $parameters defaults to None
+                token_provider=token_provider,
             )
         else:
             return ModelToComponentFactory.create_api_key_authenticator(
@@ -822,7 +822,6 @@ class ModelToComponentFactory:
             input_datetime_formats=datetime_based_cursor_model.cursor_datetime_formats,
             is_sequential_state=True,
             cursor_granularity=cursor_granularity,
-            # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
         )
 
         start_date_runtime_value: Union[InterpolatedString, str, MinMaxDatetime]
@@ -896,7 +895,7 @@ class ModelToComponentFactory:
                 stream_name=stream_name,
                 stream_namespace=stream_namespace,
                 stream_state=stream_state,
-                message_repository=self._message_repository,  # type: ignore  # message_repository is always instantiated with a value by factory
+                message_repository=self._message_repository,
                 connector_state_manager=state_manager,
                 connector_state_converter=connector_state_converter,
                 cursor_field=cursor_field,
@@ -1709,7 +1708,7 @@ class ModelToComponentFactory:
             refresh_token=model.refresh_token,
             scopes=model.scopes,
             token_expiry_date=model.token_expiry_date,
-            token_expiry_date_format=model.token_expiry_date_format,  # type: ignore
+            token_expiry_date_format=model.token_expiry_date_format,
             token_expiry_is_time_of_expiration=bool(model.token_expiry_date_format),
             token_refresh_endpoint=model.token_refresh_endpoint,
             config=config,

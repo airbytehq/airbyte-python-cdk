@@ -639,15 +639,15 @@ class HttpStreamAdapterHttpStatusErrorHandler(HttpStatusErrorHandler):
                     return ErrorResolution(
                         response_action=ResponseAction.RATE_LIMITED,
                         failure_type=FailureType.transient_error,
-                        error_message=f"Response status code: {response_or_exception.status_code}. Retrying...",  # type: ignore[union-attr]
+                        error_message=f"Response status code: {response_or_exception.status_code}. Retrying...",
                     )
                 return ErrorResolution(
                     response_action=ResponseAction.RETRY,
                     failure_type=FailureType.transient_error,
-                    error_message=f"Response status code: {response_or_exception.status_code}. Retrying...",  # type: ignore[union-attr]
+                    error_message=f"Response status code: {response_or_exception.status_code}. Retrying...",
                 )
             else:
-                if response_or_exception.ok:  # type: ignore # noqa
+                if response_or_exception.ok:
                     return ErrorResolution(
                         response_action=ResponseAction.SUCCESS,
                         failure_type=None,
@@ -657,13 +657,13 @@ class HttpStreamAdapterHttpStatusErrorHandler(HttpStatusErrorHandler):
                     return ErrorResolution(
                         response_action=ResponseAction.FAIL,
                         failure_type=FailureType.transient_error,
-                        error_message=f"Response status code: {response_or_exception.status_code}. Unexpected error. Failed.",  # type: ignore[union-attr]
+                        error_message=f"Response status code: {response_or_exception.status_code}. Unexpected error. Failed.",
                     )
                 else:
                     return ErrorResolution(
                         response_action=ResponseAction.IGNORE,
                         failure_type=FailureType.transient_error,
-                        error_message=f"Response status code: {response_or_exception.status_code}. Ignoring...",  # type: ignore[union-attr]
+                        error_message=f"Response status code: {response_or_exception.status_code}. Ignoring...",
                     )
         else:
             self._logger.error(f"Received unexpected response type: {type(response_or_exception)}")

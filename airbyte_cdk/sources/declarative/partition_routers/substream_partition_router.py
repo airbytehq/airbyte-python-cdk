@@ -134,7 +134,7 @@ class SubstreamPartitionRouter(PartitionRouter):
                                     config=self.config
                                 ): value
                             }
-                        )  # type: ignore # field_name is always casted to an interpolated string
+                        )
         return params
 
     def stream_slices(self) -> Iterable[StreamSlice]:
@@ -164,7 +164,7 @@ class SubstreamPartitionRouter(PartitionRouter):
                     extra_fields = [
                         [field_path_part.eval(self.config) for field_path_part in field_path]  # type: ignore [union-attr]
                         for field_path in parent_stream_config.extra_fields
-                    ]  # type: ignore # extra_fields is always casted to an interpolated string
+                    ]
 
                 # read_stateless() assumes the parent is not concurrent. This is currently okay since the concurrent CDK does
                 # not support either substreams or RFR, but something that needs to be considered once we do

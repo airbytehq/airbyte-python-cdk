@@ -153,7 +153,7 @@ class HttpResponseFilter:
         """
         return self.error_message.eval(  # type: ignore [no-any-return, union-attr]
             self.config, response=self._safe_response_json(response), headers=response.headers
-        )  # type: ignore # error_message is always cast to an interpolated string
+        )
 
     def _response_matches_predicate(self, response: requests.Response) -> bool:
         return (
@@ -161,13 +161,13 @@ class HttpResponseFilter:
                 self.predicate.condition  # type: ignore [union-attr]
                 and self.predicate.eval(  # type: ignore [union-attr]
                     None,  # type: ignore [arg-type]
-                    response=self._safe_response_json(response),  # type: ignore [arg-type]
+                    response=self._safe_response_json(response),
                     headers=response.headers,
                 )
             )
             if self.predicate
             else False
-        )  # type: ignore # predicate is always cast to an interpolated string
+        )
 
     def _response_contains_error_message(self, response: requests.Response) -> bool:
         if not self.error_message_contains:

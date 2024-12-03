@@ -78,7 +78,7 @@ class AirbyteLogFormatter(logging.Formatter):
             log_message = AirbyteMessage(
                 type=Type.LOG, log=AirbyteLogMessage(level=airbyte_level, message=message)
             )
-            return orjson.dumps(AirbyteMessageSerializer.dump(log_message)).decode()  # type: ignore[no-any-return] # orjson.dumps(message).decode() always returns string
+            return orjson.dumps(AirbyteMessageSerializer.dump(log_message)).decode()
 
     @staticmethod
     def extract_extra_args_from_record(record: logging.LogRecord) -> Mapping[str, Any]:
