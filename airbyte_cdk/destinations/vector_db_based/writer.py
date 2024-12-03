@@ -85,6 +85,9 @@ class Writer:
                 record_chunks, record_id_to_delete = self.processor.process(message.record)
                 self.chunks[(message.record.namespace, message.record.stream)].extend(record_chunks)
                 if record_id_to_delete is not None:
+                    if message.record is None:
+                        raise ValueError("Record messages cannot have null `record` property.")
+
                     self.ids_to_delete[(message.record.namespace, message.record.stream)].append(
                         record_id_to_delete
                     )

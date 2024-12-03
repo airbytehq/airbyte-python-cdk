@@ -131,7 +131,7 @@ class ConnectorStateManager:
         else:
             streams = {
                 HashableStreamDescriptor(
-                    name=per_stream_state.stream.stream_descriptor.name,
+                    name=per_stream_state.stream.stream_descriptor.name,  # type: ignore[union-attr] # stream has stream_descriptor
                     namespace=per_stream_state.stream.stream_descriptor.namespace,  # type: ignore[union-attr] # stream has stream_descriptor
                 ): per_stream_state.stream.stream_state  # type: ignore[union-attr] # stream has stream_state
                 for per_stream_state in state

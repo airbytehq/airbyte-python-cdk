@@ -160,10 +160,14 @@ def create_declarative_source(args: list[str]) -> ConcurrentDeclarativeSource:
     connector builder.
     """
     try:
+        config: Mapping[str, Any] | None
+        catalog: ConfiguredAirbyteCatalog | None
+        state: list[AirbyteStateMessage]
         config, catalog, state = _parse_inputs_into_config_catalog_state(args)
-        if "__injected_declarative_manifest" not in config:
+        if config is None or "__injected_declarative_manifest" not in config:
             raise ValueError(
-                f"Invalid config: `__injected_declarative_manifest` should be provided at the root of the config but config only has keys {list(config.keys())}"
+                "Invalid config: `__injected_declarative_manifest` should be provided at the root "
+                f"of the config but config only has keys: {list(config.keys() if config else [])}"
             )
         return ConcurrentDeclarativeSource(
             config=config,

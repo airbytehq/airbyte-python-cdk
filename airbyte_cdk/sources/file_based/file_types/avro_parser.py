@@ -3,7 +3,7 @@
 #
 
 import logging
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, cast
 
 import fastavro
 
@@ -183,7 +183,7 @@ class AvroParser(FileTypeParser):
                 avro_reader = fastavro.reader(fp)
                 schema = avro_reader.writer_schema
                 schema_field_name_to_type = {
-                    field["name"]: field["type"] for field in schema["fields"]
+                    field["name"]: cast(dict, field["type"]) for field in schema["fields"]
                 }
                 for record in avro_reader:
                     line_no += 1

@@ -47,7 +47,7 @@ def get_secrets(
     result = []
     for path in secret_paths:
         try:
-            result.append(dpath.get(config, path))
+            result.append(dpath.get(config, path))  # type: ignore  # dpath expect MutableMapping but doesn't need it
         except KeyError:
             # Since we try to get paths to all known secrets in the spec, in the case of oneOfs, some secret fields may not be present
             # In that case, a KeyError is thrown. This is expected behavior.

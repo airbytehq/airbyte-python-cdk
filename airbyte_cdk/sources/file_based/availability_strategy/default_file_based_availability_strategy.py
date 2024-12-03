@@ -28,9 +28,12 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
     def __init__(self, stream_reader: AbstractFileBasedStreamReader):
         self.stream_reader = stream_reader
 
-    def check_availability(
-        self, stream: "AbstractFileBasedStream", logger: logging.Logger, _: Optional[Source]
-    ) -> Tuple[bool, Optional[str]]:  # type: ignore[override]
+    def check_availability(  # type: ignore[override]
+        self,
+        stream: AbstractFileBasedStream,
+        logger: logging.Logger,
+        _: Optional[Source],
+    ) -> Tuple[bool, Optional[str]]:
         """
         Perform a connection check for the stream (verify that we can list files from the stream).
 
@@ -44,7 +47,10 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
         return True, None
 
     def check_availability_and_parsability(
-        self, stream: "AbstractFileBasedStream", logger: logging.Logger, _: Optional[Source]
+        self,
+        stream: AbstractFileBasedStream,
+        logger: logging.Logger,
+        _: Optional[Source],
     ) -> Tuple[bool, Optional[str]]:
         """
         Perform a connection check for the stream.
@@ -82,7 +88,7 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
 
         return True, None
 
-    def _check_list_files(self, stream: "AbstractFileBasedStream") -> RemoteFile:
+    def _check_list_files(self, stream: AbstractFileBasedStream) -> RemoteFile:
         """
         Check that we can list files from the stream.
 
@@ -102,7 +108,10 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
         return file
 
     def _check_parse_record(
-        self, stream: "AbstractFileBasedStream", file: RemoteFile, logger: logging.Logger
+        self,
+        stream: AbstractFileBasedStream,
+        file: RemoteFile,
+        logger: logging.Logger,
     ) -> None:
         parser = stream.get_parser()
 
