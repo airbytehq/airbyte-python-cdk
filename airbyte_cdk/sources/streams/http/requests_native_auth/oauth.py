@@ -293,7 +293,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
                 emit_configuration_as_airbyte_control_message(self._connector_config)
         return self.access_token
 
-    def refresh_access_token(  # type: ignore[override]
+    def refresh_access_token(  # type: ignore[override]  # Signature doesn't match base class
         self,
     ) -> Tuple[str, str, str]:
         response_json = self._get_refresh_access_token_response()

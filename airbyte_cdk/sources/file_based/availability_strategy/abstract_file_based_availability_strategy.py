@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 class AbstractFileBasedAvailabilityStrategy(AvailabilityStrategy):
     @abstractmethod
-    def check_availability(  # type: ignore[override]
+    def check_availability(  # type: ignore[override]  # Signature doesn't match base class
         self,
         stream: Stream,
         logger: logging.Logger,

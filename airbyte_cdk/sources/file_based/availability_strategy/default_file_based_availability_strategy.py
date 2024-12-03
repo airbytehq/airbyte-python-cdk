@@ -30,7 +30,7 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
     def __init__(self, stream_reader: AbstractFileBasedStreamReader) -> None:
         self.stream_reader = stream_reader
 
-    def check_availability(  # type: ignore[override]
+    def check_availability(  # type: ignore[override]  # Signature doesn't match base class
         self,
         stream: AbstractFileBasedStream,
         logger: logging.Logger,
