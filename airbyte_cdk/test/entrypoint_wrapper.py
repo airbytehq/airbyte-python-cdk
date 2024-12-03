@@ -129,14 +129,19 @@ class EntrypointOutput:
         return [
             message
             for message in self._get_message_by_types([Type.TRACE])
-            if message.trace.type == trace_type
-        ]  # type: ignore[union-attr] # trace has `type`
+            if message.trace.type == trace_type  # type: ignore[union-attr] # trace has `type`
+        ]
 
     def is_in_logs(self, pattern: str) -> bool:
         """Check if any log message case-insensitive matches the pattern."""
         return any(
-            re.search(pattern, entry.log.message, flags=re.IGNORECASE) for entry in self.logs
-        )  # type: ignore[union-attr] # log has `message`
+            re.search(
+                pattern,
+                entry.log.message,  # type: ignore[union-attr] # log has `message`
+                flags=re.IGNORECASE,
+            )
+            for entry in self.logs
+        )
 
     def is_not_in_logs(self, pattern: str) -> bool:
         """Check if no log message matches the case-insensitive pattern."""

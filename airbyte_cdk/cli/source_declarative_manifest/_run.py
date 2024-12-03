@@ -152,7 +152,9 @@ def handle_remote_manifest_command(args: list[str]) -> None:
         )
 
 
-def create_declarative_source(args: list[str]) -> ConcurrentDeclarativeSource:
+def create_declarative_source(
+    args: list[str],
+) -> ConcurrentDeclarativeSource:  # type: ignore [type-arg]
     """Creates the source with the injected config.
 
     This essentially does what other low-code sources do at build time, but at runtime,

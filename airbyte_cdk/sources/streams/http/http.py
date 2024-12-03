@@ -594,7 +594,7 @@ class HttpSubStream(HttpStream, ABC):
             # Skip non-records (eg AirbyteLogMessage)
             if isinstance(parent_record, AirbyteMessage):
                 if parent_record.type == MessageType.RECORD:
-                    parent_record = parent_record.record.data
+                    parent_record = parent_record.record.data  # type: ignore [assignment, union-attr]  # Incorrect type for assignment
                 else:
                     continue
             elif isinstance(parent_record, Record):

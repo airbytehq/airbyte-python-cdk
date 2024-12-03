@@ -111,7 +111,7 @@ class MinMaxDatetime:
         if isinstance(interpolated_string_or_min_max_datetime, InterpolatedString) or isinstance(
             interpolated_string_or_min_max_datetime, str
         ):
-            return MinMaxDatetime(
+            return MinMaxDatetime(  # type: ignore [call-arg]
                 datetime=interpolated_string_or_min_max_datetime, parameters=parameters
             )
         else:

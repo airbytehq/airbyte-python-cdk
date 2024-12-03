@@ -217,7 +217,7 @@ class Stream(ABC):
                         # should be fixed on the stream implementation, but we should also protect against this in the CDK as well
                         stream_state_tracker = self.get_updated_state(
                             stream_state_tracker,
-                            record_data,
+                            record_data,  # type: ignore [arg-type]
                         )
                         self._observe_state(checkpoint_reader, stream_state_tracker)
                     record_counter += 1
@@ -277,7 +277,7 @@ class Stream(ABC):
             if state
             else {},  # read() expects MutableMapping instead of Mapping which is used more often
             state_manager=None,
-            internal_config=InternalConfig(),
+            internal_config=InternalConfig(),  # type: ignore [call-arg]
         )
 
     @abstractmethod
@@ -653,7 +653,7 @@ class Stream(ABC):
         # todo: This can be consolidated into one ConnectorStateManager.update_and_create_state_message() method, but I want
         #  to reduce changes right now and this would span concurrent as well
         state_manager.update_state_for_stream(self.name, self.namespace, stream_state)
-        return state_manager.create_state_message(self.name, self.namespace)
+        return state_manager.create_state_message(self.name, self.namespace)  # type: ignore [no-any-return]
 
     @property
     def configured_json_schema(self) -> Optional[Dict[str, Any]]:

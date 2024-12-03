@@ -248,17 +248,18 @@ class AirbyteEntrypoint(object):
             case Type.RECORD:
                 stream_message_count[
                     HashableStreamDescriptor(
-                        name=message.record.stream, namespace=message.record.namespace
+                        name=message.record.stream,  # type: ignore[union-attr] # record has `stream`
+                        namespace=message.record.namespace,  # type: ignore[union-attr] # record has `namespace`
                     )
-                ] += 1.0  # type: ignore[union-attr] # record has `stream` and `namespace`
+                ] += 1.0
             case Type.STATE:
                 stream_descriptor = message_utils.get_stream_descriptor(message)
 
                 # Set record count from the counter onto the state message
                 message.state.sourceStats = message.state.sourceStats or AirbyteStateStats()  # type: ignore[union-attr] # state has `sourceStats`
-                message.state.sourceStats.recordCount = stream_message_count.get(
+                message.state.sourceStats.recordCount = stream_message_count.get(  # type: ignore[union-attr] # state has `sourceStats`
                     stream_descriptor, 0.0
-                )  # type: ignore[union-attr] # state has `sourceStats`
+                )
 
                 # Reset the counter
                 stream_message_count[stream_descriptor] = 0.0

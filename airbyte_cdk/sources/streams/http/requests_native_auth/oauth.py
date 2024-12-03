@@ -52,7 +52,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         self._refresh_request_body = refresh_request_body
         self._grant_type = grant_type
 
-        self._token_expiry_date = token_expiry_date or pendulum.now().subtract(days=1)
+        self._token_expiry_date = token_expiry_date or pendulum.now().subtract(days=1)  # type: ignore [no-untyped-call]
         self._token_expiry_date_format = token_expiry_date_format
         self._token_expiry_is_time_of_expiration = token_expiry_is_time_of_expiration
         self._access_token = None
@@ -75,14 +75,14 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
     def get_access_token_name(self) -> str:
         return self._access_token_name
 
-    def get_scopes(self) -> [str]:
-        return self._scopes
+    def get_scopes(self) -> list[str]:
+        return self._scopes  # type: ignore [return-value]
 
     def get_expires_in_name(self) -> str:
         return self._expires_in_name
 
     def get_refresh_request_body(self) -> Mapping[str, Any]:
-        return self._refresh_request_body
+        return self._refresh_request_body  # type: ignore [return-value]
 
     def get_grant_type(self) -> str:
         return self._grant_type
@@ -103,11 +103,11 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
 
     @property
     def access_token(self) -> str:
-        return self._access_token
+        return self._access_token  # type: ignore [return-value]
 
     @access_token.setter
     def access_token(self, value: str) -> None:
-        self._access_token = value
+        self._access_token = value  # type: ignore [assignment]  # Incorrect type for assignment
 
 
 class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
@@ -124,11 +124,11 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         self,
         connector_config: Mapping[str, Any],
         token_refresh_endpoint: str,
-        scopes: List[str] = None,
+        scopes: List[str] | None = None,
         access_token_name: str = "access_token",
         expires_in_name: str = "expires_in",
         refresh_token_name: str = "refresh_token",
-        refresh_request_body: Mapping[str, Any] = None,
+        refresh_request_body: Mapping[str, Any] | None = None,
         grant_type: str = "refresh_token",
         client_id: Optional[str] = None,
         client_secret: Optional[str] = None,
@@ -162,14 +162,17 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             message_repository (MessageRepository): the message repository used to emit logs on HTTP requests and control message on config update
         """
         self._client_id = (
-            client_id
+            client_id  # type: ignore [assignment]  # Incorrect type for assignment
             if client_id is not None
             else dpath.get(connector_config, ("credentials", "client_id"))  # type: ignore [arg-type]
         )
         self._client_secret = (
-            client_secret
+            client_secret  # type: ignore [assignment]  # Incorrect type for assignment
             if client_secret is not None
-            else dpath.get(connector_config, ("credentials", "client_secret"))
+            else dpath.get(
+                connector_config,  # type: ignore [arg-type]
+                ("credentials", "client_secret"),
+            )
         )
         self._access_token_config_path = access_token_config_path
         self._refresh_token_config_path = refresh_token_config_path
@@ -207,8 +210,8 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
 
     @property
     def access_token(self) -> str:
-        return dpath.get(
-            self._connector_config,
+        return dpath.get(  # type: ignore [return-value]
+            self._connector_config,  # type: ignore [arg-type]
             self._access_token_config_path,
             default="",
         )
@@ -216,39 +219,39 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
     @access_token.setter
     def access_token(self, new_access_token: str) -> None:
         dpath.new(
-            self._connector_config,
+            self._connector_config,  # type: ignore [arg-type]
             self._access_token_config_path,
             new_access_token,
         )
 
     def get_refresh_token(self) -> str:
-        return dpath.get(
-            self._connector_config,
+        return dpath.get(  # type: ignore [return-value]
+            self._connector_config,  # type: ignore [arg-type]
             self._refresh_token_config_path,
             default="",
         )
 
     def set_refresh_token(self, new_refresh_token: str) -> None:
         dpath.new(
-            self._connector_config,
+            self._connector_config,  # type: ignore [arg-type]
             self._refresh_token_config_path,
             new_refresh_token,
         )
 
     def get_token_expiry_date(self) -> pendulum.DateTime:
         expiry_date = dpath.get(
-            self._connector_config,
+            self._connector_config,  # type: ignore [arg-type]
             self._token_expiry_date_config_path,
             default="",
         )
-        return pendulum.now().subtract(days=1) if expiry_date == "" else pendulum.parse(expiry_date)
+        return pendulum.now().subtract(days=1) if expiry_date == "" else pendulum.parse(expiry_date)  # type: ignore [arg-type, return-value, no-untyped-call]
 
     def set_token_expiry_date(  # type: ignore[override]
         self,
         new_token_expiry_date: pendulum.DateTime,
     ) -> None:
         dpath.new(
-            self._connector_config,
+            self._connector_config,  # type: ignore [arg-type]
             self._token_expiry_date_config_path,
             str(new_token_expiry_date),
         )
@@ -259,7 +262,8 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
 
     @staticmethod
     def get_new_token_expiry_date(
-        access_token_expires_in: str, token_expiry_date_format: str = None
+        access_token_expires_in: str,
+        token_expiry_date_format: str | None = None,
     ) -> pendulum.DateTime:
         if token_expiry_date_format:
             return pendulum.from_format(access_token_expires_in, token_expiry_date_format)
@@ -287,10 +291,10 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             #  message directly in the console, this is needed
             if not isinstance(self._message_repository, NoopMessageRepository):
                 self._message_repository.emit_message(
-                    create_connector_config_control_message(self._connector_config)
+                    create_connector_config_control_message(self._connector_config)  # type: ignore [arg-type]
                 )
             else:
-                emit_configuration_as_airbyte_control_message(self._connector_config)
+                emit_configuration_as_airbyte_control_message(self._connector_config)  # type: ignore [arg-type]
         return self.access_token
 
     def refresh_access_token(  # type: ignore[override]  # Signature doesn't match base class

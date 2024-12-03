@@ -232,7 +232,7 @@ class MessageGrouper:
                 current_slice_descriptor = self._parse_slice_description(message.log.message)  # type: ignore[union-attr] # AirbyteMessage with MessageType.LOG has log.message
                 current_slice_pages = []
                 at_least_one_page_in_group = False
-            elif message.type == MessageType.LOG and message.log.message.startswith(
+            elif message.type == MessageType.LOG and message.log.message.startswith(  # type: ignore[union-attr] # None doesn't have 'message'
                 SliceLogger.SLICE_LOG_PREFIX
             ):  # type: ignore[union-attr] # AirbyteMessage with MessageType.LOG has log.message
                 # parsing the first slice
@@ -280,7 +280,7 @@ class MessageGrouper:
                 datetime_format_inferrer.accumulate(message.record)
             elif (
                 message.type == MessageType.CONTROL
-                and message.control.type == OrchestratorType.CONNECTOR_CONFIG
+                and message.control.type == OrchestratorType.CONNECTOR_CONFIG  # type: ignore[union-attr] # None doesn't have 'type'
             ):  # type: ignore[union-attr] # AirbyteMessage with MessageType.CONTROL has control.type
                 yield message.control
             elif message.type == MessageType.STATE:
@@ -310,8 +310,8 @@ class MessageGrouper:
             and message.type == MessageType.LOG
             and (
                 MessageGrouper._is_page_http_request(json_message)
-                or message.log.message.startswith("slice:")
-            )  # type: ignore[union-attr] # AirbyteMessage with MessageType.LOG has log.message
+                or message.log.message.startswith("slice:")  # type: ignore[union-attr] # AirbyteMessage with MessageType.LOG has log.message
+            )
         )
 
     @staticmethod
