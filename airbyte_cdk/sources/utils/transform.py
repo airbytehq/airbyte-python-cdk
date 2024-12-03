@@ -145,7 +145,7 @@ class TypeTransformer:
         self,
         schema_key: str,
         original_validator: Callable,  # type: ignore[type-arg]
-    ) -> Generator[Any, Any, None]:
+    ) -> Callable[[Any, Any, Any, dict[str, Any]], Generator[Any, Any, None]]:
         """
         Traverse through object fields using native jsonschema validator and apply normalization function.
         :param schema_key related json schema key that currently being validated/normalized.

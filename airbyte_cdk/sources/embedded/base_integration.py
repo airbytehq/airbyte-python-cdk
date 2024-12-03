@@ -52,8 +52,9 @@ class BaseEmbeddedIntegration(ABC, Generic[TConfig, TOutput]):
         for message in self.source.read(self.config, configured_catalog, state):
             if message.type == Type.RECORD:
                 output = self._handle_record(
-                    message.record, get_defined_id(stream, message.record.data)
-                )  # type: ignore[union-attr] # record has `data`
+                    message.record,
+                    get_defined_id(stream, message.record.data),  # type: ignore[union-attr, arg-type]
+                )
                 if output:
                     yield output
             elif message.type is Type.STATE and message.state:

@@ -300,7 +300,7 @@ class StreamPartition(Partition):
                     yield Record(
                         data=data_to_return,
                         stream_name=self.stream_name(),
-                        associated_slice=self._slice,
+                        associated_slice=self._slice,  # type: ignore [arg-type]
                     )
                 else:
                     self._message_repository.emit_message(record_data)

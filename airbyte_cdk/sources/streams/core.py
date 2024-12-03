@@ -216,7 +216,8 @@ class Stream(ABC):
                         # Some connectors have streams that implement get_updated_state(), but do not define a cursor_field. This
                         # should be fixed on the stream implementation, but we should also protect against this in the CDK as well
                         stream_state_tracker = self.get_updated_state(
-                            stream_state_tracker, record_data
+                            stream_state_tracker,
+                            record_data,
                         )
                         self._observe_state(checkpoint_reader, stream_state_tracker)
                     record_counter += 1

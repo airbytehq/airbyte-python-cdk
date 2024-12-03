@@ -274,7 +274,7 @@ class MessageGrouper:
                 if message.trace.type == TraceType.ERROR:  # type: ignore[union-attr] # AirbyteMessage with MessageType.TRACE has trace.type
                     yield message.trace
             elif message.type == MessageType.RECORD:
-                current_page_records.append(message.record.data)  # type: ignore[union-attr] # AirbyteMessage with MessageType.RECORD has record.data
+                current_page_records.append(message.record.data)  # type: ignore[arg-type, union-attr] # AirbyteMessage with MessageType.RECORD has record.data
                 records_count += 1
                 schema_inferrer.accumulate(message.record)
                 datetime_format_inferrer.accumulate(message.record)
@@ -355,7 +355,7 @@ class MessageGrouper:
             StreamReadPages(
                 request=current_page_request,
                 response=current_page_response,
-                records=deepcopy(current_page_records),
+                records=deepcopy(current_page_records),  # type: ignore [arg-type]
             )  # type: ignore
         )
         current_page_records.clear()

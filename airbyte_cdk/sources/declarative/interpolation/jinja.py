@@ -120,7 +120,7 @@ class JinjaInterpolation(Interpolation):
     def _eval(self, s: Optional[str], context: Mapping[str, Any]) -> Optional[str]:
         try:
             undeclared = self._find_undeclared_variables(s)
-            undeclared_not_in_context = {var for var in undeclared if var not in context}
+            undeclared_not_in_context = {var for var in undeclared if var not in context}  # type: ignore [attr-defined]  # `Template` class not iterable
             if undeclared_not_in_context:
                 raise ValueError(
                     f"Jinja macro has undeclared variables: {undeclared_not_in_context}. Context: {context}"
@@ -137,11 +137,11 @@ class JinjaInterpolation(Interpolation):
         Find undeclared variables and cache them
         """
         ast = self._environment.parse(s)  # type: ignore # parse is able to handle None
-        return meta.find_undeclared_variables(ast)
+        return meta.find_undeclared_variables(ast)  # type: ignore [return-value]  # Expected `Template` but got `set[str]`
 
     @cache
     def _compile(self, s: Optional[str]) -> Template:
         """
         We must cache the Jinja Template ourselves because we're using `from_string` instead of a template loader
         """
-        return self._environment.from_string(s)
+        return self._environment.from_string(s)  # type: ignore [arg-type]  # Expected `str | Template` but passed `str | None`

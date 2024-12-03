@@ -164,7 +164,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         self._client_id = (
             client_id
             if client_id is not None
-            else dpath.get(connector_config, ("credentials", "client_id"))
+            else dpath.get(connector_config, ("credentials", "client_id")),  # type: ignore [arg-type]
         )
         self._client_secret = (
             client_secret

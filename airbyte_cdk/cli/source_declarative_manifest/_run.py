@@ -72,7 +72,7 @@ class SourceLocalYaml(YamlDeclarativeSource):
         super().__init__(
             catalog=catalog,
             config=config,
-            state=state,
+            state=state,  # type: ignore [arg-type]
             path_to_yaml="manifest.yaml",
         )
 

@@ -70,7 +70,10 @@ class ExcelParser(FileTypeParser):
             for column, df_type in df.dtypes.items():
                 # Choose the broadest data type if the column's data type differs in dataframes
                 prev_frame_column_type = fields.get(column)
-                fields[column] = self.dtype_to_json_type(prev_frame_column_type, df_type)
+                fields[column] = self.dtype_to_json_type(  # type: ignore [index]
+                    prev_frame_column_type,
+                    df_type,
+                )
 
         schema = {
             field: (
@@ -187,4 +190,4 @@ class ExcelParser(FileTypeParser):
         Returns:
             pd.DataFrame: Parsed data from the Excel file.
         """
-        return pd.ExcelFile(fp, engine="calamine").parse()
+        return pd.ExcelFile(fp, engine="calamine").parse()  # type: ignore [arg-type]
