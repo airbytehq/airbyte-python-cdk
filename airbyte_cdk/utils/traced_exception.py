@@ -131,8 +131,8 @@ class AirbyteTracedException(Exception):
         """
         error_message = self.as_airbyte_message(stream_descriptor=stream_descriptor)
         if error_message.trace.error.message:  # type: ignore[union-attr] # AirbyteMessage with MessageType.TRACE has AirbyteTraceMessage
-            error_message.trace.error.message = filter_secrets(
-                error_message.trace.error.message,
+            error_message.trace.error.message = filter_secrets(  # type: ignore[union-attr]
+                error_message.trace.error.message,  # type: ignore[union-attr]
             )  # type: ignore[union-attr] # AirbyteMessage with MessageType.TRACE has AirbyteTraceMessage
         if error_message.trace.error.internal_message:  # type: ignore[union-attr] # AirbyteMessage with MessageType.TRACE has AirbyteTraceMessage
             error_message.trace.error.internal_message = filter_secrets(  # type: ignore[union-attr] # AirbyteMessage with MessageType.TRACE has AirbyteTraceMessage
