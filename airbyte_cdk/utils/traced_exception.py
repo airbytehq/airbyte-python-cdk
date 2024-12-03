@@ -130,9 +130,6 @@ class AirbyteTracedException(Exception):
           stream_descriptors are defined, the one from `as_sanitized_airbyte_message` will be discarded.
         """
         error_message = self.as_airbyte_message(stream_descriptor=stream_descriptor)
-        if error_message.trace is None or error_message.trace.error is None:
-            raise ValueError("Trace `error` property should not be None.")
-
         if error_message.trace.error.message:  # type: ignore[union-attr] # AirbyteMessage with MessageType.TRACE has AirbyteTraceMessage
             error_message.trace.error.message = filter_secrets(
                 error_message.trace.error.message,
