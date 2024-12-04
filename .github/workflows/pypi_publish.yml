@@ -86,6 +86,10 @@ jobs:
           fetch-depth: 0
 
       - uses: hynek/build-and-inspect-python-package@v2
+        env:
+          # Pass in the evaluated version from the previous step
+          # More info: https://github.com/mtkennerly/poetry-dynamic-versioning#user-content-environment-variables
+          POETRY_DYNAMIC_VERSIONING_BYPASS: ${{ env.VERSION || '0.0.0dev0'}}
 
       - uses: actions/upload-artifact@v4
         with:
