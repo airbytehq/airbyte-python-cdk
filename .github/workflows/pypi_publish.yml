@@ -243,6 +243,9 @@ jobs:
     # Create a PR against the Builder, to update the CDK version that it uses.
     # In the future, Builder may use the SDM docker image instead of the Python CDK package.
     name: Bump Connector Builder CDK version
+    environment:
+      name: Connector Builder
+      url: https://github.com/airbytehq/airbyte-platform-internal/pulls?q=is%3Apr+automatic-cdk-release+
     needs:
       - build
       - publish_cdk
