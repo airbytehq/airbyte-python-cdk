@@ -234,7 +234,7 @@ jobs:
     needs:
       - build
       - publish_cdk
-    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && github.event.inputs.update_connector_builder == 'true')
+    if: (github.event_name == 'push' && ${{ needs.build.outputs.IS_PRERELEASE == 'false' }} && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && github.event.inputs.update_connector_builder == 'true')
     env:
       VERSION: ${{ needs.build.outputs.VERSION }}
       IS_PRERELEASE: ${{ needs.build.outputs.IS_PRERELEASE }}
