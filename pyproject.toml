@@ -151,7 +151,7 @@ lint = {sequence = ["_lint-ruff", "type-check"], help = "Lint all code. Includes
 check-lockfile = {cmd = "poetry check", help = "Check the poetry lock file."}
 
 # Linting/Typing fix tasks
-lint-fix = { cmd = "poetry run ruff check --fix ." }
+lint-fix = { cmd = "poetry run ruff check --fix .", help = "Auto-fix any lint issues that Ruff can automatically resolve (excluding 'unsafe' fixes)." }
 lint-fix-unsafe = { cmd = "poetry run ruff check --fix --unsafe-fixes .", help = "Lint-fix modified files, including 'unsafe' fixes. It is recommended to first commit any pending changes and then always manually review any unsafe changes applied." }
 
 # Combined Check and Fix tasks
@@ -176,8 +176,8 @@ check-ci = {sequence = ["check-lockfile", "build", "lint", "unit-test-with-cov"]
 pre-push = {sequence = ["build", "check-local"], help = "Run all build and check tasks."}
 
 # API Docs with PDoc
-docs-generate = {env = {PDOC_ALLOW_EXEC = "1"}, cmd = "python -m docs.generate run"}
-docs-preview = {shell = "poe docs-generate && open docs/generated/index.html"}
+docs-generate = {env = {PDOC_ALLOW_EXEC = "1"}, cmd = "python -m docs.generate run", help="Generate API documentation with PDoc."}
+docs-preview = {shell = "poe docs-generate && open docs/generated/index.html", help="Generate API documentation with PDoc and then open the docs in the default web browser."}
 
 [tool.check-wheel-contents]
 # Quality control for Python wheel generation. Docs here:
