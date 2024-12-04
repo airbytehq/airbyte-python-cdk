@@ -112,7 +112,7 @@ jobs:
       contents: write
     environment:
       name: PyPi
-      url: https://pypi.org/p/airbyte
+      url: https://pypi.org/p/airbyte-cdk/
     if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && (github.event.inputs.publish_to_pypi == 'true' || github.event.inputs.update_connector_builder == 'true'))
     env:
       VERSION: ${{ needs.build.outputs.VERSION }}
