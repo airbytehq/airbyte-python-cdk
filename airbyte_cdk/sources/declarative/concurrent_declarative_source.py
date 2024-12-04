@@ -200,7 +200,11 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             # Some low-code sources use a combination of DeclarativeStream and regular Python streams. We can't inspect
             # these legacy Python streams the way we do low-code streams to determine if they are concurrent compatible,
             # so we need to treat them as synchronous
-            if isinstance(declarative_stream, DeclarativeStream):
+            if (
+                isinstance(declarative_stream, DeclarativeStream)
+                and name_to_stream_mapping[declarative_stream.name].get("retriever")["type"]
+                == "SimpleRetriever"
+            ):
                 incremental_sync_component_definition = name_to_stream_mapping[
                     declarative_stream.name
                 ].get("incremental_sync")
