@@ -431,10 +431,12 @@ class Stream(ABC):
         """
         return None
 
-    @deprecated(
-        "Deprecated method `get_updated_state` as of CDK version 0.1.49. "
-        "Please use explicit state property instead, see `IncrementalMixin` docs."
-    )
+    # Commented-out to avoid any runtime penalty, since this is used in a hot per-record codepath.
+    # To be evaluated for re-introduction here: https://github.com/airbytehq/airbyte-python-cdk/issues/116
+    # @deprecated(
+    #     "Deprecated method `get_updated_state` as of CDK version 0.1.49. "
+    #     "Please use explicit state property instead, see `IncrementalMixin` docs."
+    # )
     def get_updated_state(
         self, current_stream_state: MutableMapping[str, Any], latest_record: Mapping[str, Any]
     ) -> MutableMapping[str, Any]:
