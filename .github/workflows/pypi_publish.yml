@@ -1,4 +1,5 @@
 # This workflow builds the python package.
+
 # When from from a release tags or a workflow dispatch, it also publishes to PyPI and DockerHub along
 # with bumping the Connector Builder pinned version.
 # Note: We may want to rename this file at some point. However, if we rename the workflow file name,
@@ -276,7 +277,6 @@ jobs:
       - name: Post success to Slack channel dev-connectors-extensibility
         uses: slackapi/slack-github-action@v1.23.0
         # TODO: Remove the 1 == 0 condition when we're ready to post to Slack
-        if: 1 == 0
         continue-on-error: true
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN_AIRBYTE_TEAM }}
@@ -313,7 +313,7 @@ jobs:
             }
       - name: Post failure to Slack channel dev-connectors-extensibility
         # TODO: Remove the 1 == 0 condition when we're ready to post to Slack
-        if: ${{ failure() }} && 1 == 0
+        if: failure()
         uses: slackapi/slack-github-action@v1.23.0
         continue-on-error: true
         env:
