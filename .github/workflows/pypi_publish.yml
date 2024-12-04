@@ -9,6 +9,8 @@ name: Packaging and Publishing
 
 on:
   push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       version:
