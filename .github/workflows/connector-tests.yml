@@ -72,8 +72,9 @@ jobs:
             cdk_extra: n/a
           - connector: source-shopify
             cdk_extra: n/a
-          - connector: source-chargebee
-            cdk_extra: n/a
+          # Chargebee is being flaky:
+          # - connector: source-chargebee
+          #   cdk_extra: n/a
           # These two are behind in CDK updates and can't be used as tests until they are updated:
           # - connector: source-s3
           #   cdk_extra: file-based
