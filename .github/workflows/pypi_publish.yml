@@ -279,7 +279,6 @@ jobs:
           delete-branch: true
       - name: Post success to Slack channel dev-connectors-extensibility
         uses: slackapi/slack-github-action@v1.23.0
-        # TODO: Remove the 1 == 0 condition when we're ready to post to Slack
         continue-on-error: true
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN_AIRBYTE_TEAM }}
@@ -315,7 +314,6 @@ jobs:
                 ]
             }
       - name: Post failure to Slack channel dev-connectors-extensibility
-        # TODO: Remove the 1 == 0 condition when we're ready to post to Slack
         if: failure()
         uses: slackapi/slack-github-action@v1.23.0
         continue-on-error: true
