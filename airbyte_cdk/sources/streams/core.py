@@ -440,7 +440,9 @@ class Stream(ABC):
     def get_updated_state(
         self, current_stream_state: MutableMapping[str, Any], latest_record: Mapping[str, Any]
     ) -> MutableMapping[str, Any]:
-        """Override to extract state from the latest record. Needed to implement incremental sync.
+        """DEPRECATED. Please use explicit state property instead, see `IncrementalMixin` docs.
+
+        Override to extract state from the latest record. Needed to implement incremental sync.
 
         Inspects the latest record extracted from the data source and the current state object and return an updated state object.
 
