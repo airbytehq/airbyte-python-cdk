@@ -76,7 +76,7 @@ jobs:
             cdk_extra: n/a
           - connector: source-s3
             cdk_extra: file-based
-          - connector: destination-pinecone
+          - connector: destination-pgvector
             cdk_extra: vector-db-based
           - connector: destination-motherduck
             cdk_extra: sql
