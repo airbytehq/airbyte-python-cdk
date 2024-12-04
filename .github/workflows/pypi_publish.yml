@@ -292,7 +292,7 @@ jobs:
                         "type": "section",
                         "text": {
                             "type": "mrkdwn",
-                            "text": "A new version of Python CDK has been released with <https://github.com/airbytehq/airbyte/blob/master/airbyte-cdk/python/CHANGELOG.md|changelog>: ${{ github.event.inputs.changelog-message }}\n\n"
+                            "text": "Python CDK `v${{ env.VERSION }}` has been <https://github.com/airbytehq/airbyte-python-cdk/releases|released>\n\n"
                         }
                     },
                     {
@@ -330,7 +330,7 @@ jobs:
                         "type": "section",
                         "text": {
                             "type": "mrkdwn",
-                            "text": "A new version of Python CDK has been released with <https://github.com/airbytehq/airbyte/blob/master/airbyte-cdk/python/CHANGELOG.md|changelog>: ${{ github.event.inputs.changelog-message }}\n\n"
+                            "text": "Python CDK `v${{ env.VERSION }}` has been <https://github.com/airbytehq/airbyte-python-cdk/releases|released>\n\n"
                         }
                     },
                     {
