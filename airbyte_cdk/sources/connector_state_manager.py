@@ -4,7 +4,7 @@
 
 import copy
 from dataclasses import dataclass
-from typing import Any, List, Mapping, MutableMapping, Optional, Tuple, Union
+from typing import Any, List, Mapping, MutableMapping, Optional, Tuple, Union, cast
 
 from airbyte_cdk.models import (
     AirbyteMessage,
@@ -15,6 +15,7 @@ from airbyte_cdk.models import (
     StreamDescriptor,
 )
 from airbyte_cdk.models import Type as MessageType
+from airbyte_cdk.models.airbyte_protocol import AirbyteGlobalState, AirbyteStateBlob
 
 
 @dataclass(frozen=True)
@@ -118,8 +119,12 @@ class ConnectorStateManager:
         is_global = cls._is_global_state(state)
 
         if is_global:
-            global_state = state[0].global_  # type: ignore # We verified state is a list in _is_global_state
-            shared_state = copy.deepcopy(global_state.shared_state, {})  # type: ignore[union-attr] # global_state has shared_state
+            # We already validate that this is a global state message, not None:
+            global_state = cast(AirbyteGlobalState, state[0].global_)
+            # global_state has shared_state, also not None:
+            shared_state: AirbyteStateBlob = cast(
+                AirbyteStateBlob, copy.deepcopy(global_state.shared_state, {})
+            )
             streams = {
                 HashableStreamDescriptor(
                     name=per_stream_state.stream_descriptor.name,
@@ -131,7 +136,7 @@ class ConnectorStateManager:
         else:
             streams = {
                 HashableStreamDescriptor(
-                    name=per_stream_state.stream.stream_descriptor.name,
+                    name=per_stream_state.stream.stream_descriptor.name,  # type: ignore[union-attr] # stream has stream_descriptor
                     namespace=per_stream_state.stream.stream_descriptor.namespace,  # type: ignore[union-attr] # stream has stream_descriptor
                 ): per_stream_state.stream.stream_state  # type: ignore[union-attr] # stream has stream_state
                 for per_stream_state in state

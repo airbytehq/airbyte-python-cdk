@@ -23,7 +23,7 @@ from io import StringIO
 from pathlib import Path
 from typing import Any, List, Mapping, Optional, Union
 
-from orjson import orjson
+import orjson
 from pydantic import ValidationError as V2ValidationError
 from serpyco_rs import SchemaValidationError
 
@@ -63,7 +63,7 @@ class EntrypointOutput:
     @staticmethod
     def _parse_message(message: str) -> AirbyteMessage:
         try:
-            return AirbyteMessageSerializer.load(orjson.loads(message))  # type: ignore[no-any-return] # Serializer.load() always returns AirbyteMessage
+            return AirbyteMessageSerializer.load(orjson.loads(message))
         except (orjson.JSONDecodeError, SchemaValidationError):
             # The platform assumes that logs that are not of AirbyteMessage format are log messages
             return AirbyteMessage(
@@ -129,14 +129,19 @@ class EntrypointOutput:
         return [
             message
             for message in self._get_message_by_types([Type.TRACE])
-            if message.trace.type == trace_type
-        ]  # type: ignore[union-attr] # trace has `type`
+            if message.trace.type == trace_type  # type: ignore[union-attr] # trace has `type`
+        ]
 
     def is_in_logs(self, pattern: str) -> bool:
         """Check if any log message case-insensitive matches the pattern."""
         return any(
-            re.search(pattern, entry.log.message, flags=re.IGNORECASE) for entry in self.logs
-        )  # type: ignore[union-attr] # log has `message`
+            re.search(
+                pattern,
+                entry.log.message,  # type: ignore[union-attr] # log has `message`
+                flags=re.IGNORECASE,
+            )
+            for entry in self.logs
+        )
 
     def is_not_in_logs(self, pattern: str) -> bool:
         """Check if no log message matches the case-insensitive pattern."""

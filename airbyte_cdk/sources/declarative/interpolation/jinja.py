@@ -27,7 +27,7 @@ class StreamPartitionAccessEnvironment(SandboxedEnvironment):
     def is_safe_attribute(self, obj: Any, attr: str, value: Any) -> bool:
         if attr in ["_partition"]:
             return True
-        return super().is_safe_attribute(obj, attr, value)  # type: ignore  # for some reason, mypy says 'Returning Any from function declared to return "bool"'
+        return super().is_safe_attribute(obj, attr, value)
 
 
 class JinjaInterpolation(Interpolation):
@@ -132,7 +132,7 @@ class JinjaInterpolation(Interpolation):
             return s
 
     @cache
-    def _find_undeclared_variables(self, s: Optional[str]) -> Template:
+    def _find_undeclared_variables(self, s: Optional[str]) -> set[str]:
         """
         Find undeclared variables and cache them
         """
@@ -144,4 +144,4 @@ class JinjaInterpolation(Interpolation):
         """
         We must cache the Jinja Template ourselves because we're using `from_string` instead of a template loader
         """
-        return self._environment.from_string(s)
+        return self._environment.from_string(s)  # type: ignore [arg-type]  # Expected `str | Template` but passed `str | None`

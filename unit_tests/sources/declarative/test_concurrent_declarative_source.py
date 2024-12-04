@@ -10,7 +10,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 import freezegun
 import isodate
 import pendulum
-from deprecated.classic import deprecated
+from typing_extensions import deprecated
 
 from airbyte_cdk.models import (
     AirbyteMessage,
@@ -276,6 +276,69 @@ _MANIFEST = {
                 },
             },
         },
+        "async_job_stream": {
+            "$ref": "#/definitions/base_stream",
+            "$parameters": {
+                "name": "async_job_stream",
+                "primary_key": "id",
+                "url_base": "https://persona.metaverse.com",
+            },
+            "retriever": {
+                "type": "AsyncRetriever",
+                "status_mapping": {
+                    "failed": ["failed"],
+                    "running": ["pending"],
+                    "timeout": ["timeout"],
+                    "completed": ["ready"],
+                },
+                "urls_extractor": {"type": "DpathExtractor", "field_path": ["urls"]},
+                "record_selector": {
+                    "type": "RecordSelector",
+                    "extractor": {"type": "DpathExtractor", "field_path": []},
+                },
+                "status_extractor": {"type": "DpathExtractor", "field_path": ["status"]},
+                "polling_requester": {
+                    "type": "HttpRequester",
+                    "path": "/async_job/{{stream_slice['create_job_response'].json()['id'] }}",
+                    "http_method": "GET",
+                    "authenticator": {
+                        "type": "BearerAuthenticator",
+                        "api_token": "{{ config['api_key'] }}",
+                    },
+                },
+                "creation_requester": {
+                    "type": "HttpRequester",
+                    "path": "async_job",
+                    "http_method": "POST",
+                    "authenticator": {
+                        "type": "BearerAuthenticator",
+                        "api_token": "{{ config['api_key'] }}",
+                    },
+                },
+                "download_requester": {
+                    "type": "HttpRequester",
+                    "path": "{{stream_slice['url']}}",
+                    "http_method": "GET",
+                },
+            },
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {
+                    "$schema": "https://json-schema.org/draft-07/schema#",
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "description": "The identifier",
+                            "type": ["null", "string"],
+                        },
+                        "name": {
+                            "description": "The name of the metaverse palace",
+                            "type": ["null", "string"],
+                        },
+                    },
+                },
+            },
+        },
         "locations_stream": {
             "$ref": "#/definitions/base_incremental_stream",
             "retriever": {
@@ -313,7 +376,7 @@ _MANIFEST = {
         "party_members_skills_stream": {
             "$ref": "#/definitions/base_stream",
             "retriever": {
-                "$ref": "#/definitions/base_incremental_stream/retriever",
+                "$ref": "#/definitions/base_stream/retriever",
                 "record_selector": {"$ref": "#/definitions/selector"},
                 "partition_router": {
                     "type": "SubstreamPartitionRouter",
@@ -350,14 +413,122 @@ _MANIFEST = {
                 },
             },
         },
+        "arcana_personas_stream": {
+            "$ref": "#/definitions/base_stream",
+            "retriever": {
+                "$ref": "#/definitions/base_stream/retriever",
+                "record_selector": {"$ref": "#/definitions/selector"},
+                "partition_router": {
+                    "type": "ListPartitionRouter",
+                    "cursor_field": "arcana_id",
+                    "values": [
+                        "Fool",
+                        "Magician",
+                        "Priestess",
+                        "Empress",
+                        "Emperor",
+                        "Hierophant",
+                        "Lovers",
+                        "Chariot",
+                        "Justice",
+                        "Hermit",
+                        "Fortune",
+                        "Strength",
+                        "Hanged Man",
+                        "Death",
+                        "Temperance",
+                        "Devil",
+                        "Tower",
+                        "Star",
+                        "Moon",
+                        "Sun",
+                        "Judgement",
+                        "World",
+                    ],
+                },
+            },
+            "$parameters": {
+                "name": "arcana_personas",
+                "primary_key": "id",
+                "path": "/arcanas/{{stream_slice.arcana_id}}/personas",
+            },
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {
+                    "$schema": "https://json-schema.org/draft-07/schema#",
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "description": "The identifier",
+                            "type": ["null", "string"],
+                        },
+                        "name": {
+                            "description": "The name of the persona",
+                            "type": ["null", "string"],
+                        },
+                        "arcana_id": {
+                            "description": "The associated arcana tarot for this persona",
+                            "type": ["null", "string"],
+                        },
+                    },
+                },
+            },
+        },
+        "palace_enemies_stream": {
+            "$ref": "#/definitions/base_incremental_stream",
+            "retriever": {
+                "$ref": "#/definitions/base_incremental_stream/retriever",
+                "record_selector": {"$ref": "#/definitions/selector"},
+                "partition_router": {
+                    "type": "SubstreamPartitionRouter",
+                    "parent_stream_configs": [
+                        {
+                            "type": "ParentStreamConfig",
+                            "stream": "#/definitions/palaces_stream",
+                            "parent_key": "id",
+                            "partition_field": "palace_id",
+                        }
+                    ],
+                },
+            },
+            "$parameters": {
+                "name": "palace_enemies",
+                "primary_key": "id",
+                "path": "/palaces/{{stream_slice.palace_id}}/enemies",
+            },
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {
+                    "$schema": "https://json-schema.org/draft-07/schema#",
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "description": "The identifier",
+                            "type": ["null", "string"],
+                        },
+                        "name": {
+                            "description": "The name of the enemy persona",
+                            "type": ["null", "string"],
+                        },
+                        "palace_id": {
+                            "description": "The palace id where this persona exists in",
+                            "type": ["null", "string"],
+                        },
+                    },
+                },
+            },
+        },
     },
     "streams": [
         "#/definitions/party_members_stream",
         "#/definitions/palaces_stream",
         "#/definitions/locations_stream",
         "#/definitions/party_members_skills_stream",
+        "#/definitions/arcana_personas_stream",
+        "#/definitions/palace_enemies_stream",
+        "#/definitions/async_job_stream",
     ],
-    "check": {"stream_names": ["party_members", "palaces", "locations"]},
+    "check": {"stream_names": ["party_members", "locations"]},
     "concurrency_level": {
         "type": "ConcurrencyLevel",
         "default_concurrency": "{{ config['num_workers'] or 10 }}",
@@ -373,7 +544,7 @@ class DeclarativeStreamDecorator(Stream):
     make it easier to mock behavior and test how low-code streams integrate with the Concurrent CDK.
 
     NOTE: We are not using that for now but the intent was to scope the tests to only testing that streams were properly instantiated and
-    interacted together properly. However in practice, we had a couple surprises like `get_cursor` and `stream_slices` needed to be
+    interacted together properly. However, in practice, we had a couple surprises like `get_cursor` and `stream_slices` needed to be
     re-implemented as well. Because of that, we've move away from that in favour of doing tests that integrate up until the HTTP request.
     The drawback of that is that we are dependent on any change later (like if the DatetimeBasedCursor changes, this will affect those
     tests) but it feels less flaky than this. If we have new information in the future to infirm that, feel free to re-use this class as
@@ -479,21 +650,32 @@ def test_group_streams():
     concurrent_streams = source._concurrent_streams
     synchronous_streams = source._synchronous_streams
 
-    # 2 incremental streams
-    assert len(concurrent_streams) == 2
-    concurrent_stream_0, concurrent_stream_1 = concurrent_streams
+    # 1 full refresh stream, 2 incremental streams, 1 substream w/o incremental, 1 list based substream w/o incremental
+    assert len(concurrent_streams) == 5
+    (
+        concurrent_stream_0,
+        concurrent_stream_1,
+        concurrent_stream_2,
+        concurrent_stream_3,
+        concurrent_stream_4,
+    ) = concurrent_streams
     assert isinstance(concurrent_stream_0, DefaultStream)
     assert concurrent_stream_0.name == "party_members"
     assert isinstance(concurrent_stream_1, DefaultStream)
-    assert concurrent_stream_1.name == "locations"
+    assert concurrent_stream_1.name == "palaces"
+    assert isinstance(concurrent_stream_2, DefaultStream)
+    assert concurrent_stream_2.name == "locations"
+    assert isinstance(concurrent_stream_3, DefaultStream)
+    assert concurrent_stream_3.name == "party_members_skills"
+    assert isinstance(concurrent_stream_4, DefaultStream)
+    assert concurrent_stream_4.name == "arcana_personas"
 
-    # 1 full refresh stream, 1 substream
+    # 1 substream w/ incremental, 1 stream with async retriever
     assert len(synchronous_streams) == 2
-    synchronous_stream_0, synchronous_stream_1 = synchronous_streams
-    assert isinstance(synchronous_stream_0, DeclarativeStream)
-    assert synchronous_stream_0.name == "palaces"
-    assert isinstance(synchronous_stream_1, DeclarativeStream)
-    assert synchronous_stream_1.name == "party_members_skills"
+    assert isinstance(synchronous_streams[0], DeclarativeStream)
+    assert synchronous_streams[0].name == "palace_enemies"
+    assert isinstance(synchronous_streams[1], DeclarativeStream)
+    assert synchronous_streams[1].name == "async_job_stream"
 
 
 @freezegun.freeze_time(time_to_freeze=datetime(2024, 9, 1, 0, 0, 0, 0, tzinfo=timezone.utc))
@@ -540,7 +722,7 @@ def test_create_concurrent_cursor():
     assert party_members_cursor._lookback_window == timedelta(days=5)
     assert party_members_cursor._cursor_granularity == timedelta(days=1)
 
-    locations_stream = source._concurrent_streams[1]
+    locations_stream = source._concurrent_streams[2]
     assert isinstance(locations_stream, DefaultStream)
     locations_cursor = locations_stream.cursor
 
@@ -609,7 +791,15 @@ def test_discover():
     """
     Verifies that the ConcurrentDeclarativeSource discover command returns concurrent and synchronous catalog definitions
     """
-    expected_stream_names = ["party_members", "palaces", "locations", "party_members_skills"]
+    expected_stream_names = {
+        "party_members",
+        "palaces",
+        "locations",
+        "party_members_skills",
+        "arcana_personas",
+        "palace_enemies",
+        "async_job_stream",
+    }
 
     source = ConcurrentDeclarativeSource(
         source_config=_MANIFEST, config=_CONFIG, catalog=None, state=None
@@ -617,11 +807,7 @@ def test_discover():
 
     actual_catalog = source.discover(logger=source.logger, config=_CONFIG)
 
-    assert len(actual_catalog.streams) == 4
-    assert actual_catalog.streams[0].name in expected_stream_names
-    assert actual_catalog.streams[1].name in expected_stream_names
-    assert actual_catalog.streams[2].name in expected_stream_names
-    assert actual_catalog.streams[3].name in expected_stream_names
+    assert set(map(lambda stream: stream.name, actual_catalog.streams)) == expected_stream_names
 
 
 def _mock_requests(
@@ -755,7 +941,7 @@ def test_read_with_concurrent_and_synchronous_streams():
     assert len(palaces_states) == 1
     assert (
         palaces_states[0].stream.stream_state.__dict__
-        == AirbyteStateBlob(__ab_full_refresh_sync_complete=True).__dict__
+        == AirbyteStateBlob(__ab_no_cursor_state_message=True).__dict__
     )
 
     # Expects 3 records, 3 slices, 3 records in slice
@@ -765,43 +951,11 @@ def test_read_with_concurrent_and_synchronous_streams():
     party_members_skills_states = get_states_for_stream(
         stream_name="party_members_skills", messages=messages
     )
-    assert len(party_members_skills_states) == 3
-    assert party_members_skills_states[0].stream.stream_state.__dict__ == {
-        "states": [
-            {
-                "partition": {"parent_slice": {}, "party_member_id": "amamiya"},
-                "cursor": {"__ab_full_refresh_sync_complete": True},
-            },
-        ]
-    }
-    assert party_members_skills_states[1].stream.stream_state.__dict__ == {
-        "states": [
-            {
-                "partition": {"parent_slice": {}, "party_member_id": "amamiya"},
-                "cursor": {"__ab_full_refresh_sync_complete": True},
-            },
-            {
-                "partition": {"parent_slice": {}, "party_member_id": "nijima"},
-                "cursor": {"__ab_full_refresh_sync_complete": True},
-            },
-        ]
-    }
-    assert party_members_skills_states[2].stream.stream_state.__dict__ == {
-        "states": [
-            {
-                "partition": {"parent_slice": {}, "party_member_id": "amamiya"},
-                "cursor": {"__ab_full_refresh_sync_complete": True},
-            },
-            {
-                "partition": {"parent_slice": {}, "party_member_id": "nijima"},
-                "cursor": {"__ab_full_refresh_sync_complete": True},
-            },
-            {
-                "partition": {"parent_slice": {}, "party_member_id": "yoshizawa"},
-                "cursor": {"__ab_full_refresh_sync_complete": True},
-            },
-        ]
-    }
+    assert len(party_members_skills_states) == 1
+    assert (
+        party_members_skills_states[0].stream.stream_state.__dict__
+        == AirbyteStateBlob(__ab_no_cursor_state_message=True).__dict__
+    )
 
 
 @freezegun.freeze_time(_NOW)
@@ -1276,7 +1430,9 @@ def test_streams_with_stream_state_interpolation_should_be_synchronous():
         state=None,
     )
 
-    assert len(source._concurrent_streams) == 0
+    # 1 full refresh stream, 2 with parent stream without incremental dependency
+    assert len(source._concurrent_streams) == 3
+    # 2 incremental stream with interpolation on state (locations and party_members), 1 incremental with parent stream (palace_enemies), 1 stream with async retriever
     assert len(source._synchronous_streams) == 4
 
 
@@ -1572,5 +1728,6 @@ def get_states_for_stream(
 
 
 def disable_emitting_sequential_state_messages(source: ConcurrentDeclarativeSource) -> None:
-    for concurrent_streams in source._concurrent_streams:  # type: ignore  # This is the easiest way to disable behavior from the test
-        concurrent_streams.cursor._connector_state_converter._is_sequential_state = False  # type: ignore  # see above
+    for concurrent_stream in source._concurrent_streams:  # type: ignore  # This is the easiest way to disable behavior from the test
+        if isinstance(concurrent_stream.cursor, ConcurrentCursor):
+            concurrent_stream.cursor._connector_state_converter._is_sequential_state = False  # type: ignore  # see above

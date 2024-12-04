@@ -7,7 +7,7 @@ import logging
 from functools import cache, lru_cache
 from typing import TYPE_CHECKING, Any, Iterable, List, Mapping, MutableMapping, Optional, Union
 
-from deprecated.classic import deprecated
+from typing_extensions import deprecated
 
 from airbyte_cdk.models import (
     AirbyteLogMessage,
@@ -56,7 +56,10 @@ This module contains adapters to help enabling concurrency on File-based Stream 
 """
 
 
-@deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)
+@deprecated(
+    "This class is experimental. Use at your own risk.",
+    category=ExperimentalClassWarning,
+)
 class FileBasedStreamFacade(AbstractStreamFacade[DefaultStream], AbstractFileBasedStream):
     @classmethod
     def create_from_stream(
@@ -143,7 +146,7 @@ class FileBasedStreamFacade(AbstractStreamFacade[DefaultStream], AbstractFileBas
         return self._legacy_stream.supports_incremental
 
     @property
-    @deprecated(version="3.7.0")
+    @deprecated("Deprecated as of CDK version 3.7.0.")
     def availability_strategy(self) -> AbstractFileBasedAvailabilityStrategy:
         return self._legacy_stream.availability_strategy
 

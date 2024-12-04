@@ -13,10 +13,10 @@ updates:
       interval: daily
     labels:
       - chore
-    open-pull-requests-limit: 8  # default is 5
+    open-pull-requests-limit: 8 # default is 5
 
   - package-ecosystem: github-actions
-    open-pull-requests-limit: 5  # default is 5
+    open-pull-requests-limit: 5 # default is 5
     directory: "/"
     commit-message:
       prefix: "ci(deps): "
@@ -29,5 +29,5 @@ updates:
       minor-and-patch:
         applies-to: version-updates
         update-types:
-        - patch
-        - minor
+          - patch
+          - minor

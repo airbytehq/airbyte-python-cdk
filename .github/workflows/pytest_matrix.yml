@@ -12,10 +12,10 @@ on:
     branches:
       - main
     paths:
-      - 'airbyte_cdk/**'
-      - 'unit_tests/**'
-      - 'poetry.lock'
-      - 'pyproject.toml'
+      - "airbyte_cdk/**"
+      - "unit_tests/**"
+      - "poetry.lock"
+      - "pyproject.toml"
   pull_request:
 
 jobs:

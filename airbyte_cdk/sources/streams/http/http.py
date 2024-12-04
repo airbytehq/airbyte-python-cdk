@@ -9,8 +9,8 @@ from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optio
 from urllib.parse import urljoin
 
 import requests
-from deprecated import deprecated
 from requests.auth import AuthBase
+from typing_extensions import deprecated
 
 from airbyte_cdk.models import AirbyteMessage, FailureType, SyncMode
 from airbyte_cdk.models import Type as MessageType
@@ -121,8 +121,8 @@ class HttpStream(Stream, CheckpointMixin, ABC):
 
     @property
     @deprecated(
-        version="3.0.0",
-        reason="You should set error_handler explicitly in HttpStream.get_error_handler() instead.",
+        "Deprecated as of CDK version 3.0.0. "
+        "You should set error_handler explicitly in HttpStream.get_error_handler() instead."
     )
     def raise_on_http_errors(self) -> bool:
         """
@@ -132,8 +132,8 @@ class HttpStream(Stream, CheckpointMixin, ABC):
 
     @property
     @deprecated(
-        version="3.0.0",
-        reason="You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead.",
+        "Deprecated as of CDK version 3.0.0. "
+        "You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead."
     )
     def max_retries(self) -> Union[int, None]:
         """
@@ -143,8 +143,8 @@ class HttpStream(Stream, CheckpointMixin, ABC):
 
     @property
     @deprecated(
-        version="3.0.0",
-        reason="You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead.",
+        "Deprecated as of CDK version 3.0.0. "
+        "You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead."
     )
     def max_time(self) -> Union[int, None]:
         """
@@ -154,8 +154,8 @@ class HttpStream(Stream, CheckpointMixin, ABC):
 
     @property
     @deprecated(
-        version="3.0.0",
-        reason="You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead.",
+        "Deprecated as of CDK version 3.0.0. "
+        "You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead."
     )
     def retry_factor(self) -> float:
         """
@@ -594,7 +594,7 @@ class HttpSubStream(HttpStream, ABC):
             # Skip non-records (eg AirbyteLogMessage)
             if isinstance(parent_record, AirbyteMessage):
                 if parent_record.type == MessageType.RECORD:
-                    parent_record = parent_record.record.data
+                    parent_record = parent_record.record.data  # type: ignore [assignment, union-attr]  # Incorrect type for assignment
                 else:
                     continue
             elif isinstance(parent_record, Record):
@@ -603,8 +603,8 @@ class HttpSubStream(HttpStream, ABC):
 
 
 @deprecated(
-    version="3.0.0",
-    reason="You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead.",
+    "Deprecated as of CDK version 3.0.0."
+    "You should set backoff_strategies explicitly in HttpStream.get_backoff_strategy() instead."
 )
 class HttpStreamAdapterBackoffStrategy(BackoffStrategy):
     def __init__(self, stream: HttpStream):
@@ -619,8 +619,8 @@ class HttpStreamAdapterBackoffStrategy(BackoffStrategy):
 
 
 @deprecated(
-    version="3.0.0",
-    reason="You should set error_handler explicitly in HttpStream.get_error_handler() instead.",
+    "Deprecated as of CDK version 3.0.0. "
+    "You should set error_handler explicitly in HttpStream.get_error_handler() instead."
 )
 class HttpStreamAdapterHttpStatusErrorHandler(HttpStatusErrorHandler):
     def __init__(self, stream: HttpStream, **kwargs):  # type: ignore # noqa
@@ -639,15 +639,15 @@ class HttpStreamAdapterHttpStatusErrorHandler(HttpStatusErrorHandler):
                     return ErrorResolution(
                         response_action=ResponseAction.RATE_LIMITED,
                         failure_type=FailureType.transient_error,
-                        error_message=f"Response status code: {response_or_exception.status_code}. Retrying...",  # type: ignore[union-attr]
+                        error_message=f"Response status code: {response_or_exception.status_code}. Retrying...",
                     )
                 return ErrorResolution(
                     response_action=ResponseAction.RETRY,
                     failure_type=FailureType.transient_error,
-                    error_message=f"Response status code: {response_or_exception.status_code}. Retrying...",  # type: ignore[union-attr]
+                    error_message=f"Response status code: {response_or_exception.status_code}. Retrying...",
                 )
             else:
-                if response_or_exception.ok:  # type: ignore # noqa
+                if response_or_exception.ok:
                     return ErrorResolution(
                         response_action=ResponseAction.SUCCESS,
                         failure_type=None,
@@ -657,13 +657,13 @@ class HttpStreamAdapterHttpStatusErrorHandler(HttpStatusErrorHandler):
                     return ErrorResolution(
                         response_action=ResponseAction.FAIL,
                         failure_type=FailureType.transient_error,
-                        error_message=f"Response status code: {response_or_exception.status_code}. Unexpected error. Failed.",  # type: ignore[union-attr]
+                        error_message=f"Response status code: {response_or_exception.status_code}. Unexpected error. Failed.",
                     )
                 else:
                     return ErrorResolution(
                         response_action=ResponseAction.IGNORE,
                         failure_type=FailureType.transient_error,
-                        error_message=f"Response status code: {response_or_exception.status_code}. Ignoring...",  # type: ignore[union-attr]
+                        error_message=f"Response status code: {response_or_exception.status_code}. Ignoring...",
                     )
         else:
             self._logger.error(f"Received unexpected response type: {type(response_or_exception)}")

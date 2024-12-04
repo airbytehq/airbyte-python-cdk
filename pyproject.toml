@@ -33,7 +33,6 @@ python = "^3.10,<3.13"
 airbyte-protocol-models-dataclasses = "^0.14"
 backoff = "*"
 cachetools = "*"
-Deprecated = "~1.2"
 dpath = "^2.1.6"
 dunamai = "^1.22.0"
 genson = "1.3.0"
@@ -99,6 +98,11 @@ pytest-cov = "*"
 pytest-httpserver = "*"
 pytest-mock = "*"
 requests-mock = "*"
+# Stubs packages for mypy typing
+types-requests = "^2.32.0.20241016"
+types-python-dateutil = "^2.9.0.20241003"
+types-pyyaml = "^6.0.12.20240917"
+types-cachetools = "^5.5.0.20240820"
 
 [tool.poetry.extras]
 file-based = ["avro", "fastavro", "pyarrow", "unstructured", "pdf2image", "pdfminer.six", "unstructured.pytesseract", "pytesseract", "markdown", "python-calamine", "python-snappy"]
@@ -140,7 +144,7 @@ format-fix = {sequence = ["_format-fix-ruff", "_format-fix-prettier"], help = "F
 
 # Linting/Typing check tasks
 _lint-ruff = {cmd = "poetry run ruff check .", help = "Lint with Ruff."}
-type-check = {cmd = "bin/run-mypy-on-modified-files.sh", help = "Type check modified files with mypy."}
+type-check = {cmd = "poetry run mypy airbyte_cdk", help = "Type check modified files with mypy."}
 lint = {sequence = ["_lint-ruff", "type-check"], help = "Lint all code. Includes type checking.", ignore_fail = "return_non_zero"}
 
 # Lockfile check task

@@ -9,7 +9,7 @@ from airbyte_cdk.models import (
     AdvancedAuth,
     ConnectorSpecification,
     ConnectorSpecificationSerializer,
-)  # type: ignore [attr-defined]
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import AuthFlow
 
 

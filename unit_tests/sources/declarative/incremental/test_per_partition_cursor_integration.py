@@ -5,7 +5,7 @@
 import logging
 from unittest.mock import MagicMock, patch
 
-from orjson import orjson
+import orjson
 
 from airbyte_cdk.models import (
     AirbyteStateBlob,

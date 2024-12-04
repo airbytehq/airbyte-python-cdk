@@ -35,7 +35,7 @@ def stream_data_to_airbyte_message(
             # need it to normalize values against json schema. By default no action
             # taken unless configured. See
             # docs/connector-development/cdk-python/schemas.md for details.
-            transformer.transform(data, schema)  # type: ignore
+            transformer.transform(data, schema)
             if is_file_transfer_message:
                 message = AirbyteFileTransferRecordMessage(
                     stream=stream_name, file=data, emitted_at=now_millis, data={}

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from functools import cached_property, lru_cache
 from typing import Any, Dict, Iterable, Iterator, List, Mapping, MutableMapping, Optional, Union
 
-from deprecated import deprecated
+from typing_extensions import deprecated
 
 import airbyte_cdk.sources.utils.casing as casing
 from airbyte_cdk.models import (
@@ -92,8 +92,8 @@ class CheckpointMixin(ABC):
 
 
 @deprecated(
-    version="0.87.0",
-    reason="Deprecated in favor of the CheckpointMixin which offers similar functionality",
+    "Deprecated as of CDK version 0.87.0. "
+    "Deprecated in favor of the `CheckpointMixin` which offers similar functionality."
 )
 class IncrementalMixin(CheckpointMixin, ABC):
     """Mixin to make stream incremental.
@@ -115,12 +115,6 @@ class StreamClassification:
     has_multiple_slices: bool
 
 
-# Moved to class declaration since get_updated_state is called on every record for incremental syncs, and thus the @deprecated decorator as well.
-@deprecated(
-    version="0.1.49",
-    reason="Deprecated method get_updated_state, You should use explicit state property instead, see IncrementalMixin docs.",
-    action="ignore",
-)
 class Stream(ABC):
     """
     Base abstract class for an Airbyte Stream. Makes no assumption of the Stream's underlying transport protocol.
@@ -222,7 +216,8 @@ class Stream(ABC):
                         # Some connectors have streams that implement get_updated_state(), but do not define a cursor_field. This
                         # should be fixed on the stream implementation, but we should also protect against this in the CDK as well
                         stream_state_tracker = self.get_updated_state(
-                            stream_state_tracker, record_data
+                            stream_state_tracker,
+                            record_data,  # type: ignore [arg-type]
                         )
                         self._observe_state(checkpoint_reader, stream_state_tracker)
                     record_counter += 1
@@ -282,7 +277,7 @@ class Stream(ABC):
             if state
             else {},  # read() expects MutableMapping instead of Mapping which is used more often
             state_manager=None,
-            internal_config=InternalConfig(),
+            internal_config=InternalConfig(),  # type: ignore [call-arg]
         )
 
     @abstractmethod
@@ -322,7 +317,7 @@ class Stream(ABC):
         # If we can offer incremental we always should. RFR is always less reliable than incremental which uses a real cursor value
         if self.supports_incremental:
             stream.source_defined_cursor = self.source_defined_cursor
-            stream.supported_sync_modes.append(SyncMode.incremental)  # type: ignore
+            stream.supported_sync_modes.append(SyncMode.incremental)
             stream.default_cursor_field = self._wrapped_cursor_field()
 
         keys = Stream._wrapped_primary_key(self.primary_key)
@@ -436,10 +431,18 @@ class Stream(ABC):
         """
         return None
 
+    # Commented-out to avoid any runtime penalty, since this is used in a hot per-record codepath.
+    # To be evaluated for re-introduction here: https://github.com/airbytehq/airbyte-python-cdk/issues/116
+    # @deprecated(
+    #     "Deprecated method `get_updated_state` as of CDK version 0.1.49. "
+    #     "Please use explicit state property instead, see `IncrementalMixin` docs."
+    # )
     def get_updated_state(
         self, current_stream_state: MutableMapping[str, Any], latest_record: Mapping[str, Any]
     ) -> MutableMapping[str, Any]:
-        """Override to extract state from the latest record. Needed to implement incremental sync.
+        """DEPRECATED. Please use explicit state property instead, see `IncrementalMixin` docs.
+
+        Override to extract state from the latest record. Needed to implement incremental sync.
 
         Inspects the latest record extracted from the data source and the current state object and return an updated state object.
 
@@ -654,7 +657,7 @@ class Stream(ABC):
         # todo: This can be consolidated into one ConnectorStateManager.update_and_create_state_message() method, but I want
         #  to reduce changes right now and this would span concurrent as well
         state_manager.update_state_for_stream(self.name, self.namespace, stream_state)
-        return state_manager.create_state_message(self.name, self.namespace)
+        return state_manager.create_state_message(self.name, self.namespace)  # type: ignore [no-any-return]
 
     @property
     def configured_json_schema(self) -> Optional[Dict[str, Any]]:

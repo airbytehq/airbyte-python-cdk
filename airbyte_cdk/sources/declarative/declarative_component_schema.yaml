@@ -1331,6 +1331,19 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  ResponseToFileExtractor:
+    title: CSV To File Extractor
+    description: A record extractor designed for handling large responses that may exceed memory limits (to prevent OOM issues). It downloads a CSV file to disk, reads the data from disk, and deletes the file once it has been fully processed.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [ResponseToFileExtractor]
+      $parameters:
+        type: object
+        additionalProperties: true
   ExponentialBackoffStrategy:
     title: Exponential Backoff
     description: Backoff strategy with an exponential backoff interval. The interval is defined as factor * 2^attempt_count.
@@ -2044,7 +2057,7 @@ definitions:
               The DeclarativeOAuth Specific URL templated string to obtain the `access_token`, `refresh_token` etc.
               The placeholders are replaced during the processing to provide neccessary values.
             examples:
-              - access_token_url: https://auth.host.com/oauth2/token?{client_id_key}={{client_id_key}}&{client_secret_key}={{client_secret_key}}&{auth_code_key}={{auth_code_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}} 
+              - access_token_url: https://auth.host.com/oauth2/token?{client_id_key}={{client_id_key}}&{client_secret_key}={{client_secret_key}}&{auth_code_key}={{auth_code_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}
           access_token_headers:
             title: (Optional) DeclarativeOAuth Access Token Headers
             type: object
@@ -2052,9 +2065,10 @@ definitions:
             description: |-
               The DeclarativeOAuth Specific optional headers to inject while exchanging the `auth_code` to `access_token` during `completeOAuthFlow` step.
             examples:
-              - access_token_headers: {
-                  "Authorization": "Basic {base64Encoder:{client_id}:{client_secret}}"
-                }
+              - access_token_headers:
+                  {
+                    "Authorization": "Basic {base64Encoder:{client_id}:{client_secret}}",
+                  }
           access_token_params:
             title: (Optional) DeclarativeOAuth Access Token Query Params (Json Encoded)
             type: object
@@ -2063,18 +2077,19 @@ definitions:
               The DeclarativeOAuth Specific optional query parameters to inject while exchanging the `auth_code` to `access_token` during `completeOAuthFlow` step.
               When this property is provided, the query params will be encoded as `Json` and included in the outgoing API request.
             examples:
-              - access_token_params: {
-                  "{auth_code_key}": "{{auth_code_key}}",
-                  "{client_id_key}": "{{client_id_key}}",
-                  "{client_secret_key}": "{{client_secret_key}}"
-                }
+              - access_token_params:
+                  {
+                    "{auth_code_key}": "{{auth_code_key}}",
+                    "{client_id_key}": "{{client_id_key}}",
+                    "{client_secret_key}": "{{client_secret_key}}",
+                  }
           extract_output:
             title: DeclarativeOAuth Extract Output
             type: array
             items:
               type: string
             description: |-
-              The DeclarativeOAuth Specific list of strings to indicate which keys should be extracted and returned back to the input config.                
+              The DeclarativeOAuth Specific list of strings to indicate which keys should be extracted and returned back to the input config.
             examples:
               - extract_output: ["access_token", "refresh_token", "other_field"]
           state:
@@ -2086,17 +2101,14 @@ definitions:
               - max
             description: |-
               The DeclarativeOAuth Specific object to provide the criteria of how the `state` query param should be constructed,
-              including length and complexity.                
+              including length and complexity.
             properties:
               min:
                 type: integer
               max:
                 type: integer
             examples:
-              - state: {
-                  "min": 7,
-                  "max": 128,
-                }
+              - state: { "min": 7, "max": 128 }
           client_id_key:
             title: (Optional) DeclarativeOAuth Client ID Key Override
             type: string
@@ -2122,14 +2134,14 @@ definitions:
             title: (Optional) DeclarativeOAuth State Key Override
             type: string
             description: |-
-              The DeclarativeOAuth Specific optional override to provide the custom `state` key name, if required by data-provider.                
+              The DeclarativeOAuth Specific optional override to provide the custom `state` key name, if required by data-provider.
             examples:
               - state_key: "my_custom_state_key_key_name"
           auth_code_key:
             title: (Optional) DeclarativeOAuth Auth Code Key Override
             type: string
             description: |-
-              The DeclarativeOAuth Specific optional override to provide the custom `code` key name to something like `auth_code` or `custom_auth_code`, if required by data-provider.                
+              The DeclarativeOAuth Specific optional override to provide the custom `code` key name to something like `auth_code` or `custom_auth_code`, if required by data-provider.
             examples:
               - auth_code_key: "my_custom_auth_code_key_name"
           redirect_uri_key:
@@ -2680,6 +2692,12 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/CustomRecordExtractor"
           - "$ref": "#/definitions/DpathExtractor"
+      download_extractor:
+        description: Responsible for fetching the records from provided urls.
+        anyOf:
+          - "$ref": "#/definitions/CustomRecordExtractor"
+          - "$ref": "#/definitions/DpathExtractor"
+          - "$ref": "#/definitions/ResponseToFileExtractor"
       creation_requester:
         description: Requester component that describes how to prepare HTTP requests to send to the source API to create the async server-side job.
         anyOf:
@@ -2727,6 +2745,16 @@ definitions:
       decoder:
         title: Decoder
         description: Component decoding the response so records can be extracted.
+        anyOf:
+          - "$ref": "#/definitions/CustomDecoder"
+          - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonlDecoder"
+          - "$ref": "#/definitions/IterableDecoder"
+          - "$ref": "#/definitions/XmlDecoder"
+          - "$ref": "#/definitions/GzipJsonDecoder"
+      download_decoder:
+        title: Download Decoder
+        description: Component decoding the download response so records can be extracted.
         anyOf:
           - "$ref": "#/definitions/CustomDecoder"
           - "$ref": "#/definitions/JsonDecoder"

@@ -130,11 +130,11 @@ class SubstreamPartitionRouter(PartitionRouter):
                     if value:
                         params.update(
                             {
-                                parent_config.request_option.field_name.eval(
+                                parent_config.request_option.field_name.eval(  # type: ignore [union-attr]
                                     config=self.config
                                 ): value
                             }
-                        )  # type: ignore # field_name is always casted to an interpolated string
+                        )
         return params
 
     def stream_slices(self) -> Iterable[StreamSlice]:
@@ -162,9 +162,9 @@ class SubstreamPartitionRouter(PartitionRouter):
                 extra_fields = None
                 if parent_stream_config.extra_fields:
                     extra_fields = [
-                        [field_path_part.eval(self.config) for field_path_part in field_path]
+                        [field_path_part.eval(self.config) for field_path_part in field_path]  # type: ignore [union-attr]
                         for field_path in parent_stream_config.extra_fields
-                    ]  # type: ignore # extra_fields is always casted to an interpolated string
+                    ]
 
                 # read_stateless() assumes the parent is not concurrent. This is currently okay since the concurrent CDK does
                 # not support either substreams or RFR, but something that needs to be considered once we do
@@ -192,7 +192,10 @@ class SubstreamPartitionRouter(PartitionRouter):
                             message=f"Parent stream returned records as invalid type {type(parent_record)}"
                         )
                     try:
-                        partition_value = dpath.get(parent_record, parent_field)
+                        partition_value = dpath.get(
+                            parent_record,  # type: ignore [arg-type]
+                            parent_field,
+                        )
                     except KeyError:
                         continue
 
@@ -228,7 +231,10 @@ class SubstreamPartitionRouter(PartitionRouter):
         if extra_fields:
             for extra_field_path in extra_fields:
                 try:
-                    extra_field_value = dpath.get(parent_record, extra_field_path)
+                    extra_field_value = dpath.get(
+                        parent_record,  # type: ignore [arg-type]
+                        extra_field_path,
+                    )
                     self.logger.debug(
                         f"Extracted extra_field_path: {extra_field_path} with value: {extra_field_value}"
                     )
@@ -291,7 +297,7 @@ class SubstreamPartitionRouter(PartitionRouter):
         if not parent_state and incremental_dependency:
             # Attempt to retrieve child state
             substream_state = list(stream_state.values())
-            substream_state = substream_state[0] if substream_state else {}
+            substream_state = substream_state[0] if substream_state else {}  # type: ignore [assignment]  # Incorrect type for assignment
             parent_state = {}
 
             # Copy child state to parent streams with incremental dependencies

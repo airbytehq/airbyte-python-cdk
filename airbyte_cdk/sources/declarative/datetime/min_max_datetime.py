@@ -41,12 +41,12 @@ class MinMaxDatetime:
         self.datetime = InterpolatedString.create(self.datetime, parameters=parameters or {})
         self._parser = DatetimeParser()
         self.min_datetime = (
-            InterpolatedString.create(self.min_datetime, parameters=parameters)
+            InterpolatedString.create(self.min_datetime, parameters=parameters)  # type: ignore [assignment]  #  expression has type "InterpolatedString | None", variable has type "InterpolatedString | str"
             if self.min_datetime
             else None
         )  # type: ignore
         self.max_datetime = (
-            InterpolatedString.create(self.max_datetime, parameters=parameters)
+            InterpolatedString.create(self.max_datetime, parameters=parameters)  # type: ignore [assignment]  #  expression has type "InterpolatedString | None", variable has type "InterpolatedString | str"
             if self.max_datetime
             else None
         )  # type: ignore
@@ -66,7 +66,13 @@ class MinMaxDatetime:
             datetime_format = "%Y-%m-%dT%H:%M:%S.%f%z"
 
         time = self._parser.parse(
-            str(self.datetime.eval(config, **additional_parameters)), datetime_format
+            str(
+                self.datetime.eval(  # type: ignore[union-attr] # str has no attribute "eval"
+                    config,
+                    **additional_parameters,
+                )
+            ),
+            datetime_format,
         )  # type: ignore # datetime is always cast to an interpolated string
 
         if self.min_datetime:
@@ -105,7 +111,7 @@ class MinMaxDatetime:
         if isinstance(interpolated_string_or_min_max_datetime, InterpolatedString) or isinstance(
             interpolated_string_or_min_max_datetime, str
         ):
-            return MinMaxDatetime(
+            return MinMaxDatetime(  # type: ignore [call-arg]
                 datetime=interpolated_string_or_min_max_datetime, parameters=parameters
             )
         else:

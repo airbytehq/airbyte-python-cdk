@@ -11,9 +11,9 @@ from typing import Literal
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
+import orjson
 import pytest
 import requests
-from orjson import orjson
 
 from airbyte_cdk import connector_builder
 from airbyte_cdk.connector_builder.connector_builder_handler import (

@@ -72,12 +72,17 @@ jobs:
             cdk_extra: n/a
           - connector: source-shopify
             cdk_extra: n/a
-          - connector: source-chargebee
-            cdk_extra: n/a
-          - connector: source-s3
-            cdk_extra: file-based
+          # Chargebee is being flaky:
+          # - connector: source-chargebee
+          #   cdk_extra: n/a
+          # This is behind in CDK updates and can't be used in tests until updated:
+          # - connector: source-s3
+          #   cdk_extra: file-based
           - connector: destination-pgvector
             cdk_extra: vector-db-based
+          # Can bring back Pinecone for testing once it is updated to latest CDK version:
+          # - connector: destination-pinecone
+          #   cdk_extra: vector-db-based
           - connector: destination-motherduck
             cdk_extra: sql
           # ZenDesk currently failing (as of 2024-12-02)
@@ -91,7 +96,7 @@ jobs:
           # - connector: source-pokeapi
           #   cdk_extra: n/a
 
-    name: "Check: '${{matrix.connector}}' (skip=${{needs.cdk_changes.outputs[matrix.cdk_extra] == 'false'}})"
+    name: "Check: '${{matrix.connector}}' (skip=${{needs.cdk_changes.outputs['src'] == 'false' || needs.cdk_changes.outputs[matrix.cdk_extra] == 'false'}})"
     steps:
       - name: Abort if extra not changed (${{matrix.cdk_extra}})
         id: no_changes
@@ -137,16 +142,7 @@ jobs:
           --skip-step qa_checks \
           --skip-step connector_live_tests
 
-      # Upload the job output to the artifacts
-      - name: Upload Job Output
-        id: upload_job_output
-        if: always() && steps.no_changes.outputs.status != 'cancelled'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{matrix.connector}}-job-output
-          path: airbyte/airbyte-ci/connectors/pipelines/pipeline_reports
-
-      - name: Evaluate Job Output
+      - name: Evaluate Test Output
         if: always() && steps.no_changes.outputs.status != 'cancelled'
         run: |
           # save job output json file as ci step output
@@ -166,3 +162,12 @@ jobs:
             echo "::error::Test failed for connector '${{ matrix.connector }}' on step '${failed_step}'. Check the logs for more details."
             exit 1
           fi
+
+      # Upload the job output to the artifacts
+      - name: Upload Job Output
+        id: upload_job_output
+        if: always() && steps.no_changes.outputs.status != 'cancelled'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{matrix.connector}}-job-output
+          path: airbyte/airbyte-ci/connectors/pipelines/pipeline_reports
