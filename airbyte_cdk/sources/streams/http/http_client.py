@@ -54,6 +54,7 @@ from airbyte_cdk.utils.stream_status_utils import (
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
+logger = logging.getLogger("airbyte")
 
 
 class MessageRepresentationAirbyteTracedErrors(AirbyteTracedException):
@@ -142,8 +143,9 @@ class HttpClient:
                 sqlite_path = str(Path(cache_dir) / self.cache_filename)
             else:
                 sqlite_path = "file::memory:?cache=shared"
+            backend = SkipFailureSQLiteCache(sqlite_path)
             return CachedLimiterSession(
-                sqlite_path, backend="sqlite", api_budget=self._api_budget, match_headers=True
+                sqlite_path, backend=backend, api_budget=self._api_budget, match_headers=True
             )  # type: ignore # there are no typeshed stubs for requests_cache
         else:
             return LimiterSession(api_budget=self._api_budget)
@@ -517,3 +519,32 @@ class HttpClient:
         )
 
         return request, response
+
+
+class SkipFailureSQLiteDict(requests_cache.backends.sqlite.SQLiteDict):
+    def _write(self, key: str, value: str) -> None:
+        try:
+            super()._write(key, value)  # type: ignore  # lib is not typed
+        except Exception as exception:
+            logger.warning(exception)
+
+
+class SkipFailureSQLiteCache(requests_cache.backends.sqlite.SQLiteCache):
+    def __init__(  # type: ignore  # ignoring as lib is not typed
+        self,
+        db_path="http_cache",
+        serializer=None,
+        **kwargs,
+    ) -> None:
+        super().__init__(db_path, serializer, **kwargs)
+        skwargs = {"serializer": serializer, **kwargs} if serializer else kwargs
+        self.responses: requests_cache.backends.sqlite.SQLiteDict = SkipFailureSQLiteDict(
+            db_path, table_name="responses", **skwargs
+        )
+        self.redirects: requests_cache.backends.sqlite.SQLiteDict = SkipFailureSQLiteDict(
+            db_path,
+            table_name="redirects",
+            lock=self.responses._lock,
+            serializer=None,
+            **kwargs,
+        )

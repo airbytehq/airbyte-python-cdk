@@ -1,11 +1,13 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
-
+import contextlib
 import logging
 from datetime import timedelta
+from sqlite3 import OperationalError
 from unittest.mock import MagicMock, patch
 
 import pytest
 import requests
+import requests_cache
 from pympler import asizeof
 from requests_cache import CachedRequest
 
@@ -741,3 +743,27 @@ def test_given_different_headers_then_response_is_not_cached(requests_mock):
     )
 
     assert second_response.json()["test"] == "second response"
+
+
+class RaiseOnInsertConnection:
+    def execute(*args, **kwargs) -> None:
+        if "INSERT" in str(args):
+            raise OperationalError("database table is locked")
+
+
+def test_given_cache_save_failure_then_do_not_break(requests_mock, monkeypatch):
+    @contextlib.contextmanager
+    def _create_sqlite_write_error_connection(*args, **kwargs):
+        yield RaiseOnInsertConnection()
+
+    monkeypatch.setattr(
+        requests_cache.backends.sqlite.SQLiteDict,
+        "connection",
+        _create_sqlite_write_error_connection,
+    )
+    http_client = HttpClient(name="test", logger=MagicMock(), use_cache=True)
+    requests_mock.register_uri("GET", "https://google.com/", json={"test": "response"})
+
+    request, response = http_client.send_request("GET", "https://google.com/", request_kwargs={})
+
+    assert response.json()
