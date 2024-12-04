@@ -17,7 +17,6 @@ from typing import (
     Mapping,
     MutableMapping,
     Optional,
-    Tuple,
     Type,
     Union,
     get_args,
@@ -760,7 +759,7 @@ class ModelToComponentFactory:
         config: Config,
         stream_state: MutableMapping[str, Any],
         **kwargs: Any,
-    ) -> Tuple[ConcurrentCursor, DateTimeStreamStateConverter]:
+    ) -> ConcurrentCursor:
         component_type = component_definition.get("type")
         if component_definition.get("type") != model_type.__name__:
             raise ValueError(
@@ -890,23 +889,20 @@ class ModelToComponentFactory:
             if evaluated_step:
                 step_length = parse_duration(evaluated_step)
 
-        return (
-            ConcurrentCursor(
-                stream_name=stream_name,
-                stream_namespace=stream_namespace,
-                stream_state=stream_state,
-                message_repository=self._message_repository,
-                connector_state_manager=state_manager,
-                connector_state_converter=connector_state_converter,
-                cursor_field=cursor_field,
-                slice_boundary_fields=slice_boundary_fields,
-                start=start_date,  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
-                end_provider=end_date_provider,  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
-                lookback_window=lookback_window,
-                slice_range=step_length,
-                cursor_granularity=cursor_granularity,
-            ),
-            connector_state_converter,
+        return ConcurrentCursor(
+            stream_name=stream_name,
+            stream_namespace=stream_namespace,
+            stream_state=stream_state,
+            message_repository=self._message_repository,
+            connector_state_manager=state_manager,
+            connector_state_converter=connector_state_converter,
+            cursor_field=cursor_field,
+            slice_boundary_fields=slice_boundary_fields,
+            start=start_date,  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
+            end_provider=end_date_provider,  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
+            lookback_window=lookback_window,
+            slice_range=step_length,
+            cursor_granularity=cursor_granularity,
         )
 
     @staticmethod

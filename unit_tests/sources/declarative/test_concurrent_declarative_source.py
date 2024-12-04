@@ -276,6 +276,69 @@ _MANIFEST = {
                 },
             },
         },
+        "async_job_stream": {
+            "$ref": "#/definitions/base_stream",
+            "$parameters": {
+                "name": "async_job_stream",
+                "primary_key": "id",
+                "url_base": "https://persona.metaverse.com",
+            },
+            "retriever": {
+                "type": "AsyncRetriever",
+                "status_mapping": {
+                    "failed": ["failed"],
+                    "running": ["pending"],
+                    "timeout": ["timeout"],
+                    "completed": ["ready"],
+                },
+                "urls_extractor": {"type": "DpathExtractor", "field_path": ["urls"]},
+                "record_selector": {
+                    "type": "RecordSelector",
+                    "extractor": {"type": "DpathExtractor", "field_path": []},
+                },
+                "status_extractor": {"type": "DpathExtractor", "field_path": ["status"]},
+                "polling_requester": {
+                    "type": "HttpRequester",
+                    "path": "/async_job/{{stream_slice['create_job_response'].json()['id'] }}",
+                    "http_method": "GET",
+                    "authenticator": {
+                        "type": "BearerAuthenticator",
+                        "api_token": "{{ config['api_key'] }}",
+                    },
+                },
+                "creation_requester": {
+                    "type": "HttpRequester",
+                    "path": "async_job",
+                    "http_method": "POST",
+                    "authenticator": {
+                        "type": "BearerAuthenticator",
+                        "api_token": "{{ config['api_key'] }}",
+                    },
+                },
+                "download_requester": {
+                    "type": "HttpRequester",
+                    "path": "{{stream_slice['url']}}",
+                    "http_method": "GET",
+                },
+            },
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {
+                    "$schema": "https://json-schema.org/draft-07/schema#",
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "description": "The identifier",
+                            "type": ["null", "string"],
+                        },
+                        "name": {
+                            "description": "The name of the metaverse palace",
+                            "type": ["null", "string"],
+                        },
+                    },
+                },
+            },
+        },
         "locations_stream": {
             "$ref": "#/definitions/base_incremental_stream",
             "retriever": {
@@ -463,6 +526,7 @@ _MANIFEST = {
         "#/definitions/party_members_skills_stream",
         "#/definitions/arcana_personas_stream",
         "#/definitions/palace_enemies_stream",
+        "#/definitions/async_job_stream",
     ],
     "check": {"stream_names": ["party_members", "locations"]},
     "concurrency_level": {
@@ -586,27 +650,32 @@ def test_group_streams():
     concurrent_streams = source._concurrent_streams
     synchronous_streams = source._synchronous_streams
 
-    # 2 incremental streams, 1 substream w/o incremental, 1 list based substream w/o incremental
-    assert len(concurrent_streams) == 4
-    concurrent_stream_0, concurrent_stream_1, concurrent_stream_2, concurrent_stream_3 = (
-        concurrent_streams
-    )
+    # 1 full refresh stream, 2 incremental streams, 1 substream w/o incremental, 1 list based substream w/o incremental
+    assert len(concurrent_streams) == 5
+    (
+        concurrent_stream_0,
+        concurrent_stream_1,
+        concurrent_stream_2,
+        concurrent_stream_3,
+        concurrent_stream_4,
+    ) = concurrent_streams
     assert isinstance(concurrent_stream_0, DefaultStream)
     assert concurrent_stream_0.name == "party_members"
     assert isinstance(concurrent_stream_1, DefaultStream)
-    assert concurrent_stream_1.name == "locations"
+    assert concurrent_stream_1.name == "palaces"
     assert isinstance(concurrent_stream_2, DefaultStream)
-    assert concurrent_stream_2.name == "party_members_skills"
+    assert concurrent_stream_2.name == "locations"
     assert isinstance(concurrent_stream_3, DefaultStream)
-    assert concurrent_stream_3.name == "arcana_personas"
+    assert concurrent_stream_3.name == "party_members_skills"
+    assert isinstance(concurrent_stream_4, DefaultStream)
+    assert concurrent_stream_4.name == "arcana_personas"
 
-    # 1 full refresh stream, 1 substream w/ incremental
+    # 1 substream w/ incremental, 1 stream with async retriever
     assert len(synchronous_streams) == 2
-    synchronous_stream_0, synchronous_stream_1 = synchronous_streams
-    assert isinstance(synchronous_stream_0, DeclarativeStream)
-    assert synchronous_stream_0.name == "palaces"
-    assert isinstance(synchronous_stream_1, DeclarativeStream)
-    assert synchronous_stream_1.name == "palace_enemies"
+    assert isinstance(synchronous_streams[0], DeclarativeStream)
+    assert synchronous_streams[0].name == "palace_enemies"
+    assert isinstance(synchronous_streams[1], DeclarativeStream)
+    assert synchronous_streams[1].name == "async_job_stream"
 
 
 @freezegun.freeze_time(time_to_freeze=datetime(2024, 9, 1, 0, 0, 0, 0, tzinfo=timezone.utc))
@@ -653,7 +722,7 @@ def test_create_concurrent_cursor():
     assert party_members_cursor._lookback_window == timedelta(days=5)
     assert party_members_cursor._cursor_granularity == timedelta(days=1)
 
-    locations_stream = source._concurrent_streams[1]
+    locations_stream = source._concurrent_streams[2]
     assert isinstance(locations_stream, DefaultStream)
     locations_cursor = locations_stream.cursor
 
@@ -722,14 +791,15 @@ def test_discover():
     """
     Verifies that the ConcurrentDeclarativeSource discover command returns concurrent and synchronous catalog definitions
     """
-    expected_stream_names = [
+    expected_stream_names = {
         "party_members",
         "palaces",
         "locations",
         "party_members_skills",
         "arcana_personas",
         "palace_enemies",
-    ]
+        "async_job_stream",
+    }
 
     source = ConcurrentDeclarativeSource(
         source_config=_MANIFEST, config=_CONFIG, catalog=None, state=None
@@ -737,13 +807,7 @@ def test_discover():
 
     actual_catalog = source.discover(logger=source.logger, config=_CONFIG)
 
-    assert len(actual_catalog.streams) == 6
-    assert actual_catalog.streams[0].name in expected_stream_names
-    assert actual_catalog.streams[1].name in expected_stream_names
-    assert actual_catalog.streams[2].name in expected_stream_names
-    assert actual_catalog.streams[3].name in expected_stream_names
-    assert actual_catalog.streams[4].name in expected_stream_names
-    assert actual_catalog.streams[5].name in expected_stream_names
+    assert set(map(lambda stream: stream.name, actual_catalog.streams)) == expected_stream_names
 
 
 def _mock_requests(
@@ -1366,7 +1430,9 @@ def test_streams_with_stream_state_interpolation_should_be_synchronous():
         state=None,
     )
 
-    assert len(source._concurrent_streams) == 2
+    # 1 full refresh stream, 2 with parent stream without incremental dependency
+    assert len(source._concurrent_streams) == 3
+    # 2 incremental stream with interpolation on state (locations and party_members), 1 incremental with parent stream (palace_enemies), 1 stream with async retriever
     assert len(source._synchronous_streams) == 4
 
 
@@ -1662,6 +1728,6 @@ def get_states_for_stream(
 
 
 def disable_emitting_sequential_state_messages(source: ConcurrentDeclarativeSource) -> None:
-    for concurrent_streams in source._concurrent_streams:  # type: ignore  # This is the easiest way to disable behavior from the test
-        if isinstance(concurrent_streams.cursor, ConcurrentCursor):
-            concurrent_streams.cursor._connector_state_converter._is_sequential_state = False  # type: ignore  # see above
+    for concurrent_stream in source._concurrent_streams:  # type: ignore  # This is the easiest way to disable behavior from the test
+        if isinstance(concurrent_stream.cursor, ConcurrentCursor):
+            concurrent_stream.cursor._connector_state_converter._is_sequential_state = False  # type: ignore  # see above

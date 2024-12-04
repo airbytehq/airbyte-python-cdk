@@ -13,8 +13,15 @@ def get_primary_key_from_stream(
     elif isinstance(stream_primary_key, str):
         return [stream_primary_key]
     elif isinstance(stream_primary_key, list):
-        if len(stream_primary_key) > 0 and all(isinstance(k, str) for k in stream_primary_key):
+        are_all_elements_str = all(isinstance(k, str) for k in stream_primary_key)
+        are_all_elements_list_of_size_one = all(
+            isinstance(k, list) and len(k) == 1 for k in stream_primary_key
+        )
+
+        if are_all_elements_str:
             return stream_primary_key  # type: ignore # We verified all items in the list are strings
+        elif are_all_elements_list_of_size_one:
+            return list(map(lambda x: x[0], stream_primary_key))
         else:
             raise ValueError(f"Nested primary keys are not supported. Found {stream_primary_key}")
     else:
