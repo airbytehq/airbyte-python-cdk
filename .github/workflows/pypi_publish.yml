@@ -231,7 +231,7 @@ jobs:
     needs:
       - build
       - publish_cdk
-    if: always() && (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && github.event.inputs.update_connector_builder == 'true')
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && github.event.inputs.update_connector_builder == 'true')
     env:
       VERSION: ${{ needs.build.outputs.VERSION }}
       IS_PRERELEASE: ${{ needs.build.outputs.IS_PRERELEASE }}
@@ -246,15 +246,21 @@ jobs:
           repository: airbytehq/airbyte-platform-internal
           token: ${{ secrets.GH_PAT_MAINTENANCE_OCTAVIA }}
       - name: Update Builder's CDK version to ${{ env.VERSION }}
-        run: |
-          PREVIOUS_VERSION=$(cat oss/airbyte-connector-builder-resources/CDK_VERSION)
-          sed -i "s/${PREVIOUS_VERSION}/${VERSION}/g" oss/airbyte-connector-builder-server/Dockerfile
-          sed -i "s/${PREVIOUS_VERSION}/${VERSION}/g" cloud/airbyte-connector-builder-server-wrapped/Dockerfile
-          sed -i "s/airbyte-cdk==${PREVIOUS_VERSION}/airbyte-cdk==${VERSION}/g" oss/airbyte-connector-builder-server/requirements.in
-          echo ${VERSION} > oss/airbyte-connector-builder-resources/CDK_VERSION
-          cd oss/airbyte-connector-builder-server
-          pip install pip-tools
-          pip-compile --upgrade
+        # PyPI servers aren't immediately updated so we may need to retry a few times.
+        uses: nick-fields/retry@v3
+        with:
+          shell: bash
+          max_attempts: 5
+          retry_wait_seconds: 30
+          command: |
+            PREVIOUS_VERSION=$(cat oss/airbyte-connector-builder-resources/CDK_VERSION)
+            sed -i "s/${PREVIOUS_VERSION}/${VERSION}/g" oss/airbyte-connector-builder-server/Dockerfile
+            sed -i "s/${PREVIOUS_VERSION}/${VERSION}/g" cloud/airbyte-connector-builder-server-wrapped/Dockerfile
+            sed -i "s/airbyte-cdk==${PREVIOUS_VERSION}/airbyte-cdk==${VERSION}/g" oss/airbyte-connector-builder-server/requirements.in
+            echo ${VERSION} > oss/airbyte-connector-builder-resources/CDK_VERSION
+            cd oss/airbyte-connector-builder-server
+            pip install pip-tools
+            pip-compile --upgrade
       - name: Create Pull Request
         id: create-pull-request
         uses: peter-evans/create-pull-request@v6
