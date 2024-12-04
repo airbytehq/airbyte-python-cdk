@@ -95,7 +95,7 @@ class HttpJobRepositoryTest(TestCase):
                 stream_response=True,
             ),
             record_selector=RecordSelector(
-                extractor=ResponseToFileExtractor(),
+                extractor=ResponseToFileExtractor({}),
                 record_filter=None,
                 transformations=[],
                 schema_normalization=TypeTransformer(TransformConfig.NoTransform),

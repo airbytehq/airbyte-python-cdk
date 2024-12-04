@@ -101,6 +101,20 @@ class ConcurrentCursorStateTest(TestCase):
             _NO_LOOKBACK_WINDOW,
         )
 
+    def test_given_no_cursor_value_when_observe_then_do_not_raise(self) -> None:
+        cursor = self._cursor_with_slice_boundary_fields()
+        partition = _partition(_NO_SLICE)
+
+        cursor.observe(
+            Record(
+                data={"record_with_A_CURSOR_FIELD_KEY": "any value"},
+                associated_slice=partition.to_slice(),
+                stream_name=_A_STREAM_NAME,
+            )
+        )
+
+        # did not raise
+
     def test_given_boundary_fields_when_close_partition_then_emit_state(self) -> None:
         cursor = self._cursor_with_slice_boundary_fields()
         cursor.close_partition(

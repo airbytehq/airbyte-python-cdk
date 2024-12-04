@@ -116,6 +116,7 @@ test_stream_facade_single_stream = (
                     },
                     "name": "stream1",
                     "supported_sync_modes": ["full_refresh"],
+                    "is_resumable": False,
                 }
             ]
         }
@@ -160,6 +161,7 @@ test_stream_facade_raises_exception = (
                     },
                     "name": "stream1",
                     "supported_sync_modes": ["full_refresh"],
+                    "is_resumable": False,
                 }
             ]
         }
@@ -191,6 +193,7 @@ test_stream_facade_single_stream_with_primary_key = (
                     },
                     "name": "stream1",
                     "supported_sync_modes": ["full_refresh"],
+                    "is_resumable": False,
                 }
             ]
         }
@@ -223,6 +226,7 @@ test_stream_facade_multiple_streams = (
                     },
                     "name": "stream1",
                     "supported_sync_modes": ["full_refresh"],
+                    "is_resumable": False,
                 },
                 {
                     "json_schema": {
@@ -233,6 +237,7 @@ test_stream_facade_multiple_streams = (
                     },
                     "name": "stream2",
                     "supported_sync_modes": ["full_refresh"],
+                    "is_resumable": False,
                 },
             ]
         }
@@ -263,6 +268,7 @@ test_stream_facade_single_stream_with_single_slice = (
                     },
                     "name": "stream1",
                     "supported_sync_modes": ["full_refresh"],
+                    "is_resumable": False,
                 }
             ]
         }
@@ -295,6 +301,7 @@ test_stream_facade_single_stream_with_multiple_slices = (
                     },
                     "name": "stream1",
                     "supported_sync_modes": ["full_refresh"],
+                    "is_resumable": False,
                 }
             ]
         }
@@ -327,6 +334,7 @@ test_stream_facade_single_stream_with_multiple_slices_with_concurrency_level_two
                     },
                     "name": "stream1",
                     "supported_sync_modes": ["full_refresh"],
+                    "is_resumable": False,
                 }
             ]
         }

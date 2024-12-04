@@ -1331,6 +1331,19 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  ResponseToFileExtractor:
+    title: CSV To File Extractor
+    description: A record extractor designed for handling large responses that may exceed memory limits (to prevent OOM issues). It downloads a CSV file to disk, reads the data from disk, and deletes the file once it has been fully processed.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [ResponseToFileExtractor]
+      $parameters:
+        type: object
+        additionalProperties: true
   ExponentialBackoffStrategy:
     title: Exponential Backoff
     description: Backoff strategy with an exponential backoff interval. The interval is defined as factor * 2^attempt_count.
@@ -2680,6 +2693,12 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/CustomRecordExtractor"
           - "$ref": "#/definitions/DpathExtractor"
+      download_extractor:
+        description: Responsible for fetching the records from provided urls.
+        anyOf:
+          - "$ref": "#/definitions/CustomRecordExtractor"
+          - "$ref": "#/definitions/DpathExtractor"
+          - "$ref": "#/definitions/ResponseToFileExtractor"
       creation_requester:
         description: Requester component that describes how to prepare HTTP requests to send to the source API to create the async server-side job.
         anyOf:
@@ -2727,6 +2746,16 @@ definitions:
       decoder:
         title: Decoder
         description: Component decoding the response so records can be extracted.
+        anyOf:
+          - "$ref": "#/definitions/CustomDecoder"
+          - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonlDecoder"
+          - "$ref": "#/definitions/IterableDecoder"
+          - "$ref": "#/definitions/XmlDecoder"
+          - "$ref": "#/definitions/GzipJsonDecoder"
+      download_decoder:
+        title: Download Decoder
+        description: Component decoding the download response so records can be extracted.
         anyOf:
           - "$ref": "#/definitions/CustomDecoder"
           - "$ref": "#/definitions/JsonDecoder"

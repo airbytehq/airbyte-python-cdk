@@ -4,11 +4,12 @@
 
 # mypy: ignore-errors
 import datetime
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 import freezegun
 import pendulum
 import pytest
+import requests
 
 from airbyte_cdk import AirbyteTracedException
 from airbyte_cdk.models import FailureType, Level
@@ -27,6 +28,7 @@ from airbyte_cdk.sources.declarative.datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder, PaginationDecoderDecorator
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordFilter, RecordSelector
+from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
@@ -46,6 +48,9 @@ from airbyte_cdk.sources.declarative.models import ConcurrencyLevel as Concurren
 from airbyte_cdk.sources.declarative.models import CustomErrorHandler as CustomErrorHandlerModel
 from airbyte_cdk.sources.declarative.models import (
     CustomPartitionRouter as CustomPartitionRouterModel,
+)
+from airbyte_cdk.sources.declarative.models import (
+    CustomRecordExtractor as CustomRecordExtractorModel,
 )
 from airbyte_cdk.sources.declarative.models import CustomSchemaLoader as CustomSchemaLoaderModel
 from airbyte_cdk.sources.declarative.models import DatetimeBasedCursor as DatetimeBasedCursorModel
@@ -3271,3 +3276,20 @@ def test_create_concurrent_cursor_uses_min_max_datetime_format_if_defined():
         "state_type": "date-range",
         "legacy": {},
     }
+
+
+class CustomRecordExtractor(RecordExtractor):
+    def extract_records(
+        self,
+        response: requests.Response,
+    ) -> Iterable[Mapping[str, Any]]:
+        yield from response.json()
+
+
+def test_create_custom_record_extractor():
+    definition = {
+        "type": "CustomRecordExtractor",
+        "class_name": "unit_tests.sources.declarative.parsers.test_model_to_component_factory.CustomRecordExtractor",
+    }
+    component = factory.create_component(CustomRecordExtractorModel, definition, {})
+    assert isinstance(component, CustomRecordExtractor)
