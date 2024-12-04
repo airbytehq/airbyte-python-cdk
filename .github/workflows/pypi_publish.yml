@@ -252,6 +252,7 @@ jobs:
           shell: bash
           max_attempts: 5
           retry_wait_seconds: 30
+          timeout_minutes: 7
           command: |
             PREVIOUS_VERSION=$(cat oss/airbyte-connector-builder-resources/CDK_VERSION)
             sed -i "s/${PREVIOUS_VERSION}/${VERSION}/g" oss/airbyte-connector-builder-server/Dockerfile
