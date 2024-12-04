@@ -31,4 +31,4 @@ For instructions on how to contribute, please see our [Contributing Guide](docs/
 
 ## Release Management
 
-Please see the [Release Management](./RELEASES.md) guide for information on how to perform releases and pre-releases.
+Please see the [Release Management](docs/RELEASES.md) guide for information on how to perform releases and pre-releases.
