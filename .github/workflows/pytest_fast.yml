@@ -7,6 +7,25 @@ on:
   pull_request:
 
 jobs:
+  test-build:
+    name: Build and Inspect Python Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - uses: hynek/build-and-inspect-python-package@v2
+        env:
+          # Pass in dummy version '0.0.0dev0' version to appease dynamic versioning
+          POETRY_DYNAMIC_VERSIONING_BYPASS: 0.0.0dev0
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Packages-${{ github.run_id }}
+          path: |
+            /tmp/baipp/dist/*.whl
+            /tmp/baipp/dist/*.tar.gz
+
   pytest-fast:
     name: Pytest (Fast)
     runs-on: ubuntu-latest

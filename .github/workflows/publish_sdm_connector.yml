@@ -1,5 +1,6 @@
 # This flow publishes the Source-Declarative-Manifest (SDM)
 # connector to DockerHub as a Docker image.
+# TODO: Delete this workflow file once the unified publish flow is implemented and proven stable.
 
 name: Publish SDM Connector
 
