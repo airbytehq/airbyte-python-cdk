@@ -131,8 +131,9 @@ jobs:
         run: |
           cd airbyte
           make tools.airbyte-ci-dev.install
-          --ci-report-bucket-name=airbyte-ci-reports-multi
-          airbyte-ci-dev connectors \
+          airbyte-ci-dev \
+          --ci-report-bucket-name=airbyte-ci-reports-multi \
+          connectors \
           --name ${{matrix.connector}} \
           --use-local-cdk \
           test \
