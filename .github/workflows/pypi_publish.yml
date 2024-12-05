@@ -247,6 +247,7 @@ jobs:
     needs:
       - build
       - publish_cdk
+      - publish_sdm
     if: >
       (github.event_name == 'push' &&
        needs.build.outputs.IS_PRERELEASE == 'false' &&
