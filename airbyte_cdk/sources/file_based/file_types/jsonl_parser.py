@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Union
 
-from orjson import orjson
+import orjson
 
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.exceptions import FileBasedSourceError, RecordParseError

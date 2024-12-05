@@ -42,7 +42,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
 
     job_timeout: Optional[timedelta] = None
     record_extractor: RecordExtractor = field(
-        init=False, repr=False, default_factory=lambda: ResponseToFileExtractor()
+        init=False, repr=False, default_factory=lambda: ResponseToFileExtractor({})
     )
 
     def __post_init__(self) -> None:

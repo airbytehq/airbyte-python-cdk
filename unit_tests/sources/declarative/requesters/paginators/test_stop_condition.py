@@ -108,7 +108,7 @@ def test_when_reset_then_delegate(mocked_pagination_strategy, mocked_stop_condit
         mocked_pagination_strategy, mocked_stop_condition
     )
     decorator.reset()
-    mocked_pagination_strategy.reset.assert_called_once_with()
+    mocked_pagination_strategy.reset.assert_called_once_with(None)
 
 
 def test_when_get_page_size_then_delegate(mocked_pagination_strategy, mocked_stop_condition):

@@ -2,6 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from __future__ import annotations
+
 import logging
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Optional, Tuple
@@ -22,8 +24,11 @@ if TYPE_CHECKING:
 
 class AbstractFileBasedAvailabilityStrategy(AvailabilityStrategy):
     @abstractmethod
-    def check_availability(
-        self, stream: Stream, logger: logging.Logger, _: Optional[Source]
+    def check_availability(  # type: ignore[override]  # Signature doesn't match base class
+        self,
+        stream: Stream,
+        logger: logging.Logger,
+        _: Optional[Source],
     ) -> Tuple[bool, Optional[str]]:
         """
         Perform a connection check for the stream.
@@ -34,7 +39,10 @@ class AbstractFileBasedAvailabilityStrategy(AvailabilityStrategy):
 
     @abstractmethod
     def check_availability_and_parsability(
-        self, stream: "AbstractFileBasedStream", logger: logging.Logger, _: Optional[Source]
+        self,
+        stream: AbstractFileBasedStream,
+        logger: logging.Logger,
+        _: Optional[Source],
     ) -> Tuple[bool, Optional[str]]:
         """
         Performs a connection check for the stream, as well as additional checks that
@@ -46,7 +54,7 @@ class AbstractFileBasedAvailabilityStrategy(AvailabilityStrategy):
 
 
 class AbstractFileBasedAvailabilityStrategyWrapper(AbstractAvailabilityStrategy):
-    def __init__(self, stream: "AbstractFileBasedStream"):
+    def __init__(self, stream: AbstractFileBasedStream) -> None:
         self.stream = stream
 
     def check_availability(self, logger: logging.Logger) -> StreamAvailability:

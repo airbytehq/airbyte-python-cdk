@@ -72,31 +72,38 @@ jobs:
             cdk_extra: n/a
           - connector: source-shopify
             cdk_extra: n/a
-          - connector: source-chargebee
-            cdk_extra: n/a
-          # Currently not passing CI (unrelated)
-          # - connector: source-zendesk-support
+          # Chargebee is being flaky:
+          # - connector: source-chargebee
           #   cdk_extra: n/a
-          - connector: source-s3
-            cdk_extra: file-based
-          - connector: destination-pinecone
-            cdk_extra: vector-db-based
+          # These two are behind in CDK updates and can't be used as tests until they are updated:
+          # - connector: source-s3
+          #   cdk_extra: file-based
+          # - connector: destination-pinecone
+          #   cdk_extra: vector-db-based
           - connector: destination-motherduck
             cdk_extra: sql
+          # ZenDesk currently failing (as of 2024-12-02)
+          # TODO: Re-enable once fixed
+          # - connector: source-zendesk-support
+          #   cdk_extra: n/a
           # TODO: These are manifest connectors and won't work as expected until we
           #       add `--use-local-cdk` support for manifest connectors.
-          - connector: source-the-guardian-api
-            cdk_extra: n/a
-          - connector: source-pokeapi
-            cdk_extra: n/a
+          # - connector: source-the-guardian-api
+          #   cdk_extra: n/a
+          # - connector: source-pokeapi
+          #   cdk_extra: n/a
 
-    name: "Check: '${{matrix.connector}}' (skip=${{needs.cdk_changes.outputs[matrix.cdk_extra] == 'false'}})"
+    name: "Check: '${{matrix.connector}}' (skip=${{needs.cdk_changes.outputs['src'] == 'false' || needs.cdk_changes.outputs[matrix.cdk_extra] == 'false'}})"
     steps:
       - name: Abort if extra not changed (${{matrix.cdk_extra}})
         id: no_changes
-        if: ${{ matrix.cdk_extra != 'n/a' && needs.cdk_changes.outputs[matrix.cdk_extra] == 'false' }}
+        if: ${{ needs.cdk_changes.outputs['src'] == 'false' || matrix.cdk_extra != 'n/a' && needs.cdk_changes.outputs[matrix.cdk_extra] == 'false' }}
         run: |
-          echo "Aborting job as specified extra not changed: ${{matrix.cdk_extra}} = ${{ needs.cdk_changes.outputs[matrix.cdk_extra] }}"
+          echo "Aborting job."
+          echo "Source code changed: ${{ needs.cdk_changes.outputs['src'] }}"
+          if [ "${{ matrix.cdk_extra }}" != "n/a" ]; then
+            echo "Extra not changed: ${{ matrix.cdk_extra }} = ${{ needs.cdk_changes.outputs[matrix.cdk_extra] }}"
+          fi
           echo "> Skipped '${{matrix.connector}}' (no relevant changes)" >> $GITHUB_STEP_SUMMARY
           echo "status=cancelled" >> $GITHUB_OUTPUT
           exit 0
@@ -112,8 +119,7 @@ jobs:
         if: steps.no_changes.outputs.status != 'cancelled'
         with:
           repository: airbytehq/airbyte
-          # TODO: Revert to `master` after Airbyte CI released:
-          ref: aj/airbyte-ci/update-python-local-cdk-code
+          ref: master
           path: airbyte
       - name: Test Connector
         if: steps.no_changes.outputs.status != 'cancelled'
@@ -133,16 +139,7 @@ jobs:
           --skip-step qa_checks \
           --skip-step connector_live_tests
 
-      # Upload the job output to the artifacts
-      - name: Upload Job Output
-        id: upload_job_output
-        if: always() && steps.no_changes.outputs.status != 'cancelled'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{matrix.connector}}-job-output
-          path: airbyte/airbyte-ci/connectors/pipelines/pipeline_reports
-
-      - name: Evaluate Job Output
+      - name: Evaluate Test Output
         if: always() && steps.no_changes.outputs.status != 'cancelled'
         run: |
           # save job output json file as ci step output
@@ -162,3 +159,12 @@ jobs:
             echo "::error::Test failed for connector '${{ matrix.connector }}' on step '${failed_step}'. Check the logs for more details."
             exit 1
           fi
+
+      # Upload the job output to the artifacts
+      - name: Upload Job Output
+        id: upload_job_output
+        if: always() && steps.no_changes.outputs.status != 'cancelled'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{matrix.connector}}-job-output
+          path: airbyte/airbyte-ci/connectors/pipelines/pipeline_reports

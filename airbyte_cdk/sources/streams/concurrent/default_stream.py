@@ -67,6 +67,7 @@ class DefaultStream(AbstractStream):
             name=self.name,
             json_schema=dict(self._json_schema),
             supported_sync_modes=[SyncMode.full_refresh],
+            is_resumable=False,
         )
 
         if self._namespace:

@@ -74,6 +74,7 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             default_cursor_field=None,
             source_defined_primary_key=None,
             namespace=None,
+            is_resumable=False,
         )
         actual_airbyte_stream = self._stream.as_airbyte_stream()
 
@@ -110,6 +111,7 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             default_cursor_field=None,
             source_defined_primary_key=[["composite_key_1"], ["composite_key_2"]],
             namespace=None,
+            is_resumable=False,
         )
 
         airbyte_stream = stream.as_airbyte_stream()
@@ -146,6 +148,7 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             default_cursor_field=None,
             source_defined_primary_key=[["id_a"], ["id_b"]],
             namespace=None,
+            is_resumable=False,
         )
 
         airbyte_stream = stream.as_airbyte_stream()
@@ -212,6 +215,7 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             default_cursor_field=None,
             source_defined_primary_key=None,
             namespace="test",
+            is_resumable=False,
         )
         actual_airbyte_stream = stream.as_airbyte_stream()
 

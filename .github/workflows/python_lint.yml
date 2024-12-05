@@ -72,14 +72,7 @@ jobs:
       - name: Install dependencies
         run: poetry install --all-extras
 
-      # Job-specifc step(s):
+      # Job-specific step(s):
 
-      # For now, we run mypy only on modified files
-      - name: Get changed Python files
-        id: changed-py-files
-        uses: tj-actions/changed-files@v43
-        with:
-          files: "airbyte_cdk/**/*.py"
-      - name: Run mypy on changed files
-        if: steps.changed-py-files.outputs.any_changed == 'true'
-        run: poetry run mypy ${{ steps.changed-py-files.outputs.all_changed_files }} --config-file mypy.ini --install-types --non-interactive
+      - name: Run mypy
+        run: poetry run mypy --config-file mypy.ini airbyte_cdk

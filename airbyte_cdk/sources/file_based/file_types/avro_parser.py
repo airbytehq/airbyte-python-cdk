@@ -3,7 +3,7 @@
 #
 
 import logging
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
+from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, cast
 
 import fastavro
 
@@ -64,18 +64,20 @@ class AvroParser(FileTypeParser):
             raise ValueError(f"Expected ParquetFormat, got {avro_format}")
 
         with stream_reader.open_file(file, self.file_read_mode, self.ENCODING, logger) as fp:
-            avro_reader = fastavro.reader(fp)
+            avro_reader = fastavro.reader(fp)  # type: ignore [arg-type]
             avro_schema = avro_reader.writer_schema
-        if not avro_schema["type"] == "record":
-            unsupported_type = avro_schema["type"]
+        if not avro_schema["type"] == "record":  # type: ignore [index, call-overload]
+            unsupported_type = avro_schema["type"]  # type: ignore [index, call-overload]
             raise ValueError(
                 f"Only record based avro files are supported. Found {unsupported_type}"
             )
         json_schema = {
-            field["name"]: AvroParser._convert_avro_type_to_json(
-                avro_format, field["name"], field["type"]
+            field["name"]: AvroParser._convert_avro_type_to_json(  # type: ignore [index]
+                avro_format,
+                field["name"],  # type: ignore [index]
+                field["type"],  # type: ignore [index]
             )
-            for field in avro_schema["fields"]
+            for field in avro_schema["fields"]  # type: ignore [index, call-overload]
         }
         return json_schema
 
@@ -180,18 +182,19 @@ class AvroParser(FileTypeParser):
         line_no = 0
         try:
             with stream_reader.open_file(file, self.file_read_mode, self.ENCODING, logger) as fp:
-                avro_reader = fastavro.reader(fp)
+                avro_reader = fastavro.reader(fp)  # type: ignore [arg-type]
                 schema = avro_reader.writer_schema
                 schema_field_name_to_type = {
-                    field["name"]: field["type"] for field in schema["fields"]
+                    field["name"]: cast(dict[str, Any], field["type"])  # type: ignore [index]
+                    for field in schema["fields"]  # type: ignore [index, call-overload]  # If schema is not dict, it is not subscriptable by strings
                 }
                 for record in avro_reader:
                     line_no += 1
                     yield {
                         record_field: self._to_output_value(
                             avro_format,
-                            schema_field_name_to_type[record_field],
-                            record[record_field],
+                            schema_field_name_to_type[record_field],  # type: ignore [index] # Any not subscriptable
+                            record[record_field],  # type: ignore [index] # Any not subscriptable
                         )
                         for record_field, record_value in schema_field_name_to_type.items()
                     }

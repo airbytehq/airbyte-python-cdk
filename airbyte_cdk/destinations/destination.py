@@ -9,7 +9,7 @@ import sys
 from abc import ABC, abstractmethod
 from typing import Any, Iterable, List, Mapping
 
-from orjson import orjson
+import orjson
 
 from airbyte_cdk.connector import Connector
 from airbyte_cdk.exception_handler import init_uncaught_exception_handler

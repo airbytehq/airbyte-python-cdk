@@ -4,11 +4,12 @@
 
 import json
 import re
+from typing import Any
 
 from jsonschema import RefResolver
 
 
-def resolve_refs(schema: dict) -> dict:
+def resolve_refs(schema: dict[str, Any]) -> dict[str, Any]:
     """
     For spec schemas generated using Pydantic models, the resulting JSON schema can contain refs between object
     relationships.
@@ -20,6 +21,6 @@ def resolve_refs(schema: dict) -> dict:
         str_schema = str_schema.replace(
             ref_block, json.dumps(json_schema_ref_resolver.resolve(ref)[1])
         )
-    pyschema: dict = json.loads(str_schema)
+    pyschema: dict[str, Any] = json.loads(str_schema)
     del pyschema["definitions"]
     return pyschema

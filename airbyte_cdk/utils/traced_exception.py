@@ -3,9 +3,9 @@
 #
 import time
 import traceback
-from typing import Optional
+from typing import Any, Optional
 
-from orjson import orjson
+import orjson
 
 from airbyte_cdk.models import (
     AirbyteConnectionStatus,
@@ -104,9 +104,9 @@ class AirbyteTracedException(Exception):
         cls,
         exc: BaseException,
         stream_descriptor: Optional[StreamDescriptor] = None,
-        *args,
-        **kwargs,
-    ) -> "AirbyteTracedException":  # type: ignore  # ignoring because of args and kwargs
+        *args: Any,
+        **kwargs: Any,
+    ) -> "AirbyteTracedException":
         """
         Helper to create an AirbyteTracedException from an existing exception
         :param exc: the exception that caused the error
@@ -131,13 +131,15 @@ class AirbyteTracedException(Exception):
         """
         error_message = self.as_airbyte_message(stream_descriptor=stream_descriptor)
         if error_message.trace.error.message:  # type: ignore[union-attr] # AirbyteMessage with MessageType.TRACE has AirbyteTraceMessage
-            error_message.trace.error.message = filter_secrets(error_message.trace.error.message)  # type: ignore[union-attr] # AirbyteMessage with MessageType.TRACE has AirbyteTraceMessage
+            error_message.trace.error.message = filter_secrets(  # type: ignore[union-attr]
+                error_message.trace.error.message,  # type: ignore[union-attr]
+            )
         if error_message.trace.error.internal_message:  # type: ignore[union-attr] # AirbyteMessage with MessageType.TRACE has AirbyteTraceMessage
-            error_message.trace.error.internal_message = filter_secrets(
-                error_message.trace.error.internal_message
-            )  # type: ignore[union-attr] # AirbyteMessage with MessageType.TRACE has AirbyteTraceMessage
+            error_message.trace.error.internal_message = filter_secrets(  # type: ignore[union-attr] # AirbyteMessage with MessageType.TRACE has AirbyteTraceMessage
+                error_message.trace.error.internal_message  # type: ignore[union-attr] # AirbyteMessage with MessageType.TRACE has AirbyteTraceMessage
+            )
         if error_message.trace.error.stack_trace:  # type: ignore[union-attr] # AirbyteMessage with MessageType.TRACE has AirbyteTraceMessage
-            error_message.trace.error.stack_trace = filter_secrets(
-                error_message.trace.error.stack_trace
-            )  # type: ignore[union-attr] # AirbyteMessage with MessageType.TRACE has AirbyteTraceMessage
+            error_message.trace.error.stack_trace = filter_secrets(  # type: ignore[union-attr] # AirbyteMessage with MessageType.TRACE has AirbyteTraceMessage
+                error_message.trace.error.stack_trace  # type: ignore[union-attr] # AirbyteMessage with MessageType.TRACE has AirbyteTraceMessage
+            )
         return error_message

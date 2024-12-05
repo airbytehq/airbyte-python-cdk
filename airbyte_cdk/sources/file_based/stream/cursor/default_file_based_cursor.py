@@ -21,7 +21,7 @@ class DefaultFileBasedCursor(AbstractFileBasedCursor):
     CURSOR_FIELD = "_ab_source_file_last_modified"
 
     def __init__(self, stream_config: FileBasedStreamConfig, **_: Any):
-        super().__init__(stream_config)
+        super().__init__(stream_config)  # type: ignore [safe-super]
         self._file_to_datetime_history: MutableMapping[str, str] = {}
         self._time_window_if_history_is_full = timedelta(
             days=stream_config.days_to_sync_if_history_is_full

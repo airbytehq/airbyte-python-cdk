@@ -83,11 +83,19 @@ class Writer:
                 yield message
             elif message.type == Type.RECORD:
                 record_chunks, record_id_to_delete = self.processor.process(message.record)
-                self.chunks[(message.record.namespace, message.record.stream)].extend(record_chunks)
-                if record_id_to_delete is not None:
-                    self.ids_to_delete[(message.record.namespace, message.record.stream)].append(
-                        record_id_to_delete
+                self.chunks[
+                    (  # type: ignore [index] # expected "tuple[str, str]", got "tuple[str | Any | None, str | Any]"
+                        message.record.namespace,  # type: ignore [union-attr] # record not None
+                        message.record.stream,  # type: ignore [union-attr] # record not None
                     )
+                ].extend(record_chunks)
+                if record_id_to_delete is not None:
+                    self.ids_to_delete[
+                        (  # type: ignore [index] # expected "tuple[str, str]", got "tuple[str | Any | None, str | Any]"
+                            message.record.namespace,  # type: ignore [union-attr] # record not None
+                            message.record.stream,  # type: ignore [union-attr] # record not None
+                        )
+                    ].append(record_id_to_delete)
                 self.number_of_chunks += len(record_chunks)
                 if self.number_of_chunks >= self.batch_size:
                     self._process_batch()

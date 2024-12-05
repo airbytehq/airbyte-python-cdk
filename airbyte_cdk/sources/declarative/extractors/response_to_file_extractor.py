@@ -6,6 +6,7 @@ import os
 import uuid
 import zlib
 from contextlib import closing
+from dataclasses import InitVar, dataclass
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
 import pandas as pd
@@ -19,6 +20,7 @@ DEFAULT_ENCODING: str = "utf-8"
 DOWNLOAD_CHUNK_SIZE: int = 1024 * 10
 
 
+@dataclass
 class ResponseToFileExtractor(RecordExtractor):
     """
     This class is used when having very big HTTP responses (usually streamed) which would require too much memory so we use disk space as
@@ -28,7 +30,9 @@ class ResponseToFileExtractor(RecordExtractor):
     a first iteration so we will only support CSV parsing using pandas as salesforce and sendgrid were doing.
     """
 
-    def __init__(self) -> None:
+    parameters: InitVar[Mapping[str, Any]]
+
+    def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.logger = logging.getLogger("airbyte")
 
     def _get_response_encoding(self, headers: Dict[str, Any]) -> str:

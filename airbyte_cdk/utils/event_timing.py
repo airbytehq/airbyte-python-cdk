@@ -7,7 +7,7 @@ import logging
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Any, Generator, Literal, Optional
 
 logger = logging.getLogger("airbyte")
 
@@ -18,13 +18,13 @@ class EventTimer:
        Event nesting follows a LIFO pattern, so finish will apply to the last started event.
     """
 
-    def __init__(self, name):
+    def __init__(self, name: str) -> None:
         self.name = name
-        self.events = {}
+        self.events: dict[str, Any] = {}
         self.count = 0
-        self.stack = []
+        self.stack: list[Any] = []
 
-    def start_event(self, name):
+    def start_event(self, name: str) -> None:
         """
         Start a new event and push it to the stack.
         """
@@ -32,7 +32,7 @@ class EventTimer:
         self.count += 1
         self.stack.insert(0, self.events[name])
 
-    def finish_event(self):
+    def finish_event(self) -> None:
         """
         Finish the current event and pop it from the stack.
         """
@@ -43,7 +43,7 @@ class EventTimer:
         else:
             logger.warning(f"{self.name} finish_event called without start_event")
 
-    def report(self, order_by="name"):
+    def report(self, order_by: Literal["name", "duration"] = "name") -> str:
         """
         :param order_by: 'name' or 'duration'
         """
@@ -69,15 +69,15 @@ class Event:
             return (self.end - self.start) / 1e9
         return float("+inf")
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.name} {datetime.timedelta(seconds=self.duration)}"
 
-    def finish(self):
+    def finish(self) -> None:
         self.end = time.perf_counter_ns()
 
 
 @contextmanager
-def create_timer(name):
+def create_timer(name: str) -> Generator[EventTimer, Any, None]:
     """
     Creates a new EventTimer as a context manager to improve code readability.
     """

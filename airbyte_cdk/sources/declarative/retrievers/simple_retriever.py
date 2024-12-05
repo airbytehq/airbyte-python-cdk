@@ -468,8 +468,9 @@ class SimpleRetriever(Retriever):
         else:
             return None
 
-    @staticmethod
-    def _extract_record(stream_data: StreamData, stream_slice: StreamSlice) -> Optional[Record]:
+    def _extract_record(
+        self, stream_data: StreamData, stream_slice: StreamSlice
+    ) -> Optional[Record]:
         """
         As we allow the output of _read_pages to be StreamData, it can be multiple things. Therefore, we need to filter out and normalize
         to data to streamline the rest of the process.
@@ -478,9 +479,15 @@ class SimpleRetriever(Retriever):
             # Record is not part of `StreamData` but is the most common implementation of `Mapping[str, Any]` which is part of `StreamData`
             return stream_data
         elif isinstance(stream_data, (dict, Mapping)):
-            return Record(dict(stream_data), stream_slice)
+            return Record(
+                data=dict(stream_data), associated_slice=stream_slice, stream_name=self.name
+            )
         elif isinstance(stream_data, AirbyteMessage) and stream_data.record:
-            return Record(stream_data.record.data, stream_slice)
+            return Record(
+                data=stream_data.record.data,  # type:ignore # AirbyteMessage always has record.data
+                associated_slice=stream_slice,
+                stream_name=self.name,
+            )
         return None
 
     # stream_slices is defined with arguments on http stream and fixing this has a long tail of dependencies. Will be resolved by the decoupling of http stream and simple retriever

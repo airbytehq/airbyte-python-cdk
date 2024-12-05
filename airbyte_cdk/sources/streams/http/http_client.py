@@ -76,6 +76,7 @@ class MessageRepresentationAirbyteTracedErrors(AirbyteTracedException):
 class HttpClient:
     _DEFAULT_MAX_RETRY: int = 5
     _DEFAULT_MAX_TIME: int = 60 * 10
+    _ACTIONS_TO_RETRY_ON = {ResponseAction.RETRY, ResponseAction.RATE_LIMITED}
 
     def __init__(
         self,
@@ -143,7 +144,7 @@ class HttpClient:
                 sqlite_path = "file::memory:?cache=shared"
             return CachedLimiterSession(
                 sqlite_path, backend="sqlite", api_budget=self._api_budget, match_headers=True
-            )  # type: ignore # there are no typeshed stubs for requests_cache
+            )
         else:
             return LimiterSession(api_budget=self._api_budget)
 
@@ -323,7 +324,7 @@ class HttpClient:
             formatter = log_formatter
             self._message_repository.log_message(
                 Level.DEBUG,
-                lambda: formatter(response),  # type: ignore # log_formatter is always cast to a callable
+                lambda: formatter(response),
             )
 
         self._handle_error_resolution(
@@ -359,6 +360,17 @@ class HttpClient:
             except Exception:
                 return "The Content of the Response couldn't be decoded."
 
+    def _evict_key(self, prepared_request: requests.PreparedRequest) -> None:
+        """
+        Addresses high memory consumption when enabling concurrency in https://github.com/airbytehq/oncall/issues/6821.
+
+        The `_request_attempt_count` attribute keeps growing as multiple requests are made using the same `http_client`.
+        To mitigate this issue, we evict keys for completed requests once we confirm that no further retries are needed.
+        This helps manage memory usage more efficiently while maintaining the necessary logic for retry attempts.
+        """
+        if prepared_request in self._request_attempt_count:
+            del self._request_attempt_count[prepared_request]
+
     def _handle_error_resolution(
         self,
         response: Optional[requests.Response],
@@ -367,6 +379,9 @@ class HttpClient:
         error_resolution: ErrorResolution,
         exit_on_rate_limit: Optional[bool] = False,
     ) -> None:
+        if error_resolution.response_action not in self._ACTIONS_TO_RETRY_ON:
+            self._evict_key(request)
+
         # Emit stream status RUNNING with the reason RATE_LIMITED to log that the rate limit has been reached
         if error_resolution.response_action == ResponseAction.RATE_LIMITED:
             # TODO: Update to handle with message repository when concurrent message repository is ready
