@@ -177,14 +177,3 @@ jobs:
         with:
           name: ${{matrix.connector}}-job-output
           path: airbyte/airbyte-ci/connectors/pipelines/pipeline_reports
-
-      - name: Override Details URL for GitHub Check Run
-        if: steps.evaluate_output.outputs.html_report_url != ''
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh api \
-            -X PATCH \
-            -H "Accept: application/vnd.github.v3+json" \
-            "/repos/${{ github.repository }}/check-runs/${{ github.run_id }}" \
-            -f details_url="${{ steps.evaluate_output.outputs.html_report_url }}"
