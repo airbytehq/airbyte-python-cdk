@@ -71,6 +71,116 @@ class TestManifestDeclarativeSource:
         yield
         os.remove(yaml_path)
 
+    @pytest.fixture
+    def _base_manifest(self):
+        """Base manifest without streams or dynamic streams."""
+        return {
+            "version": "3.8.2",
+            "description": "This is a sample source connector that is very valid.",
+            "check": {"type": "CheckStream", "stream_names": ["lists"]},
+        }
+
+    @pytest.fixture
+    def _declarative_stream(self):
+        def declarative_stream_config(
+            name="lists", requester_type="HttpRequester", custom_requester=None
+        ):
+            """Generates a DeclarativeStream configuration."""
+            requester_config = {
+                "type": requester_type,
+                "path": "/v3/marketing/lists",
+                "authenticator": {
+                    "type": "BearerAuthenticator",
+                    "api_token": "{{ config.apikey }}",
+                },
+                "request_parameters": {"page_size": "{{ 10 }}"},
+            }
+            if custom_requester:
+                requester_config.update(custom_requester)
+
+            return {
+                "type": "DeclarativeStream",
+                "$parameters": {
+                    "name": name,
+                    "primary_key": "id",
+                    "url_base": "https://api.sendgrid.com",
+                },
+                "schema_loader": {
+                    "name": "{{ parameters.stream_name }}",
+                    "file_path": f"./source_sendgrid/schemas/{{{{ parameters.name }}}}.yaml",
+                },
+                "retriever": {
+                    "paginator": {
+                        "type": "DefaultPaginator",
+                        "page_size": 10,
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "page_size",
+                        },
+                        "page_token_option": {"type": "RequestPath"},
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ response._metadata.next }}",
+                            "page_size": 10,
+                        },
+                    },
+                    "requester": requester_config,
+                    "record_selector": {"extractor": {"field_path": ["result"]}},
+                },
+            }
+
+        return declarative_stream_config
+
+    @pytest.fixture
+    def _dynamic_declarative_stream(self, _declarative_stream):
+        """Generates a DynamicDeclarativeStream configuration."""
+        return {
+            "type": "DynamicDeclarativeStream",
+            "stream_template": _declarative_stream(),
+            "components_resolver": {
+                "type": "HttpComponentsResolver",
+                "$parameters": {
+                    "name": "lists",
+                    "primary_key": "id",
+                    "url_base": "https://api.sendgrid.com",
+                },
+                "retriever": {
+                    "paginator": {
+                        "type": "DefaultPaginator",
+                        "page_size": 10,
+                        "page_size_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "page_size",
+                        },
+                        "page_token_option": {"type": "RequestPath"},
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ response._metadata.next }}",
+                            "page_size": 10,
+                        },
+                    },
+                    "requester": {
+                        "path": "/v3/marketing/lists",
+                        "authenticator": {
+                            "type": "BearerAuthenticator",
+                            "api_token": "{{ config.apikey }}",
+                        },
+                        "request_parameters": {"page_size": "{{ 10 }}"},
+                    },
+                    "record_selector": {"extractor": {"field_path": ["result"]}},
+                },
+                "components_mapping": [
+                    {
+                        "type": "ComponentMappingDefinition",
+                        "field_path": ["name"],
+                        "value": "{{ components_value['name'] }}",
+                    }
+                ],
+            },
+        }
+
     def test_valid_manifest(self):
         manifest = {
             "version": "3.8.2",
@@ -516,14 +626,37 @@ class TestManifestDeclarativeSource:
         with pytest.raises(ValidationError):
             ManifestDeclarativeSource(source_config=manifest)
 
-    def test_source_with_missing_streams_fails(self):
-        manifest = {
-            "version": "0.29.3",
-            "definitions": None,
-            "check": {"type": "CheckStream", "stream_names": ["lists"]},
-        }
+    def test_source_with_missing_streams_and_dynamic_streams_fails(
+        self, _base_manifest, _dynamic_declarative_stream, _declarative_stream
+    ):
+        # test case for manifest without streams or dynamic streams
+        manifest_without_streams_and_dynamic_streams = _base_manifest
         with pytest.raises(ValidationError):
-            ManifestDeclarativeSource(source_config=manifest)
+            ManifestDeclarativeSource(source_config=manifest_without_streams_and_dynamic_streams)
+
+        # test case for manifest with streams
+        manifest_with_streams = {
+            **manifest_without_streams_and_dynamic_streams,
+            "streams": [
+                _declarative_stream(name="lists"),
+                _declarative_stream(
+                    name="stream_with_custom_requester",
+                    requester_type="CustomRequester",
+                    custom_requester={
+                        "class_name": "unit_tests.sources.declarative.external_component.SampleCustomComponent",
+                        "custom_request_parameters": {"page_size": 10},
+                    },
+                ),
+            ],
+        }
+        ManifestDeclarativeSource(source_config=manifest_with_streams)
+
+        # test case for manifest with dynamic streams
+        manifest_with_dynamic_streams = {
+            **manifest_without_streams_and_dynamic_streams,
+            "dynamic_streams": [_dynamic_declarative_stream],
+        }
+        ManifestDeclarativeSource(source_config=manifest_with_dynamic_streams)
 
     def test_source_with_missing_version_fails(self):
         manifest = {

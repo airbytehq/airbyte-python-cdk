@@ -192,9 +192,13 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
         state_manager = ConnectorStateManager(state=self._state)  # type: ignore  # state is always in the form of List[AirbyteStateMessage]. The ConnectorStateManager should use generics, but this can be done later
 
-        name_to_stream_mapping = {
-            stream["name"]: stream for stream in self.resolved_manifest["streams"]
-        }
+        # Combine streams and dynamic_streams. Note: both cannot be empty at the same time,
+        # and this is validated during the initialization of the source.
+        streams = self._stream_configs(self._source_config) + self._dynamic_stream_configs(
+            self._source_config, config
+        )
+
+        name_to_stream_mapping = {stream["name"]: stream for stream in streams}
 
         for declarative_stream in self.streams(config=config):
             # Some low-code sources use a combination of DeclarativeStream and regular Python streams. We can't inspect
