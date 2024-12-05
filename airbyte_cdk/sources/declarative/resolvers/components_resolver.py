@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from dataclasses import InitVar, dataclass
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Type, Union
 
-from deprecated.classic import deprecated
+from typing_extensions import deprecated
 
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.source import ExperimentalClassWarning

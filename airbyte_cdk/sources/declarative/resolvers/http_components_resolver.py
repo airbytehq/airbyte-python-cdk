@@ -7,7 +7,7 @@ from dataclasses import InitVar, dataclass, field
 from typing import Any, Dict, Iterable, List, Mapping
 
 import dpath
-from deprecated.classic import deprecated
+from typing_extensions import deprecated
 
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.resolvers.components_resolver import (
