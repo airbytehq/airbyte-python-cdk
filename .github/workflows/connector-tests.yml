@@ -121,7 +121,7 @@ jobs:
         if: steps.no_changes.outputs.status != 'cancelled'
         with:
           repository: airbytehq/airbyte
-          ref: aj/airbyte-ci/allow-report-uploads-with-fewer-permissions
+          ref: master
           path: airbyte
       - name: Test Connector
         if: steps.no_changes.outputs.status != 'cancelled'
