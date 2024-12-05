@@ -11,9 +11,9 @@ from unittest import mock
 from unittest.mock import MagicMock, patch
 
 import freezegun
+import orjson
 import pytest
 import requests
-from orjson import orjson
 
 from airbyte_cdk import AirbyteEntrypoint
 from airbyte_cdk import entrypoint as entrypoint_module

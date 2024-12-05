@@ -128,7 +128,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             initial_number_of_partitions_to_generate=initial_number_of_partitions_to_generate,
             logger=self.logger,
             slice_logger=self._slice_logger,
-            message_repository=self.message_repository,  # type: ignore  # message_repository is always instantiated with a value by factory
+            message_repository=self.message_repository,
         )
 
     def read(
@@ -192,9 +192,13 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
         state_manager = ConnectorStateManager(state=self._state)  # type: ignore  # state is always in the form of List[AirbyteStateMessage]. The ConnectorStateManager should use generics, but this can be done later
 
-        name_to_stream_mapping = {
-            stream["name"]: stream for stream in self.resolved_manifest["streams"]
-        }
+        # Combine streams and dynamic_streams. Note: both cannot be empty at the same time,
+        # and this is validated during the initialization of the source.
+        streams = self._stream_configs(self._source_config) + self._dynamic_stream_configs(
+            self._source_config, config
+        )
+
+        name_to_stream_mapping = {stream["name"]: stream for stream in streams}
 
         for declarative_stream in self.streams(config=config):
             # Some low-code sources use a combination of DeclarativeStream and regular Python streams. We can't inspect
@@ -202,7 +206,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             # so we need to treat them as synchronous
             if (
                 isinstance(declarative_stream, DeclarativeStream)
-                and name_to_stream_mapping[declarative_stream.name].get("retriever")["type"]
+                and name_to_stream_mapping[declarative_stream.name]["retriever"]["type"]
                 == "SimpleRetriever"
             ):
                 incremental_sync_component_definition = name_to_stream_mapping[
@@ -211,7 +215,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
                 partition_router_component_definition = (
                     name_to_stream_mapping[declarative_stream.name]
-                    .get("retriever")
+                    .get("retriever", {})
                     .get("partition_router")
                 )
                 is_without_partition_router_or_cursor = not bool(
@@ -233,7 +237,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     cursor = self._constructor.create_concurrent_cursor_from_datetime_based_cursor(
                         state_manager=state_manager,
                         model_type=DatetimeBasedCursorModel,
-                        component_definition=incremental_sync_component_definition,
+                        component_definition=incremental_sync_component_definition,  # type: ignore  # Not None because of the if condition above
                         stream_name=declarative_stream.name,
                         stream_namespace=declarative_stream.namespace,
                         config=config or {},
@@ -316,10 +320,11 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
     def _is_datetime_incremental_without_partition_routing(
         self,
         declarative_stream: DeclarativeStream,
-        incremental_sync_component_definition: Mapping[str, Any],
+        incremental_sync_component_definition: Mapping[str, Any] | None,
     ) -> bool:
         return (
-            bool(incremental_sync_component_definition)
+            incremental_sync_component_definition is not None
+            and bool(incremental_sync_component_definition)
             and incremental_sync_component_definition.get("type", "")
             == DatetimeBasedCursorModel.__name__
             and self._stream_supports_concurrent_partition_processing(

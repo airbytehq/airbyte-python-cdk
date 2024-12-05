@@ -5,7 +5,7 @@
 from dataclasses import InitVar, dataclass, field
 from typing import Any, Mapping, MutableMapping, Optional, Union
 
-from deprecated import deprecated
+from typing_extensions import deprecated
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_nested_mapping import NestedMapping
 from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_nested_request_input_provider import (

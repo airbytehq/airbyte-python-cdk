@@ -8,12 +8,11 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description:
-            The version to publish, ie 1.0.0 or 1.0.0-dev1.
-            If omitted, and if run from a release branch, the version will be
-            inferred from the git tag.
-            If omitted, and if run from a non-release branch, then only a SHA-based
-            Docker tag will be created.
+        description: The version to publish, ie 1.0.0 or 1.0.0-dev1.
+          If omitted, and if run from a release branch, the version will be
+          inferred from the git tag.
+          If omitted, and if run from a non-release branch, then only a SHA-based
+          Docker tag will be created.
         required: false
       dry_run:
         description: If true, the workflow will not push to DockerHub.
@@ -25,7 +24,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-
       - name: Detect Release Tag Version
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
@@ -167,7 +165,6 @@ jobs:
           push: true
           tags: |
             airbyte/source-declarative-manifest:${{ env.VERSION }}
-
 
       - name: Build and push ('latest' tag)
         # Only run if version is set and IS_PRERELEASE is false

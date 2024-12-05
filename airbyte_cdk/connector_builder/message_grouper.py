@@ -71,7 +71,7 @@ class MessageGrouper:
 
         is_nested_key = isinstance(field[0], str)
         if is_nested_key:
-            return [field]  # type: ignore  # the type of field is expected to be List[str] here
+            return [field]
 
         raise ValueError(f"Unknown type for cursor field `{field}")
 
@@ -232,9 +232,9 @@ class MessageGrouper:
                 current_slice_descriptor = self._parse_slice_description(message.log.message)  # type: ignore[union-attr] # AirbyteMessage with MessageType.LOG has log.message
                 current_slice_pages = []
                 at_least_one_page_in_group = False
-            elif message.type == MessageType.LOG and message.log.message.startswith(
+            elif message.type == MessageType.LOG and message.log.message.startswith(  # type: ignore[union-attr] # None doesn't have 'message'
                 SliceLogger.SLICE_LOG_PREFIX
-            ):  # type: ignore[union-attr] # AirbyteMessage with MessageType.LOG has log.message
+            ):
                 # parsing the first slice
                 current_slice_descriptor = self._parse_slice_description(message.log.message)  # type: ignore[union-attr] # AirbyteMessage with MessageType.LOG has log.message
             elif message.type == MessageType.LOG:
@@ -274,14 +274,14 @@ class MessageGrouper:
                 if message.trace.type == TraceType.ERROR:  # type: ignore[union-attr] # AirbyteMessage with MessageType.TRACE has trace.type
                     yield message.trace
             elif message.type == MessageType.RECORD:
-                current_page_records.append(message.record.data)  # type: ignore[union-attr] # AirbyteMessage with MessageType.RECORD has record.data
+                current_page_records.append(message.record.data)  # type: ignore[arg-type, union-attr] # AirbyteMessage with MessageType.RECORD has record.data
                 records_count += 1
                 schema_inferrer.accumulate(message.record)
                 datetime_format_inferrer.accumulate(message.record)
             elif (
                 message.type == MessageType.CONTROL
-                and message.control.type == OrchestratorType.CONNECTOR_CONFIG
-            ):  # type: ignore[union-attr] # AirbyteMessage with MessageType.CONTROL has control.type
+                and message.control.type == OrchestratorType.CONNECTOR_CONFIG  # type: ignore[union-attr] # None doesn't have 'type'
+            ):
                 yield message.control
             elif message.type == MessageType.STATE:
                 latest_state_message = message.state  # type: ignore[assignment]
@@ -310,8 +310,8 @@ class MessageGrouper:
             and message.type == MessageType.LOG
             and (
                 MessageGrouper._is_page_http_request(json_message)
-                or message.log.message.startswith("slice:")
-            )  # type: ignore[union-attr] # AirbyteMessage with MessageType.LOG has log.message
+                or message.log.message.startswith("slice:")  # type: ignore[union-attr] # AirbyteMessage with MessageType.LOG has log.message
+            )
         )
 
     @staticmethod
@@ -355,8 +355,8 @@ class MessageGrouper:
             StreamReadPages(
                 request=current_page_request,
                 response=current_page_response,
-                records=deepcopy(current_page_records),
-            )  # type: ignore
+                records=deepcopy(current_page_records),  # type: ignore [arg-type]
+            )
         )
         current_page_records.clear()
 

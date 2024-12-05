@@ -5,9 +5,9 @@
 import logging
 from distutils.util import strtobool
 from enum import Flag, auto
-from typing import Any, Callable, Dict, Mapping, Optional
+from typing import Any, Callable, Dict, Generator, Mapping, Optional, cast
 
-from jsonschema import Draft7Validator, ValidationError, validators
+from jsonschema import Draft7Validator, RefResolver, ValidationError, Validator, validators
 
 json_to_python_simple = {
     "string": str,
@@ -30,7 +30,7 @@ class TransformConfig(Flag):
         ```
     """
 
-    # No action taken, default behaviour. Cannot be combined with any other options.
+    # No action taken, default behavior. Cannot be combined with any other options.
     NoTransform = auto()
     # Applies default type casting with default_convert method which converts
     # values by applying simple type casting to specified jsonschema type.
@@ -67,15 +67,15 @@ class TypeTransformer:
         )
 
     def registerCustomTransform(
-        self, normalization_callback: Callable[[Any, Dict[str, Any]], Any]
-    ) -> Callable:
+        self, normalization_callback: Callable[[Any, dict[str, Any]], Any]
+    ) -> Callable[[Any, dict[str, Any]], Any]:
         """
         Register custom normalization callback.
         :param normalization_callback function to be used for value
         normalization. Takes original value and part type schema. Should return
         normalized value. See docs/connector-development/cdk-python/schemas.md
         for details.
-        :return Same callbeck, this is usefull for using registerCustomTransform function as decorator.
+        :return Same callback, this is useful for using registerCustomTransform function as decorator.
         """
         if TransformConfig.CustomSchemaNormalization not in self._config:
             raise Exception(
@@ -141,7 +141,11 @@ class TypeTransformer:
             return original_item
         return original_item
 
-    def __get_normalizer(self, schema_key: str, original_validator: Callable):
+    def __get_normalizer(
+        self,
+        schema_key: str,
+        original_validator: Callable,  # type: ignore[type-arg]
+    ) -> Callable[[Any, Any, Any, dict[str, Any]], Generator[Any, Any, None]]:
         """
         Traverse through object fields using native jsonschema validator and apply normalization function.
         :param schema_key related json schema key that currently being validated/normalized.
@@ -149,8 +153,11 @@ class TypeTransformer:
         """
 
         def normalizator(
-            validator_instance: Callable, property_value: Any, instance: Any, schema: Dict[str, Any]
-        ):
+            validator_instance: Validator,
+            property_value: Any,
+            instance: Any,
+            schema: Dict[str, Any],
+        ) -> Generator[Any, Any, None]:
             """
             Jsonschema validator callable it uses for validating instance. We
             override default Draft7Validator to perform value transformation
@@ -163,10 +170,13 @@ class TypeTransformer:
             :
             """
 
-            def resolve(subschema):
+            def resolve(subschema: dict[str, Any]) -> dict[str, Any]:
                 if "$ref" in subschema:
-                    _, resolved = validator_instance.resolver.resolve(subschema["$ref"])
-                    return resolved
+                    _, resolved = cast(
+                        RefResolver,
+                        validator_instance.resolver,
+                    ).resolve(subschema["$ref"])
+                    return cast(dict[str, Any], resolved)
                 return subschema
 
             # Transform object and array values before running json schema type checking for each element.
@@ -185,11 +195,20 @@ class TypeTransformer:
                     instance[index] = self.__normalize(item, subschema)
 
             # Running native jsonschema traverse algorithm after field normalization is done.
-            yield from original_validator(validator_instance, property_value, instance, schema)
+            yield from original_validator(
+                validator_instance,
+                property_value,
+                instance,
+                schema,
+            )
 
         return normalizator
 
-    def transform(self, record: Dict[str, Any], schema: Mapping[str, Any]):
+    def transform(
+        self,
+        record: Dict[str, Any],
+        schema: Mapping[str, Any],
+    ) -> None:
         """
         Normalize and validate according to config.
         :param record: record instance for normalization/transformation. All modification are done by modifying existent object.
@@ -201,7 +220,7 @@ class TypeTransformer:
         for e in normalizer.iter_errors(record):
             """
             just calling normalizer.validate() would throw an exception on
-            first validation occurences and stop processing rest of schema.
+            first validation occurrences and stop processing rest of schema.
             """
             logger.warning(self.get_error_message(e))
 

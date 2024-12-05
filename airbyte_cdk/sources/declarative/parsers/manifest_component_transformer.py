@@ -31,6 +31,12 @@ DEFAULT_MODEL_TYPES: Mapping[str, str] = {
     # DeclarativeStream
     "DeclarativeStream.retriever": "SimpleRetriever",
     "DeclarativeStream.schema_loader": "JsonFileSchemaLoader",
+    # DynamicDeclarativeStream
+    "DynamicDeclarativeStream.stream_template": "DeclarativeStream",
+    "DynamicDeclarativeStream.components_resolver": "HttpComponentsResolver",
+    # HttpComponentsResolver
+    "HttpComponentsResolver.retriever": "SimpleRetriever",
+    "HttpComponentsResolver.components_mapping": "ComponentMappingDefinition",
     # DefaultErrorHandler
     "DefaultErrorHandler.response_filters": "HttpResponseFilter",
     # DefaultPaginator

@@ -120,6 +120,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     CheckStream as CheckStreamModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ComponentMappingDefinition as ComponentMappingDefinitionModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CompositeErrorHandler as CompositeErrorHandlerModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -190,6 +193,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     GzipJsonDecoder as GzipJsonDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    HttpComponentsResolver as HttpComponentsResolverModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     HttpRequester as HttpRequesterModel,
@@ -298,6 +304,7 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
     ListPartitionRouter,
+    PartitionRouter,
     SinglePartitionRouter,
     SubstreamPartitionRouter,
 )
@@ -338,6 +345,10 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
+from airbyte_cdk.sources.declarative.resolvers import (
+    ComponentMappingDefinition,
+    HttpComponentsResolver,
+)
 from airbyte_cdk.sources.declarative.retrievers import (
     AsyncRetriever,
     SimpleRetriever,
@@ -396,7 +407,7 @@ class ModelToComponentFactory:
         self._disable_retries = disable_retries
         self._disable_cache = disable_cache
         self._disable_resumable_full_refresh = disable_resumable_full_refresh
-        self._message_repository = message_repository or InMemoryMessageRepository(  # type: ignore
+        self._message_repository = message_repository or InMemoryMessageRepository(
             self._evaluate_log_level(emit_connector_builder_messages)
         )
 
@@ -467,6 +478,8 @@ class ModelToComponentFactory:
             WaitTimeFromHeaderModel: self.create_wait_time_from_header,
             WaitUntilTimeFromHeaderModel: self.create_wait_until_time_from_header,
             AsyncRetrieverModel: self.create_async_retriever,
+            HttpComponentsResolverModel: self.create_http_components_resolver,
+            ComponentMappingDefinitionModel: self.create_components_mapping_definition,
         }
 
         # Needed for the case where we need to perform a second parse on the fields of a custom component
@@ -644,7 +657,7 @@ class ModelToComponentFactory:
             declarative_stream.incremental_sync,  # type: ignore # was already checked. Migration can be applied only to incremental streams.
             config,
             declarative_stream.parameters,  # type: ignore # different type is expected here Mapping[str, Any], got Dict[str, Any]
-        )  # type: ignore # The retriever type was already checked
+        )
 
     def create_session_token_authenticator(
         self, model: SessionTokenAuthenticatorModel, config: Config, name: str, **kwargs: Any
@@ -674,7 +687,7 @@ class ModelToComponentFactory:
             return ModelToComponentFactory.create_bearer_authenticator(
                 BearerAuthenticatorModel(type="BearerAuthenticator", api_token=""),  # type: ignore # $parameters has a default value
                 config,
-                token_provider=token_provider,  # type: ignore # $parameters defaults to None
+                token_provider=token_provider,
             )
         else:
             return ModelToComponentFactory.create_api_key_authenticator(
@@ -821,7 +834,6 @@ class ModelToComponentFactory:
             input_datetime_formats=datetime_based_cursor_model.cursor_datetime_formats,
             is_sequential_state=True,
             cursor_granularity=cursor_granularity,
-            # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
         )
 
         start_date_runtime_value: Union[InterpolatedString, str, MinMaxDatetime]
@@ -894,7 +906,7 @@ class ModelToComponentFactory:
             stream_name=stream_name,
             stream_namespace=stream_namespace,
             stream_state=stream_state,
-            message_repository=self._message_repository,  # type: ignore  # message_repository is always instantiated with a value by factory
+            message_repository=self._message_repository,
             connector_state_manager=state_manager,
             connector_state_converter=connector_state_converter,
             cursor_field=cursor_field,
@@ -1282,19 +1294,20 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
-    def _merge_stream_slicers(
-        self, model: DeclarativeStreamModel, config: Config
-    ) -> Optional[StreamSlicer]:
-        stream_slicer = None
+    def _build_stream_slicer_from_partition_router(
+        self,
+        model: Union[AsyncRetrieverModel, CustomRetrieverModel, SimpleRetrieverModel],
+        config: Config,
+    ) -> Optional[PartitionRouter]:
         if (
-            hasattr(model.retriever, "partition_router")
-            and isinstance(model.retriever, SimpleRetrieverModel)
-            and model.retriever.partition_router
+            hasattr(model, "partition_router")
+            and isinstance(model, SimpleRetrieverModel)
+            and model.partition_router
         ):
-            stream_slicer_model = model.retriever.partition_router
+            stream_slicer_model = model.partition_router
 
             if isinstance(stream_slicer_model, list):
-                stream_slicer = CartesianProductStreamSlicer(
+                return CartesianProductStreamSlicer(
                     [
                         self._create_component_from_model(model=slicer, config=config)
                         for slicer in stream_slicer_model
@@ -1302,9 +1315,24 @@ class ModelToComponentFactory:
                     parameters={},
                 )
             else:
-                stream_slicer = self._create_component_from_model(
-                    model=stream_slicer_model, config=config
-                )
+                return self._create_component_from_model(model=stream_slicer_model, config=config)  # type: ignore[no-any-return]
+                # Will be created PartitionRouter as stream_slicer_model is model.partition_router
+        return None
+
+    def _build_resumable_cursor_from_paginator(
+        self,
+        model: Union[AsyncRetrieverModel, CustomRetrieverModel, SimpleRetrieverModel],
+        stream_slicer: Optional[StreamSlicer],
+    ) -> Optional[StreamSlicer]:
+        if hasattr(model, "paginator") and model.paginator and not stream_slicer:
+            # For the regular Full-Refresh streams, we use the high level `ResumableFullRefreshCursor`
+            return ResumableFullRefreshCursor(parameters={})
+        return None
+
+    def _merge_stream_slicers(
+        self, model: DeclarativeStreamModel, config: Config
+    ) -> Optional[StreamSlicer]:
+        stream_slicer = self._build_stream_slicer_from_partition_router(model.retriever, config)
 
         if model.incremental_sync and stream_slicer:
             incremental_sync_model = model.incremental_sync
@@ -1347,15 +1375,7 @@ class ModelToComponentFactory:
                 ),
                 partition_router=stream_slicer,
             )
-        elif (
-            hasattr(model.retriever, "paginator")
-            and model.retriever.paginator
-            and not stream_slicer
-        ):
-            # For the regular Full-Refresh streams, we use the high level `ResumableFullRefreshCursor`
-            return ResumableFullRefreshCursor(parameters={})
-        else:
-            return None
+        return self._build_resumable_cursor_from_paginator(model.retriever, stream_slicer)
 
     def create_default_error_handler(
         self, model: DefaultErrorHandlerModel, config: Config, **kwargs: Any
@@ -1705,7 +1725,7 @@ class ModelToComponentFactory:
             refresh_token=model.refresh_token,
             scopes=model.scopes,
             token_expiry_date=model.token_expiry_date,
-            token_expiry_date_format=model.token_expiry_date_format,  # type: ignore
+            token_expiry_date_format=model.token_expiry_date_format,
             token_expiry_is_time_of_expiration=bool(model.token_expiry_date_format),
             token_refresh_endpoint=model.token_refresh_endpoint,
             config=config,
@@ -2219,3 +2239,56 @@ class ModelToComponentFactory:
 
     def _evaluate_log_level(self, emit_connector_builder_messages: bool) -> Level:
         return Level.DEBUG if emit_connector_builder_messages else Level.INFO
+
+    @staticmethod
+    def create_components_mapping_definition(
+        model: ComponentMappingDefinitionModel, config: Config, **kwargs: Any
+    ) -> ComponentMappingDefinition:
+        interpolated_value = InterpolatedString.create(
+            model.value, parameters=model.parameters or {}
+        )
+        field_path = [
+            InterpolatedString.create(path, parameters=model.parameters or {})
+            for path in model.field_path
+        ]
+        return ComponentMappingDefinition(
+            field_path=field_path,  # type: ignore[arg-type] # field_path can be str and InterpolatedString
+            value=interpolated_value,
+            value_type=ModelToComponentFactory._json_schema_type_name_to_type(model.value_type),
+            parameters=model.parameters or {},
+        )
+
+    def create_http_components_resolver(
+        self, model: HttpComponentsResolverModel, config: Config
+    ) -> Any:
+        stream_slicer = self._build_stream_slicer_from_partition_router(model.retriever, config)
+        combined_slicers = self._build_resumable_cursor_from_paginator(
+            model.retriever, stream_slicer
+        )
+
+        retriever = self._create_component_from_model(
+            model=model.retriever,
+            config=config,
+            name="",
+            primary_key=None,
+            stream_slicer=combined_slicers,
+            transformations=[],
+        )
+
+        components_mapping = [
+            self._create_component_from_model(
+                model=components_mapping_definition_model,
+                value_type=ModelToComponentFactory._json_schema_type_name_to_type(
+                    components_mapping_definition_model.value_type
+                ),
+                config=config,
+            )
+            for components_mapping_definition_model in model.components_mapping
+        ]
+
+        return HttpComponentsResolver(
+            retriever=retriever,
+            config=config,
+            components_mapping=components_mapping,
+            parameters=model.parameters or {},
+        )

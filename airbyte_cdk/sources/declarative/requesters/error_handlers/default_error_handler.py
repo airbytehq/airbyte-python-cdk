@@ -141,7 +141,7 @@ class DefaultErrorHandler(ErrorHandler):
             for backoff_strategy in self.backoff_strategies:
                 backoff = backoff_strategy.backoff_time(
                     response_or_exception=response_or_exception, attempt_count=attempt_count
-                )  # type: ignore # attempt_count maintained for compatibility with low code CDK
+                )
                 if backoff:
                     return backoff
         return backoff

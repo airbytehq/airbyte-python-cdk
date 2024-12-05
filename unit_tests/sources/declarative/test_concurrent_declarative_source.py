@@ -10,7 +10,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 import freezegun
 import isodate
 import pendulum
-from deprecated.classic import deprecated
+from typing_extensions import deprecated
 
 from airbyte_cdk.models import (
     AirbyteMessage,

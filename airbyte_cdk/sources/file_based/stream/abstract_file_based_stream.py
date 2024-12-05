@@ -6,7 +6,7 @@ from abc import abstractmethod
 from functools import cache, cached_property, lru_cache
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Type
 
-from deprecated import deprecated
+from typing_extensions import deprecated
 
 from airbyte_cdk import AirbyteMessage
 from airbyte_cdk.models import SyncMode
@@ -179,7 +179,7 @@ class AbstractFileBasedStream(Stream):
             )
 
     @cached_property
-    @deprecated(version="3.7.0")
+    @deprecated("Deprecated as of CDK version 3.7.0.")
     def availability_strategy(self) -> AbstractFileBasedAvailabilityStrategy:
         return self._availability_strategy
 

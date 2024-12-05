@@ -7,8 +7,12 @@ version: 1.0.0
 required:
   - type
   - check
-  - streams
   - version
+anyOf:
+  - required:
+      - streams
+  - required:
+      - dynamic_streams
 properties:
   type:
     type: string
@@ -19,6 +23,10 @@ properties:
     type: array
     items:
       "$ref": "#/definitions/DeclarativeStream"
+  dynamic_streams:
+    type: array
+    items:
+      "$ref": "#/definitions/DynamicDeclarativeStream"
   version:
     type: string
     description: The version of the Airbyte CDK used to build and test the source.
@@ -1321,7 +1329,7 @@ definitions:
         type: array
         items:
           - type: string
-        interpolation_content:
+        interpolation_context:
           - config
         examples:
           - ["data"]
@@ -2057,7 +2065,7 @@ definitions:
               The DeclarativeOAuth Specific URL templated string to obtain the `access_token`, `refresh_token` etc.
               The placeholders are replaced during the processing to provide neccessary values.
             examples:
-              - access_token_url: https://auth.host.com/oauth2/token?{client_id_key}={{client_id_key}}&{client_secret_key}={{client_secret_key}}&{auth_code_key}={{auth_code_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}} 
+              - access_token_url: https://auth.host.com/oauth2/token?{client_id_key}={{client_id_key}}&{client_secret_key}={{client_secret_key}}&{auth_code_key}={{auth_code_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}
           access_token_headers:
             title: (Optional) DeclarativeOAuth Access Token Headers
             type: object
@@ -2065,9 +2073,10 @@ definitions:
             description: |-
               The DeclarativeOAuth Specific optional headers to inject while exchanging the `auth_code` to `access_token` during `completeOAuthFlow` step.
             examples:
-              - access_token_headers: {
-                  "Authorization": "Basic {base64Encoder:{client_id}:{client_secret}}"
-                }
+              - access_token_headers:
+                  {
+                    "Authorization": "Basic {base64Encoder:{client_id}:{client_secret}}",
+                  }
           access_token_params:
             title: (Optional) DeclarativeOAuth Access Token Query Params (Json Encoded)
             type: object
@@ -2076,18 +2085,19 @@ definitions:
               The DeclarativeOAuth Specific optional query parameters to inject while exchanging the `auth_code` to `access_token` during `completeOAuthFlow` step.
               When this property is provided, the query params will be encoded as `Json` and included in the outgoing API request.
             examples:
-              - access_token_params: {
-                  "{auth_code_key}": "{{auth_code_key}}",
-                  "{client_id_key}": "{{client_id_key}}",
-                  "{client_secret_key}": "{{client_secret_key}}"
-                }
+              - access_token_params:
+                  {
+                    "{auth_code_key}": "{{auth_code_key}}",
+                    "{client_id_key}": "{{client_id_key}}",
+                    "{client_secret_key}": "{{client_secret_key}}",
+                  }
           extract_output:
             title: DeclarativeOAuth Extract Output
             type: array
             items:
               type: string
             description: |-
-              The DeclarativeOAuth Specific list of strings to indicate which keys should be extracted and returned back to the input config.                
+              The DeclarativeOAuth Specific list of strings to indicate which keys should be extracted and returned back to the input config.
             examples:
               - extract_output: ["access_token", "refresh_token", "other_field"]
           state:
@@ -2099,17 +2109,14 @@ definitions:
               - max
             description: |-
               The DeclarativeOAuth Specific object to provide the criteria of how the `state` query param should be constructed,
-              including length and complexity.                
+              including length and complexity.
             properties:
               min:
                 type: integer
               max:
                 type: integer
             examples:
-              - state: {
-                  "min": 7,
-                  "max": 128,
-                }
+              - state: { "min": 7, "max": 128 }
           client_id_key:
             title: (Optional) DeclarativeOAuth Client ID Key Override
             type: string
@@ -2135,14 +2142,14 @@ definitions:
             title: (Optional) DeclarativeOAuth State Key Override
             type: string
             description: |-
-              The DeclarativeOAuth Specific optional override to provide the custom `state` key name, if required by data-provider.                
+              The DeclarativeOAuth Specific optional override to provide the custom `state` key name, if required by data-provider.
             examples:
               - state_key: "my_custom_state_key_key_name"
           auth_code_key:
             title: (Optional) DeclarativeOAuth Auth Code Key Override
             type: string
             description: |-
-              The DeclarativeOAuth Specific optional override to provide the custom `code` key name to something like `auth_code` or `custom_auth_code`, if required by data-provider.                
+              The DeclarativeOAuth Specific optional override to provide the custom `code` key name to something like `auth_code` or `custom_auth_code`, if required by data-provider.
             examples:
               - auth_code_key: "my_custom_auth_code_key_name"
           redirect_uri_key:
@@ -2896,6 +2903,96 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  ComponentMappingDefinition:
+    title: Component Mapping Definition
+    description: (This component is experimental. Use at your own risk.) Specifies a mapping definition to update or add fields in a record or configuration. This allows dynamic mapping of data by interpolating values into the template based on provided contexts.
+    type: object
+    required:
+      - type
+      - field_path
+      - value
+    properties:
+      type:
+        type: string
+        enum: [ComponentMappingDefinition]
+      field_path:
+        title: Field Path
+        description: A list of potentially nested fields indicating the full path where value will be added or updated.
+        type: array
+        items:
+          - type: string
+        interpolation_context:
+          - config
+          - components_values
+          - stream_template_config
+        examples:
+          - ["data"]
+          - ["data", "records"]
+          - ["data", "{{ parameters.name }}"]
+          - ["data", "*", "record"]
+      value:
+        title: Value
+        description: The dynamic or static value to assign to the key. Interpolated values can be used to dynamically determine the value during runtime.
+        type: string
+        interpolation_context:
+          - config
+          - stream_template_config
+          - components_values
+        examples:
+          - "{{ components_values['updates'] }}"
+          - "{{ components_values['MetaData']['LastUpdatedTime'] }}"
+          - "{{ config['segment_id'] }}"
+      value_type:
+        title: Value Type
+        description: The expected data type of the value. If omitted, the type will be inferred from the value provided.
+        "$ref": "#/definitions/ValueType"
+      $parameters:
+        type: object
+        additionalProperties: true
+  HttpComponentsResolver:
+    type: object
+    description: (This component is experimental. Use at your own risk.) Component resolve and populates stream templates with components fetched via an HTTP retriever.
+    properties:
+      type:
+        type: string
+        enum: [HttpComponentsResolver]
+      retriever:
+        title: Retriever
+        description: Component used to coordinate how records are extracted across stream slices and request pages.
+        anyOf:
+          - "$ref": "#/definitions/AsyncRetriever"
+          - "$ref": "#/definitions/CustomRetriever"
+          - "$ref": "#/definitions/SimpleRetriever"
+      components_mapping:
+        type: array
+        items:
+          "$ref": "#/definitions/ComponentMappingDefinition"
+      $parameters:
+        type: object
+        additionalProperties: true
+    required:
+      - type
+      - retriever
+      - components_mapping
+  DynamicDeclarativeStream:
+    type: object
+    description: (This component is experimental. Use at your own risk.) A component that described how will be created declarative streams based on stream template.
+    properties:
+      type:
+        type: string
+        enum: [DynamicDeclarativeStream]
+      stream_template:
+        title: Stream Template
+        description: Reference to the stream template.
+        "$ref": "#/definitions/DeclarativeStream"
+      components_resolver:
+        title: Components Resolver
+        description: Component resolve and populates stream templates with components values.
+        "$ref": "#/definitions/HttpComponentsResolver"
+    required:
+      - type
+      - stream_template
+      - components_resolver
 interpolation:
   variables:
     - title: config

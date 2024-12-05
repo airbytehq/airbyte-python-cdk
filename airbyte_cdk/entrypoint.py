@@ -22,7 +22,7 @@ from requests import PreparedRequest, Response, Session
 from airbyte_cdk.connector import TConfig
 from airbyte_cdk.exception_handler import init_uncaught_exception_handler
 from airbyte_cdk.logger import init_logger
-from airbyte_cdk.models import (  # type: ignore [attr-defined]
+from airbyte_cdk.models import (
     AirbyteConnectionStatus,
     AirbyteMessage,
     AirbyteMessageSerializer,
@@ -255,9 +255,10 @@ class AirbyteEntrypoint(object):
 
                 stream_message_count[
                     HashableStreamDescriptor(
-                        name=message.record.stream, namespace=message.record.namespace
+                        name=message.record.stream,  # type: ignore[union-attr] # record has `stream`
+                        namespace=message.record.namespace,  # type: ignore[union-attr] # record has `namespace`
                     )
-                ] += 1.0  # type: ignore[union-attr] # record has `stream` and `namespace`
+                ] += 1.0
             case Type.STATE:
                 if message.state is None:
                     raise ValueError("State message must have a state attribute")
@@ -266,9 +267,9 @@ class AirbyteEntrypoint(object):
 
                 # Set record count from the counter onto the state message
                 message.state.sourceStats = message.state.sourceStats or AirbyteStateStats()  # type: ignore[union-attr] # state has `sourceStats`
-                message.state.sourceStats.recordCount = stream_message_count.get(
+                message.state.sourceStats.recordCount = stream_message_count.get(  # type: ignore[union-attr] # state has `sourceStats`
                     stream_descriptor, 0.0
-                )  # type: ignore[union-attr] # state has `sourceStats`
+                )
 
                 # Reset the counter
                 stream_message_count[stream_descriptor] = 0.0
@@ -290,7 +291,7 @@ class AirbyteEntrypoint(object):
 
     @staticmethod
     def airbyte_message_to_string(airbyte_message: AirbyteMessage) -> str:
-        return orjson.dumps(AirbyteMessageSerializer.dump(airbyte_message)).decode()  # type: ignore[no-any-return] # orjson.dumps(message).decode() always returns string
+        return orjson.dumps(AirbyteMessageSerializer.dump(airbyte_message)).decode()
 
     @classmethod
     def extract_state(cls, args: List[str]) -> Optional[Any]:

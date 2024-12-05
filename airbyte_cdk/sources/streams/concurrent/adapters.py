@@ -8,7 +8,7 @@ import logging
 from functools import lru_cache
 from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Tuple, Union
 
-from deprecated.classic import deprecated
+from typing_extensions import deprecated
 
 from airbyte_cdk.models import (
     AirbyteLogMessage,
@@ -50,7 +50,10 @@ This module contains adapters to help enabling concurrency on Stream objects wit
 """
 
 
-@deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)
+@deprecated(
+    "This class is experimental. Use at your own risk.",
+    category=ExperimentalClassWarning,
+)
 class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
     """
     The StreamFacade is a Stream that wraps an AbstractStream and exposes it as a Stream.
@@ -297,7 +300,7 @@ class StreamPartition(Partition):
                     yield Record(
                         data=data_to_return,
                         stream_name=self.stream_name(),
-                        associated_slice=self._slice,
+                        associated_slice=self._slice,  # type: ignore [arg-type]
                     )
                 else:
                     self._message_repository.emit_message(record_data)

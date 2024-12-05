@@ -6,8 +6,8 @@ import json
 from typing import Any, Iterator, List, Mapping
 from unittest.mock import MagicMock, Mock, patch
 
+import orjson
 import pytest
-from orjson import orjson
 
 from airbyte_cdk.connector_builder.message_grouper import MessageGrouper
 from airbyte_cdk.connector_builder.models import (

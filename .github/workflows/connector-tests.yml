@@ -72,12 +72,14 @@ jobs:
             cdk_extra: n/a
           - connector: source-shopify
             cdk_extra: n/a
-          - connector: source-chargebee
-            cdk_extra: n/a
-          - connector: source-s3
-            cdk_extra: file-based
-          - connector: destination-pinecone
-            cdk_extra: vector-db-based
+          # Chargebee is being flaky:
+          # - connector: source-chargebee
+          #   cdk_extra: n/a
+          # These two are behind in CDK updates and can't be used as tests until they are updated:
+          # - connector: source-s3
+          #   cdk_extra: file-based
+          # - connector: destination-pinecone
+          #   cdk_extra: vector-db-based
           - connector: destination-motherduck
             cdk_extra: sql
           # ZenDesk currently failing (as of 2024-12-02)
@@ -91,7 +93,9 @@ jobs:
           # - connector: source-pokeapi
           #   cdk_extra: n/a
 
-    name: "Check: '${{matrix.connector}}' (skip=${{needs.cdk_changes.outputs[matrix.cdk_extra] == 'false'}})"
+    name: "Check: '${{matrix.connector}}' (skip=${{needs.cdk_changes.outputs['src'] == 'false' || needs.cdk_changes.outputs[matrix.cdk_extra] == 'false'}})"
+    permissions:
+      checks: write
     steps:
       - name: Abort if extra not changed (${{matrix.cdk_extra}})
         id: no_changes
@@ -129,7 +133,9 @@ jobs:
         run: |
           cd airbyte
           make tools.airbyte-ci-dev.install
-          airbyte-ci-dev connectors \
+          airbyte-ci-dev \
+          --ci-report-bucket-name=airbyte-ci-reports-multi \
+          connectors \
           --name ${{matrix.connector}} \
           --use-local-cdk \
           test \
@@ -137,7 +143,8 @@ jobs:
           --skip-step qa_checks \
           --skip-step connector_live_tests
 
-      - name: Evaluate Test Output
+      - name: Evaluate Test
+        id: evaluate_output
         if: always() && steps.no_changes.outputs.status != 'cancelled'
         run: |
           # save job output json file as ci step output
@@ -146,7 +153,9 @@ jobs:
           success=$(echo ${job_output} | jq -r '.success')
           failed_step=$(echo ${job_output} | jq -r '.failed_steps | select(length > 0) | .[0] // "None"')
           run_duration=$(echo ${job_output} | jq -r '.run_duration')
+          html_report_url=$(echo ${job_output} | jq -r '.html_report_url')
           echo "## Job Output for ${{matrix.connector}}" >> $GITHUB_STEP_SUMMARY
+          echo "- [HTML Report](${html_report_url})" >> $GITHUB_STEP_SUMMARY
           echo "- Success: ${success}" >> $GITHUB_STEP_SUMMARY
           echo "- Test Duration: $(printf "%.0f" ${run_duration})s" >> $GITHUB_STEP_SUMMARY
           if [ "${success}" != "true" ]; then
@@ -157,6 +166,8 @@ jobs:
             echo "::error::Test failed for connector '${{ matrix.connector }}' on step '${failed_step}'. Check the logs for more details."
             exit 1
           fi
+          echo "success=${success}" >> $GITHUB_OUTPUT
+          echo "html_report_url=${html_report_url}" >> $GITHUB_OUTPUT
 
       # Upload the job output to the artifacts
       - name: Upload Job Output

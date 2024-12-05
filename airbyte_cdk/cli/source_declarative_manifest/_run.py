@@ -25,7 +25,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
-from orjson import orjson
+import orjson
 
 from airbyte_cdk.entrypoint import AirbyteEntrypoint, launch
 from airbyte_cdk.models import (
@@ -72,7 +72,7 @@ class SourceLocalYaml(YamlDeclarativeSource):
         super().__init__(
             catalog=catalog,
             config=config,
-            state=state,
+            state=state,  # type: ignore [arg-type]
             path_to_yaml="manifest.yaml",
         )
 
@@ -152,7 +152,9 @@ def handle_remote_manifest_command(args: list[str]) -> None:
         )
 
 
-def create_declarative_source(args: list[str]) -> ConcurrentDeclarativeSource:
+def create_declarative_source(
+    args: list[str],
+) -> ConcurrentDeclarativeSource:  # type: ignore [type-arg]
     """Creates the source with the injected config.
 
     This essentially does what other low-code sources do at build time, but at runtime,
@@ -160,10 +162,14 @@ def create_declarative_source(args: list[str]) -> ConcurrentDeclarativeSource:
     connector builder.
     """
     try:
+        config: Mapping[str, Any] | None
+        catalog: ConfiguredAirbyteCatalog | None
+        state: list[AirbyteStateMessage]
         config, catalog, state = _parse_inputs_into_config_catalog_state(args)
-        if "__injected_declarative_manifest" not in config:
+        if config is None or "__injected_declarative_manifest" not in config:
             raise ValueError(
-                f"Invalid config: `__injected_declarative_manifest` should be provided at the root of the config but config only has keys {list(config.keys())}"
+                "Invalid config: `__injected_declarative_manifest` should be provided at the root "
+                f"of the config but config only has keys: {list(config.keys() if config else [])}"
             )
         return ConcurrentDeclarativeSource(
             config=config,

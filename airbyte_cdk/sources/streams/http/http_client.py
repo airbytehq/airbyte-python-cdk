@@ -144,7 +144,7 @@ class HttpClient:
                 sqlite_path = "file::memory:?cache=shared"
             return CachedLimiterSession(
                 sqlite_path, backend="sqlite", api_budget=self._api_budget, match_headers=True
-            )  # type: ignore # there are no typeshed stubs for requests_cache
+            )
         else:
             return LimiterSession(api_budget=self._api_budget)
 
@@ -324,7 +324,7 @@ class HttpClient:
             formatter = log_formatter
             self._message_repository.log_message(
                 Level.DEBUG,
-                lambda: formatter(response),  # type: ignore # log_formatter is always cast to a callable
+                lambda: formatter(response),
             )
 
         self._handle_error_resolution(

@@ -6,7 +6,7 @@
 import sys
 from typing import Any, List, Mapping, Optional, Tuple
 
-from orjson import orjson
+import orjson
 
 from airbyte_cdk.connector import BaseConnector
 from airbyte_cdk.connector_builder.connector_builder_handler import (
