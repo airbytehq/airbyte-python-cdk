@@ -198,6 +198,12 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     HttpComponentsResolver as HttpComponentsResolverModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ConfigComponentsResolver as ConfigComponentsResolverModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    StreamConfig as StreamConfigModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     HttpRequester as HttpRequesterModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -348,6 +354,8 @@ from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
 from airbyte_cdk.sources.declarative.resolvers import (
     ComponentMappingDefinition,
     HttpComponentsResolver,
+    ConfigComponentsResolver,
+    StreamConfig,
 )
 from airbyte_cdk.sources.declarative.retrievers import (
     AsyncRetriever,
@@ -479,6 +487,8 @@ class ModelToComponentFactory:
             WaitUntilTimeFromHeaderModel: self.create_wait_until_time_from_header,
             AsyncRetrieverModel: self.create_async_retriever,
             HttpComponentsResolverModel: self.create_http_components_resolver,
+            ConfigComponentsResolverModel: self.create_config_components_resolver,
+            StreamConfigModel: self.create_stream_config,
             ComponentMappingDefinitionModel: self.create_components_mapping_definition,
         }
 
@@ -1812,8 +1822,8 @@ class ModelToComponentFactory:
         self,
         model: RecordSelectorModel,
         config: Config,
-        name: str,
         *,
+        name: str,
         transformations: List[RecordTransformation],
         decoder: Optional[Decoder] = None,
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
@@ -2288,6 +2298,44 @@ class ModelToComponentFactory:
 
         return HttpComponentsResolver(
             retriever=retriever,
+            config=config,
+            components_mapping=components_mapping,
+            parameters=model.parameters or {},
+        )
+
+    @staticmethod
+    def create_stream_config(
+        model: StreamConfigModel, config: Config, **kwargs: Any
+    ) -> StreamConfig:
+        model_configs_pointer: List[Union[InterpolatedString, str]] = (
+            [x for x in model.configs_pointer] if model.configs_pointer else []
+        )
+
+        return StreamConfig(
+            configs_pointer=model_configs_pointer,
+            parameters=model.parameters or {},
+        )
+
+    def create_config_components_resolver(
+        self, model: ConfigComponentsResolverModel, config: Config
+    ) -> Any:
+        stream_config = self._create_component_from_model(
+            model.stream_config, config=config, parameters=model.parameters or {}
+        )
+
+        components_mapping = [
+            self._create_component_from_model(
+                model=components_mapping_definition_model,
+                value_type=ModelToComponentFactory._json_schema_type_name_to_type(
+                    components_mapping_definition_model.value_type
+                ),
+                config=config,
+            )
+            for components_mapping_definition_model in model.components_mapping
+        ]
+
+        return ConfigComponentsResolver(
+            stream_config=stream_config,
             config=config,
             components_mapping=components_mapping,
             parameters=model.parameters or {},

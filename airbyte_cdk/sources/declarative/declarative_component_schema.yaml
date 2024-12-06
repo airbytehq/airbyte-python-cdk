@@ -2920,7 +2920,9 @@ definitions:
         description: A list of potentially nested fields indicating the full path where value will be added or updated.
         type: array
         items:
-          - type: string
+          anyOf:
+            - type: string
+            - type: integer
         interpolation_context:
           - config
           - components_values
@@ -2928,8 +2930,10 @@ definitions:
         examples:
           - ["data"]
           - ["data", "records"]
-          - ["data", "{{ parameters.name }}"]
+          - ["data", 1, "name"]
+          - ["data", "{{ components_values.name }}"]
           - ["data", "*", "record"]
+          - ["*", "**", "name"]
       value:
         title: Value
         description: The dynamic or static value to assign to the key. Interpolated values can be used to dynamically determine the value during runtime.
@@ -2974,6 +2978,52 @@ definitions:
       - type
       - retriever
       - components_mapping
+  StreamConfig:
+    title: Stream Config
+    description: (This component is experimental. Use at your own risk.) Describes how to get streams config from the source config.
+    type: object
+    required:
+      - type
+      - configs_pointer
+    properties:
+      type:
+        type: string
+        enum: [StreamConfig]
+      configs_pointer:
+        title: Configs Pointer
+        description: A list of potentially nested fields indicating the full path in source config file where streams configs located.
+        type: array
+        items:
+          - type: string
+        interpolation_context:
+          - parameters
+        examples:
+          - ["data"]
+          - ["data", "streams"]
+          - ["data", "{{ parameters.name }}"]
+      $parameters:
+        type: object
+        additionalProperties: true
+  ConfigComponentsResolver:
+    type: object
+    description: (This component is experimental. Use at your own risk.) Component resolve and populates stream templates with components fetched from the source config.
+    properties:
+      type:
+        type: string
+        enum: [ConfigComponentsResolver]
+      stream_config:
+        "$ref": "#/definitions/StreamConfig"
+      components_mapping:
+        type: array
+        items:
+          "$ref": "#/definitions/ComponentMappingDefinition"
+      $parameters:
+        type: object
+        additionalProperties: true
+    required:
+      - type
+      - stream_config
+      - components_mapping
   DynamicDeclarativeStream:
     type: object
     description: (This component is experimental. Use at your own risk.) A component that described how will be created declarative streams based on stream template.
@@ -2988,7 +3038,9 @@ definitions:
       components_resolver:
         title: Components Resolver
         description: Component resolve and populates stream templates with components values.
-        "$ref": "#/definitions/HttpComponentsResolver"
+        anyOf:
+          - "$ref": "#/definitions/HttpComponentsResolver"
+          - "$ref": "#/definitions/ConfigComponentsResolver"
     required:
       - type
       - stream_template
