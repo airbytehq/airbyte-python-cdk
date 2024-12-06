@@ -1,4 +1,4 @@
-FROM docker.io/airbyte/python-connector-base:2.0.0@sha256:c44839ba84406116e8ba68722a0f30e8f6e7056c726f447681bb9e9ece8bd916
+FROM docker.io/airbyte/python-connector-base:3.0.0@sha256:1a0845ff2b30eafa793c6eee4e8f4283c2e52e1bbd44eed6cb9e9abd5d34d844
 
 WORKDIR /airbyte/integration_code
 
@@ -26,3 +26,4 @@ RUN rm -rf dist/ pyproject.toml poetry.lock README.md
 # Set the entrypoint
 ENV AIRBYTE_ENTRYPOINT="python /airbyte/integration_code/main.py"
 ENTRYPOINT ["python", "/airbyte/integration_code/main.py"]
+USER airbyte
