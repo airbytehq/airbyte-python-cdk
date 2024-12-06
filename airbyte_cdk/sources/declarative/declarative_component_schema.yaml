@@ -7,8 +7,12 @@ version: 1.0.0
 required:
   - type
   - check
-  - streams
   - version
+anyOf:
+  - required:
+      - streams
+  - required:
+      - dynamic_streams
 properties:
   type:
     type: string
@@ -19,6 +23,10 @@ properties:
     type: array
     items:
       "$ref": "#/definitions/DeclarativeStream"
+  dynamic_streams:
+    type: array
+    items:
+      "$ref": "#/definitions/DynamicDeclarativeStream"
   version:
     type: string
     description: The version of the Airbyte CDK used to build and test the source.
@@ -1321,7 +1329,7 @@ definitions:
         type: array
         items:
           - type: string
-        interpolation_content:
+        interpolation_context:
           - config
         examples:
           - ["data"]
@@ -2895,6 +2903,96 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  ComponentMappingDefinition:
+    title: Component Mapping Definition
+    description: (This component is experimental. Use at your own risk.) Specifies a mapping definition to update or add fields in a record or configuration. This allows dynamic mapping of data by interpolating values into the template based on provided contexts.
+    type: object
+    required:
+      - type
+      - field_path
+      - value
+    properties:
+      type:
+        type: string
+        enum: [ComponentMappingDefinition]
+      field_path:
+        title: Field Path
+        description: A list of potentially nested fields indicating the full path where value will be added or updated.
+        type: array
+        items:
+          - type: string
+        interpolation_context:
+          - config
+          - components_values
+          - stream_template_config
+        examples:
+          - ["data"]
+          - ["data", "records"]
+          - ["data", "{{ parameters.name }}"]
+          - ["data", "*", "record"]
+      value:
+        title: Value
+        description: The dynamic or static value to assign to the key. Interpolated values can be used to dynamically determine the value during runtime.
+        type: string
+        interpolation_context:
+          - config
+          - stream_template_config
+          - components_values
+        examples:
+          - "{{ components_values['updates'] }}"
+          - "{{ components_values['MetaData']['LastUpdatedTime'] }}"
+          - "{{ config['segment_id'] }}"
+      value_type:
+        title: Value Type
+        description: The expected data type of the value. If omitted, the type will be inferred from the value provided.
+        "$ref": "#/definitions/ValueType"
+      $parameters:
+        type: object
+        additionalProperties: true
+  HttpComponentsResolver:
+    type: object
+    description: (This component is experimental. Use at your own risk.) Component resolve and populates stream templates with components fetched via an HTTP retriever.
+    properties:
+      type:
+        type: string
+        enum: [HttpComponentsResolver]
+      retriever:
+        title: Retriever
+        description: Component used to coordinate how records are extracted across stream slices and request pages.
+        anyOf:
+          - "$ref": "#/definitions/AsyncRetriever"
+          - "$ref": "#/definitions/CustomRetriever"
+          - "$ref": "#/definitions/SimpleRetriever"
+      components_mapping:
+        type: array
+        items:
+          "$ref": "#/definitions/ComponentMappingDefinition"
+      $parameters:
+        type: object
+        additionalProperties: true
+    required:
+      - type
+      - retriever
+      - components_mapping
+  DynamicDeclarativeStream:
+    type: object
+    description: (This component is experimental. Use at your own risk.) A component that described how will be created declarative streams based on stream template.
+    properties:
+      type:
+        type: string
+        enum: [DynamicDeclarativeStream]
+      stream_template:
+        title: Stream Template
+        description: Reference to the stream template.
+        "$ref": "#/definitions/DeclarativeStream"
+      components_resolver:
+        title: Components Resolver
+        description: Component resolve and populates stream templates with components values.
+        "$ref": "#/definitions/HttpComponentsResolver"
+    required:
+      - type
+      - stream_template
+      - components_resolver
 interpolation:
   variables:
     - title: config

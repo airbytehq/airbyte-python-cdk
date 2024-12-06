@@ -1158,6 +1158,37 @@ class WaitUntilTimeFromHeader(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class ComponentMappingDefinition(BaseModel):
+    type: Literal["ComponentMappingDefinition"]
+    field_path: List[str] = Field(
+        ...,
+        description="A list of potentially nested fields indicating the full path where value will be added or updated.",
+        examples=[
+            ["data"],
+            ["data", "records"],
+            ["data", "{{ parameters.name }}"],
+            ["data", "*", "record"],
+        ],
+        title="Field Path",
+    )
+    value: str = Field(
+        ...,
+        description="The dynamic or static value to assign to the key. Interpolated values can be used to dynamically determine the value during runtime.",
+        examples=[
+            "{{ components_values['updates'] }}",
+            "{{ components_values['MetaData']['LastUpdatedTime'] }}",
+            "{{ config['segment_id'] }}",
+        ],
+        title="Value",
+    )
+    value_type: Optional[ValueType] = Field(
+        None,
+        description="The expected data type of the value. If omitted, the type will be inferred from the value provided.",
+        title="Value Type",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class AddedFieldDefinition(BaseModel):
     type: Literal["AddedFieldDefinition"]
     path: List[str] = Field(
@@ -1455,13 +1486,14 @@ class CompositeErrorHandler(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class DeclarativeSource(BaseModel):
+class DeclarativeSource1(BaseModel):
     class Config:
         extra = Extra.forbid
 
     type: Literal["DeclarativeSource"]
     check: CheckStream
     streams: List[DeclarativeStream]
+    dynamic_streams: Optional[List[DynamicDeclarativeStream]] = None
     version: str = Field(
         ...,
         description="The version of the Airbyte CDK used to build and test the source.",
@@ -1477,6 +1509,43 @@ class DeclarativeSource(BaseModel):
     description: Optional[str] = Field(
         None,
         description="A description of the connector. It will be presented on the Source documentation page.",
+    )
+
+
+class DeclarativeSource2(BaseModel):
+    class Config:
+        extra = Extra.forbid
+
+    type: Literal["DeclarativeSource"]
+    check: CheckStream
+    streams: Optional[List[DeclarativeStream]] = None
+    dynamic_streams: List[DynamicDeclarativeStream]
+    version: str = Field(
+        ...,
+        description="The version of the Airbyte CDK used to build and test the source.",
+    )
+    schemas: Optional[Schemas] = None
+    definitions: Optional[Dict[str, Any]] = None
+    spec: Optional[Spec] = None
+    concurrency_level: Optional[ConcurrencyLevel] = None
+    metadata: Optional[Dict[str, Any]] = Field(
+        None,
+        description="For internal Airbyte use only - DO NOT modify manually. Used by consumers of declarative manifests for storing related metadata.",
+    )
+    description: Optional[str] = Field(
+        None,
+        description="A description of the connector. It will be presented on the Source documentation page.",
+    )
+
+
+class DeclarativeSource(BaseModel):
+    class Config:
+        extra = Extra.forbid
+
+    __root__: Union[DeclarativeSource1, DeclarativeSource2] = Field(
+        ...,
+        description="An API source that extracts data according to its declarative components.",
+        title="DeclarativeSource",
     )
 
 
@@ -1883,8 +1952,32 @@ class SubstreamPartitionRouter(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class HttpComponentsResolver(BaseModel):
+    type: Literal["HttpComponentsResolver"]
+    retriever: Union[AsyncRetriever, CustomRetriever, SimpleRetriever] = Field(
+        ...,
+        description="Component used to coordinate how records are extracted across stream slices and request pages.",
+        title="Retriever",
+    )
+    components_mapping: List[ComponentMappingDefinition]
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class DynamicDeclarativeStream(BaseModel):
+    type: Literal["DynamicDeclarativeStream"]
+    stream_template: DeclarativeStream = Field(
+        ..., description="Reference to the stream template.", title="Stream Template"
+    )
+    components_resolver: HttpComponentsResolver = Field(
+        ...,
+        description="Component resolve and populates stream templates with components values.",
+        title="Components Resolver",
+    )
+
+
 CompositeErrorHandler.update_forward_refs()
-DeclarativeSource.update_forward_refs()
+DeclarativeSource1.update_forward_refs()
+DeclarativeSource2.update_forward_refs()
 SelectiveAuthenticator.update_forward_refs()
 DeclarativeStream.update_forward_refs()
 SessionTokenAuthenticator.update_forward_refs()

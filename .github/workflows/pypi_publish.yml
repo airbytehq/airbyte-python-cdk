@@ -287,7 +287,7 @@ jobs:
             pip-compile --upgrade
       - name: Create Pull Request
         id: create-pull-request
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@v7
         with:
           token: ${{ secrets.GH_PAT_MAINTENANCE_OCTAVIA }}
           commit-message: "chore: update CDK version following release"
