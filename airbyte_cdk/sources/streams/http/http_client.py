@@ -146,8 +146,8 @@ class HttpClient:
                 else "file::memory:?cache=shared"
             )
             backend = requests_cache.SQLiteCache(
-                sqlite_path, wal=True
-            )  # by using `PRAGMA journal_mode=WAL`, we avoid having `database table is locked` errors
+                sqlite_path, fast_save=True, wal=True
+            )  # By using `PRAGMA synchronous=OFF` and `PRAGMA journal_mode=WAL`, we avoid having `database table is locked` errors. Note that those were blindly added at the same time and one or the other might be sufficient to prevent the issues but we have seen good results with both. Feel free to revisit given more information.
             return CachedLimiterSession(
                 sqlite_path, backend=backend, api_budget=self._api_budget, match_headers=True
             )
