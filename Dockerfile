@@ -23,7 +23,7 @@ RUN mkdir -p source_declarative_manifest \
 # Remove unnecessary build files
 RUN rm -rf dist/ pyproject.toml poetry.lock README.md
 
-# Set ownership of /airbyte to the airbyte user
+# Set ownership of /airbyte to the (non-root) airbyte user
 RUN chown -R airbyte /airbyte
 
 # Set the entrypoint
