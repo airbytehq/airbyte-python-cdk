@@ -138,12 +138,18 @@ class HttpClient:
             cache_dir = os.getenv(ENV_REQUEST_CACHE_PATH)
             # Use in-memory cache if cache_dir is not set
             # This is a non-obvious interface, but it ensures we don't write sql files when running unit tests
-            if cache_dir:
-                sqlite_path = str(Path(cache_dir) / self.cache_filename)
-            else:
-                sqlite_path = "file::memory:?cache=shared"
+            # Use in-memory cache if cache_dir is not set
+            # This is a non-obvious interface, but it ensures we don't write sql files when running unit tests
+            sqlite_path = (
+                str(Path(cache_dir) / self.cache_filename)
+                if cache_dir
+                else "file::memory:?cache=shared"
+            )
+            backend = requests_cache.SQLiteCache(
+                sqlite_path, wal=True
+            )  # by using `PRAGMA journal_mode=WAL`, we avoid having `database table is locked` errors
             return CachedLimiterSession(
-                sqlite_path, backend="sqlite", api_budget=self._api_budget, match_headers=True
+                sqlite_path, backend=backend, api_budget=self._api_budget, match_headers=True
             )
         else:
             return LimiterSession(api_budget=self._api_budget)
