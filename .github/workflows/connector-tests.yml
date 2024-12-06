@@ -163,9 +163,10 @@ jobs:
           fi
           echo -e "\n[Download Job Output](${{steps.upload_job_output.outputs.artifact-url}})" >> $GITHUB_STEP_SUMMARY
           if [ "${success}" != "true" ]; then
-            echo "::error::Test failed for connector '${{ matrix.connector }}' on step '${failed_step}'. Check the logs for more details."
+            echo "::error::Test failed for connector '${{ matrix.connector }}' on step '${failed_step}'. "
             exit 1
           fi
+          echo "See the execution report for details: ${html_report_url}"
           echo "success=${success}" >> $GITHUB_OUTPUT
           echo "html_report_url=${html_report_url}" >> $GITHUB_OUTPUT
 
