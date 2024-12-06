@@ -119,7 +119,7 @@ jobs:
         if: steps.no_changes.outputs.status != 'cancelled'
         with:
           repository: airbytehq/airbyte
-          ref: augustin/use-local-cdk-manifest-only
+          ref: master
           path: airbyte
       - name: Test Connector
         if: steps.no_changes.outputs.status != 'cancelled'
