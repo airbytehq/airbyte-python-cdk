@@ -189,6 +189,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     DpathExtractor as DpathExtractorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    DynamicSchemaLoader as DynamicSchemaLoaderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ExponentialBackoffStrategy as ExponentialBackoffStrategyModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -279,6 +282,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     ResponseToFileExtractor as ResponseToFileExtractorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    SchemaTypeIdentifier as SchemaTypeIdentifierModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SelectiveAuthenticator as SelectiveAuthenticatorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -290,6 +296,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import Spec as SpecModel
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SubstreamPartitionRouter as SubstreamPartitionRouterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    TypesMap as TypesMapModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import ValueType
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -356,8 +365,11 @@ from airbyte_cdk.sources.declarative.retrievers import (
 )
 from airbyte_cdk.sources.declarative.schema import (
     DefaultSchemaLoader,
+    DynamicSchemaLoader,
     InlineSchemaLoader,
     JsonFileSchemaLoader,
+    SchemaTypeIdentifier,
+    TypesMap,
 )
 from airbyte_cdk.sources.declarative.spec import Spec
 from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicer
@@ -455,6 +467,9 @@ class ModelToComponentFactory:
             IterableDecoderModel: self.create_iterable_decoder,
             XmlDecoderModel: self.create_xml_decoder,
             JsonFileSchemaLoaderModel: self.create_json_file_schema_loader,
+            DynamicSchemaLoaderModel: self.create_dynamic_schema_loader,
+            SchemaTypeIdentifierModel: self.create_schema_type_identifier,
+            TypesMapModel: self.create_types_map,
             JwtAuthenticatorModel: self.create_jwt_authenticator,
             LegacyToPerPartitionStateMigrationModel: self.create_legacy_to_per_partition_state_migration,
             ListPartitionRouterModel: self.create_list_partition_router,
@@ -1573,6 +1588,63 @@ class ModelToComponentFactory:
         model: InlineSchemaLoaderModel, config: Config, **kwargs: Any
     ) -> InlineSchemaLoader:
         return InlineSchemaLoader(schema=model.schema_ or {}, parameters={})
+
+    @staticmethod
+    def create_types_map(model: TypesMapModel, **kwargs: Any) -> TypesMap:
+        return TypesMap(target_type=model.target_type, current_type=model.current_type)
+
+    def create_schema_type_identifier(
+        self, model: SchemaTypeIdentifierModel, config: Config, **kwargs: Any
+    ) -> SchemaTypeIdentifier:
+        types_mapping = []
+        if model.types_mapping:
+            types_mapping.extend(
+                [
+                    self._create_component_from_model(types_map, config=config)
+                    for types_map in model.types_mapping
+                ]
+            )
+        model_schema_pointer: List[Union[InterpolatedString, str]] = (
+            [x for x in model.schema_pointer] if model.schema_pointer else []
+        )
+        model_key_pointer: List[Union[InterpolatedString, str]] = [x for x in model.key_pointer]
+        model_type_pointer: Optional[List[Union[InterpolatedString, str]]] = (
+            [x for x in model.type_pointer] if model.type_pointer else None
+        )
+
+        return SchemaTypeIdentifier(
+            schema_pointer=model_schema_pointer,
+            key_pointer=model_key_pointer,
+            type_pointer=model_type_pointer,
+            types_mapping=types_mapping,
+            parameters=model.parameters or {},
+        )
+
+    def create_dynamic_schema_loader(
+        self, model: DynamicSchemaLoaderModel, config: Config, **kwargs: Any
+    ) -> DynamicSchemaLoader:
+        stream_slicer = self._build_stream_slicer_from_partition_router(model.retriever, config)
+        combined_slicers = self._build_resumable_cursor_from_paginator(
+            model.retriever, stream_slicer
+        )
+
+        retriever = self._create_component_from_model(
+            model=model.retriever,
+            config=config,
+            name="",
+            primary_key=None,
+            stream_slicer=combined_slicers,
+            transformations=[],
+        )
+        schema_type_identifier = self._create_component_from_model(
+            model.schema_type_identifier, config=config, parameters=model.parameters or {}
+        )
+        return DynamicSchemaLoader(
+            retriever=retriever,
+            config=config,
+            schema_type_identifier=schema_type_identifier,
+            parameters=model.parameters or {},
+        )
 
     @staticmethod
     def create_json_decoder(model: JsonDecoderModel, config: Config, **kwargs: Any) -> JsonDecoder:
