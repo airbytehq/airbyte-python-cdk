@@ -56,8 +56,9 @@ from airbyte_cdk.sources.types import Config, StreamState
 
 
 class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
-    # By default, we defer to a value of 1 which represents running a connector using the Concurrent CDK engine on only one thread.
-    SINGLE_THREADED_CONCURRENCY_LEVEL = 1
+    # By default, we defer to a value of 2. A value lower than than could cause a PartitionEnqueuer to be stuck in a state of deadlock
+    # because it has hit the limit of futures but not partition reader is consuming them.
+    _LOWEST_SAFE_CONCURRENCY_LEVEL = 2
 
     def __init__(
         self,
@@ -107,8 +108,8 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                 concurrency_level // 2, 1
             )  # Partition_generation iterates using range based on this value. If this is floored to zero we end up in a dead lock during start up
         else:
-            concurrency_level = self.SINGLE_THREADED_CONCURRENCY_LEVEL
-            initial_number_of_partitions_to_generate = self.SINGLE_THREADED_CONCURRENCY_LEVEL
+            concurrency_level = self._LOWEST_SAFE_CONCURRENCY_LEVEL
+            initial_number_of_partitions_to_generate = self._LOWEST_SAFE_CONCURRENCY_LEVEL // 2
 
         self._concurrent_source = ConcurrentSource.create(
             num_workers=concurrency_level,
