@@ -310,7 +310,9 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                         declarative_stream=declarative_stream
                     )
                     and hasattr(declarative_stream.retriever, "stream_slicer")
-                    and isinstance(declarative_stream.retriever.stream_slicer, PerPartitionWithGlobalCursor)
+                    and isinstance(
+                        declarative_stream.retriever.stream_slicer, PerPartitionWithGlobalCursor
+                    )
                 ):
                     stream_state = state_manager.get_stream_state(
                         stream_name=declarative_stream.name, namespace=declarative_stream.namespace
@@ -318,16 +320,15 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     partition_router = declarative_stream.retriever.stream_slicer._partition_router
 
                     cursor = self._constructor.create_concurrent_cursor_from_perpartition_cursor(
-                            state_manager=state_manager,
-                            model_type=DatetimeBasedCursorModel,
-                            component_definition=incremental_sync_component_definition,
-                            stream_name=declarative_stream.name,
-                            stream_namespace=declarative_stream.namespace,
-                            config=config or {},
-                            stream_state=stream_state,
-                            partition_router=partition_router,
-                        )
-
+                        state_manager=state_manager,
+                        model_type=DatetimeBasedCursorModel,
+                        component_definition=incremental_sync_component_definition,
+                        stream_name=declarative_stream.name,
+                        stream_namespace=declarative_stream.namespace,
+                        config=config or {},
+                        stream_state=stream_state,
+                        partition_router=partition_router,
+                    )
 
                     partition_generator = StreamSlicerPartitionGenerator(
                         DeclarativePartitionFactory(

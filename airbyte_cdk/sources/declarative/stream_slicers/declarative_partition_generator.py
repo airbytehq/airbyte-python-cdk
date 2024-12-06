@@ -38,6 +38,7 @@ class DeclarativePartitionFactory:
             stream_slice,
         )
 
+
 class DeclarativePartition(Partition):
     def __init__(
         self,

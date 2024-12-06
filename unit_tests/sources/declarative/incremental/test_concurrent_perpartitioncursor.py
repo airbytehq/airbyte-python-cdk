@@ -263,9 +263,7 @@ def _run_read(
     source = ConcurrentDeclarativeSource(
         source_config=manifest, config=config, catalog=catalog, state=state
     )
-    messages = list(
-        source.read(logger=source.logger, config=config, catalog=catalog, state=[])
-    )
+    messages = list(source.read(logger=source.logger, config=config, catalog=catalog, state=[]))
     return messages
 
 
@@ -514,7 +512,9 @@ def test_incremental_parent_state_no_incremental_dependency(
         output = _run_read(manifest, config, _stream_name, initial_state)
         output_data = [message.record.data for message in output if message.record]
 
-        assert set(tuple(sorted(d.items())) for d in output_data) == set(tuple(sorted(d.items())) for d in expected_records)
+        assert set(tuple(sorted(d.items())) for d in output_data) == set(
+            tuple(sorted(d.items())) for d in expected_records
+        )
         final_state = [
             orjson.loads(orjson.dumps(message.state.stream.stream_state))
             for message in output

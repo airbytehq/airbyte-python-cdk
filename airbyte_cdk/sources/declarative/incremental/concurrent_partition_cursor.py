@@ -104,7 +104,9 @@ class ConcurrentPerPartitionCursor(Cursor):
         return state
 
     def close_partition(self, partition: Partition) -> None:
-        self._cursor_per_partition[self._to_partition_key(partition._stream_slice.partition)].close_partition_without_emit(partition=partition)
+        self._cursor_per_partition[
+            self._to_partition_key(partition._stream_slice.partition)
+        ].close_partition_without_emit(partition=partition)
 
     def ensure_at_least_one_state_emitted(self) -> None:
         """
@@ -123,7 +125,6 @@ class ConcurrentPerPartitionCursor(Cursor):
             self._stream_name, self._stream_namespace
         )
         self._message_repository.emit_message(state_message)
-
 
     def stream_slices(self) -> Iterable[StreamSlice]:
         slices = self._partition_router.stream_slices()
@@ -217,7 +218,9 @@ class ConcurrentPerPartitionCursor(Cursor):
         self._partition_router.set_initial_state(stream_state)
 
     def observe(self, record: Record) -> None:
-        self._cursor_per_partition[self._to_partition_key(record.associated_slice.partition)].observe(record)
+        self._cursor_per_partition[
+            self._to_partition_key(record.associated_slice.partition)
+        ].observe(record)
 
     def _to_partition_key(self, partition: Mapping[str, Any]) -> str:
         return self._partition_serializer.to_partition_key(partition)

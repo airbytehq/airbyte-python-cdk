@@ -930,7 +930,7 @@ class ModelToComponentFactory:
         config: Config,
         stream_state: MutableMapping[str, Any],
         partition_router,
-            **kwargs: Any,
+        **kwargs: Any,
     ) -> ConcurrentPerPartitionCursor:
         component_type = component_definition.get("type")
         if component_definition.get("type") != model_type.__name__:
@@ -966,15 +966,15 @@ class ModelToComponentFactory:
 
         # Return the concurrent cursor and state converter
         return ConcurrentPerPartitionCursor(
-                cursor_factory=cursor_factory,
-                partition_router=partition_router,
-                stream_name=stream_name,
-                stream_namespace=stream_namespace,
-                stream_state=stream_state,
-                message_repository=self._message_repository,  # type: ignore
-                connector_state_manager=state_manager,
-                cursor_field=cursor_field,
-            )
+            cursor_factory=cursor_factory,
+            partition_router=partition_router,
+            stream_name=stream_name,
+            stream_namespace=stream_namespace,
+            stream_state=stream_state,
+            message_repository=self._message_repository,  # type: ignore
+            connector_state_manager=state_manager,
+            cursor_field=cursor_field,
+        )
 
     @staticmethod
     def create_constant_backoff_strategy(
@@ -1258,15 +1258,15 @@ class ModelToComponentFactory:
                 raise ValueError(
                     "Unsupported Slicer is used. PerPartitionWithGlobalCursor should be used here instead"
                 )
-            cursor = combined_slicers if isinstance(
-                combined_slicers, (PerPartitionWithGlobalCursor, GlobalSubstreamCursor)
-            ) else self._create_component_from_model(
-                model=model.incremental_sync, config=config
+            cursor = (
+                combined_slicers
+                if isinstance(
+                    combined_slicers, (PerPartitionWithGlobalCursor, GlobalSubstreamCursor)
+                )
+                else self._create_component_from_model(model=model.incremental_sync, config=config)
             )
 
-            client_side_incremental_sync = {
-                "cursor": cursor
-            }
+            client_side_incremental_sync = {"cursor": cursor}
 
         if model.incremental_sync and isinstance(model.incremental_sync, DatetimeBasedCursorModel):
             cursor_model = model.incremental_sync
