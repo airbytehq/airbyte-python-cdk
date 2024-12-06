@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version. For public-facing stable releases, please use the GitHub Releases workflow instead: https://github.com/airbytehq/airbyte-python-cdk/blob/main/docs/RELEASES.md. If running this workflow again main or from a dev branch, the desired version number is required to be entered here, e.g. `v1.2.3dev0` or `v1.2.3rc1`."
+        description: "Note that this workflow is intended for prereleases. For public-facing stable releases, please use the GitHub Releases workflow instead: https://github.com/airbytehq/airbyte-python-cdk/blob/main/docs/RELEASES.md. If running this workflow from main or from a dev branch, please enter the desired version number here, for instance 1.2.3dev0 or 1.2.3rc1."
         required: false
       publish_to_pypi:
         description: "Publish to PyPI. If true, the workflow will publish to PyPI."
