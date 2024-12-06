@@ -138,12 +138,22 @@ class HttpClient:
             cache_dir = os.getenv(ENV_REQUEST_CACHE_PATH)
             # Use in-memory cache if cache_dir is not set
             # This is a non-obvious interface, but it ensures we don't write sql files when running unit tests
-            if cache_dir:
-                sqlite_path = str(Path(cache_dir) / self.cache_filename)
-            else:
-                sqlite_path = "file::memory:?cache=shared"
+            # Use in-memory cache if cache_dir is not set
+            # This is a non-obvious interface, but it ensures we don't write sql files when running unit tests
+            sqlite_path = (
+                str(Path(cache_dir) / self.cache_filename)
+                if cache_dir
+                else "file::memory:?cache=shared"
+            )
+            # By using `PRAGMA synchronous=OFF` and `PRAGMA journal_mode=WAL`, we reduce the possible occurrences of `database table is locked` errors.
+            # Note that those were blindly added at the same time and one or the other might be sufficient to prevent the issues but we have seen good results with both. Feel free to revisit given more information.
+            # There are strong signals that `fast_save` might create problems but if the sync crashes, we start back from the beginning in terms of sqlite anyway so the impact should be minimal. Signals are:
+            # * https://github.com/requests-cache/requests-cache/commit/7fa89ffda300331c37d8fad7f773348a3b5b0236#diff-f43db4a5edf931647c32dec28ea7557aae4cae8444af4b26c8ecbe88d8c925aaR238
+            # * https://github.com/requests-cache/requests-cache/commit/7fa89ffda300331c37d8fad7f773348a3b5b0236#diff-2e7f95b7d7be270ff1a8118f817ea3e6663cdad273592e536a116c24e6d23c18R164-R168
+            # * `If the application running SQLite crashes, the data will be safe, but the database [might become corrupted](https://www.sqlite.org/howtocorrupt.html#cfgerr) if the operating system crashes or the computer loses power before that data has been written to the disk surface.` in [this description](https://www.sqlite.org/pragma.html#pragma_synchronous).
+            backend = requests_cache.SQLiteCache(sqlite_path, fast_save=True, wal=True)
             return CachedLimiterSession(
-                sqlite_path, backend="sqlite", api_budget=self._api_budget, match_headers=True
+                sqlite_path, backend=backend, api_budget=self._api_budget, match_headers=True
             )
         else:
             return LimiterSession(api_budget=self._api_budget)
