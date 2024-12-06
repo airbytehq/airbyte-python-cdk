@@ -1160,7 +1160,7 @@ class WaitUntilTimeFromHeader(BaseModel):
 
 class ComponentMappingDefinition(BaseModel):
     type: Literal["ComponentMappingDefinition"]
-    field_path: List[Union[str, int]] = Field(
+    field_path: List[str] = Field(
         ...,
         description="A list of potentially nested fields indicating the full path where value will be added or updated.",
         examples=[

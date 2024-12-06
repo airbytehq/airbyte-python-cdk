@@ -91,12 +91,12 @@ class ConfigComponentsResolver(ComponentsResolver):
                 )
 
     @property
-    def _stream_config(self):
+    def _stream_config(self) -> Iterable[Mapping[str, Any]]:
         path = [
             node.eval(self.config) if not isinstance(node, str) else node
             for node in self.stream_config.configs_pointer
         ]
-        stream_config = dpath.get(self.config, path, default=[])
+        stream_config = dpath.get(dict(self.config), path, default=[])
 
         if not isinstance(stream_config, list):
             stream_config = [stream_config]

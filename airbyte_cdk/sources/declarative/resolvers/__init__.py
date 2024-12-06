@@ -7,8 +7,10 @@ from airbyte_cdk.sources.declarative.resolvers.http_components_resolver import H
 from airbyte_cdk.sources.declarative.resolvers.config_components_resolver import ConfigComponentsResolver, StreamConfig
 from airbyte_cdk.sources.declarative.models import HttpComponentsResolver as HttpComponentsResolverModel
 from airbyte_cdk.sources.declarative.models import ConfigComponentsResolver as ConfigComponentsResolverModel
+from pydantic.v1 import BaseModel
+from typing import Mapping
 
-COMPONENTS_RESOLVER_TYPE_MAPPING = {
+COMPONENTS_RESOLVER_TYPE_MAPPING: Mapping[str, type[BaseModel]] = {
     "HttpComponentsResolver": HttpComponentsResolverModel,
     "ConfigComponentsResolver": ConfigComponentsResolverModel
 }

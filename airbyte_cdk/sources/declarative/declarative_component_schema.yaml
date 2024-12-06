@@ -2920,9 +2920,7 @@ definitions:
         description: A list of potentially nested fields indicating the full path where value will be added or updated.
         type: array
         items:
-          anyOf:
-            - type: string
-            - type: integer
+          - type: string
         interpolation_context:
           - config
           - components_values
