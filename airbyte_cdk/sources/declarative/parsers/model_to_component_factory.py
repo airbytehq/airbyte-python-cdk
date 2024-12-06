@@ -129,6 +129,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     ConcurrencyLevel as ConcurrencyLevelModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ConfigComponentsResolver as ConfigComponentsResolverModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConstantBackoffStrategy as ConstantBackoffStrategyModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -196,12 +199,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     HttpComponentsResolver as HttpComponentsResolverModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    ConfigComponentsResolver as ConfigComponentsResolverModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    StreamConfig as StreamConfigModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     HttpRequester as HttpRequesterModel,
@@ -295,6 +292,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import Spec as SpecModel
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    StreamConfig as StreamConfigModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SubstreamPartitionRouter as SubstreamPartitionRouterModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import ValueType
@@ -353,8 +353,8 @@ from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
 from airbyte_cdk.sources.declarative.resolvers import (
     ComponentMappingDefinition,
-    HttpComponentsResolver,
     ConfigComponentsResolver,
+    HttpComponentsResolver,
     StreamConfig,
 )
 from airbyte_cdk.sources.declarative.retrievers import (
