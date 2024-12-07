@@ -4,7 +4,7 @@
 
 from abc import abstractmethod
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, List, MutableMapping, Optional, Tuple
+from typing import Any, Callable, List, MutableMapping, Optional, Tuple, Union
 
 import pendulum
 from pendulum.datetime import DateTime
@@ -202,7 +202,7 @@ class CustomFormatConcurrentStreamStateConverter(IsoMillisConcurrentStreamStateC
         self._input_datetime_formats += [self._datetime_format]
         self._parser = DatetimeParser()
 
-    def output_format(self, timestamp: datetime) -> str:
+    def output_format(self, timestamp: datetime) -> Union[str, int, float]:
         return self._parser.format(timestamp, self._datetime_format)
 
     def parse_timestamp(self, timestamp: str) -> datetime:

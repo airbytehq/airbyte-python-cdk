@@ -919,7 +919,7 @@ def test_request_option_with_empty_stream_slice(stream_slice):
         ),
         (
             "test_parse_timestamp",
-            "1609459200",
+            1609459200,
             "%s",
             "PT1S",
             datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
