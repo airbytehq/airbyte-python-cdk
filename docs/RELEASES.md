@@ -45,7 +45,7 @@ Note: Currently we don't pre-test images in Platform so manual testing is needed
 
 Currently there are two ways to do this.
 
-The first option is to look in the `declarative_manifest_image_version` database table  in Prod.
+The first option is to look in the `declarative_manifest_image_version` database table in Prod.
 
 If that is not available as an option, you can run an Builder-created connector in Cloud and note the version number printed in the logs. Warning: this may not be indicative if that connector instance has been manually pinned to a specific version.
 
