@@ -18,13 +18,15 @@ import pytest
 
 @pytest.fixture(scope="session")
 def connector_dir(request: pytest.FixtureRequest) -> Path:
-    """Return the connector's root directory.
+    """Return the connector's root directory."""
 
-    This assumes tests are being run from the unit_tests directory,
-    and that it is a direct child of the connector directory.
-    """
-    test_dir = Path(request.config.invocation_params.dir)
-    return test_dir.parent
+    current_dir = Path(request.config.invocation_params.dir)
+
+    # If the tests are run locally from the connector's unit_tests directory, return the parent (connector) directory
+    if current_dir.name == "unit_tests":
+        return current_dir.parent
+    # In CI, the tests are run from the connector directory itself
+    return current_dir
 
 
 @pytest.fixture(scope="session")
