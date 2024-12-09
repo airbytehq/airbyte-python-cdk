@@ -88,12 +88,14 @@ jobs:
           #   cdk_extra: n/a
           # TODO: These are manifest connectors and won't work as expected until we
           #       add `--use-local-cdk` support for manifest connectors.
-          # - connector: source-the-guardian-api
-          #   cdk_extra: n/a
-          # - connector: source-pokeapi
-          #   cdk_extra: n/a
+          - connector: source-the-guardian-api
+            cdk_extra: n/a
+          - connector: source-pokeapi
+            cdk_extra: n/a
 
     name: "Check: '${{matrix.connector}}' (skip=${{needs.cdk_changes.outputs['src'] == 'false' || needs.cdk_changes.outputs[matrix.cdk_extra] == 'false'}})"
+    permissions:
+      checks: write
     steps:
       - name: Abort if extra not changed (${{matrix.cdk_extra}})
         id: no_changes
@@ -131,7 +133,9 @@ jobs:
         run: |
           cd airbyte
           make tools.airbyte-ci-dev.install
-          airbyte-ci-dev connectors \
+          airbyte-ci-dev \
+          --ci-report-bucket-name=airbyte-ci-reports-multi \
+          connectors \
           --name ${{matrix.connector}} \
           --use-local-cdk \
           test \
@@ -139,7 +143,8 @@ jobs:
           --skip-step qa_checks \
           --skip-step connector_live_tests
 
-      - name: Evaluate Test Output
+      - name: Evaluate Test
+        id: evaluate_output
         if: always() && steps.no_changes.outputs.status != 'cancelled'
         run: |
           # save job output json file as ci step output
@@ -148,7 +153,9 @@ jobs:
           success=$(echo ${job_output} | jq -r '.success')
           failed_step=$(echo ${job_output} | jq -r '.failed_steps | select(length > 0) | .[0] // "None"')
           run_duration=$(echo ${job_output} | jq -r '.run_duration')
+          html_report_url=$(echo ${job_output} | jq -r '.html_report_url')
           echo "## Job Output for ${{matrix.connector}}" >> $GITHUB_STEP_SUMMARY
+          echo "- [HTML Report](${html_report_url})" >> $GITHUB_STEP_SUMMARY
           echo "- Success: ${success}" >> $GITHUB_STEP_SUMMARY
           echo "- Test Duration: $(printf "%.0f" ${run_duration})s" >> $GITHUB_STEP_SUMMARY
           if [ "${success}" != "true" ]; then
@@ -156,9 +163,12 @@ jobs:
           fi
           echo -e "\n[Download Job Output](${{steps.upload_job_output.outputs.artifact-url}})" >> $GITHUB_STEP_SUMMARY
           if [ "${success}" != "true" ]; then
-            echo "::error::Test failed for connector '${{ matrix.connector }}' on step '${failed_step}'. Check the logs for more details."
+            echo "::error::Test failed for connector '${{ matrix.connector }}' on step '${failed_step}'. "
             exit 1
           fi
+          echo "See the execution report for details: ${html_report_url}"
+          echo "success=${success}" >> $GITHUB_OUTPUT
+          echo "html_report_url=${html_report_url}" >> $GITHUB_OUTPUT
 
       # Upload the job output to the artifacts
       - name: Upload Job Output

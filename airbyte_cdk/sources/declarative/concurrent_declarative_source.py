@@ -56,8 +56,9 @@ from airbyte_cdk.sources.types import Config, StreamState
 
 
 class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
-    # By default, we defer to a value of 1 which represents running a connector using the Concurrent CDK engine on only one thread.
-    SINGLE_THREADED_CONCURRENCY_LEVEL = 1
+    # By default, we defer to a value of 2. A value lower than than could cause a PartitionEnqueuer to be stuck in a state of deadlock
+    # because it has hit the limit of futures but not partition reader is consuming them.
+    _LOWEST_SAFE_CONCURRENCY_LEVEL = 2
 
     def __init__(
         self,
@@ -86,22 +87,9 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             component_factory=component_factory,
         )
 
+        # todo: We could remove state from initialization. Now that streams are grouped during the read(), a source
+        #  no longer needs to store the original incoming state. But maybe there's an edge case?
         self._state = state
-
-        self._concurrent_streams: Optional[List[AbstractStream]]
-        self._synchronous_streams: Optional[List[Stream]]
-
-        # If the connector command was SPEC, there is no incoming config, and we cannot instantiate streams because
-        # they might depend on it. Ideally we want to have a static method on this class to get the spec without
-        # any other arguments, but the existing entrypoint.py isn't designed to support this. Just noting this
-        # for our future improvements to the CDK.
-        if config:
-            self._concurrent_streams, self._synchronous_streams = self._group_streams(
-                config=config or {}
-            )
-        else:
-            self._concurrent_streams = None
-            self._synchronous_streams = None
 
         concurrency_level_from_manifest = self._source_config.get("concurrency_level")
         if concurrency_level_from_manifest:
@@ -120,8 +108,8 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                 concurrency_level // 2, 1
             )  # Partition_generation iterates using range based on this value. If this is floored to zero we end up in a dead lock during start up
         else:
-            concurrency_level = self.SINGLE_THREADED_CONCURRENCY_LEVEL
-            initial_number_of_partitions_to_generate = self.SINGLE_THREADED_CONCURRENCY_LEVEL
+            concurrency_level = self._LOWEST_SAFE_CONCURRENCY_LEVEL
+            initial_number_of_partitions_to_generate = self._LOWEST_SAFE_CONCURRENCY_LEVEL // 2
 
         self._concurrent_source = ConcurrentSource.create(
             num_workers=concurrency_level,
@@ -136,17 +124,20 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         logger: logging.Logger,
         config: Mapping[str, Any],
         catalog: ConfiguredAirbyteCatalog,
-        state: Optional[Union[List[AirbyteStateMessage]]] = None,
+        state: Optional[List[AirbyteStateMessage]] = None,
     ) -> Iterator[AirbyteMessage]:
-        # ConcurrentReadProcessor pops streams that are finished being read so before syncing, the names of the concurrent
-        # streams must be saved so that they can be removed from the catalog before starting synchronous streams
-        if self._concurrent_streams:
+        concurrent_streams, _ = self._group_streams(config=config)
+
+        # ConcurrentReadProcessor pops streams that are finished being read so before syncing, the names of
+        # the concurrent streams must be saved so that they can be removed from the catalog before starting
+        # synchronous streams
+        if len(concurrent_streams) > 0:
             concurrent_stream_names = set(
-                [concurrent_stream.name for concurrent_stream in self._concurrent_streams]
+                [concurrent_stream.name for concurrent_stream in concurrent_streams]
             )
 
             selected_concurrent_streams = self._select_streams(
-                streams=self._concurrent_streams, configured_catalog=catalog
+                streams=concurrent_streams, configured_catalog=catalog
             )
             # It would appear that passing in an empty set of streams causes an infinite loop in ConcurrentReadProcessor.
             # This is also evident in concurrent_source_adapter.py so I'll leave this out of scope to fix for now
@@ -165,8 +156,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         yield from super().read(logger, config, filtered_catalog, state)
 
     def discover(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteCatalog:
-        concurrent_streams = self._concurrent_streams or []
-        synchronous_streams = self._synchronous_streams or []
+        concurrent_streams, synchronous_streams = self._group_streams(config=config)
         return AirbyteCatalog(
             streams=[
                 stream.as_airbyte_stream() for stream in concurrent_streams + synchronous_streams
@@ -192,9 +182,13 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
         state_manager = ConnectorStateManager(state=self._state)  # type: ignore  # state is always in the form of List[AirbyteStateMessage]. The ConnectorStateManager should use generics, but this can be done later
 
-        name_to_stream_mapping = {
-            stream["name"]: stream for stream in self.resolved_manifest["streams"]
-        }
+        # Combine streams and dynamic_streams. Note: both cannot be empty at the same time,
+        # and this is validated during the initialization of the source.
+        streams = self._stream_configs(self._source_config) + self._dynamic_stream_configs(
+            self._source_config, config
+        )
+
+        name_to_stream_mapping = {stream["name"]: stream for stream in streams}
 
         for declarative_stream in self.streams(config=config):
             # Some low-code sources use a combination of DeclarativeStream and regular Python streams. We can't inspect
@@ -202,7 +196,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             # so we need to treat them as synchronous
             if (
                 isinstance(declarative_stream, DeclarativeStream)
-                and name_to_stream_mapping[declarative_stream.name].get("retriever")["type"]
+                and name_to_stream_mapping[declarative_stream.name]["retriever"]["type"]
                 == "SimpleRetriever"
             ):
                 incremental_sync_component_definition = name_to_stream_mapping[
@@ -211,7 +205,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
                 partition_router_component_definition = (
                     name_to_stream_mapping[declarative_stream.name]
-                    .get("retriever")
+                    .get("retriever", {})
                     .get("partition_router")
                 )
                 is_without_partition_router_or_cursor = not bool(
@@ -233,7 +227,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     cursor = self._constructor.create_concurrent_cursor_from_datetime_based_cursor(
                         state_manager=state_manager,
                         model_type=DatetimeBasedCursorModel,
-                        component_definition=incremental_sync_component_definition,
+                        component_definition=incremental_sync_component_definition,  # type: ignore  # Not None because of the if condition above
                         stream_name=declarative_stream.name,
                         stream_namespace=declarative_stream.namespace,
                         config=config or {},
@@ -316,10 +310,11 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
     def _is_datetime_incremental_without_partition_routing(
         self,
         declarative_stream: DeclarativeStream,
-        incremental_sync_component_definition: Mapping[str, Any],
+        incremental_sync_component_definition: Mapping[str, Any] | None,
     ) -> bool:
         return (
-            bool(incremental_sync_component_definition)
+            incremental_sync_component_definition is not None
+            and bool(incremental_sync_component_definition)
             and incremental_sync_component_definition.get("type", "")
             == DatetimeBasedCursorModel.__name__
             and self._stream_supports_concurrent_partition_processing(
