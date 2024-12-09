@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version. The version to publish, ie 1.0.0 or 1.0.0-dev1. In most cases, you can leave this blank. If run from a release tag (recommended), the version number will be inferred from the git tag."
+        description: "Note that this workflow is intended for prereleases. For public-facing stable releases, please use the GitHub Releases workflow instead: https://github.com/airbytehq/airbyte-python-cdk/blob/main/docs/RELEASES.md. If running this workflow from main or from a dev branch, please enter the desired version number here, for instance 1.2.3dev0 or 1.2.3rc1."
         required: false
       publish_to_pypi:
         description: "Publish to PyPI. If true, the workflow will publish to PyPI."
@@ -30,7 +30,7 @@ on:
         description: "Update Connector Builder. If true, the workflow will create a PR to bump the CDK version used by Connector Builder."
         type: boolean
         required: true
-        default: true
+        default: false
 
 jobs:
   build:
