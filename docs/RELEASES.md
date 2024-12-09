@@ -26,3 +26,25 @@ This process is slightly different from the above, since we don't necessarily wa
 3. Select `main` or your dev branch from the "Use workflow from" dropdown.
 4. Select your options and click "Run workflow".
 5. Monitor the workflow to ensure the process has succeeded.
+
+## Understanding and Debugging Builder and SDM Releases
+
+### How Connector Builder uses SDM/CDK
+
+The Connector Builder (written in Java) calls the CDK Python package directly, executing the CDK's Source Declarative Manfiest code via Python processes on the Builder container. (The Connector Builder does not directly invoke the SDM image, but there is an open project to change this in the future.)
+
+Our publish flow sends a PR to the Builder repo (`airbyte-platform-internal`) to bump the version used in Builder. The Marketplace Contributions team (aka Connector Builder maintainers) will review and merge the PR.
+
+### How the SDM Image is used in Platform
+
+The platform scans DockerHub on specific intervals, and has logic to periodically bump the used version based on semver rules on the DockerTag. TODO: Get more info this.
+
+Note: Currently we don't pre-test images in Platform so manual testing is needed.
+
+### How to confirm what SDM version is used on the Platform
+
+TODO: ...
+
+### How to pretest changes to SDM images manually
+
+TODO: ...
