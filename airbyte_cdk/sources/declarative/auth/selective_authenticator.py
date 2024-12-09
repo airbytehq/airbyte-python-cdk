@@ -30,7 +30,7 @@ class SelectiveAuthenticator(DeclarativeAuthenticator):
         try:
             selected_key = str(
                 dpath.get(
-                    config,  # type: ignore [arg-type]  # Dpath wants mutable mapping but doesn't need it.
+                    config,  # type: ignore[arg-type]  # Dpath wants mutable mapping but doesn't need it.
                     authenticator_selection_path,
                 )
             )
