@@ -53,4 +53,30 @@ TODO: Would be great to find a way to inspect directly without requiring direct 
 
 ### How to pretest changes to SDM images manually
 
-TODO: ...
+To manually test changes against a dev image of SDM before committing to a release, first use the Publishing & Packaging workflow to publish a pre-release version of the CDK/SDM. Be sure to uncheck the option to create a connector builder PR.
+
+#### Pretesting Manifest-Only connectors
+
+Once the publish pipeline has completed, choose a connector to test. Set the base_image in the connector's metadata to your pre-release version in Dockerhub (make sure to update the SHA as well). 
+Next, build the pre-release image locally using `airbyte-ci connectors —name=<source> build`. 
+You can now run connector interfaces against the built image using the pattern `docker run airbyte/<source-name>:dev <spec/check/discover/read>`.
+The connector's README should include a list of these commands, which can be copy/pasted and run from the connector's directory for quick testing against a local config.
+You can also run `airbyte-ci connectors —name=<source> test` to run the CI test suite against the dev image.
+
+#### Pretesting Low-Code Python connectors
+
+Once the publish pipeline has completed, set the version of `airbyte-cdk` in the connector's pyproject.toml file to the pre-release version in PyPI. 
+Update the lockfile and run connector interfaces via poetry: `poetry run source-<name> spec/check/discover/read`.
+You can also run `airbyte-ci connectors —name=<source> test` to run the CI test suite against the dev image.  
+
+#### Pretesting in Cloud
+
+It is possible to pretest a version of SDM in Airbyte Cloud using the following steps:
+
+1. Publish a pre-release version.
+2. Open Cloud and create a custom source in the Builder (ie fork PokeAPI with no changes). Publish the source to your workspace.
+3. Set up a connection using the forked custom source.
+4. Connect to the production database with a tool like DBeaver.
+5. Manually update the connector's `actor_definition_version`.
+
+Because this process requires accessing and updating the production database manually, it is NOT RECOMMENDED for most cases. Only do so if you understand the risks, are already confident navigating the database, and feel the potential risk of your changes breaking the CDK/SDM is high enough to warrant this process.
