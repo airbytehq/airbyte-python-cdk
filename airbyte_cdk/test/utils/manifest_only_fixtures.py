@@ -54,4 +54,7 @@ def components_module(connector_dir: Path) -> Optional[ModuleType]:
 @pytest.fixture(scope="session")
 def manifest_path(connector_dir: Path) -> Path:
     """Return the path to the connector's manifest file."""
-    return connector_dir / "manifest.yaml"
+    path = connector_dir / "manifest.yaml"
+    if not path.exists():
+        raise FileNotFoundError(f"Manifest file not found at {path}")
+    return path
