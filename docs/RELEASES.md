@@ -37,7 +37,7 @@ Our publish flow sends a PR to the Builder repo (`airbyte-platform-internal`) to
 
 ### How the SDM Image is used in Platform
 
-The platform scans DockerHub on specific intervals, and has logic to periodically bump the used version based on semver rules on the DockerTag. TODO: Get more info this.
+The platform scans DockerHub at an [every 10 minutes cadence](https://github.com/airbytehq/airbyte-platform-internal/blob/d744174c0f3ca8fa70f3e05cca6728f067219752/oss/airbyte-cron/src/main/java/io/airbyte/cron/jobs/DeclarativeSourcesUpdater.java) as of 2024-12-09. Based on that DockerHub scan, the platform bumps the default SDM version that is stored in the `declarative_manifest_image_version` table in prod.
 
 Note: Currently we don't pre-test images in Platform so manual testing is needed.
 
