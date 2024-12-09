@@ -37,17 +37,17 @@ class DatetimeParser:
             return parsed_datetime.replace(tzinfo=datetime.timezone.utc)
         return parsed_datetime
 
-    def format(self, dt: datetime.datetime, format: str) -> str:
+    def format(self, dt: datetime.datetime, format: str) -> Union[str, int, float]:
         # strftime("%s") is unreliable because it ignores the time zone information and assumes the time zone of the system it's running on
         # It's safer to use the timestamp() method than the %s directive
         # See https://stackoverflow.com/a/4974930
         if format == "%s":
-            return str(int(dt.timestamp()))
+            return int(dt.timestamp())
         if format == "%s_as_float":
-            return str(float(dt.timestamp()))
+            return float(dt.timestamp())
         if format == "%ms":
             # timstamp() returns a float representing the number of seconds since the unix epoch
-            return str(int(dt.timestamp() * 1000))
+            return int(dt.timestamp() * 1000)
         else:
             return dt.strftime(format)
 

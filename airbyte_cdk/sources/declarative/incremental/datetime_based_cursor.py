@@ -248,7 +248,7 @@ class DatetimeBasedCursor(DeclarativeCursor):
         return datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
 
     def _format_datetime(self, dt: datetime.datetime) -> str:
-        return self._parser.format(dt, self.datetime_format)
+        return str(self._parser.format(dt, self.datetime_format))
 
     def _partition_daterange(
         self,
