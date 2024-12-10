@@ -822,13 +822,13 @@ class OauthConnectorInputSpecification(BaseModel):
     )
     extract_output: List[str] = Field(
         ...,
-        description="The DeclarativeOAuth Specific list of strings to indicate which keys should be extracted and returned back to the input config.                ",
+        description="The DeclarativeOAuth Specific list of strings to indicate which keys should be extracted and returned back to the input config.",
         examples=[{"extract_output": ["access_token", "refresh_token", "other_field"]}],
         title="DeclarativeOAuth Extract Output",
     )
     state: Optional[State] = Field(
         None,
-        description="The DeclarativeOAuth Specific object to provide the criteria of how the `state` query param should be constructed,\nincluding length and complexity.                ",
+        description="The DeclarativeOAuth Specific object to provide the criteria of how the `state` query param should be constructed,\nincluding length and complexity.",
         examples=[{"state": {"min": 7, "max": 128}}],
         title="(Optional) DeclarativeOAuth Configurable State Query Param",
     )
@@ -852,13 +852,13 @@ class OauthConnectorInputSpecification(BaseModel):
     )
     state_key: Optional[str] = Field(
         None,
-        description="The DeclarativeOAuth Specific optional override to provide the custom `state` key name, if required by data-provider.                ",
+        description="The DeclarativeOAuth Specific optional override to provide the custom `state` key name, if required by data-provider.",
         examples=[{"state_key": "my_custom_state_key_key_name"}],
         title="(Optional) DeclarativeOAuth State Key Override",
     )
     auth_code_key: Optional[str] = Field(
         None,
-        description="The DeclarativeOAuth Specific optional override to provide the custom `code` key name to something like `auth_code` or `custom_auth_code`, if required by data-provider.                ",
+        description="The DeclarativeOAuth Specific optional override to provide the custom `code` key name to something like `auth_code` or `custom_auth_code`, if required by data-provider.",
         examples=[{"auth_code_key": "my_custom_auth_code_key_name"}],
         title="(Optional) DeclarativeOAuth Auth Code Key Override",
     )
@@ -1166,8 +1166,10 @@ class ComponentMappingDefinition(BaseModel):
         examples=[
             ["data"],
             ["data", "records"],
-            ["data", "{{ parameters.name }}"],
+            ["data", 1, "name"],
+            ["data", "{{ components_values.name }}"],
             ["data", "*", "record"],
+            ["*", "**", "name"],
         ],
         title="Field Path",
     )
@@ -1186,6 +1188,24 @@ class ComponentMappingDefinition(BaseModel):
         description="The expected data type of the value. If omitted, the type will be inferred from the value provided.",
         title="Value Type",
     )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class StreamConfig(BaseModel):
+    type: Literal["StreamConfig"]
+    configs_pointer: List[str] = Field(
+        ...,
+        description="A list of potentially nested fields indicating the full path in source config file where streams configs located.",
+        examples=[["data"], ["data", "streams"], ["data", "{{ parameters.name }}"]],
+        title="Configs Pointer",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class ConfigComponentsResolver(BaseModel):
+    type: Literal["ConfigComponentsResolver"]
+    stream_config: StreamConfig
+    components_mapping: List[ComponentMappingDefinition]
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -1968,7 +1988,7 @@ class DynamicDeclarativeStream(BaseModel):
     stream_template: DeclarativeStream = Field(
         ..., description="Reference to the stream template.", title="Stream Template"
     )
-    components_resolver: HttpComponentsResolver = Field(
+    components_resolver: Union[HttpComponentsResolver, ConfigComponentsResolver] = Field(
         ...,
         description="Component resolve and populates stream templates with components values.",
         title="Components Resolver",

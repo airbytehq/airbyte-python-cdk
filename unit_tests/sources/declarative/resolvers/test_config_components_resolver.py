@@ -22,7 +22,14 @@ from airbyte_cdk.sources.embedded.catalog import (
 )
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 
-_CONFIG = {"start_date": "2024-07-01T00:00:00.000Z"}
+_CONFIG = {
+    "start_date": "2024-07-01T00:00:00.000Z",
+    "custom_streams": [
+        {"id": 1, "name": "item_1"},
+        {"id": 2, "name": "item_2"},
+        {"id": 3, "name": "item_2"},
+    ],
+}
 
 _MANIFEST = {
     "version": "6.7.0",
@@ -68,25 +75,10 @@ _MANIFEST = {
                 },
             },
             "components_resolver": {
-                "type": "HttpComponentsResolver",
-                "retriever": {
-                    "type": "SimpleRetriever",
-                    "requester": {
-                        "type": "HttpRequester",
-                        "url_base": "https://api.test.com",
-                        "path": "items",
-                        "http_method": "GET",
-                        "authenticator": {
-                            "type": "ApiKeyAuthenticator",
-                            "header": "apikey",
-                            "api_token": "{{ config['api_key'] }}",
-                        },
-                    },
-                    "record_selector": {
-                        "type": "RecordSelector",
-                        "extractor": {"type": "DpathExtractor", "field_path": []},
-                    },
-                    "paginator": {"type": "NoPagination"},
+                "type": "ConfigComponentsResolver",
+                "stream_config": {
+                    "type": "StreamConfig",
+                    "configs_pointer": ["custom_streams"],
                 },
                 "components_mapping": [
                     {
@@ -111,57 +103,22 @@ _MANIFEST = {
 }
 
 
-@pytest.mark.parametrize(
-    "components_mapping, retriever_data, stream_template_config, expected_result",
-    [
-        (
-            [
-                ComponentMappingDefinition(
-                    field_path=[InterpolatedString.create("key1", parameters={})],
-                    value="{{components_values['key1']}}",
-                    value_type=str,
-                    parameters={},
-                )
-            ],
-            [{"key1": "updated_value1", "key2": "updated_value2"}],
-            {"key1": None, "key2": None},
-            [{"key1": "updated_value1", "key2": None}],
-        )
-    ],
-)
-def test_http_components_resolver(
-    components_mapping, retriever_data, stream_template_config, expected_result
-):
-    mock_retriever = MagicMock()
-    mock_retriever.read_records.return_value = retriever_data
-    config = {}
+def test_dynamic_streams_read_with_config_components_resolver():
+    expected_stream_names = ["item_1", "item_2"]
 
-    resolver = HttpComponentsResolver(
-        retriever=mock_retriever,
-        config=config,
-        components_mapping=components_mapping,
-        parameters={},
+    source = ConcurrentDeclarativeSource(
+        source_config=_MANIFEST, config=_CONFIG, catalog=None, state=None
     )
 
-    result = list(resolver.resolve_components(stream_template_config=stream_template_config))
-    assert result == expected_result
+    actual_catalog = source.discover(logger=source.logger, config=_CONFIG)
 
+    configured_streams = [
+        to_configured_stream(stream, primary_key=stream.source_defined_primary_key)
+        for stream in actual_catalog.streams
+    ]
+    configured_catalog = to_configured_catalog(configured_streams)
 
-def test_dynamic_streams_read_with_http_components_resolver():
-    expected_stream_names = ["item_1", "item_2"]
     with HttpMocker() as http_mocker:
-        http_mocker.get(
-            HttpRequest(url="https://api.test.com/items"),
-            HttpResponse(
-                body=json.dumps(
-                    [
-                        {"id": 1, "name": "item_1"},
-                        {"id": 2, "name": "item_2"},
-                        {"id": 3, "name": "item_2"},
-                    ]
-                )
-            ),
-        )
         http_mocker.get(
             HttpRequest(url="https://api.test.com/items/1"),
             HttpResponse(body=json.dumps({"id": "1", "name": "item_1"})),
@@ -170,22 +127,6 @@ def test_dynamic_streams_read_with_http_components_resolver():
             HttpRequest(url="https://api.test.com/items/2"),
             HttpResponse(body=json.dumps({"id": "2", "name": "item_2"})),
         )
-        http_mocker.get(
-            HttpRequest(url="https://api.test.com/items/3"),
-            HttpResponse(body=json.dumps({"id": "3", "name": "item_2"})),
-        )
-
-        source = ConcurrentDeclarativeSource(
-            source_config=_MANIFEST, config=_CONFIG, catalog=None, state=None
-        )
-
-        actual_catalog = source.discover(logger=source.logger, config=_CONFIG)
-
-        configured_streams = [
-            to_configured_stream(stream, primary_key=stream.source_defined_primary_key)
-            for stream in actual_catalog.streams
-        ]
-        configured_catalog = to_configured_catalog(configured_streams)
 
         records = [
             message.record
