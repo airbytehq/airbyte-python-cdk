@@ -67,6 +67,7 @@ from airbyte_cdk.sources.declarative.decoders import (
     PaginationDecoderDecorator,
     XmlDecoder,
 )
+from airbyte_cdk.sources.declarative.decoders.parsers import JsonParser
 from airbyte_cdk.sources.declarative.extractors import (
     DpathExtractor,
     RecordFilter,
@@ -217,6 +218,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     JsonlDecoder as JsonlDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonParser as JsonParserModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     JwtAuthenticator as JwtAuthenticatorModel,
@@ -450,6 +454,7 @@ class ModelToComponentFactory:
             InlineSchemaLoaderModel: self.create_inline_schema_loader,
             JsonDecoderModel: self.create_json_decoder,
             JsonlDecoderModel: self.create_jsonl_decoder,
+            JsonParser: self.create_json_parser,
             GzipJsonDecoderModel: self.create_gzipjson_decoder,
             KeysToLowerModel: self.create_keys_to_lower_transformation,
             IterableDecoderModel: self.create_iterable_decoder,
@@ -1599,6 +1604,12 @@ class ModelToComponentFactory:
         model: GzipJsonDecoderModel, config: Config, **kwargs: Any
     ) -> GzipJsonDecoder:
         return GzipJsonDecoder(parameters={}, encoding=model.encoding)
+
+    @staticmethod
+    def create_json_parser(
+        model: JsonParserModel, config: Config, **kwargs: Any
+    ) -> JsonParser:
+        return JsonParser(parameters={})
 
     @staticmethod
     def create_json_file_schema_loader(
