@@ -124,6 +124,9 @@ line-length = 100
 select = ["I"]
 
 [tool.poe.tasks]
+# Installation
+install = { shell = "poetry install --all-extras" }
+
 # Build tasks
 assemble = {cmd = "bin/generate-component-manifest-dagger.sh", help = "Generate component manifest files."}
 build-package = {cmd = "poetry build", help = "Build the python package: source and wheels archives."}
