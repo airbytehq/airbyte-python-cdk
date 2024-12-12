@@ -3004,7 +3004,7 @@ definitions:
         additionalProperties: true
   ConfigComponentsResolver:
     type: object
-    description: (This component is experimental. Use at your own risk.) Component resolve and populates stream templates with components fetched from the source config.
+    description: (This component is experimental. Use at your own risk.) Resolves and populates stream templates with components fetched from the source config.
     properties:
       type:
         type: string
