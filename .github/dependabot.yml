@@ -21,7 +21,7 @@ updates:
     commit-message:
       prefix: "ci(deps): "
     schedule:
-      interval: daily
+      interval: monthly
     labels:
       - ci
     groups:
