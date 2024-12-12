@@ -357,12 +357,17 @@ class ManifestDeclarativeSource(DeclarativeSource):
                 name = dynamic_stream.get("name")
 
                 if name in seen_dynamic_streams:
-                    error_message = f"Dynamic streams list contains a duplicate name: {name}. Please check your configuration."
+                    error_message = f"Dynamic streams list contains a duplicate name: {name}. Please contact Airbyte Support."
+                    failure_type = FailureType.system_error
+
+                    if resolver_type == "ConfigComponentsResolverModel":
+                        error_message = f"Dynamic streams list contains a duplicate name: {name}. Please check your configuration."
+                        failure_type = FailureType.config_error
 
                     raise AirbyteTracedException(
                         message=error_message,
                         internal_message=error_message,
-                        failure_type=FailureType.config_error,
+                        failure_type=failure_type,
                     )
 
                 seen_dynamic_streams.add(name)

@@ -21,6 +21,7 @@ from airbyte_cdk.sources.embedded.catalog import (
     to_configured_stream,
 )
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 _CONFIG = {"start_date": "2024-07-01T00:00:00.000Z"}
 
@@ -192,3 +193,29 @@ def test_dynamic_streams_read_with_http_components_resolver():
     assert [stream.name for stream in actual_catalog.streams] == expected_stream_names
     assert len(records) == 2
     assert [record.stream for record in records] == expected_stream_names
+
+
+def test_duplicated_dynamic_streams_read_with_http_components_resolver():
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/items"),
+            HttpResponse(
+                body=json.dumps(
+                    [
+                        {"id": 1, "name": "item_1"},
+                        {"id": 2, "name": "item_2"},
+                        {"id": 3, "name": "item_2"},
+                    ]
+                )
+            ),
+        )
+
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            source = ConcurrentDeclarativeSource(
+                source_config=_MANIFEST, config=_CONFIG, catalog=None, state=None
+            )
+            source.discover(logger=source.logger, config=_CONFIG)
+        assert (
+            str(exc_info.value)
+            == "Dynamic streams list contains a duplicate name: item_2. Please contact Airbyte Support."
+        )
