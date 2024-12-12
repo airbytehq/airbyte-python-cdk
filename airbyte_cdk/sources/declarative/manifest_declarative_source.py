@@ -20,6 +20,7 @@ from airbyte_cdk.models import (
     AirbyteStateMessage,
     ConfiguredAirbyteCatalog,
     ConnectorSpecification,
+    FailureType,
 )
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
@@ -48,6 +49,7 @@ from airbyte_cdk.sources.utils.slice_logger import (
     DebugSliceLogger,
     SliceLogger,
 )
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
 class ManifestDeclarativeSource(DeclarativeSource):
@@ -354,9 +356,17 @@ class ManifestDeclarativeSource(DeclarativeSource):
                 # Ensure that each stream is created with a unique name
                 name = dynamic_stream.get("name")
 
-                if name not in seen_dynamic_streams:
-                    seen_dynamic_streams.add(name)
-                    dynamic_stream_configs.append(dynamic_stream)
+                if name in seen_dynamic_streams:
+                    error_message = f"Dynamic streams list contains a duplicate name: {name}. Please check your configuration."
+
+                    raise AirbyteTracedException(
+                        message=error_message,
+                        internal_message=error_message,
+                        failure_type=FailureType.config_error,
+                    )
+
+                seen_dynamic_streams.add(name)
+                dynamic_stream_configs.append(dynamic_stream)
 
         return dynamic_stream_configs
 

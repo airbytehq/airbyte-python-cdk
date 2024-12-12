@@ -11,18 +11,22 @@ from airbyte_cdk.models import Type
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
-from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
-from airbyte_cdk.sources.declarative.resolvers import (
-    ComponentMappingDefinition,
-    HttpComponentsResolver,
-)
 from airbyte_cdk.sources.embedded.catalog import (
     to_configured_catalog,
     to_configured_stream,
 )
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 _CONFIG = {
+    "start_date": "2024-07-01T00:00:00.000Z",
+    "custom_streams": [
+        {"id": 1, "name": "item_1"},
+        {"id": 2, "name": "item_2"},
+    ],
+}
+
+_CONFIG_WITH_STREAM_DUPLICATION = {
     "start_date": "2024-07-01T00:00:00.000Z",
     "custom_streams": [
         {"id": 1, "name": "item_1"},
@@ -103,40 +107,55 @@ _MANIFEST = {
 }
 
 
-def test_dynamic_streams_read_with_config_components_resolver():
-    expected_stream_names = ["item_1", "item_2"]
-
-    source = ConcurrentDeclarativeSource(
-        source_config=_MANIFEST, config=_CONFIG, catalog=None, state=None
-    )
-
-    actual_catalog = source.discover(logger=source.logger, config=_CONFIG)
-
-    configured_streams = [
-        to_configured_stream(stream, primary_key=stream.source_defined_primary_key)
-        for stream in actual_catalog.streams
-    ]
-    configured_catalog = to_configured_catalog(configured_streams)
-
-    with HttpMocker() as http_mocker:
-        http_mocker.get(
-            HttpRequest(url="https://api.test.com/items/1"),
-            HttpResponse(body=json.dumps({"id": "1", "name": "item_1"})),
+@pytest.mark.parametrize(
+    "config, expected_exception, expected_stream_names",
+    [
+        (_CONFIG, None, ["item_1", "item_2"]),
+        (
+            _CONFIG_WITH_STREAM_DUPLICATION,
+            "Dynamic streams list contains a duplicate name: item_2. Please check your configuration.",
+            None
+        ),
+    ],
+)
+def test_dynamic_streams_read_with_config_components_resolver(config, expected_exception, expected_stream_names):
+    if expected_exception:
+        with pytest.raises(AirbyteTracedException) as exc_info:
+            source = ConcurrentDeclarativeSource(
+                source_config=_MANIFEST, config=config, catalog=None, state=None
+            )
+            source.discover(logger=source.logger, config=config)
+        assert str(exc_info.value) == expected_exception
+    else:
+        source = ConcurrentDeclarativeSource(
+            source_config=_MANIFEST, config=config, catalog=None, state=None
         )
-        http_mocker.get(
-            HttpRequest(url="https://api.test.com/items/2"),
-            HttpResponse(body=json.dumps({"id": "2", "name": "item_2"})),
-        )
 
-        records = [
-            message.record
-            for message in source.read(MagicMock(), _CONFIG, configured_catalog)
-            if message.type == Type.RECORD
+        actual_catalog = source.discover(logger=source.logger, config=config)
+
+        configured_streams = [
+            to_configured_stream(stream, primary_key=stream.source_defined_primary_key)
+            for stream in actual_catalog.streams
         ]
+        configured_catalog = to_configured_catalog(configured_streams)
 
-    assert (
-        len(actual_catalog.streams) == 2
-    )  # Only 2 streams were created because the 3rd item has a duplicate name.
-    assert [stream.name for stream in actual_catalog.streams] == expected_stream_names
-    assert len(records) == 2
-    assert [record.stream for record in records] == expected_stream_names
+        with HttpMocker() as http_mocker:
+            http_mocker.get(
+                HttpRequest(url="https://api.test.com/items/1"),
+                HttpResponse(body=json.dumps({"id": "1", "name": "item_1"})),
+            )
+            http_mocker.get(
+                HttpRequest(url="https://api.test.com/items/2"),
+                HttpResponse(body=json.dumps({"id": "2", "name": "item_2"})),
+            )
+
+            records = [
+                message.record
+                for message in source.read(MagicMock(), config, configured_catalog)
+                if message.type == Type.RECORD
+            ]
+
+        assert len(actual_catalog.streams) == len(expected_stream_names)
+        assert [stream.name for stream in actual_catalog.streams] == expected_stream_names
+        assert len(records) == len(expected_stream_names)
+        assert [record.stream for record in records] == expected_stream_names
