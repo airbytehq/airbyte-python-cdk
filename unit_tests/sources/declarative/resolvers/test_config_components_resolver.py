@@ -114,11 +114,13 @@ _MANIFEST = {
         (
             _CONFIG_WITH_STREAM_DUPLICATION,
             "Dynamic streams list contains a duplicate name: item_2. Please check your configuration.",
-            None
+            None,
         ),
     ],
 )
-def test_dynamic_streams_read_with_config_components_resolver(config, expected_exception, expected_stream_names):
+def test_dynamic_streams_read_with_config_components_resolver(
+    config, expected_exception, expected_stream_names
+):
     if expected_exception:
         with pytest.raises(AirbyteTracedException) as exc_info:
             source = ConcurrentDeclarativeSource(
