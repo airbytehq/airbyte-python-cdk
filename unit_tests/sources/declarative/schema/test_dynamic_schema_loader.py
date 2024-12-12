@@ -151,3 +151,213 @@ def test_dynamic_schema_loader_invalid_type(dynamic_schema_loader):
 
     with pytest.raises(ValueError, match="Expected key to be a string. Got None"):
         dynamic_schema_loader.get_json_schema()
+
+
+#
+# Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+#
+
+import json
+from unittest.mock import MagicMock
+
+import pytest
+
+from airbyte_cdk.models import Type
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+)
+from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
+from airbyte_cdk.sources.declarative.resolvers import (
+    ComponentMappingDefinition,
+    HttpComponentsResolver,
+)
+from airbyte_cdk.sources.embedded.catalog import (
+    to_configured_catalog,
+    to_configured_stream,
+)
+from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
+
+_CONFIG = {
+    "start_date": "2024-07-01T00:00:00.000Z",
+}
+
+_MANIFEST = {
+    "version": "6.7.0",
+    "type": "DeclarativeSource",
+    "check": {"type": "CheckStream", "stream_names": ["Rates"]},
+    "dynamic_streams": [
+        {
+            "type": "DynamicDeclarativeStream",
+            "stream_template": {
+                "type": "DeclarativeStream",
+                "name": "",
+                "primary_key": [],
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "http://json-schema.org/schema#",
+                        "properties": {
+                            "ABC": {"type": "number"},
+                            "AED": {"type": "number"},
+                        },
+                        "type": "object",
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "$parameters": {"item_id": ""},
+                        "url_base": "https://api.test.com",
+                        "path": "/items/{{parameters['item_id']}}",
+                        "http_method": "GET",
+                        "authenticator": {
+                            "type": "ApiKeyAuthenticator",
+                            "header": "apikey",
+                            "api_token": "{{ config['api_key'] }}",
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "paginator": {"type": "NoPagination"},
+                },
+            },
+            "components_resolver": {
+                "type": "ConfigComponentsResolver",
+                "stream_config": {
+                    "type": "StreamConfig",
+                    "configs_pointer": ["custom_streams"],
+                },
+                "components_mapping": [
+                    {
+                        "type": "ComponentMappingDefinition",
+                        "field_path": ["name"],
+                        "value": "{{components_values['name']}}",
+                    },
+                    {
+                        "type": "ComponentMappingDefinition",
+                        "field_path": [
+                            "retriever",
+                            "requester",
+                            "$parameters",
+                            "item_id",
+                        ],
+                        "value": "{{components_values['id']}}",
+                    },
+                ],
+            },
+        }
+    ],
+}
+
+_MANIFEST = {
+    "version": "6.7.0",
+    "definitions": {
+        "party_members_stream": {
+            "type": "DeclarativeStream",
+            "name": "party_members",
+            "primary_key": [],
+            "retriever": {
+                "type": "SimpleRetriever",
+                "requester": {
+                    "type": "HttpRequester",
+                    "url_base": "https://api.test.com",
+                    "path": "/party_members",
+                    "http_method": "GET",
+                    "authenticator": {
+                        "type": "ApiKeyAuthenticator",
+                        "header": "apikey",
+                        "api_token": "{{ config['api_key'] }}",
+                    },
+                },
+                "record_selector": {
+                    "type": "RecordSelector",
+                    "extractor": {"type": "DpathExtractor", "field_path": []},
+                },
+                "paginator": {"type": "NoPagination"},
+            },
+            "schema_loader": {
+                "type": "DynamicSchemaLoader",
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://api.test.com",
+                        "path": "/party_members/schema",
+                        "http_method": "GET",
+                        "authenticator": {
+                            "type": "ApiKeyAuthenticator",
+                            "header": "apikey",
+                            "api_token": "{{ config['api_key'] }}",
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "paginator": {"type": "NoPagination"},
+                },
+                "schema_type_identifier": {
+                    "schema_pointer": ["fields"],
+                    "key_pointer": ["name"],
+                    "type_pointer": ["type"],
+                    "types_mapping": [{"target_type": "string", "current_type": "singleLineText"}],
+                },
+            },
+        },
+    },
+    "streams": [
+        "#/definitions/party_members_stream",
+    ],
+    "check": {"stream_names": ["party_members"]},
+}
+
+
+def test_dynamic_schema_loader_manifest_flow():
+    expected_schema = {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+            "id": {"type": ["null", "integer"]},
+            "name": {"type": ["null", "string"]},
+            "description": {"type": ["null", "string"]},
+        },
+    }
+
+    source = ConcurrentDeclarativeSource(
+        source_config=_MANIFEST, config=_CONFIG, catalog=None, state=None
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/party_members"),
+            HttpResponse(
+                body=json.dumps(
+                    [
+                        {"id": 1, "name": "member_1", "description": "First member"},
+                        {"id": 2, "name": "member_2", "description": "Second member"},
+                    ]
+                )
+            ),
+        )
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/party_members/schema"),
+            HttpResponse(
+                body=json.dumps(
+                    {
+                        "fields": [
+                            {"name": "id", "type": "integer"},
+                            {"name": "name", "type": "string"},
+                            {"name": "description", "type": "singleLineText"},
+                        ]
+                    }
+                )
+            ),
+        )
+
+        actual_catalog = source.discover(logger=source.logger, config=_CONFIG)
+
+    assert len(actual_catalog.streams) == 1
+    assert actual_catalog.streams[0].json_schema == expected_schema
