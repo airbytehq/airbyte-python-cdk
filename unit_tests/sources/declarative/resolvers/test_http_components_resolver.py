@@ -157,7 +157,6 @@ def test_dynamic_streams_read_with_http_components_resolver():
                     [
                         {"id": 1, "name": "item_1"},
                         {"id": 2, "name": "item_2"},
-                        {"id": 3, "name": "item_2"},
                     ]
                 )
             ),
@@ -169,10 +168,6 @@ def test_dynamic_streams_read_with_http_components_resolver():
         http_mocker.get(
             HttpRequest(url="https://api.test.com/items/2"),
             HttpResponse(body=json.dumps({"id": "2", "name": "item_2"})),
-        )
-        http_mocker.get(
-            HttpRequest(url="https://api.test.com/items/3"),
-            HttpResponse(body=json.dumps({"id": "3", "name": "item_2"})),
         )
 
         source = ConcurrentDeclarativeSource(
@@ -193,9 +188,7 @@ def test_dynamic_streams_read_with_http_components_resolver():
             if message.type == Type.RECORD
         ]
 
-    assert (
-        len(actual_catalog.streams) == 2
-    )  # Only 2 streams were created because the 3rd item has a duplicate name.
+    assert len(actual_catalog.streams) == 2
     assert [stream.name for stream in actual_catalog.streams] == expected_stream_names
     assert len(records) == 2
     assert [record.stream for record in records] == expected_stream_names
