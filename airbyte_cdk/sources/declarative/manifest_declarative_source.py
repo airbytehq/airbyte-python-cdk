@@ -360,7 +360,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
                     error_message = f"Dynamic streams list contains a duplicate name: {name}. Please contact Airbyte Support."
                     failure_type = FailureType.system_error
 
-                    if resolver_type == "ConfigComponentsResolverModel":
+                    if resolver_type == "ConfigComponentsResolver":
                         error_message = f"Dynamic streams list contains a duplicate name: {name}. Please check your configuration."
                         failure_type = FailureType.config_error
 
