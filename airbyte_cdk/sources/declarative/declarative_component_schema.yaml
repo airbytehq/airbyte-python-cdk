@@ -1218,6 +1218,7 @@ definitions:
         title: Schema Loader
         description: Component used to retrieve the schema for the current stream.
         anyOf:
+          - "$ref": "#/definitions/DynamicSchemaLoader"
           - "$ref": "#/definitions/InlineSchemaLoader"
           - "$ref": "#/definitions/JsonFileSchemaLoader"
           - "$ref": "#/definitions/CustomSchemaLoader"
@@ -1681,6 +1682,92 @@ definitions:
         examples:
           - "{{ 'Too much requests' in response }}"
           - "{{ 'error_code' in response and response['error_code'] == 'ComplexityException' }}"
+      $parameters:
+        type: object
+        additionalProperties: true
+  TypesMap:
+    title: Types Map
+    description: (This component is experimental. Use at your own risk.) Represents a mapping between a current type and its corresponding target type.
+    type: object
+    required:
+      - target_type
+      - current_type
+    properties:
+      target_type:
+        anyOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+      current_type:
+        anyOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+  SchemaTypeIdentifier:
+    title: Schema Type Identifier
+    description: (This component is experimental. Use at your own risk.) Identifies schema details for dynamic schema extraction and processing.
+    type: object
+    required:
+      - key_pointer
+    properties:
+      type:
+        type: string
+        enum: [SchemaTypeIdentifier]
+      schema_pointer:
+        title: Schema Path
+        description: List of nested fields defining the schema field path to extract. Defaults to [].
+        type: array
+        default: []
+        items:
+          - type: string
+        interpolation_context:
+          - config
+      key_pointer:
+        title: Key Path
+        description: List of potentially nested fields describing the full path of the field key to extract.
+        type: array
+        items:
+          - type: string
+        interpolation_context:
+          - config
+      type_pointer:
+        title: Type Path
+        description: List of potentially nested fields describing the full path of the field type to extract.
+        type: array
+        items:
+          - type: string
+        interpolation_context:
+          - config
+      types_mapping:
+        type: array
+        items:
+          - "$ref": "#/definitions/TypesMap"
+      $parameters:
+        type: object
+        additionalProperties: true
+  DynamicSchemaLoader:
+    title: Dynamic Schema Loader
+    description: (This component is experimental. Use at your own risk.) Loads a schema by extracting data from retrieved records.
+    type: object
+    required:
+      - type
+      - retriever
+      - schema_type_identifier
+    properties:
+      type:
+        type: string
+        enum: [DynamicSchemaLoader]
+      retriever:
+        title: Retriever
+        description: Component used to coordinate how records are extracted across stream slices and request pages.
+        anyOf:
+          - "$ref": "#/definitions/AsyncRetriever"
+          - "$ref": "#/definitions/CustomRetriever"
+          - "$ref": "#/definitions/SimpleRetriever"
+      schema_type_identifier:
+        "$ref": "#/definitions/SchemaTypeIdentifier"
       $parameters:
         type: object
         additionalProperties: true
