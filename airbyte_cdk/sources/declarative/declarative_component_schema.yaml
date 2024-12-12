@@ -1218,6 +1218,7 @@ definitions:
         title: Schema Loader
         description: Component used to retrieve the schema for the current stream.
         anyOf:
+          - "$ref": "#/definitions/DynamicSchemaLoader"
           - "$ref": "#/definitions/InlineSchemaLoader"
           - "$ref": "#/definitions/JsonFileSchemaLoader"
           - "$ref": "#/definitions/CustomSchemaLoader"
