@@ -111,6 +111,92 @@ _MANIFEST = {
     ],
 }
 
+_MANIFEST_WITH_DUPLICATES = {
+    "version": "6.7.0",
+    "type": "DeclarativeSource",
+    "check": {"type": "CheckStream", "stream_names": ["Rates"]},
+    "dynamic_streams": [
+        {
+            "type": "DynamicDeclarativeStream",
+            "stream_template": {
+                "type": "DeclarativeStream",
+                "name": "",
+                "primary_key": [],
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "http://json-schema.org/schema#",
+                        "properties": {
+                            "ABC": {"type": "number"},
+                            "AED": {"type": "number"},
+                        },
+                        "type": "object",
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "$parameters": {"item_id": ""},
+                        "url_base": "https://api.test.com",
+                        "path": "/items/{{parameters['item_id']}}",
+                        "http_method": "GET",
+                        "authenticator": {
+                            "type": "ApiKeyAuthenticator",
+                            "header": "apikey",
+                            "api_token": "{{ config['api_key'] }}",
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "paginator": {"type": "NoPagination"},
+                },
+            },
+            "components_resolver": {
+                "type": "HttpComponentsResolver",
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://api.test.com",
+                        "path": "duplicates_items",
+                        "http_method": "GET",
+                        "authenticator": {
+                            "type": "ApiKeyAuthenticator",
+                            "header": "apikey",
+                            "api_token": "{{ config['api_key'] }}",
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "paginator": {"type": "NoPagination"},
+                },
+                "components_mapping": [
+                    {
+                        "type": "ComponentMappingDefinition",
+                        "field_path": ["name"],
+                        "value": "{{components_values['name']}}",
+                    },
+                    {
+                        "type": "ComponentMappingDefinition",
+                        "field_path": [
+                            "retriever",
+                            "requester",
+                            "$parameters",
+                            "item_id",
+                        ],
+                        "value": "{{components_values['id']}}",
+                    },
+                ],
+            },
+        }
+    ],
+}
+
 
 @pytest.mark.parametrize(
     "components_mapping, retriever_data, stream_template_config, expected_result",
@@ -198,7 +284,7 @@ def test_dynamic_streams_read_with_http_components_resolver():
 def test_duplicated_dynamic_streams_read_with_http_components_resolver():
     with HttpMocker() as http_mocker:
         http_mocker.get(
-            HttpRequest(url="https://api.test.com/items"),
+            HttpRequest(url="https://api.test.com/duplicates_items"),
             HttpResponse(
                 body=json.dumps(
                     [
@@ -212,7 +298,7 @@ def test_duplicated_dynamic_streams_read_with_http_components_resolver():
 
         with pytest.raises(AirbyteTracedException) as exc_info:
             source = ConcurrentDeclarativeSource(
-                source_config=_MANIFEST, config=_CONFIG, catalog=None, state=None
+                source_config=_MANIFEST_WITH_DUPLICATES, config=_CONFIG, catalog=None, state=None
             )
             source.discover(logger=source.logger, config=_CONFIG)
         assert (
