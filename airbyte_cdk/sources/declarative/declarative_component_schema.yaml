@@ -2139,7 +2139,7 @@ definitions:
               - https://domain.host.com/marketing_api/auth?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{state_key}={{state_key}}
               - https://endpoint.host.com/oauth2/authorize?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{scope_key}={urlEncoder:{{scope_key}}}&{state_key}={{state_key}}&subdomain={subdomain}
           scope:
-            title: (Optional) Scope
+            title: Scopes
             type: string
             description: |-
               The DeclarativeOAuth Specific string of the scopes needed to be grant for authenticated user.
@@ -2154,7 +2154,7 @@ definitions:
             examples:
               - https://auth.host.com/oauth2/token?{client_id_key}={{client_id_key}}&{client_secret_key}={{client_secret_key}}&{auth_code_key}={{auth_code_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}
           access_token_headers:
-            title: (Optional) Access Token Headers
+            title: Access Token Headers
             type: object
             additionalProperties: true
             description: |-
@@ -2162,14 +2162,18 @@ definitions:
             examples:
               - {"Authorization": "Basic {base64Encoder:{client_id}:{client_secret}}"}
           access_token_params:
-            title: (Optional) Access Token Query Params (Json Encoded)
+            title: Access Token Query Params (Json Encoded)
             type: object
             additionalProperties: true
             description: |-
               The DeclarativeOAuth Specific optional query parameters to inject while exchanging the `auth_code` to `access_token` during `completeOAuthFlow` step.
               When this property is provided, the query params will be encoded as `Json` and included in the outgoing API request.
             examples:
-              - {"{client_id_key}": "{{client_id_key}}"}
+              - {
+                  "{auth_code_key}": "{{auth_code_key}}",
+                  "{client_id_key}": "{{client_id_key}}",
+                  "{client_secret_key}": "{{client_secret_key}}",
+                }
           extract_output:
             title: Extract Output
             type: array
@@ -2180,7 +2184,7 @@ definitions:
             examples:
               - ["access_token", "refresh_token", "other_field"]
           state:
-            title: (Optional) Configurable State Query Param
+            title: Configurable State Query Param
             type: object
             additionalProperties: true
             required:
@@ -2197,42 +2201,42 @@ definitions:
             examples:
               - { "min": 7, "max": 128 }
           client_id_key:
-            title: (Optional) Client ID Key Override
+            title: Client ID Key Override
             type: string
             description: |-
               The DeclarativeOAuth Specific optional override to provide the custom `client_id` key name, if required by data-provider.
             examples:
               - "my_custom_client_id_key_name"
           client_secret_key:
-            title: (Optional) Client Secret Key Override
+            title: Client Secret Key Override
             type: string
             description: |-
               The DeclarativeOAuth Specific optional override to provide the custom `client_secret` key name, if required by data-provider.
             examples:
               - "my_custom_client_secret_key_name"
           scope_key:
-            title: (Optional) Scope Key Override
+            title: Scopes Key Override
             type: string
             description: |-
               The DeclarativeOAuth Specific optional override to provide the custom `scope` key name, if required by data-provider.
             examples:
               - "my_custom_scope_key_key_name"
           state_key:
-            title: (Optional) State Key Override
+            title: State Key Override
             type: string
             description: |-
               The DeclarativeOAuth Specific optional override to provide the custom `state` key name, if required by data-provider.
             examples:
               - "my_custom_state_key_key_name"
           auth_code_key:
-            title: (Optional) Auth Code Key Override
+            title: Auth Code Key Override
             type: string
             description: |-
               The DeclarativeOAuth Specific optional override to provide the custom `code` key name to something like `auth_code` or `custom_auth_code`, if required by data-provider.
             examples:
               - "my_custom_auth_code_key_name"
           redirect_uri_key:
-            title: (Optional) Redirect URI Key Override
+            title: Redirect URI Key Override
             type: string
             description: |-
               The DeclarativeOAuth Specific optional override to provide the custom `redirect_uri` key name to something like `callback_uri`, if required by data-provider.
