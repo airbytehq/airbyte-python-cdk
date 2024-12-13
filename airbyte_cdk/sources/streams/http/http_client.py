@@ -472,7 +472,9 @@ class HttpClient:
 
             elif retry_endlessly:
                 raise RateLimitBackoffException(
-                    request=request, response=response or exc, error_message=error_message
+                    request=request,
+                    response=(response if response is not None else exc),
+                    error_message=error_message,
                 )
 
             raise DefaultBackoffException(
