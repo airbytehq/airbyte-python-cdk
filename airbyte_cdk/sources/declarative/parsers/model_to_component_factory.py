@@ -1512,7 +1512,7 @@ class ModelToComponentFactory:
         )
 
     def create_http_requester(
-        self, model: HttpRequesterModel, decoder: Decoder, config: Config, *, name: str
+        self, model: HttpRequesterModel, config: Config, decoder: Decoder=JsonDecoder(parameters={}), *, name: str
     ) -> HttpRequester:
         authenticator = (
             self._create_component_from_model(
@@ -1896,7 +1896,7 @@ class ModelToComponentFactory:
         config: Config,
         *,
         name: str,
-        transformations: List[RecordTransformation],
+        transformations: Optional[List[RecordTransformation]] = None,
         decoder: Optional[Decoder] = None,
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
@@ -1928,7 +1928,7 @@ class ModelToComponentFactory:
             name=name,
             config=config,
             record_filter=record_filter,
-            transformations=transformations,
+            transformations=transformations or [],
             schema_normalization=schema_normalization,
             parameters=model.parameters or {},
         )
