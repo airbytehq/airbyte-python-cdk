@@ -22,6 +22,7 @@ from airbyte_cdk.sources.streams.http.exceptions import (
     DefaultBackoffException,
     RequestBodyException,
     UserDefinedBackoffException,
+    RateLimitBackoffException
 )
 from airbyte_cdk.sources.streams.http.requests_native_auth import TokenAuthenticator
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -690,10 +691,10 @@ def test_send_emit_stream_status_with_rate_limit_reason(capsys):
 
 @pytest.mark.parametrize(
     "exit_on_rate_limit, expected_call_count, expected_error",
-    [[True, 6, DefaultBackoffException], [False, 38, OverflowError]],
+    [[True, 6, DefaultBackoffException], [False, 6, RateLimitBackoffException]],
 )
 @pytest.mark.usefixtures("mock_sleep")
-def test_backoff_strategy_endless(exit_on_rate_limit, expected_call_count, expected_error):
+def test_backoff_strategy_endless(exit_on_rate_limit: bool, expected_call_count: int, expected_error: Exception):
     http_client = HttpClient(
         name="test", logger=MagicMock(), error_handler=HttpStatusErrorHandler(logger=MagicMock())
     )
