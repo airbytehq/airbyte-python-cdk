@@ -2195,9 +2195,10 @@ class TestCreateTransformations:
         )
 
         assert isinstance(stream, DeclarativeStream)
-        expected = [
-            RemoveFields(field_pointers=[["path", "to", "field1"], ["path2"]], parameters={})
-        ]
+        expected = (
+            [RemoveFields(field_pointers=[["path", "to", "field1"], ["path2"]], parameters={})] * 2
+        )  # Entity will be present twice as we resolve parameters and add the component to both the record
+        # selector level and the stream level
         assert stream.retriever.record_selector.transformations == expected
 
     def test_add_fields_no_value_type(self):
@@ -2212,21 +2213,25 @@ class TestCreateTransformations:
                         - path: ["field1"]
                           value: "static_value"
         """
-        expected = [
-            AddFields(
-                fields=[
-                    AddedFieldDefinition(
-                        path=["field1"],
-                        value=InterpolatedString(
-                            string="static_value", default="static_value", parameters={}
-                        ),
-                        value_type=None,
-                        parameters={},
-                    )
-                ],
-                parameters={},
-            )
-        ]
+        expected = (
+            [
+                AddFields(
+                    fields=[
+                        AddedFieldDefinition(
+                            path=["field1"],
+                            value=InterpolatedString(
+                                string="static_value", default="static_value", parameters={}
+                            ),
+                            value_type=None,
+                            parameters={},
+                        )
+                    ],
+                    parameters={},
+                )
+            ]
+            * 2
+        )  # Entity will be present twice as we resolve parameters and add the component to both the record
+        # selector level and the stream level
         self._test_add_fields(content, expected)
 
     def test_add_fields_value_type_is_string(self):
@@ -2242,21 +2247,25 @@ class TestCreateTransformations:
                           value: "static_value"
                           value_type: string
         """
-        expected = [
-            AddFields(
-                fields=[
-                    AddedFieldDefinition(
-                        path=["field1"],
-                        value=InterpolatedString(
-                            string="static_value", default="static_value", parameters={}
-                        ),
-                        value_type=str,
-                        parameters={},
-                    )
-                ],
-                parameters={},
-            )
-        ]
+        expected = (
+            [
+                AddFields(
+                    fields=[
+                        AddedFieldDefinition(
+                            path=["field1"],
+                            value=InterpolatedString(
+                                string="static_value", default="static_value", parameters={}
+                            ),
+                            value_type=str,
+                            parameters={},
+                        )
+                    ],
+                    parameters={},
+                )
+            ]
+            * 2
+        )  # Entity will be present twice as we resolve parameters and add the component to both the record
+        # selector level and the stream level
         self._test_add_fields(content, expected)
 
     def test_add_fields_value_type_is_number(self):
@@ -2272,19 +2281,23 @@ class TestCreateTransformations:
                           value: "1"
                           value_type: number
         """
-        expected = [
-            AddFields(
-                fields=[
-                    AddedFieldDefinition(
-                        path=["field1"],
-                        value=InterpolatedString(string="1", default="1", parameters={}),
-                        value_type=float,
-                        parameters={},
-                    )
-                ],
-                parameters={},
-            )
-        ]
+        expected = (
+            [
+                AddFields(
+                    fields=[
+                        AddedFieldDefinition(
+                            path=["field1"],
+                            value=InterpolatedString(string="1", default="1", parameters={}),
+                            value_type=float,
+                            parameters={},
+                        )
+                    ],
+                    parameters={},
+                )
+            ]
+            * 2
+        )  # Entity will be present twice as we resolve parameters and add the component to both the record
+        # selector level and the stream level
         self._test_add_fields(content, expected)
 
     def test_add_fields_value_type_is_integer(self):
@@ -2300,19 +2313,23 @@ class TestCreateTransformations:
                           value: "1"
                           value_type: integer
         """
-        expected = [
-            AddFields(
-                fields=[
-                    AddedFieldDefinition(
-                        path=["field1"],
-                        value=InterpolatedString(string="1", default="1", parameters={}),
-                        value_type=int,
-                        parameters={},
-                    )
-                ],
-                parameters={},
-            )
-        ]
+        expected = (
+            [
+                AddFields(
+                    fields=[
+                        AddedFieldDefinition(
+                            path=["field1"],
+                            value=InterpolatedString(string="1", default="1", parameters={}),
+                            value_type=int,
+                            parameters={},
+                        )
+                    ],
+                    parameters={},
+                )
+            ]
+            * 2
+        )  # Entity will be present twice as we resolve parameters and add the component to both the record
+        # selector level and the stream level
         self._test_add_fields(content, expected)
 
     def test_add_fields_value_type_is_boolean(self):
@@ -2340,7 +2357,7 @@ class TestCreateTransformations:
                 ],
                 parameters={},
             )
-        ]
+        ] * 2
         self._test_add_fields(content, expected)
 
     def _test_add_fields(self, content, expected):
