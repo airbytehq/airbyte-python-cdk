@@ -88,19 +88,23 @@ class HttpComponentsResolver(ComponentsResolver):
         """
         kwargs = {"stream_template_config": stream_template_config}
 
-        for components_values in self.retriever.read_records({}):
-            updated_config = deepcopy(stream_template_config)
-            kwargs["components_values"] = components_values  # type: ignore[assignment] # component_values will always be of type Mapping[str, Any]
+        stream_slices = self.retriever.stream_slices() if self.retriever.stream_slicer else [{}]
 
-            for resolved_component in self._resolved_components:
-                valid_types = (
-                    (resolved_component.value_type,) if resolved_component.value_type else None
-                )
-                value = resolved_component.value.eval(
-                    self.config, valid_types=valid_types, **kwargs
-                )
+        for stream_slice in stream_slices:
+            for components_values in self.retriever.read_records({}, stream_slice):
+                updated_config = deepcopy(stream_template_config)
+                kwargs["components_values"] = components_values  # type: ignore[assignment] # component_values will always be of type Mapping[str, Any]
+                kwargs["stream_slice"] = stream_slice
 
-                path = [path.eval(self.config, **kwargs) for path in resolved_component.field_path]
-                dpath.set(updated_config, path, value)
+                for resolved_component in self._resolved_components:
+                    valid_types = (
+                        (resolved_component.value_type,) if resolved_component.value_type else None
+                    )
+                    value = resolved_component.value.eval(
+                        self.config, valid_types=valid_types, **kwargs
+                    )
 
-            yield updated_config
+                    path = [path.eval(self.config, **kwargs) for path in resolved_component.field_path]
+                    dpath.set(updated_config, path, value)
+
+                yield updated_config

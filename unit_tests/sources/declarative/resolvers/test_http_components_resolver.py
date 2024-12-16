@@ -221,6 +221,7 @@ def test_http_components_resolver(
 ):
     mock_retriever = MagicMock()
     mock_retriever.read_records.return_value = retriever_data
+    mock_retriever.stream_slices.return_value = [{}]
     config = {}
 
     resolver = HttpComponentsResolver(
