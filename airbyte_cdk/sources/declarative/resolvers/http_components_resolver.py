@@ -104,7 +104,9 @@ class HttpComponentsResolver(ComponentsResolver):
                         self.config, valid_types=valid_types, **kwargs
                     )
 
-                    path = [path.eval(self.config, **kwargs) for path in resolved_component.field_path]
+                    path = [
+                        path.eval(self.config, **kwargs) for path in resolved_component.field_path
+                    ]
                     dpath.set(updated_config, path, value)
 
                 yield updated_config
