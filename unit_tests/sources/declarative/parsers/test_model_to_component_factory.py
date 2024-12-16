@@ -305,7 +305,7 @@ spec:
     assert add_fields.fields[0].path == ["extra"]
     assert add_fields.fields[0].value.string == "{{ response.to_add }}"
     remove_fields = stream.retriever.record_selector.transformations[1]
-    assert isinstance(add_fields, AddFields)
+    assert isinstance(remove_fields, RemoveFields)
     assert remove_fields.field_pointers[0] == ["extra"]
 
     assert isinstance(stream.retriever, SimpleRetriever)
