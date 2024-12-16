@@ -2514,6 +2514,16 @@ definitions:
       schema_normalization:
         "$ref": "#/definitions/SchemaNormalization"
         default: None
+      transformations:
+        title: Transformations
+        description: A list of transformations to be applied to each output record.
+        type: array
+        items:
+          anyOf:
+            - "$ref": "#/definitions/AddFields"
+            - "$ref": "#/definitions/CustomTransformation"
+            - "$ref": "#/definitions/RemoveFields"
+            - "$ref": "#/definitions/KeysToLower"
       $parameters:
         type: object
         additionalProperties: true

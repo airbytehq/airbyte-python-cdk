@@ -179,6 +179,10 @@ selector:
   record_filter:
     type: RecordFilter
     condition: "{{ record['id'] > stream_state['id'] }}"
+  transformations:
+    - type: RemoveFields
+      field_pointers:
+        - ["extra"] 
 metadata_paginator:
     type: DefaultPaginator
     page_size_option:
@@ -295,11 +299,14 @@ spec:
     assert isinstance(stream.schema_loader, JsonFileSchemaLoader)
     assert stream.schema_loader._get_json_filepath() == "./source_sendgrid/schemas/lists.json"
 
-    assert len(stream.retriever.record_selector.transformations) == 1
+    assert len(stream.retriever.record_selector.transformations) == 2
     add_fields = stream.retriever.record_selector.transformations[0]
     assert isinstance(add_fields, AddFields)
     assert add_fields.fields[0].path == ["extra"]
     assert add_fields.fields[0].value.string == "{{ response.to_add }}"
+    remove_fields = stream.retriever.record_selector.transformations[1]
+    assert isinstance(add_fields, AddFields)
+    assert remove_fields.field_pointers[0] == ["extra"]
 
     assert isinstance(stream.retriever, SimpleRetriever)
     assert stream.retriever.primary_key == stream.primary_key
@@ -1305,6 +1312,10 @@ def test_create_record_selector(test_name, record_selector, expected_runtime_sel
       extractor:
         $ref: "#/extractor"
         field_path: ["{record_selector}"]
+      transformations:
+        - type: RemoveFields
+          field_pointers:
+            - ["extra"] 
     """
     parsed_manifest = YamlDeclarativeSource._parse(content)
     resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
@@ -1326,6 +1337,7 @@ def test_create_record_selector(test_name, record_selector, expected_runtime_sel
     assert [fp.eval(input_config) for fp in selector.extractor._field_path] == [
         expected_runtime_selector
     ]
+    assert isinstance(selector.transformations[0], RemoveFields)
     assert isinstance(selector.record_filter, RecordFilter)
     assert selector.record_filter.condition == "{{ record['id'] > stream_state['id'] }}"
 

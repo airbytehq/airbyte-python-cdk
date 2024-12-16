@@ -1923,6 +1923,12 @@ class ModelToComponentFactory:
             SCHEMA_TRANSFORMER_TYPE_MAPPING[model.schema_normalization]
         )
 
+        if model.transformations:
+            for transformation_model in model.transformations:
+                transformations.append(
+                    self._create_component_from_model(model=transformation_model, config=config)
+                )
+
         return RecordSelector(
             extractor=extractor,
             name=name,
