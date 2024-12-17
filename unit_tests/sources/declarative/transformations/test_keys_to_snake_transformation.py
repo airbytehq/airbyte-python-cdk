@@ -5,7 +5,7 @@
 import pytest
 
 from airbyte_cdk.sources.declarative.transformations.keys_to_snake_transformation import (
-    KeyToSnakeCaseTransformation,
+    KeysToSnakeCaseTransformation,
 )
 
 _ANY_VALUE = -1
@@ -21,6 +21,16 @@ _ANY_VALUE = -1
         (
             {"123Number": _ANY_VALUE, "456Another123": _ANY_VALUE},
             {"_123_number": _ANY_VALUE, "_456_another_123": _ANY_VALUE},
+        ),
+        (
+            {
+                "NestedRecord": {"FirstName": _ANY_VALUE, "lastName": _ANY_VALUE},
+                "456Another123": _ANY_VALUE,
+            },
+            {
+                "nested_record": {"first_name": _ANY_VALUE, "last_name": _ANY_VALUE},
+                "_456_another_123": _ANY_VALUE,
+            },
         ),
         (
             {"hello@world": _ANY_VALUE, "test#case": _ANY_VALUE},
@@ -43,6 +53,6 @@ _ANY_VALUE = -1
         ),
     ],
 )
-def test_key_transformation(input_keys, expected_keys):
-    KeyToSnakeCaseTransformation().transform(input_keys)
+def test_keys_transformation(input_keys, expected_keys):
+    KeysToSnakeCaseTransformation().transform(input_keys)
     assert input_keys == expected_keys

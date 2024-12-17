@@ -710,8 +710,8 @@ class KeysToLower(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class KeyToSnakeCase(BaseModel):
-    type: Literal["KeyToSnakeCase"]
+class KeysToSnakeCase(BaseModel):
+    type: Literal["KeysToSnakeCase"]
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -1665,7 +1665,7 @@ class DeclarativeStream(BaseModel):
                 CustomTransformation,
                 RemoveFields,
                 KeysToLower,
-                KeyToSnakeCase,
+                KeysToSnakeCase,
             ]
         ]
     ] = Field(

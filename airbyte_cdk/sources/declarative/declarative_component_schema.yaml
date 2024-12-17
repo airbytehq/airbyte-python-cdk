@@ -1234,7 +1234,7 @@ definitions:
             - "$ref": "#/definitions/CustomTransformation"
             - "$ref": "#/definitions/RemoveFields"
             - "$ref": "#/definitions/KeysToLower"
-            - "$ref": "#/definitions/KeyToSnakeCase"
+            - "$ref": "#/definitions/KeysToSnakeCase"
       state_migrations:
         title: State Migrations
         description: Array of state migrations to be applied on the input state
@@ -1839,7 +1839,7 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
-  KeyToSnakeCase:
+  KeysToSnakeCase:
     title: Key to Snake Case
     description: A transformation that renames all keys to snake case.
     type: object
@@ -1848,7 +1848,7 @@ definitions:
     properties:
       type:
         type: string
-        enum: [KeyToSnakeCase]
+        enum: [KeysToSnakeCase]
       $parameters:
         type: object
         additionalProperties: true
