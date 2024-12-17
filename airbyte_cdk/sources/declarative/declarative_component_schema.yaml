@@ -1234,6 +1234,7 @@ definitions:
             - "$ref": "#/definitions/CustomTransformation"
             - "$ref": "#/definitions/RemoveFields"
             - "$ref": "#/definitions/KeysToLower"
+            - "$ref": "#/definitions/KeyToSnakeCase"
       state_migrations:
         title: State Migrations
         description: Array of state migrations to be applied on the input state
@@ -1838,6 +1839,19 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  KeyToSnakeCase:
+    title: Key to Snake Case
+    description: A transformation that renames all keys to snake case.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [KeyToSnakeCase]
+      $parameters:
+        type: object
+        additionalProperties: true
   IterableDecoder:
     title: Iterable Decoder
     description: Use this if the response consists of strings separated by new lines (`\n`). The Decoder will wrap each row into a JSON object with the `record` key.
@@ -2160,7 +2174,9 @@ definitions:
             description: |-
               The DeclarativeOAuth Specific optional headers to inject while exchanging the `auth_code` to `access_token` during `completeOAuthFlow` step.
             examples:
-              - {"Authorization": "Basic {base64Encoder:{client_id}:{client_secret}}"}
+              - {
+                  "Authorization": "Basic {base64Encoder:{client_id}:{client_secret}}",
+                }
           access_token_params:
             title: Access Token Query Params (Json Encoded)
             type: object

@@ -710,6 +710,11 @@ class KeysToLower(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class KeyToSnakeCase(BaseModel):
+    type: Literal["KeyToSnakeCase"]
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class IterableDecoder(BaseModel):
     type: Literal["IterableDecoder"]
 
@@ -1654,7 +1659,15 @@ class DeclarativeStream(BaseModel):
         title="Schema Loader",
     )
     transformations: Optional[
-        List[Union[AddFields, CustomTransformation, RemoveFields, KeysToLower]]
+        List[
+            Union[
+                AddFields,
+                CustomTransformation,
+                RemoveFields,
+                KeysToLower,
+                KeyToSnakeCase,
+            ]
+        ]
     ] = Field(
         None,
         description="A list of transformations to be applied to each output record.",
