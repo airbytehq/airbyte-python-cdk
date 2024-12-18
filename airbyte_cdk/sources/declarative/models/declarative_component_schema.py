@@ -715,6 +715,11 @@ class KeysToSnakeCase(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class FlattenFields(BaseModel):
+    type: Literal["FlattenFields"]
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class IterableDecoder(BaseModel):
     type: Literal["IterableDecoder"]
 

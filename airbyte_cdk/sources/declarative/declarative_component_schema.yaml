@@ -1852,6 +1852,19 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  FlattenFields:
+    title: Flatten Fields
+    description: A transformation that flatten record to single level format.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [FlattenFields]
+      $parameters:
+        type: object
+        additionalProperties: true
   IterableDecoder:
     title: Iterable Decoder
     description: Use this if the response consists of strings separated by new lines (`\n`). The Decoder will wrap each row into a JSON object with the `record` key.
