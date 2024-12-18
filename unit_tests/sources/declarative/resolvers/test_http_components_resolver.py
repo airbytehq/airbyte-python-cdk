@@ -284,23 +284,24 @@ _MANIFEST_WITH_HTTP_COMPONENT_RESOLVER_WITH_RETRIEVER_WITH_PARENT_STREAM = {
                                         },
                                         "record_selector": {
                                             "type": "RecordSelector",
-                                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                                            "extractor": {
+                                                "type": "DpathExtractor",
+                                                "field_path": [],
+                                            },
                                         },
                                     },
                                     "schema_loader": {
                                         "type": "InlineSchemaLoader",
                                         "schema": {
                                             "$schema": "http://json-schema.org/schema#",
-                                            "properties": {
-                                                "id": {"type": "integer"}
-                                            },
+                                            "properties": {"id": {"type": "integer"}},
                                             "type": "object",
                                         },
                                     },
-                                }
+                                },
                             }
-                        ]
-                    }
+                        ],
+                    },
                 },
                 "components_mapping": [
                     {
@@ -322,6 +323,8 @@ _MANIFEST_WITH_HTTP_COMPONENT_RESOLVER_WITH_RETRIEVER_WITH_PARENT_STREAM = {
         }
     ],
 }
+
+
 @pytest.mark.parametrize(
     "components_mapping, retriever_data, stream_template_config, expected_result",
     [
@@ -358,6 +361,7 @@ def test_http_components_resolver(
     result = list(resolver.resolve_components(stream_template_config=stream_template_config))
     assert result == expected_result
 
+
 @pytest.mark.parametrize(
     "components_mapping, retriever_data, stream_template_config, expected_result",
     [
@@ -393,6 +397,7 @@ def test_http_components_resolver_with_stream_slices(
 
     result = list(resolver.resolve_components(stream_template_config=stream_template_config))
     assert result == expected_result
+
 
 def test_dynamic_streams_read_with_http_components_resolver():
     expected_stream_names = ["item_1", "item_2"]
@@ -466,16 +471,18 @@ def test_duplicated_dynamic_streams_read_with_http_components_resolver():
             == "Dynamic streams list contains a duplicate name: item_2. Please contact Airbyte Support."
         )
 
+
 def test_dynamic_streams_with_http_components_resolver_retriever_with_parent_stream():
     expected_stream_names = [
-        "parent_1_item_1", "parent_1_item_2", "parent_2_item_1", "parent_2_item_2"
+        "parent_1_item_1",
+        "parent_1_item_2",
+        "parent_2_item_1",
+        "parent_2_item_2",
     ]
     with HttpMocker() as http_mocker:
         http_mocker.get(
             HttpRequest(url="https://api.test.com/parents"),
-            HttpResponse(
-                body=json.dumps([{"id": 1}, {"id": 2}])
-            ),
+            HttpResponse(body=json.dumps([{"id": 1}, {"id": 2}])),
         )
         parent_ids = [1, 2]
         for parent_id in parent_ids:
@@ -494,13 +501,14 @@ def test_dynamic_streams_with_http_components_resolver_retriever_with_parent_str
         for dynamic_stream_path in dynamic_stream_paths:
             http_mocker.get(
                 HttpRequest(url=f"https://api.test.com/{dynamic_stream_path}"),
-                HttpResponse(
-                    body=json.dumps([{"ABC": 1, "AED": 2}])
-                ),
+                HttpResponse(body=json.dumps([{"ABC": 1, "AED": 2}])),
             )
 
         source = ConcurrentDeclarativeSource(
-            source_config=_MANIFEST_WITH_HTTP_COMPONENT_RESOLVER_WITH_RETRIEVER_WITH_PARENT_STREAM, config=_CONFIG, catalog=None, state=None
+            source_config=_MANIFEST_WITH_HTTP_COMPONENT_RESOLVER_WITH_RETRIEVER_WITH_PARENT_STREAM,
+            config=_CONFIG,
+            catalog=None,
+            state=None,
         )
 
         actual_catalog = source.discover(logger=source.logger, config=_CONFIG)

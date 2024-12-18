@@ -89,7 +89,9 @@ class HttpComponentsResolver(ComponentsResolver):
         kwargs = {"stream_template_config": stream_template_config}
 
         for stream_slice in self.retriever.stream_slices():
-            for components_values in self.retriever.read_records(records_schema={}, stream_slice=stream_slice):
+            for components_values in self.retriever.read_records(
+                records_schema={}, stream_slice=stream_slice
+            ):
                 updated_config = deepcopy(stream_template_config)
                 kwargs["components_values"] = components_values  # type: ignore[assignment] # component_values will always be of type Mapping[str, Any]
                 kwargs["stream_slice"] = stream_slice  # type: ignore[assignment] # stream_slice will always be of type Mapping[str, Any]
