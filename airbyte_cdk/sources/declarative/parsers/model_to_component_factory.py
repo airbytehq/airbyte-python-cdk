@@ -1638,13 +1638,20 @@ class ModelToComponentFactory:
             model.retriever, stream_slicer
         )
 
+        transformations = []
+        if model.transformations:
+            for transformation_model in model.transformations:
+                transformations.append(
+                    self._create_component_from_model(model=transformation_model, config=config)
+                )
+
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
             name="",
             primary_key=None,
             stream_slicer=combined_slicers,
-            transformations=[],
+            transformations=transformations,
         )
         schema_type_identifier = self._create_component_from_model(
             model.schema_type_identifier, config=config, parameters=model.parameters or {}
@@ -1922,12 +1929,6 @@ class ModelToComponentFactory:
         schema_normalization = TypeTransformer(
             SCHEMA_TRANSFORMER_TYPE_MAPPING[model.schema_normalization]
         )
-
-        if model.transformations:
-            for transformation_model in model.transformations:
-                transformations.append(
-                    self._create_component_from_model(model=transformation_model, config=config)
-                )
 
         return RecordSelector(
             extractor=extractor,

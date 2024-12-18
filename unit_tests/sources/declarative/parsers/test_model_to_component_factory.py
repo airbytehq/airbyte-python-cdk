@@ -179,10 +179,6 @@ selector:
   record_filter:
     type: RecordFilter
     condition: "{{ record['id'] > stream_state['id'] }}"
-  transformations:
-    - type: RemoveFields
-      field_pointers:
-        - ["extra"] 
 metadata_paginator:
     type: DefaultPaginator
     page_size_option:
@@ -299,14 +295,11 @@ spec:
     assert isinstance(stream.schema_loader, JsonFileSchemaLoader)
     assert stream.schema_loader._get_json_filepath() == "./source_sendgrid/schemas/lists.json"
 
-    assert len(stream.retriever.record_selector.transformations) == 2
+    assert len(stream.retriever.record_selector.transformations) == 1
     add_fields = stream.retriever.record_selector.transformations[0]
     assert isinstance(add_fields, AddFields)
     assert add_fields.fields[0].path == ["extra"]
     assert add_fields.fields[0].value.string == "{{ response.to_add }}"
-    remove_fields = stream.retriever.record_selector.transformations[1]
-    assert isinstance(remove_fields, RemoveFields)
-    assert remove_fields.field_pointers[0] == ["extra"]
 
     assert isinstance(stream.retriever, SimpleRetriever)
     assert stream.retriever.primary_key == stream.primary_key
@@ -1312,10 +1305,6 @@ def test_create_record_selector(test_name, record_selector, expected_runtime_sel
       extractor:
         $ref: "#/extractor"
         field_path: ["{record_selector}"]
-      transformations:
-        - type: RemoveFields
-          field_pointers:
-            - ["extra"] 
     """
     parsed_manifest = YamlDeclarativeSource._parse(content)
     resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
@@ -1337,7 +1326,6 @@ def test_create_record_selector(test_name, record_selector, expected_runtime_sel
     assert [fp.eval(input_config) for fp in selector.extractor._field_path] == [
         expected_runtime_selector
     ]
-    assert isinstance(selector.transformations[0], RemoveFields)
     assert isinstance(selector.record_filter, RecordFilter)
     assert selector.record_filter.condition == "{{ record['id'] > stream_state['id'] }}"
 
@@ -2195,10 +2183,9 @@ class TestCreateTransformations:
         )
 
         assert isinstance(stream, DeclarativeStream)
-        expected = (
-            [RemoveFields(field_pointers=[["path", "to", "field1"], ["path2"]], parameters={})] * 2
-        )  # Entity will be present twice as we resolve parameters and add the component to both the record
-        # selector level and the stream level
+        expected = [
+            RemoveFields(field_pointers=[["path", "to", "field1"], ["path2"]], parameters={})
+        ]
         assert stream.retriever.record_selector.transformations == expected
 
     def test_add_fields_no_value_type(self):
@@ -2213,25 +2200,21 @@ class TestCreateTransformations:
                         - path: ["field1"]
                           value: "static_value"
         """
-        expected = (
-            [
-                AddFields(
-                    fields=[
-                        AddedFieldDefinition(
-                            path=["field1"],
-                            value=InterpolatedString(
-                                string="static_value", default="static_value", parameters={}
-                            ),
-                            value_type=None,
-                            parameters={},
-                        )
-                    ],
-                    parameters={},
-                )
-            ]
-            * 2
-        )  # Entity will be present twice as we resolve parameters and add the component to both the record
-        # selector level and the stream level
+        expected = [
+            AddFields(
+                fields=[
+                    AddedFieldDefinition(
+                        path=["field1"],
+                        value=InterpolatedString(
+                            string="static_value", default="static_value", parameters={}
+                        ),
+                        value_type=None,
+                        parameters={},
+                    )
+                ],
+                parameters={},
+            )
+        ]
         self._test_add_fields(content, expected)
 
     def test_add_fields_value_type_is_string(self):
@@ -2247,25 +2230,21 @@ class TestCreateTransformations:
                           value: "static_value"
                           value_type: string
         """
-        expected = (
-            [
-                AddFields(
-                    fields=[
-                        AddedFieldDefinition(
-                            path=["field1"],
-                            value=InterpolatedString(
-                                string="static_value", default="static_value", parameters={}
-                            ),
-                            value_type=str,
-                            parameters={},
-                        )
-                    ],
-                    parameters={},
-                )
-            ]
-            * 2
-        )  # Entity will be present twice as we resolve parameters and add the component to both the record
-        # selector level and the stream level
+        expected = [
+            AddFields(
+                fields=[
+                    AddedFieldDefinition(
+                        path=["field1"],
+                        value=InterpolatedString(
+                            string="static_value", default="static_value", parameters={}
+                        ),
+                        value_type=str,
+                        parameters={},
+                    )
+                ],
+                parameters={},
+            )
+        ]
         self._test_add_fields(content, expected)
 
     def test_add_fields_value_type_is_number(self):
@@ -2281,23 +2260,19 @@ class TestCreateTransformations:
                           value: "1"
                           value_type: number
         """
-        expected = (
-            [
-                AddFields(
-                    fields=[
-                        AddedFieldDefinition(
-                            path=["field1"],
-                            value=InterpolatedString(string="1", default="1", parameters={}),
-                            value_type=float,
-                            parameters={},
-                        )
-                    ],
-                    parameters={},
-                )
-            ]
-            * 2
-        )  # Entity will be present twice as we resolve parameters and add the component to both the record
-        # selector level and the stream level
+        expected = [
+            AddFields(
+                fields=[
+                    AddedFieldDefinition(
+                        path=["field1"],
+                        value=InterpolatedString(string="1", default="1", parameters={}),
+                        value_type=float,
+                        parameters={},
+                    )
+                ],
+                parameters={},
+            )
+        ]
         self._test_add_fields(content, expected)
 
     def test_add_fields_value_type_is_integer(self):
@@ -2313,23 +2288,19 @@ class TestCreateTransformations:
                           value: "1"
                           value_type: integer
         """
-        expected = (
-            [
-                AddFields(
-                    fields=[
-                        AddedFieldDefinition(
-                            path=["field1"],
-                            value=InterpolatedString(string="1", default="1", parameters={}),
-                            value_type=int,
-                            parameters={},
-                        )
-                    ],
-                    parameters={},
-                )
-            ]
-            * 2
-        )  # Entity will be present twice as we resolve parameters and add the component to both the record
-        # selector level and the stream level
+        expected = [
+            AddFields(
+                fields=[
+                    AddedFieldDefinition(
+                        path=["field1"],
+                        value=InterpolatedString(string="1", default="1", parameters={}),
+                        value_type=int,
+                        parameters={},
+                    )
+                ],
+                parameters={},
+            )
+        ]
         self._test_add_fields(content, expected)
 
     def test_add_fields_value_type_is_boolean(self):
@@ -2357,7 +2328,7 @@ class TestCreateTransformations:
                 ],
                 parameters={},
             )
-        ] * 2
+        ]
         self._test_add_fields(content, expected)
 
     def _test_add_fields(self, content, expected):
