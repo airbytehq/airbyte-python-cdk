@@ -66,8 +66,18 @@ _MANIFEST = {
                 },
                 "schema_transformations": [
                     {
+                        "type": "AddFields",
+                        "fields": [
+                            {
+                                "type": "AddedFieldDefinition",
+                                "path": ["StaticField"],
+                                "value": "{{ {'type': ['null', 'string']} }}",
+                            }
+                        ],
+                    },
+                    {
                         "type": "KeysToSnakeCase",
-                    }
+                    },
                 ],
                 "schema_type_identifier": {
                     "schema_pointer": ["fields"],
@@ -237,6 +247,7 @@ def test_dynamic_schema_loader_manifest_flow():
             "id": {"type": ["null", "integer"]},
             "first_name": {"type": ["null", "string"]},
             "description": {"type": ["null", "string"]},
+            "static_field": {"type": ["null", "string"]},
         },
     }
 
