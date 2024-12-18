@@ -1767,9 +1767,9 @@ definitions:
           - "$ref": "#/definitions/AsyncRetriever"
           - "$ref": "#/definitions/CustomRetriever"
           - "$ref": "#/definitions/SimpleRetriever"
-      transformations:
-        title: Transformations
-        description: A list of transformations to be applied to retrieved record.
+      schema_transformations:
+        title: Schema Transformations
+        description: A list of transformations to be applied to the schema.
         type: array
         items:
           anyOf:

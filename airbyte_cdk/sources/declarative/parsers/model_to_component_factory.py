@@ -237,6 +237,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     KeysToLower as KeysToLowerModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    KeysToSnakeCase as KeysToSnakeCaseModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     LegacySessionTokenAuthenticator as LegacySessionTokenAuthenticatorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -390,6 +393,9 @@ from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFiel
 from airbyte_cdk.sources.declarative.transformations.keys_to_lower_transformation import (
     KeysToLowerTransformation,
 )
+from airbyte_cdk.sources.declarative.transformations.keys_to_snake_transformation import (
+    KeysToSnakeCaseTransformation,
+)
 from airbyte_cdk.sources.message import (
     InMemoryMessageRepository,
     LogAppenderMessageRepositoryDecorator,
@@ -472,6 +478,7 @@ class ModelToComponentFactory:
             JsonlDecoderModel: self.create_jsonl_decoder,
             GzipJsonDecoderModel: self.create_gzipjson_decoder,
             KeysToLowerModel: self.create_keys_to_lower_transformation,
+            KeysToSnakeCaseModel: self.create_keys_to_snake_transformation,
             IterableDecoderModel: self.create_iterable_decoder,
             XmlDecoderModel: self.create_xml_decoder,
             JsonFileSchemaLoaderModel: self.create_json_file_schema_loader,
@@ -586,6 +593,11 @@ class ModelToComponentFactory:
         self, model: KeysToLowerModel, config: Config, **kwargs: Any
     ) -> KeysToLowerTransformation:
         return KeysToLowerTransformation()
+
+    def create_keys_to_snake_transformation(
+        self, model: KeysToSnakeCaseModel, config: Config, **kwargs: Any
+    ) -> KeysToSnakeCaseTransformation:
+        return KeysToSnakeCaseTransformation()
 
     @staticmethod
     def _json_schema_type_name_to_type(value_type: Optional[ValueType]) -> Optional[Type[Any]]:
@@ -1638,10 +1650,10 @@ class ModelToComponentFactory:
             model.retriever, stream_slicer
         )
 
-        transformations = []
-        if model.transformations:
-            for transformation_model in model.transformations:
-                transformations.append(
+        schema_transformations = []
+        if model.schema_transformations:
+            for transformation_model in model.schema_transformations:
+                schema_transformations.append(
                     self._create_component_from_model(model=transformation_model, config=config)
                 )
 
@@ -1651,7 +1663,7 @@ class ModelToComponentFactory:
             name="",
             primary_key=None,
             stream_slicer=combined_slicers,
-            transformations=transformations,
+            transformations=[],
         )
         schema_type_identifier = self._create_component_from_model(
             model.schema_type_identifier, config=config, parameters=model.parameters or {}
@@ -1659,6 +1671,7 @@ class ModelToComponentFactory:
         return DynamicSchemaLoader(
             retriever=retriever,
             config=config,
+            schema_transformations=schema_transformations,
             schema_type_identifier=schema_type_identifier,
             parameters=model.parameters or {},
         )
