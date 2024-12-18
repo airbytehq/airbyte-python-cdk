@@ -1,5 +1,3 @@
-
-
 import gzip
 import json
 from abc import ABC, abstractmethod
@@ -17,6 +15,7 @@ class BufferedDataInput(Protocol):
     """
     at least read to _n bytes method should be supported to align with BufferedReader and avoid OOM.
     """
+
     def read(self, __n: int) -> bytes: ...
 
 
@@ -103,7 +102,6 @@ class CompositeRawDecoder(Decoder):
         self, response: requests.Response
     ) -> Generator[MutableMapping[str, Any], None, None]:
         yield from self.parser.parse(data=response.raw)
-
 
 
 # Examples how to use
