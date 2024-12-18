@@ -24,7 +24,7 @@ class FlattenFields(RecordTransformation):
 
     def flatten_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
         stack = [(record, "_")]
-        transformed_record = {}
+        transformed_record: Dict[str, Any] = {}
         force_with_parent_name = False
 
         while stack:
