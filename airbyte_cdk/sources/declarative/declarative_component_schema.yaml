@@ -1911,6 +1911,56 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  ZipfileDecoder:
+    title: Zipfile Decoder
+    description: Decoder for response data that is returned as zipfile(s).
+    type: object
+    additionalProperties: true
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [ZipfileDecoder]
+      parser:
+        title: Parser
+        description: Parser to parse the decompressed data from the zipfile(s).
+        anyOf:
+          - "$ref": "#/definitions/JsonParser"
+          - "$ref": "#/definitions/CustomParser"
+  JsonParser:
+    title: JsonParser
+    description: Parser used for parsing str, bytes, or bytearray data and returning data in a dictionary format.
+    type: object
+    additionalProperties: true
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [JsonParser]
+  CustomParser:
+    title: Custom Parser
+    description: Use this to implement custom parser logic.
+    type: object
+    additionalProperties: true
+    required:
+      - type
+      - class_name
+    properties:
+      type:
+        type: string
+        enum: [CustomParser]
+      class_name:
+        title: Class Name
+        description: Fully-qualified name of the class that will be implementing the custom decoding. Has to be a sub class of Parser. The format is `source_<name>.<package>.<class_name>`.
+        type: string
+        additionalProperties: true
+        examples:
+          - "source_rivendell.components.ElvishParser"
+      $parameters:
+        type: object
+        additionalProperties: true
   ListPartitionRouter:
     title: List Partition Router
     description: A Partition router that specifies a list of attributes where each attribute describes a portion of the complete data set for a stream. During a sync, each value is iterated over and can be used as input to outbound API requests.
