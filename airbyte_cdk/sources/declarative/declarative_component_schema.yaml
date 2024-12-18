@@ -1235,6 +1235,7 @@ definitions:
             - "$ref": "#/definitions/RemoveFields"
             - "$ref": "#/definitions/KeysToLower"
             - "$ref": "#/definitions/KeysToSnakeCase"
+            - "$ref": "#/definitions/FlattenFields"
       state_migrations:
         title: State Migrations
         description: Array of state migrations to be applied on the input state
@@ -1778,6 +1779,7 @@ definitions:
             - "$ref": "#/definitions/RemoveFields"
             - "$ref": "#/definitions/KeysToLower"
             - "$ref": "#/definitions/KeysToSnakeCase"
+            - "$ref": "#/definitions/FlattenFields"
       schema_type_identifier:
         "$ref": "#/definitions/SchemaTypeIdentifier"
       $parameters:

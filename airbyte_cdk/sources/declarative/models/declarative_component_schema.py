@@ -1671,6 +1671,7 @@ class DeclarativeStream(BaseModel):
                 RemoveFields,
                 KeysToLower,
                 KeysToSnakeCase,
+                FlattenFields,
             ]
         ]
     ] = Field(
@@ -1844,6 +1845,7 @@ class DynamicSchemaLoader(BaseModel):
                 RemoveFields,
                 KeysToLower,
                 KeysToSnakeCase,
+                FlattenFields,
             ]
         ]
     ] = Field(
