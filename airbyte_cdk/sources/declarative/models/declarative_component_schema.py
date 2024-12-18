@@ -710,6 +710,11 @@ class KeysToLower(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class KeysToSnakeCase(BaseModel):
+    type: Literal["KeysToSnakeCase"]
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class IterableDecoder(BaseModel):
     type: Literal["IterableDecoder"]
 
@@ -795,104 +800,90 @@ class OauthConnectorInputSpecification(BaseModel):
         ...,
         description="The DeclarativeOAuth Specific string URL string template to initiate the authentication.\nThe placeholders are replaced during the processing to provide neccessary values.",
         examples=[
-            {
-                "consent_url": "https://domain.host.com/marketing_api/auth?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{state_key}={{state_key}}"
-            },
-            {
-                "consent_url": "https://endpoint.host.com/oauth2/authorize?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{scope_key}={urlEncoder:{{scope_key}}}&{state_key}={{state_key}}&subdomain={subdomain}"
-            },
+            "https://domain.host.com/marketing_api/auth?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{state_key}={{state_key}}",
+            "https://endpoint.host.com/oauth2/authorize?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{scope_key}={urlEncoder:{{scope_key}}}&{state_key}={{state_key}}&subdomain={subdomain}",
         ],
-        title="DeclarativeOAuth Consent URL",
+        title="Consent URL",
     )
     scope: Optional[str] = Field(
         None,
         description="The DeclarativeOAuth Specific string of the scopes needed to be grant for authenticated user.",
-        examples=[{"scope": "user:read user:read_orders workspaces:read"}],
-        title="(Optional) DeclarativeOAuth Scope",
+        examples=["user:read user:read_orders workspaces:read"],
+        title="Scopes",
     )
     access_token_url: str = Field(
         ...,
         description="The DeclarativeOAuth Specific URL templated string to obtain the `access_token`, `refresh_token` etc.\nThe placeholders are replaced during the processing to provide neccessary values.",
         examples=[
-            {
-                "access_token_url": "https://auth.host.com/oauth2/token?{client_id_key}={{client_id_key}}&{client_secret_key}={{client_secret_key}}&{auth_code_key}={{auth_code_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}"
-            }
+            "https://auth.host.com/oauth2/token?{client_id_key}={{client_id_key}}&{client_secret_key}={{client_secret_key}}&{auth_code_key}={{auth_code_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}"
         ],
-        title="DeclarativeOAuth Access Token URL",
+        title="Access Token URL",
     )
     access_token_headers: Optional[Dict[str, Any]] = Field(
         None,
         description="The DeclarativeOAuth Specific optional headers to inject while exchanging the `auth_code` to `access_token` during `completeOAuthFlow` step.",
-        examples=[
-            {
-                "access_token_headers": {
-                    "Authorization": "Basic {base64Encoder:{client_id}:{client_secret}}"
-                }
-            }
-        ],
-        title="(Optional) DeclarativeOAuth Access Token Headers",
+        examples=[{"Authorization": "Basic {base64Encoder:{client_id}:{client_secret}}"}],
+        title="Access Token Headers",
     )
     access_token_params: Optional[Dict[str, Any]] = Field(
         None,
         description="The DeclarativeOAuth Specific optional query parameters to inject while exchanging the `auth_code` to `access_token` during `completeOAuthFlow` step.\nWhen this property is provided, the query params will be encoded as `Json` and included in the outgoing API request.",
         examples=[
             {
-                "access_token_params": {
-                    "{auth_code_key}": "{{auth_code_key}}",
-                    "{client_id_key}": "{{client_id_key}}",
-                    "{client_secret_key}": "{{client_secret_key}}",
-                }
+                "{auth_code_key}": "{{auth_code_key}}",
+                "{client_id_key}": "{{client_id_key}}",
+                "{client_secret_key}": "{{client_secret_key}}",
             }
         ],
-        title="(Optional) DeclarativeOAuth Access Token Query Params (Json Encoded)",
+        title="Access Token Query Params (Json Encoded)",
     )
     extract_output: List[str] = Field(
         ...,
         description="The DeclarativeOAuth Specific list of strings to indicate which keys should be extracted and returned back to the input config.",
-        examples=[{"extract_output": ["access_token", "refresh_token", "other_field"]}],
-        title="DeclarativeOAuth Extract Output",
+        examples=[["access_token", "refresh_token", "other_field"]],
+        title="Extract Output",
     )
     state: Optional[State] = Field(
         None,
         description="The DeclarativeOAuth Specific object to provide the criteria of how the `state` query param should be constructed,\nincluding length and complexity.",
-        examples=[{"state": {"min": 7, "max": 128}}],
-        title="(Optional) DeclarativeOAuth Configurable State Query Param",
+        examples=[{"min": 7, "max": 128}],
+        title="Configurable State Query Param",
     )
     client_id_key: Optional[str] = Field(
         None,
         description="The DeclarativeOAuth Specific optional override to provide the custom `client_id` key name, if required by data-provider.",
-        examples=[{"client_id_key": "my_custom_client_id_key_name"}],
-        title="(Optional) DeclarativeOAuth Client ID Key Override",
+        examples=["my_custom_client_id_key_name"],
+        title="Client ID Key Override",
     )
     client_secret_key: Optional[str] = Field(
         None,
         description="The DeclarativeOAuth Specific optional override to provide the custom `client_secret` key name, if required by data-provider.",
-        examples=[{"client_secret_key": "my_custom_client_secret_key_name"}],
-        title="(Optional) DeclarativeOAuth Client Secret Key Override",
+        examples=["my_custom_client_secret_key_name"],
+        title="Client Secret Key Override",
     )
     scope_key: Optional[str] = Field(
         None,
         description="The DeclarativeOAuth Specific optional override to provide the custom `scope` key name, if required by data-provider.",
-        examples=[{"scope_key": "my_custom_scope_key_key_name"}],
-        title="(Optional) DeclarativeOAuth Scope Key Override",
+        examples=["my_custom_scope_key_key_name"],
+        title="Scopes Key Override",
     )
     state_key: Optional[str] = Field(
         None,
         description="The DeclarativeOAuth Specific optional override to provide the custom `state` key name, if required by data-provider.",
-        examples=[{"state_key": "my_custom_state_key_key_name"}],
-        title="(Optional) DeclarativeOAuth State Key Override",
+        examples=["my_custom_state_key_key_name"],
+        title="State Key Override",
     )
     auth_code_key: Optional[str] = Field(
         None,
         description="The DeclarativeOAuth Specific optional override to provide the custom `code` key name to something like `auth_code` or `custom_auth_code`, if required by data-provider.",
-        examples=[{"auth_code_key": "my_custom_auth_code_key_name"}],
-        title="(Optional) DeclarativeOAuth Auth Code Key Override",
+        examples=["my_custom_auth_code_key_name"],
+        title="Auth Code Key Override",
     )
     redirect_uri_key: Optional[str] = Field(
         None,
         description="The DeclarativeOAuth Specific optional override to provide the custom `redirect_uri` key name to something like `callback_uri`, if required by data-provider.",
-        examples=[{"redirect_uri_key": "my_custom_redirect_uri_key_name"}],
-        title="(Optional) DeclarativeOAuth Redirect URI Key Override",
+        examples=["my_custom_redirect_uri_key_name"],
+        title="Redirect URI Key Override",
     )
 
 
@@ -1675,7 +1666,15 @@ class DeclarativeStream(BaseModel):
         title="Schema Loader",
     )
     transformations: Optional[
-        List[Union[AddFields, CustomTransformation, RemoveFields, KeysToLower]]
+        List[
+            Union[
+                AddFields,
+                CustomTransformation,
+                RemoveFields,
+                KeysToLower,
+                KeysToSnakeCase,
+            ]
+        ]
     ] = Field(
         None,
         description="A list of transformations to be applied to each output record.",
