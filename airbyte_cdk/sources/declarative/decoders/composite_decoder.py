@@ -19,7 +19,8 @@ logger = logging.getLogger("airbyte")
 class Parser(ABC):
     @abstractmethod
     def parse(
-        self, data: BufferedIOBase, *args, **kwargs
+        self,
+        data: BufferedIOBase,
     ) -> Generator[MutableMapping[str, Any], None, None]:
         """
         Parse data and yield dictionaries.
@@ -32,7 +33,8 @@ class GzipParser(Parser):
     inner_parser: Parser
 
     def parse(
-        self, data: BufferedIOBase, *args, **kwargs
+        self,
+        data: BufferedIOBase,
     ) -> Generator[MutableMapping[str, Any], None, None]:
         """
         Decompress gzipped bytes and pass decompressed data to the inner parser.
@@ -46,7 +48,8 @@ class JsonLineParser(Parser):
     encoding: Optional[str] = "utf-8"
 
     def parse(
-        self, data: BufferedIOBase, *args, **kwargs
+        self,
+        data: BufferedIOBase,
     ) -> Generator[MutableMapping[str, Any], None, None]:
         for line in data:
             try:
@@ -64,7 +67,8 @@ class CsvParser(Parser):
     delimiter: Optional[str] = ","
 
     def parse(
-        self, data: BufferedIOBase, *args, **kwargs
+        self,
+        data: BufferedIOBase,
     ) -> Generator[MutableMapping[str, Any], None, None]:
         """
         Parse CSV data from decompressed bytes.
