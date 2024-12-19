@@ -262,7 +262,7 @@ class HttpClient:
         user_backoff_handler = user_defined_backoff_handler(max_tries=max_tries, max_time=max_time)(
             self._send
         )
-        rate_limit_backoff_handler = rate_limit_default_backoff_handler()
+        rate_limit_backoff_handler = rate_limit_default_backoff_handler(max_tries=max_tries)
         backoff_handler = http_client_default_backoff_handler(
             max_tries=max_tries, max_time=max_time
         )
@@ -472,7 +472,9 @@ class HttpClient:
 
             elif retry_endlessly:
                 raise RateLimitBackoffException(
-                    request=request, response=response or exc, error_message=error_message
+                    request=request,
+                    response=(response if response is not None else exc),
+                    error_message=error_message,
                 )
 
             raise DefaultBackoffException(

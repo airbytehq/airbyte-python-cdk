@@ -1234,6 +1234,8 @@ definitions:
             - "$ref": "#/definitions/CustomTransformation"
             - "$ref": "#/definitions/RemoveFields"
             - "$ref": "#/definitions/KeysToLower"
+            - "$ref": "#/definitions/KeysToSnakeCase"
+            - "$ref": "#/definitions/FlattenFields"
       state_migrations:
         title: State Migrations
         description: Array of state migrations to be applied on the input state
@@ -1766,6 +1768,18 @@ definitions:
           - "$ref": "#/definitions/AsyncRetriever"
           - "$ref": "#/definitions/CustomRetriever"
           - "$ref": "#/definitions/SimpleRetriever"
+      schema_transformations:
+        title: Schema Transformations
+        description: A list of transformations to be applied to the schema.
+        type: array
+        items:
+          anyOf:
+            - "$ref": "#/definitions/AddFields"
+            - "$ref": "#/definitions/CustomTransformation"
+            - "$ref": "#/definitions/RemoveFields"
+            - "$ref": "#/definitions/KeysToLower"
+            - "$ref": "#/definitions/KeysToSnakeCase"
+            - "$ref": "#/definitions/FlattenFields"
       schema_type_identifier:
         "$ref": "#/definitions/SchemaTypeIdentifier"
       $parameters:
@@ -1835,6 +1849,32 @@ definitions:
       type:
         type: string
         enum: [KeysToLower]
+      $parameters:
+        type: object
+        additionalProperties: true
+  KeysToSnakeCase:
+    title: Key to Snake Case
+    description: A transformation that renames all keys to snake case.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [KeysToSnakeCase]
+      $parameters:
+        type: object
+        additionalProperties: true
+  FlattenFields:
+    title: Flatten Fields
+    description: A transformation that flatten record to single level format.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [FlattenFields]
       $parameters:
         type: object
         additionalProperties: true
@@ -2160,7 +2200,9 @@ definitions:
             description: |-
               The DeclarativeOAuth Specific optional headers to inject while exchanging the `auth_code` to `access_token` during `completeOAuthFlow` step.
             examples:
-              - {"Authorization": "Basic {base64Encoder:{client_id}:{client_secret}}"}
+              - {
+                  "Authorization": "Basic {base64Encoder:{client_id}:{client_secret}}",
+                }
           access_token_params:
             title: Access Token Query Params (Json Encoded)
             type: object
