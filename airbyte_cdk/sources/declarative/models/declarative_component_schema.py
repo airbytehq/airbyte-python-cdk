@@ -1114,6 +1114,7 @@ class JsonLineParser(BaseModel):
 
 
 class CsvParser(BaseModel):
+    type: Literal["CsvParser"]
     encoding: Optional[str] = "utf-8"
     delimiter: Optional[str] = ","
 
@@ -1498,7 +1499,8 @@ class RecordSelector(BaseModel):
 
 
 class GzipParser(BaseModel):
-    inner_parser: Optional[Union[JsonLineParser, CsvParser]] = None
+    type: Literal["GzipParser"]
+    inner_parser: Union[JsonLineParser, CsvParser]
 
 
 class Spec(BaseModel):
@@ -1532,6 +1534,7 @@ class CompositeErrorHandler(BaseModel):
 
 
 class CompositeRawDecoder(BaseModel):
+    type: Literal["CompositeRawDecoder"]
     parser: Union[GzipParser, JsonLineParser, CsvParser]
 
 

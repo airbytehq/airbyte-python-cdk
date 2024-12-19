@@ -2727,8 +2727,12 @@ definitions:
     description: "(This is experimental, use at your own risk)"
     type: object
     required:
+      - type
       - parser
     properties:
+      type:
+        type: string
+        enum: [ CompositeRawDecoder ]
       parser:
         anyOf:
           - "$ref": "#/definitions/GzipParser"
@@ -2737,7 +2741,13 @@ definitions:
 #    PARSERS
   GzipParser:
     type: object
+    required:
+      - type
+      - inner_parser
     properties:
+      type:
+        type: string
+        enum: [ GzipParser ]
       inner_parser:
         anyOf:
           - "$ref": "#/definitions/JsonLineParser"
@@ -2750,7 +2760,12 @@ definitions:
         default: utf-8
   CsvParser:
     type: object
+    required:
+      - type
     properties:
+      type:
+        type: string
+        enum: [ CsvParser ]
       encoding:
         type: string
         default: utf-8
