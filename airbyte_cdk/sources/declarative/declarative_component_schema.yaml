@@ -1021,7 +1021,6 @@ definitions:
       - type
       - client_id
       - client_secret
-      - token_refresh_endpoint
     properties:
       type:
         type: string
@@ -1060,6 +1059,12 @@ definitions:
         default: "access_token"
         examples:
           - access_token
+      access_token_value:
+        title: Access Token Value
+        description: The value of the access_token to bypass the token refreshing using `refresh_token`.
+        type: string
+        examples:
+          - secret_access_token_value
       expires_in_name:
         title: Token Expiry Property Name
         description: The name of the property which contains the expiry date in the response from the token refresh endpoint.
