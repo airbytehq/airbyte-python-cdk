@@ -3049,6 +3049,7 @@ definitions:
         interpolation_context:
           - config
           - components_values
+          - stream_slice
           - stream_template_config
         examples:
           - ["data"]
@@ -3065,10 +3066,13 @@ definitions:
           - config
           - stream_template_config
           - components_values
+          - stream_slice
         examples:
           - "{{ components_values['updates'] }}"
           - "{{ components_values['MetaData']['LastUpdatedTime'] }}"
           - "{{ config['segment_id'] }}"
+          - "{{ stream_slice['parent_id'] }}"
+          - "{{ stream_slice['extra_fields']['name'] }}"
       value_type:
         title: Value Type
         description: The expected data type of the value. If omitted, the type will be inferred from the value provided.

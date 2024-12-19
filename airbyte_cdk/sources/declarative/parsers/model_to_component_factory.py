@@ -2394,7 +2394,7 @@ class ModelToComponentFactory:
             config=config,
             name="",
             primary_key=None,
-            stream_slicer=combined_slicers,
+            stream_slicer=stream_slicer if stream_slicer else combined_slicers,
             transformations=[],
         )
 
