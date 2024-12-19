@@ -55,7 +55,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     token_expiry_date_format: Optional[str] = None
     token_expiry_is_time_of_expiration: bool = False
     access_token_name: Union[InterpolatedString, str] = "access_token"
-    access_token_value: Optional[str] = None
+    access_token_value: Optional[Union[InterpolatedString, str]] = None
     expires_in_name: Union[InterpolatedString, str] = "expires_in"
     refresh_request_body: Optional[Mapping[str, Any]] = None
     grant_type: Union[InterpolatedString, str] = "refresh_token"
@@ -96,8 +96,15 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
             if self.token_expiry_date
             else pendulum.now().subtract(days=1)  # type: ignore # substract does not have type hints
         )
+        if self.access_token_value is not None:
+            self._access_token_value = InterpolatedString.create(
+                self.access_token_value, parameters=parameters
+            ).eval(self.config)
+        else:
+            self._access_token_value = None
+
         self._access_token: Optional[str] = (
-            self.access_token_value if self.access_token_value else None
+            self._access_token_value if self.access_token_value else None
         )
 
         if self.get_grant_type() == "refresh_token" and self._refresh_token is None:

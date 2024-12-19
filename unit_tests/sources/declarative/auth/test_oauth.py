@@ -26,6 +26,7 @@ config = {
     "custom_field": "in_outbound_request",
     "another_field": "exists_in_body",
     "grant_type": "some_grant_type",
+    "access_token": "some_access_token",
 }
 parameters = {"refresh_token": "some_refresh_token"}
 
@@ -138,15 +139,14 @@ class TestOauth2Authenticator:
         contains the authentication.
         """
         oauth = DeclarativeOauth2Authenticator(
-            access_token_value="my_access_token_value",
+            access_token_value="{{ config['access_token'] }}",
             client_id="{{ config['client_id'] }}",
             client_secret="{{ config['client_secret'] }}",
             config=config,
             parameters={},
             grant_type="client_credentials",
         )
-
-        assert oauth.get_auth_header() == {"Authorization": "Bearer my_access_token_value"}
+        assert oauth.get_auth_header() == {"Authorization": "Bearer some_access_token"}
 
     def test_error_on_refresh_token_grant_without_refresh_token(self):
         """
