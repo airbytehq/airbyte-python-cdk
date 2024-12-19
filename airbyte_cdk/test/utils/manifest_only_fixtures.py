@@ -2,6 +2,7 @@
 
 
 import importlib.util
+import types
 from pathlib import Path
 from types import ModuleType
 from typing import Optional
@@ -48,6 +49,25 @@ def components_module(connector_dir: Path) -> Optional[ModuleType]:
         return None
 
     components_spec.loader.exec_module(components_module)
+    return components_module
+
+
+def components_module_from_string(components_py_text: str) -> Optional[ModuleType]:
+    """Load and return the components module from a provided string containing the python code.
+
+    This assumes the components module is located at <connector_dir>/components.py.
+
+    TODO: Make new unit test to leverage this fixture
+    """
+    module_name = "components"
+
+    # Create a new module object
+    components_module = types.ModuleType(name=module_name)
+
+    # Execute the module text in the module's namespace
+    exec(components_py_text, components_module.__dict__)
+
+    # Now you can import and use the module
     return components_module
 
 
