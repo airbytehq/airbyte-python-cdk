@@ -489,8 +489,8 @@ class OAuthAuthenticator(BaseModel):
         ],
         title="Refresh Token",
     )
-    token_refresh_endpoint: str = Field(
-        ...,
+    token_refresh_endpoint: Optional[str] = Field(
+        None,
         description="The full URL to call to obtain a new access token.",
         examples=["https://connect.squareup.com/oauth2/token"],
         title="Token Refresh Endpoint",
@@ -500,6 +500,12 @@ class OAuthAuthenticator(BaseModel):
         description="The name of the property which contains the access token in the response from the token refresh endpoint.",
         examples=["access_token"],
         title="Access Token Property Name",
+    )
+    access_token_value: Optional[str] = Field(
+        None,
+        description="The value of the access_token to bypass the token refreshing using `refresh_token`.",
+        examples=["secret_access_token_value"],
+        title="Access Token Value",
     )
     expires_in_name: Optional[str] = Field(
         "expires_in",

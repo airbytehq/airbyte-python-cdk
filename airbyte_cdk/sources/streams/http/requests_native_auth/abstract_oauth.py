@@ -54,7 +54,16 @@ class AbstractOauth2Authenticator(AuthBase):
 
     def get_auth_header(self) -> Mapping[str, Any]:
         """HTTP header to set on the requests"""
-        return {"Authorization": f"Bearer {self.get_access_token()}"}
+        token = (
+            self.access_token
+            if (
+                not self.get_token_refresh_endpoint()
+                or not self.get_refresh_token()
+                and self.access_token
+            )
+            else self.get_access_token()
+        )
+        return {"Authorization": f"Bearer {token}"}
 
     def get_access_token(self) -> str:
         """Returns the access token"""
@@ -121,7 +130,7 @@ class AbstractOauth2Authenticator(AuthBase):
         try:
             response = requests.request(
                 method="POST",
-                url=self.get_token_refresh_endpoint(),
+                url=self.get_token_refresh_endpoint(),  # type: ignore # returns None, if not provided, but str | bytes is expected.
                 data=self.build_refresh_request_body(),
             )
             if response.ok:
@@ -198,7 +207,7 @@ class AbstractOauth2Authenticator(AuthBase):
         return None
 
     @abstractmethod
-    def get_token_refresh_endpoint(self) -> str:
+    def get_token_refresh_endpoint(self) -> Optional[str]:
         """Returns the endpoint to refresh the access token"""
 
     @abstractmethod

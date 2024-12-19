@@ -1800,7 +1800,8 @@ class ModelToComponentFactory:
             return DeclarativeSingleUseRefreshTokenOauth2Authenticator(  # type: ignore
                 config,
                 InterpolatedString.create(
-                    model.token_refresh_endpoint, parameters=model.parameters or {}
+                    model.token_refresh_endpoint,  # type: ignore
+                    parameters=model.parameters or {},
                 ).eval(config),
                 access_token_name=InterpolatedString.create(
                     model.access_token_name or "access_token", parameters=model.parameters or {}
@@ -1834,6 +1835,7 @@ class ModelToComponentFactory:
         # ignore type error because fixing it would have a lot of dependencies, revisit later
         return DeclarativeOauth2Authenticator(  # type: ignore
             access_token_name=model.access_token_name or "access_token",
+            access_token_value=model.access_token_value,
             client_id=model.client_id,
             client_secret=model.client_secret,
             expires_in_name=model.expires_in_name or "expires_in",
