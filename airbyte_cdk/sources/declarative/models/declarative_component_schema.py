@@ -716,6 +716,16 @@ class KeysToLower(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class KeysToSnakeCase(BaseModel):
+    type: Literal["KeysToSnakeCase"]
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class FlattenFields(BaseModel):
+    type: Literal["FlattenFields"]
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class IterableDecoder(BaseModel):
     type: Literal["IterableDecoder"]
 
@@ -1660,7 +1670,16 @@ class DeclarativeStream(BaseModel):
         title="Schema Loader",
     )
     transformations: Optional[
-        List[Union[AddFields, CustomTransformation, RemoveFields, KeysToLower]]
+        List[
+            Union[
+                AddFields,
+                CustomTransformation,
+                RemoveFields,
+                KeysToLower,
+                KeysToSnakeCase,
+                FlattenFields,
+            ]
+        ]
     ] = Field(
         None,
         description="A list of transformations to be applied to each output record.",
@@ -1823,6 +1842,22 @@ class DynamicSchemaLoader(BaseModel):
         ...,
         description="Component used to coordinate how records are extracted across stream slices and request pages.",
         title="Retriever",
+    )
+    schema_transformations: Optional[
+        List[
+            Union[
+                AddFields,
+                CustomTransformation,
+                RemoveFields,
+                KeysToLower,
+                KeysToSnakeCase,
+                FlattenFields,
+            ]
+        ]
+    ] = Field(
+        None,
+        description="A list of transformations to be applied to the schema.",
+        title="Schema Transformations",
     )
     schema_type_identifier: SchemaTypeIdentifier
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")

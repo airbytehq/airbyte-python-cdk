@@ -64,6 +64,21 @@ _MANIFEST = {
                     },
                     "paginator": {"type": "NoPagination"},
                 },
+                "schema_transformations": [
+                    {
+                        "type": "AddFields",
+                        "fields": [
+                            {
+                                "type": "AddedFieldDefinition",
+                                "path": ["StaticField"],
+                                "value": "{{ {'type': ['null', 'string']} }}",
+                            }
+                        ],
+                    },
+                    {
+                        "type": "KeysToSnakeCase",
+                    },
+                ],
                 "schema_type_identifier": {
                     "schema_pointer": ["fields"],
                     "key_pointer": ["name"],
@@ -230,8 +245,9 @@ def test_dynamic_schema_loader_manifest_flow():
         "type": "object",
         "properties": {
             "id": {"type": ["null", "integer"]},
-            "name": {"type": ["null", "string"]},
+            "first_name": {"type": ["null", "string"]},
             "description": {"type": ["null", "string"]},
+            "static_field": {"type": ["null", "string"]},
         },
     }
 
@@ -245,8 +261,8 @@ def test_dynamic_schema_loader_manifest_flow():
             HttpResponse(
                 body=json.dumps(
                     [
-                        {"id": 1, "name": "member_1", "description": "First member"},
-                        {"id": 2, "name": "member_2", "description": "Second member"},
+                        {"id": 1, "first_name": "member_1", "description": "First member"},
+                        {"id": 2, "first_name": "member_2", "description": "Second member"},
                     ]
                 )
             ),
@@ -257,9 +273,9 @@ def test_dynamic_schema_loader_manifest_flow():
                 body=json.dumps(
                     {
                         "fields": [
-                            {"name": "id", "type": "integer"},
-                            {"name": "name", "type": "string"},
-                            {"name": "description", "type": "singleLineText"},
+                            {"name": "Id", "type": "integer"},
+                            {"name": "FirstName", "type": "string"},
+                            {"name": "Description", "type": "singleLineText"},
                         ]
                     }
                 )

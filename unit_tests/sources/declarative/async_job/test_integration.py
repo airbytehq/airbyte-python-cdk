@@ -20,6 +20,9 @@ from airbyte_cdk.sources.declarative.async_job.repository import AsyncJobReposit
 from airbyte_cdk.sources.declarative.async_job.status import AsyncJobStatus
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.extractors.record_selector import RecordSelector
+from airbyte_cdk.sources.declarative.partition_routers.async_job_partition_router import (
+    AsyncJobPartitionRouter,
+)
 from airbyte_cdk.sources.declarative.retrievers.async_retriever import AsyncRetriever
 from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader
 from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicer
@@ -35,7 +38,7 @@ _NO_LIMIT = 10000
 
 class MockAsyncJobRepository(AsyncJobRepository):
     def start(self, stream_slice: StreamSlice) -> AsyncJob:
-        return AsyncJob("a_job_id", StreamSlice(partition={}, cursor_slice={}))
+        return AsyncJob("a_job_id", stream_slice)
 
     def update_jobs_status(self, jobs: Set[AsyncJob]) -> None:
         for job in jobs:
@@ -79,12 +82,16 @@ class MockSource(AbstractSource):
                     config={},
                     parameters={},
                     record_selector=noop_record_selector,
-                    stream_slicer=self._stream_slicer,
-                    job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
-                        MockAsyncJobRepository(),
-                        stream_slices,
-                        JobTracker(_NO_LIMIT),
-                        self._message_repository,
+                    stream_slicer=AsyncJobPartitionRouter(
+                        stream_slicer=self._stream_slicer,
+                        job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
+                            MockAsyncJobRepository(),
+                            stream_slices,
+                            JobTracker(_NO_LIMIT),
+                            self._message_repository,
+                        ),
+                        config={},
+                        parameters={},
                     ),
                 ),
                 config={},
