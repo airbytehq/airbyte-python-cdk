@@ -1,8 +1,10 @@
 import gzip
 import json
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Generator, Iterable, MutableMapping, Optional, Protocol
+from io import BufferedIOBase
+from typing import Any, Generator, MutableMapping, Optional
 
 import pandas as pd
 import requests
@@ -10,13 +12,7 @@ from numpy import nan
 
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
 
-
-class BufferedDataInput(Protocol):
-    """
-    at least read to _n bytes method should be supported to align with BufferedReader and avoid OOM.
-    """
-
-    def read(self, __n: int) -> bytes: ...
+logger = logging.getLogger("airbyte")
 
 
 @dataclass
@@ -25,7 +21,7 @@ class Parser(ABC):
 
     @abstractmethod
     def parse(
-        self, data: BufferedDataInput | Iterable, *args, **kwargs
+        self, data: BufferedIOBase, *args, **kwargs
     ) -> Generator[MutableMapping[str, Any], None, None]:
         """
         Parse data and yield dictionaries.
@@ -36,12 +32,12 @@ class Parser(ABC):
 @dataclass
 class GzipParser(Parser):
     def parse(
-        self, data: BufferedDataInput | Iterable, *args, **kwargs
+        self, data: BufferedIOBase, *args, **kwargs
     ) -> Generator[MutableMapping[str, Any], None, None]:
         """
         Decompress gzipped bytes and pass decompressed data to the inner parser.
         """
-        gzipobj = gzip.GzipFile(fileobj=data)
+        gzipobj = gzip.GzipFile(fileobj=data, mode="rb")
         if self.inner_parser:
             yield from self.inner_parser.parse(gzipobj)
         else:
@@ -53,12 +49,13 @@ class JsonLineParser(Parser):
     encoding: Optional[str] = "utf-8"
 
     def parse(
-        self, data: BufferedDataInput | Iterable, *args, **kwargs
+        self, data: BufferedIOBase, *args, **kwargs
     ) -> Generator[MutableMapping[str, Any], None, None]:
         for line in data:
             try:
                 yield json.loads(line.decode(self.encoding))
             except json.JSONDecodeError:
+                logger.warning(f"Cannot decode/parse line {line} as JSON")
                 # Handle invalid JSON lines gracefully (e.g., log and skip)
                 pass
 
@@ -67,10 +64,10 @@ class JsonLineParser(Parser):
 class CsvParser(Parser):
     # TODO: add more parameters: see read_csv for more details, e.g.: quotechar, headers,
     encoding: Optional[str] = "utf-8"
-    delimiter: str = ","
+    delimiter: Optional[str] = ","
 
     def parse(
-        self, data: BufferedDataInput | Iterable, *args, **kwargs
+        self, data: BufferedIOBase, *args, **kwargs
     ) -> Generator[MutableMapping[str, Any], None, None]:
         """
         Parse CSV data from decompressed bytes.
