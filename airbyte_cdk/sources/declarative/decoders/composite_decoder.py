@@ -59,7 +59,7 @@ class JsonLineParser(Parser):
 
 @dataclass
 class CsvParser(Parser):
-    # TODO: add more parameters: see read_csv for more details, e.g.: quotechar, headers,
+    # TODO: migrate implementation to re-use file-base classes
     encoding: Optional[str] = "utf-8"
     delimiter: Optional[str] = ","
 
