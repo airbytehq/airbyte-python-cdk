@@ -96,26 +96,3 @@ class CompositeRawDecoder(Decoder):
         self, response: requests.Response
     ) -> Generator[MutableMapping[str, Any], None, None]:
         yield from self.parser.parse(data=response.raw)
-
-
-# Examples how to use
-if __name__ == "__main__":
-    # SIMPLE JSONLINES
-    # composite_decoder = CompositeDecoder(parser=JsonLineParser())
-    # response = requests.get('http://127.0.0.1:5000/jsonlines', stream=True)
-    # for rec in composite_decoder.decode(response):
-    #     print(rec)
-
-    # Gzipped JSONLINES
-    # parser = GzipParser(inner_parser=JsonLineParser(encoding="iso-8859-1"))
-    # composite_decoder = CompositeDecoder(parser=parser)
-    # response = requests.get('http://127.0.0.1:5000/jsonlines', stream=True)
-    # for rec in composite_decoder.decode(response):
-    #     print(rec)
-
-    # Gzipped TSV
-    parser = GzipParser(inner_parser=CsvParser(encoding="iso-8859-1", delimiter="\t"))
-    composite_decoder = CompositeRawDecoder(parser=parser)
-    response = requests.get("http://127.0.0.1:5000/csv", stream=True)
-    for rec in composite_decoder.decode(response):
-        print(rec)
