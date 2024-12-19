@@ -17,8 +17,6 @@ logger = logging.getLogger("airbyte")
 
 @dataclass
 class Parser(ABC):
-    inner_parser: Optional["Parser"] = None
-
     @abstractmethod
     def parse(
         self, data: BufferedIOBase, *args, **kwargs
@@ -31,6 +29,8 @@ class Parser(ABC):
 
 @dataclass
 class GzipParser(Parser):
+    inner_parser: Parser
+
     def parse(
         self, data: BufferedIOBase, *args, **kwargs
     ) -> Generator[MutableMapping[str, Any], None, None]:
@@ -38,10 +38,7 @@ class GzipParser(Parser):
         Decompress gzipped bytes and pass decompressed data to the inner parser.
         """
         gzipobj = gzip.GzipFile(fileobj=data, mode="rb")
-        if self.inner_parser:
-            yield from self.inner_parser.parse(gzipobj)
-        else:
-            yield from gzipobj
+        yield from self.inner_parser.parse(gzipobj)
 
 
 @dataclass
