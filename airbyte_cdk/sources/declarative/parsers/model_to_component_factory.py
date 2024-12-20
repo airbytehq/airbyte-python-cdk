@@ -129,6 +129,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     ConcurrencyLevel as ConcurrencyLevelModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ConfigComponentsResolver as ConfigComponentsResolverModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConstantBackoffStrategy as ConstantBackoffStrategyModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -189,7 +192,13 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     DpathExtractor as DpathExtractorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    DynamicSchemaLoader as DynamicSchemaLoaderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ExponentialBackoffStrategy as ExponentialBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    FlattenFields as FlattenFieldsModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     GzipJsonDecoder as GzipJsonDecoderModel,
@@ -229,6 +238,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     KeysToLower as KeysToLowerModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    KeysToSnakeCase as KeysToSnakeCaseModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     LegacySessionTokenAuthenticator as LegacySessionTokenAuthenticatorModel,
@@ -279,6 +291,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     ResponseToFileExtractor as ResponseToFileExtractorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    SchemaTypeIdentifier as SchemaTypeIdentifierModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SelectiveAuthenticator as SelectiveAuthenticatorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -289,7 +304,13 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import Spec as SpecModel
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    StreamConfig as StreamConfigModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SubstreamPartitionRouter as SubstreamPartitionRouterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    TypesMap as TypesMapModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import ValueType
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -307,6 +328,9 @@ from airbyte_cdk.sources.declarative.partition_routers import (
     PartitionRouter,
     SinglePartitionRouter,
     SubstreamPartitionRouter,
+)
+from airbyte_cdk.sources.declarative.partition_routers.async_job_partition_router import (
+    AsyncJobPartitionRouter,
 )
 from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
     ParentStreamConfig,
@@ -347,7 +371,9 @@ from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
 from airbyte_cdk.sources.declarative.resolvers import (
     ComponentMappingDefinition,
+    ConfigComponentsResolver,
     HttpComponentsResolver,
+    StreamConfig,
 )
 from airbyte_cdk.sources.declarative.retrievers import (
     AsyncRetriever,
@@ -356,8 +382,11 @@ from airbyte_cdk.sources.declarative.retrievers import (
 )
 from airbyte_cdk.sources.declarative.schema import (
     DefaultSchemaLoader,
+    DynamicSchemaLoader,
     InlineSchemaLoader,
     JsonFileSchemaLoader,
+    SchemaTypeIdentifier,
+    TypesMap,
 )
 from airbyte_cdk.sources.declarative.spec import Spec
 from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicer
@@ -367,8 +396,14 @@ from airbyte_cdk.sources.declarative.transformations import (
     RemoveFields,
 )
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
+from airbyte_cdk.sources.declarative.transformations.flatten_fields import (
+    FlattenFields,
+)
 from airbyte_cdk.sources.declarative.transformations.keys_to_lower_transformation import (
     KeysToLowerTransformation,
+)
+from airbyte_cdk.sources.declarative.transformations.keys_to_snake_transformation import (
+    KeysToSnakeCaseTransformation,
 )
 from airbyte_cdk.sources.message import (
     InMemoryMessageRepository,
@@ -452,9 +487,14 @@ class ModelToComponentFactory:
             JsonlDecoderModel: self.create_jsonl_decoder,
             GzipJsonDecoderModel: self.create_gzipjson_decoder,
             KeysToLowerModel: self.create_keys_to_lower_transformation,
+            KeysToSnakeCaseModel: self.create_keys_to_snake_transformation,
+            FlattenFieldsModel: self.create_flatten_fields,
             IterableDecoderModel: self.create_iterable_decoder,
             XmlDecoderModel: self.create_xml_decoder,
             JsonFileSchemaLoaderModel: self.create_json_file_schema_loader,
+            DynamicSchemaLoaderModel: self.create_dynamic_schema_loader,
+            SchemaTypeIdentifierModel: self.create_schema_type_identifier,
+            TypesMapModel: self.create_types_map,
             JwtAuthenticatorModel: self.create_jwt_authenticator,
             LegacyToPerPartitionStateMigrationModel: self.create_legacy_to_per_partition_state_migration,
             ListPartitionRouterModel: self.create_list_partition_router,
@@ -479,6 +519,8 @@ class ModelToComponentFactory:
             WaitUntilTimeFromHeaderModel: self.create_wait_until_time_from_header,
             AsyncRetrieverModel: self.create_async_retriever,
             HttpComponentsResolverModel: self.create_http_components_resolver,
+            ConfigComponentsResolverModel: self.create_config_components_resolver,
+            StreamConfigModel: self.create_stream_config,
             ComponentMappingDefinitionModel: self.create_components_mapping_definition,
         }
 
@@ -561,6 +603,16 @@ class ModelToComponentFactory:
         self, model: KeysToLowerModel, config: Config, **kwargs: Any
     ) -> KeysToLowerTransformation:
         return KeysToLowerTransformation()
+
+    def create_keys_to_snake_transformation(
+        self, model: KeysToSnakeCaseModel, config: Config, **kwargs: Any
+    ) -> KeysToSnakeCaseTransformation:
+        return KeysToSnakeCaseTransformation()
+
+    def create_flatten_fields(
+        self, model: FlattenFieldsModel, config: Config, **kwargs: Any
+    ) -> FlattenFields:
+        return FlattenFields()
 
     @staticmethod
     def _json_schema_type_name_to_type(value_type: Optional[ValueType]) -> Optional[Type[Any]]:
@@ -1575,6 +1627,71 @@ class ModelToComponentFactory:
         return InlineSchemaLoader(schema=model.schema_ or {}, parameters={})
 
     @staticmethod
+    def create_types_map(model: TypesMapModel, **kwargs: Any) -> TypesMap:
+        return TypesMap(target_type=model.target_type, current_type=model.current_type)
+
+    def create_schema_type_identifier(
+        self, model: SchemaTypeIdentifierModel, config: Config, **kwargs: Any
+    ) -> SchemaTypeIdentifier:
+        types_mapping = []
+        if model.types_mapping:
+            types_mapping.extend(
+                [
+                    self._create_component_from_model(types_map, config=config)
+                    for types_map in model.types_mapping
+                ]
+            )
+        model_schema_pointer: List[Union[InterpolatedString, str]] = (
+            [x for x in model.schema_pointer] if model.schema_pointer else []
+        )
+        model_key_pointer: List[Union[InterpolatedString, str]] = [x for x in model.key_pointer]
+        model_type_pointer: Optional[List[Union[InterpolatedString, str]]] = (
+            [x for x in model.type_pointer] if model.type_pointer else None
+        )
+
+        return SchemaTypeIdentifier(
+            schema_pointer=model_schema_pointer,
+            key_pointer=model_key_pointer,
+            type_pointer=model_type_pointer,
+            types_mapping=types_mapping,
+            parameters=model.parameters or {},
+        )
+
+    def create_dynamic_schema_loader(
+        self, model: DynamicSchemaLoaderModel, config: Config, **kwargs: Any
+    ) -> DynamicSchemaLoader:
+        stream_slicer = self._build_stream_slicer_from_partition_router(model.retriever, config)
+        combined_slicers = self._build_resumable_cursor_from_paginator(
+            model.retriever, stream_slicer
+        )
+
+        schema_transformations = []
+        if model.schema_transformations:
+            for transformation_model in model.schema_transformations:
+                schema_transformations.append(
+                    self._create_component_from_model(model=transformation_model, config=config)
+                )
+
+        retriever = self._create_component_from_model(
+            model=model.retriever,
+            config=config,
+            name="",
+            primary_key=None,
+            stream_slicer=combined_slicers,
+            transformations=[],
+        )
+        schema_type_identifier = self._create_component_from_model(
+            model.schema_type_identifier, config=config, parameters=model.parameters or {}
+        )
+        return DynamicSchemaLoader(
+            retriever=retriever,
+            config=config,
+            schema_transformations=schema_transformations,
+            schema_type_identifier=schema_type_identifier,
+            parameters=model.parameters or {},
+        )
+
+    @staticmethod
     def create_json_decoder(model: JsonDecoderModel, config: Config, **kwargs: Any) -> JsonDecoder:
         return JsonDecoder(parameters={})
 
@@ -1812,8 +1929,8 @@ class ModelToComponentFactory:
         self,
         model: RecordSelectorModel,
         config: Config,
-        name: str,
         *,
+        name: str,
         transformations: List[RecordTransformation],
         decoder: Optional[Decoder] = None,
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
@@ -2146,18 +2263,24 @@ class ModelToComponentFactory:
             urls_extractor=urls_extractor,
         )
 
-        return AsyncRetriever(
+        async_job_partition_router = AsyncJobPartitionRouter(
             job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
                 job_repository,
                 stream_slices,
-                JobTracker(
-                    1
-                ),  # FIXME eventually make the number of concurrent jobs in the API configurable. Until then, we limit to 1
+                JobTracker(1),
+                # FIXME eventually make the number of concurrent jobs in the API configurable. Until then, we limit to 1
                 self._message_repository,
-                has_bulk_parent=False,  # FIXME work would need to be done here in order to detect if a stream as a parent stream that is bulk
+                has_bulk_parent=False,
+                # FIXME work would need to be done here in order to detect if a stream as a parent stream that is bulk
             ),
-            record_selector=record_selector,
             stream_slicer=stream_slicer,
+            config=config,
+            parameters=model.parameters or {},
+        )
+
+        return AsyncRetriever(
+            record_selector=record_selector,
+            stream_slicer=async_job_partition_router,
             config=config,
             parameters=model.parameters or {},
         )
@@ -2288,6 +2411,44 @@ class ModelToComponentFactory:
 
         return HttpComponentsResolver(
             retriever=retriever,
+            config=config,
+            components_mapping=components_mapping,
+            parameters=model.parameters or {},
+        )
+
+    @staticmethod
+    def create_stream_config(
+        model: StreamConfigModel, config: Config, **kwargs: Any
+    ) -> StreamConfig:
+        model_configs_pointer: List[Union[InterpolatedString, str]] = (
+            [x for x in model.configs_pointer] if model.configs_pointer else []
+        )
+
+        return StreamConfig(
+            configs_pointer=model_configs_pointer,
+            parameters=model.parameters or {},
+        )
+
+    def create_config_components_resolver(
+        self, model: ConfigComponentsResolverModel, config: Config
+    ) -> Any:
+        stream_config = self._create_component_from_model(
+            model.stream_config, config=config, parameters=model.parameters or {}
+        )
+
+        components_mapping = [
+            self._create_component_from_model(
+                model=components_mapping_definition_model,
+                value_type=ModelToComponentFactory._json_schema_type_name_to_type(
+                    components_mapping_definition_model.value_type
+                ),
+                config=config,
+            )
+            for components_mapping_definition_model in model.components_mapping
+        ]
+
+        return ConfigComponentsResolver(
+            stream_config=stream_config,
             config=config,
             components_mapping=components_mapping,
             parameters=model.parameters or {},

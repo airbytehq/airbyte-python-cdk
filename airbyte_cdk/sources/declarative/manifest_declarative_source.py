@@ -7,7 +7,7 @@ import logging
 import pkgutil
 from copy import deepcopy
 from importlib import metadata
-from typing import Any, Dict, Iterator, List, Mapping, Optional
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Set
 
 import yaml
 from jsonschema.exceptions import ValidationError
@@ -20,6 +20,7 @@ from airbyte_cdk.models import (
     AirbyteStateMessage,
     ConfiguredAirbyteCatalog,
     ConnectorSpecification,
+    FailureType,
 )
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
@@ -48,6 +49,7 @@ from airbyte_cdk.sources.utils.slice_logger import (
     DebugSliceLogger,
     SliceLogger,
 )
+from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
 class ManifestDeclarativeSource(DeclarativeSource):
@@ -313,6 +315,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
     ) -> List[Dict[str, Any]]:
         dynamic_stream_definitions: List[Dict[str, Any]] = manifest.get("dynamic_streams", [])
         dynamic_stream_configs: List[Dict[str, Any]] = []
+        seen_dynamic_streams: Set[str] = set()
 
         for dynamic_definition in dynamic_stream_definitions:
             components_resolver_config = dynamic_definition["components_resolver"]
@@ -350,6 +353,24 @@ class ManifestDeclarativeSource(DeclarativeSource):
                 if "type" not in dynamic_stream:
                     dynamic_stream["type"] = "DeclarativeStream"
 
+                # Ensure that each stream is created with a unique name
+                name = dynamic_stream.get("name")
+
+                if name in seen_dynamic_streams:
+                    error_message = f"Dynamic streams list contains a duplicate name: {name}. Please contact Airbyte Support."
+                    failure_type = FailureType.system_error
+
+                    if resolver_type == "ConfigComponentsResolver":
+                        error_message = f"Dynamic streams list contains a duplicate name: {name}. Please check your configuration."
+                        failure_type = FailureType.config_error
+
+                    raise AirbyteTracedException(
+                        message=error_message,
+                        internal_message=error_message,
+                        failure_type=failure_type,
+                    )
+
+                seen_dynamic_streams.add(name)
                 dynamic_stream_configs.append(dynamic_stream)
 
         return dynamic_stream_configs
