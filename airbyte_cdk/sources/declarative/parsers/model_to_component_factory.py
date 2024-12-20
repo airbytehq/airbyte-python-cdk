@@ -243,6 +243,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     KeysToSnakeCase as KeysToSnakeCaseModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    KeysReplace as KeysReplaceModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     LegacySessionTokenAuthenticator as LegacySessionTokenAuthenticatorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -405,6 +408,9 @@ from airbyte_cdk.sources.declarative.transformations.keys_to_lower_transformatio
 from airbyte_cdk.sources.declarative.transformations.keys_to_snake_transformation import (
     KeysToSnakeCaseTransformation,
 )
+from airbyte_cdk.sources.declarative.transformations.keys_replace_transformation import (
+    KeysReplaceTransformation,
+)
 from airbyte_cdk.sources.message import (
     InMemoryMessageRepository,
     LogAppenderMessageRepositoryDecorator,
@@ -488,6 +494,7 @@ class ModelToComponentFactory:
             GzipJsonDecoderModel: self.create_gzipjson_decoder,
             KeysToLowerModel: self.create_keys_to_lower_transformation,
             KeysToSnakeCaseModel: self.create_keys_to_snake_transformation,
+            KeysReplaceModel: self.create_keys_replace_transformation,
             FlattenFieldsModel: self.create_flatten_fields,
             IterableDecoderModel: self.create_iterable_decoder,
             XmlDecoderModel: self.create_xml_decoder,
@@ -608,6 +615,11 @@ class ModelToComponentFactory:
         self, model: KeysToSnakeCaseModel, config: Config, **kwargs: Any
     ) -> KeysToSnakeCaseTransformation:
         return KeysToSnakeCaseTransformation()
+
+    def create_keys_replace_transformation(
+        self, model: KeysReplaceModel, config: Config, **kwargs: Any
+    ) -> KeysReplaceTransformation:
+        return KeysReplaceTransformation(old=model.old, new=model.new)
 
     def create_flatten_fields(
         self, model: FlattenFieldsModel, config: Config, **kwargs: Any
