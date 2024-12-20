@@ -54,16 +54,19 @@ class AbstractOauth2Authenticator(AuthBase):
 
     def get_auth_header(self) -> Mapping[str, Any]:
         """HTTP header to set on the requests"""
-        token = (
-            self.access_token
-            if (
-                not self.get_token_refresh_endpoint()
-                or not self.get_refresh_token()
-                and self.access_token
-            )
-            else self.get_access_token()
-        )
+        token = self.access_token if self._is_access_token_flow else self.get_access_token()
         return {"Authorization": f"Bearer {token}"}
+
+    @property
+    def _is_access_token_flow(self) -> bool:
+        """
+        Determines if the current flow is an `access token` flow, meaning that the `access_token_value`
+        has been provided directly, without triggering the `refresh_access_token()` flow.
+
+        Returns:
+            bool: True if the flow is an access token flow, False otherwise.
+        """
+        return True if self.access_token and not self.get_token_refresh_endpoint() else False
 
     def get_access_token(self) -> str:
         """Returns the access token"""
