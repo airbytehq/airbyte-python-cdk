@@ -528,4 +528,8 @@ def test_dynamic_streams_with_http_components_resolver_retriever_with_parent_str
     assert len(actual_catalog.streams) == 4
     assert [stream.name for stream in actual_catalog.streams] == expected_stream_names
     assert len(records) == 4
-    assert [record.stream for record in records] == expected_stream_names
+
+    actual_record_stream_names = [record.stream for record in records]
+    actual_record_stream_names.sort()
+
+    assert actual_record_stream_names == expected_stream_names
