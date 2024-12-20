@@ -31,6 +31,15 @@ DEFAULT_MODEL_TYPES: Mapping[str, str] = {
     # DeclarativeStream
     "DeclarativeStream.retriever": "SimpleRetriever",
     "DeclarativeStream.schema_loader": "JsonFileSchemaLoader",
+    # DynamicDeclarativeStream
+    "DynamicDeclarativeStream.stream_template": "DeclarativeStream",
+    "DynamicDeclarativeStream.components_resolver": "ConfigComponentResolver",
+    # HttpComponentsResolver
+    "HttpComponentsResolver.retriever": "SimpleRetriever",
+    "HttpComponentsResolver.components_mapping": "ComponentMappingDefinition",
+    # ConfigComponentResolver
+    "ConfigComponentsResolver.stream_config": "StreamConfig",
+    "ConfigComponentsResolver.components_mapping": "ComponentMappingDefinition",
     # DefaultErrorHandler
     "DefaultErrorHandler.response_filters": "HttpResponseFilter",
     # DefaultPaginator
@@ -58,6 +67,10 @@ DEFAULT_MODEL_TYPES: Mapping[str, str] = {
     "AddFields.fields": "AddedFieldDefinition",
     # CustomPartitionRouter
     "CustomPartitionRouter.parent_stream_configs": "ParentStreamConfig",
+    # DynamicSchemaLoader
+    "DynamicSchemaLoader.retriever": "SimpleRetriever",
+    # SchemaTypeIdentifier
+    "SchemaTypeIdentifier.types_map": "TypesMap",
 }
 
 # We retain a separate registry for custom components to automatically insert the type if it is missing. This is intended to

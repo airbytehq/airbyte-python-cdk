@@ -650,6 +650,32 @@ class HttpResponseFilter(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class TypesMap(BaseModel):
+    target_type: Union[str, List[str]]
+    current_type: Union[str, List[str]]
+
+
+class SchemaTypeIdentifier(BaseModel):
+    type: Optional[Literal["SchemaTypeIdentifier"]] = None
+    schema_pointer: Optional[List[str]] = Field(
+        [],
+        description="List of nested fields defining the schema field path to extract. Defaults to [].",
+        title="Schema Path",
+    )
+    key_pointer: List[str] = Field(
+        ...,
+        description="List of potentially nested fields describing the full path of the field key to extract.",
+        title="Key Path",
+    )
+    type_pointer: Optional[List[str]] = Field(
+        None,
+        description="List of potentially nested fields describing the full path of the field type to extract.",
+        title="Type Path",
+    )
+    types_mapping: Optional[List[TypesMap]] = None
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class InlineSchemaLoader(BaseModel):
     type: Literal["InlineSchemaLoader"]
     schema_: Optional[Dict[str, Any]] = Field(
@@ -681,6 +707,16 @@ class JsonlDecoder(BaseModel):
 
 class KeysToLower(BaseModel):
     type: Literal["KeysToLower"]
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class KeysToSnakeCase(BaseModel):
+    type: Literal["KeysToSnakeCase"]
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class FlattenFields(BaseModel):
+    type: Literal["FlattenFields"]
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -769,104 +805,90 @@ class OauthConnectorInputSpecification(BaseModel):
         ...,
         description="The DeclarativeOAuth Specific string URL string template to initiate the authentication.\nThe placeholders are replaced during the processing to provide neccessary values.",
         examples=[
-            {
-                "consent_url": "https://domain.host.com/marketing_api/auth?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{state_key}={{state_key}}"
-            },
-            {
-                "consent_url": "https://endpoint.host.com/oauth2/authorize?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{scope_key}={urlEncoder:{{scope_key}}}&{state_key}={{state_key}}&subdomain={subdomain}"
-            },
+            "https://domain.host.com/marketing_api/auth?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{state_key}={{state_key}}",
+            "https://endpoint.host.com/oauth2/authorize?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{scope_key}={urlEncoder:{{scope_key}}}&{state_key}={{state_key}}&subdomain={subdomain}",
         ],
-        title="DeclarativeOAuth Consent URL",
+        title="Consent URL",
     )
     scope: Optional[str] = Field(
         None,
         description="The DeclarativeOAuth Specific string of the scopes needed to be grant for authenticated user.",
-        examples=[{"scope": "user:read user:read_orders workspaces:read"}],
-        title="(Optional) DeclarativeOAuth Scope",
+        examples=["user:read user:read_orders workspaces:read"],
+        title="Scopes",
     )
     access_token_url: str = Field(
         ...,
         description="The DeclarativeOAuth Specific URL templated string to obtain the `access_token`, `refresh_token` etc.\nThe placeholders are replaced during the processing to provide neccessary values.",
         examples=[
-            {
-                "access_token_url": "https://auth.host.com/oauth2/token?{client_id_key}={{client_id_key}}&{client_secret_key}={{client_secret_key}}&{auth_code_key}={{auth_code_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}"
-            }
+            "https://auth.host.com/oauth2/token?{client_id_key}={{client_id_key}}&{client_secret_key}={{client_secret_key}}&{auth_code_key}={{auth_code_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}"
         ],
-        title="DeclarativeOAuth Access Token URL",
+        title="Access Token URL",
     )
     access_token_headers: Optional[Dict[str, Any]] = Field(
         None,
         description="The DeclarativeOAuth Specific optional headers to inject while exchanging the `auth_code` to `access_token` during `completeOAuthFlow` step.",
-        examples=[
-            {
-                "access_token_headers": {
-                    "Authorization": "Basic {base64Encoder:{client_id}:{client_secret}}"
-                }
-            }
-        ],
-        title="(Optional) DeclarativeOAuth Access Token Headers",
+        examples=[{"Authorization": "Basic {base64Encoder:{client_id}:{client_secret}}"}],
+        title="Access Token Headers",
     )
     access_token_params: Optional[Dict[str, Any]] = Field(
         None,
         description="The DeclarativeOAuth Specific optional query parameters to inject while exchanging the `auth_code` to `access_token` during `completeOAuthFlow` step.\nWhen this property is provided, the query params will be encoded as `Json` and included in the outgoing API request.",
         examples=[
             {
-                "access_token_params": {
-                    "{auth_code_key}": "{{auth_code_key}}",
-                    "{client_id_key}": "{{client_id_key}}",
-                    "{client_secret_key}": "{{client_secret_key}}",
-                }
+                "{auth_code_key}": "{{auth_code_key}}",
+                "{client_id_key}": "{{client_id_key}}",
+                "{client_secret_key}": "{{client_secret_key}}",
             }
         ],
-        title="(Optional) DeclarativeOAuth Access Token Query Params (Json Encoded)",
+        title="Access Token Query Params (Json Encoded)",
     )
     extract_output: List[str] = Field(
         ...,
-        description="The DeclarativeOAuth Specific list of strings to indicate which keys should be extracted and returned back to the input config.                ",
-        examples=[{"extract_output": ["access_token", "refresh_token", "other_field"]}],
-        title="DeclarativeOAuth Extract Output",
+        description="The DeclarativeOAuth Specific list of strings to indicate which keys should be extracted and returned back to the input config.",
+        examples=[["access_token", "refresh_token", "other_field"]],
+        title="Extract Output",
     )
     state: Optional[State] = Field(
         None,
-        description="The DeclarativeOAuth Specific object to provide the criteria of how the `state` query param should be constructed,\nincluding length and complexity.                ",
-        examples=[{"state": {"min": 7, "max": 128}}],
-        title="(Optional) DeclarativeOAuth Configurable State Query Param",
+        description="The DeclarativeOAuth Specific object to provide the criteria of how the `state` query param should be constructed,\nincluding length and complexity.",
+        examples=[{"min": 7, "max": 128}],
+        title="Configurable State Query Param",
     )
     client_id_key: Optional[str] = Field(
         None,
         description="The DeclarativeOAuth Specific optional override to provide the custom `client_id` key name, if required by data-provider.",
-        examples=[{"client_id_key": "my_custom_client_id_key_name"}],
-        title="(Optional) DeclarativeOAuth Client ID Key Override",
+        examples=["my_custom_client_id_key_name"],
+        title="Client ID Key Override",
     )
     client_secret_key: Optional[str] = Field(
         None,
         description="The DeclarativeOAuth Specific optional override to provide the custom `client_secret` key name, if required by data-provider.",
-        examples=[{"client_secret_key": "my_custom_client_secret_key_name"}],
-        title="(Optional) DeclarativeOAuth Client Secret Key Override",
+        examples=["my_custom_client_secret_key_name"],
+        title="Client Secret Key Override",
     )
     scope_key: Optional[str] = Field(
         None,
         description="The DeclarativeOAuth Specific optional override to provide the custom `scope` key name, if required by data-provider.",
-        examples=[{"scope_key": "my_custom_scope_key_key_name"}],
-        title="(Optional) DeclarativeOAuth Scope Key Override",
+        examples=["my_custom_scope_key_key_name"],
+        title="Scopes Key Override",
     )
     state_key: Optional[str] = Field(
         None,
-        description="The DeclarativeOAuth Specific optional override to provide the custom `state` key name, if required by data-provider.                ",
-        examples=[{"state_key": "my_custom_state_key_key_name"}],
-        title="(Optional) DeclarativeOAuth State Key Override",
+        description="The DeclarativeOAuth Specific optional override to provide the custom `state` key name, if required by data-provider.",
+        examples=["my_custom_state_key_key_name"],
+        title="State Key Override",
     )
     auth_code_key: Optional[str] = Field(
         None,
-        description="The DeclarativeOAuth Specific optional override to provide the custom `code` key name to something like `auth_code` or `custom_auth_code`, if required by data-provider.                ",
-        examples=[{"auth_code_key": "my_custom_auth_code_key_name"}],
-        title="(Optional) DeclarativeOAuth Auth Code Key Override",
+        description="The DeclarativeOAuth Specific optional override to provide the custom `code` key name to something like `auth_code` or `custom_auth_code`, if required by data-provider.",
+        examples=["my_custom_auth_code_key_name"],
+        title="Auth Code Key Override",
     )
     redirect_uri_key: Optional[str] = Field(
         None,
         description="The DeclarativeOAuth Specific optional override to provide the custom `redirect_uri` key name to something like `callback_uri`, if required by data-provider.",
-        examples=[{"redirect_uri_key": "my_custom_redirect_uri_key_name"}],
-        title="(Optional) DeclarativeOAuth Redirect URI Key Override",
+        examples=["my_custom_redirect_uri_key_name"],
+        title="Redirect URI Key Override",
     )
 
 
@@ -1155,6 +1177,57 @@ class WaitUntilTimeFromHeader(BaseModel):
         examples=["([-+]?\\d+)"],
         title="Extraction Regex",
     )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class ComponentMappingDefinition(BaseModel):
+    type: Literal["ComponentMappingDefinition"]
+    field_path: List[str] = Field(
+        ...,
+        description="A list of potentially nested fields indicating the full path where value will be added or updated.",
+        examples=[
+            ["data"],
+            ["data", "records"],
+            ["data", 1, "name"],
+            ["data", "{{ components_values.name }}"],
+            ["data", "*", "record"],
+            ["*", "**", "name"],
+        ],
+        title="Field Path",
+    )
+    value: str = Field(
+        ...,
+        description="The dynamic or static value to assign to the key. Interpolated values can be used to dynamically determine the value during runtime.",
+        examples=[
+            "{{ components_values['updates'] }}",
+            "{{ components_values['MetaData']['LastUpdatedTime'] }}",
+            "{{ config['segment_id'] }}",
+        ],
+        title="Value",
+    )
+    value_type: Optional[ValueType] = Field(
+        None,
+        description="The expected data type of the value. If omitted, the type will be inferred from the value provided.",
+        title="Value Type",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class StreamConfig(BaseModel):
+    type: Literal["StreamConfig"]
+    configs_pointer: List[str] = Field(
+        ...,
+        description="A list of potentially nested fields indicating the full path in source config file where streams configs located.",
+        examples=[["data"], ["data", "streams"], ["data", "{{ parameters.name }}"]],
+        title="Configs Pointer",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class ConfigComponentsResolver(BaseModel):
+    type: Literal["ConfigComponentsResolver"]
+    stream_config: StreamConfig
+    components_mapping: List[ComponentMappingDefinition]
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -1455,13 +1528,14 @@ class CompositeErrorHandler(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class DeclarativeSource(BaseModel):
+class DeclarativeSource1(BaseModel):
     class Config:
         extra = Extra.forbid
 
     type: Literal["DeclarativeSource"]
     check: CheckStream
     streams: List[DeclarativeStream]
+    dynamic_streams: Optional[List[DynamicDeclarativeStream]] = None
     version: str = Field(
         ...,
         description="The version of the Airbyte CDK used to build and test the source.",
@@ -1477,6 +1551,43 @@ class DeclarativeSource(BaseModel):
     description: Optional[str] = Field(
         None,
         description="A description of the connector. It will be presented on the Source documentation page.",
+    )
+
+
+class DeclarativeSource2(BaseModel):
+    class Config:
+        extra = Extra.forbid
+
+    type: Literal["DeclarativeSource"]
+    check: CheckStream
+    streams: Optional[List[DeclarativeStream]] = None
+    dynamic_streams: List[DynamicDeclarativeStream]
+    version: str = Field(
+        ...,
+        description="The version of the Airbyte CDK used to build and test the source.",
+    )
+    schemas: Optional[Schemas] = None
+    definitions: Optional[Dict[str, Any]] = None
+    spec: Optional[Spec] = None
+    concurrency_level: Optional[ConcurrencyLevel] = None
+    metadata: Optional[Dict[str, Any]] = Field(
+        None,
+        description="For internal Airbyte use only - DO NOT modify manually. Used by consumers of declarative manifests for storing related metadata.",
+    )
+    description: Optional[str] = Field(
+        None,
+        description="A description of the connector. It will be presented on the Source documentation page.",
+    )
+
+
+class DeclarativeSource(BaseModel):
+    class Config:
+        extra = Extra.forbid
+
+    __root__: Union[DeclarativeSource1, DeclarativeSource2] = Field(
+        ...,
+        description="An API source that extracts data according to its declarative components.",
+        title="DeclarativeSource",
     )
 
 
@@ -1540,15 +1651,29 @@ class DeclarativeStream(BaseModel):
     primary_key: Optional[PrimaryKey] = Field(
         "", description="The primary key of the stream.", title="Primary Key"
     )
-    schema_loader: Optional[Union[InlineSchemaLoader, JsonFileSchemaLoader, CustomSchemaLoader]] = (
-        Field(
-            None,
-            description="Component used to retrieve the schema for the current stream.",
-            title="Schema Loader",
-        )
+    schema_loader: Optional[
+        Union[
+            DynamicSchemaLoader,
+            InlineSchemaLoader,
+            JsonFileSchemaLoader,
+            CustomSchemaLoader,
+        ]
+    ] = Field(
+        None,
+        description="Component used to retrieve the schema for the current stream.",
+        title="Schema Loader",
     )
     transformations: Optional[
-        List[Union[AddFields, CustomTransformation, RemoveFields, KeysToLower]]
+        List[
+            Union[
+                AddFields,
+                CustomTransformation,
+                RemoveFields,
+                KeysToLower,
+                KeysToSnakeCase,
+                FlattenFields,
+            ]
+        ]
     ] = Field(
         None,
         description="A list of transformations to be applied to each output record.",
@@ -1702,6 +1827,33 @@ class HttpRequester(BaseModel):
         description="Enables stream requests caching. This field is automatically set by the CDK.",
         title="Use Cache",
     )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class DynamicSchemaLoader(BaseModel):
+    type: Literal["DynamicSchemaLoader"]
+    retriever: Union[AsyncRetriever, CustomRetriever, SimpleRetriever] = Field(
+        ...,
+        description="Component used to coordinate how records are extracted across stream slices and request pages.",
+        title="Retriever",
+    )
+    schema_transformations: Optional[
+        List[
+            Union[
+                AddFields,
+                CustomTransformation,
+                RemoveFields,
+                KeysToLower,
+                KeysToSnakeCase,
+                FlattenFields,
+            ]
+        ]
+    ] = Field(
+        None,
+        description="A list of transformations to be applied to the schema.",
+        title="Schema Transformations",
+    )
+    schema_type_identifier: SchemaTypeIdentifier
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -1883,10 +2035,35 @@ class SubstreamPartitionRouter(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class HttpComponentsResolver(BaseModel):
+    type: Literal["HttpComponentsResolver"]
+    retriever: Union[AsyncRetriever, CustomRetriever, SimpleRetriever] = Field(
+        ...,
+        description="Component used to coordinate how records are extracted across stream slices and request pages.",
+        title="Retriever",
+    )
+    components_mapping: List[ComponentMappingDefinition]
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class DynamicDeclarativeStream(BaseModel):
+    type: Literal["DynamicDeclarativeStream"]
+    stream_template: DeclarativeStream = Field(
+        ..., description="Reference to the stream template.", title="Stream Template"
+    )
+    components_resolver: Union[HttpComponentsResolver, ConfigComponentsResolver] = Field(
+        ...,
+        description="Component resolve and populates stream templates with components values.",
+        title="Components Resolver",
+    )
+
+
 CompositeErrorHandler.update_forward_refs()
-DeclarativeSource.update_forward_refs()
+DeclarativeSource1.update_forward_refs()
+DeclarativeSource2.update_forward_refs()
 SelectiveAuthenticator.update_forward_refs()
 DeclarativeStream.update_forward_refs()
 SessionTokenAuthenticator.update_forward_refs()
+DynamicSchemaLoader.update_forward_refs()
 SimpleRetriever.update_forward_refs()
 AsyncRetriever.update_forward_refs()
