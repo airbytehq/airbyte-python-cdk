@@ -1125,6 +1125,16 @@ class LegacySessionTokenAuthenticator(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class JsonLineParser(BaseModel):
+    encoding: Optional[str] = "utf-8"
+
+
+class CsvParser(BaseModel):
+    type: Literal["CsvParser"]
+    encoding: Optional[str] = "utf-8"
+    delimiter: Optional[str] = ","
+
+
 class AsyncJobStatusMap(BaseModel):
     type: Optional[Literal["AsyncJobStatusMap"]] = None
     running: List[str]
@@ -1504,6 +1514,11 @@ class RecordSelector(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class GzipParser(BaseModel):
+    type: Literal["GzipParser"]
+    inner_parser: Union[JsonLineParser, CsvParser]
+
+
 class Spec(BaseModel):
     type: Literal["Spec"]
     connection_specification: Dict[str, Any] = Field(
@@ -1532,6 +1547,11 @@ class CompositeErrorHandler(BaseModel):
         title="Error Handlers",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class CompositeRawDecoder(BaseModel):
+    type: Literal["CompositeRawDecoder"]
+    parser: Union[GzipParser, JsonLineParser, CsvParser]
 
 
 class DeclarativeSource1(BaseModel):
@@ -1936,6 +1956,7 @@ class SimpleRetriever(BaseModel):
             IterableDecoder,
             XmlDecoder,
             GzipJsonDecoder,
+            CompositeRawDecoder,
         ]
     ] = Field(
         None,
