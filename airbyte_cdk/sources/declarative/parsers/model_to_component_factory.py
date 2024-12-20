@@ -237,13 +237,13 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     JwtPayload as JwtPayloadModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    KeysReplace as KeysReplaceModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     KeysToLower as KeysToLowerModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     KeysToSnakeCase as KeysToSnakeCaseModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    KeysReplace as KeysReplaceModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     LegacySessionTokenAuthenticator as LegacySessionTokenAuthenticatorModel,
@@ -402,14 +402,14 @@ from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFiel
 from airbyte_cdk.sources.declarative.transformations.flatten_fields import (
     FlattenFields,
 )
+from airbyte_cdk.sources.declarative.transformations.keys_replace_transformation import (
+    KeysReplaceTransformation,
+)
 from airbyte_cdk.sources.declarative.transformations.keys_to_lower_transformation import (
     KeysToLowerTransformation,
 )
 from airbyte_cdk.sources.declarative.transformations.keys_to_snake_transformation import (
     KeysToSnakeCaseTransformation,
-)
-from airbyte_cdk.sources.declarative.transformations.keys_replace_transformation import (
-    KeysReplaceTransformation,
 )
 from airbyte_cdk.sources.message import (
     InMemoryMessageRepository,
