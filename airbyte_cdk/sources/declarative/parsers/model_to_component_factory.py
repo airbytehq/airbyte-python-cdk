@@ -8,6 +8,7 @@ import datetime
 import importlib
 import inspect
 import re
+import types
 from functools import partial
 from typing import (
     Any,
@@ -1013,8 +1014,11 @@ class ModelToComponentFactory:
         :param config: The custom defined connector config
         :return: The declarative component built from the Pydantic model to be used at runtime
         """
-
-        custom_component_class = self._get_class_from_fully_qualified_class_name(model.class_name)
+        components_module = self._get_components_module_object(config=config)
+        custom_component_class = self._get_class_from_fully_qualified_class_name(
+            full_qualified_class_name=model.class_name,
+            components_module=components_module,
+        )
         component_fields = get_type_hints(custom_component_class)
         model_args = model.dict()
         model_args["config"] = config
@@ -1066,15 +1070,59 @@ class ModelToComponentFactory:
         }
         return custom_component_class(**kwargs)
 
-    @staticmethod
-    def _get_class_from_fully_qualified_class_name(full_qualified_class_name: str) -> Any:
+    def _get_components_module_object(
+        config: Config,
+    ) -> None:
+        """Get a components module object based on the provided config.
+
+        If custom python components is provided, this will be loaded. Otherwise, we will
+        attempt to load from the `components` module already imported.
+        """
+        INJECTED_COMPONENTS_PY = "__injected_components_py"
+        COMPONENTS_MODULE_NAME = "components"
+
+        components_module: types.ModuleType
+        if INJECTED_COMPONENTS_PY in config:
+            # Create a new module object and execute the provided Python code text within it
+            components_module = types.ModuleType(name=COMPONENTS_MODULE_NAME)
+            python_text = config[INJECTED_COMPONENTS_PY]
+            exec(python_text, components_module.__dict__)
+            # Skip insert the module into sys.modules because we pass by reference below
+            # sys.modules[module_name] = components_module
+        else:
+            components_module = importlib.import_module(name=COMPONENTS_MODULE_NAME)
+
+    def _get_class_from_fully_qualified_class_name(
+        full_qualified_class_name: str,
+        components_module: types.ModuleType,
+    ) -> Any:
+        """
+        Get a class from its fully qualified name, optionally using a pre-parsed module.
+
+        Args:
+            full_qualified_class_name (str): The fully qualified name of the class (e.g., "module.ClassName").
+            components_module (Optional[ModuleType]): An optional pre-parsed module.
+
+        Returns:
+            Any: The class object.
+
+        Raises:
+            ValueError: If the class cannot be loaded.
+        """
         split = full_qualified_class_name.split(".")
-        module = ".".join(split[:-1])
+        module_name_full = ".".join(split[:-1])
+        module_name = split[:-2]
         class_name = split[-1]
+
+        if module_name != "components":
+            raise ValueError(
+                f"Custom components must be defined in a module named `components`. Found {module_name} instead."
+            )
+
         try:
-            return getattr(importlib.import_module(module), class_name)
-        except AttributeError:
-            raise ValueError(f"Could not load class {full_qualified_class_name}.")
+            return getattr(components_module, class_name)
+        except (AttributeError, ModuleNotFoundError) as e:
+            raise ValueError(f"Could not load class {full_qualified_class_name}.") from e
 
     @staticmethod
     def _derive_component_type_from_type_hints(field_type: Any) -> Optional[str]:
