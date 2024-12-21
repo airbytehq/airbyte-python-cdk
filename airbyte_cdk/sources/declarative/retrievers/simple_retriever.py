@@ -47,6 +47,13 @@ FULL_REFRESH_SYNC_COMPLETE_KEY = "__ab_full_refresh_sync_complete"
 
 
 @dataclass
+class LastResponseValue:
+    last_response: Optional[requests.Response] = None
+    last_page_size: int = 0
+    last_record: Optional[Record] = None
+
+
+@dataclass
 class SimpleRetriever(Retriever):
     """
     Retrieves records by synchronously sending requests to fetch records.
@@ -90,19 +97,12 @@ class SimpleRetriever(Retriever):
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._paginator = self.paginator or NoPagination(parameters=parameters)
-        self._last_response: Optional[requests.Response] = None
-        self._last_page_size: int = 0
-        self._last_record: Optional[Record] = None
         self._parameters = parameters
         self._name = (
             InterpolatedString(self._name, parameters=parameters)
             if isinstance(self._name, str)
             else self._name
         )
-
-        # This mapping is used during a resumable full refresh syncs to indicate whether a partition has started syncing
-        # records. Partitions serve as the key and map to True if they already began processing records
-        self._partition_started: MutableMapping[Any, bool] = dict()
 
     @property  # type: ignore
     def name(self) -> str:
@@ -251,17 +251,13 @@ class SimpleRetriever(Retriever):
             raise ValueError("Request body json cannot be a string")
         return body_json
 
-    def _paginator_path(
-        self,
-    ) -> Optional[str]:
+    def _paginator_path(self, next_page_token: Optional[Mapping[str, Any]] = None) -> Optional[str]:
         """
         If the paginator points to a path, follow it, else return nothing so the requester is used.
-        :param stream_state:
-        :param stream_slice:
         :param next_page_token:
         :return:
         """
-        return self._paginator.path()
+        return self._paginator.path(next_page_token=next_page_token)
 
     def _parse_response(
         self,
@@ -270,10 +266,10 @@ class SimpleRetriever(Retriever):
         records_schema: Mapping[str, Any],
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Iterable[Record]:
+    ) -> Iterable[Union[Record, LastResponseValue]]:
         if not response:
-            self._last_response = None
             yield from []
+            return LastResponseValue(last_response=None, last_page_size=0, last_record=None)
         else:
             self._last_response = response
             record_generator = self.record_selector.select_records(
@@ -283,11 +279,16 @@ class SimpleRetriever(Retriever):
                 stream_slice=stream_slice,
                 next_page_token=next_page_token,
             )
-            self._last_page_size = 0
+
+            last_page_size = 0
+            last_record = None
             for record in record_generator:
-                self._last_page_size += 1
-                self._last_record = record
+                last_page_size += 1
+                last_record = record
                 yield record
+            return LastResponseValue(
+                last_response=response, last_page_size=last_page_size, last_record=last_record
+            )
 
     @property  # type: ignore
     def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
@@ -299,7 +300,13 @@ class SimpleRetriever(Retriever):
         if not isinstance(value, property):
             self._primary_key = value
 
-    def _next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def _next_page_token(
+        self,
+        response: requests.Response,
+        last_page_size: int,
+        last_record: Optional[Record],
+        last_page_token_value: Optional[Any],
+    ) -> Optional[Mapping[str, Any]]:
         """
         Specifies a pagination strategy.
 
@@ -307,7 +314,12 @@ class SimpleRetriever(Retriever):
 
         :return: The token for the next page from the input response object. Returning None means there are no more pages to read in this response.
         """
-        return self._paginator.next_page_token(response, self._last_page_size, self._last_record)
+        return self._paginator.next_page_token(
+            response=response,
+            last_page_size=last_page_size,
+            last_record=last_record,
+            last_page_token_value=last_page_token_value,
+        )
 
     def _fetch_next_page(
         self,
@@ -316,7 +328,7 @@ class SimpleRetriever(Retriever):
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Optional[requests.Response]:
         return self.requester.send_request(
-            path=self._paginator_path(),
+            path=self._paginator_path(next_page_token=next_page_token),
             stream_state=stream_state,
             stream_slice=stream_slice,
             next_page_token=next_page_token,
@@ -350,15 +362,35 @@ class SimpleRetriever(Retriever):
         stream_slice: StreamSlice,
     ) -> Iterable[StreamData]:
         pagination_complete = False
-        next_page_token = None
+        initial_token = self._paginator.get_initial_token()
+        next_page_token = {"next_page_token": initial_token} if initial_token else None
         while not pagination_complete:
             response = self._fetch_next_page(stream_state, stream_slice, next_page_token)
-            yield from records_generator_fn(response)
+
+            last_page_size = 0
+            last_record = None
+
+            # todo: There has to be a better way of yielding records and still emitting a final return value
+            try:
+                yield from records_generator_fn(response)
+            except StopIteration as e:
+                last_response_value = e.value
+                if isinstance(last_response_value, LastResponseValue):
+                    last_page_size = last_response_value.last_page_size
+                    last_record = last_response_value.last_record
 
             if not response:
                 pagination_complete = True
             else:
-                next_page_token = self._next_page_token(response)
+                last_page_token_value = (
+                    next_page_token.get("next_page_token") if next_page_token else None
+                )
+                next_page_token = self._next_page_token(
+                    response=response,
+                    last_page_size=last_page_size,
+                    last_record=last_record,
+                    last_page_token_value=last_page_token_value,
+                )
                 if not next_page_token:
                     pagination_complete = True
 
@@ -371,15 +403,39 @@ class SimpleRetriever(Retriever):
         stream_state: Mapping[str, Any],
         stream_slice: StreamSlice,
     ) -> Iterable[StreamData]:
-        response = self._fetch_next_page(stream_state, stream_slice)
-        yield from records_generator_fn(response)
+        initial_token = stream_state.get("next_page_token")
+        if initial_token is None:
+            initial_token = self._paginator.get_initial_token()
+        next_page_token = {"next_page_token": initial_token} if initial_token else None
+
+        response = self._fetch_next_page(stream_state, stream_slice, next_page_token)
+
+        last_page_size = 0
+        last_record = None
+
+        # todo: There has to be a better way of yielding records and still emitting a final return value
+        try:
+            record_generator = records_generator_fn(response)
+            while True:
+                yield next(record_generator)
+        except StopIteration as e:
+            last_response_value = e.value
+            if isinstance(last_response_value, LastResponseValue):
+                last_page_size = last_response_value.last_page_size
+                last_record = last_response_value.last_record
 
         if not response:
             next_page_token: Mapping[str, Any] = {FULL_REFRESH_SYNC_COMPLETE_KEY: True}
         else:
-            next_page_token = self._next_page_token(response) or {
-                FULL_REFRESH_SYNC_COMPLETE_KEY: True
-            }
+            last_page_token_value = (
+                next_page_token.get("next_page_token") if next_page_token else None
+            )
+            next_page_token = self._next_page_token(
+                response=response,
+                last_page_size=last_page_size,
+                last_record=last_record,
+                last_page_token_value=last_page_token_value,
+            ) or {FULL_REFRESH_SYNC_COMPLETE_KEY: True}
 
         if self.cursor:
             self.cursor.close_slice(
@@ -414,25 +470,14 @@ class SimpleRetriever(Retriever):
         if self.cursor and isinstance(self.cursor, ResumableFullRefreshCursor):
             stream_state = self.state
 
-            # Before syncing the RFR stream, we check if the job's prior attempt was successful and don't need to fetch more records
-            # The platform deletes stream state for full refresh streams before starting a new job, so we don't need to worry about
-            # this value existing for the initial attempt
+            # Before syncing the RFR stream, we check if the job's prior attempt was successful and don't need to
+            # fetch more records. The platform deletes stream state for full refresh streams before starting a
+            # new job, so we don't need to worry about this value existing for the initial attempt
             if stream_state.get(FULL_REFRESH_SYNC_COMPLETE_KEY):
                 return
-            cursor_value = stream_state.get("next_page_token")
-
-            # The first attempt to read a page for the current partition should reset the paginator to the current
-            # cursor state which is initially assigned to the incoming state from the platform
-            partition_key = self._to_partition_key(_slice.partition)
-            if partition_key not in self._partition_started:
-                self._partition_started[partition_key] = True
-                self._paginator.reset(reset_value=cursor_value)
 
             yield from self._read_single_page(record_generator, stream_state, _slice)
         else:
-            # Fixing paginator types has a long tail of dependencies
-            self._paginator.reset()
-
             for stream_data in self._read_pages(record_generator, self.state, _slice):
                 current_record = self._extract_record(stream_data, _slice)
                 if self.cursor and current_record:
@@ -518,13 +563,18 @@ class SimpleRetriever(Retriever):
         stream_state: Mapping[str, Any],
         records_schema: Mapping[str, Any],
         stream_slice: Optional[StreamSlice],
-    ) -> Iterable[StreamData]:
-        yield from self._parse_response(
+    ) -> Iterable[Union[StreamData, LastResponseValue]]:
+        record_generator = self._parse_response(
             response,
             stream_slice=stream_slice,
             stream_state=stream_state,
             records_schema=records_schema,
         )
+        try:
+            while True:
+                yield next(record_generator)
+        except StopIteration as e:
+            return e.value
 
     def must_deduplicate_query_params(self) -> bool:
         return True
@@ -562,7 +612,7 @@ class SimpleRetrieverTestReadDecorator(SimpleRetriever):
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Optional[requests.Response]:
         return self.requester.send_request(
-            path=self._paginator_path(),
+            path=self._paginator_path(next_page_token=next_page_token),
             stream_state=stream_state,
             stream_slice=stream_slice,
             next_page_token=next_page_token,
