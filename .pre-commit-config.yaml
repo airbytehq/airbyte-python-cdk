@@ -1,0 +1,41 @@
+# Pre-commit configuration file.
+#
+# Usage:
+#   pre-commit                  # Run pre-commit checks on modified files.
+#   pre-commit run --all-files  # Run pre-commit on all files in the repo.
+#
+# You do not need to install pre-commit as a git hook. The pre-commit
+# tool can be called directly (or in CI). You can also lean on your IDE
+# or CLI of the individual tools to run them directly.
+#
+# If direct execution differs from the pre-commit execution, this is a bug
+# and should be raised as an issue.
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.3
+    hooks:
+      # Run the linter.
+      - id: ruff
+        args:
+          - --fix
+          - --select=I
+
+      # Run the formatter.
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.0.3
+    hooks:
+      - id: prettier
+        types_or: [json, yaml]
+        additional_dependencies:
+          - prettier@3.0.3
+
+  - repo: local
+    hooks:
+      - id: addlicense
+        name: Add license headers
+        entry: addlicense -c "Airbyte, Inc." -l apache -v -f LICENSE_SHORT
+        language: golang
+        additional_dependencies: [github.com/google/addlicense@v1.1.1]
+        files: \.py$
