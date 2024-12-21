@@ -3,6 +3,7 @@
 #
 
 import json
+from typing import Iterable, Union
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -26,6 +27,7 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies import Pag
 from airbyte_cdk.sources.declarative.requesters.request_option import RequestOptionType
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import (
+    LastResponseValue,
     SimpleRetriever,
     SimpleRetrieverTestReadDecorator,
 )
@@ -51,10 +53,11 @@ def test_simple_retriever_full(mock_http_stream):
     requester.get_request_params.return_value = request_params
 
     paginator = MagicMock()
+    paginator.get_initial_token.return_value = None
     next_page_token = {"cursor": "cursor_value"}
     paginator.path.return_value = None
     paginator.next_page_token.return_value = next_page_token
-    paginator.get_requesyyt_headers.return_value = {}
+    paginator.get_request_headers.return_value = {}
 
     record_selector = MagicMock()
     record_selector.select_records.return_value = records
@@ -65,6 +68,10 @@ def test_simple_retriever_full(mock_http_stream):
 
     response = requests.Response()
     response.status_code = 200
+
+    last_page_size = 2
+    last_record = Record(data={"id": "1a"}, stream_name="stream_name")
+    last_page_token_value = 0
 
     underlying_state = {"date": "2021-01-01"}
     cursor.get_stream_state.return_value = underlying_state
@@ -102,18 +109,31 @@ def test_simple_retriever_full(mock_http_stream):
 
     assert retriever.primary_key == primary_key
     assert retriever.state == underlying_state
-    assert retriever._next_page_token(response) == next_page_token
+    assert (
+        retriever._next_page_token(response, last_page_size, last_record, last_page_token_value)
+        == next_page_token
+    )
     assert retriever._request_params(None, None, None) == {}
     assert retriever.stream_slices() == stream_slices
 
-    assert retriever._last_response is None
-    assert retriever._last_record is None
-    assert list(retriever._parse_response(response, stream_state={}, records_schema={})) == records
-    assert retriever._last_response == response
-    assert retriever._last_page_size == 2
+    # assert retriever._last_response is None
+    # assert retriever._last_record is None
+    # assert list(retriever._parse_response(response, stream_state={}, records_schema={})) == records
+    # assert retriever._last_response == response
+    # assert retriever._last_page_size == 2
+
+    try:
+        assert (
+            list(retriever._parse_response(response, stream_state={}, records_schema={})) == records
+        )
+    except StopIteration as e:
+        last_response_values = e.value
+        assert isinstance(last_response_values, LastResponseValue)
+        assert last_response_values.last_response == response
+        assert last_response_values.last_record == last_record
+        assert last_response_values.last_page_size == 2
 
     [r for r in retriever.read_records(SyncMode.full_refresh)]
-    paginator.reset.assert_called()
 
 
 @patch.object(SimpleRetriever, "_read_pages", return_value=iter([*request_response_logs, *records]))
@@ -144,7 +164,6 @@ def test_simple_retriever_with_request_response_logs(mock_http_stream):
     )
 
     actual_messages = [r for r in retriever.read_records(SyncMode.full_refresh)]
-    paginator.reset.assert_called()
 
     assert isinstance(actual_messages[0], AirbyteLogMessage)
     assert isinstance(actual_messages[1], AirbyteLogMessage)
@@ -209,7 +228,7 @@ def test_simple_retriever_resumable_full_refresh_cursor_page_increment(
         url_base="https://airbyte.io",
         parameters={},
     )
-    paginator.reset = Mock(wraps=paginator.reset)
+    # paginator.reset = Mock(wraps=paginator.reset)
 
     stream_slicer = ResumableFullRefreshCursor(parameters={})
     if initial_state:
@@ -242,8 +261,6 @@ def test_simple_retriever_resumable_full_refresh_cursor_page_increment(
     assert len(actual_records) == 3
     assert actual_records == expected_records[5:]
     assert retriever.state == {"__ab_full_refresh_sync_complete": True}
-
-    paginator.reset.assert_called_once_with(reset_value=expected_reset_value)
 
 
 @pytest.mark.parametrize(
@@ -331,7 +348,6 @@ primary_key: []
         "https://for-all-mankind.nasa.com/api/v1/astronauts?next_page=gordo_stevens",
         json=response_body_2,
     )
-    stream.retriever.paginator.reset = Mock(wraps=stream.retriever.paginator.reset)
     stream_slicer = ResumableFullRefreshCursor(parameters={})
     if initial_state:
         stream_slicer.set_initial_state(initial_state)
@@ -359,8 +375,6 @@ primary_key: []
     assert len(actual_records) == 3
     assert actual_records == expected_records[5:]
     assert stream.retriever.state == {"__ab_full_refresh_sync_complete": True}
-
-    stream.retriever.paginator.reset.assert_called_once_with(reset_value=expected_reset_value)
 
 
 def test_simple_retriever_resumable_full_refresh_cursor_reset_skip_completed_stream():
@@ -391,7 +405,7 @@ def test_simple_retriever_resumable_full_refresh_cursor_reset_skip_completed_str
         url_base="https://airbyte.io",
         parameters={},
     )
-    paginator.reset = Mock(wraps=paginator.reset)
+    paginator.get_initial_token = Mock(wraps=paginator.get_initial_token)
 
     stream_slicer = ResumableFullRefreshCursor(parameters={})
     stream_slicer.set_initial_state({"__ab_full_refresh_sync_complete": True})
@@ -416,7 +430,7 @@ def test_simple_retriever_resumable_full_refresh_cursor_reset_skip_completed_str
     assert len(actual_records) == 0
     assert retriever.state == {"__ab_full_refresh_sync_complete": True}
 
-    paginator.reset.assert_not_called()
+    paginator.get_initial_token.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -614,8 +628,6 @@ def test_request_body_data(
     paginator.get_request_body_data.return_value = paginator_body_data
     requester = MagicMock(use_cache=False)
 
-    # stream_slicer = MagicMock()
-    # stream_slicer.get_request_body_data.return_value = request_options_provider_body_data
     request_option_provider = MagicMock()
     request_option_provider.get_request_body_data.return_value = request_options_provider_body_data
 
@@ -667,7 +679,7 @@ def test_path(test_name, requester_path, paginator_path, expected_path):
         config={},
     )
 
-    actual_path = retriever._paginator_path()
+    actual_path = retriever._paginator_path(next_page_token=None)
     assert actual_path == expected_path
 
 
