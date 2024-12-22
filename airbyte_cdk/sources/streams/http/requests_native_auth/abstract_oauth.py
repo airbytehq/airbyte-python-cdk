@@ -54,16 +54,12 @@ class AbstractOauth2Authenticator(AuthBase):
 
     def get_auth_header(self) -> Mapping[str, Any]:
         """HTTP header to set on the requests"""
-        token = (
-            self.access_token
-            if (
-                not self.get_token_refresh_endpoint()
-                or not self.get_refresh_token()
-                and self.access_token
-            )
-            else self.get_access_token()
-        )
+        token = self.access_token if self._is_access_token_flow else self.get_access_token()
         return {"Authorization": f"Bearer {token}"}
+
+    @property
+    def _is_access_token_flow(self) -> bool:
+        return self.get_token_refresh_endpoint() is None and self.access_token is not None
 
     def get_access_token(self) -> str:
         """Returns the access token"""
