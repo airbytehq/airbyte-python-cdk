@@ -1,3 +1,4 @@
+# Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 from .config.abstract_file_based_spec import AbstractFileBasedSpec
 from .config.csv_format import CsvFormat
 from .config.file_based_stream_config import FileBasedStreamConfig

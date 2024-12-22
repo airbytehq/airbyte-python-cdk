@@ -112,18 +112,6 @@ sql = ["sqlalchemy"]
 
 source-declarative-manifest = "airbyte_cdk.cli.source_declarative_manifest:run"
 
-[tool.isort]
-skip = ["__init__.py"]  # TODO: Remove after this is fixed: https://github.com/airbytehq/airbyte-python-cdk/issues/12
-
-[tool.ruff]
-exclude = ["__init__.py"]  # TODO: Remove after this is fixed: https://github.com/airbytehq/airbyte-python-cdk/issues/12
-
-target-version = "py310"
-line-length = 100
-
-[tool.ruff.lint]
-select = ["I"]
-
 [tool.poe.tasks]
 # Installation
 install = { shell = "poetry install --all-extras" }
