@@ -66,7 +66,9 @@ from airbyte_cdk.sources.declarative.decoders import (
     JsonlDecoder,
     PaginationDecoderDecorator,
     XmlDecoder,
+    ZipfileDecoder,
 )
+from airbyte_cdk.sources.declarative.decoders.parsers import JsonParser
 from airbyte_cdk.sources.declarative.extractors import (
     DpathExtractor,
     RecordFilter,
@@ -228,6 +230,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     JsonlDecoder as JsonlDecoderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonParser as JsonParserModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     JwtAuthenticator as JwtAuthenticatorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -321,6 +326,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     XmlDecoder as XmlDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ZipfileDecoder as ZipfileDecoderModel,
 )
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
@@ -485,6 +493,7 @@ class ModelToComponentFactory:
             InlineSchemaLoaderModel: self.create_inline_schema_loader,
             JsonDecoderModel: self.create_json_decoder,
             JsonlDecoderModel: self.create_jsonl_decoder,
+            JsonParserModel: self.create_json_parser,
             GzipJsonDecoderModel: self.create_gzipjson_decoder,
             KeysToLowerModel: self.create_keys_to_lower_transformation,
             KeysToSnakeCaseModel: self.create_keys_to_snake_transformation,
@@ -522,6 +531,7 @@ class ModelToComponentFactory:
             ConfigComponentsResolverModel: self.create_config_components_resolver,
             StreamConfigModel: self.create_stream_config,
             ComponentMappingDefinitionModel: self.create_components_mapping_definition,
+            ZipfileDecoderModel: self.create_zipfile_decoder,
         }
 
         # Needed for the case where we need to perform a second parse on the fields of a custom component
@@ -1716,6 +1726,20 @@ class ModelToComponentFactory:
         model: GzipJsonDecoderModel, config: Config, **kwargs: Any
     ) -> GzipJsonDecoder:
         return GzipJsonDecoder(parameters={}, encoding=model.encoding)
+
+    def create_zipfile_decoder(
+        self, model: ZipfileDecoderModel, config: Config, **kwargs: Any
+    ) -> ZipfileDecoder:
+        parser = (
+            self._create_component_from_model(model=model.parser, config=config)
+            if model.parser
+            else None
+        )
+        return ZipfileDecoder(parameters={}, parser=parser)
+
+    @staticmethod
+    def create_json_parser(model: JsonParserModel, config: Config, **kwargs: Any) -> JsonParser:
+        return JsonParser(parameters={})
 
     @staticmethod
     def create_json_file_schema_loader(

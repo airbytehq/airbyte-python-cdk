@@ -757,6 +757,27 @@ class GzipJsonDecoder(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class JsonParser(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    type: Literal["JsonParser"]
+
+
+class CustomParser(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    type: Literal["CustomParser"]
+    class_name: str = Field(
+        ...,
+        description="Fully-qualified name of the class that will be implementing the custom decoding. Has to be a sub class of Parser. The format is `source_<name>.<package>.<class_name>`.",
+        examples=["source_rivendell.components.ElvishParser"],
+        title="Class Name",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class MinMaxDatetime(BaseModel):
     type: Literal["MinMaxDatetime"]
     datetime: str = Field(
@@ -1467,6 +1488,18 @@ class SessionTokenRequestApiKeyAuthenticator(BaseModel):
             {"inject_into": "request_parameter", "field_name": "authKey"},
         ],
         title="Inject API Key Into Outgoing HTTP Request",
+    )
+
+
+class ZipfileDecoder(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    type: Literal["ZipfileDecoder"]
+    parser: Optional[Union[JsonParser, CustomParser]] = Field(
+        None,
+        description="Parser to parse the decompressed data from the zipfile(s).",
+        title="Parser",
     )
 
 
