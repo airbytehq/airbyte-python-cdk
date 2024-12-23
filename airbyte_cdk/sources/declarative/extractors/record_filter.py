@@ -59,13 +59,11 @@ class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
 
     def __init__(
         self,
-        date_time_based_cursor: DatetimeBasedCursor,
-        substream_cursor: Optional[Union[PerPartitionWithGlobalCursor, GlobalSubstreamCursor]],
+        cursor: Union[DatetimeBasedCursor, PerPartitionWithGlobalCursor, GlobalSubstreamCursor],
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
-        self._date_time_based_cursor = date_time_based_cursor
-        self._substream_cursor = substream_cursor
+        self._cursor = cursor
 
     def filter_records(
         self,
@@ -77,7 +75,7 @@ class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
         records = (
             record
             for record in records
-            if (self._substream_cursor or self._date_time_based_cursor).should_be_synced(
+            if self._cursor.should_be_synced(
                 # Record is created on the fly to align with cursors interface; stream name is ignored as we don't need it here
                 # Record stream name is empty cause it is not used durig the filtering
                 Record(data=record, associated_slice=stream_slice, stream_name="")
