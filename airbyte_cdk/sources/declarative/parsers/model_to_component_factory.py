@@ -26,12 +26,6 @@ from typing import (
 
 from isodate import parse_duration
 from pydantic.v1 import BaseModel
-from sources.declarative.decoders.composite_decoder import (
-    CompositeRawDecoder,
-    CsvParser,
-    GzipParser,
-    JsonLineParser,
-)
 
 from airbyte_cdk.models import FailureType, Level
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
@@ -72,6 +66,12 @@ from airbyte_cdk.sources.declarative.decoders import (
     JsonlDecoder,
     PaginationDecoderDecorator,
     XmlDecoder,
+)
+from airbyte_cdk.sources.declarative.decoders.composite_decoder import (
+    CompositeRawDecoder,
+    CsvParser,
+    GzipParser,
+    JsonLineParser,
 )
 from airbyte_cdk.sources.declarative.extractors import (
     DpathExtractor,
