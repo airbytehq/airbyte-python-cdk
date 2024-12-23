@@ -458,6 +458,7 @@ class ModelToComponentFactory:
             BearerAuthenticatorModel: self.create_bearer_authenticator,
             CheckStreamModel: self.create_check_stream,
             CompositeErrorHandlerModel: self.create_composite_error_handler,
+            CompositeRawDecoderModel: self.create_composite_raw_decoder,
             ConcurrencyLevelModel: self.create_concurrency_level,
             ConstantBackoffStrategyModel: self.create_constant_backoff_strategy,
             CursorPaginationModel: self.create_cursor_pagination,
@@ -1716,11 +1717,11 @@ class ModelToComponentFactory:
     def create_csv_parser(model: CsvParserModel, config: Config, **kwargs: Any) -> CsvParser:
         return CsvParser(encoding=model.encoding, delimiter=model.delimiter)
 
-    @staticmethod
     def create_composite_raw_decoder(
-        model: CompositeRawDecoderModel, config: Config, **kwargs: Any
+        self, model: CompositeRawDecoderModel, config: Config, **kwargs: Any
     ) -> CompositeRawDecoder:
-        return CompositeRawDecoder(parser=model.parser)
+        parser = self._create_component_from_model(model=model.parser, config=config)
+        return CompositeRawDecoder(parser=parser)
 
     @staticmethod
     def create_json_file_schema_loader(
