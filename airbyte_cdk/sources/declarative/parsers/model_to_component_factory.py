@@ -1709,9 +1709,11 @@ class ModelToComponentFactory:
     ) -> GzipJsonDecoder:
         return GzipJsonDecoder(parameters={}, encoding=model.encoding)
 
-    @staticmethod
-    def create_gzip_parser(model: GzipParserModel, config: Config, **kwargs: Any) -> GzipParser:
-        return GzipParser(inner_parser=model.inner_parser)
+    def create_gzip_parser(
+        self, model: GzipParserModel, config: Config, **kwargs: Any
+    ) -> GzipParser:
+        inner_parser = self._create_component_from_model(model=model.inner_parser, config=config)
+        return GzipParser(inner_parser=inner_parser)
 
     @staticmethod
     def create_csv_parser(model: CsvParserModel, config: Config, **kwargs: Any) -> CsvParser:

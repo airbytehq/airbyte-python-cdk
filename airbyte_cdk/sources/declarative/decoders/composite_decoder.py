@@ -101,4 +101,4 @@ class CompositeRawDecoder(Decoder):
     def decode(
         self, response: requests.Response
     ) -> Generator[MutableMapping[str, Any], None, None]:
-        yield from self.parser.parse(data=response.raw)
+        yield from self.parser.parse(data=response.raw)  # type: ignore[arg-type]
