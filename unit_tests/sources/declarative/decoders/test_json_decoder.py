@@ -12,7 +12,6 @@ from airbyte_cdk.sources.declarative.decoders import GzipJsonDecoder
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder, JsonlDecoder
 
 
-
 @pytest.mark.parametrize(
     "response_body, first_element",
     [

@@ -8,9 +8,13 @@ from io import BytesIO, StringIO
 
 import pytest
 import requests
-from sources.declarative.decoders.composite_decoder import CsvParser, GzipParser, JsonLineParser
 
-from airbyte_cdk.sources.declarative.decoders import CompositeRawDecoder
+from airbyte_cdk.sources.declarative.decoders.composite_decoder import (
+    CompositeRawDecoder,
+    CsvParser,
+    GzipParser,
+    JsonLineParser,
+)
 
 
 def compress_with_gzip(data: str, encoding: str = "utf-8"):
