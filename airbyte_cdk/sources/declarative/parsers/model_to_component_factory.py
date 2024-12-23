@@ -26,6 +26,12 @@ from typing import (
 
 from isodate import parse_duration
 from pydantic.v1 import BaseModel
+from sources.declarative.decoders.composite_decoder import (
+    CompositeRawDecoder,
+    CsvParser,
+    GzipParser,
+    JsonLineParser,
+)
 
 from airbyte_cdk.models import FailureType, Level
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
@@ -126,6 +132,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     CompositeErrorHandler as CompositeErrorHandlerModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CompositeRawDecoder as CompositeRawDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConcurrencyLevel as ConcurrencyLevelModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -133,6 +142,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConstantBackoffStrategy as ConstantBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CsvParser as CsvParserModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CursorPagination as CursorPaginationModel,
@@ -201,6 +213,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     GzipJsonDecoder as GzipJsonDecoderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    GzipParser as GzipParserModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     HttpComponentsResolver as HttpComponentsResolverModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -223,6 +238,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     JsonlDecoder as JsonlDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonLineParser as JsonLineParserModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     JwtAuthenticator as JwtAuthenticatorModel,
@@ -470,7 +488,9 @@ class ModelToComponentFactory:
             InlineSchemaLoaderModel: self.create_inline_schema_loader,
             JsonDecoderModel: self.create_json_decoder,
             JsonlDecoderModel: self.create_jsonl_decoder,
+            JsonLineParserModel: self.create_jsonline_parser,
             GzipJsonDecoderModel: self.create_gzipjson_decoder,
+            GzipParserModel: self.create_gzip_parser,
             KeysToLowerModel: self.create_keys_to_lower_transformation,
             IterableDecoderModel: self.create_iterable_decoder,
             XmlDecoderModel: self.create_xml_decoder,
@@ -1667,6 +1687,12 @@ class ModelToComponentFactory:
         return JsonlDecoder(parameters={})
 
     @staticmethod
+    def create_jsonline_parser(
+        model: JsonLineParserModel, config: Config, **kwargs: Any
+    ) -> JsonLineParser:
+        return JsonLineParser(encoding=model.encoding)
+
+    @staticmethod
     def create_iterable_decoder(
         model: IterableDecoderModel, config: Config, **kwargs: Any
     ) -> IterableDecoder:
@@ -1681,6 +1707,20 @@ class ModelToComponentFactory:
         model: GzipJsonDecoderModel, config: Config, **kwargs: Any
     ) -> GzipJsonDecoder:
         return GzipJsonDecoder(parameters={}, encoding=model.encoding)
+
+    @staticmethod
+    def create_gzip_parser(model: GzipParserModel, config: Config, **kwargs: Any) -> GzipParser:
+        return GzipParser(inner_parser=model.inner_parser)
+
+    @staticmethod
+    def create_csv_parser(model: CsvParserModel, config: Config, **kwargs: Any) -> CsvParser:
+        return CsvParser(encoding=model.encoding, delimiter=model.delimiter)
+
+    @staticmethod
+    def create_composite_raw_decoder(
+        model: CompositeRawDecoderModel, config: Config, **kwargs: Any
+    ) -> CompositeRawDecoder:
+        return CompositeRawDecoder(parser=model.parser)
 
     @staticmethod
     def create_json_file_schema_loader(
