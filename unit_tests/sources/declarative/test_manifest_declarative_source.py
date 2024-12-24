@@ -1449,7 +1449,7 @@ def _create_page(response_body):
                 {"ABC": 0, "id": 1},
                 {"AED": 1, "id": 2},
             ],
-            [call({}, {})],
+            [call({}, {}, None)],
         ),
         (
             "test_read_with_pagination_no_partitions",

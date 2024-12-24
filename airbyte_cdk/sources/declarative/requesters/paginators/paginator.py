@@ -49,7 +49,7 @@ class Paginator(ABC, RequestOptionsProvider):
         pass
 
     @abstractmethod
-    def path(self, next_page_token: Mapping[str, Any]) -> Optional[str]:
+    def path(self, next_page_token: Optional[Mapping[str, Any]]) -> Optional[str]:
         """
         Returns the URL path to hit to fetch the next page of records
 

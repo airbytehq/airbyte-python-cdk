@@ -130,6 +130,7 @@ class DefaultPaginator(Paginator):
         last_record: Optional[Record],
         last_page_token_value: Optional[Any] = None,
     ) -> Optional[Mapping[str, Any]]:
+        print("At the DefaultPaginator")
         next_page_token = self.pagination_strategy.next_page_token(
             response=response,
             last_page_size=last_page_size,
@@ -141,7 +142,7 @@ class DefaultPaginator(Paginator):
         else:
             return None
 
-    def path(self, next_page_token: Mapping[str, Any]) -> Optional[str]:
+    def path(self, next_page_token: Optional[Mapping[str, Any]]) -> Optional[str]:
         token = next_page_token.get("next_page_token") if next_page_token else None
         if token and self.page_token_option and isinstance(self.page_token_option, RequestPath):
             # Replace url base to only return the path
@@ -213,6 +214,9 @@ class PaginatorTestReadDecorator(Paginator):
     """
     In some cases, we want to limit the number of requests that are made to the backend source. This class allows for limiting the number of
     pages that are queried throughout a read command.
+
+    WARNING: This decorator is not currently thread-safe like the rest of the low-code framework because it has
+    an internal state to track the current number of pages counted so that it can exit early during a test read
     """
 
     _PAGE_COUNT_BEFORE_FIRST_NEXT_CALL = 1
@@ -227,6 +231,7 @@ class PaginatorTestReadDecorator(Paginator):
         self._page_count = self._PAGE_COUNT_BEFORE_FIRST_NEXT_CALL
 
     def get_initial_token(self) -> Optional[Any]:
+        self._page_count = self._PAGE_COUNT_BEFORE_FIRST_NEXT_CALL
         return self._decorated.get_initial_token()
 
     def next_page_token(
@@ -236,6 +241,8 @@ class PaginatorTestReadDecorator(Paginator):
         last_record: Optional[Record],
         last_page_token_value: Optional[Any] = None,
     ) -> Optional[Mapping[str, Any]]:
+        print("At the PaginatorTestReadDecorator")
+        print(f"page count = {self._page_count} and max pages = {self._maximum_number_of_pages}")
         if self._page_count >= self._maximum_number_of_pages:
             return None
 
@@ -244,7 +251,7 @@ class PaginatorTestReadDecorator(Paginator):
             response, last_page_size, last_record, last_page_token_value
         )
 
-    def path(self, next_page_token: Mapping[str, Any]) -> Optional[str]:
+    def path(self, next_page_token: Optional[Mapping[str, Any]]) -> Optional[str]:
         return self._decorated.path(next_page_token)
 
     def get_request_params(

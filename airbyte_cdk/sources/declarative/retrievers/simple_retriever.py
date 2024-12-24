@@ -9,6 +9,7 @@ from itertools import islice
 from typing import (
     Any,
     Callable,
+    Generator,
     Iterable,
     List,
     Mapping,
@@ -266,28 +267,16 @@ class SimpleRetriever(Retriever):
         records_schema: Mapping[str, Any],
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Iterable[Union[Record, LastResponseValue]]:
+    ) -> Iterable[Record]:
         if not response:
             yield from []
-            return LastResponseValue(last_response=None, last_page_size=0, last_record=None)
         else:
-            self._last_response = response
-            record_generator = self.record_selector.select_records(
+            yield from self.record_selector.select_records(
                 response=response,
                 stream_state=stream_state,
                 records_schema=records_schema,
                 stream_slice=stream_slice,
                 next_page_token=next_page_token,
-            )
-
-            last_page_size = 0
-            last_record = None
-            for record in record_generator:
-                last_page_size += 1
-                last_record = record
-                yield record
-            return LastResponseValue(
-                last_response=response, last_page_size=last_page_size, last_record=last_record
             )
 
     @property  # type: ignore
@@ -357,27 +346,24 @@ class SimpleRetriever(Retriever):
     # This logic is similar to _read_pages in the HttpStream class. When making changes here, consider making changes there as well.
     def _read_pages(
         self,
-        records_generator_fn: Callable[[Optional[requests.Response]], Iterable[StreamData]],
+        records_generator_fn: Callable[[Optional[requests.Response]], Iterable[Record]],
         stream_state: Mapping[str, Any],
         stream_slice: StreamSlice,
-    ) -> Iterable[StreamData]:
+    ) -> Iterable[Record]:
         pagination_complete = False
         initial_token = self._paginator.get_initial_token()
-        next_page_token = {"next_page_token": initial_token} if initial_token else None
+        next_page_token: Optional[Mapping[str, Any]] = (
+            {"next_page_token": initial_token} if initial_token else None
+        )
         while not pagination_complete:
             response = self._fetch_next_page(stream_state, stream_slice, next_page_token)
 
             last_page_size = 0
-            last_record = None
-
-            # todo: There has to be a better way of yielding records and still emitting a final return value
-            try:
-                yield from records_generator_fn(response)
-            except StopIteration as e:
-                last_response_value = e.value
-                if isinstance(last_response_value, LastResponseValue):
-                    last_page_size = last_response_value.last_page_size
-                    last_record = last_response_value.last_record
+            last_record: Optional[Record] = None
+            for record in records_generator_fn(response):
+                last_page_size += 1
+                last_record = record
+                yield record
 
             if not response:
                 pagination_complete = True
@@ -399,33 +385,28 @@ class SimpleRetriever(Retriever):
 
     def _read_single_page(
         self,
-        records_generator_fn: Callable[[Optional[requests.Response]], Iterable[StreamData]],
+        records_generator_fn: Callable[[Optional[requests.Response]], Iterable[Record]],
         stream_state: Mapping[str, Any],
         stream_slice: StreamSlice,
     ) -> Iterable[StreamData]:
         initial_token = stream_state.get("next_page_token")
         if initial_token is None:
             initial_token = self._paginator.get_initial_token()
-        next_page_token = {"next_page_token": initial_token} if initial_token else None
+        next_page_token: Optional[Mapping[str, Any]] = (
+            {"next_page_token": initial_token} if initial_token else None
+        )
 
         response = self._fetch_next_page(stream_state, stream_slice, next_page_token)
 
         last_page_size = 0
-        last_record = None
-
-        # todo: There has to be a better way of yielding records and still emitting a final return value
-        try:
-            record_generator = records_generator_fn(response)
-            while True:
-                yield next(record_generator)
-        except StopIteration as e:
-            last_response_value = e.value
-            if isinstance(last_response_value, LastResponseValue):
-                last_page_size = last_response_value.last_page_size
-                last_record = last_response_value.last_record
+        last_record: Optional[Record] = None
+        for record in records_generator_fn(response):
+            last_page_size += 1
+            last_record = record
+            yield record
 
         if not response:
-            next_page_token: Mapping[str, Any] = {FULL_REFRESH_SYNC_COMPLETE_KEY: True}
+            next_page_token = {FULL_REFRESH_SYNC_COMPLETE_KEY: True}
         else:
             last_page_token_value = (
                 next_page_token.get("next_page_token") if next_page_token else None
@@ -563,18 +544,13 @@ class SimpleRetriever(Retriever):
         stream_state: Mapping[str, Any],
         records_schema: Mapping[str, Any],
         stream_slice: Optional[StreamSlice],
-    ) -> Iterable[Union[StreamData, LastResponseValue]]:
-        record_generator = self._parse_response(
+    ) -> Iterable[Record]:
+        yield from self._parse_response(
             response,
             stream_slice=stream_slice,
             stream_state=stream_state,
             records_schema=records_schema,
         )
-        try:
-            while True:
-                yield next(record_generator)
-        except StopIteration as e:
-            return e.value
 
     def must_deduplicate_query_params(self) -> bool:
         return True
