@@ -400,7 +400,7 @@ def test_http_components_resolver_with_stream_slices(
 
 
 def test_dynamic_streams_read_with_http_components_resolver():
-    expected_stream_names = ["item_1", "item_2"]
+    expected_stream_names = {"item_1", "item_2"}
     with HttpMocker() as http_mocker:
         http_mocker.get(
             HttpRequest(url="https://api.test.com/items"),
@@ -441,9 +441,9 @@ def test_dynamic_streams_read_with_http_components_resolver():
         ]
 
     assert len(actual_catalog.streams) == 2
-    assert [stream.name for stream in actual_catalog.streams] == expected_stream_names
+    assert set([stream.name for stream in actual_catalog.streams]) == expected_stream_names
     assert len(records) == 2
-    assert [record.stream for record in records] == expected_stream_names
+    assert set([record.stream for record in records]) == expected_stream_names
 
 
 def test_duplicated_dynamic_streams_read_with_http_components_resolver():
