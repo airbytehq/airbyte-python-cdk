@@ -892,6 +892,35 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  DateTimeNormalizer:
+    title: DateTime Normalizer
+    description: Transformation which normalize datetime fields in record to RFC3339. The path of the datetime fields can be nested.
+    type: object
+    required:
+      - type
+      - field_pointers
+    properties:
+      type:
+        type: string
+        enum: [DateTimeNormalizer]
+      field_pointers:
+        title: Field Paths
+        description: Array of paths defining the field to normalize.
+        type: array
+        items:
+          items:
+            type: string
+        examples:
+          - ["created_at"]
+          - [["content", "created_at"]]
+      datetime_format:
+        title: DateTime Format
+        description: Expected datetime format
+        type: string
+        examples:
+          - "%Y-%m-%d %H:%M:%S %Z"
+          - "%m/%d/%Y %I:%M %p"
+          - "%A, %B %d, %Y %I:%M:%S %p %Z"
   JwtAuthenticator:
     title: JWT Authenticator
     description: Authenticator for requests using JWT authentication flow.
@@ -1237,6 +1266,7 @@ definitions:
           anyOf:
             - "$ref": "#/definitions/AddFields"
             - "$ref": "#/definitions/CustomTransformation"
+            - "$ref": "#/definitions/DateTimeNormalizer"
             - "$ref": "#/definitions/RemoveFields"
             - "$ref": "#/definitions/KeysToLower"
             - "$ref": "#/definitions/KeysToSnakeCase"
@@ -1781,6 +1811,7 @@ definitions:
           anyOf:
             - "$ref": "#/definitions/AddFields"
             - "$ref": "#/definitions/CustomTransformation"
+            - "$ref": "#/definitions/DateTimeNormalizer"
             - "$ref": "#/definitions/RemoveFields"
             - "$ref": "#/definitions/KeysToLower"
             - "$ref": "#/definitions/KeysToSnakeCase"

@@ -303,6 +303,26 @@ class LegacyToPerPartitionStateMigration(BaseModel):
     type: Optional[Literal["LegacyToPerPartitionStateMigration"]] = None
 
 
+class DateTimeNormalizer(BaseModel):
+    type: Literal["DateTimeNormalizer"]
+    field_pointers: List[List[str]] = Field(
+        ...,
+        description="Array of paths defining the field to normalize.",
+        examples=[["created_at"], [["content", "created_at"]]],
+        title="Field Paths",
+    )
+    datetime_format: Optional[str] = Field(
+        None,
+        description="Expected datetime format",
+        examples=[
+            "%Y-%m-%d %H:%M:%S %Z",
+            "%m/%d/%Y %I:%M %p",
+            "%A, %B %d, %Y %I:%M:%S %p %Z",
+        ],
+        title="DateTime Format",
+    )
+
+
 class Algorithm(Enum):
     HS256 = "HS256"
     HS384 = "HS384"
@@ -1208,6 +1228,8 @@ class ComponentMappingDefinition(BaseModel):
             "{{ components_values['updates'] }}",
             "{{ components_values['MetaData']['LastUpdatedTime'] }}",
             "{{ config['segment_id'] }}",
+            "{{ stream_slice['parent_id'] }}",
+            "{{ stream_slice['extra_fields']['name'] }}",
         ],
         title="Value",
     )
@@ -1674,6 +1696,7 @@ class DeclarativeStream(BaseModel):
             Union[
                 AddFields,
                 CustomTransformation,
+                DateTimeNormalizer,
                 RemoveFields,
                 KeysToLower,
                 KeysToSnakeCase,
@@ -1848,6 +1871,7 @@ class DynamicSchemaLoader(BaseModel):
             Union[
                 AddFields,
                 CustomTransformation,
+                DateTimeNormalizer,
                 RemoveFields,
                 KeysToLower,
                 KeysToSnakeCase,
