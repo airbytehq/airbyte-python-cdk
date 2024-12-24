@@ -53,11 +53,9 @@ class JsonLineParser(Parser):
     ) -> Generator[MutableMapping[str, Any], None, None]:
         for line in data:
             try:
-                yield json.loads(line.decode(encoding=self.encoding))
+                yield json.loads(line.decode(encoding=self.encoding or "utf-8"))
             except json.JSONDecodeError:
                 logger.warning(f"Cannot decode/parse line {line!r} as JSON")
-                # Handle invalid JSON lines gracefully (e.g., log and skip)
-                pass
 
 
 @dataclass
@@ -73,7 +71,7 @@ class CsvParser(Parser):
         """
         Parse CSV data from decompressed bytes.
         """
-        reader = pd.read_csv(
+        reader = pd.read_csv(  # type: ignore
             data, sep=self.delimiter, iterator=True, dtype=object, encoding=self.encoding
         )
         for chunk in reader:
