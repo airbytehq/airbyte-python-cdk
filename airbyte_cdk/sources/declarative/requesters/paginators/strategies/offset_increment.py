@@ -52,7 +52,6 @@ class OffsetIncrement(PaginationStrategy):
     inject_on_first_request: bool = False
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        self._offset = 0
         page_size = str(self.page_size) if isinstance(self.page_size, int) else self.page_size
         if page_size:
             self._page_size: Optional[InterpolatedString] = InterpolatedString(
@@ -64,11 +63,15 @@ class OffsetIncrement(PaginationStrategy):
     @property
     def initial_token(self) -> Optional[Any]:
         if self.inject_on_first_request:
-            return self._offset
+            return 0
         return None
 
     def next_page_token(
-        self, response: requests.Response, last_page_size: int, last_record: Optional[Record]
+        self,
+        response: requests.Response,
+        last_page_size: int,
+        last_record: Optional[Record],
+        last_page_token_value: Optional[Any] = None,
     ) -> Optional[Any]:
         decoded_response = next(self.decoder.decode(response))
 
@@ -78,9 +81,17 @@ class OffsetIncrement(PaginationStrategy):
             and last_page_size < self._page_size.eval(self.config, response=decoded_response)
         ) or last_page_size == 0:
             return None
+        elif last_page_token_value is None:
+            # If the OffsetIncrement strategy does not inject on the first request, the incoming last_page_token_value
+            # will be None. For this case, we assume that None was the first page and progress to the next offset
+            return 0 + last_page_size
+        elif not isinstance(last_page_token_value, int):
+            raise ValueError(
+                "The page token for a OffsetIncrement pagination strategy must be an integer"
+            )
         else:
-            self._offset += last_page_size
-            return self._offset
+            next_page_token_value = last_page_token_value + last_page_size
+            return next_page_token_value
 
     def reset(self, reset_value: Optional[Any] = 0) -> None:
         if not isinstance(reset_value, int):

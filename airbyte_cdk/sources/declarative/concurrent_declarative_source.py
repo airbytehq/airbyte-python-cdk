@@ -194,10 +194,11 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             # Some low-code sources use a combination of DeclarativeStream and regular Python streams. We can't inspect
             # these legacy Python streams the way we do low-code streams to determine if they are concurrent compatible,
             # so we need to treat them as synchronous
-            if (
-                isinstance(declarative_stream, DeclarativeStream)
-                and name_to_stream_mapping[declarative_stream.name]["retriever"]["type"]
+            if isinstance(declarative_stream, DeclarativeStream) and (
+                name_to_stream_mapping[declarative_stream.name]["retriever"]["type"]
                 == "SimpleRetriever"
+                or name_to_stream_mapping[declarative_stream.name]["retriever"]["type"]
+                == "AsyncRetriever"
             ):
                 incremental_sync_component_definition = name_to_stream_mapping[
                     declarative_stream.name
@@ -215,6 +216,11 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                 is_substream_without_incremental = (
                     partition_router_component_definition
                     and not incremental_sync_component_definition
+                )
+
+                is_async_job_stream = (
+                    name_to_stream_mapping[declarative_stream.name].get("retriever", {}).get("type")
+                    == "AsyncRetriever"
                 )
 
                 if self._is_datetime_incremental_without_partition_routing(
@@ -268,15 +274,24 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                 elif (
                     is_substream_without_incremental or is_without_partition_router_or_cursor
                 ) and hasattr(declarative_stream.retriever, "stream_slicer"):
+                    if is_async_job_stream:
+                        async_retriever = declarative_stream.retriever
+
+                        def async_retriever_factory_method() -> Retriever:
+                            return async_retriever
+
+                        retriever_factory = async_retriever_factory_method
+                    else:
+                        retriever_factory = self._retriever_factory(
+                            name_to_stream_mapping[declarative_stream.name],
+                            config,
+                            {},
+                        )
                     partition_generator = StreamSlicerPartitionGenerator(
                         DeclarativePartitionFactory(
                             declarative_stream.name,
                             declarative_stream.get_json_schema(),
-                            self._retriever_factory(
-                                name_to_stream_mapping[declarative_stream.name],
-                                config,
-                                {},
-                            ),
+                            retriever_factory,
                             self.message_repository,
                         ),
                         declarative_stream.retriever.stream_slicer,
