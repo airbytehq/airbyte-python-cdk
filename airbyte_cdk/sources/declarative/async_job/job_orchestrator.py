@@ -20,7 +20,6 @@ from typing import (
     TypeVar,
 )
 
-from airbyte_cdk import StreamSlice
 from airbyte_cdk.logger import lazy_log
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.async_job.job import AsyncJob
@@ -31,6 +30,7 @@ from airbyte_cdk.sources.declarative.async_job.job_tracker import (
 from airbyte_cdk.sources.declarative.async_job.repository import AsyncJobRepository
 from airbyte_cdk.sources.declarative.async_job.status import AsyncJobStatus
 from airbyte_cdk.sources.message import MessageRepository
+from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
