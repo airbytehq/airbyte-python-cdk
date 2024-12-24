@@ -26,6 +26,7 @@ config = {
     "custom_field": "in_outbound_request",
     "another_field": "exists_in_body",
     "grant_type": "some_grant_type",
+    "access_token": "some_access_token",
 }
 parameters = {"refresh_token": "some_refresh_token"}
 
@@ -128,6 +129,24 @@ class TestOauth2Authenticator:
             "refresh_token": None,
         }
         assert body == expected
+
+    def test_get_auth_header_without_refresh_token_and_without_refresh_token_endpoint(self):
+        """
+        Coverred the case when the `access_token_value` is supplied,
+        without `token_refresh_endpoint` or `refresh_token` provided.
+
+        In this case, it's expected to have the `access_token_value` provided to return the permanent `auth header`,
+        contains the authentication.
+        """
+        oauth = DeclarativeOauth2Authenticator(
+            access_token_value="{{ config['access_token'] }}",
+            client_id="{{ config['client_id'] }}",
+            client_secret="{{ config['client_secret'] }}",
+            config=config,
+            parameters={},
+            grant_type="client_credentials",
+        )
+        assert oauth.get_auth_header() == {"Authorization": "Bearer some_access_token"}
 
     def test_error_on_refresh_token_grant_without_refresh_token(self):
         """

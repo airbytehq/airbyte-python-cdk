@@ -14,6 +14,7 @@ import requests
 from airbyte_cdk import AirbyteTracedException
 from airbyte_cdk.models import FailureType, Level
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
+from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator
 from airbyte_cdk.sources.declarative.auth import DeclarativeOauth2Authenticator, JwtAuthenticator
 from airbyte_cdk.sources.declarative.auth.token import (
     ApiKeyAuthenticator,
@@ -40,6 +41,7 @@ from airbyte_cdk.sources.declarative.incremental import (
     ResumableFullRefreshCursor,
 )
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
+from airbyte_cdk.sources.declarative.models import AsyncRetriever as AsyncRetrieverModel
 from airbyte_cdk.sources.declarative.models import CheckStream as CheckStreamModel
 from airbyte_cdk.sources.declarative.models import (
     CompositeErrorHandler as CompositeErrorHandlerModel,
@@ -85,6 +87,7 @@ from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
 from airbyte_cdk.sources.declarative.partition_routers import (
+    AsyncJobPartitionRouter,
     CartesianProductStreamSlicer,
     ListPartitionRouter,
     SinglePartitionRouter,
@@ -102,6 +105,7 @@ from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategie
     WaitTimeFromHeaderBackoffStrategy,
     WaitUntilTimeFromHeaderBackoffStrategy,
 )
+from airbyte_cdk.sources.declarative.requesters.http_job_repository import AsyncHttpJobRepository
 from airbyte_cdk.sources.declarative.requesters.paginators import DefaultPaginator
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     CursorPaginationStrategy,
@@ -121,6 +125,7 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
 from airbyte_cdk.sources.declarative.retrievers import (
+    AsyncRetriever,
     SimpleRetriever,
     SimpleRetrieverTestReadDecorator,
 )
@@ -138,6 +143,7 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import Resp
 from airbyte_cdk.sources.streams.http.requests_native_auth.oauth import (
     SingleUseRefreshTokenOauth2Authenticator,
 )
+from airbyte_cdk.sources.types import StreamSlice
 from unit_tests.sources.declarative.parsers.testing_components import (
     TestingCustomSubstreamPartitionRouter,
     TestingSomeComponent,
@@ -3294,3 +3300,97 @@ def test_create_custom_record_extractor():
     }
     component = factory.create_component(CustomRecordExtractorModel, definition, {})
     assert isinstance(component, CustomRecordExtractor)
+
+
+def test_create_async_retriever():
+    config = {"api_key": "123"}
+
+    definition = {
+        "type": "AsyncRetriever",
+        "status_mapping": {
+            "failed": ["failed"],
+            "running": ["pending"],
+            "timeout": ["timeout"],
+            "completed": ["ready"],
+        },
+        "urls_extractor": {"type": "DpathExtractor", "field_path": ["urls"]},
+        "record_selector": {
+            "type": "RecordSelector",
+            "extractor": {"type": "DpathExtractor", "field_path": ["data"]},
+        },
+        "status_extractor": {"type": "DpathExtractor", "field_path": ["status"]},
+        "polling_requester": {
+            "type": "HttpRequester",
+            "path": "/v3/marketing/contacts/exports/{{stream_slice['create_job_response'].json()['id'] }}",
+            "url_base": "https://api.sendgrid.com",
+            "http_method": "GET",
+            "authenticator": {
+                "type": "BearerAuthenticator",
+                "api_token": "{{ config['api_key'] }}",
+            },
+        },
+        "creation_requester": {
+            "type": "HttpRequester",
+            "path": "/v3/marketing/contacts/exports",
+            "url_base": "https://api.sendgrid.com",
+            "http_method": "POST",
+            "authenticator": {
+                "type": "BearerAuthenticator",
+                "api_token": "{{ config['api_key'] }}",
+            },
+        },
+        "download_requester": {
+            "type": "HttpRequester",
+            "path": "{{stream_slice['url']}}",
+            "url_base": "",
+            "http_method": "GET",
+        },
+        "abort_requester": {
+            "type": "HttpRequester",
+            "path": "{{stream_slice['url']}}/abort",
+            "url_base": "",
+            "http_method": "POST",
+        },
+        "delete_requester": {
+            "type": "HttpRequester",
+            "path": "{{stream_slice['url']}}",
+            "url_base": "",
+            "http_method": "POST",
+        },
+    }
+
+    component = factory.create_component(
+        model_type=AsyncRetrieverModel,
+        component_definition=definition,
+        name="test_stream",
+        primary_key="id",
+        stream_slicer=None,
+        transformations=[],
+        config=config,
+    )
+
+    assert isinstance(component, AsyncRetriever)
+
+    async_job_partition_router = component.stream_slicer
+    assert isinstance(async_job_partition_router, AsyncJobPartitionRouter)
+    assert isinstance(async_job_partition_router.stream_slicer, SinglePartitionRouter)
+    job_orchestrator = async_job_partition_router.job_orchestrator_factory(
+        [StreamSlice(partition={}, cursor_slice={})]
+    )
+    assert isinstance(job_orchestrator, AsyncJobOrchestrator)
+
+    job_repository = job_orchestrator._job_repository
+    assert isinstance(job_repository, AsyncHttpJobRepository)
+    assert job_repository.creation_requester
+    assert job_repository.polling_requester
+    assert job_repository.download_retriever
+    assert job_repository.abort_requester
+    assert job_repository.delete_requester
+    assert job_repository.status_extractor
+    assert job_repository.urls_extractor
+
+    selector = component.record_selector
+    extractor = selector.extractor
+    assert isinstance(selector, RecordSelector)
+    assert isinstance(extractor, DpathExtractor)
+    assert extractor.field_path == ["data"]

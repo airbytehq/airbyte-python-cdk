@@ -1021,7 +1021,6 @@ definitions:
       - type
       - client_id
       - client_secret
-      - token_refresh_endpoint
     properties:
       type:
         type: string
@@ -1060,6 +1059,12 @@ definitions:
         default: "access_token"
         examples:
           - access_token
+      access_token_value:
+        title: Access Token Value
+        description: The value of the access_token to bypass the token refreshing using `refresh_token`.
+        type: string
+        examples:
+          - secret_access_token_value
       expires_in_name:
         title: Token Expiry Property Name
         description: The name of the property which contains the expiry date in the response from the token refresh endpoint.
@@ -1234,6 +1239,8 @@ definitions:
             - "$ref": "#/definitions/CustomTransformation"
             - "$ref": "#/definitions/RemoveFields"
             - "$ref": "#/definitions/KeysToLower"
+            - "$ref": "#/definitions/KeysToSnakeCase"
+            - "$ref": "#/definitions/FlattenFields"
       state_migrations:
         title: State Migrations
         description: Array of state migrations to be applied on the input state
@@ -1766,6 +1773,18 @@ definitions:
           - "$ref": "#/definitions/AsyncRetriever"
           - "$ref": "#/definitions/CustomRetriever"
           - "$ref": "#/definitions/SimpleRetriever"
+      schema_transformations:
+        title: Schema Transformations
+        description: A list of transformations to be applied to the schema.
+        type: array
+        items:
+          anyOf:
+            - "$ref": "#/definitions/AddFields"
+            - "$ref": "#/definitions/CustomTransformation"
+            - "$ref": "#/definitions/RemoveFields"
+            - "$ref": "#/definitions/KeysToLower"
+            - "$ref": "#/definitions/KeysToSnakeCase"
+            - "$ref": "#/definitions/FlattenFields"
       schema_type_identifier:
         "$ref": "#/definitions/SchemaTypeIdentifier"
       $parameters:
@@ -1835,6 +1854,32 @@ definitions:
       type:
         type: string
         enum: [KeysToLower]
+      $parameters:
+        type: object
+        additionalProperties: true
+  KeysToSnakeCase:
+    title: Key to Snake Case
+    description: A transformation that renames all keys to snake case.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [KeysToSnakeCase]
+      $parameters:
+        type: object
+        additionalProperties: true
+  FlattenFields:
+    title: Flatten Fields
+    description: A transformation that flatten record to single level format.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [FlattenFields]
       $parameters:
         type: object
         additionalProperties: true
@@ -2160,7 +2205,9 @@ definitions:
             description: |-
               The DeclarativeOAuth Specific optional headers to inject while exchanging the `auth_code` to `access_token` during `completeOAuthFlow` step.
             examples:
-              - {"Authorization": "Basic {base64Encoder:{client_id}:{client_secret}}"}
+              - {
+                  "Authorization": "Basic {base64Encoder:{client_id}:{client_secret}}",
+                }
           access_token_params:
             title: Access Token Query Params (Json Encoded)
             type: object
@@ -3057,6 +3104,7 @@ definitions:
         interpolation_context:
           - config
           - components_values
+          - stream_slice
           - stream_template_config
         examples:
           - ["data"]
@@ -3073,10 +3121,13 @@ definitions:
           - config
           - stream_template_config
           - components_values
+          - stream_slice
         examples:
           - "{{ components_values['updates'] }}"
           - "{{ components_values['MetaData']['LastUpdatedTime'] }}"
           - "{{ config['segment_id'] }}"
+          - "{{ stream_slice['parent_id'] }}"
+          - "{{ stream_slice['extra_fields']['name'] }}"
       value_type:
         title: Value Type
         description: The expected data type of the value. If omitted, the type will be inferred from the value provided.
