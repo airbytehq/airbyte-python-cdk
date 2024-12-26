@@ -15,7 +15,7 @@ from airbyte_cdk.sources.declarative.extractors.record_selector import RecordSel
 from airbyte_cdk.sources.declarative.partition_routers.async_job_partition_router import (
     AsyncJobPartitionRouter,
 )
-from airbyte_cdk.sources.declarative.retrievers import Retriever
+from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
