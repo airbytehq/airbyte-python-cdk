@@ -24,6 +24,7 @@ SCHEMA_TRANSFORMER_TYPE_MAPPING = {
 
 STREAM_SLICE_RESPONSE_KEY = "response"
 
+
 @dataclass
 class RecordSelector(HttpSelector):
     """
@@ -54,7 +55,7 @@ class RecordSelector(HttpSelector):
             else self._name
         )
         self.response_root_extractor = DpathExtractor(field_path=[], config={}, parameters={})
-        
+
     @property  # type: ignore
     def name(self) -> str:
         """
@@ -89,16 +90,15 @@ class RecordSelector(HttpSelector):
         :return: List of Records selected from the response
         """
         all_data: Iterable[Mapping[str, Any]] = self.extractor.extract_records(response)
-        
+
         response_root_data = self.response_root_extractor.extract_records(response)
         stream_state.update({STREAM_SLICE_RESPONSE_KEY: response_root_data})
-        try: 
+        try:
             yield from self.filter_and_transform(
                 all_data, stream_state, records_schema, stream_slice, next_page_token
             )
         finally:
             stream_state.pop(STREAM_SLICE_RESPONSE_KEY)
-
 
     def filter_and_transform(
         self,
