@@ -38,8 +38,8 @@ class GzipParser(Parser):
         """
         Decompress gzipped bytes and pass decompressed data to the inner parser.
         """
-        gzipobj = gzip.GzipFile(fileobj=data, mode="rb")
-        yield from self.inner_parser.parse(gzipobj)
+        with gzip.GzipFile(fileobj=data, mode="rb") as gzipobj:
+            yield from self.inner_parser.parse(gzipobj)
 
 
 @dataclass
@@ -54,7 +54,7 @@ class JsonLineParser(Parser):
             try:
                 yield json.loads(line.decode(encoding=self.encoding or "utf-8"))
             except json.JSONDecodeError:
-                logger.warning(f"Cannot decode/parse line {line!r} as JSON")
+                logger.warning(f"Cannot decode/parse line {line!r} as JSON, error: {e}")
 
 
 @dataclass
