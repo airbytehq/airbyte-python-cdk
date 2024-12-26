@@ -275,6 +275,8 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     is_substream_without_incremental or is_without_partition_router_or_cursor
                 ) and hasattr(declarative_stream.retriever, "stream_slicer"):
                     if is_async_job_stream:
+                        # A stream's AsyncRetriever must be shared across all partitions because it uses a
+                        # shared JobRepository to manage the state of jobs requests and when they are ready
                         async_retriever = declarative_stream.retriever
 
                         def async_retriever_factory_method() -> Retriever:
