@@ -1,14 +1,13 @@
+import csv
 import gzip
 import json
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from io import BufferedIOBase
+from io import BufferedIOBase, TextIOWrapper
 from typing import Any, Generator, MutableMapping, Optional
 
-import pandas as pd
 import requests
-from numpy import nan
 
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
 
@@ -71,13 +70,9 @@ class CsvParser(Parser):
         """
         Parse CSV data from decompressed bytes.
         """
-        reader = pd.read_csv(  # type: ignore
-            data, sep=self.delimiter, iterator=True, dtype=object, encoding=self.encoding
-        )
-        for chunk in reader:
-            chunk = chunk.replace({nan: None}).to_dict(orient="records")
-            for row in chunk:
-                yield row
+        text_data = TextIOWrapper(data, encoding=self.encoding)
+        reader = csv.DictReader(text_data, delimiter=self.delimiter)
+        yield from reader
 
 
 @dataclass
