@@ -3,7 +3,8 @@
 #
 
 import json
-from typing import Iterable, Union
+from functools import partial
+from typing import Any, Iterable, Mapping, Optional
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -12,6 +13,8 @@ import requests
 from airbyte_cdk import YamlDeclarativeSource
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, SyncMode, Type
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import NoAuth
+from airbyte_cdk.sources.declarative.decoders import JsonDecoder
+from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordSelector
 from airbyte_cdk.sources.declarative.incremental import (
     DatetimeBasedCursor,
     DeclarativeCursor,
@@ -23,15 +26,18 @@ from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
 )
 from airbyte_cdk.sources.declarative.partition_routers import SinglePartitionRouter
 from airbyte_cdk.sources.declarative.requesters.paginators import DefaultPaginator
-from airbyte_cdk.sources.declarative.requesters.paginators.strategies import PageIncrement
+from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
+    CursorPaginationStrategy,
+    PageIncrement,
+)
 from airbyte_cdk.sources.declarative.requesters.request_option import RequestOptionType
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import (
-    LastResponseValue,
     SimpleRetriever,
     SimpleRetrieverTestReadDecorator,
 )
 from airbyte_cdk.sources.types import Record, StreamSlice
+from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 
 A_SLICE_STATE = {"slice_state": "slice state value"}
 A_STREAM_SLICE = StreamSlice(cursor_slice={"stream slice": "slice value"}, partition={})
@@ -115,25 +121,6 @@ def test_simple_retriever_full(mock_http_stream):
     )
     assert retriever._request_params(None, None, None) == {}
     assert retriever.stream_slices() == stream_slices
-
-    # assert retriever._last_response is None
-    # assert retriever._last_record is None
-    # assert list(retriever._parse_response(response, stream_state={}, records_schema={})) == records
-    # assert retriever._last_response == response
-    # assert retriever._last_page_size == 2
-
-    try:
-        assert (
-            list(retriever._parse_response(response, stream_state={}, records_schema={})) == records
-        )
-    except StopIteration as e:
-        last_response_values = e.value
-        assert isinstance(last_response_values, LastResponseValue)
-        assert last_response_values.last_response == response
-        assert last_response_values.last_record == last_record
-        assert last_response_values.last_page_size == 2
-
-    [r for r in retriever.read_records(SyncMode.full_refresh)]
 
 
 @patch.object(SimpleRetriever, "_read_pages", return_value=iter([*request_response_logs, *records]))
@@ -228,7 +215,6 @@ def test_simple_retriever_resumable_full_refresh_cursor_page_increment(
         url_base="https://airbyte.io",
         parameters={},
     )
-    # paginator.reset = Mock(wraps=paginator.reset)
 
     stream_slicer = ResumableFullRefreshCursor(parameters={})
     if initial_state:
@@ -858,4 +844,214 @@ def test_emit_log_request_response_messages(mocker):
     assert (
         requester.send_request.call_args_list[0][1]["log_formatter"](response)
         == format_http_message_mock.return_value
+    )
+
+
+def test_retriever_last_page_size_for_page_increment():
+    requester = MagicMock()
+    requester.send_request.return_value = MagicMock()
+
+    paginator = DefaultPaginator(
+        config={},
+        pagination_strategy=PageIncrement(config={}, page_size=5, parameters={}),
+        url_base="https://airbyte.io",
+        parameters={},
+    )
+
+    retriever = SimpleRetriever(
+        name="employees",
+        primary_key=primary_key,
+        requester=requester,
+        paginator=paginator,
+        record_selector=MagicMock(),
+        stream_slicer=SinglePartitionRouter(parameters={}),
+        parameters={},
+        config={},
+    )
+
+    expected_records = [
+        Record(data={"id": "1a", "name": "Cross Product Sales"}, stream_name="departments"),
+        Record(data={"id": "2b", "name": "Foreign Exchange"}, stream_name="departments"),
+        Record(data={"id": "3c", "name": "Wealth Management"}, stream_name="departments"),
+        Record(data={"id": "4d", "name": "Investment Banking Division"}, stream_name="departments"),
+    ]
+
+    def mock_parse_records(response: Optional[requests.Response]) -> Iterable[Record]:
+        yield from expected_records
+
+    actual_records = list(
+        retriever._read_pages(
+            records_generator_fn=mock_parse_records,
+            stream_state={},
+            stream_slice=StreamSlice(cursor_slice={}, partition={}),
+        )
+    )
+    assert actual_records == expected_records
+
+
+def test_retriever_last_record_for_page_increment():
+    requester = MagicMock()
+    requester.send_request.return_value = MagicMock()
+
+    paginator = DefaultPaginator(
+        config={},
+        pagination_strategy=CursorPaginationStrategy(
+            cursor_value="{{ last_record['id'] }}",
+            stop_condition="{{ last_record['last_record'] }}",
+            config={},
+            parameters={},
+        ),
+        url_base="https://airbyte.io",
+        parameters={},
+    )
+
+    retriever = SimpleRetriever(
+        name="employees",
+        primary_key=primary_key,
+        requester=requester,
+        paginator=paginator,
+        record_selector=MagicMock(),
+        stream_slicer=SinglePartitionRouter(parameters={}),
+        parameters={},
+        config={},
+    )
+
+    expected_records = [
+        Record(data={"id": "a", "name": "Cross Product Sales"}, stream_name="departments"),
+        Record(data={"id": "b", "name": "Foreign Exchange"}, stream_name="departments"),
+        Record(data={"id": "c", "name": "Wealth Management"}, stream_name="departments"),
+        Record(
+            data={"id": "d", "name": "Investment Banking Division", "last_record": True},
+            stream_name="departments",
+        ),
+    ]
+
+    def mock_parse_records(response: Optional[requests.Response]) -> Iterable[Record]:
+        yield from expected_records
+
+    actual_records = list(
+        retriever._read_pages(
+            records_generator_fn=mock_parse_records,
+            stream_state={},
+            stream_slice=StreamSlice(cursor_slice={}, partition={}),
+        )
+    )
+    assert actual_records == expected_records
+
+
+def test_retriever_is_stateless():
+    """
+    Special test case to verify that retrieving the pages for a given slice does not affect an internal
+    state of the component. Specifically, because this test don't call any type of reset so invoking the
+    _read_pages() method twice will fail if there is an internal state (and is therefore not stateless)
+    because the page count will not be reset.
+    """
+
+    page_response_1 = requests.Response()
+    page_response_1.status_code = 200
+    page_response_1._content = json.dumps(
+        {
+            "employees": [
+                {"id": "0", "first_name": "eric", "last_name": "tao"},
+                {"id": "1", "first_name": "rishi", "last_name": "ramdani"},
+                {"id": "2", "first_name": "harper", "last_name": "stern"},
+                {"id": "3", "first_name": "erobertric", "last_name": "spearing"},
+                {"id": "4", "first_name": "yasmin", "last_name": "kara-hanani"},
+            ]
+        }
+    ).encode("utf-8")
+
+    page_response_2 = requests.Response()
+    page_response_2.status_code = 200
+    page_response_2._content = json.dumps(
+        {
+            "employees": [
+                {"id": "5", "first_name": "daria", "last_name": "greenock"},
+                {"id": "6", "first_name": "venetia", "last_name": "berens"},
+                {"id": "7", "first_name": "kenny", "last_name": "killbane"},
+            ]
+        }
+    ).encode("utf-8")
+
+    def mock_send_request(
+        next_page_token: Optional[Mapping[str, Any]] = None, **kwargs
+    ) -> Optional[requests.Response]:
+        page_number = next_page_token.get("next_page_token") if next_page_token else None
+        if page_number is None:
+            return page_response_1
+        elif page_number == 1:
+            return page_response_2
+        else:
+            raise ValueError(f"Requested an invalid page number {page_number}")
+
+    requester = MagicMock()
+    requester.send_request.side_effect = mock_send_request
+
+    decoder = JsonDecoder(parameters={})
+    extractor = DpathExtractor(
+        field_path=["employees"], decoder=decoder, config=config, parameters={}
+    )
+    record_selector = RecordSelector(
+        name="employees",
+        extractor=extractor,
+        record_filter=None,
+        transformations=[],
+        config=config,
+        parameters={},
+        schema_normalization=TypeTransformer(TransformConfig.DefaultSchemaNormalization),
+    )
+
+    paginator = DefaultPaginator(
+        config={},
+        pagination_strategy=PageIncrement(config={}, page_size=5, parameters={}),
+        url_base="https://airbyte.io",
+        parameters={},
+    )
+
+    retriever = SimpleRetriever(
+        name="employees",
+        primary_key=primary_key,
+        requester=requester,
+        paginator=paginator,
+        record_selector=record_selector,
+        stream_slicer=SinglePartitionRouter(parameters={}),
+        parameters={},
+        config={},
+    )
+
+    _slice = StreamSlice(cursor_slice={}, partition={})
+
+    record_generator = partial(
+        retriever._parse_records,
+        stream_state=retriever.state or {},
+        stream_slice=_slice,
+        records_schema={},
+    )
+
+    # We call _read_pages() because the existing read_records() used to modify and reset state whereas
+    # _read_pages() did not invoke any methods to reset state
+    actual_records = list(
+        retriever._read_pages(
+            records_generator_fn=record_generator, stream_state={}, stream_slice=_slice
+        )
+    )
+    assert len(actual_records) == 8
+    assert actual_records[0] == Record(
+        data={"id": "0", "first_name": "eric", "last_name": "tao"}, stream_name="employees"
+    )
+    assert actual_records[7] == Record(
+        data={"id": "7", "first_name": "kenny", "last_name": "killbane"}, stream_name="employees"
+    )
+
+    actual_records = list(
+        retriever._read_pages(
+            records_generator_fn=record_generator, stream_state={}, stream_slice=_slice
+        )
+    )
+    assert len(actual_records) == 8
+    assert actual_records[2] == Record(
+        data={"id": "2", "first_name": "harper", "last_name": "stern"}, stream_name="employees"
+    )
+    assert actual_records[5] == Record(
+        data={"id": "5", "first_name": "daria", "last_name": "greenock"}, stream_name="employees"
     )

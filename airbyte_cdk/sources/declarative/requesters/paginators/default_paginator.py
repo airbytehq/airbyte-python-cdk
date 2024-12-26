@@ -112,7 +112,6 @@ class DefaultPaginator(Paginator):
             )
         if isinstance(self.url_base, str):
             self.url_base = InterpolatedString(string=self.url_base, parameters=parameters)
-        # self._token: Optional[Any] = self.pagination_strategy.initial_token
 
     def get_initial_token(self) -> Optional[Any]:
         """
@@ -130,7 +129,6 @@ class DefaultPaginator(Paginator):
         last_record: Optional[Record],
         last_page_token_value: Optional[Any] = None,
     ) -> Optional[Mapping[str, Any]]:
-        print("At the DefaultPaginator")
         next_page_token = self.pagination_strategy.next_page_token(
             response=response,
             last_page_size=last_page_size,
@@ -241,8 +239,6 @@ class PaginatorTestReadDecorator(Paginator):
         last_record: Optional[Record],
         last_page_token_value: Optional[Any] = None,
     ) -> Optional[Mapping[str, Any]]:
-        print("At the PaginatorTestReadDecorator")
-        print(f"page count = {self._page_count} and max pages = {self._maximum_number_of_pages}")
         if self._page_count >= self._maximum_number_of_pages:
             return None
 
