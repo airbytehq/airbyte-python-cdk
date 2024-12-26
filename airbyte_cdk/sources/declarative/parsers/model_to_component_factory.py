@@ -504,7 +504,7 @@ class ModelToComponentFactory:
             InlineSchemaLoaderModel: self.create_inline_schema_loader,
             JsonDecoderModel: self.create_json_decoder,
             JsonlDecoderModel: self.create_jsonl_decoder,
-            JsonLineParserModel: self.create_jsonline_parser,
+            JsonLineParserModel: self.create_json_line_parser,
             GzipJsonDecoderModel: self.create_gzipjson_decoder,
             GzipParserModel: self.create_gzip_parser,
             KeysToLowerModel: self.create_keys_to_lower_transformation,
@@ -1723,7 +1723,7 @@ class ModelToComponentFactory:
         return JsonlDecoder(parameters={})
 
     @staticmethod
-    def create_jsonline_parser(
+    def create_json_line_parser(
         model: JsonLineParserModel, config: Config, **kwargs: Any
     ) -> JsonLineParser:
         return JsonLineParser(encoding=model.encoding)
