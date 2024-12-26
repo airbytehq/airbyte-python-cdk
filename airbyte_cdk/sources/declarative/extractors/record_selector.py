@@ -7,6 +7,7 @@ from typing import Any, Iterable, List, Mapping, Optional, Union
 
 import requests
 
+from airbyte_cdk.sources.declarative.extractors.dpath_extractor import DpathExtractor
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.extractors.record_filter import RecordFilter
@@ -21,6 +22,7 @@ SCHEMA_TRANSFORMER_TYPE_MAPPING = {
     SchemaNormalization.Default: TransformConfig.DefaultSchemaNormalization,
 }
 
+STREAM_SLICE_RESPONSE_KEY = "response"
 
 @dataclass
 class RecordSelector(HttpSelector):
@@ -51,7 +53,8 @@ class RecordSelector(HttpSelector):
             if isinstance(self._name, str)
             else self._name
         )
-
+        self.response_root_extractor = DpathExtractor(field_path=[], config={}, parameters={})
+        
     @property  # type: ignore
     def name(self) -> str:
         """
@@ -86,9 +89,16 @@ class RecordSelector(HttpSelector):
         :return: List of Records selected from the response
         """
         all_data: Iterable[Mapping[str, Any]] = self.extractor.extract_records(response)
-        yield from self.filter_and_transform(
-            all_data, stream_state, records_schema, stream_slice, next_page_token
-        )
+        
+        response_root_data = self.response_root_extractor.extract_records(response)
+        stream_state.update({STREAM_SLICE_RESPONSE_KEY: response_root_data})
+        try: 
+            yield from self.filter_and_transform(
+                all_data, stream_state, records_schema, stream_slice, next_page_token
+            )
+        finally:
+            stream_state.pop(STREAM_SLICE_RESPONSE_KEY)
+
 
     def filter_and_transform(
         self,
