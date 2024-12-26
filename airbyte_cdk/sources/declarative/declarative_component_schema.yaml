@@ -2779,13 +2779,13 @@ definitions:
     properties:
       type:
         type: string
-        enum: [ CompositeRawDecoder ]
+        enum: [CompositeRawDecoder]
       parser:
         anyOf:
           - "$ref": "#/definitions/GzipParser"
           - "$ref": "#/definitions/JsonLineParser"
           - "$ref": "#/definitions/CsvParser"
-#    PARSERS
+  #    PARSERS
   GzipParser:
     type: object
     required:
@@ -2794,7 +2794,7 @@ definitions:
     properties:
       type:
         type: string
-        enum: [ GzipParser ]
+        enum: [GzipParser]
       inner_parser:
         anyOf:
           - "$ref": "#/definitions/JsonLineParser"
@@ -2806,7 +2806,7 @@ definitions:
     properties:
       type:
         type: string
-        enum: [ JsonLineParser ]
+        enum: [JsonLineParser]
       encoding:
         type: string
         default: utf-8
@@ -2817,7 +2817,7 @@ definitions:
     properties:
       type:
         type: string
-        enum: [ CsvParser ]
+        enum: [CsvParser]
       encoding:
         type: string
         default: utf-8
