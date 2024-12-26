@@ -1126,6 +1126,7 @@ class LegacySessionTokenAuthenticator(BaseModel):
 
 
 class JsonLineParser(BaseModel):
+    type: Literal["JsonLineParser"]
     encoding: Optional[str] = "utf-8"
 
 
@@ -1218,6 +1219,8 @@ class ComponentMappingDefinition(BaseModel):
             "{{ components_values['updates'] }}",
             "{{ components_values['MetaData']['LastUpdatedTime'] }}",
             "{{ config['segment_id'] }}",
+            "{{ stream_slice['parent_id'] }}",
+            "{{ stream_slice['extra_fields']['name'] }}",
         ],
         title="Value",
     )

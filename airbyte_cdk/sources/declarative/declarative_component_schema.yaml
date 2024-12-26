@@ -2801,7 +2801,12 @@ definitions:
           - "$ref": "#/definitions/CsvParser"
   JsonLineParser:
     type: object
+    required:
+      - type
     properties:
+      type:
+        type: string
+        enum: [ JsonLineParser ]
       encoding:
         type: string
         default: utf-8
