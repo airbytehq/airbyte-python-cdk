@@ -9,7 +9,7 @@ from io import BytesIO, StringIO
 import pytest
 import requests
 
-from airbyte_cdk.sources.declarative.decoders.composite_decoder import (
+from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     CompositeRawDecoder,
     CsvParser,
     GzipParser,
@@ -60,9 +60,9 @@ def test_composite_raw_decoder_gzip_csv_parser(requests_mock, encoding: str):
     response = requests.get("https://airbyte.io/", stream=True)
 
     parser = GzipParser(inner_parser=CsvParser(encoding=encoding, delimiter="\t"))
-    composite_decoder = CompositeRawDecoder(parser=parser)
+    composite_raw_decoder = CompositeRawDecoder(parser=parser)
     counter = 0
-    for _ in composite_decoder.decode(response):
+    for _ in composite_raw_decoder.decode(response):
         counter += 1
     assert counter == 3
 
@@ -98,9 +98,9 @@ def test_composite_raw_decoder_gzip_jsonline_parser(requests_mock, encoding: str
     response = requests.get("https://airbyte.io/", stream=True)
 
     parser = GzipParser(inner_parser=JsonLineParser(encoding=encoding))
-    composite_decoder = CompositeRawDecoder(parser=parser)
+    composite_raw_decoder = CompositeRawDecoder(parser=parser)
     counter = 0
-    for _ in composite_decoder.decode(response):
+    for _ in composite_raw_decoder.decode(response):
         counter += 1
     assert counter == 3
 
@@ -112,8 +112,8 @@ def test_composite_raw_decoder_jsonline_parser(requests_mock, encoding: str):
         "GET", "https://airbyte.io/", content=response_content.encode(encoding=encoding)
     )
     response = requests.get("https://airbyte.io/", stream=True)
-    composite_decoder = CompositeRawDecoder(parser=JsonLineParser(encoding=encoding))
+    composite_raw_decoder = CompositeRawDecoder(parser=JsonLineParser(encoding=encoding))
     counter = 0
-    for _ in composite_decoder.decode(response):
+    for _ in composite_raw_decoder.decode(response):
         counter += 1
     assert counter == 3

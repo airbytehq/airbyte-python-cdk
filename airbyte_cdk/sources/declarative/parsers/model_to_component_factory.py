@@ -67,7 +67,7 @@ from airbyte_cdk.sources.declarative.decoders import (
     PaginationDecoderDecorator,
     XmlDecoder,
 )
-from airbyte_cdk.sources.declarative.decoders.composite_decoder import (
+from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     CompositeRawDecoder,
     CsvParser,
     GzipParser,

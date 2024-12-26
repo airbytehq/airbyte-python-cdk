@@ -88,7 +88,7 @@ class CompositeRawDecoder(Decoder):
     Note: response.raw is not decoded/decompressed by default.
     parsers should be instantiated recursively.
     Example:
-    composite_decoder = CompositeDecoder(parser=GzipParser(inner_parser=JsonLineParser(encoding="iso-8859-1")))
+    composite_raw_decoder = CompositeRawDecoder(parser=GzipParser(inner_parser=JsonLineParser(encoding="iso-8859-1")))
     """
 
     parser: Parser
