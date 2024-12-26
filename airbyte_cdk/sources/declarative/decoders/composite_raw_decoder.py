@@ -53,7 +53,7 @@ class JsonLineParser(Parser):
         for line in data:
             try:
                 yield json.loads(line.decode(encoding=self.encoding or "utf-8"))
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
                 logger.warning(f"Cannot decode/parse line {line!r} as JSON, error: {e}")
 
 
