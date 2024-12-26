@@ -70,8 +70,8 @@ class CsvParser(Parser):
         """
         Parse CSV data from decompressed bytes.
         """
-        text_data = TextIOWrapper(data, encoding=self.encoding)
-        reader = csv.DictReader(text_data, delimiter=self.delimiter)
+        text_data = TextIOWrapper(data, encoding=self.encoding)  # type: ignore
+        reader = csv.DictReader(text_data, delimiter=self.delimiter or ",")
         yield from reader
 
 
