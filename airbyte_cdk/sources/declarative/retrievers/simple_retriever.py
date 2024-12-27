@@ -6,19 +6,7 @@ import json
 from dataclasses import InitVar, dataclass, field
 from functools import partial
 from itertools import islice
-from typing import (
-    Any,
-    Callable,
-    Generator,
-    Iterable,
-    List,
-    Mapping,
-    MutableMapping,
-    Optional,
-    Set,
-    Tuple,
-    Union,
-)
+from typing import Any, Callable, Iterable, List, Mapping, Optional, Set, Tuple, Union
 
 import requests
 
@@ -45,13 +33,6 @@ from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from airbyte_cdk.utils.mapping_helpers import combine_mappings
 
 FULL_REFRESH_SYNC_COMPLETE_KEY = "__ab_full_refresh_sync_complete"
-
-
-@dataclass
-class LastResponseValue:
-    last_response: Optional[requests.Response] = None
-    last_page_size: int = 0
-    last_record: Optional[Record] = None
 
 
 @dataclass
