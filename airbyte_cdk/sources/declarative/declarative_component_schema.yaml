@@ -2766,9 +2766,64 @@ definitions:
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
           - "$ref": "#/definitions/GzipJsonDecoder"
+          - "$ref": "#/definitions/CompositeRawDecoder"
       $parameters:
         type: object
         additionalProperties: true
+  CompositeRawDecoder:
+    description: "(This is experimental, use at your own risk)"
+    type: object
+    required:
+      - type
+      - parser
+    properties:
+      type:
+        type: string
+        enum: [CompositeRawDecoder]
+      parser:
+        anyOf:
+          - "$ref": "#/definitions/GzipParser"
+          - "$ref": "#/definitions/JsonLineParser"
+          - "$ref": "#/definitions/CsvParser"
+  #    PARSERS
+  GzipParser:
+    type: object
+    required:
+      - type
+      - inner_parser
+    properties:
+      type:
+        type: string
+        enum: [GzipParser]
+      inner_parser:
+        anyOf:
+          - "$ref": "#/definitions/JsonLineParser"
+          - "$ref": "#/definitions/CsvParser"
+  JsonLineParser:
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [JsonLineParser]
+      encoding:
+        type: string
+        default: utf-8
+  CsvParser:
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [CsvParser]
+      encoding:
+        type: string
+        default: utf-8
+      delimiter:
+        type: string
+        default: ","
   AsyncJobStatusMap:
     description: Matches the api job status to Async Job Status.
     type: object

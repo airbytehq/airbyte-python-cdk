@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import CompositeRawDecoder
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
 from airbyte_cdk.sources.declarative.decoders.json_decoder import (
     GzipJsonDecoder,
@@ -17,6 +18,7 @@ from airbyte_cdk.sources.declarative.decoders.xml_decoder import XmlDecoder
 
 __all__ = [
     "Decoder",
+    "CompositeRawDecoder",
     "JsonDecoder",
     "JsonlDecoder",
     "IterableDecoder",

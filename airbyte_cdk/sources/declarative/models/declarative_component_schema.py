@@ -1125,6 +1125,17 @@ class LegacySessionTokenAuthenticator(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class JsonLineParser(BaseModel):
+    type: Literal["JsonLineParser"]
+    encoding: Optional[str] = "utf-8"
+
+
+class CsvParser(BaseModel):
+    type: Literal["CsvParser"]
+    encoding: Optional[str] = "utf-8"
+    delimiter: Optional[str] = ","
+
+
 class AsyncJobStatusMap(BaseModel):
     type: Optional[Literal["AsyncJobStatusMap"]] = None
     running: List[str]
@@ -1208,6 +1219,8 @@ class ComponentMappingDefinition(BaseModel):
             "{{ components_values['updates'] }}",
             "{{ components_values['MetaData']['LastUpdatedTime'] }}",
             "{{ config['segment_id'] }}",
+            "{{ stream_slice['parent_id'] }}",
+            "{{ stream_slice['extra_fields']['name'] }}",
         ],
         title="Value",
     )
@@ -1504,6 +1517,11 @@ class RecordSelector(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class GzipParser(BaseModel):
+    type: Literal["GzipParser"]
+    inner_parser: Union[JsonLineParser, CsvParser]
+
+
 class Spec(BaseModel):
     type: Literal["Spec"]
     connection_specification: Dict[str, Any] = Field(
@@ -1532,6 +1550,11 @@ class CompositeErrorHandler(BaseModel):
         title="Error Handlers",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class CompositeRawDecoder(BaseModel):
+    type: Literal["CompositeRawDecoder"]
+    parser: Union[GzipParser, JsonLineParser, CsvParser]
 
 
 class DeclarativeSource1(BaseModel):
@@ -1936,6 +1959,7 @@ class SimpleRetriever(BaseModel):
             IterableDecoder,
             XmlDecoder,
             GzipJsonDecoder,
+            CompositeRawDecoder,
         ]
     ] = Field(
         None,
