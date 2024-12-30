@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import Any, ItemsView, Iterator, KeysView, List, Mapping, Optional, ValuesView
+from typing import Any, ItemsView, Iterator, KeysView, List, Mapping, Optional, ValuesView, MutableMapping
 
 import orjson
 
@@ -102,7 +102,7 @@ class StreamSlice(Mapping[str, Any]):
         return c
 
     @property
-    def extra_fields(self) -> Mapping[str, Any]:
+    def extra_fields(self) -> MutableMapping[str, Any]:
         """Returns the extra fields that are not part of the partition."""
         return self._extra_fields
 
