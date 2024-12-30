@@ -4,7 +4,7 @@
 import copy
 import logging
 from dataclasses import InitVar, dataclass
-from typing import TYPE_CHECKING, Any, Iterable, List, Mapping, Optional, Union
+from typing import TYPE_CHECKING, Any, Iterable, List, Mapping, MutableMapping, Optional, Union
 
 import dpath
 
@@ -215,7 +215,7 @@ class SubstreamPartitionRouter(PartitionRouter):
         self,
         parent_record: Mapping[str, Any] | AirbyteMessage,
         extra_fields: Optional[List[List[str]]] = None,
-    ) -> Mapping[str, Any]:
+    ) -> MutableMapping[str, Any]:
         """
         Extracts additional fields specified by their paths from the parent record.
 
