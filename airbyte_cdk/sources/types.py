@@ -4,7 +4,17 @@
 
 from __future__ import annotations
 
-from typing import Any, ItemsView, Iterator, KeysView, List, Mapping, Optional, ValuesView, MutableMapping
+from typing import (
+    Any,
+    ItemsView,
+    Iterator,
+    KeysView,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    ValuesView,
+)
 
 import orjson
 
@@ -68,7 +78,7 @@ class StreamSlice(Mapping[str, Any]):
         *,
         partition: Mapping[str, Any],
         cursor_slice: Mapping[str, Any],
-        extra_fields: Optional[Mapping[str, Any]] = None,
+        extra_fields: Optional[MutableMapping[str, Any]] = None,
     ) -> None:
         """
         :param partition: The partition keys representing a unique partition in the stream.
@@ -153,5 +163,5 @@ class StreamSlice(Mapping[str, Any]):
     def __hash__(self) -> int:
         return hash(orjson.dumps(self._stream_slice, option=orjson.OPT_SORT_KEYS))
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return bool(self._stream_slice) or bool(self._extra_fields)
