@@ -2254,7 +2254,7 @@ class ModelToComponentFactory:
                 extractor=download_extractor,
                 name=name,
                 record_filter=None,
-                transformations=[],
+                transformations=transformations,
                 schema_normalization=TypeTransformer(TransformConfig.NoTransform),
                 config=config,
                 parameters={},
