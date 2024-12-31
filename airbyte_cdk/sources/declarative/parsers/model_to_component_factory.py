@@ -2012,7 +2012,7 @@ class ModelToComponentFactory:
         schema_normalization = (
             TypeTransformer(SCHEMA_TRANSFORMER_TYPE_MAPPING[model.schema_normalization])
             if isinstance(model.schema_normalization, SchemaNormalizationModel)
-            else self._create_component_from_model(model.schema_normalization, config=config)
+            else self._create_component_from_model(model.schema_normalization, config=config)  # type: ignore[arg-type] # custom normalization model expected here
         )
 
         return RecordSelector(
