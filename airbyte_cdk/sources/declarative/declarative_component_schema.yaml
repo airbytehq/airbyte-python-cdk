@@ -2556,8 +2556,8 @@ definitions:
           - "$ref": "#/definitions/RecordFilter"
       schema_normalization:
         anyOf:
-         - "$ref": "#/definitions/SchemaNormalization"
-         - "$ref": "#/definitions/CustomSchemaNormalization"
+          - "$ref": "#/definitions/SchemaNormalization"
+          - "$ref": "#/definitions/CustomSchemaNormalization"
         default: None
       $parameters:
         type: object
@@ -2573,22 +2573,22 @@ definitions:
       - None
       - Default
   CustomSchemaNormalization:
-    title: Schema Normalization
-    description: Responsible for normalization according to the schema.
+    title: Custom Schema Normalization
+    description: Use this to implement custom normalization according to the schema.
     type: object
     required:
       - type
     properties:
       type:
         type: string
-        enum: [ CustomSchemaNormalization ]
+        enum: [CustomSchemaNormalization]
       class_name:
         title: Class Name
-        description: Fully-qualified name of the class that will be implementing the custom decoding. Has to be a sub class of Decoder. The format is `source_<name>.<package>.<class_name>`.
+        description: Fully-qualified name of the class that will be implementing the custom normalization. The format is `source_<name>.<package>.<class_name>`.
         type: string
         additionalProperties: true
         examples:
-          - "source_amazon_ads.components.LedgerDetailedViewReportsTypeTransformer"
+          - "source_amazon_seller_partner.components.LedgerDetailedViewReportsTypeTransformer"
       $parameters:
         type: object
         additionalProperties: true

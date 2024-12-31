@@ -1028,8 +1028,10 @@ class CustomSchemaNormalization(BaseModel):
     type: Literal["CustomSchemaNormalization"]
     class_name: Optional[str] = Field(
         None,
-        description="Fully-qualified name of the class that will be implementing the custom decoding. Has to be a sub class of Decoder. The format is `source_<name>.<package>.<class_name>`.",
-        examples=["source_amazon_ads.components.LedgerDetailedViewReportsTypeTransformer"],
+        description="Fully-qualified name of the class that will be implementing the custom normalization. The format is `source_<name>.<package>.<class_name>`.",
+        examples=[
+            "source_amazon_seller_partner.components.LedgerDetailedViewReportsTypeTransformer"
+        ],
         title="Class Name",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
