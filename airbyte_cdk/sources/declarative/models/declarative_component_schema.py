@@ -1025,9 +1025,12 @@ class SchemaNormalization(Enum):
 
 
 class CustomSchemaNormalization(BaseModel):
+    class Config:
+        extra = Extra.allow
+
     type: Literal["CustomSchemaNormalization"]
-    class_name: Optional[str] = Field(
-        None,
+    class_name: str = Field(
+        ...,
         description="Fully-qualified name of the class that will be implementing the custom normalization. The format is `source_<name>.<package>.<class_name>`.",
         examples=[
             "source_amazon_seller_partner.components.LedgerDetailedViewReportsTypeTransformer"

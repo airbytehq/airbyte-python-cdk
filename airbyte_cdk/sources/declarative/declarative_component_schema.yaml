@@ -2576,8 +2576,10 @@ definitions:
     title: Custom Schema Normalization
     description: Use this to implement custom normalization according to the schema.
     type: object
+    additionalProperties: true
     required:
       - type
+      - class_name
     properties:
       type:
         type: string
