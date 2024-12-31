@@ -1019,14 +1019,9 @@ class RecordFilter(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class TransformConfig(Enum):
+class SchemaNormalization(Enum):
     None_ = "None"
     Default = "Default"
-
-
-class SchemaNormalization(BaseModel):
-    type: Literal["SchemaNormalization"]
-    transform_config: Optional[TransformConfig] = None
 
 
 class CustomSchemaNormalization(BaseModel):
@@ -1529,7 +1524,9 @@ class RecordSelector(BaseModel):
         description="Responsible for filtering records to be emitted by the Source.",
         title="Record Filter",
     )
-    schema_normalization: Optional[Union[SchemaNormalization, CustomSchemaNormalization]] = None
+    schema_normalization: Optional[Union[SchemaNormalization, CustomSchemaNormalization]] = (
+        SchemaNormalization.None_
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 

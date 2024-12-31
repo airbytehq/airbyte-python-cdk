@@ -2558,25 +2558,20 @@ definitions:
         anyOf:
          - "$ref": "#/definitions/SchemaNormalization"
          - "$ref": "#/definitions/CustomSchemaNormalization"
-#        default: None
+        default: None
       $parameters:
         type: object
         additionalProperties: true
   SchemaNormalization:
     title: Schema Normalization
     description: Responsible for normalization according to the schema.
-    type: object
-    required:
-      - type
-    properties:
-      type:
-        type: string
-        enum: [ SchemaNormalization ]
-      transform_config:
-        type: string
-        enum:
-          - None
-          - Default
+    type: string
+    enum:
+      - None
+      - Default
+    examples:
+      - None
+      - Default
   CustomSchemaNormalization:
     title: Schema Normalization
     description: Responsible for normalization according to the schema.
