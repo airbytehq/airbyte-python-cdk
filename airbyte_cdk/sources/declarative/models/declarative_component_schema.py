@@ -1019,9 +1019,25 @@ class RecordFilter(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class SchemaNormalization(Enum):
+class TransformConfig(Enum):
     None_ = "None"
     Default = "Default"
+
+
+class SchemaNormalization(BaseModel):
+    type: Literal["SchemaNormalization"]
+    transform_config: Optional[TransformConfig] = None
+
+
+class CustomSchemaNormalization(BaseModel):
+    type: Literal["CustomSchemaNormalization"]
+    class_name: Optional[str] = Field(
+        None,
+        description="Fully-qualified name of the class that will be implementing the custom decoding. Has to be a sub class of Decoder. The format is `source_<name>.<package>.<class_name>`.",
+        examples=["source_amazon_ads.components.LedgerDetailedViewReportsTypeTransformer"],
+        title="Class Name",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
 class RemoveFields(BaseModel):
@@ -1513,7 +1529,7 @@ class RecordSelector(BaseModel):
         description="Responsible for filtering records to be emitted by the Source.",
         title="Record Filter",
     )
-    schema_normalization: Optional[SchemaNormalization] = SchemaNormalization.None_
+    schema_normalization: Optional[Union[SchemaNormalization, CustomSchemaNormalization]] = None
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 

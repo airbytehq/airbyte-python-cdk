@@ -82,9 +82,6 @@ from airbyte_cdk.sources.declarative.extractors import (
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
-from airbyte_cdk.sources.declarative.extractors.record_selector import (
-    SCHEMA_TRANSFORMER_TYPE_MAPPING,
-)
 from airbyte_cdk.sources.declarative.incremental import (
     ChildPartitionResumableFullRefreshCursor,
     CursorFactory,
@@ -100,7 +97,12 @@ from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import I
 from airbyte_cdk.sources.declarative.migrations.legacy_to_per_partition_state_migration import (
     LegacyToPerPartitionStateMigration,
 )
-from airbyte_cdk.sources.declarative.models import CustomStateMigration
+from airbyte_cdk.sources.declarative.models import (
+    CustomStateMigration,
+)
+from airbyte_cdk.sources.declarative.models import (
+    TransformConfig as TransformConfigModel,
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     AddedFieldDefinition as AddedFieldDefinitionModel,
 )
@@ -184,6 +186,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CustomSchemaLoader as CustomSchemaLoader,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomSchemaNormalization as CustomSchemaNormalizationModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CustomTransformation as CustomTransformationModel,
@@ -307,6 +312,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ResponseToFileExtractor as ResponseToFileExtractorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    SchemaNormalization as SchemaNormalizationModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SchemaTypeIdentifier as SchemaTypeIdentifierModel,
@@ -439,6 +447,11 @@ from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 
 ComponentDefinition = Mapping[str, Any]
 
+SCHEMA_TRANSFORMER_TYPE_MAPPING = {
+    TransformConfigModel.None_: TransformConfig.NoTransform,
+    TransformConfigModel.Default: TransformConfig.DefaultSchemaNormalization,
+}
+
 
 class ModelToComponentFactory:
     EPOCH_DATETIME_FORMAT = "%s"
@@ -487,6 +500,7 @@ class ModelToComponentFactory:
             CustomRequesterModel: self.create_custom_component,
             CustomRetrieverModel: self.create_custom_component,
             CustomSchemaLoader: self.create_custom_component,
+            CustomSchemaNormalizationModel: self.create_custom_component,
             CustomStateMigration: self.create_custom_component,
             CustomPaginationStrategyModel: self.create_custom_component,
             CustomPartitionRouterModel: self.create_custom_component,
@@ -532,6 +546,7 @@ class ModelToComponentFactory:
             RequestPathModel: self.create_request_path,
             RequestOptionModel: self.create_request_option,
             LegacySessionTokenAuthenticatorModel: self.create_legacy_session_token_authenticator,
+            SchemaNormalizationModel: self.create_schema_normalization,
             SelectiveAuthenticatorModel: self.create_selective_authenticator,
             SimpleRetrieverModel: self.create_simple_retriever,
             SpecModel: self.create_spec,
@@ -1981,7 +1996,6 @@ class ModelToComponentFactory:
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> RecordSelector:
-        assert model.schema_normalization is not None  # for mypy
         extractor = self._create_component_from_model(
             model=model.extractor, decoder=decoder, config=config
         )
@@ -1999,8 +2013,10 @@ class ModelToComponentFactory:
                 else None,
                 **client_side_incremental_sync,
             )
-        schema_normalization = TypeTransformer(
-            SCHEMA_TRANSFORMER_TYPE_MAPPING[model.schema_normalization]
+        schema_normalization = (
+            self._create_component_from_model(model.schema_normalization, config=config)
+            if model.schema_normalization
+            else TypeTransformer(TransformConfig.NoTransform)
         )
 
         return RecordSelector(
@@ -2020,6 +2036,16 @@ class ModelToComponentFactory:
         return RemoveFields(
             field_pointers=model.field_pointers, condition=model.condition or "", parameters={}
         )
+
+    @staticmethod
+    def create_schema_normalization(
+        model: SchemaNormalizationModel, config: Config, **kwargs: Any
+    ) -> TypeTransformer:
+        schema_normalization = TypeTransformer(
+            SCHEMA_TRANSFORMER_TYPE_MAPPING[model.transform_config]
+        )
+
+        return schema_normalization
 
     def create_selective_authenticator(
         self, model: SelectiveAuthenticatorModel, config: Config, **kwargs: Any

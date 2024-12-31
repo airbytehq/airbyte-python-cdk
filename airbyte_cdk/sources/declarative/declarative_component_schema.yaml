@@ -2555,21 +2555,48 @@ definitions:
           - "$ref": "#/definitions/CustomRecordFilter"
           - "$ref": "#/definitions/RecordFilter"
       schema_normalization:
-        "$ref": "#/definitions/SchemaNormalization"
-        default: None
+        anyOf:
+         - "$ref": "#/definitions/SchemaNormalization"
+         - "$ref": "#/definitions/CustomSchemaNormalization"
+#        default: None
       $parameters:
         type: object
         additionalProperties: true
   SchemaNormalization:
     title: Schema Normalization
     description: Responsible for normalization according to the schema.
-    type: string
-    enum:
-      - None
-      - Default
-    examples:
-      - None
-      - Default
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [ SchemaNormalization ]
+      transform_config:
+        type: string
+        enum:
+          - None
+          - Default
+  CustomSchemaNormalization:
+    title: Schema Normalization
+    description: Responsible for normalization according to the schema.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [ CustomSchemaNormalization ]
+      class_name:
+        title: Class Name
+        description: Fully-qualified name of the class that will be implementing the custom decoding. Has to be a sub class of Decoder. The format is `source_<name>.<package>.<class_name>`.
+        type: string
+        additionalProperties: true
+        examples:
+          - "source_amazon_ads.components.LedgerDetailedViewReportsTypeTransformer"
+      $parameters:
+        type: object
+        additionalProperties: true
   RemoveFields:
     title: Remove Fields
     description: A transformation which removes fields from a record. The fields removed are designated using FieldPointers. During transformation, if a field or any of its parents does not exist in the record, no error is thrown.
