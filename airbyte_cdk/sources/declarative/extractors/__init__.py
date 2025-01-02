@@ -9,8 +9,10 @@ from airbyte_cdk.sources.declarative.extractors.record_selector import RecordSel
 from airbyte_cdk.sources.declarative.extractors.response_to_file_extractor import (
     ResponseToFileExtractor,
 )
+from airbyte_cdk.sources.declarative.extractors.type_transformer import AbstractTypeTransformer
 
 __all__ = [
+    "AbstractTypeTransformer",
     "HttpSelector",
     "DpathExtractor",
     "RecordFilter",
