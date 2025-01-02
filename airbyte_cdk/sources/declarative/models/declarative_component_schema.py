@@ -1529,8 +1529,10 @@ class RecordSelector(BaseModel):
         description="Responsible for filtering records to be emitted by the Source.",
         title="Record Filter",
     )
-    schema_normalization: Optional[Union[SchemaNormalization, CustomSchemaNormalization]] = (
-        SchemaNormalization.None_
+    schema_normalization: Optional[Union[SchemaNormalization, CustomSchemaNormalization]] = Field(
+        SchemaNormalization.None_,
+        description="Responsible for normalization according to the schema.",
+        title="Schema Normalization",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
