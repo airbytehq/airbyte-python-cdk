@@ -189,8 +189,12 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         for url in self.urls_extractor.extract_records(
             self._polling_job_response_by_id[job.api_job_id()]
         ):
-            stream_slice = job.job_parameters()
-            stream_slice.extra_fields.update({"url": url})
+            job_slice = job.job_parameters()
+            stream_slice = StreamSlice(
+                partition=job_slice.partition,
+                cursor_slice=job_slice.cursor_slice,
+                extra_fields={**job_slice.extra_fields, "url": url},
+            )
             for message in self.download_retriever.read_records({}, stream_slice):
                 if isinstance(message, Record):
                     yield message.data

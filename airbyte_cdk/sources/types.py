@@ -4,17 +4,7 @@
 
 from __future__ import annotations
 
-from typing import (
-    Any,
-    ItemsView,
-    Iterator,
-    KeysView,
-    List,
-    Mapping,
-    MutableMapping,
-    Optional,
-    ValuesView,
-)
+from typing import Any, ItemsView, Iterator, KeysView, List, Mapping, Optional, ValuesView
 
 import orjson
 
@@ -78,7 +68,7 @@ class StreamSlice(Mapping[str, Any]):
         *,
         partition: Mapping[str, Any],
         cursor_slice: Mapping[str, Any],
-        extra_fields: Optional[MutableMapping[str, Any]] = None,
+        extra_fields: Optional[Mapping[str, Any]] = None,
     ) -> None:
         """
         :param partition: The partition keys representing a unique partition in the stream.
@@ -112,7 +102,7 @@ class StreamSlice(Mapping[str, Any]):
         return c
 
     @property
-    def extra_fields(self) -> MutableMapping[str, Any]:
+    def extra_fields(self) -> Mapping[str, Any]:
         """Returns the extra fields that are not part of the partition."""
         return self._extra_fields
 
