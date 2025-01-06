@@ -1981,9 +1981,9 @@ class ModelToComponentFactory:
         config: Config,
         *,
         name: str,
-        transformations: Optional[List[RecordTransformation]] = None,
-        decoder: Optional[Decoder] = None,
-        client_side_incremental_sync: Optional[Dict[str, Any]] = None,
+        transformations: List[RecordTransformation] | None = None,
+        decoder: Decoder | None = None,
+        client_side_incremental_sync: Dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> RecordSelector:
         assert model.schema_normalization is not None  # for mypy
