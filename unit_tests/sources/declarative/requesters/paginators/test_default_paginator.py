@@ -366,7 +366,7 @@ def test_data_feed_paginator_with_stop_page_condition():
 
     cursor = DatetimeBasedCursor(
         cursor_field="updated_at",
-        datetime_format="%Y-%m-$d",
+        datetime_format="%Y-%m-%d",
         start_datetime="2024-01-01",
         config=config,
         parameters={},
