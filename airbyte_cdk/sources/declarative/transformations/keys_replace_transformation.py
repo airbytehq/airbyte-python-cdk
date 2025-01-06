@@ -28,7 +28,7 @@ class KeysReplaceTransformation(RecordTransformation):
     new: str
     parameters: InitVar[Mapping[str, Any]]
 
-    def __post_init__(self, parameters) -> None:
+    def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._old = InterpolatedString.create(self.old, parameters=parameters)
         self._new = InterpolatedString.create(self.new, parameters=parameters)
 
