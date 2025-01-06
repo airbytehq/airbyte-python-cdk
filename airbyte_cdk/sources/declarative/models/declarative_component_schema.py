@@ -720,13 +720,13 @@ class KeysReplace(BaseModel):
     old: str = Field(
         ...,
         description="Old value to replace.",
-        examples=[" ", "_"],
+        examples=[" ", "{{ record.id }}", "{{ config['id'] }}", "{{ stream_slice['id'] }}"],
         title="Old value",
     )
     new: str = Field(
         ...,
         description="New value to set.",
-        examples=["_", " "],
+        examples=["_", "{{ record.id }}", "{{ config['id'] }}", "{{ stream_slice['id'] }}"],
         title="New value",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")

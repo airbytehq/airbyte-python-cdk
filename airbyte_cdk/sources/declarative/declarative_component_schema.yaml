@@ -1898,14 +1898,28 @@ definitions:
         description: Old value to replace.
         examples:
           - " "
-          - "_"
+          - "{{ record.id }}"
+          - "{{ config['id'] }}"
+          - "{{ stream_slice['id'] }}"
+        interpolation_context:
+          - config
+          - record
+          - stream_state
+          - stream_slice
       new:
         type: string
         title: New value
         description: New value to set.
         examples:
           - "_"
-          - " "
+          - "{{ record.id }}"
+          - "{{ config['id'] }}"
+          - "{{ stream_slice['id'] }}"
+        interpolation_context:
+          - config
+          - record
+          - stream_state
+          - stream_slice
       $parameters:
         type: object
         additionalProperties: true

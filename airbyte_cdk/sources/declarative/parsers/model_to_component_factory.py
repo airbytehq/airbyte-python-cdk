@@ -619,7 +619,9 @@ class ModelToComponentFactory:
     def create_keys_replace_transformation(
         self, model: KeysReplaceModel, config: Config, **kwargs: Any
     ) -> KeysReplaceTransformation:
-        return KeysReplaceTransformation(old=model.old, new=model.new)
+        return KeysReplaceTransformation(
+            old=model.old, new=model.new, parameters=model.parameters or {}
+        )
 
     def create_flatten_fields(
         self, model: FlattenFieldsModel, config: Config, **kwargs: Any
