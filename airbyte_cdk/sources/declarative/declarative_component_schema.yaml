@@ -1021,7 +1021,6 @@ definitions:
       - type
       - client_id
       - client_secret
-      - token_refresh_endpoint
     properties:
       type:
         type: string
@@ -1060,6 +1059,12 @@ definitions:
         default: "access_token"
         examples:
           - access_token
+      access_token_value:
+        title: Access Token Value
+        description: The value of the access_token to bypass the token refreshing using `refresh_token`.
+        type: string
+        examples:
+          - secret_access_token_value
       expires_in_name:
         title: Token Expiry Property Name
         description: The name of the property which contains the expiry date in the response from the token refresh endpoint.
@@ -1234,6 +1239,8 @@ definitions:
             - "$ref": "#/definitions/CustomTransformation"
             - "$ref": "#/definitions/RemoveFields"
             - "$ref": "#/definitions/KeysToLower"
+            - "$ref": "#/definitions/KeysToSnakeCase"
+            - "$ref": "#/definitions/FlattenFields"
       state_migrations:
         title: State Migrations
         description: Array of state migrations to be applied on the input state
@@ -1766,6 +1773,18 @@ definitions:
           - "$ref": "#/definitions/AsyncRetriever"
           - "$ref": "#/definitions/CustomRetriever"
           - "$ref": "#/definitions/SimpleRetriever"
+      schema_transformations:
+        title: Schema Transformations
+        description: A list of transformations to be applied to the schema.
+        type: array
+        items:
+          anyOf:
+            - "$ref": "#/definitions/AddFields"
+            - "$ref": "#/definitions/CustomTransformation"
+            - "$ref": "#/definitions/RemoveFields"
+            - "$ref": "#/definitions/KeysToLower"
+            - "$ref": "#/definitions/KeysToSnakeCase"
+            - "$ref": "#/definitions/FlattenFields"
       schema_type_identifier:
         "$ref": "#/definitions/SchemaTypeIdentifier"
       $parameters:
@@ -1835,6 +1854,32 @@ definitions:
       type:
         type: string
         enum: [KeysToLower]
+      $parameters:
+        type: object
+        additionalProperties: true
+  KeysToSnakeCase:
+    title: Key to Snake Case
+    description: A transformation that renames all keys to snake case.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [KeysToSnakeCase]
+      $parameters:
+        type: object
+        additionalProperties: true
+  FlattenFields:
+    title: Flatten Fields
+    description: A transformation that flatten record to single level format.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [FlattenFields]
       $parameters:
         type: object
         additionalProperties: true
@@ -2130,65 +2175,63 @@ definitions:
           - extract_output
         properties:
           consent_url:
-            title: DeclarativeOAuth Consent URL
+            title: Consent URL
             type: string
             description: |-
               The DeclarativeOAuth Specific string URL string template to initiate the authentication.
               The placeholders are replaced during the processing to provide neccessary values.
             examples:
-              - consent_url: https://domain.host.com/marketing_api/auth?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{state_key}={{state_key}}
-              - consent_url: https://endpoint.host.com/oauth2/authorize?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{scope_key}={urlEncoder:{{scope_key}}}&{state_key}={{state_key}}&subdomain={subdomain}
+              - https://domain.host.com/marketing_api/auth?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{state_key}={{state_key}}
+              - https://endpoint.host.com/oauth2/authorize?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{scope_key}={urlEncoder:{{scope_key}}}&{state_key}={{state_key}}&subdomain={subdomain}
           scope:
-            title: (Optional) DeclarativeOAuth Scope
+            title: Scopes
             type: string
             description: |-
               The DeclarativeOAuth Specific string of the scopes needed to be grant for authenticated user.
             examples:
-              - scope: user:read user:read_orders workspaces:read
+              - user:read user:read_orders workspaces:read
           access_token_url:
-            title: DeclarativeOAuth Access Token URL
+            title: Access Token URL
             type: string
             description: |-
               The DeclarativeOAuth Specific URL templated string to obtain the `access_token`, `refresh_token` etc.
               The placeholders are replaced during the processing to provide neccessary values.
             examples:
-              - access_token_url: https://auth.host.com/oauth2/token?{client_id_key}={{client_id_key}}&{client_secret_key}={{client_secret_key}}&{auth_code_key}={{auth_code_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}
+              - https://auth.host.com/oauth2/token?{client_id_key}={{client_id_key}}&{client_secret_key}={{client_secret_key}}&{auth_code_key}={{auth_code_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}
           access_token_headers:
-            title: (Optional) DeclarativeOAuth Access Token Headers
+            title: Access Token Headers
             type: object
             additionalProperties: true
             description: |-
               The DeclarativeOAuth Specific optional headers to inject while exchanging the `auth_code` to `access_token` during `completeOAuthFlow` step.
             examples:
-              - access_token_headers:
-                  {
-                    "Authorization": "Basic {base64Encoder:{client_id}:{client_secret}}",
-                  }
+              - {
+                  "Authorization": "Basic {base64Encoder:{client_id}:{client_secret}}",
+                }
           access_token_params:
-            title: (Optional) DeclarativeOAuth Access Token Query Params (Json Encoded)
+            title: Access Token Query Params (Json Encoded)
             type: object
             additionalProperties: true
             description: |-
               The DeclarativeOAuth Specific optional query parameters to inject while exchanging the `auth_code` to `access_token` during `completeOAuthFlow` step.
               When this property is provided, the query params will be encoded as `Json` and included in the outgoing API request.
             examples:
-              - access_token_params:
-                  {
-                    "{auth_code_key}": "{{auth_code_key}}",
-                    "{client_id_key}": "{{client_id_key}}",
-                    "{client_secret_key}": "{{client_secret_key}}",
-                  }
+              - {
+                  "{auth_code_key}": "{{auth_code_key}}",
+                  "{client_id_key}": "{{client_id_key}}",
+                  "{client_secret_key}": "{{client_secret_key}}",
+                }
           extract_output:
-            title: DeclarativeOAuth Extract Output
+            title: Extract Output
             type: array
             items:
               type: string
             description: |-
               The DeclarativeOAuth Specific list of strings to indicate which keys should be extracted and returned back to the input config.
             examples:
-              - extract_output: ["access_token", "refresh_token", "other_field"]
+              - ["access_token", "refresh_token", "other_field"]
           state:
-            title: (Optional) DeclarativeOAuth Configurable State Query Param
+            title: Configurable State Query Param
             type: object
             additionalProperties: true
             required:
@@ -2203,49 +2246,49 @@ definitions:
               max:
                 type: integer
             examples:
-              - state: { "min": 7, "max": 128 }
+              - { "min": 7, "max": 128 }
           client_id_key:
-            title: (Optional) DeclarativeOAuth Client ID Key Override
+            title: Client ID Key Override
             type: string
             description: |-
               The DeclarativeOAuth Specific optional override to provide the custom `client_id` key name, if required by data-provider.
             examples:
-              - client_id_key: "my_custom_client_id_key_name"
+              - "my_custom_client_id_key_name"
           client_secret_key:
-            title: (Optional) DeclarativeOAuth Client Secret Key Override
+            title: Client Secret Key Override
             type: string
             description: |-
               The DeclarativeOAuth Specific optional override to provide the custom `client_secret` key name, if required by data-provider.
             examples:
-              - client_secret_key: "my_custom_client_secret_key_name"
+              - "my_custom_client_secret_key_name"
           scope_key:
-            title: (Optional) DeclarativeOAuth Scope Key Override
+            title: Scopes Key Override
             type: string
             description: |-
               The DeclarativeOAuth Specific optional override to provide the custom `scope` key name, if required by data-provider.
             examples:
-              - scope_key: "my_custom_scope_key_key_name"
+              - "my_custom_scope_key_key_name"
           state_key:
-            title: (Optional) DeclarativeOAuth State Key Override
+            title: State Key Override
             type: string
             description: |-
               The DeclarativeOAuth Specific optional override to provide the custom `state` key name, if required by data-provider.
             examples:
-              - state_key: "my_custom_state_key_key_name"
+              - "my_custom_state_key_key_name"
           auth_code_key:
-            title: (Optional) DeclarativeOAuth Auth Code Key Override
+            title: Auth Code Key Override
             type: string
             description: |-
               The DeclarativeOAuth Specific optional override to provide the custom `code` key name to something like `auth_code` or `custom_auth_code`, if required by data-provider.
             examples:
-              - auth_code_key: "my_custom_auth_code_key_name"
+              - "my_custom_auth_code_key_name"
           redirect_uri_key:
-            title: (Optional) DeclarativeOAuth Redirect URI Key Override
+            title: Redirect URI Key Override
             type: string
             description: |-
               The DeclarativeOAuth Specific optional override to provide the custom `redirect_uri` key name to something like `callback_uri`, if required by data-provider.
             examples:
-              - redirect_uri_key: "my_custom_redirect_uri_key_name"
+              - "my_custom_redirect_uri_key_name"
       complete_oauth_output_specification:
         title: "OAuth output specification"
         description: |-
@@ -2723,9 +2766,64 @@ definitions:
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
           - "$ref": "#/definitions/GzipJsonDecoder"
+          - "$ref": "#/definitions/CompositeRawDecoder"
       $parameters:
         type: object
         additionalProperties: true
+  CompositeRawDecoder:
+    description: "(This is experimental, use at your own risk)"
+    type: object
+    required:
+      - type
+      - parser
+    properties:
+      type:
+        type: string
+        enum: [CompositeRawDecoder]
+      parser:
+        anyOf:
+          - "$ref": "#/definitions/GzipParser"
+          - "$ref": "#/definitions/JsonLineParser"
+          - "$ref": "#/definitions/CsvParser"
+  #    PARSERS
+  GzipParser:
+    type: object
+    required:
+      - type
+      - inner_parser
+    properties:
+      type:
+        type: string
+        enum: [GzipParser]
+      inner_parser:
+        anyOf:
+          - "$ref": "#/definitions/JsonLineParser"
+          - "$ref": "#/definitions/CsvParser"
+  JsonLineParser:
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [JsonLineParser]
+      encoding:
+        type: string
+        default: utf-8
+  CsvParser:
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [CsvParser]
+      encoding:
+        type: string
+        default: utf-8
+      delimiter:
+        type: string
+        default: ","
   AsyncJobStatusMap:
     description: Matches the api job status to Async Job Status.
     type: object
@@ -3011,6 +3109,7 @@ definitions:
         interpolation_context:
           - config
           - components_values
+          - stream_slice
           - stream_template_config
         examples:
           - ["data"]
@@ -3027,10 +3126,13 @@ definitions:
           - config
           - stream_template_config
           - components_values
+          - stream_slice
         examples:
           - "{{ components_values['updates'] }}"
           - "{{ components_values['MetaData']['LastUpdatedTime'] }}"
           - "{{ config['segment_id'] }}"
+          - "{{ stream_slice['parent_id'] }}"
+          - "{{ stream_slice['extra_fields']['name'] }}"
       value_type:
         title: Value Type
         description: The expected data type of the value. If omitted, the type will be inferred from the value provided.
