@@ -67,6 +67,12 @@ from airbyte_cdk.sources.declarative.decoders import (
     PaginationDecoderDecorator,
     XmlDecoder,
 )
+from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
+    CompositeRawDecoder,
+    CsvParser,
+    GzipParser,
+    JsonLineParser,
+)
 from airbyte_cdk.sources.declarative.extractors import (
     DpathExtractor,
     RecordFilter,
@@ -126,6 +132,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     CompositeErrorHandler as CompositeErrorHandlerModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CompositeRawDecoder as CompositeRawDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConcurrencyLevel as ConcurrencyLevelModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -133,6 +142,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConstantBackoffStrategy as ConstantBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CsvParser as CsvParserModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CursorPagination as CursorPaginationModel,
@@ -204,6 +216,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     GzipJsonDecoder as GzipJsonDecoderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    GzipParser as GzipParserModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     HttpComponentsResolver as HttpComponentsResolverModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -226,6 +241,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     JsonlDecoder as JsonlDecoderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonLineParser as JsonLineParserModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     JwtAuthenticator as JwtAuthenticatorModel,
@@ -461,6 +479,7 @@ class ModelToComponentFactory:
             BearerAuthenticatorModel: self.create_bearer_authenticator,
             CheckStreamModel: self.create_check_stream,
             CompositeErrorHandlerModel: self.create_composite_error_handler,
+            CompositeRawDecoderModel: self.create_composite_raw_decoder,
             ConcurrencyLevelModel: self.create_concurrency_level,
             ConstantBackoffStrategyModel: self.create_constant_backoff_strategy,
             CursorPaginationModel: self.create_cursor_pagination,
@@ -491,7 +510,9 @@ class ModelToComponentFactory:
             InlineSchemaLoaderModel: self.create_inline_schema_loader,
             JsonDecoderModel: self.create_json_decoder,
             JsonlDecoderModel: self.create_jsonl_decoder,
+            JsonLineParserModel: self.create_json_line_parser,
             GzipJsonDecoderModel: self.create_gzipjson_decoder,
+            GzipParserModel: self.create_gzip_parser,
             KeysToLowerModel: self.create_keys_to_lower_transformation,
             KeysToSnakeCaseModel: self.create_keys_to_snake_transformation,
             KeysReplaceModel: self.create_keys_replace_transformation,
@@ -1716,6 +1737,12 @@ class ModelToComponentFactory:
         return JsonlDecoder(parameters={})
 
     @staticmethod
+    def create_json_line_parser(
+        model: JsonLineParserModel, config: Config, **kwargs: Any
+    ) -> JsonLineParser:
+        return JsonLineParser(encoding=model.encoding)
+
+    @staticmethod
     def create_iterable_decoder(
         model: IterableDecoderModel, config: Config, **kwargs: Any
     ) -> IterableDecoder:
@@ -1730,6 +1757,22 @@ class ModelToComponentFactory:
         model: GzipJsonDecoderModel, config: Config, **kwargs: Any
     ) -> GzipJsonDecoder:
         return GzipJsonDecoder(parameters={}, encoding=model.encoding)
+
+    def create_gzip_parser(
+        self, model: GzipParserModel, config: Config, **kwargs: Any
+    ) -> GzipParser:
+        inner_parser = self._create_component_from_model(model=model.inner_parser, config=config)
+        return GzipParser(inner_parser=inner_parser)
+
+    @staticmethod
+    def create_csv_parser(model: CsvParserModel, config: Config, **kwargs: Any) -> CsvParser:
+        return CsvParser(encoding=model.encoding, delimiter=model.delimiter)
+
+    def create_composite_raw_decoder(
+        self, model: CompositeRawDecoderModel, config: Config, **kwargs: Any
+    ) -> CompositeRawDecoder:
+        parser = self._create_component_from_model(model=model.parser, config=config)
+        return CompositeRawDecoder(parser=parser)
 
     @staticmethod
     def create_json_file_schema_loader(
@@ -1814,7 +1857,8 @@ class ModelToComponentFactory:
             return DeclarativeSingleUseRefreshTokenOauth2Authenticator(  # type: ignore
                 config,
                 InterpolatedString.create(
-                    model.token_refresh_endpoint, parameters=model.parameters or {}
+                    model.token_refresh_endpoint,  # type: ignore
+                    parameters=model.parameters or {},
                 ).eval(config),
                 access_token_name=InterpolatedString.create(
                     model.access_token_name or "access_token", parameters=model.parameters or {}
@@ -1848,6 +1892,7 @@ class ModelToComponentFactory:
         # ignore type error because fixing it would have a lot of dependencies, revisit later
         return DeclarativeOauth2Authenticator(  # type: ignore
             access_token_name=model.access_token_name or "access_token",
+            access_token_value=model.access_token_value,
             client_id=model.client_id,
             client_secret=model.client_secret,
             expires_in_name=model.expires_in_name or "expires_in",
