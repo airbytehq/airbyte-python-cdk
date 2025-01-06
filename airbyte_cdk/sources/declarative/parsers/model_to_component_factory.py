@@ -1512,7 +1512,12 @@ class ModelToComponentFactory:
         )
 
     def create_http_requester(
-        self, model: HttpRequesterModel, config: Config, decoder: Decoder=JsonDecoder(parameters={}), *, name: str
+        self,
+        model: HttpRequesterModel,
+        config: Config,
+        decoder: Decoder = JsonDecoder(parameters={}),
+        *,
+        name: str,
     ) -> HttpRequester:
         authenticator = (
             self._create_component_from_model(

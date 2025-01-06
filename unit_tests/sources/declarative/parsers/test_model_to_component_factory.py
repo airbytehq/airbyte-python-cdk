@@ -2644,14 +2644,14 @@ def test_create_custom_retriever():
                     "type": "DpathExtractor",
                     "field_path": [],
                 },
-                "$parameters": { "name": ""}
+                "$parameters": {"name": ""},
             },
             "requester": {
                 "type": "HttpRequester",
                 "name": "list",
                 "url_base": "orange.com",
                 "path": "/v1/api",
-                "$parameters": {"name": ""}
+                "$parameters": {"name": ""},
             },
         },
     }
