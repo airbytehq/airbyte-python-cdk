@@ -1563,7 +1563,7 @@ class ModelToComponentFactory:
         self,
         model: HttpRequesterModel,
         config: Config,
-        decoder: Decoder | None = None,
+        decoder: Decoder = JsonDecoder(parameters={}),
         *,
         name: str,
     ) -> HttpRequester:
