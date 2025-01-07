@@ -6,19 +6,23 @@ import asyncio
 import itertools
 import traceback
 from copy import deepcopy
+from collections import defaultdict
 from functools import cache
-from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Set, Union
+from os import path
+from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Set, Union, Tuple
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, FailureType, Level
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import PrimaryKeyType
 from airbyte_cdk.sources.file_based.exceptions import (
     FileBasedSourceError,
+    DuplicatedFilesError,
     InvalidSchemaError,
     MissingSchemaError,
     RecordParseError,
     SchemaInferenceError,
     StopSyncPerValidationPolicy,
+    format_duplicate_files_error_message,
 )
 from airbyte_cdk.sources.file_based.file_types import FileTransfer
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
@@ -43,6 +47,8 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
     """
 
     FILE_TRANSFER_KW = "use_file_transfer"
+    PRESERVE_SUBDIRECTORIES_KW = "preserve_subdirectories_directories"
+    FILES_KEY = "files"
     DATE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
     ab_last_mod_col = "_ab_source_file_last_modified"
     ab_file_name_col = "_ab_source_file_url"
@@ -50,10 +56,14 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
     source_file_url = "source_file_url"
     airbyte_columns = [ab_last_mod_col, ab_file_name_col]
     use_file_transfer = False
+    preserve_subdirectories_directories = True
 
     def __init__(self, **kwargs: Any):
         if self.FILE_TRANSFER_KW in kwargs:
             self.use_file_transfer = kwargs.pop(self.FILE_TRANSFER_KW, False)
+            self.preserve_subdirectories_directories = kwargs.pop(
+                self.PRESERVE_SUBDIRECTORIES_KW, True
+            )
         super().__init__(**kwargs)
 
     @property
@@ -98,15 +108,41 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         else:
             return super()._filter_schema_invalid_properties(configured_catalog_json_schema)
 
+    def _duplicated_files_names(self, slices: List) -> list[dict]:
+        seen_file_names = set()
+        duplicates_file_names = set()
+        file_paths = defaultdict(list)
+        for file_slice in slices:
+            for file_found in file_slice[self.FILES_KEY]:
+                file_name = path.basename(file_found.uri)
+                if file_name not in seen_file_names:
+                    seen_file_names.add(file_name)
+                else:
+                    duplicates_file_names.add(file_name)
+                file_paths[file_name].append(file_found.uri)
+        return [
+            {duplicated_file: file_paths[duplicated_file]}
+            for duplicated_file in duplicates_file_names
+        ]
+
     def compute_slices(self) -> Iterable[Optional[Mapping[str, Any]]]:
         # Sort files by last_modified, uri and return them grouped by last_modified
         all_files = self.list_files()
         files_to_read = self._cursor.get_files_to_sync(all_files, self.logger)
         sorted_files_to_read = sorted(files_to_read, key=lambda f: (f.last_modified, f.uri))
         slices = [
-            {"files": list(group[1])}
+            {self.FILES_KEY: list(group[1])}
             for group in itertools.groupby(sorted_files_to_read, lambda f: f.last_modified)
         ]
+        if slices and not self.preserve_subdirectories_directories:
+            duplicated_files_names = self._duplicated_files_names(slices)
+            if duplicated_files_names:
+                raise DuplicatedFilesError(
+                    format_duplicate_files_error_message(
+                        stream_name=self.name, duplicated_files_names=duplicated_files_names
+                    ),
+                    stream=self.name,
+                )
         return slices
 
     def transform_record(

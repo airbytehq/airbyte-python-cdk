@@ -111,6 +111,10 @@ class ErrorListingFiles(BaseFileBasedSourceError):
     pass
 
 
+class DuplicatedFilesError(BaseFileBasedSourceError):
+    pass
+
+
 class CustomFileBasedException(AirbyteTracedException):
     """
     A specialized exception for file-based connectors.
@@ -123,3 +127,23 @@ class CustomFileBasedException(AirbyteTracedException):
 
 class FileSizeLimitError(CustomFileBasedException):
     pass
+
+
+def format_duplicate_files_error_message(stream_name: str, duplicated_files_names: List):
+    duplicated_files_messages = []
+    for duplicated_file in duplicated_files_names:
+        for duplicated_file_name, file_paths in duplicated_file.items():
+            file_duplicated_message = (
+                f"{len(file_paths)} duplicates found for file name {duplicated_file_name}:\n\n"
+                + "".join(f"\n - {file_paths}")
+            )
+            duplicated_files_messages.append(file_duplicated_message)
+
+    error_message = (
+        f"ERROR: Duplicate filenames found for stream {stream_name}. "
+        "Duplicate file names are not allowed if the Preserve Subdirectories in File Paths option is disabled. "
+        "Please remove or rename the duplicate files before attempting to re-run the sync.\n\n"
+        + "\n".join(duplicated_files_messages)
+    )
+
+    return error_message

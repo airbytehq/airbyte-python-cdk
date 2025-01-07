@@ -14,6 +14,13 @@ from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileB
 from airbyte_cdk.sources.utils import schema_helpers
 
 
+class DeliveryOptions(BaseModel):
+    preserve_subdirectories_directories: bool = Field(
+        True,
+        description="Flag indicating we should preserve subdirectories directories",
+    )
+
+
 class DeliverRecords(BaseModel):
     class Config(OneOfOptionConfig):
         title = "Replicate Records"
@@ -30,6 +37,11 @@ class DeliverRawFiles(BaseModel):
         discriminator = "delivery_type"
 
     delivery_type: Literal["use_file_transfer"] = Field("use_file_transfer", const=True)
+    delivery_options: Optional[DeliveryOptions] = Field(
+        title="Delivery Options",
+        type="object",
+        order=2,
+    )
 
 
 class AbstractFileBasedSpec(BaseModel):
@@ -63,6 +75,12 @@ class AbstractFileBasedSpec(BaseModel):
         group="advanced",
         default="use_records_transfer",
         airbyte_hidden=True,
+    )
+
+    delivery_options: Optional[DeliveryOptions] = Field(
+        title="Delivery Options",
+        type="object",
+        order=8,
     )
 
     @classmethod
