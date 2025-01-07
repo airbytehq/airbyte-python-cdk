@@ -5,18 +5,18 @@
 import asyncio
 import itertools
 import traceback
-from copy import deepcopy
 from collections import defaultdict
+from copy import deepcopy
 from functools import cache
 from os import path
-from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Set, Union, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Set, Tuple, Union
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, FailureType, Level
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import PrimaryKeyType
 from airbyte_cdk.sources.file_based.exceptions import (
-    FileBasedSourceError,
     DuplicatedFilesError,
+    FileBasedSourceError,
     InvalidSchemaError,
     MissingSchemaError,
     RecordParseError,
