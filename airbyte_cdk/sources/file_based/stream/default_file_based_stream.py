@@ -108,7 +108,9 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         else:
             return super()._filter_schema_invalid_properties(configured_catalog_json_schema)
 
-    def _duplicated_files_names(self, slices: List) -> list[dict]:
+    def _duplicated_files_names(
+        self, slices: List[dict[str, List[RemoteFile]]]
+    ) -> List[dict[str, List[str]]]:
         seen_file_names = set()
         duplicates_file_names = set()
         file_paths = defaultdict(list)

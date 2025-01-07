@@ -129,7 +129,9 @@ class FileSizeLimitError(CustomFileBasedException):
     pass
 
 
-def format_duplicate_files_error_message(stream_name: str, duplicated_files_names: List):
+def format_duplicate_files_error_message(
+    stream_name: str, duplicated_files_names: List[dict[str, List[str]]]
+) -> str:
     duplicated_files_messages = []
     for duplicated_file in duplicated_files_names:
         for duplicated_file_name, file_paths in duplicated_file.items():
