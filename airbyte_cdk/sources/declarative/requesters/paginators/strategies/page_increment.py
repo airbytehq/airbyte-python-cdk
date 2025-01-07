@@ -62,7 +62,7 @@ class PageIncrement(PaginationStrategy):
             return self.start_from_page + 1
         elif not isinstance(last_page_token_value, int):
             raise ValueError(
-                "The page token for a PageIncrement pagination strategy must be an integer"
+                f"Last page token value {last_page_token_value} for PageIncrement pagination strategy was not an integer"
             )
         else:
             return last_page_token_value + 1

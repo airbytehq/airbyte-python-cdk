@@ -87,19 +87,10 @@ class OffsetIncrement(PaginationStrategy):
             return 0 + last_page_size
         elif not isinstance(last_page_token_value, int):
             raise ValueError(
-                "The page token for a OffsetIncrement pagination strategy must be an integer"
+                f"Last page token value {last_page_token_value} for OffsetIncrement pagination strategy was not an integer"
             )
         else:
-            next_page_token_value = last_page_token_value + last_page_size
-            return next_page_token_value
-
-    def reset(self, reset_value: Optional[Any] = 0) -> None:
-        if not isinstance(reset_value, int):
-            raise ValueError(
-                f"Reset value {reset_value} for OffsetIncrement pagination strategy was not an integer"
-            )
-        else:
-            self._offset = reset_value
+            return last_page_token_value + last_page_size
 
     def get_page_size(self) -> Optional[int]:
         if self._page_size:
