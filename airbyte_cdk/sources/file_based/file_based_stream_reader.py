@@ -139,6 +139,7 @@ class AbstractFileBasedStreamReader(ABC):
         # fall back to preserve subdirectories if config is not present or incomplete
         if (
             self.use_file_transfer()
+            and self.config
             and hasattr(self.config.delivery_method, "preserve_subdirectories_directories")
             and self.config.delivery_method.preserve_subdirectories_directories is not None
         ):
