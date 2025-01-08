@@ -34,7 +34,7 @@ class RecordSelector(HttpSelector):
     extractor: RecordExtractor
     config: Config
     parameters: InitVar[Mapping[str, Any]]
-    schema_normalization: TypeTransformer | AbstractTypeTransformer
+    schema_normalization: Union[TypeTransformer, AbstractTypeTransformer]
     name: str
     _name: Union[InterpolatedString, str] = field(init=False, repr=False, default="")
     record_filter: Optional[RecordFilter] = None
