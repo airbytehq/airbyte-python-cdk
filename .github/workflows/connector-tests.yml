@@ -132,7 +132,7 @@ jobs:
         run: |
           cd airbyte
           make tools.airbyte-ci-binary.install
-          airbyte-ci-dev \
+          airbyte-ci \
           --ci-report-bucket-name=airbyte-ci-reports-multi \
           connectors \
           --name ${{matrix.connector}} \
