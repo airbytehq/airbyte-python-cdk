@@ -354,18 +354,21 @@ def test_initial_token_with_offset_pagination():
             {"next_page_token": 20},
         ),
         pytest.param(
-            PageIncrement(config={}, page_size=5, start_from_page=0, parameters={}, inject_on_first_request=True),
+            PageIncrement(
+                config={},
+                page_size=5,
+                start_from_page=0,
+                parameters={},
+                inject_on_first_request=True,
+            ),
             5,
             {"next_page_token": 1},
             {"next_page_token": 2},
         ),
-    ]
+    ],
 )
 def test_no_inject_on_first_request_offset_pagination(
-    pagination_strategy,
-    last_page_size,
-    expected_next_page_token,
-    expected_second_next_page_token
+    pagination_strategy, last_page_size, expected_next_page_token, expected_second_next_page_token
 ):
     """
     Validate that the stateless next_page_token() works when the first page does not inject the value
@@ -398,7 +401,9 @@ def test_no_inject_on_first_request_offset_pagination(
     assert actual_next_page_token == expected_next_page_token
 
     last_page_token_value = actual_next_page_token["next_page_token"]
-    actual_next_page_token = paginator.next_page_token(response, last_page_size, last_record, last_page_token_value)
+    actual_next_page_token = paginator.next_page_token(
+        response, last_page_size, last_record, last_page_token_value
+    )
     assert actual_next_page_token == expected_second_next_page_token
 
 
