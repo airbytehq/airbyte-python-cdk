@@ -1241,6 +1241,7 @@ definitions:
             - "$ref": "#/definitions/KeysToLower"
             - "$ref": "#/definitions/KeysToSnakeCase"
             - "$ref": "#/definitions/FlattenFields"
+            - "$ref": "#/definitions/KeysReplace"
       state_migrations:
         title: State Migrations
         description: Array of state migrations to be applied on the input state
@@ -1785,6 +1786,7 @@ definitions:
             - "$ref": "#/definitions/KeysToLower"
             - "$ref": "#/definitions/KeysToSnakeCase"
             - "$ref": "#/definitions/FlattenFields"
+            - "$ref": "#/definitions/KeysReplace"
       schema_type_identifier:
         "$ref": "#/definitions/SchemaTypeIdentifier"
       $parameters:
@@ -1880,6 +1882,49 @@ definitions:
       type:
         type: string
         enum: [FlattenFields]
+      $parameters:
+        type: object
+        additionalProperties: true
+  KeysReplace:
+    title: Keys Replace
+    description: A transformation that replaces symbols in keys.
+    type: object
+    required:
+      - type
+      - old
+      - new
+    properties:
+      type:
+        type: string
+        enum: [KeysReplace]
+      old:
+        type: string
+        title: Old value
+        description: Old value to replace.
+        examples:
+          - " "
+          - "{{ record.id }}"
+          - "{{ config['id'] }}"
+          - "{{ stream_slice['id'] }}"
+        interpolation_context:
+          - config
+          - record
+          - stream_state
+          - stream_slice
+      new:
+        type: string
+        title: New value
+        description: New value to set.
+        examples:
+          - "_"
+          - "{{ record.id }}"
+          - "{{ config['id'] }}"
+          - "{{ stream_slice['id'] }}"
+        interpolation_context:
+          - config
+          - record
+          - stream_state
+          - stream_slice
       $parameters:
         type: object
         additionalProperties: true

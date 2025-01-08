@@ -721,6 +721,23 @@ class KeysToSnakeCase(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class KeysReplace(BaseModel):
+    type: Literal["KeysReplace"]
+    old: str = Field(
+        ...,
+        description="Old value to replace.",
+        examples=[" ", "{{ record.id }}", "{{ config['id'] }}", "{{ stream_slice['id'] }}"],
+        title="Old value",
+    )
+    new: str = Field(
+        ...,
+        description="New value to set.",
+        examples=["_", "{{ record.id }}", "{{ config['id'] }}", "{{ stream_slice['id'] }}"],
+        title="New value",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class FlattenFields(BaseModel):
     type: Literal["FlattenFields"]
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
@@ -1701,6 +1718,7 @@ class DeclarativeStream(BaseModel):
                 KeysToLower,
                 KeysToSnakeCase,
                 FlattenFields,
+                KeysReplace,
             ]
         ]
     ] = Field(
@@ -1875,6 +1893,7 @@ class DynamicSchemaLoader(BaseModel):
                 KeysToLower,
                 KeysToSnakeCase,
                 FlattenFields,
+                KeysReplace,
             ]
         ]
     ] = Field(

@@ -9,6 +9,7 @@ import pytest
 import requests
 
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder, XmlDecoder
+from airbyte_cdk.sources.declarative.incremental import DatetimeBasedCursor
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.requesters.paginators.default_paginator import (
     DefaultPaginator,
@@ -21,6 +22,10 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies.cursor_pag
 )
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.offset_increment import (
     OffsetIncrement,
+)
+from airbyte_cdk.sources.declarative.requesters.paginators.strategies.stop_condition import (
+    CursorStopCondition,
+    StopConditionPaginationStrategyDecorator,
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 
@@ -354,6 +359,40 @@ def test_reset(inject_on_first_request):
     request_parameters_after_reset = paginator.get_request_params()
     assert initial_request_parameters == request_parameters_after_reset
     assert request_parameters_for_second_request != request_parameters_after_reset
+
+
+def test_data_feed_paginator_with_stop_page_condition():
+    config = {}
+
+    cursor = DatetimeBasedCursor(
+        cursor_field="updated_at",
+        datetime_format="%Y-%m-%d",
+        start_datetime="2024-01-01",
+        config=config,
+        parameters={},
+    )
+
+    wrapped_strategy = StopConditionPaginationStrategyDecorator(
+        _delegate=OffsetIncrement(
+            config={}, page_size=2, inject_on_first_request=False, parameters={}
+        ),
+        stop_condition=CursorStopCondition(cursor=cursor),
+    )
+
+    paginator = DefaultPaginator(
+        pagination_strategy=wrapped_strategy,
+        config=config,
+        url_base="https://airbyte.io",
+        parameters={},
+        page_size_option=RequestOption(
+            inject_into=RequestOptionType.request_parameter, field_name="limit", parameters={}
+        ),
+        page_token_option=RequestOption(
+            inject_into=RequestOptionType.request_parameter, field_name="offset", parameters={}
+        ),
+    )
+
+    paginator.reset()
 
 
 def test_initial_token_with_offset_pagination():

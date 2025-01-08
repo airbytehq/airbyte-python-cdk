@@ -255,6 +255,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     JwtPayload as JwtPayloadModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    KeysReplace as KeysReplaceModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     KeysToLower as KeysToLowerModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -417,6 +420,9 @@ from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFiel
 from airbyte_cdk.sources.declarative.transformations.flatten_fields import (
     FlattenFields,
 )
+from airbyte_cdk.sources.declarative.transformations.keys_replace_transformation import (
+    KeysReplaceTransformation,
+)
 from airbyte_cdk.sources.declarative.transformations.keys_to_lower_transformation import (
     KeysToLowerTransformation,
 )
@@ -509,6 +515,7 @@ class ModelToComponentFactory:
             GzipParserModel: self.create_gzip_parser,
             KeysToLowerModel: self.create_keys_to_lower_transformation,
             KeysToSnakeCaseModel: self.create_keys_to_snake_transformation,
+            KeysReplaceModel: self.create_keys_replace_transformation,
             FlattenFieldsModel: self.create_flatten_fields,
             IterableDecoderModel: self.create_iterable_decoder,
             XmlDecoderModel: self.create_xml_decoder,
@@ -629,6 +636,13 @@ class ModelToComponentFactory:
         self, model: KeysToSnakeCaseModel, config: Config, **kwargs: Any
     ) -> KeysToSnakeCaseTransformation:
         return KeysToSnakeCaseTransformation()
+
+    def create_keys_replace_transformation(
+        self, model: KeysReplaceModel, config: Config, **kwargs: Any
+    ) -> KeysReplaceTransformation:
+        return KeysReplaceTransformation(
+            old=model.old, new=model.new, parameters=model.parameters or {}
+        )
 
     def create_flatten_fields(
         self, model: FlattenFieldsModel, config: Config, **kwargs: Any
