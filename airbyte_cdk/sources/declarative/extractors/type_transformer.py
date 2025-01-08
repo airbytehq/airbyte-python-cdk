@@ -8,7 +8,7 @@ from typing import Any, Dict, Mapping
 
 
 @dataclass
-class AbstractTypeTransformer(ABC):
+class TypeTransformer(ABC):
     """
     Abstract base class for implementing type transformation logic.
 

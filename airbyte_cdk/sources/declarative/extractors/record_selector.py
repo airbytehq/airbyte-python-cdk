@@ -10,7 +10,7 @@ import requests
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.extractors.record_filter import RecordFilter
-from airbyte_cdk.sources.declarative.extractors.type_transformer import AbstractTypeTransformer
+from airbyte_cdk.sources.declarative.extractors.type_transformer import TypeTransformer as DeclarativeTypeTransformer
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.models import SchemaNormalization
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
@@ -34,7 +34,7 @@ class RecordSelector(HttpSelector):
     extractor: RecordExtractor
     config: Config
     parameters: InitVar[Mapping[str, Any]]
-    schema_normalization: Union[TypeTransformer, AbstractTypeTransformer]
+    schema_normalization: Union[TypeTransformer, DeclarativeTypeTransformer]
     name: str
     _name: Union[InterpolatedString, str] = field(init=False, repr=False, default="")
     record_filter: Optional[RecordFilter] = None
