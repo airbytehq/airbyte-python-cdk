@@ -184,6 +184,7 @@ def test_to_string(test_name, input_value, expected_output):
             id="test_timestamp_from_rfc3339",
         ),
         pytest.param("{{ max(1,2) }}", 2, id="test_max"),
+        pytest.param("{{ min(1,2) }}", 1, id="test_min"),
     ],
 )
 def test_macros(s, expected_value):
@@ -291,6 +292,8 @@ def test_undeclared_variables(template_string, expected_error, expected_value):
         ),
         pytest.param("{{ max(2, 3) }}", 3, id="test_max_with_arguments"),
         pytest.param("{{ max([2, 3]) }}", 3, id="test_max_with_list"),
+        pytest.param("{{ min(2, 3) }}", 2, id="test_min_with_arguments"),
+        pytest.param("{{ min([2, 3]) }}", 2, id="test_min_with_list"),
         pytest.param("{{ day_delta(1) }}", "2021-09-02T00:00:00.000000+0000", id="test_day_delta"),
         pytest.param(
             "{{ day_delta(-1) }}", "2021-08-31T00:00:00.000000+0000", id="test_day_delta_negative"
