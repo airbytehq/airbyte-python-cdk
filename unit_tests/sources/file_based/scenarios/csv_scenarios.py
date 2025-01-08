@@ -535,7 +535,7 @@ single_csv_scenario: TestScenario[InMemoryFilesSource] = (
                                 "required": ["delivery_type"],
                             },
                         ],
-                    }
+                    },
                 },
                 "required": ["streams"],
             },
