@@ -633,7 +633,9 @@ class ModelToComponentFactory:
     def create_flatten_fields(
         self, model: FlattenFieldsModel, config: Config, **kwargs: Any
     ) -> FlattenFields:
-        return FlattenFields(flatten_lists=model.flatten_lists if model.flatten_lists is not None else True)
+        return FlattenFields(
+            flatten_lists=model.flatten_lists if model.flatten_lists is not None else True
+        )
 
     @staticmethod
     def _json_schema_type_name_to_type(value_type: Optional[ValueType]) -> Optional[Type[Any]]:
