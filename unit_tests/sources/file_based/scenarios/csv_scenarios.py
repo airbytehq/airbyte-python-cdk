@@ -526,8 +526,8 @@ single_csv_scenario: TestScenario[InMemoryFilesSource] = (
                                     },
                                     "preserve_subdirectories_directories": {
                                         "default": True,
-                                        "description": "Flag indicating we should preserve subdirectories directories",
-                                        "title": "Preserve Subdirectories Directories",
+                                        "description": "If enabled replicate source folder structure",
+                                        "title": "Preserve Subdirectories in File Paths",
                                         "type": "boolean",
                                     },
                                 },
@@ -535,13 +535,7 @@ single_csv_scenario: TestScenario[InMemoryFilesSource] = (
                                 "required": ["delivery_type"],
                             },
                         ],
-                    },
-                    "preserve_subdirectories_directories": {
-                        "default": True,
-                        "description": "Flag indicating we should preserve subdirectories directories",
-                        "title": "Preserve Subdirectories Directories",
-                        "type": "boolean",
-                    },
+                    }
                 },
                 "required": ["streams"],
             },

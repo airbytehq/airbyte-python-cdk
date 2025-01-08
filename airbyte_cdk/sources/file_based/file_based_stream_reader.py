@@ -138,11 +138,11 @@ class AbstractFileBasedStreamReader(ABC):
     def preserve_subdirectories_directories(self) -> bool:
         # fall back to preserve subdirectories if config is not present or incomplete
         if (
-            self.config
-            and hasattr(self.config, "preserve_subdirectories_directories")
-            and self.config.preserve_subdirectories_directories is not None
+            self.use_file_transfer()
+            and hasattr(self.config.delivery_method, "preserve_subdirectories_directories")
+            and self.config.delivery_method.preserve_subdirectories_directories is not None
         ):
-            return self.config.preserve_subdirectories_directories
+            return self.config.delivery_method.preserve_subdirectories_directories
         return True
 
     @abstractmethod

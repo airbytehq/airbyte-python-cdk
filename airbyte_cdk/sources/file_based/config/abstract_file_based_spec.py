@@ -32,8 +32,8 @@ class DeliverRawFiles(BaseModel):
     delivery_type: Literal["use_file_transfer"] = Field("use_file_transfer", const=True)
 
     preserve_subdirectories_directories: bool = Field(
-        title="Preserve Subdirectories Directories",
-        description="Flag indicating we should preserve subdirectories directories",
+        title="Preserve Subdirectories in File Paths",
+        description="If enabled replicate source folder structure",
         default=True,
     )
 
@@ -69,12 +69,6 @@ class AbstractFileBasedSpec(BaseModel):
         group="advanced",
         default="use_records_transfer",
         airbyte_hidden=True,
-    )
-
-    preserve_subdirectories_directories: bool = Field(
-        title="Preserve Subdirectories Directories",
-        description="Flag indicating we should preserve subdirectories directories",
-        default=True,
     )
 
     @classmethod
