@@ -517,25 +517,6 @@ single_csv_scenario: TestScenario[InMemoryFilesSource] = (
                                 "title": "Copy Raw Files",
                                 "type": "object",
                                 "properties": {
-                                    "delivery_options": {
-                                        "allOf": [
-                                            {
-                                                "properties": {
-                                                    "preserve_subdirectories_directories": {
-                                                        "default": True,
-                                                        "description": "Flag indicating we should preserve subdirectories directories",
-                                                        "title": "Preserve Subdirectories Directories",
-                                                        "type": "boolean",
-                                                    }
-                                                },
-                                                "title": "DeliveryOptions",
-                                                "type": "object",
-                                            }
-                                        ],
-                                        "order": 2,
-                                        "title": "Delivery Options",
-                                        "type": "object",
-                                    },
                                     "delivery_type": {
                                         "title": "Delivery Type",
                                         "default": "use_file_transfer",
@@ -543,30 +524,23 @@ single_csv_scenario: TestScenario[InMemoryFilesSource] = (
                                         "enum": ["use_file_transfer"],
                                         "type": "string",
                                     },
+                                    "preserve_subdirectories_directories": {
+                                        "default": True,
+                                        "description": "Flag indicating we should preserve subdirectories directories",
+                                        "title": "Preserve Subdirectories Directories",
+                                        "type": "boolean",
+                                    },
                                 },
                                 "description": "Copy raw files without parsing their contents. Bits are copied into the destination exactly as they appeared in the source. Recommended for use with unstructured text data, non-text and compressed files.",
                                 "required": ["delivery_type"],
                             },
                         ],
                     },
-                    "delivery_options": {
-                        "allOf": [
-                            {
-                                "properties": {
-                                    "preserve_subdirectories_directories": {
-                                        "default": True,
-                                        "description": "Flag indicating we should preserve subdirectories directories",
-                                        "title": "Preserve Subdirectories Directories",
-                                        "type": "boolean",
-                                    }
-                                },
-                                "title": "DeliveryOptions",
-                                "type": "object",
-                            }
-                        ],
-                        "order": 8,
-                        "title": "Delivery Options",
-                        "type": "object",
+                    "preserve_subdirectories_directories": {
+                        "default": True,
+                        "description": "Flag indicating we should preserve subdirectories directories",
+                        "title": "Preserve Subdirectories Directories",
+                        "type": "boolean",
                     },
                 },
                 "required": ["streams"],

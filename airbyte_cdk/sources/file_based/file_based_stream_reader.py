@@ -139,11 +139,10 @@ class AbstractFileBasedStreamReader(ABC):
         # fall back to preserve subdirectories if config is not present or incomplete
         if (
             self.config
-            and hasattr(self.config, "delivery_options")
-            and self.config.delivery_options is not None
-            and hasattr(self.config.delivery_options, "preserve_subdirectories_directories")
+            and hasattr(self.config, "preserve_subdirectories_directories")
+            and self.config.preserve_subdirectories_directories is not None
         ):
-            return self.config.delivery_options.preserve_subdirectories_directories
+            return self.config.preserve_subdirectories_directories
         return True
 
     @abstractmethod
