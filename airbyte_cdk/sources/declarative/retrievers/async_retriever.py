@@ -7,10 +7,7 @@ from typing import Any, Iterable, Mapping, Optional
 from typing_extensions import deprecated
 
 from airbyte_cdk.models import FailureType
-from airbyte_cdk.sources.declarative.async_job.job_orchestrator import (
-    AsyncJobOrchestrator,
-    AsyncPartition,
-)
+from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncPartition
 from airbyte_cdk.sources.declarative.extractors.record_selector import RecordSelector
 from airbyte_cdk.sources.declarative.partition_routers.async_job_partition_router import (
     AsyncJobPartitionRouter,

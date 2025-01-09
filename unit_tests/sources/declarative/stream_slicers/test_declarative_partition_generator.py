@@ -1,3 +1,5 @@
+# Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+
 from typing import List
 from unittest import TestCase
 from unittest.mock import Mock
@@ -52,7 +54,6 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
             message_repository,
         )
 
-        # self._retriever_factory.return_value = retriever
         partition = partition_factory.create(_A_STREAM_SLICE)
 
         records = list(partition.read())

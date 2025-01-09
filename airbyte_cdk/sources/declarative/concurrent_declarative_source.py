@@ -213,11 +213,6 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     and not incremental_sync_component_definition
                 )
 
-                is_async_job_stream = (
-                    name_to_stream_mapping[declarative_stream.name].get("retriever", {}).get("type")
-                    == "AsyncRetriever"
-                )
-
                 if self._is_datetime_incremental_without_partition_routing(
                     declarative_stream, incremental_sync_component_definition
                 ):
