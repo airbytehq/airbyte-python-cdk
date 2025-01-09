@@ -299,7 +299,9 @@ class AirbyteEntrypoint(object):
             return orjson.dumps(serialized_message).decode()
         except Exception as exception:
             if not _HAS_LOGGED_FOR_SERIALIZATION_ERROR:
-                logger.warning(f"There was an error during the serialization of an AirbyteMessage: `{exception}`. This might impact the sync performances.")
+                logger.warning(
+                    f"There was an error during the serialization of an AirbyteMessage: `{exception}`. This might impact the sync performances."
+                )
                 _HAS_LOGGED_FOR_SERIALIZATION_ERROR = True
             return json.dumps(serialized_message)
 
