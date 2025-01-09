@@ -5,6 +5,7 @@
 import argparse
 import importlib
 import ipaddress
+import json
 import logging
 import os.path
 import socket
@@ -291,7 +292,10 @@ class AirbyteEntrypoint(object):
 
     @staticmethod
     def airbyte_message_to_string(airbyte_message: AirbyteMessage) -> str:
-        return orjson.dumps(AirbyteMessageSerializer.dump(airbyte_message)).decode()
+        try:
+            return orjson.dumps(AirbyteMessageSerializer.dump(airbyte_message)).decode()
+        except:
+            return json.dumps(AirbyteMessageSerializer.dump(airbyte_message))
 
     @classmethod
     def extract_state(cls, args: List[str]) -> Optional[Any]:
