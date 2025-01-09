@@ -82,9 +82,6 @@ from airbyte_cdk.sources.declarative.extractors import (
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
-from airbyte_cdk.sources.declarative.extractors.record_selector import (
-    SCHEMA_TRANSFORMER_TYPE_MAPPING,
-)
 from airbyte_cdk.sources.declarative.incremental import (
     ChildPartitionResumableFullRefreshCursor,
     CursorFactory,
@@ -100,7 +97,9 @@ from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import I
 from airbyte_cdk.sources.declarative.migrations.legacy_to_per_partition_state_migration import (
     LegacyToPerPartitionStateMigration,
 )
-from airbyte_cdk.sources.declarative.models import CustomStateMigration
+from airbyte_cdk.sources.declarative.models import (
+    CustomStateMigration,
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     AddedFieldDefinition as AddedFieldDefinitionModel,
 )
@@ -186,6 +185,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     CustomSchemaLoader as CustomSchemaLoader,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CustomSchemaNormalization as CustomSchemaNormalizationModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CustomTransformation as CustomTransformationModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -255,6 +257,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     JwtPayload as JwtPayloadModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    KeysReplace as KeysReplaceModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     KeysToLower as KeysToLowerModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -307,6 +312,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ResponseToFileExtractor as ResponseToFileExtractorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    SchemaNormalization as SchemaNormalizationModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     SchemaTypeIdentifier as SchemaTypeIdentifierModel,
@@ -417,6 +425,9 @@ from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFiel
 from airbyte_cdk.sources.declarative.transformations.flatten_fields import (
     FlattenFields,
 )
+from airbyte_cdk.sources.declarative.transformations.keys_replace_transformation import (
+    KeysReplaceTransformation,
+)
 from airbyte_cdk.sources.declarative.transformations.keys_to_lower_transformation import (
     KeysToLowerTransformation,
 )
@@ -438,6 +449,11 @@ from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 
 ComponentDefinition = Mapping[str, Any]
+
+SCHEMA_TRANSFORMER_TYPE_MAPPING = {
+    SchemaNormalizationModel.None_: TransformConfig.NoTransform,
+    SchemaNormalizationModel.Default: TransformConfig.DefaultSchemaNormalization,
+}
 
 
 class ModelToComponentFactory:
@@ -487,6 +503,7 @@ class ModelToComponentFactory:
             CustomRequesterModel: self.create_custom_component,
             CustomRetrieverModel: self.create_custom_component,
             CustomSchemaLoader: self.create_custom_component,
+            CustomSchemaNormalizationModel: self.create_custom_component,
             CustomStateMigration: self.create_custom_component,
             CustomPaginationStrategyModel: self.create_custom_component,
             CustomPartitionRouterModel: self.create_custom_component,
@@ -509,6 +526,7 @@ class ModelToComponentFactory:
             GzipParserModel: self.create_gzip_parser,
             KeysToLowerModel: self.create_keys_to_lower_transformation,
             KeysToSnakeCaseModel: self.create_keys_to_snake_transformation,
+            KeysReplaceModel: self.create_keys_replace_transformation,
             FlattenFieldsModel: self.create_flatten_fields,
             IterableDecoderModel: self.create_iterable_decoder,
             XmlDecoderModel: self.create_xml_decoder,
@@ -629,6 +647,13 @@ class ModelToComponentFactory:
         self, model: KeysToSnakeCaseModel, config: Config, **kwargs: Any
     ) -> KeysToSnakeCaseTransformation:
         return KeysToSnakeCaseTransformation()
+
+    def create_keys_replace_transformation(
+        self, model: KeysReplaceModel, config: Config, **kwargs: Any
+    ) -> KeysReplaceTransformation:
+        return KeysReplaceTransformation(
+            old=model.old, new=model.new, parameters=model.parameters or {}
+        )
 
     def create_flatten_fields(
         self, model: FlattenFieldsModel, config: Config, **kwargs: Any
@@ -1560,7 +1585,12 @@ class ModelToComponentFactory:
         )
 
     def create_http_requester(
-        self, model: HttpRequesterModel, decoder: Decoder, config: Config, *, name: str
+        self,
+        model: HttpRequesterModel,
+        config: Config,
+        decoder: Decoder = JsonDecoder(parameters={}),
+        *,
+        name: str,
     ) -> HttpRequester:
         authenticator = (
             self._create_component_from_model(
@@ -1976,12 +2006,11 @@ class ModelToComponentFactory:
         config: Config,
         *,
         name: str,
-        transformations: List[RecordTransformation],
-        decoder: Optional[Decoder] = None,
-        client_side_incremental_sync: Optional[Dict[str, Any]] = None,
+        transformations: List[RecordTransformation] | None = None,
+        decoder: Decoder | None = None,
+        client_side_incremental_sync: Dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> RecordSelector:
-        assert model.schema_normalization is not None  # for mypy
         extractor = self._create_component_from_model(
             model=model.extractor, decoder=decoder, config=config
         )
@@ -1999,8 +2028,10 @@ class ModelToComponentFactory:
                 else None,
                 **client_side_incremental_sync,
             )
-        schema_normalization = TypeTransformer(
-            SCHEMA_TRANSFORMER_TYPE_MAPPING[model.schema_normalization]
+        schema_normalization = (
+            TypeTransformer(SCHEMA_TRANSFORMER_TYPE_MAPPING[model.schema_normalization])
+            if isinstance(model.schema_normalization, SchemaNormalizationModel)
+            else self._create_component_from_model(model.schema_normalization, config=config)  # type: ignore[arg-type] # custom normalization model expected here
         )
 
         return RecordSelector(
@@ -2008,7 +2039,7 @@ class ModelToComponentFactory:
             name=name,
             config=config,
             record_filter=record_filter,
-            transformations=transformations,
+            transformations=transformations or [],
             schema_normalization=schema_normalization,
             parameters=model.parameters or {},
         )

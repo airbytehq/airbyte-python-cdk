@@ -768,3 +768,26 @@ def test_handle_record_counts(
         assert isinstance(
             actual_message.state.sourceStats.recordCount, float
         ), "recordCount value should be expressed as a float"
+
+
+def test_given_serialization_error_using_orjson_then_fallback_on_json(
+    entrypoint: AirbyteEntrypoint, mocker, spec_mock, config_mock
+):
+    parsed_args = Namespace(
+        command="read", config="config_path", state="statepath", catalog="catalogpath"
+    )
+    record = AirbyteMessage(
+        record=AirbyteRecordMessage(
+            stream="stream", data={"data": 7046723166326052303072}, emitted_at=1
+        ),
+        type=Type.RECORD,
+    )
+    mocker.patch.object(MockSource, "read_state", return_value={})
+    mocker.patch.object(MockSource, "read_catalog", return_value={})
+    mocker.patch.object(MockSource, "read", return_value=[record, record])
+
+    messages = list(entrypoint.run(parsed_args))
+
+    # There will be multiple messages here because the fixture `entrypoint` sets a control message. We only care about records here
+    record_messages = list(filter(lambda message: "RECORD" in message, messages))
+    assert len(record_messages) == 2
