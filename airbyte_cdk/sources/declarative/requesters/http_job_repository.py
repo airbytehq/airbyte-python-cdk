@@ -238,7 +238,5 @@ class AsyncHttpJobRepository(AsyncJobRepository):
                 },
                 cursor_slice={},
             )
-            url_response = self.url_requester.send_request(
-                stream_slice=stream_slice
-            )
+            url_response = self.url_requester.send_request(stream_slice=stream_slice)
         yield from self.urls_extractor.extract_records(url_response)
