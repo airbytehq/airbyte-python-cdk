@@ -80,7 +80,6 @@ class AirbyteLogFormatter(logging.Formatter):
             )
             return orjson.dumps(AirbyteMessageSerializer.dump(log_message)).decode()
 
-
     @staticmethod
     def extract_extra_args_from_record(record: logging.LogRecord) -> Mapping[str, Any]:
         """
