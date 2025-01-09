@@ -34,6 +34,9 @@ class AsyncHttpJobRepository(AsyncJobRepository):
     creation_requester: Requester
     polling_requester: Requester
     download_retriever: SimpleRetriever
+    url_requester: Optional[
+        Requester
+    ]  # use it in case polling_requester provides some <id> and extra request is needed to obtain list of urls to download from
     abort_requester: Optional[Requester]
     delete_requester: Optional[Requester]
     status_extractor: DpathExtractor
@@ -186,9 +189,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
 
         """
 
-        for url in self.urls_extractor.extract_records(
-            self._polling_job_response_by_id[job.api_job_id()]
-        ):
+        for url in self._get_download_url(job):
             stream_slice: StreamSlice = StreamSlice(partition={"url": url}, cursor_slice={})
             for message in self.download_retriever.read_records({}, stream_slice):
                 if isinstance(message, Record):
@@ -226,3 +227,18 @@ class AsyncHttpJobRepository(AsyncJobRepository):
             cursor_slice={},
         )
         return stream_slice
+
+    def _get_download_url(self, job: AsyncJob) -> Iterable[str]:
+        if not self.url_requester:
+            url_response = self._polling_job_response_by_id[job.api_job_id()]
+        else:
+            stream_slice: StreamSlice = StreamSlice(
+                partition={
+                    "polling_job_response": self._polling_job_response_by_id[job.api_job_id()]
+                },
+                cursor_slice={},
+            )
+            url_response = self.url_requester.send_request(
+                stream_slice=stream_slice
+            )
+        yield from self.urls_extractor.extract_records(url_response)
