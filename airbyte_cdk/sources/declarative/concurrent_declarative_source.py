@@ -242,6 +242,8 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                         # still rely on a DatetimeBasedCursor that is properly initialized with state.
                         if retriever.cursor:
                             retriever.cursor.set_initial_state(stream_state=stream_state)
+                        # We zero it out here, but since this is a cursor reference, the state is still properly
+                        # instantiated for the other components that reference it
                         retriever.cursor = None
 
                     partition_generator = StreamSlicerPartitionGenerator(
