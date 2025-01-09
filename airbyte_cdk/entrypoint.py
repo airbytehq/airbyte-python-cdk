@@ -292,10 +292,11 @@ class AirbyteEntrypoint(object):
 
     @staticmethod
     def airbyte_message_to_string(airbyte_message: AirbyteMessage) -> str:
+        serialized_message = AirbyteMessageSerializer.dump(airbyte_message)
         try:
-            return orjson.dumps(AirbyteMessageSerializer.dump(airbyte_message)).decode()
+            return orjson.dumps(serialized_message).decode()
         except:
-            return json.dumps(AirbyteMessageSerializer.dump(airbyte_message))
+            return json.dumps(serialized_message)
 
     @classmethod
     def extract_state(cls, args: List[str]) -> Optional[Any]:
