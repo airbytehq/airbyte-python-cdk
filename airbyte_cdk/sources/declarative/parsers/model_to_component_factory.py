@@ -257,6 +257,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     JwtPayload as JwtPayloadModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    KeysReplace as KeysReplaceModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     KeysToLower as KeysToLowerModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -422,6 +425,9 @@ from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFiel
 from airbyte_cdk.sources.declarative.transformations.flatten_fields import (
     FlattenFields,
 )
+from airbyte_cdk.sources.declarative.transformations.keys_replace_transformation import (
+    KeysReplaceTransformation,
+)
 from airbyte_cdk.sources.declarative.transformations.keys_to_lower_transformation import (
     KeysToLowerTransformation,
 )
@@ -520,6 +526,7 @@ class ModelToComponentFactory:
             GzipParserModel: self.create_gzip_parser,
             KeysToLowerModel: self.create_keys_to_lower_transformation,
             KeysToSnakeCaseModel: self.create_keys_to_snake_transformation,
+            KeysReplaceModel: self.create_keys_replace_transformation,
             FlattenFieldsModel: self.create_flatten_fields,
             IterableDecoderModel: self.create_iterable_decoder,
             XmlDecoderModel: self.create_xml_decoder,
@@ -640,6 +647,13 @@ class ModelToComponentFactory:
         self, model: KeysToSnakeCaseModel, config: Config, **kwargs: Any
     ) -> KeysToSnakeCaseTransformation:
         return KeysToSnakeCaseTransformation()
+
+    def create_keys_replace_transformation(
+        self, model: KeysReplaceModel, config: Config, **kwargs: Any
+    ) -> KeysReplaceTransformation:
+        return KeysReplaceTransformation(
+            old=model.old, new=model.new, parameters=model.parameters or {}
+        )
 
     def create_flatten_fields(
         self, model: FlattenFieldsModel, config: Config, **kwargs: Any
@@ -1571,7 +1585,12 @@ class ModelToComponentFactory:
         )
 
     def create_http_requester(
-        self, model: HttpRequesterModel, decoder: Decoder, config: Config, *, name: str
+        self,
+        model: HttpRequesterModel,
+        config: Config,
+        decoder: Decoder = JsonDecoder(parameters={}),
+        *,
+        name: str,
     ) -> HttpRequester:
         authenticator = (
             self._create_component_from_model(
@@ -1987,9 +2006,9 @@ class ModelToComponentFactory:
         config: Config,
         *,
         name: str,
-        transformations: List[RecordTransformation],
-        decoder: Optional[Decoder] = None,
-        client_side_incremental_sync: Optional[Dict[str, Any]] = None,
+        transformations: List[RecordTransformation] | None = None,
+        decoder: Decoder | None = None,
+        client_side_incremental_sync: Dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> RecordSelector:
         extractor = self._create_component_from_model(
@@ -2020,7 +2039,7 @@ class ModelToComponentFactory:
             name=name,
             config=config,
             record_filter=record_filter,
-            transformations=transformations,
+            transformations=transformations or [],
             schema_normalization=schema_normalization,
             parameters=model.parameters or {},
         )
