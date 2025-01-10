@@ -268,6 +268,22 @@ class CustomSchemaLoader(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class CustomSchemaNormalization(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    type: Literal["CustomSchemaNormalization"]
+    class_name: str = Field(
+        ...,
+        description="Fully-qualified name of the class that will be implementing the custom normalization. The format is `source_<name>.<package>.<class_name>`.",
+        examples=[
+            "source_amazon_seller_partner.components.LedgerDetailedViewReportsTypeTransformer"
+        ],
+        title="Class Name",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class CustomStateMigration(BaseModel):
     class Config:
         extra = Extra.allow
@@ -1530,7 +1546,11 @@ class RecordSelector(BaseModel):
         description="Responsible for filtering records to be emitted by the Source.",
         title="Record Filter",
     )
-    schema_normalization: Optional[SchemaNormalization] = SchemaNormalization.None_
+    schema_normalization: Optional[Union[SchemaNormalization, CustomSchemaNormalization]] = Field(
+        SchemaNormalization.None_,
+        description="Responsible for normalization according to the schema.",
+        title="Schema Normalization",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 

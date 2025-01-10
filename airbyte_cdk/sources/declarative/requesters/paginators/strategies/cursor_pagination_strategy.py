@@ -43,7 +43,6 @@ class CursorPaginationStrategy(PaginationStrategy):
     )
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        self._initial_cursor = None
         if isinstance(self.cursor_value, str):
             self._cursor_value = InterpolatedString.create(self.cursor_value, parameters=parameters)
         else:
@@ -57,10 +56,19 @@ class CursorPaginationStrategy(PaginationStrategy):
 
     @property
     def initial_token(self) -> Optional[Any]:
-        return self._initial_cursor
+        """
+        CursorPaginationStrategy does not have an initial value because the next cursor is typically included
+        in the response of the first request. For Resumable Full Refresh streams that checkpoint the page
+        cursor, the next cursor should be read from the state or stream slice object.
+        """
+        return None
 
     def next_page_token(
-        self, response: requests.Response, last_page_size: int, last_record: Optional[Record]
+        self,
+        response: requests.Response,
+        last_page_size: int,
+        last_record: Optional[Record],
+        last_page_token_value: Optional[Any] = None,
     ) -> Optional[Any]:
         decoded_response = next(self.decoder.decode(response))
 
@@ -86,9 +94,6 @@ class CursorPaginationStrategy(PaginationStrategy):
             last_page_size=last_page_size,
         )
         return token if token else None
-
-    def reset(self, reset_value: Optional[Any] = None) -> None:
-        self._initial_cursor = reset_value
 
     def get_page_size(self) -> Optional[int]:
         return self.page_size

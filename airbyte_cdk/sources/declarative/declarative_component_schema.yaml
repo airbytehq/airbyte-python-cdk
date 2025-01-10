@@ -667,6 +667,28 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  CustomSchemaNormalization:
+    title: Custom Schema Normalization
+    description: Schema normalization component whose behavior is derived from a custom code implementation of the connector.
+    type: object
+    additionalProperties: true
+    required:
+      - type
+      - class_name
+    properties:
+      type:
+        type: string
+        enum: [ CustomSchemaNormalization ]
+      class_name:
+        title: Class Name
+        description: Fully-qualified name of the class that will be implementing the custom normalization. The format is `source_<name>.<package>.<class_name>`.
+        type: string
+        additionalProperties: true
+        examples:
+          - "source_amazon_seller_partner.components.LedgerDetailedViewReportsTypeTransformer"
+      $parameters:
+        type: object
+        additionalProperties: true
   CustomStateMigration:
     title: Custom State Migration
     description: Apply a custom transformation on the input state.
@@ -2600,7 +2622,11 @@ definitions:
           - "$ref": "#/definitions/CustomRecordFilter"
           - "$ref": "#/definitions/RecordFilter"
       schema_normalization:
-        "$ref": "#/definitions/SchemaNormalization"
+        title: Schema Normalization
+        description: Responsible for normalization according to the schema.
+        anyOf:
+          - "$ref": "#/definitions/SchemaNormalization"
+          - "$ref": "#/definitions/CustomSchemaNormalization"
         default: None
       $parameters:
         type: object
