@@ -34,9 +34,6 @@ class AsyncHttpJobRepository(AsyncJobRepository):
     creation_requester: Requester
     polling_requester: Requester
     download_retriever: SimpleRetriever
-    url_requester: Optional[
-        Requester
-    ]  # use it in case polling_requester provides some <id> and extra request is needed to obtain list of urls to download from
     abort_requester: Optional[Requester]
     delete_requester: Optional[Requester]
     status_extractor: DpathExtractor
@@ -46,6 +43,9 @@ class AsyncHttpJobRepository(AsyncJobRepository):
     job_timeout: Optional[timedelta] = None
     record_extractor: RecordExtractor = field(
         init=False, repr=False, default_factory=lambda: ResponseToFileExtractor({})
+    )
+    url_requester: Optional[Requester] = (
+        None  # use it in case polling_requester provides some <id> and extra request is needed to obtain list of urls to download from
     )
 
     def __post_init__(self) -> None:
