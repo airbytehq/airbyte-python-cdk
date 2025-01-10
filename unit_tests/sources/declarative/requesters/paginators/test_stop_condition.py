@@ -86,7 +86,9 @@ def test_given_stop_condition_is_not_met_when_next_page_token_then_delegate(
     next_page_token = decorator.next_page_token(ANY_RESPONSE, 2, last_record)
 
     assert next_page_token == mocked_pagination_strategy.next_page_token.return_value
-    mocked_pagination_strategy.next_page_token.assert_called_once_with(ANY_RESPONSE, 2, last_record)
+    mocked_pagination_strategy.next_page_token.assert_called_once_with(
+        ANY_RESPONSE, 2, last_record, None
+    )
     mocked_stop_condition.is_met.assert_has_calls([call(last_record)])
 
 
@@ -100,15 +102,9 @@ def test_given_no_records_when_next_page_token_then_delegate(
     next_page_token = decorator.next_page_token(ANY_RESPONSE, 0, NO_RECORD)
 
     assert next_page_token == mocked_pagination_strategy.next_page_token.return_value
-    mocked_pagination_strategy.next_page_token.assert_called_once_with(ANY_RESPONSE, 0, NO_RECORD)
-
-
-def test_when_reset_then_delegate(mocked_pagination_strategy, mocked_stop_condition):
-    decorator = StopConditionPaginationStrategyDecorator(
-        mocked_pagination_strategy, mocked_stop_condition
+    mocked_pagination_strategy.next_page_token.assert_called_once_with(
+        ANY_RESPONSE, 0, NO_RECORD, None
     )
-    decorator.reset()
-    mocked_pagination_strategy.reset.assert_called_once_with()
 
 
 def test_when_get_page_size_then_delegate(mocked_pagination_strategy, mocked_stop_condition):

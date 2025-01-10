@@ -2634,6 +2634,42 @@ def test_create_custom_schema_loader():
     assert isinstance(component, MyCustomSchemaLoader)
 
 
+class MyCustomRetriever(SimpleRetriever):
+    pass
+
+
+def test_create_custom_retriever():
+    stream_model = {
+        "type": "DeclarativeStream",
+        "retriever": {
+            "type": "CustomRetriever",
+            "class_name": "unit_tests.sources.declarative.parsers.test_model_to_component_factory.MyCustomRetriever",
+            "record_selector": {
+                "type": "RecordSelector",
+                "extractor": {
+                    "type": "DpathExtractor",
+                    "field_path": [],
+                },
+                "$parameters": {"name": ""},
+            },
+            "requester": {
+                "type": "HttpRequester",
+                "name": "list",
+                "url_base": "orange.com",
+                "path": "/v1/api",
+                "$parameters": {"name": ""},
+            },
+        },
+    }
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_model, config=input_config
+    )
+
+    assert isinstance(stream, DeclarativeStream)
+    assert isinstance(stream.retriever, MyCustomRetriever)
+
+
 @freezegun.freeze_time("2021-01-01 00:00:00")
 @pytest.mark.parametrize(
     "config, manifest, expected",

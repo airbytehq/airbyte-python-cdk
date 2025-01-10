@@ -12,6 +12,7 @@ from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import I
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.cursor_pagination_strategy import (
     CursorPaginationStrategy,
 )
+from airbyte_cdk.sources.types import Record
 
 
 @pytest.mark.parametrize(
@@ -79,7 +80,7 @@ def test_cursor_pagination_strategy(template_string, stop_condition, expected_to
         "characters": {},
     }
     response._content = json.dumps(response_body).encode("utf-8")
-    last_record = {"id": 1, "more_records": True}
+    last_record = Record(data={"id": 1, "more_records": True}, stream_name="stream_name")
 
     token = strategy.next_page_token(response, 1, last_record)
     assert expected_token == token
@@ -111,18 +112,3 @@ def test_last_record_is_node_if_no_records():
     response = requests.Response()
     next_page_token = strategy.next_page_token(response, 0, None)
     assert next_page_token is None
-
-
-def test_reset_with_initial_token():
-    strategy = CursorPaginationStrategy(
-        page_size=10,
-        cursor_value="{{ response.next_page }}",
-        config={},
-        parameters={},
-    )
-
-    assert strategy.initial_token is None
-
-    strategy.reset("https://for-all-mankind.nasa.com/api/v1/astronauts")
-
-    assert strategy.initial_token == "https://for-all-mankind.nasa.com/api/v1/astronauts"

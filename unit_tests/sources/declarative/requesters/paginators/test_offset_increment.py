@@ -14,36 +14,46 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies.offset_inc
 
 
 @pytest.mark.parametrize(
-    "page_size, parameters, last_page_size, last_record, expected_next_page_token, expected_offset",
+    "page_size, parameters, last_page_size, last_record, last_page_token_value, expected_next_page_token, expected_offset",
     [
-        pytest.param("2", {}, 2, {"id": 1}, 2, 2, id="test_same_page_size"),
-        pytest.param(2, {}, 2, {"id": 1}, 2, 2, id="test_same_page_size"),
+        pytest.param("2", {}, 2, {"id": 1}, 4, 6, 2, id="test_same_page_size"),
+        pytest.param(2, {}, 2, {"id": 1}, 4, 6, 2, id="test_same_page_size"),
         pytest.param(
             "{{ parameters['page_size'] }}",
             {"page_size": 3},
             2,
             {"id": 1},
+            3,
             None,
             0,
             id="test_larger_page_size",
         ),
-        pytest.param(None, {}, 0, [], None, 0, id="test_stop_if_no_records"),
+        pytest.param(None, {}, 0, [], 3, None, 0, id="test_stop_if_no_records"),
         pytest.param(
             "{{ response['page_metadata']['limit'] }}",
             {},
             2,
             {"id": 1},
+            3,
             None,
             0,
             id="test_page_size_from_response",
         ),
+        pytest.param(
+            2, {}, 2, {"id": 1}, None, 2, 2, id="test_get_second_page_with_first_page_not_injected"
+        ),
     ],
 )
 def test_offset_increment_paginator_strategy(
-    page_size, parameters, last_page_size, last_record, expected_next_page_token, expected_offset
+    page_size,
+    parameters,
+    last_page_size,
+    last_record,
+    last_page_token_value,
+    expected_next_page_token,
+    expected_offset,
 ):
     paginator_strategy = OffsetIncrement(page_size=page_size, parameters=parameters, config={})
-    assert paginator_strategy._offset == 0
 
     response = requests.Response()
 
@@ -51,12 +61,16 @@ def test_offset_increment_paginator_strategy(
     response_body = {"next": "https://airbyte.io/next_url", "page_metadata": {"limit": 5}}
     response._content = json.dumps(response_body).encode("utf-8")
 
-    next_page_token = paginator_strategy.next_page_token(response, last_page_size, last_record)
+    next_page_token = paginator_strategy.next_page_token(
+        response, last_page_size, last_record, last_page_token_value
+    )
     assert expected_next_page_token == next_page_token
-    assert expected_offset == paginator_strategy._offset
 
-    paginator_strategy.reset()
-    assert 0 == paginator_strategy._offset
+    # Validate that the PaginationStrategy is stateless and calling next_page_token() again returns the same result
+    next_page_token = paginator_strategy.next_page_token(
+        response, last_page_size, last_record, last_page_token_value
+    )
+    assert expected_next_page_token == next_page_token
 
 
 def test_offset_increment_paginator_strategy_rises():
@@ -85,24 +99,3 @@ def test_offset_increment_paginator_strategy_initial_token(
     )
 
     assert paginator_strategy.initial_token == expected_initial_token
-
-
-@pytest.mark.parametrize(
-    "reset_value, expected_initial_token, expected_error",
-    [
-        pytest.param(25, 25, None, id="test_reset_with_offset_value"),
-        pytest.param(None, 0, None, id="test_reset_with_default"),
-        pytest.param("Nope", None, ValueError, id="test_reset_with_invalid_value"),
-    ],
-)
-def test_offset_increment_reset(reset_value, expected_initial_token, expected_error):
-    paginator_strategy = OffsetIncrement(
-        page_size=20, parameters={}, config={}, inject_on_first_request=True
-    )
-
-    if expected_error:
-        with pytest.raises(expected_error):
-            paginator_strategy.reset(reset_value=reset_value)
-    else:
-        paginator_strategy.reset(reset_value=reset_value)
-        assert paginator_strategy.initial_token == expected_initial_token

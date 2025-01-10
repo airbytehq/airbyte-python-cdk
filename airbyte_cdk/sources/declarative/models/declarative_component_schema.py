@@ -268,6 +268,22 @@ class CustomSchemaLoader(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class CustomSchemaNormalization(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    type: Literal["CustomSchemaNormalization"]
+    class_name: str = Field(
+        ...,
+        description="Fully-qualified name of the class that will be implementing the custom normalization. The format is `source_<name>.<package>.<class_name>`.",
+        examples=[
+            "source_amazon_seller_partner.components.LedgerDetailedViewReportsTypeTransformer"
+        ],
+        title="Class Name",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class CustomStateMigration(BaseModel):
     class Config:
         extra = Extra.allow
@@ -718,6 +734,23 @@ class KeysToLower(BaseModel):
 
 class KeysToSnakeCase(BaseModel):
     type: Literal["KeysToSnakeCase"]
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class KeysReplace(BaseModel):
+    type: Literal["KeysReplace"]
+    old: str = Field(
+        ...,
+        description="Old value to replace.",
+        examples=[" ", "{{ record.id }}", "{{ config['id'] }}", "{{ stream_slice['id'] }}"],
+        title="Old value",
+    )
+    new: str = Field(
+        ...,
+        description="New value to set.",
+        examples=["_", "{{ record.id }}", "{{ config['id'] }}", "{{ stream_slice['id'] }}"],
+        title="New value",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -1518,7 +1551,11 @@ class RecordSelector(BaseModel):
         description="Responsible for filtering records to be emitted by the Source.",
         title="Record Filter",
     )
-    schema_normalization: Optional[SchemaNormalization] = SchemaNormalization.None_
+    schema_normalization: Optional[Union[SchemaNormalization, CustomSchemaNormalization]] = Field(
+        SchemaNormalization.None_,
+        description="Responsible for normalization according to the schema.",
+        title="Schema Normalization",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -1706,6 +1743,7 @@ class DeclarativeStream(BaseModel):
                 KeysToLower,
                 KeysToSnakeCase,
                 FlattenFields,
+                KeysReplace,
             ]
         ]
     ] = Field(
@@ -1880,6 +1918,7 @@ class DynamicSchemaLoader(BaseModel):
                 KeysToLower,
                 KeysToSnakeCase,
                 FlattenFields,
+                KeysReplace,
             ]
         ]
     ] = Field(
