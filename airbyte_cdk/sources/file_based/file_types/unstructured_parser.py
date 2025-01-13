@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 import logging
+import os
 import traceback
 from datetime import datetime
 from io import BytesIO, IOBase
@@ -41,13 +42,16 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 unstructured_partition_pdf = None
 unstructured_partition_docx = None
 unstructured_partition_pptx = None
+nltk_data_dir = "/tmp/nltk_data"
 
 try:
+    os.makedirs(nltk_data_dir, exist_ok=True)
+    nltk.data.path.append(nltk_data_dir)
     nltk.data.find("tokenizers/punkt.zip")
     nltk.data.find("tokenizers/punkt_tab.zip")
 except LookupError:
-    nltk.download("punkt")
-    nltk.download("punkt_tab")
+    nltk.download("punkt", download_dir=nltk_data_dir)
+    nltk.download("punkt_tab", download_dir=nltk_data_dir)
 
 
 def optional_decode(contents: Union[str, bytes]) -> str:
