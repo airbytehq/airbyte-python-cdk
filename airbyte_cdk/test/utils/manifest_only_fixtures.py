@@ -31,9 +31,28 @@ def connector_dir(request: pytest.FixtureRequest) -> Path:
 
 @pytest.fixture(scope="session")
 def components_module(connector_dir: Path) -> ModuleType | None:
-    """Load and return the components module from the connector directory.
-
-    This assumes the components module is located at <connector_dir>/components.py.
+    """
+    Load and return the components module from the connector directory.
+    
+    This function attempts to load the 'components.py' module from the specified connector directory. It handles various potential failure scenarios during module loading.
+    
+    Parameters:
+        connector_dir (Path): The root directory of the connector containing the components module.
+    
+    Returns:
+        ModuleType | None: The loaded components module if successful, or None if:
+            - The components.py file does not exist
+            - The module specification cannot be created
+            - The module loader is unavailable
+    
+    Raises:
+        No explicit exceptions are raised; returns None on failure.
+    
+    Example:
+        components = components_module(Path('/path/to/connector'))
+        if components:
+            # Use the loaded module
+            some_component = components.SomeComponent()
     """
     components_path = connector_dir / "components.py"
     if not components_path.exists():
@@ -52,9 +71,25 @@ def components_module(connector_dir: Path) -> ModuleType | None:
 
 
 def components_module_from_string(components_py_text: str) -> ModuleType | None:
-    """Load and return the components module from a provided string containing the python code.
-
-    This assumes the components module is located at <connector_dir>/components.py.
+    """
+    Load a Python module from a string containing module code.
+    
+    Parameters:
+        components_py_text (str): A string containing valid Python code representing a module.
+    
+    Returns:
+        ModuleType | None: A dynamically created module object containing the executed code, or None if execution fails.
+    
+    Raises:
+        Exception: Potential runtime errors during code execution.
+    
+    Example:
+        components_code = '''
+        def sample_component():
+            return "Hello, World!"
+        '''
+        module = components_module_from_string(components_code)
+        result = module.sample_component()  # Returns "Hello, World!"
     """
     module_name = "components"
 
@@ -70,7 +105,22 @@ def components_module_from_string(components_py_text: str) -> ModuleType | None:
 
 @pytest.fixture(scope="session")
 def manifest_path(connector_dir: Path) -> Path:
-    """Return the path to the connector's manifest file."""
+    """
+    Return the path to the connector's manifest file.
+    
+    Parameters:
+        connector_dir (Path): The root directory of the connector.
+    
+    Returns:
+        Path: The absolute path to the manifest.yaml file.
+    
+    Raises:
+        FileNotFoundError: If the manifest.yaml file does not exist in the specified connector directory.
+    
+    Example:
+        manifest_file = manifest_path(Path('/path/to/connector'))
+        # Returns Path('/path/to/connector/manifest.yaml')
+    """
     path = connector_dir / "manifest.yaml"
     if not path.exists():
         raise FileNotFoundError(f"Manifest file not found at {path}")

@@ -155,11 +155,25 @@ def handle_remote_manifest_command(args: list[str]) -> None:
 def create_declarative_source(
     args: list[str],
 ) -> ConcurrentDeclarativeSource:  # type: ignore [type-arg]
-    """Creates the source with the injected config.
-
-    This essentially does what other low-code sources do at build time, but at runtime,
-    with a user-provided manifest in the config. This better reflects what happens in the
-    connector builder.
+    """
+    Create a declarative source with an injected manifest configuration.
+    
+    This function dynamically creates a ConcurrentDeclarativeSource at runtime using a user-provided manifest, similar to how low-code sources are built. It validates the configuration and prepares the source for execution.
+    
+    Parameters:
+        args (list[str]): Command-line arguments containing configuration, catalog, and state information.
+    
+    Returns:
+        ConcurrentDeclarativeSource: A configured declarative source ready for sync operations.
+    
+    Raises:
+        ValueError: If the configuration is invalid or missing required manifest information.
+        Exception: For any unexpected errors during source creation, with detailed error tracing.
+    
+    Notes:
+        - Requires a configuration with an '__injected_declarative_manifest' key
+        - The manifest must be a dictionary
+        - Provides structured error reporting for configuration issues
     """
     try:
         config: Mapping[str, Any] | None

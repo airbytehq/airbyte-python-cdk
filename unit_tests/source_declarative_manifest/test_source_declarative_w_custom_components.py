@@ -36,11 +36,35 @@ class SimpleClass:
 
 
 def get_fixture_path(file_name) -> str:
+    """
+    Construct the absolute path to a fixture file relative to the current script's directory.
+    
+    Parameters:
+        file_name (str): The name of the fixture file to locate
+    
+    Returns:
+        str: The full absolute path to the specified fixture file
+    """
     return os.path.join(os.path.dirname(__file__), file_name)
 
 
 def test_components_module_from_string() -> None:
     # Call the function to get the module
+    """
+    Test the functionality of dynamically creating a Python module from a string containing code.
+    
+    This test verifies that the `components_module_from_string` function can successfully:
+    - Create a module from a string of Python code
+    - Define functions within the module
+    - Define classes within the module
+    - Allow instantiation and method calls on dynamically created classes
+    
+    Assertions:
+        - Checks that the returned object is a module
+        - Verifies the existence of a sample function
+        - Confirms the sample function returns the expected string
+        - Validates class definition and method invocation
+    """
     components_module: types.ModuleType = components_module_from_string(SAMPLE_COMPONENTS_PY_TEXT)
 
     # Check that the module is created and is of the correct type
@@ -60,6 +84,29 @@ def test_components_module_from_string() -> None:
 
 
 def get_py_components_config_dict() -> dict[str, Any]:
+    """
+    Construct a configuration dictionary for a declarative source with custom Python components.
+    
+    This function loads and combines configuration data from multiple YAML files and a Python components file
+    for a specific Airbyte connector. It prepares a comprehensive configuration dictionary that includes:
+    - The declarative manifest
+    - Custom Python components
+    - Checksums for the Python components
+    - Configuration and secrets from YAML files
+    
+    Parameters:
+        None
+    
+    Returns:
+        dict[str, Any]: A configuration dictionary containing:
+            - '__injected_declarative_manifest': The loaded manifest configuration
+            - '__injected_components_py': The raw Python components code
+            - '__injected_components_py_checksum': MD5 and SHA256 checksums of the components
+            - Additional configuration and secret key-value pairs from YAML files
+    
+    Raises:
+        AssertionError: If the manifest file cannot be loaded or is not a mapping
+    """
     connector_dir = Path(get_fixture_path("resources/source_the_guardian_api"))
     manifest_yml_path: Path = connector_dir / "manifest.yaml"
     custom_py_code_path: Path = connector_dir / "components.py"
@@ -91,6 +138,29 @@ def get_py_components_config_dict() -> dict[str, Any]:
     reason="Skipped due to missing 'secrets.yaml'.",
 )
 def test_given_injected_declarative_manifest_and_py_components() -> None:
+    """
+    Test the integration of a declarative source with custom Python components.
+    
+    This test function validates the end-to-end functionality of a declarative source by:
+    1. Retrieving a configuration dictionary with injected components
+    2. Modifying the start date to limit test duration
+    3. Creating a temporary configuration file
+    4. Creating a declarative source
+    5. Performing source check and discovery operations
+    6. Reading messages from the source and validating them
+    
+    The test ensures that:
+    - The configuration dictionary is correctly structured
+    - A declarative source can be created from the configuration
+    - The source can perform check and discover operations
+    - The source can read messages without errors
+    
+    Args:
+        None
+    
+    Raises:
+        AssertionError: If any of the validation checks fail during the test process
+    """
     py_components_config_dict = get_py_components_config_dict()
     # Truncate the start_date to speed up tests
     py_components_config_dict["start_date"] = (

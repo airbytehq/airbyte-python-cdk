@@ -981,11 +981,27 @@ class ModelToComponentFactory:
 
     def create_custom_component(self, model: Any, config: Config, **kwargs: Any) -> Any:
         """
-        Generically creates a custom component based on the model type and a class_name reference to the custom Python class being
-        instantiated. Only the model's additional properties that match the custom class definition are passed to the constructor
-        :param model: The Pydantic model of the custom component being created
-        :param config: The custom defined connector config
-        :return: The declarative component built from the Pydantic model to be used at runtime
+        Create a custom component from a Pydantic model with dynamic class instantiation.
+        
+        This method dynamically creates a custom component by loading a class from a specified module and instantiating it with appropriate arguments. It handles complex scenarios such as nested components, type inference, and argument passing.
+        
+        Parameters:
+            model (Any): A Pydantic model representing the custom component configuration.
+            config (Config): The connector configuration used for module and component resolution.
+            **kwargs (Any): Additional keyword arguments to override or supplement model arguments.
+        
+        Returns:
+            Any: An instantiated custom component with resolved nested components and configurations.
+        
+        Raises:
+            ValueError: If the component class cannot be loaded or instantiated.
+            TypeError: If arguments do not match the component's constructor signature.
+        
+        Notes:
+            - Supports nested component creation
+            - Performs type inference for component fields
+            - Handles both dictionary and list-based component configurations
+            - Prioritizes kwargs over model arguments in case of field collisions
         """
         custom_component_class = self._get_class_from_fully_qualified_class_name(
             full_qualified_class_name=model.class_name,
@@ -1046,10 +1062,25 @@ class ModelToComponentFactory:
     def _get_components_module_object(
         config: Config,
     ) -> types.ModuleType:
-        """Get a components module object based on the provided config.
-
-        If custom python components is provided, this will be loaded. Otherwise, we will
-        attempt to load from the `components` module already imported.
+        """
+        Get a components module object based on the provided configuration.
+        
+        This method dynamically creates a module for custom Python components defined in the configuration. It ensures that custom components are defined in a module named 'components' and allows runtime module creation and execution.
+        
+        Parameters:
+            config (Config): A configuration object containing the custom components definition.
+        
+        Returns:
+            types.ModuleType: A dynamically created module containing the custom components.
+        
+        Raises:
+            ValueError: If no custom components are provided or if the components are not defined in a module named 'components'.
+        
+        Notes:
+            - Uses the special key '__injected_components_py' to retrieve custom component code
+            - Creates a new module dynamically using types.ModuleType
+            - Executes the provided Python code within the new module's namespace
+            - Registers the module in sys.modules for future imports
         """
         INJECTED_COMPONENTS_PY = "__injected_components_py"
         COMPONENTS_MODULE_NAME = "components"
@@ -1073,17 +1104,24 @@ class ModelToComponentFactory:
         components_module: types.ModuleType,
     ) -> Any:
         """
-        Get a class from its fully qualified name, optionally using a pre-parsed module.
-
-        Args:
-            full_qualified_class_name (str): The fully qualified name of the class (e.g., "module.ClassName").
-            components_module (Optional[ModuleType]): An optional pre-parsed module.
-
+        Retrieve a class from its fully qualified name within a predefined components module.
+        
+        Parameters:
+            full_qualified_class_name (str): The complete dot-separated path to the class (e.g., "source_declarative_manifest.components.ClassName").
+            components_module (types.ModuleType): The pre-parsed module containing custom components.
+        
         Returns:
-            Any: The class object.
-
+            Any: The requested class object.
+        
         Raises:
-            ValueError: If the class cannot be loaded.
+            ValueError: If the class cannot be loaded or does not meet module naming conventions.
+            - Raised when the module is not named "components"
+            - Raised when the full module path is not "source_declarative_manifest.components"
+            - Raised when the specific class cannot be found in the module
+        
+        Notes:
+            - Enforces strict naming conventions for custom component modules
+            - Provides detailed error messages for debugging component loading issues
         """
         split = full_qualified_class_name.split(".")
         module_name_full = ".".join(split[:-1])
@@ -1108,6 +1146,23 @@ class ModelToComponentFactory:
 
     @staticmethod
     def _derive_component_type_from_type_hints(field_type: Any) -> Optional[str]:
+        """
+        Derive the component type name from type hints by unwrapping nested generic types.
+        
+        This method extracts the underlying type from potentially nested generic type hints,
+        such as List[T], Optional[List[T]], etc., and returns the type name if it's a non-builtin type.
+        
+        Parameters:
+            field_type (Any): The type hint to analyze for component type extraction.
+        
+        Returns:
+            Optional[str]: The name of the underlying type if it's a non-builtin type, otherwise None.
+        
+        Examples:
+            - List[str] returns None
+            - List[CustomType] returns "CustomType"
+            - Optional[List[CustomType]] returns "CustomType"
+        """
         interface = field_type
         while True:
             origin = get_origin(interface)
