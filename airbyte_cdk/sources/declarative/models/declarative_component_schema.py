@@ -756,6 +756,11 @@ class KeysReplace(BaseModel):
 
 class FlattenFields(BaseModel):
     type: Literal["FlattenFields"]
+    flatten_lists: Optional[bool] = Field(
+        True,
+        description="Whether to flatten lists or leave it as is. Default is True.",
+        title="Flatten Lists",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 

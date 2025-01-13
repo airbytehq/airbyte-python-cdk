@@ -1904,6 +1904,11 @@ definitions:
       type:
         type: string
         enum: [FlattenFields]
+      flatten_lists:
+        title: Flatten Lists
+        description: Whether to flatten lists or leave it as is. Default is True.
+        type: boolean
+        default: true
       $parameters:
         type: object
         additionalProperties: true
