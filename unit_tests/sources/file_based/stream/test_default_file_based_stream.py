@@ -19,9 +19,9 @@ from airbyte_cdk.sources.file_based.availability_strategy import (
 )
 from airbyte_cdk.sources.file_based.discovery_policy import AbstractDiscoveryPolicy
 from airbyte_cdk.sources.file_based.exceptions import (
+    DuplicatedFilesError,
     FileBasedErrorsCollector,
     FileBasedSourceError,
-    DuplicatedFilesError,
 )
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
 from airbyte_cdk.sources.file_based.file_types import FileTransfer
