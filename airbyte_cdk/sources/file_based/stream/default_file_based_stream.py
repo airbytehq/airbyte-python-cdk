@@ -61,6 +61,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
     def __init__(self, **kwargs: Any):
         if self.FILE_TRANSFER_KW in kwargs:
             self.use_file_transfer = kwargs.pop(self.FILE_TRANSFER_KW, False)
+        if self.PRESERVE_SUBDIRECTORIES_KW in kwargs:
             self.preserve_subdirectories_directories = kwargs.pop(
                 self.PRESERVE_SUBDIRECTORIES_KW, True
             )
