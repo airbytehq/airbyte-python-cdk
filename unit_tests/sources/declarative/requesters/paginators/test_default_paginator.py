@@ -9,7 +9,6 @@ import pytest
 import requests
 
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder, XmlDecoder
-from airbyte_cdk.sources.declarative.incremental import DatetimeBasedCursor
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.requesters.paginators.default_paginator import (
     DefaultPaginator,
@@ -23,11 +22,11 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies.cursor_pag
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.offset_increment import (
     OffsetIncrement,
 )
-from airbyte_cdk.sources.declarative.requesters.paginators.strategies.stop_condition import (
-    CursorStopCondition,
-    StopConditionPaginationStrategyDecorator,
+from airbyte_cdk.sources.declarative.requesters.paginators.strategies.page_increment import (
+    PageIncrement,
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
+from airbyte_cdk.sources.declarative.types import Record
 
 
 @pytest.mark.parametrize(
@@ -213,12 +212,12 @@ def test_default_paginator_with_cursor(
         json.dumps(response_body).encode("utf-8") if decoder == JsonDecoder else response_body
     )
 
-    actual_next_page_token = paginator.next_page_token(response, 2, last_record)
-    actual_next_path = paginator.path()
-    actual_request_params = paginator.get_request_params()
-    actual_headers = paginator.get_request_headers()
-    actual_body_data = paginator.get_request_body_data()
-    actual_body_json = paginator.get_request_body_json()
+    actual_next_page_token = paginator.next_page_token(response, 2, last_record, None)
+    actual_next_path = paginator.path(actual_next_page_token)
+    actual_request_params = paginator.get_request_params(next_page_token=actual_next_page_token)
+    actual_headers = paginator.get_request_headers(next_page_token=actual_next_page_token)
+    actual_body_data = paginator.get_request_body_data(next_page_token=actual_next_page_token)
+    actual_body_json = paginator.get_request_body_json(next_page_token=actual_next_page_token)
     assert actual_next_page_token == expected_next_page_token
     assert actual_next_path == expected_updated_path
     assert actual_request_params == expected_request_params
@@ -286,8 +285,8 @@ def test_paginator_request_param_interpolation(
     response_body = {"next": "https://airbyte.io/next_url"}
     response._content = json.dumps(response_body).encode("utf-8")
     last_record = {"id": 1}
-    paginator.next_page_token(response, 2, last_record)
-    actual_request_params = paginator.get_request_params()
+    next_page_token = paginator.next_page_token(response, 2, last_record, None)
+    actual_request_params = paginator.get_request_params(next_page_token=next_page_token)
     assert actual_request_params == expected_request_params
 
 
@@ -319,82 +318,6 @@ def test_page_size_option_cannot_be_set_if_strategy_has_no_limit():
         pass
 
 
-@pytest.mark.parametrize(
-    "inject_on_first_request",
-    [
-        (True),
-        (False),
-    ],
-    ids=[
-        "test_reset_inject_on_first_request",
-        "test_reset_no_inject_on_first_request",
-    ],
-)
-def test_reset(inject_on_first_request):
-    page_size_request_option = RequestOption(
-        inject_into=RequestOptionType.request_parameter, field_name="limit", parameters={}
-    )
-    page_token_request_option = RequestOption(
-        inject_into=RequestOptionType.request_parameter, field_name="offset", parameters={}
-    )
-    url_base = "https://airbyte.io"
-    config = {}
-    strategy = OffsetIncrement(
-        config={}, page_size=2, inject_on_first_request=inject_on_first_request, parameters={}
-    )
-    paginator = DefaultPaginator(
-        strategy,
-        config,
-        url_base,
-        parameters={},
-        page_size_option=page_size_request_option,
-        page_token_option=page_token_request_option,
-    )
-    initial_request_parameters = paginator.get_request_params()
-    response = requests.Response()
-    response._content = json.dumps({}).encode("utf-8")
-    paginator.next_page_token(response, 2, {"a key": "a value"})
-    request_parameters_for_second_request = paginator.get_request_params()
-    paginator.reset()
-    request_parameters_after_reset = paginator.get_request_params()
-    assert initial_request_parameters == request_parameters_after_reset
-    assert request_parameters_for_second_request != request_parameters_after_reset
-
-
-def test_data_feed_paginator_with_stop_page_condition():
-    config = {}
-
-    cursor = DatetimeBasedCursor(
-        cursor_field="updated_at",
-        datetime_format="%Y-%m-%d",
-        start_datetime="2024-01-01",
-        config=config,
-        parameters={},
-    )
-
-    wrapped_strategy = StopConditionPaginationStrategyDecorator(
-        _delegate=OffsetIncrement(
-            config={}, page_size=2, inject_on_first_request=False, parameters={}
-        ),
-        stop_condition=CursorStopCondition(cursor=cursor),
-    )
-
-    paginator = DefaultPaginator(
-        pagination_strategy=wrapped_strategy,
-        config=config,
-        url_base="https://airbyte.io",
-        parameters={},
-        page_size_option=RequestOption(
-            inject_into=RequestOptionType.request_parameter, field_name="limit", parameters={}
-        ),
-        page_token_option=RequestOption(
-            inject_into=RequestOptionType.request_parameter, field_name="offset", parameters={}
-        ),
-    )
-
-    paginator.reset()
-
-
 def test_initial_token_with_offset_pagination():
     page_size_request_option = RequestOption(
         inject_into=RequestOptionType.request_parameter, field_name="limit", parameters={}
@@ -413,9 +336,75 @@ def test_initial_token_with_offset_pagination():
         page_size_option=page_size_request_option,
         page_token_option=page_token_request_option,
     )
-    initial_request_parameters = paginator.get_request_params()
+    initial_token = paginator.get_initial_token()
+    next_page_token = {"next_page_token": initial_token}
+
+    initial_request_parameters = paginator.get_request_params(next_page_token=next_page_token)
 
     assert initial_request_parameters == {"limit": 2, "offset": 0}
+
+
+@pytest.mark.parametrize(
+    "pagination_strategy,last_page_size,expected_next_page_token,expected_second_next_page_token",
+    [
+        pytest.param(
+            OffsetIncrement(config={}, page_size=10, parameters={}, inject_on_first_request=True),
+            10,
+            {"next_page_token": 10},
+            {"next_page_token": 20},
+        ),
+        pytest.param(
+            PageIncrement(
+                config={},
+                page_size=5,
+                start_from_page=0,
+                parameters={},
+                inject_on_first_request=True,
+            ),
+            5,
+            {"next_page_token": 1},
+            {"next_page_token": 2},
+        ),
+    ],
+)
+def test_no_inject_on_first_request_offset_pagination(
+    pagination_strategy, last_page_size, expected_next_page_token, expected_second_next_page_token
+):
+    """
+    Validate that the stateless next_page_token() works when the first page does not inject the value
+    """
+
+    response = requests.Response()
+    response.headers = {"A_HEADER": "HEADER_VALUE"}
+    response._content = {}
+
+    last_record = Record(data={}, stream_name="test")
+
+    page_size_request_option = RequestOption(
+        inject_into=RequestOptionType.request_parameter, field_name="limit", parameters={}
+    )
+    page_token_request_option = RequestOption(
+        inject_into=RequestOptionType.request_parameter, field_name="offset", parameters={}
+    )
+    url_base = "https://airbyte.io"
+    config = {}
+    paginator = DefaultPaginator(
+        pagination_strategy,
+        config,
+        url_base,
+        parameters={},
+        page_size_option=page_size_request_option,
+        page_token_option=page_token_request_option,
+    )
+
+    actual_next_page_token = paginator.next_page_token(response, last_page_size, last_record, None)
+    assert actual_next_page_token == expected_next_page_token
+
+    last_page_token_value = actual_next_page_token["next_page_token"]
+    actual_next_page_token = paginator.next_page_token(
+        response, last_page_size, last_record, last_page_token_value
+    )
+    assert actual_next_page_token == expected_second_next_page_token
 
 
 def test_limit_page_fetched():

@@ -19,7 +19,7 @@ class NoPagination(Paginator):
 
     parameters: InitVar[Mapping[str, Any]]
 
-    def path(self) -> Optional[str]:
+    def path(self, next_page_token: Optional[Mapping[str, Any]]) -> Optional[str]:
         return None
 
     def get_request_params(
@@ -58,11 +58,14 @@ class NoPagination(Paginator):
     ) -> Mapping[str, Any]:
         return {}
 
-    def next_page_token(
-        self, response: requests.Response, last_page_size: int, last_record: Optional[Record]
-    ) -> Mapping[str, Any]:
-        return {}
+    def get_initial_token(self) -> Optional[Any]:
+        return None
 
-    def reset(self, reset_value: Optional[Any] = None) -> None:
-        # No state to reset
-        pass
+    def next_page_token(
+        self,
+        response: requests.Response,
+        last_page_size: int,
+        last_record: Optional[Record],
+        last_page_token_value: Optional[Any],
+    ) -> Optional[Mapping[str, Any]]:
+        return {}
