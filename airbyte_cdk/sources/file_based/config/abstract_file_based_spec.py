@@ -32,7 +32,7 @@ class DeliverRawFiles(BaseModel):
     delivery_type: Literal["use_file_transfer"] = Field("use_file_transfer", const=True)
 
     preserve_subdirectories_directories: bool = Field(
-        title="Preserve Subdirectories in File Paths",
+        title="Preserve Sub-Directories in File Paths",
         description="If enabled replicate source folder structure",
         default=True,
     )

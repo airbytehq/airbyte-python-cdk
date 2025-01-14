@@ -527,7 +527,7 @@ single_csv_scenario: TestScenario[InMemoryFilesSource] = (
                                     "preserve_subdirectories_directories": {
                                         "default": True,
                                         "description": "If enabled replicate source folder structure",
-                                        "title": "Preserve Subdirectories in File Paths",
+                                        "title": "Preserve Sub-Directories in File Paths",
                                         "type": "boolean",
                                     },
                                 },

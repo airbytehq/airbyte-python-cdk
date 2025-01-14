@@ -143,7 +143,7 @@ def format_duplicate_files_error_message(
 
     error_message = (
         f"ERROR: Duplicate filenames found for stream {stream_name}. "
-        "Duplicate file names are not allowed if the Preserve Subdirectories in File Paths option is disabled. "
+        "Duplicate file names are not allowed if the Preserve Sub-Directories in File Paths option is disabled. "
         "Please remove or rename the duplicate files before attempting to re-run the sync.\n\n"
         + "\n".join(duplicated_files_messages)
     )
