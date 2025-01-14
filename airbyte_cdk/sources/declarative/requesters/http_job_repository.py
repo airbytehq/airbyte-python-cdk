@@ -31,6 +31,10 @@ LOGGER = logging.getLogger("airbyte")
 
 @dataclass
 class AsyncHttpJobRepository(AsyncJobRepository):
+    """
+    See Readme file for more details about flow.
+    """
+
     creation_requester: Requester
     polling_requester: Requester
     download_retriever: SimpleRetriever
