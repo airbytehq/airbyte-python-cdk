@@ -243,5 +243,11 @@ class AsyncHttpJobRepository(AsyncJobRepository):
                 },
                 cursor_slice={},
             )
-            url_response = self.url_requester.send_request(stream_slice=stream_slice)
-        yield from self.urls_extractor.extract_records(url_response)
+            url_response = self.url_requester.send_request(stream_slice=stream_slice)  # type: ignore # we expect url_requester to always be presented, otherwise raise an exception as we cannot proceed with the report
+            if not url_response:
+                raise AirbyteTracedException(
+                    internal_message="Always expect a response or an exception from url_requester",
+                    failure_type=FailureType.system_error,
+                )
+
+        yield from self.urls_extractor.extract_records(url_response)  # type: ignore # we expect urls_extractor to always return list of strings
