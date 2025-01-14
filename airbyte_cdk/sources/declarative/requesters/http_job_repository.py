@@ -190,7 +190,12 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         """
 
         for url in self._get_download_url(job):
-            stream_slice: StreamSlice = StreamSlice(partition={"url": url}, cursor_slice={})
+            job_slice = job.job_parameters()
+            stream_slice = StreamSlice(
+                partition=job_slice.partition,
+                cursor_slice=job_slice.cursor_slice,
+                extra_fields={**job_slice.extra_fields, "url": url},
+            )
             for message in self.download_retriever.read_records({}, stream_slice):
                 if isinstance(message, Record):
                     yield message.data
