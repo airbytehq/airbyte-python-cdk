@@ -9,9 +9,24 @@ import dpath
 import requests
 
 from airbyte_cdk.sources.declarative.decoders import Decoder, JsonDecoder
-from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
+from airbyte_cdk.sources.declarative.extractors.record_extractor import (
+    SERVICE_KEY_PREFIX,
+    RecordExtractor,
+)
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.types import Config
+
+# The name of the service field to bind the response (root) in each record
+RECORD_ROOT_KEY = SERVICE_KEY_PREFIX + "root"
+
+
+def update_record(record: Any, root: Any) -> Any:
+    if isinstance(record, dict):
+        copy = {k: v for k, v in record.items()}
+        copy.update({RECORD_ROOT_KEY: root})
+    else:
+        copy = record
+    return copy
 
 
 @dataclass
@@ -70,17 +85,25 @@ class DpathExtractor(RecordExtractor):
 
     def extract_records(self, response: requests.Response) -> Iterable[MutableMapping[Any, Any]]:
         for body in self.decoder.decode(response):
-            if len(self._field_path) == 0:
-                extracted = body
+            if body == {}:
+                # An empty/invalid JSON parsed, keep the contract
+                yield {}
             else:
-                path = [path.eval(self.config) for path in self._field_path]
-                if "*" in path:
-                    extracted = dpath.values(body, path)
+                root_response = body
+                if len(self._field_path) == 0:
+                    extracted = body
                 else:
-                    extracted = dpath.get(body, path, default=[])  # type: ignore # extracted will be a MutableMapping, given input data structure
-            if isinstance(extracted, list):
-                yield from extracted
-            elif extracted:
-                yield extracted
-            else:
-                yield from []
+                    path = [path.eval(self.config) for path in self._field_path]
+                    if "*" in path:
+                        extracted = dpath.values(body, path)
+                    else:
+                        extracted = dpath.get(body, path, default=[])  # type: ignore # extracted will be a MutableMapping, given input data structure
+                if isinstance(extracted, list):
+                    for record in extracted:
+                        yield update_record(record, root_response)
+                elif isinstance(extracted, dict):
+                    yield update_record(extracted, root_response)
+                elif extracted:
+                    yield extracted
+                else:
+                    yield from []

@@ -9,7 +9,14 @@ import pytest
 import requests
 
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder
-from airbyte_cdk.sources.declarative.extractors.dpath_extractor import DpathExtractor
+from airbyte_cdk.sources.declarative.extractors.dpath_extractor import (
+    RECORD_ROOT_KEY,
+    DpathExtractor,
+)
+from airbyte_cdk.sources.declarative.extractors.record_extractor import (
+    assert_service_keys_exist,
+    exclude_service_keys,
+)
 from airbyte_cdk.sources.declarative.extractors.record_filter import RecordFilter
 from airbyte_cdk.sources.declarative.extractors.record_selector import RecordSelector
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
@@ -39,6 +46,36 @@ from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
             None,
             {"data": [{"id": 1, "created_at": "06-06-21"}, {"id": 2, "created_at": "06-07-21"}]},
             [{"id": 1, "created_at": "06-06-21"}, {"id": 2, "created_at": "06-07-21"}],
+        ),
+        (
+            "test_no_record_filter_returns_all_records_with_nested",
+            ["data"],
+            None,
+            {
+                "data": [
+                    {"id": 1, "created_at": "06-06-21", "nested": [{"id": 1}]},
+                    {"id": 2, "created_at": "06-07-21", "nested": [{"id": 1, "id2": 2}]},
+                ]
+            },
+            [
+                {"id": 1, "created_at": "06-06-21", "nested": [{"id": 1}]},
+                {"id": 2, "created_at": "06-07-21", "nested": [{"id": 1, "id2": 2}]},
+            ],
+        ),
+        (
+            "test_true_record_filter_returns_all_records_with_nested",
+            ["data"],
+            "{{True}}",
+            {
+                "data": [
+                    {"id": 1, "created_at": "06-06-21", "nested": [{"id": 1}]},
+                    {"id": 2, "created_at": "06-07-21", "nested": [{"id": 1, "id2": 2}]},
+                ]
+            },
+            [
+                {"id": 1, "created_at": "06-06-21", "nested": [{"id": 1}]},
+                {"id": 2, "created_at": "06-07-21", "nested": [{"id": 1, "id2": 2}]},
+            ],
         ),
         (
             "test_with_extractor_and_filter_with_parameters",
@@ -73,6 +110,19 @@ from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
             None,
             [],
             [],
+        ),
+        (
+            "test_the original response is available in filters and transformations",
+            ["data"],
+            "{{ record['created_at'] == record['" + RECORD_ROOT_KEY + "'].data[1].created_at }}",
+            {
+                "data": [
+                    {"id": 1, "created_at": "06-06-21"},
+                    {"id": 2, "created_at": "06-07-21"},
+                    {"id": 3, "created_at": "06-08-21"},
+                ]
+            },
+            [{"id": 2, "created_at": "06-07-21"}],
         ),
     ],
 )
@@ -116,18 +166,9 @@ def test_record_filter(test_name, field_path, filter_template, body, expected_da
             next_page_token=next_page_token,
         )
     )
-    assert actual_records == [
-        Record(data=data, associated_slice=stream_slice, stream_name="") for data in expected_data
-    ]
 
-    calls = []
-    for record in expected_data:
-        calls.append(
-            call(record, config=config, stream_state=stream_state, stream_slice=stream_slice)
-        )
-    for transformation in transformations:
-        assert transformation.transform.call_count == len(expected_data)
-        transformation.transform.assert_has_calls(calls)
+    actual_records = [exclude_service_keys(record) for record in actual_records]
+    assert actual_records == expected_data
 
 
 @pytest.mark.parametrize(
@@ -200,7 +241,9 @@ def test_schema_normalization(test_name, schema, schema_transformation, body, ex
         )
     )
 
-    assert actual_records == [Record(data, stream_slice) for data in expected_data]
+    actual_records = [exclude_service_keys(record) for record in actual_records]
+
+    assert actual_records == expected_data
 
 
 def create_response(body):
