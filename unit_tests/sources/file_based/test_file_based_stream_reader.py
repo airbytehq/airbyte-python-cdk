@@ -376,7 +376,7 @@ def test_globs_and_prefixes_from_globs(
                 "streams": [],
                 "delivery_method": {
                     "delivery_type": "use_file_transfer",
-                    "preserve_subdirectories_directories": True,
+                    "preserve_directory_structure": True,
                 },
             },
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
@@ -390,7 +390,7 @@ def test_globs_and_prefixes_from_globs(
                 "streams": [],
                 "delivery_method": {
                     "delivery_type": "use_file_transfer",
-                    "preserve_subdirectories_directories": False,
+                    "preserve_directory_structure": False,
                 },
             },
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",

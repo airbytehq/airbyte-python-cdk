@@ -318,7 +318,7 @@ class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
             cursor=self._cursor,
             errors_collector=FileBasedErrorsCollector(),
             use_file_transfer=True,
-            preserve_subdirectories_directories=False,
+            preserve_directory_structure=False,
         )
 
     def test_when_read_records_from_slice_then_return_records(self) -> None:
@@ -394,7 +394,7 @@ class DefaultFileBasedStreamFileTransferTestNotMirroringDirectories(unittest.Tes
             cursor=self._cursor,
             errors_collector=FileBasedErrorsCollector(),
             use_file_transfer=True,
-            preserve_subdirectories_directories=False,
+            preserve_directory_structure=False,
         )
 
         self._all_files = [

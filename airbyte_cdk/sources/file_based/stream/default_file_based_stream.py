@@ -46,7 +46,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
     """
 
     FILE_TRANSFER_KW = "use_file_transfer"
-    PRESERVE_SUBDIRECTORIES_KW = "preserve_subdirectories_directories"
+    PRESERVE_DIRECTORY_STRUCTURE_KW = "preserve_directory_structure"
     FILES_KEY = "files"
     DATE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
     ab_last_mod_col = "_ab_source_file_last_modified"
@@ -55,14 +55,14 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
     source_file_url = "source_file_url"
     airbyte_columns = [ab_last_mod_col, ab_file_name_col]
     use_file_transfer = False
-    preserve_subdirectories_directories = True
+    preserve_directory_structure = True
 
     def __init__(self, **kwargs: Any):
         if self.FILE_TRANSFER_KW in kwargs:
             self.use_file_transfer = kwargs.pop(self.FILE_TRANSFER_KW, False)
-        if self.PRESERVE_SUBDIRECTORIES_KW in kwargs:
-            self.preserve_subdirectories_directories = kwargs.pop(
-                self.PRESERVE_SUBDIRECTORIES_KW, True
+        if self.PRESERVE_DIRECTORY_STRUCTURE_KW in kwargs:
+            self.preserve_directory_structure = kwargs.pop(
+                self.PRESERVE_DIRECTORY_STRUCTURE_KW, True
             )
         super().__init__(**kwargs)
 
@@ -136,7 +136,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
             {self.FILES_KEY: list(group[1])}
             for group in itertools.groupby(sorted_files_to_read, lambda f: f.last_modified)
         ]
-        if slices and not self.preserve_subdirectories_directories:
+        if slices and not self.preserve_directory_structure:
             duplicated_files_names = self._duplicated_files_names(slices)
             if duplicated_files_names:
                 raise DuplicatedFilesError(

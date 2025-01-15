@@ -311,7 +311,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
             errors_collector=self.errors_collector,
             cursor=cursor,
             use_file_transfer=self._use_file_transfer(parsed_config),
-            preserve_subdirectories_directories=self._preserve_subdirectories_directories(
+            preserve_directory_structure=self._preserve_directory_structure(
                 parsed_config
             ),
         )
@@ -390,12 +390,12 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         return use_file_transfer
 
     @staticmethod
-    def _preserve_subdirectories_directories(parsed_config: AbstractFileBasedSpec) -> bool:
+    def _preserve_directory_structure(parsed_config: AbstractFileBasedSpec) -> bool:
         # fall back to preserve subdirectories if config is not present or incomplete
         if (
             FileBasedSource._use_file_transfer(parsed_config)
-            and hasattr(parsed_config.delivery_method, "preserve_subdirectories_directories")
-            and parsed_config.delivery_method.preserve_subdirectories_directories is not None
+            and hasattr(parsed_config.delivery_method, "preserve_directory_structure")
+            and parsed_config.delivery_method.preserve_directory_structure is not None
         ):
-            return parsed_config.delivery_method.preserve_subdirectories_directories
+            return parsed_config.delivery_method.preserve_directory_structure
         return True
