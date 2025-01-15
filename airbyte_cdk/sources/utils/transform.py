@@ -253,14 +253,10 @@ class TypeTransformer:
             )
 
         if isinstance(input_data, dict):
-            structure = {
+            return {
                 key: self._get_type_structure(field_value, current_depth + 1)
                 for key, field_value in input_data.items()
             }
-
-            if current_depth == 0:
-                return f"object with structure {structure}"
-            return structure
 
         else:
             return python_to_json[type(input_data)]
