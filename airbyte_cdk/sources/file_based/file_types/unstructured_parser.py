@@ -42,10 +42,24 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 unstructured_partition_pdf = None
 unstructured_partition_docx = None
 unstructured_partition_pptx = None
-nltk_data_dir = "/tmp/nltk_data"
+
+
+def get_ntlk_temp_folder():
+    """
+    For non-root connectors /tmp is not currently writable, but we should allow it in the future.
+    It's safe to use /airbyte for now. Fallback to /tmp for local development.
+    """
+    try:
+        nltk_data_dir = "/airbyte/nltk_data"
+        os.makedirs(nltk_data_dir, exist_ok=True)
+    except OSError:
+        nltk_data_dir = "/tmp/nltk_data"
+        os.makedirs(nltk_data_dir, exist_ok=True)
+    return nltk_data_dir
+
 
 try:
-    os.makedirs(nltk_data_dir, exist_ok=True)
+    nltk_data_dir = get_ntlk_temp_folder()
     nltk.data.path.append(nltk_data_dir)
     nltk.data.find("tokenizers/punkt.zip")
     nltk.data.find("tokenizers/punkt_tab.zip")
