@@ -22,7 +22,6 @@ from airbyte_cdk.sources.file_based.exceptions import (
     RecordParseError,
     SchemaInferenceError,
     StopSyncPerValidationPolicy,
-    format_duplicate_files_error_message,
 )
 from airbyte_cdk.sources.file_based.file_types import FileTransfer
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
@@ -141,10 +140,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
             duplicated_files_names = self._duplicated_files_names(slices)
             if duplicated_files_names:
                 raise DuplicatedFilesError(
-                    format_duplicate_files_error_message(
-                        stream_name=self.name, duplicated_files_names=duplicated_files_names
-                    ),
-                    stream=self.name,
+                    stream=self.name, duplicated_files_names=duplicated_files_names
                 )
         return slices
 
