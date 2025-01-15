@@ -526,7 +526,7 @@ single_csv_scenario: TestScenario[InMemoryFilesSource] = (
                                     },
                                     "preserve_subdirectories_directories": {
                                         "default": True,
-                                        "description": "If enabled replicate source folder structure",
+                                        "description": "If enabled, sends subdirectory folder structure along with source file names to the destination. Otherwise, files will be synced by their names only. This option is ignored when file-based replication is not enabled.",
                                         "title": "Preserve Sub-Directories in File Paths",
                                         "type": "boolean",
                                     },

@@ -33,7 +33,12 @@ class DeliverRawFiles(BaseModel):
 
     preserve_subdirectories_directories: bool = Field(
         title="Preserve Sub-Directories in File Paths",
-        description="If enabled replicate source folder structure",
+        description=(
+            "If enabled, sends subdirectory folder structure "
+            "along with source file names to the destination. "
+            "Otherwise, files will be synced by their names only. "
+            "This option is ignored when file-based replication is not enabled."
+        ),
         default=True,
     )
 
