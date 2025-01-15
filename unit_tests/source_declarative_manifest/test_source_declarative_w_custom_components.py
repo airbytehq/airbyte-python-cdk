@@ -21,9 +21,15 @@ from airbyte_cdk.cli.source_declarative_manifest._run import (
 )
 from airbyte_cdk.models import ConfiguredAirbyteCatalog, ConfiguredAirbyteStream
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
-from airbyte_cdk.test.utils.manifest_only_fixtures import components_module_from_string
-from unit_tests.connector_builder.test_connector_builder_handler import configured_catalog
-from unit_tests.source_declarative_manifest.conftest import hash_text
+from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
+    ENV_VAR_ALLOW_CUSTOM_CODE,
+    INJECTED_COMPONENTS_PY,
+    INJECTED_COMPONENTS_PY_CHECKSUMS,
+    INJECTED_MANIFEST,
+    AirbyteCodeTamperedError,
+    _hash_text,
+    components_module_from_string,
+)
 
 SAMPLE_COMPONENTS_PY_TEXT = """
 def sample_function() -> str:
@@ -74,11 +80,11 @@ def get_py_components_config_dict() -> dict[str, Any]:
 
     custom_py_code = custom_py_code_path.read_text()
     combined_config_dict = {
-        "__injected_declarative_manifest": manifest_dict,
-        "__injected_components_py": custom_py_code,
-        "__injected_components_py_checksum": {
-            "md5": hash_text(custom_py_code, "md5"),
-            "sha256": hash_text(custom_py_code, "sha256"),
+        INJECTED_MANIFEST: manifest_dict,
+        INJECTED_COMPONENTS_PY: custom_py_code,
+        INJECTED_COMPONENTS_PY_CHECKSUMS: {
+            "md5": _hash_text(custom_py_code, "md5"),
+            "sha256": _hash_text(custom_py_code, "sha256"),
         },
     }
     combined_config_dict.update(yaml.safe_load(config_yaml_path.read_text()))
@@ -99,6 +105,7 @@ def test_given_injected_declarative_manifest_and_py_components() -> None:
     assert isinstance(py_components_config_dict, dict)
     assert "__injected_declarative_manifest" in py_components_config_dict
     assert "__injected_components_py" in py_components_config_dict
+    assert "__injected_components_py_checksums" in py_components_config_dict
 
     with NamedTemporaryFile(delete=False, suffix=".json") as temp_config_file:
         json_str = json.dumps(py_components_config_dict)
@@ -132,3 +139,101 @@ def test_given_injected_declarative_manifest_and_py_components() -> None:
         )
         for msg in msg_iterator:
             assert msg
+
+def test_missing_checksum_fails_to_run() -> None:
+    """Assert that missing checksum in the config will raise an error."""
+    py_components_config_dict = get_py_components_config_dict()
+    # Truncate the start_date to speed up tests
+    py_components_config_dict["start_date"] = (
+        datetime.datetime.now() - datetime.timedelta(days=2)
+    ).strftime("%Y-%m-%d")
+
+    py_components_config_dict.pop("__injected_components_py_checksums")
+
+    with NamedTemporaryFile(delete=False, suffix=".json") as temp_config_file:
+        json_str = json.dumps(py_components_config_dict)
+        Path(temp_config_file.name).write_text(json_str)
+        temp_config_file.flush()
+        source = create_declarative_source(
+            ["check", "--config", temp_config_file.name],
+        )
+        assert isinstance(source, ManifestDeclarativeSource)
+        with pytest.raises(ValueError):
+            source.check(logger=logging.getLogger(), config=py_components_config_dict)
+
+
+@pytest.mark.parametrize(
+    "hash_type",
+    [
+        "md5",
+        "sha256",
+    ],
+)
+def test_invalid_checksum_fails_to_run(hash_type: str) -> None:
+    """Assert that an invalid checksum in the config will raise an error."""
+    py_components_config_dict = get_py_components_config_dict()
+    # Truncate the start_date to speed up tests
+    py_components_config_dict["start_date"] = (
+        datetime.datetime.now() - datetime.timedelta(days=2)
+    ).strftime("%Y-%m-%d")
+
+    py_components_config_dict["__injected_components_py_checksums"][hash_type] = "invalid_checksum"
+
+    with NamedTemporaryFile(delete=False, suffix=".json") as temp_config_file:
+        json_str = json.dumps(py_components_config_dict)
+        Path(temp_config_file.name).write_text(json_str)
+        temp_config_file.flush()
+        source = create_declarative_source(
+            ["check", "--config", temp_config_file.name],
+        )
+        assert isinstance(source, ManifestDeclarativeSource)
+        with pytest.raises(AirbyteCodeTamperedError):
+            source.check(logger=logging.getLogger(), config=py_components_config_dict)
+
+
+@pytest.mark.parametrize(
+    "env_value, should_raise",
+    [
+        ("true", False),
+        ("True", False),
+        ("TRUE", False),
+        ("1", True),
+        ("false", True),
+        ("False", True),
+        ("", True),
+        ("0", True),
+        ("True", True),
+    ],
+)
+def test_fail_unless_custom_code_enabled_explicitly(
+    env_value: Any,
+    should_raise: bool,
+) -> None:
+    """Fails if the environment variable to allow custom code is not set.
+
+    A missing value should fail.
+    Any value other than "true" (case insensitive) should fail.
+    """
+    os.environ.pop(ENV_VAR_ALLOW_CUSTOM_CODE, None)
+    if env_value is not None:
+        os.environ[ENV_VAR_ALLOW_CUSTOM_CODE] = env_value
+
+    py_components_config_dict = get_py_components_config_dict()
+    # Truncate the start_date to speed up tests
+    py_components_config_dict["start_date"] = (
+        datetime.datetime.now() - datetime.timedelta(days=2)
+    ).strftime("%Y-%m-%d")
+
+    with NamedTemporaryFile(delete=False, suffix=".json") as temp_config_file:
+        json_str = json.dumps(py_components_config_dict)
+        Path(temp_config_file.name).write_text(json_str)
+        temp_config_file.flush()
+        try:
+            source = create_declarative_source(
+                ["check", "--config", temp_config_file.name],
+            )
+        except:
+            if should_raise:
+                return  # Success
+
+            raise

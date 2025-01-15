@@ -17,6 +17,7 @@ source-declarative-manifest spec
 from __future__ import annotations
 
 import json
+import os
 import pkgutil
 import sys
 import traceback
@@ -41,6 +42,11 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
+)
+from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
+    ENV_VAR_ALLOW_CUSTOM_CODE,
+    INJECTED_COMPONENTS_PY,
+    INJECTED_MANIFEST,
 )
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.sources.source import TState
@@ -176,12 +182,19 @@ def create_declarative_source(
                 "Invalid config: `__injected_declarative_manifest` should be a dictionary, "
                 f"but got type: {type(config['__injected_declarative_manifest'])}"
             )
-
+        if (
+            INJECTED_COMPONENTS_PY in config
+            and os.environ.get(ENV_VAR_ALLOW_CUSTOM_CODE, "").lower() != "true"
+        ):
+            raise RuntimeError(
+                "Custom connector code is not allowed in this environment. "
+                "Set the `AIRBYTE_ALLOW_CUSTOM_CODE` environment variable to 'true' to enable custom code."
+            )
         return ConcurrentDeclarativeSource(
             config=config,
             catalog=catalog,
             state=state,
-            source_config=cast(dict[str, Any], config["__injected_declarative_manifest"]),
+            source_config=cast(dict[str, Any], config[INJECTED_MANIFEST]),
         )
     except Exception as error:
         print(

@@ -2,22 +2,15 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
-import hashlib
 import os
-from typing import Literal
 
 import pytest
 import yaml
 
-
-def hash_text(input_text: str, hash_type: Literal["md5", "sha256"] = "md5") -> str:
-    hashers = {
-        "md5": hashlib.md5,
-        "sha256": hashlib.sha256,
-    }
-    hash_object = hashers[hash_type]()
-    hash_object.update(input_text.encode())
-    return hash_object.hexdigest()
+from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
+    # CustomCodeCompiler,
+    _hash_text,
+)
 
 
 def get_fixture_path(file_name) -> str:

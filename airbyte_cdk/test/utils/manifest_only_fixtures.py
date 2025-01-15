@@ -9,8 +9,6 @@ from types import ModuleType
 
 import pytest
 
-COMPONENTS_MODULE_NAME = "components"
-
 # The following fixtures are used to load a manifest-only connector's components module and manifest file.
 # They can be accessed from any test file in the connector's unit_tests directory by importing them as follows:
 
@@ -51,26 +49,6 @@ def components_module(connector_dir: Path) -> ModuleType | None:
         return None
 
     components_spec.loader.exec_module(components_module)
-    return components_module
-
-
-def components_module_from_string(components_py_text: str) -> ModuleType | None:
-    """Load and return the components module from a provided string containing the python code.
-
-    This assumes the components module is located at <connector_dir>/components.py.
-    """
-    module_name = "components"
-
-    # Create a new module object
-    components_module = types.ModuleType(name=module_name)
-
-    # Execute the module text in the module's namespace
-    exec(components_py_text, components_module.__dict__)
-
-    # Add the module to sys.modules so it can be imported
-    sys.modules[COMPONENTS_MODULE_NAME] = components_module
-
-    # Now you can import and use the module
     return components_module
 
 
