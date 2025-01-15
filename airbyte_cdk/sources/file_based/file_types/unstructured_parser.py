@@ -43,23 +43,26 @@ unstructured_partition_pdf = None
 unstructured_partition_docx = None
 unstructured_partition_pptx = None
 
+AIRBYTE_NLTK_DATA_DIR = "/airbyte/nltk_data"
+TMP_NLTK_DATA_DIR = "/tmp/nltk_data"
 
-def get_ntlk_temp_folder() -> str:
+
+def get_nltk_temp_folder() -> str:
     """
     For non-root connectors /tmp is not currently writable, but we should allow it in the future.
     It's safe to use /airbyte for now. Fallback to /tmp for local development.
     """
     try:
-        nltk_data_dir = "/airbyte/nltk_data"
+        nltk_data_dir = AIRBYTE_NLTK_DATA_DIR
         os.makedirs(nltk_data_dir, exist_ok=True)
     except OSError:
-        nltk_data_dir = "/tmp/nltk_data"
+        nltk_data_dir = TMP_NLTK_DATA_DIR
         os.makedirs(nltk_data_dir, exist_ok=True)
     return nltk_data_dir
 
 
 try:
-    nltk_data_dir = get_ntlk_temp_folder()
+    nltk_data_dir = get_nltk_temp_folder()
     nltk.data.path.append(nltk_data_dir)
     nltk.data.find("tokenizers/punkt.zip")
     nltk.data.find("tokenizers/punkt_tab.zip")
