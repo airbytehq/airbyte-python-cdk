@@ -1,6 +1,7 @@
 """Contains functions to compile custom code from text."""
 
 import hashlib
+import os
 import sys
 from types import ModuleType
 
@@ -18,17 +19,38 @@ INJECTED_COMPONENTS_PY_CHECKSUMS = "__injected_components_py_checksums"
 ENV_VAR_ALLOW_CUSTOM_CODE = "AIRBYTE_ALLOW_CUSTOM_CODE"
 
 
+class AirbyteCodeTamperedError(Exception):
+    """Raised when the connector's components module does not match its checksum.
+
+    This is a fatal error, as it can be a sign of code tampering.
+    """
+
+
+class AirbyteCustomCodeNotPermittedError(Exception):
+    """Raised when custom code is attempted to be run in an environment that does not support it."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "Custom connector code is not permitted in this environment. "
+            "If you need to run custom code, please ask your administrator to set the `AIRBYTE_ALLOW_CUSTOM_CODE` "
+            "environment variable to 'true' in your Airbyte environment. "
+            "If you see this message in Airbyte Cloud, your workspace does not allow executing "
+            "custom connector code."
+        )
+
+
 def _hash_text(input_text: str, hash_type: Literal["md5", "sha256"] = "md5") -> str:
     hash_object = CHECKSUM_FUNCTIONS[hash_type]()
     hash_object.update(input_text.encode())
     return hash_object.hexdigest()
 
 
-class AirbyteCodeTamperedError(Exception):
-    """Raised when the connector's components module does not match its checksum.
+def custom_code_execution_permitted() -> bool:
+    """Return `True` if custom code execution is permitted, otherwise `False`.
 
-    This is a fatal error, as it can be a sign of code tampering.
+    Custom code execution is permitted if the `AIRBYTE_ALLOW_CUSTOM_CODE` environment variable is set to 'true'.
     """
+    return os.environ.get(ENV_VAR_ALLOW_CUSTOM_CODE, "").lower() == "true"
 
 
 def validate_python_code(

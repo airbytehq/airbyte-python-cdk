@@ -29,6 +29,7 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     AirbyteCodeTamperedError,
     _hash_text,
     components_module_from_string,
+    custom_code_execution_permitted,
 )
 
 SAMPLE_COMPONENTS_PY_TEXT = """
@@ -216,6 +217,8 @@ def test_fail_unless_custom_code_enabled_explicitly(
     os.environ.pop(ENV_VAR_ALLOW_CUSTOM_CODE, None)
     if env_value is not None:
         os.environ[ENV_VAR_ALLOW_CUSTOM_CODE] = env_value
+
+    assert custom_code_execution_permitted() == (not should_raise)
 
     py_components_config_dict = get_py_components_config_dict()
     # Truncate the start_date to speed up tests

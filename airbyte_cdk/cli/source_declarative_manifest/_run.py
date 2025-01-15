@@ -47,6 +47,8 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     ENV_VAR_ALLOW_CUSTOM_CODE,
     INJECTED_COMPONENTS_PY,
     INJECTED_MANIFEST,
+    AirbyteCustomCodeNotPermittedError,
+    custom_code_execution_permitted,
 )
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.sources.source import TState
@@ -182,14 +184,9 @@ def create_declarative_source(
                 "Invalid config: `__injected_declarative_manifest` should be a dictionary, "
                 f"but got type: {type(config['__injected_declarative_manifest'])}"
             )
-        if (
-            INJECTED_COMPONENTS_PY in config
-            and os.environ.get(ENV_VAR_ALLOW_CUSTOM_CODE, "").lower() != "true"
-        ):
-            raise RuntimeError(
-                "Custom connector code is not allowed in this environment. "
-                "Set the `AIRBYTE_ALLOW_CUSTOM_CODE` environment variable to 'true' to enable custom code."
-            )
+        if INJECTED_COMPONENTS_PY in config and not custom_code_execution_permitted():
+            raise AirbyteCustomCodeNotPermittedError
+
         return ConcurrentDeclarativeSource(
             config=config,
             catalog=catalog,
