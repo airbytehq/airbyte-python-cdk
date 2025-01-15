@@ -197,12 +197,11 @@ def test_invalid_checksum_fails_to_run(hash_type: str) -> None:
         ("true", False),
         ("True", False),
         ("TRUE", False),
-        ("1", True),
+        ("1", True),  # Not accepted as truthy as of now
         ("false", True),
         ("False", True),
         ("", True),
         ("0", True),
-        ("True", True),
     ],
 )
 def test_fail_unless_custom_code_enabled_explicitly(
