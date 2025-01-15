@@ -65,9 +65,9 @@ try:
     nltk.data.find("tokenizers/punkt_tab.zip")
     nltk.data.find("tokenizers/averaged_perceptron_tagger_eng.zip")
 except LookupError:
-    nltk.download("punkt", download_dir=nltk_data_dir)
-    nltk.download("punkt_tab", download_dir=nltk_data_dir)
-    nltk.download("averaged_perceptron_tagger_eng", download_dir=nltk_data_dir)
+    nltk.download("punkt", download_dir=nltk_data_dir, quiet=True)
+    nltk.download("punkt_tab", download_dir=nltk_data_dir, quiet=True)
+    nltk.download("averaged_perceptron_tagger_eng", download_dir=nltk_data_dir, quiet=True)
 
 
 def optional_decode(contents: Union[str, bytes]) -> str:
