@@ -1900,6 +1900,9 @@ class ModelToComponentFactory:
                 refresh_request_body=InterpolatedMapping(
                     model.refresh_request_body or {}, parameters=model.parameters or {}
                 ).eval(config),
+                refresh_request_headers=InterpolatedMapping(
+                    model.refresh_request_headers or {}, parameters=model.parameters or {}
+                ).eval(config),
                 scopes=model.scopes,
                 token_expiry_date_format=model.token_expiry_date_format,
                 message_repository=self._message_repository,
@@ -1916,6 +1919,7 @@ class ModelToComponentFactory:
             expires_in_name=model.expires_in_name or "expires_in",
             grant_type=model.grant_type or "refresh_token",
             refresh_request_body=model.refresh_request_body,
+            refresh_request_headers=model.refresh_request_headers,
             refresh_token=model.refresh_token,
             scopes=model.scopes,
             token_expiry_date=model.token_expiry_date,
