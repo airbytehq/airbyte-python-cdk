@@ -1095,9 +1095,9 @@ class ModelToComponentFactory:
 
         components_module: types.ModuleType
         if not INJECTED_COMPONENTS_PY in config:
-            raise ValueError(
-                "Custom components must be defined in a module named `components`. Please provide a custom components module."
-            )
+            # Use the existing components module. We expect this to be already grafted into the
+            # connector module.
+            components_module = sys.modules.get(COMPONENTS_MODULE_NAME)
 
         # Create a new module object and execute the provided Python code text within it
         components_module = types.ModuleType(name=COMPONENTS_MODULE_NAME)
