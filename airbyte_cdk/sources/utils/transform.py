@@ -244,11 +244,7 @@ class TypeTransformer:
 
         # Avoid recursing too deep
         if current_depth >= MAX_NESTING_DEPTH:
-            return (
-                "object"
-                if isinstance(input_data, dict)
-                else python_to_json[type(input_data)]
-            )
+            return "object" if isinstance(input_data, dict) else python_to_json[type(input_data)]
 
         if isinstance(input_data, dict):
             return {
