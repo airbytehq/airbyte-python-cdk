@@ -225,17 +225,20 @@ class TypeTransformer:
             logger.warning(self.get_error_message(e))
 
     def get_error_message(self, e: ValidationError) -> str:
-        def get_type_structure(input_data: Any) -> Any:
+        def _get_type_structure(input_data: Any) -> Any:
             if isinstance(input_data, dict):
-                return {
-                    key: get_type_structure(field_value) for key, field_value in input_data.items()
-                }
+                structure = {key: _get_type_structure(field_value) for key, field_value in input_data.items()}
+                return f"object with structure {structure}"
             elif isinstance(input_data, list):
-                return [get_type_structure(item) for item in input_data] if input_data else "array"
+                if not input_data:
+                    # Handle empty array
+                    return "array"
+                items = [_get_type_structure(item) for item in input_data]
+                return f"array with structure {items}"
             else:
                 return python_to_json[type(input_data)]
 
         field_path = ".".join(map(str, e.path))
-        type_structure = get_type_structure(e.instance)
-
-        return f"Failed to transform value of type '{type_structure}' to '{e.validator_value}' at path: '{field_path}'"
+        type_structure = _get_type_structure(e.instance)
+        
+        return f"Failed to transform value from type '{type_structure}' to type '{e.validator_value}' at path: '{field_path}'"

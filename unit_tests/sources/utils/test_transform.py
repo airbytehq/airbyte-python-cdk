@@ -104,14 +104,14 @@ VERY_NESTED_SCHEMA = {
             COMPLEX_SCHEMA,
             {"prop": 12, "number_prop": "aa12", "array": [12]},
             {"prop": "12", "number_prop": "aa12", "array": ["12"]},
-            "Failed to transform value of type 'string' to 'number' at path: 'number_prop'",
+            "Failed to transform value from type 'string' to type 'number' at path: 'number_prop'",
         ),
         # Field too_many_types have ambigious type, skip formatting
         (
             COMPLEX_SCHEMA,
             {"prop": 12, "too_many_types": 1212, "array": [12]},
             {"prop": "12", "too_many_types": 1212, "array": ["12"]},
-            "Failed to transform value of type 'integer' to '['boolean', 'null', 'string']' at path: 'too_many_types'",
+            "Failed to transform value from type 'integer' to type '['boolean', 'null', 'string']' at path: 'too_many_types'",
         ),
         # Test null field
         (COMPLEX_SCHEMA, {"prop": None, "array": [12]}, {"prop": "None", "array": ["12"]}, None),
@@ -196,7 +196,7 @@ VERY_NESTED_SCHEMA = {
             },
             {"value": "string"},
             {"value": "string"},
-            "Failed to transform value of type 'string' to 'array' at path: 'value'",
+            "Failed to transform value from type 'string' to type 'array' at path: 'value'",
         ),
         (
             {
@@ -205,21 +205,21 @@ VERY_NESTED_SCHEMA = {
             },
             {"value": {"key": "value"}},
             {"value": {"key": "value"}},
-            "Failed to transform value of type '{'key': 'string'}' to 'array' at path: 'value'",
+            "Failed to transform value from type 'object with structure {'key': 'string'}' to type 'array' at path: 'value'",
         ),
         (
             # Schema root object is not an object, no convertion should happen
             {"type": "integer"},
             {"value": "12"},
             {"value": "12"},
-            "Failed to transform value of type '{'value': 'string'}' to 'integer' at path: ''",
+            "Failed to transform value from type 'object with structure {'value': 'string'}' to type 'integer' at path: ''",
         ),
         (
             # More than one type except null, no conversion should happen
             {"type": "object", "properties": {"value": {"type": ["string", "boolean", "null"]}}},
             {"value": 12},
             {"value": 12},
-            "Failed to transform value of type 'integer' to '['string', 'boolean', 'null']' at path: 'value'",
+            "Failed to transform value from type 'integer' to type '['string', 'boolean', 'null']' at path: 'value'",
         ),
         (
             # Oneof not suported, no conversion for one_of_value should happen
@@ -252,7 +252,7 @@ VERY_NESTED_SCHEMA = {
             },
             {"value": {"key": "value"}},
             {"value": {"key": "value"}},
-            "Failed to transform value of type '{'key': 'string'}' to 'array' at path: 'value'",
+            "Failed to transform value from type 'object with structure {'key': 'string'}' to type 'array' at path: 'value'",
         ),
         (
             {
@@ -263,7 +263,7 @@ VERY_NESTED_SCHEMA = {
             },
             {"value1": "value2"},
             {"value1": "value2"},
-            "Failed to transform value of type 'string' to 'object' at path: 'value1'",
+            "Failed to transform value from type 'string' to type 'object' at path: 'value1'",
         ),
         (
             {
@@ -272,7 +272,7 @@ VERY_NESTED_SCHEMA = {
             },
             {"value": ["one", "two"]},
             {"value": ["one", "two"]},
-            "Failed to transform value of type 'string' to 'object' at path: 'value.0'",
+            "Failed to transform value from type 'string' to type 'object' at path: 'value.0'",
         ),
     ],
 )
