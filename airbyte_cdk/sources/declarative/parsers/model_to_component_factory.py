@@ -404,6 +404,10 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_sta
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
+from airbyte_cdk.test.utils.manifest_only_fixtures import (
+    COMPONENTS_MODULE_NAME,
+    components_module_from_string,
+)
 
 ComponentDefinition = Mapping[str, Any]
 
@@ -1091,19 +1095,22 @@ class ModelToComponentFactory:
         attempt to load from the `components` module already imported.
         """
         INJECTED_COMPONENTS_PY = "__injected_components_py"
-        COMPONENTS_MODULE_NAME = "components"
 
         components_module: types.ModuleType
         if not INJECTED_COMPONENTS_PY in config:
             # Use the existing components module. We expect this to be already grafted into the
             # connector module.
             components_module = sys.modules.get(COMPONENTS_MODULE_NAME)
+            if not components_module:
+                raise ValueError(
+                    f"Could not find module '{COMPONENTS_MODULE_NAME}' in `sys.modules` "
+                    f"and '{INJECTED_COMPONENTS_PY}' was not provided in config"
+                )
+            return components_module
 
         # Create a new module object and execute the provided Python code text within it
-        components_module = types.ModuleType(name=COMPONENTS_MODULE_NAME)
         python_text = config[INJECTED_COMPONENTS_PY]
-        exec(python_text, components_module.__dict__)
-        sys.modules[COMPONENTS_MODULE_NAME] = components_module
+        components_module = components_module_from_string(components_py_text=python_text)
         return components_module
 
     @staticmethod
