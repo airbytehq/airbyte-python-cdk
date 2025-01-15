@@ -20,6 +20,7 @@ from typing import (
     Optional,
     Type,
     Union,
+    cast,
     get_args,
     get_origin,
     get_type_hints,
@@ -1099,16 +1100,18 @@ class ModelToComponentFactory:
         attempt to load from the `components` module already imported.
         """
 
-        components_module: types.ModuleType
+        components_module: types.ModuleType | None
         if not INJECTED_COMPONENTS_PY in config:
             # Use the existing components module. We expect this to be already grafted into the
             # connector module.
-            components_module = sys.modules.get(COMPONENTS_MODULE_NAME)
-            if not components_module:
+            if COMPONENTS_MODULE_NAME not in sys.modules:
                 raise ValueError(
                     f"Could not find module '{COMPONENTS_MODULE_NAME}' in `sys.modules` "
                     f"and '{INJECTED_COMPONENTS_PY}' was not provided in config"
                 )
+
+            # We now know this is not `None`
+            components_module = cast(types.ModuleType, sys.modules.get(COMPONENTS_MODULE_NAME))
             return components_module
 
         # Create a new module object and execute the provided Python code text within it

@@ -56,7 +56,7 @@ def validate_python_code(
             continue
 
 
-def components_module_from_string(components_py_text: str) -> ModuleType | None:
+def components_module_from_string(components_py_text: str) -> ModuleType:
     """Load and return the components module from a provided string containing the python code.
 
     This assumes the components module is located at <connector_dir>/components.py.
