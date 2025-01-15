@@ -203,7 +203,6 @@ class TestOauth2Authenticator:
     def test_refresh_access_token(self, mocker):
         oauth = Oauth2Authenticator(
             token_refresh_endpoint="refresh_end",
-            client_id_name="TEST",
             client_id="some_client_id",
             client_secret="some_client_secret",
             refresh_token="some_refresh_token",
