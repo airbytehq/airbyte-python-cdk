@@ -111,20 +111,13 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
     def _duplicated_files_names(
         self, slices: List[dict[str, List[RemoteFile]]]
     ) -> List[dict[str, List[str]]]:
-        seen_file_names = set()
-        duplicates_file_names = set()
-        file_paths = defaultdict(list)
+        seen_file_names: Dict[str, List[str]] = defaultdict(list)
         for file_slice in slices:
             for file_found in file_slice[self.FILES_KEY]:
                 file_name = path.basename(file_found.uri)
-                if file_name not in seen_file_names:
-                    seen_file_names.add(file_name)
-                else:
-                    duplicates_file_names.add(file_name)
-                file_paths[file_name].append(file_found.uri)
+                seen_file_names[file_name].append(file_found.uri)
         return [
-            {duplicated_file: file_paths[duplicated_file]}
-            for duplicated_file in duplicates_file_names
+            {file_name: paths} for file_name, paths in seen_file_names.items() if len(paths) > 1
         ]
 
     def compute_slices(self) -> Iterable[Optional[Mapping[str, Any]]]:

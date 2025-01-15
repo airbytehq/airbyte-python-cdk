@@ -389,7 +389,18 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
 
     @staticmethod
     def _preserve_directory_structure(parsed_config: AbstractFileBasedSpec) -> bool:
-        # fall back to preserve subdirectories if config is not present or incomplete
+        """
+        Determines whether to preserve directory structure during file transfer.
+
+        When enabled, files maintain their subdirectory paths in the destination.
+        When disabled, files are flattened to the root of the destination.
+
+        Args:
+            parsed_config: The parsed configuration containing delivery method settings
+
+        Returns:
+            True if directory structure should be preserved (default), False otherwise
+        """
         if (
             FileBasedSource._use_file_transfer(parsed_config)
             and hasattr(parsed_config.delivery_method, "preserve_directory_structure")
