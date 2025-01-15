@@ -40,6 +40,10 @@ class AirbyteCustomCodeNotPermittedError(Exception):
 
 
 def _hash_text(input_text: str, hash_type: Literal["md5", "sha256"] = "md5") -> str:
+    """Return the hash of the input text using the specified hash type."""
+    if not input_text:
+        raise ValueError("Input text cannot be empty.")
+
     hash_object = CHECKSUM_FUNCTIONS[hash_type]()
     hash_object.update(input_text.encode())
     return hash_object.hexdigest()
