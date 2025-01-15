@@ -1043,31 +1043,6 @@ class ModelToComponentFactory:
         return custom_component_class(**kwargs)
 
     @staticmethod
-    def _get_components_module_object(
-        config: Config,
-    ) -> types.ModuleType:
-        """Get a components module object based on the provided config.
-
-        If custom python components is provided, this will be loaded. Otherwise, we will
-        attempt to load from the `components` module already imported.
-        """
-        INJECTED_COMPONENTS_PY = "__injected_components_py"
-        COMPONENTS_MODULE_NAME = "components"
-
-        components_module: types.ModuleType
-        if not INJECTED_COMPONENTS_PY in config:
-            raise ValueError(
-                "Custom components must be defined in a module named `components`. Please provide a custom components module."
-            )
-
-        # Create a new module object and execute the provided Python code text within it
-        components_module = types.ModuleType(name=COMPONENTS_MODULE_NAME)
-        python_text = config[INJECTED_COMPONENTS_PY]
-        exec(python_text, components_module.__dict__)
-        sys.modules[COMPONENTS_MODULE_NAME] = components_module
-        return components_module
-
-    @staticmethod
     def _get_class_from_fully_qualified_class_name(
         full_qualified_class_name: str,
         components_module: types.ModuleType,
@@ -1105,6 +1080,31 @@ class ModelToComponentFactory:
             return getattr(components_module, class_name)
         except (AttributeError, ModuleNotFoundError) as e:
             raise ValueError(f"Could not load class {full_qualified_class_name}.") from e
+
+    @staticmethod
+    def _get_components_module_object(
+        config: Config,
+    ) -> types.ModuleType:
+        """Get a components module object based on the provided config.
+
+        If custom python components is provided, this will be loaded. Otherwise, we will
+        attempt to load from the `components` module already imported.
+        """
+        INJECTED_COMPONENTS_PY = "__injected_components_py"
+        COMPONENTS_MODULE_NAME = "components"
+
+        components_module: types.ModuleType
+        if not INJECTED_COMPONENTS_PY in config:
+            raise ValueError(
+                "Custom components must be defined in a module named `components`. Please provide a custom components module."
+            )
+
+        # Create a new module object and execute the provided Python code text within it
+        components_module = types.ModuleType(name=COMPONENTS_MODULE_NAME)
+        python_text = config[INJECTED_COMPONENTS_PY]
+        exec(python_text, components_module.__dict__)
+        sys.modules[COMPONENTS_MODULE_NAME] = components_module
+        return components_module
 
     @staticmethod
     def _derive_component_type_from_type_hints(field_type: Any) -> Optional[str]:
