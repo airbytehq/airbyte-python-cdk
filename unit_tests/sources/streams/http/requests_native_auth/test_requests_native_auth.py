@@ -165,6 +165,41 @@ class TestOauth2Authenticator:
         }
         assert body == expected
 
+    def test_refresh_request_body_with_keys_override(self):
+        """
+        Request body should match given configuration.
+        """
+        scopes = ["scope1", "scope2"]
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="refresh_end",
+            client_id_name="custom_client_id_key",
+            client_id="some_client_id",
+            client_secret_name="custom_client_secret_key",
+            client_secret="some_client_secret",
+            refresh_token_name="custom_refresh_token_key",
+            refresh_token="some_refresh_token",
+            scopes=["scope1", "scope2"],
+            token_expiry_date=pendulum.now().add(days=3),
+            grant_type_name="custom_grant_type",
+            grant_type="some_grant_type",
+            refresh_request_body={
+                "custom_field": "in_outbound_request",
+                "another_field": "exists_in_body",
+                "scopes": ["no_override"],
+            },
+        )
+        body = oauth.build_refresh_request_body()
+        expected = {
+            "custom_grant_type": "some_grant_type",
+            "custom_client_id_key": "some_client_id",
+            "custom_client_secret_key": "some_client_secret",
+            "custom_refresh_token_key": "some_refresh_token",
+            "scopes": scopes,
+            "custom_field": "in_outbound_request",
+            "another_field": "exists_in_body",
+        }
+        assert body == expected
+
     def test_refresh_access_token(self, mocker):
         oauth = Oauth2Authenticator(
             token_refresh_endpoint="refresh_end",
