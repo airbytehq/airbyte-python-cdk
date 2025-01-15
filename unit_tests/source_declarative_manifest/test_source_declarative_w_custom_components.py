@@ -141,6 +141,7 @@ def test_given_injected_declarative_manifest_and_py_components() -> None:
         for msg in msg_iterator:
             assert msg
 
+
 def test_missing_checksum_fails_to_run() -> None:
     """Assert that missing checksum in the config will raise an error."""
     py_components_config_dict = get_py_components_config_dict()
