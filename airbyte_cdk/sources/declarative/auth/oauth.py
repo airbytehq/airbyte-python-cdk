@@ -56,8 +56,12 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     token_expiry_is_time_of_expiration: bool = False
     access_token_name: Union[InterpolatedString, str] = "access_token"
     access_token_value: Optional[Union[InterpolatedString, str]] = None
+    client_id_name: Union[InterpolatedString, str] = "client_id"
+    client_secret_name: Union[InterpolatedString, str] = "client_secret"
     expires_in_name: Union[InterpolatedString, str] = "expires_in"
+    refresh_token_name: Union[InterpolatedString, str] = "refresh_token"
     refresh_request_body: Optional[Mapping[str, Any]] = None
+    grant_type_name: Union[InterpolatedString, str] = "grant_type"
     grant_type: Union[InterpolatedString, str] = "refresh_token"
     message_repository: MessageRepository = NoopMessageRepository()
 
@@ -69,8 +73,15 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
             )
         else:
             self._token_refresh_endpoint = None
+        self._client_id_name = InterpolatedString.create(self.client_id_name, parameters=parameters)
         self._client_id = InterpolatedString.create(self.client_id, parameters=parameters)
+        self._client_secret_name = InterpolatedString.create(
+            self.client_secret_name, parameters=parameters
+        )
         self._client_secret = InterpolatedString.create(self.client_secret, parameters=parameters)
+        self._refresh_token_name = InterpolatedString.create(
+            self.refresh_token_name, parameters=parameters
+        )
         if self.refresh_token is not None:
             self._refresh_token: Optional[InterpolatedString] = InterpolatedString.create(
                 self.refresh_token, parameters=parameters
@@ -82,6 +93,9 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         )
         self.expires_in_name = InterpolatedString.create(
             self.expires_in_name, parameters=parameters
+        )
+        self.grant_type_name = InterpolatedString.create(
+            self.grant_type_name, parameters=parameters
         )
         self.grant_type = InterpolatedString.create(self.grant_type, parameters=parameters)
         self._refresh_request_body = InterpolatedMapping(
@@ -122,17 +136,26 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
             return refresh_token_endpoint
         return None
 
+    def get_client_id_name(self) -> str:
+        return self._client_id_name.eval(self.config)  # type: ignore # eval returns a string in this context
+
     def get_client_id(self) -> str:
         client_id: str = self._client_id.eval(self.config)
         if not client_id:
             raise ValueError("OAuthAuthenticator was unable to evaluate client_id parameter")
         return client_id
 
+    def get_client_secret_name(self) -> str:
+        return self._client_secret_name.eval(self.config)  # type: ignore # eval returns a string in this context
+
     def get_client_secret(self) -> str:
         client_secret: str = self._client_secret.eval(self.config)
         if not client_secret:
             raise ValueError("OAuthAuthenticator was unable to evaluate client_secret parameter")
         return client_secret
+
+    def get_refresh_token_name(self) -> str:
+        return self._refresh_token_name.eval(self.config)  # type: ignore # eval returns a string in this context
 
     def get_refresh_token(self) -> Optional[str]:
         return None if self._refresh_token is None else str(self._refresh_token.eval(self.config))
@@ -145,6 +168,9 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
 
     def get_expires_in_name(self) -> str:
         return self.expires_in_name.eval(self.config)  # type: ignore # eval returns a string in this context
+
+    def get_grant_type_name(self) -> str:
+        return self.grant_type_name.eval(self.config)  # type: ignore # eval returns a string in this context
 
     def get_grant_type(self) -> str:
         return self.grant_type.eval(self.config)  # type: ignore # eval returns a string in this context
