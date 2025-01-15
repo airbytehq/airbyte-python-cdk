@@ -481,11 +481,23 @@ class RefreshTokenUpdater(BaseModel):
 
 class OAuthAuthenticator(BaseModel):
     type: Literal["OAuthAuthenticator"]
+    client_id_name: Optional[str] = Field(
+        "client_id",
+        description="The name of the property to use to refresh the `access_token`.",
+        examples=["custom_app_id"],
+        title="Client ID Property Name",
+    )
     client_id: str = Field(
         ...,
         description="The OAuth client ID. Fill it in the user inputs.",
         examples=["{{ config['client_id }}", "{{ config['credentials']['client_id }}"],
         title="Client ID",
+    )
+    client_secret_name: Optional[str] = Field(
+        "client_secret",
+        description="The name of the property to use to refresh the `access_token`.",
+        examples=["custom_app_secret"],
+        title="Client Secret Property Name",
     )
     client_secret: str = Field(
         ...,
@@ -495,6 +507,12 @@ class OAuthAuthenticator(BaseModel):
             "{{ config['credentials']['client_secret }}",
         ],
         title="Client Secret",
+    )
+    refresh_token_name: Optional[str] = Field(
+        "refresh_token",
+        description="The name of the property to use to refresh the `access_token`.",
+        examples=["custom_app_refresh_value"],
+        title="Refresh Token Property Name",
     )
     refresh_token: Optional[str] = Field(
         None,
@@ -528,6 +546,12 @@ class OAuthAuthenticator(BaseModel):
         description="The name of the property which contains the expiry date in the response from the token refresh endpoint.",
         examples=["expires_in"],
         title="Token Expiry Property Name",
+    )
+    grant_type_name: Optional[str] = Field(
+        "grant_type",
+        description="The name of the property to use to refresh the `access_token`.",
+        examples=["custom_grant_type"],
+        title="Grant Type Property Name",
     )
     grant_type: Optional[str] = Field(
         "refresh_token",
@@ -859,8 +883,8 @@ class OauthConnectorInputSpecification(BaseModel):
         ...,
         description="The DeclarativeOAuth Specific string URL string template to initiate the authentication.\nThe placeholders are replaced during the processing to provide neccessary values.",
         examples=[
-            "https://domain.host.com/marketing_api/auth?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{state_key}={{state_key}}",
-            "https://endpoint.host.com/oauth2/authorize?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{scope_key}={urlEncoder:{{scope_key}}}&{state_key}={{state_key}}&subdomain={subdomain}",
+            "https://domain.host.com/marketing_api/auth?{{client_id_key}}={{client_id_value}}&{{redirect_uri_key}}={{{{redirect_uri_value}} | urlEncoder}}&{{state_key}}={{state_value}}",
+            "https://endpoint.host.com/oauth2/authorize?{{client_id_key}}={{client_id_value}}&{{redirect_uri_key}}={{{{redirect_uri_value}} | urlEncoder}}&{{scope_key}}={{{{scope_value}} | urlEncoder}}&{{state_key}}={{state_value}}&subdomain={{subdomain}}",
         ],
         title="Consent URL",
     )
@@ -874,14 +898,18 @@ class OauthConnectorInputSpecification(BaseModel):
         ...,
         description="The DeclarativeOAuth Specific URL templated string to obtain the `access_token`, `refresh_token` etc.\nThe placeholders are replaced during the processing to provide neccessary values.",
         examples=[
-            "https://auth.host.com/oauth2/token?{client_id_key}={{client_id_key}}&{client_secret_key}={{client_secret_key}}&{auth_code_key}={{auth_code_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}"
+            "https://auth.host.com/oauth2/token?{{client_id_key}}={{client_id_value}}&{{client_secret_key}}={{client_secret_value}}&{{auth_code_key}}={{auth_code_value}}&{{redirect_uri_key}}={{{{redirect_uri_value}} | urlEncoder}}"
         ],
         title="Access Token URL",
     )
     access_token_headers: Optional[Dict[str, Any]] = Field(
         None,
         description="The DeclarativeOAuth Specific optional headers to inject while exchanging the `auth_code` to `access_token` during `completeOAuthFlow` step.",
-        examples=[{"Authorization": "Basic {base64Encoder:{client_id}:{client_secret}}"}],
+        examples=[
+            {
+                "Authorization": "Basic {{ {{ client_id_value }}:{{ client_secret_value }} | base64Encoder }}"
+            }
+        ],
         title="Access Token Headers",
     )
     access_token_params: Optional[Dict[str, Any]] = Field(
@@ -889,15 +917,15 @@ class OauthConnectorInputSpecification(BaseModel):
         description="The DeclarativeOAuth Specific optional query parameters to inject while exchanging the `auth_code` to `access_token` during `completeOAuthFlow` step.\nWhen this property is provided, the query params will be encoded as `Json` and included in the outgoing API request.",
         examples=[
             {
-                "{auth_code_key}": "{{auth_code_key}}",
-                "{client_id_key}": "{{client_id_key}}",
-                "{client_secret_key}": "{{client_secret_key}}",
+                "{{ auth_code_key }}": "{{ auth_code_value }}",
+                "{{ client_id_key }}": "{{ client_id_value }}",
+                "{{ client_secret_key }}": "{{ client_secret_value }}",
             }
         ],
         title="Access Token Query Params (Json Encoded)",
     )
-    extract_output: List[str] = Field(
-        ...,
+    extract_output: Optional[List[str]] = Field(
+        None,
         description="The DeclarativeOAuth Specific list of strings to indicate which keys should be extracted and returned back to the input config.",
         examples=[["access_token", "refresh_token", "other_field"]],
         title="Extract Output",
@@ -966,7 +994,7 @@ class OAuthConfigSpecification(BaseModel):
     )
     oauth_connector_input_specification: Optional[OauthConnectorInputSpecification] = Field(
         None,
-        description='The DeclarativeOAuth specific blob.\nPertains to the fields defined by the connector relating to the OAuth flow.\n\nInterpolation capabilities:\n- The variables placeholders are declared as `{my_var}`.\n- The nested resolution variables like `{{my_nested_var}}` is allowed as well.\n\n- The allowed interpolation context is:\n  + base64Encoder - encode to `base64`, {base64Encoder:{my_var_a}:{my_var_b}}\n  + base64Decorer - decode from `base64` encoded string, {base64Decoder:{my_string_variable_or_string_value}}\n  + urlEncoder - encode the input string to URL-like format, {urlEncoder:https://test.host.com/endpoint}\n  + urlDecorer - decode the input url-encoded string into text format, {urlDecoder:https%3A%2F%2Fairbyte.io}\n  + codeChallengeS256 - get the `codeChallenge` encoded value to provide additional data-provider specific authorisation values, {codeChallengeS256:{state_value}}\n\nExamples:\n  - The TikTok Marketing DeclarativeOAuth spec:\n  {\n    "oauth_connector_input_specification": {\n      "type": "object",\n      "additionalProperties": false,\n      "properties": {\n          "consent_url": "https://ads.tiktok.com/marketing_api/auth?{client_id_key}={{client_id_key}}&{redirect_uri_key}={urlEncoder:{{redirect_uri_key}}}&{state_key}={{state_key}}",\n          "access_token_url": "https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/",\n          "access_token_params": {\n              "{auth_code_key}": "{{auth_code_key}}",\n              "{client_id_key}": "{{client_id_key}}",\n              "{client_secret_key}": "{{client_secret_key}}"\n          },\n          "access_token_headers": {\n              "Content-Type": "application/json",\n              "Accept": "application/json"\n          },\n          "extract_output": ["data.access_token"],\n          "client_id_key": "app_id",\n          "client_secret_key": "secret",\n          "auth_code_key": "auth_code"\n      }\n    }\n  }',
+        description='The DeclarativeOAuth specific blob.\nPertains to the fields defined by the connector relating to the OAuth flow.\n\nInterpolation capabilities:\n- The variables placeholders are declared as `{{my_var}}`.\n- The nested resolution variables like `{{ {{my_nested_var}} }}` is allowed as well.\n\n- The allowed interpolation context is:\n  + base64Encoder - encode to `base64`, {{ {{my_var_a}}:{{my_var_b}} | base64Encoder }}\n  + base64Decorer - decode from `base64` encoded string, {{ {{my_string_variable_or_string_value}} | base64Decoder }}\n  + urlEncoder - encode the input string to URL-like format, {{ https://test.host.com/endpoint | urlEncoder}}\n  + urlDecorer - decode the input url-encoded string into text format, {{ urlDecoder:https%3A%2F%2Fairbyte.io | urlDecoder}}\n  + codeChallengeS256 - get the `codeChallenge` encoded value to provide additional data-provider specific authorisation values, {{ {{state_value}} | codeChallengeS256 }}\n\nExamples:\n  - The TikTok Marketing DeclarativeOAuth spec:\n  {\n    "oauth_connector_input_specification": {\n      "type": "object",\n      "additionalProperties": false,\n      "properties": {\n          "consent_url": "https://ads.tiktok.com/marketing_api/auth?{{client_id_key}}={{client_id_value}}&{{redirect_uri_key}}={{ {{redirect_uri_value}} | urlEncoder}}&{{state_key}}={{state_value}}",\n          "access_token_url": "https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/",\n          "access_token_params": {\n              "{{ auth_code_key }}": "{{ auth_code_value }}",\n              "{{ client_id_key }}": "{{ client_id_value }}",\n              "{{ client_secret_key }}": "{{ client_secret_value }}"\n          },\n          "access_token_headers": {\n              "Content-Type": "application/json",\n              "Accept": "application/json"\n          },\n          "extract_output": ["data.access_token"],\n          "client_id_key": "app_id",\n          "client_secret_key": "secret",\n          "auth_code_key": "auth_code"\n      }\n    }\n  }',
         title="DeclarativeOAuth Connector Specification",
     )
     complete_oauth_output_specification: Optional[Dict[str, Any]] = Field(

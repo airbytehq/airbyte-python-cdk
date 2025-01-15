@@ -1885,8 +1885,14 @@ class ModelToComponentFactory:
                 expires_in_name=InterpolatedString.create(
                     model.expires_in_name or "expires_in", parameters=model.parameters or {}
                 ).eval(config),
+                client_id_name=InterpolatedString.create(
+                    model.client_id_name or "client_id", parameters=model.parameters or {}
+                ).eval(config),
                 client_id=InterpolatedString.create(
                     model.client_id, parameters=model.parameters or {}
+                ).eval(config),
+                client_secret_name=InterpolatedString.create(
+                    model.client_secret_name or "client_secret", parameters=model.parameters or {}
                 ).eval(config),
                 client_secret=InterpolatedString.create(
                     model.client_secret, parameters=model.parameters or {}
@@ -1894,6 +1900,9 @@ class ModelToComponentFactory:
                 access_token_config_path=model.refresh_token_updater.access_token_config_path,
                 refresh_token_config_path=model.refresh_token_updater.refresh_token_config_path,
                 token_expiry_date_config_path=model.refresh_token_updater.token_expiry_date_config_path,
+                grant_type_name=InterpolatedString.create(
+                    model.grant_type_name or "grant_type", parameters=model.parameters or {}
+                ).eval(config),
                 grant_type=InterpolatedString.create(
                     model.grant_type or "refresh_token", parameters=model.parameters or {}
                 ).eval(config),
@@ -1911,11 +1920,15 @@ class ModelToComponentFactory:
         return DeclarativeOauth2Authenticator(  # type: ignore
             access_token_name=model.access_token_name or "access_token",
             access_token_value=model.access_token_value,
+            client_id_name=model.client_id_name or "client_id",
             client_id=model.client_id,
+            client_secret_name=model.client_secret_name or "client_secret",
             client_secret=model.client_secret,
             expires_in_name=model.expires_in_name or "expires_in",
+            grant_type_name=model.grant_type_name or "grant_type",
             grant_type=model.grant_type or "refresh_token",
             refresh_request_body=model.refresh_request_body,
+            refresh_token_name=model.refresh_token_name or "refresh_token",
             refresh_token=model.refresh_token,
             scopes=model.scopes,
             token_expiry_date=model.token_expiry_date,
