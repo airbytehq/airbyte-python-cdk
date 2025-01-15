@@ -227,7 +227,9 @@ class TypeTransformer:
     def get_error_message(self, e: ValidationError) -> str:
         def _get_type_structure(input_data: Any) -> Any:
             if isinstance(input_data, dict):
-                structure = {key: _get_type_structure(field_value) for key, field_value in input_data.items()}
+                structure = {
+                    key: _get_type_structure(field_value) for key, field_value in input_data.items()
+                }
                 return f"object with structure {structure}"
             elif isinstance(input_data, list):
                 if not input_data:
@@ -240,5 +242,5 @@ class TypeTransformer:
 
         field_path = ".".join(map(str, e.path))
         type_structure = _get_type_structure(e.instance)
-        
+
         return f"Failed to transform value from type '{type_structure}' to type '{e.validator_value}' at path: '{field_path}'"
