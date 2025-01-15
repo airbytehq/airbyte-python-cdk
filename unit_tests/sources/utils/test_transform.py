@@ -204,14 +204,14 @@ VERY_NESTED_SCHEMA = {
             },
             {"value": {"key": "value"}},
             {"value": {"key": "value"}},
-            "Failed to transform value from type 'object with structure {'key': 'string'}' to type 'array' at path: 'value'",
+            "Failed to transform value from type '{'key': 'string'}' to type 'array' at path: 'value'",
         ),
         (
             # Schema root object is not an object, no convertion should happen
             {"type": "integer"},
             {"value": "12"},
             {"value": "12"},
-            "Failed to transform value from type 'object with structure {'value': 'string'}' to type 'integer' at path: ''",
+            "Failed to transform value from type '{'value': 'string'}' to type 'integer' at path: ''",
         ),
         (
             # More than one type except null, no conversion should happen
@@ -251,7 +251,7 @@ VERY_NESTED_SCHEMA = {
             },
             {"value": {"key": "value"}},
             {"value": {"key": "value"}},
-            "Failed to transform value from type 'object with structure {'key': 'string'}' to type 'array' at path: 'value'",
+            "Failed to transform value from type '{'key': 'string'}' to type 'array' at path: 'value'",
         ),
         (
             {
@@ -283,7 +283,7 @@ VERY_NESTED_SCHEMA = {
             {"type": "string"},
             {"a": {"b": {"c": {"d": {"e": "deep value"}}}}},
             {"a": {"b": {"c": {"d": {"e": "deep value"}}}}},
-            "Failed to transform value from type 'object with structure {'a': {'b': {'c': 'object'}}}' to type 'string' at path: ''",
+            "Failed to transform value from type '{'a': {'b': {'c': 'object'}}}' to type 'string' at path: ''",
         ),
     ],
     ids=[

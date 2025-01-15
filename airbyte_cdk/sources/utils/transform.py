@@ -247,8 +247,6 @@ class TypeTransformer:
             return (
                 "object"
                 if isinstance(input_data, dict)
-                else "array"
-                if isinstance(input_data, list)
                 else python_to_json[type(input_data)]
             )
 
