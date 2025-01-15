@@ -7,7 +7,7 @@ import json
 import logging
 import os
 import types
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
@@ -27,6 +27,7 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     INJECTED_COMPONENTS_PY_CHECKSUMS,
     INJECTED_MANIFEST,
     AirbyteCodeTamperedError,
+    AirbyteCustomCodeNotPermittedError,
     _hash_text,
     components_module_from_string,
     custom_code_execution_permitted,
@@ -66,10 +67,12 @@ def test_components_module_from_string() -> None:
     assert obj.sample_method() == "Hello, World!"
 
 
-def get_py_components_config_dict() -> dict[str, Any]:
+def get_py_components_config_dict(failing_components: bool = False) -> dict[str, Any]:
     connector_dir = Path(get_fixture_path("resources/source_the_guardian_api"))
     manifest_yml_path: Path = connector_dir / "manifest.yaml"
-    custom_py_code_path: Path = connector_dir / "components.py"
+    custom_py_code_path: Path = connector_dir / (
+        "components.py" if not failing_components else "components_failing.py"
+    )
     config_yaml_path: Path = connector_dir / "valid_config.yaml"
     secrets_yaml_path: Path = connector_dir / "secrets.yaml"
 
@@ -97,8 +100,19 @@ def get_py_components_config_dict() -> dict[str, Any]:
     condition=not Path(get_fixture_path("resources/source_the_guardian_api/secrets.yaml")).exists(),
     reason="Skipped due to missing 'secrets.yaml'.",
 )
-def test_given_injected_declarative_manifest_and_py_components() -> None:
-    py_components_config_dict = get_py_components_config_dict()
+@pytest.mark.parametrize(
+    "failing_components",
+    [
+        False,
+        True,
+    ],
+)
+def test_given_injected_declarative_manifest_and_py_components(
+    failing_components: bool,
+) -> None:
+    os.environ[ENV_VAR_ALLOW_CUSTOM_CODE] = "true"
+
+    py_components_config_dict = get_py_components_config_dict(failing_components)
     # Truncate the start_date to speed up tests
     py_components_config_dict["start_date"] = (
         datetime.datetime.now() - datetime.timedelta(days=2)
@@ -138,6 +152,12 @@ def test_given_injected_declarative_manifest_and_py_components() -> None:
             catalog=configured_catalog,
             state=None,
         )
+        if failing_components:
+            with pytest.raises(Exception):
+                for msg in msg_iterator:
+                    assert msg
+            return
+
         for msg in msg_iterator:
             assert msg
 
@@ -231,12 +251,13 @@ def test_fail_unless_custom_code_enabled_explicitly(
         json_str = json.dumps(py_components_config_dict)
         Path(temp_config_file.name).write_text(json_str)
         temp_config_file.flush()
-        try:
-            source = create_declarative_source(
-                ["check", "--config", temp_config_file.name],
-            )
-        except:
-            if should_raise:
-                return  # Success
+        fn: Callable = lambda: create_declarative_source(
+            ["check", "--config", temp_config_file.name],
+        )
+        if should_raise:
+            with pytest.raises(AirbyteCustomCodeNotPermittedError):
+                fn()
 
-            raise
+            return  # Success
+
+        fn()
