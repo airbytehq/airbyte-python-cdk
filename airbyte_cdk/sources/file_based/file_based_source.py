@@ -311,9 +311,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
             errors_collector=self.errors_collector,
             cursor=cursor,
             use_file_transfer=self._use_file_transfer(parsed_config),
-            preserve_directory_structure=self._preserve_directory_structure(
-                parsed_config
-            ),
+            preserve_directory_structure=self._preserve_directory_structure(parsed_config),
         )
 
     def _get_stream_from_catalog(
