@@ -231,12 +231,6 @@ class TypeTransformer:
                     key: _get_type_structure(field_value) for key, field_value in input_data.items()
                 }
                 return f"object with structure {structure}"
-            elif isinstance(input_data, list):
-                if not input_data:
-                    # Handle empty array
-                    return "array"
-                items = [_get_type_structure(item) for item in input_data]
-                return f"array with structure {items}"
             else:
                 return python_to_json[type(input_data)]
 
