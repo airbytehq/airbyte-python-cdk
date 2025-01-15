@@ -1071,7 +1071,9 @@ class ModelToComponentFactory:
         """
         split = full_qualified_class_name.split(".")
         module_name_full = ".".join(split[:-1])
-        module_name = split[-2]
+        module_name = (  # If bare class name passed, assume "components" module name
+            split[-2] or "components"
+        )
         class_name = split[-1]
 
         if module_name != "components":
@@ -1079,9 +1081,9 @@ class ModelToComponentFactory:
                 "Custom components must be defined in a module named "
                 f"`components`. Found `{module_name}` instead."
             )
-        if module_name_full != "source_declarative_manifest.components":
+        if module_name_full not in {"components", "source_declarative_manifest.components"}:
             raise ValueError(
-                "Custom components must be defined in a module named "
+                "Custom components must be defined in a module named `components` or "
                 f"`source_declarative_manifest.components`. Found `{module_name_full}` instead."
             )
 

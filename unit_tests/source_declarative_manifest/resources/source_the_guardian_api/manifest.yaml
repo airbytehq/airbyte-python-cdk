@@ -42,7 +42,7 @@ definitions:
       type: DefaultPaginator
       pagination_strategy:
         type: CustomPaginationStrategy
-        class_name: "source_declarative_manifest.components.CustomPageIncrement"
+        class_name: "CustomPageIncrement"
         page_size: 10
       page_token_option:
         type: RequestOption
@@ -89,7 +89,7 @@ definitions:
         type: DefaultPaginator
         pagination_strategy:
           type: CustomPaginationStrategy
-          class_name: "source_declarative_manifest.components.CustomPageIncrement"
+          class_name: "CustomPageIncrement"
           page_size: 10
         page_token_option:
           type: RequestOption
@@ -136,7 +136,7 @@ definitions:
         type: "DefaultPaginator"
         pagination_strategy:
           type: CustomPaginationStrategy
-          class_name: "source_declarative_manifest.components.CustomPageIncrement"
+          class_name: "components.CustomPageIncrement"
           page_size: 10
         page_token_option:
           type: RequestOption
@@ -228,7 +228,7 @@ streams:
       paginator:
         type: "DefaultPaginator"
         pagination_strategy:
-          class_name: source_declarative_manifest.components.CustomPageIncrement
+          class_name: components.CustomPageIncrement
           page_size: 10
           type: CustomPaginationStrategy
         page_token_option:
