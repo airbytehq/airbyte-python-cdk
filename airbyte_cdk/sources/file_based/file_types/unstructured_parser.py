@@ -44,7 +44,7 @@ unstructured_partition_docx = None
 unstructured_partition_pptx = None
 
 
-def get_ntlk_temp_folder():
+def get_ntlk_temp_folder() -> str:
     """
     For non-root connectors /tmp is not currently writable, but we should allow it in the future.
     It's safe to use /airbyte for now. Fallback to /tmp for local development.
