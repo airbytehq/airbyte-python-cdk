@@ -253,7 +253,7 @@ class AbstractOauth2Authenticator(AuthBase):
 
     @abstractmethod
     def get_refresh_request_headers(self) -> Mapping[str, Any]:
-        """Returns the request body to set on the refresh request"""
+        """Returns the request headers to set on the refresh request"""
 
     @abstractmethod
     def get_grant_type(self) -> str:
