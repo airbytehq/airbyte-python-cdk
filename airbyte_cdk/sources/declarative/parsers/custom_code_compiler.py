@@ -76,15 +76,8 @@ def validate_python_code(
                 f"Unsupported checksum type: {checksum_type}. Supported checksum types are: {CHECKSUM_FUNCTIONS.keys()}"
             )
 
-        if checksum_type == "md5":
-            if _hash_text(code_text, "md5") != checksum:
-                raise AirbyteCodeTamperedError("MD5 checksum does not match.")
-            continue
-
-        if checksum_type == "sha256":
-            if _hash_text(code_text, "sha256") != checksum:
-                raise AirbyteCodeTamperedError("SHA256 checksum does not match.")
-            continue
+        if _hash_text(code_text, checksum_type) != checksum:
+            raise AirbyteCodeTamperedError(f"{checksum_type} checksum does not match.")
 
 
 def get_registered_components_module(
