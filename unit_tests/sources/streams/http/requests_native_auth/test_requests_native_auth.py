@@ -165,6 +165,38 @@ class TestOauth2Authenticator:
         }
         assert body == expected
 
+    def test_refresh_request_headers(self):
+        """
+        Request headers should match given configuration.
+        """
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="refresh_end",
+            client_id="some_client_id",
+            client_secret="some_client_secret",
+            refresh_token="some_refresh_token",
+            token_expiry_date=pendulum.now().add(days=3),
+            refresh_request_headers={
+                "Authorization": "Bearer some_refresh_token",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+        )
+        headers = oauth.build_refresh_request_headers()
+        expected = {
+            "Authorization": "Bearer some_refresh_token",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        assert headers == expected
+
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="refresh_end",
+            client_id="some_client_id",
+            client_secret="some_client_secret",
+            refresh_token="some_refresh_token",
+            token_expiry_date=pendulum.now().add(days=3),
+        )
+        headers = oauth.build_refresh_request_headers()
+        assert headers is None
+
     def test_refresh_request_body_with_keys_override(self):
         """
         Request body should match given configuration.
@@ -244,6 +276,35 @@ class TestOauth2Authenticator:
 
         assert isinstance(expires_in, str)
         assert ("access_token", "2022-04-24T00:00:00Z") == (token, expires_in)
+
+    def test_refresh_access_token_when_headers_provided(self, mocker):
+        expected_headers = {
+            "Authorization": "Bearer some_access_token",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        oauth = Oauth2Authenticator(
+            token_refresh_endpoint="refresh_end",
+            client_id="some_client_id",
+            client_secret="some_client_secret",
+            refresh_token="some_refresh_token",
+            scopes=["scope1", "scope2"],
+            token_expiry_date=pendulum.now().add(days=3),
+            refresh_request_headers=expected_headers,
+        )
+
+        resp.status_code = 200
+        mocker.patch.object(
+            resp, "json", return_value={"access_token": "access_token", "expires_in": 1000}
+        )
+        mocked_request = mocker.patch.object(
+            requests, "request", side_effect=mock_request, autospec=True
+        )
+        token, expires_in = oauth.refresh_access_token()
+
+        assert isinstance(expires_in, int)
+        assert ("access_token", 1000) == (token, expires_in)
+
+        assert mocked_request.call_args.kwargs["headers"] == expected_headers
 
     @pytest.mark.parametrize(
         "expires_in_response, token_expiry_date_format, expected_token_expiry_date",
@@ -557,7 +618,9 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
         )
 
 
-def mock_request(method, url, data):
+def mock_request(method, url, data, headers):
     if url == "refresh_end":
         return resp
-    raise Exception(f"Error while refreshing access token with request: {method}, {url}, {data}")
+    raise Exception(
+        f"Error while refreshing access token with request: {method}, {url}, {data}, {headers}"
+    )

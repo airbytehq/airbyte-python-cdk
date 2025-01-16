@@ -98,6 +98,14 @@ class AbstractOauth2Authenticator(AuthBase):
 
         return payload
 
+    def build_refresh_request_headers(self) -> Mapping[str, Any] | None:
+        """
+        Returns the request headers to set on the refresh request
+
+        """
+        headers = self.get_refresh_request_headers()
+        return headers if headers else None
+
     def _wrap_refresh_token_exception(
         self, exception: requests.exceptions.RequestException
     ) -> bool:
@@ -128,6 +136,7 @@ class AbstractOauth2Authenticator(AuthBase):
                 method="POST",
                 url=self.get_token_refresh_endpoint(),  # type: ignore # returns None, if not provided, but str | bytes is expected.
                 data=self.build_refresh_request_body(),
+                headers=self.build_refresh_request_headers(),
             )
             if response.ok:
                 response_json = response.json()
@@ -253,6 +262,10 @@ class AbstractOauth2Authenticator(AuthBase):
     @abstractmethod
     def get_refresh_request_body(self) -> Mapping[str, Any]:
         """Returns the request body to set on the refresh request"""
+
+    @abstractmethod
+    def get_refresh_request_headers(self) -> Mapping[str, Any]:
+        """Returns the request headers to set on the refresh request"""
 
     @abstractmethod
     def get_grant_type(self) -> str:

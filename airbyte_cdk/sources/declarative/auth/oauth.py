@@ -39,6 +39,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         token_expiry_date_format str: format of the datetime; provide it if expires_in is returned in datetime instead of seconds
         token_expiry_is_time_of_expiration bool: set True it if expires_in is returned as time of expiration instead of the number seconds until expiration
         refresh_request_body (Optional[Mapping[str, Any]]): The request body to send in the refresh request
+        refresh_request_headers (Optional[Mapping[str, Any]]): The request headers to send in the refresh request
         grant_type: The grant_type to request for access_token. If set to refresh_token, the refresh_token parameter has to be provided
         message_repository (MessageRepository): the message repository used to emit logs on HTTP requests
     """
@@ -61,6 +62,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     expires_in_name: Union[InterpolatedString, str] = "expires_in"
     refresh_token_name: Union[InterpolatedString, str] = "refresh_token"
     refresh_request_body: Optional[Mapping[str, Any]] = None
+    refresh_request_headers: Optional[Mapping[str, Any]] = None
     grant_type_name: Union[InterpolatedString, str] = "grant_type"
     grant_type: Union[InterpolatedString, str] = "refresh_token"
     message_repository: MessageRepository = NoopMessageRepository()
@@ -100,6 +102,9 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         self.grant_type = InterpolatedString.create(self.grant_type, parameters=parameters)
         self._refresh_request_body = InterpolatedMapping(
             self.refresh_request_body or {}, parameters=parameters
+        )
+        self._refresh_request_headers = InterpolatedMapping(
+            self.refresh_request_headers or {}, parameters=parameters
         )
         self._token_expiry_date: pendulum.DateTime = (
             pendulum.parse(
@@ -177,6 +182,9 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
 
     def get_refresh_request_body(self) -> Mapping[str, Any]:
         return self._refresh_request_body.eval(self.config)
+
+    def get_refresh_request_headers(self) -> Mapping[str, Any]:
+        return self._refresh_request_headers.eval(self.config)
 
     def get_token_expiry_date(self) -> pendulum.DateTime:
         return self._token_expiry_date  # type: ignore # _token_expiry_date is a pendulum.DateTime. It is never None despite what mypy thinks

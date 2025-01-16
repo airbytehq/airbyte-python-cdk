@@ -571,6 +571,17 @@ class OAuthAuthenticator(BaseModel):
         ],
         title="Refresh Request Body",
     )
+    refresh_request_headers: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Headers of the request sent to get a new access token.",
+        examples=[
+            {
+                "Authorization": "<AUTH_TOKEN>",
+                "Content-Type": "application/x-www-form-urlencoded",
+            }
+        ],
+        title="Refresh Request Headers",
+    )
     scopes: Optional[List[str]] = Field(
         None,
         description="List of scopes that should be granted to the access token.",
