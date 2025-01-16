@@ -256,7 +256,7 @@ def test_fail_unless_custom_code_enabled_explicitly(
     should_raise: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Fails if the environment variable to allow custom code is not set.
+    """Assert that we properly fail if the environment variable to allow custom code is not set.
 
     A missing value should fail.
     Any value other than "true" (case insensitive) should fail.
