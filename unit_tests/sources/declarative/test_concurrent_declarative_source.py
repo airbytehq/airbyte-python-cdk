@@ -172,19 +172,26 @@ _MANIFEST = {
             "type": "HttpRequester",
             "url_base": "https://persona.metaverse.com",
             "http_method": "GET",
+            "authenticator": {
+                "type": "BasicHttpAuthenticator",
+                "username": "{{ config['api_key'] }}",
+                "password": "{{ config['secret_key'] }}",
+            },
             "error_handler": {
-              "type": "CompositeErrorHandler",
-              "error_handlers": [
-                {
-                  "type": "DefaultErrorHandler",
-                  "backoff_strategies": [
+                "type": "DefaultErrorHandler",
+                "response_filters": [
                     {
-                      "type": "ConstantBackoffStrategy",
-                      "backoff_time_in_seconds": 60
-                    }
-                  ]
-                }
-              ]
+                        "http_codes": [403],
+                        "action": "FAIL",
+                        "failure_type": "config_error",
+                        "error_message": "Access denied due to lack of permission or invalid API/Secret key or wrong data region.",
+                    },
+                    {
+                        "http_codes": [404],
+                        "action": "IGNORE",
+                        "error_message": "No data available for the time range requested.",
+                    },
+                ],
             },
         },
         "retriever": {
@@ -193,9 +200,161 @@ _MANIFEST = {
             "paginator": {"type": "NoPagination"},
             "requester": {"$ref": "#/definitions/requester"},
         },
+        "incremental_cursor": {
+            "type": "DatetimeBasedCursor",
+            "start_datetime": {
+                "datetime": "{{ format_datetime(config['start_date'], '%Y-%m-%d') }}"
+            },
+            "end_datetime": {"datetime": "{{ now_utc().strftime('%Y-%m-%d') }}"},
+            "datetime_format": "%Y-%m-%d",
+            "cursor_datetime_formats": ["%Y-%m-%d", "%Y-%m-%dT%H:%M:%S"],
+            "cursor_granularity": "P1D",
+            "step": "P15D",
+            "cursor_field": "updated_at",
+            "lookback_window": "P5D",
+            "start_time_option": {
+                "type": "RequestOption",
+                "field_name": "start",
+                "inject_into": "request_parameter",
+            },
+            "end_time_option": {
+                "type": "RequestOption",
+                "field_name": "end",
+                "inject_into": "request_parameter",
+            },
+        },
         "base_stream": {"retriever": {"$ref": "#/definitions/retriever"}},
-        "locations_stream": {
+        "base_incremental_stream": {
+            "retriever": {
+                "$ref": "#/definitions/retriever",
+                "requester": {"$ref": "#/definitions/requester"},
+            },
+            "incremental_sync": {"$ref": "#/definitions/incremental_cursor"},
+        },
+        "party_members_stream": {
+            "$ref": "#/definitions/base_incremental_stream",
+            "retriever": {
+                "$ref": "#/definitions/base_incremental_stream/retriever",
+                "record_selector": {"$ref": "#/definitions/selector"},
+            },
+            "$parameters": {"name": "party_members", "primary_key": "id", "path": "/party_members"},
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {
+                    "$schema": "https://json-schema.org/draft-07/schema#",
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "description": "The identifier",
+                            "type": ["null", "string"],
+                        },
+                        "name": {
+                            "description": "The name of the party member",
+                            "type": ["null", "string"],
+                        },
+                    },
+                },
+            },
+        },
+        "palaces_stream": {
             "$ref": "#/definitions/base_stream",
+            "$parameters": {"name": "palaces", "primary_key": "id", "path": "/palaces"},
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {
+                    "$schema": "https://json-schema.org/draft-07/schema#",
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "description": "The identifier",
+                            "type": ["null", "string"],
+                        },
+                        "name": {
+                            "description": "The name of the metaverse palace",
+                            "type": ["null", "string"],
+                        },
+                    },
+                },
+            },
+        },
+        "async_job_stream": {
+            "$ref": "#/definitions/base_stream",
+            "$parameters": {
+                "name": "async_job_stream",
+                "primary_key": "id",
+                "url_base": "https://persona.metaverse.com",
+            },
+            "retriever": {
+                "type": "AsyncRetriever",
+                "status_mapping": {
+                    "failed": ["failed"],
+                    "running": ["pending"],
+                    "timeout": ["timeout"],
+                    "completed": ["ready"],
+                },
+                "urls_extractor": {"type": "DpathExtractor", "field_path": ["urls"]},
+                "record_selector": {
+                    "type": "RecordSelector",
+                    "extractor": {"type": "DpathExtractor", "field_path": []},
+                },
+                "status_extractor": {"type": "DpathExtractor", "field_path": ["status"]},
+                "polling_requester": {
+                    "type": "HttpRequester",
+                    "path": "/async_job/{{stream_slice['create_job_response'].json()['id'] }}",
+                    "http_method": "GET",
+                    "authenticator": {
+                        "type": "BearerAuthenticator",
+                        "api_token": "{{ config['api_key'] }}",
+                    },
+                },
+                "creation_requester": {
+                    "type": "HttpRequester",
+                    "path": "async_job",
+                    "http_method": "POST",
+                    "authenticator": {
+                        "type": "BearerAuthenticator",
+                        "api_token": "{{ config['api_key'] }}",
+                    },
+                },
+                "download_requester": {
+                    "type": "HttpRequester",
+                    "path": "{{stream_slice['url']}}",
+                    "http_method": "GET",
+                },
+            },
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {
+                    "$schema": "https://json-schema.org/draft-07/schema#",
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "description": "The identifier",
+                            "type": ["null", "string"],
+                        },
+                        "name": {
+                            "description": "The name of the metaverse palace",
+                            "type": ["null", "string"],
+                        },
+                    },
+                },
+            },
+        },
+        "locations_stream": {
+            "$ref": "#/definitions/base_incremental_stream",
+            "retriever": {
+                "$ref": "#/definitions/base_incremental_stream/retriever",
+                "requester": {
+                    "$ref": "#/definitions/base_incremental_stream/retriever/requester",
+                    "request_parameters": {"m": "active", "i": "1", "g": "country"},
+                },
+                "record_selector": {"$ref": "#/definitions/selector"},
+            },
+            "incremental_sync": {
+                "$ref": "#/definitions/incremental_cursor",
+                "step": "P1M",
+                "cursor_field": "updated_at",
+            },
             "$parameters": {"name": "locations", "primary_key": "id", "path": "/locations"},
             "schema_loader": {
                 "type": "InlineSchemaLoader",
@@ -215,11 +374,162 @@ _MANIFEST = {
                 },
             },
         },
+        "party_members_skills_stream": {
+            "$ref": "#/definitions/base_stream",
+            "retriever": {
+                "$ref": "#/definitions/base_stream/retriever",
+                "record_selector": {"$ref": "#/definitions/selector"},
+                "partition_router": {
+                    "type": "SubstreamPartitionRouter",
+                    "parent_stream_configs": [
+                        {
+                            "type": "ParentStreamConfig",
+                            "stream": "#/definitions/party_members_stream",
+                            "parent_key": "id",
+                            "partition_field": "party_member_id",
+                        }
+                    ],
+                },
+            },
+            "$parameters": {
+                "name": "party_members_skills",
+                "primary_key": "id",
+                "path": "/party_members/{{stream_slice.party_member_id}}/skills",
+            },
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {
+                    "$schema": "https://json-schema.org/draft-07/schema#",
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "description": "The identifier",
+                            "type": ["null", "string"],
+                        },
+                        "name": {
+                            "description": "The name of the party member",
+                            "type": ["null", "string"],
+                        },
+                    },
+                },
+            },
+        },
+        "arcana_personas_stream": {
+            "$ref": "#/definitions/base_stream",
+            "retriever": {
+                "$ref": "#/definitions/base_stream/retriever",
+                "record_selector": {"$ref": "#/definitions/selector"},
+                "partition_router": {
+                    "type": "ListPartitionRouter",
+                    "cursor_field": "arcana_id",
+                    "values": [
+                        "Fool",
+                        "Magician",
+                        "Priestess",
+                        "Empress",
+                        "Emperor",
+                        "Hierophant",
+                        "Lovers",
+                        "Chariot",
+                        "Justice",
+                        "Hermit",
+                        "Fortune",
+                        "Strength",
+                        "Hanged Man",
+                        "Death",
+                        "Temperance",
+                        "Devil",
+                        "Tower",
+                        "Star",
+                        "Moon",
+                        "Sun",
+                        "Judgement",
+                        "World",
+                    ],
+                },
+            },
+            "$parameters": {
+                "name": "arcana_personas",
+                "primary_key": "id",
+                "path": "/arcanas/{{stream_slice.arcana_id}}/personas",
+            },
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {
+                    "$schema": "https://json-schema.org/draft-07/schema#",
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "description": "The identifier",
+                            "type": ["null", "string"],
+                        },
+                        "name": {
+                            "description": "The name of the persona",
+                            "type": ["null", "string"],
+                        },
+                        "arcana_id": {
+                            "description": "The associated arcana tarot for this persona",
+                            "type": ["null", "string"],
+                        },
+                    },
+                },
+            },
+        },
+        "palace_enemies_stream": {
+            "$ref": "#/definitions/base_incremental_stream",
+            "retriever": {
+                "$ref": "#/definitions/base_incremental_stream/retriever",
+                "record_selector": {"$ref": "#/definitions/selector"},
+                "partition_router": {
+                    "type": "SubstreamPartitionRouter",
+                    "parent_stream_configs": [
+                        {
+                            "type": "ParentStreamConfig",
+                            "stream": "#/definitions/palaces_stream",
+                            "parent_key": "id",
+                            "partition_field": "palace_id",
+                        }
+                    ],
+                },
+            },
+            "$parameters": {
+                "name": "palace_enemies",
+                "primary_key": "id",
+                "path": "/palaces/{{stream_slice.palace_id}}/enemies",
+            },
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {
+                    "$schema": "https://json-schema.org/draft-07/schema#",
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "description": "The identifier",
+                            "type": ["null", "string"],
+                        },
+                        "name": {
+                            "description": "The name of the enemy persona",
+                            "type": ["null", "string"],
+                        },
+                        "palace_id": {
+                            "description": "The palace id where this persona exists in",
+                            "type": ["null", "string"],
+                        },
+                    },
+                },
+            },
+        },
     },
     "streams": [
+        "#/definitions/party_members_stream",
+        "#/definitions/palaces_stream",
         "#/definitions/locations_stream",
+        "#/definitions/party_members_skills_stream",
+        "#/definitions/arcana_personas_stream",
+        "#/definitions/palace_enemies_stream",
+        "#/definitions/async_job_stream",
     ],
-    "check": {"stream_names": ["locations"]},
+    "check": {"stream_names": ["party_members", "locations"]},
     "concurrency_level": {
         "type": "ConcurrencyLevel",
         "default_concurrency": "{{ config['num_workers'] or 10 }}",
@@ -588,12 +898,11 @@ def test_read_with_concurrent_and_synchronous_streams():
     )
 
     with HttpMocker() as http_mocker:
-        # _mock_party_members_requests(http_mocker, _NO_STATE_PARTY_MEMBERS_SLICES_AND_RESPONSES)
-        # _mock_locations_requests(http_mocker, location_slices)
-        # http_mocker.get(HttpRequest("https://persona.metaverse.com/palaces"), _PALACES_RESPONSE)
-        # _mock_party_members_skills_requests(http_mocker)
+        _mock_party_members_requests(http_mocker, _NO_STATE_PARTY_MEMBERS_SLICES_AND_RESPONSES)
+        _mock_locations_requests(http_mocker, location_slices)
+        http_mocker.get(HttpRequest("https://persona.metaverse.com/palaces"), _PALACES_RESPONSE)
+        _mock_party_members_skills_requests(http_mocker)
 
-        http_mocker.get(HttpRequest("https://persona.metaverse.com/locations"), HttpResponse("", 500))
         messages = list(
             source.read(logger=source.logger, config=_CONFIG, catalog=_CATALOG, state=[])
         )
