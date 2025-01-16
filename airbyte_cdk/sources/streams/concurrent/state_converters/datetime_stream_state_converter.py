@@ -153,8 +153,7 @@ class IsoMillisConcurrentStreamStateConverter(DateTimeStreamStateConverter):
         "state_type": "date-range",
         "metadata": { … },
         "slices": [
-            {starts: "2020-01-01T21:18:20.000Z", end: "2020-01-31T21:18:20.000Z", finished_processing: true}
-            {starts: "2020-02-01T21:18:20.000Z", end: "2020-02-28T21:18:20.000Z", finished_processing: true}
+            {starts: "2020-01-01T21:18:20.000Z", end: "2021-01-18T21:18:20.000Z", finished_processing: true}
         ]
     }
     """

@@ -83,7 +83,11 @@ class CompositeErrorHandler(ErrorHandler):
     def backoff_strategies(self) -> Optional[List[BackoffStrategy]]:
         """
         Combines backoff strategies from all child error handlers into a single flattened list.
-        Returns None if no handlers have strategies defined.
+        Note: The first non-None strategy in this list becomes the default strategy for ALL retryable errors,
+        including both user-defined response filters and errors that fall back to DEFAULT_ERROR_MAPPING.
+        The list structure is currently not used to map different strategies to different error conditions.
+
+        Returns None if no handlers have strategies defined, which will result in the default backoff strategy being used.
         """
         all_strategies = []
         for handler in self.error_handlers:
