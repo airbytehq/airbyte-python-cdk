@@ -523,7 +523,13 @@ single_csv_scenario: TestScenario[InMemoryFilesSource] = (
                                         "const": "use_file_transfer",
                                         "enum": ["use_file_transfer"],
                                         "type": "string",
-                                    }
+                                    },
+                                    "preserve_directory_structure": {
+                                        "default": True,
+                                        "description": "If enabled, sends subdirectory folder structure along with source file names to the destination. Otherwise, files will be synced by their names only. This option is ignored when file-based replication is not enabled.",
+                                        "title": "Preserve Sub-Directories in File Paths",
+                                        "type": "boolean",
+                                    },
                                 },
                                 "description": "Copy raw files without parsing their contents. Bits are copied into the destination exactly as they appeared in the source. Recommended for use with unstructured text data, non-text and compressed files.",
                                 "required": ["delivery_type"],

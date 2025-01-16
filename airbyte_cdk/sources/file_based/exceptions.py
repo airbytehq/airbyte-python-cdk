@@ -111,6 +111,40 @@ class ErrorListingFiles(BaseFileBasedSourceError):
     pass
 
 
+class DuplicatedFilesError(BaseFileBasedSourceError):
+    def __init__(self, duplicated_files_names: List[dict[str, List[str]]], **kwargs: Any):
+        self._duplicated_files_names = duplicated_files_names
+        self._stream_name: str = kwargs["stream"]
+        super().__init__(self._format_duplicate_files_error_message(), **kwargs)
+
+    def _format_duplicate_files_error_message(self) -> str:
+        duplicated_files_messages = []
+        for duplicated_file in self._duplicated_files_names:
+            for duplicated_file_name, file_paths in duplicated_file.items():
+                file_duplicated_message = (
+                    f"{len(file_paths)} duplicates found for file name {duplicated_file_name}:\n\n"
+                    + "".join(f"\n - {file_paths}")
+                )
+                duplicated_files_messages.append(file_duplicated_message)
+
+        error_message = (
+            f"ERROR: Duplicate filenames found for stream {self._stream_name}. "
+            "Duplicate file names are not allowed if the Preserve Sub-Directories in File Paths option is disabled. "
+            "Please remove or rename the duplicate files before attempting to re-run the sync.\n\n"
+            + "\n".join(duplicated_files_messages)
+        )
+
+        return error_message
+
+    def __repr__(self) -> str:
+        """Return a string representation of the exception."""
+        class_name = self.__class__.__name__
+        properties_str = ", ".join(
+            f"{k}={v!r}" for k, v in self.__dict__.items() if not k.startswith("_")
+        )
+        return f"{class_name}({properties_str})"
+
+
 class CustomFileBasedException(AirbyteTracedException):
     """
     A specialized exception for file-based connectors.

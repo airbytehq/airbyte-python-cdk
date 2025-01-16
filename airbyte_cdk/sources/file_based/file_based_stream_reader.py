@@ -135,6 +135,17 @@ class AbstractFileBasedStreamReader(ABC):
             return use_file_transfer
         return False
 
+    def preserve_directory_structure(self) -> bool:
+        # fall back to preserve subdirectories if config is not present or incomplete
+        if (
+            self.use_file_transfer()
+            and self.config
+            and hasattr(self.config.delivery_method, "preserve_directory_structure")
+            and self.config.delivery_method.preserve_directory_structure is not None
+        ):
+            return self.config.delivery_method.preserve_directory_structure
+        return True
+
     @abstractmethod
     def get_file(
         self, file: RemoteFile, local_directory: str, logger: logging.Logger
@@ -159,10 +170,13 @@ class AbstractFileBasedStreamReader(ABC):
         """
         ...
 
-    @staticmethod
-    def _get_file_transfer_paths(file: RemoteFile, local_directory: str) -> List[str]:
-        # Remove left slashes from source path format to make relative path for writing locally
-        file_relative_path = file.uri.lstrip("/")
+    def _get_file_transfer_paths(self, file: RemoteFile, local_directory: str) -> List[str]:
+        preserve_directory_structure = self.preserve_directory_structure()
+        if preserve_directory_structure:
+            # Remove left slashes from source path format to make relative path for writing locally
+            file_relative_path = file.uri.lstrip("/")
+        else:
+            file_relative_path = path.basename(file.uri)
         local_file_path = path.join(local_directory, file_relative_path)
 
         # Ensure the local directory exists

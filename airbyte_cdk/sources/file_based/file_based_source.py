@@ -242,7 +242,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                         stream=self._make_default_stream(
                             stream_config=stream_config,
                             cursor=cursor,
-                            use_file_transfer=self._use_file_transfer(parsed_config),
+                            parsed_config=parsed_config,
                         ),
                         source=self,
                         logger=self.logger,
@@ -273,7 +273,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                         stream=self._make_default_stream(
                             stream_config=stream_config,
                             cursor=cursor,
-                            use_file_transfer=self._use_file_transfer(parsed_config),
+                            parsed_config=parsed_config,
                         ),
                         source=self,
                         logger=self.logger,
@@ -285,7 +285,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                     stream = self._make_default_stream(
                         stream_config=stream_config,
                         cursor=cursor,
-                        use_file_transfer=self._use_file_transfer(parsed_config),
+                        parsed_config=parsed_config,
                     )
 
                 streams.append(stream)
@@ -298,7 +298,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         self,
         stream_config: FileBasedStreamConfig,
         cursor: Optional[AbstractFileBasedCursor],
-        use_file_transfer: bool = False,
+        parsed_config: AbstractFileBasedSpec,
     ) -> AbstractFileBasedStream:
         return DefaultFileBasedStream(
             config=stream_config,
@@ -310,7 +310,8 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
             validation_policy=self._validate_and_get_validation_policy(stream_config),
             errors_collector=self.errors_collector,
             cursor=cursor,
-            use_file_transfer=use_file_transfer,
+            use_file_transfer=self._use_file_transfer(parsed_config),
+            preserve_directory_structure=self._preserve_directory_structure(parsed_config),
         )
 
     def _get_stream_from_catalog(
@@ -385,3 +386,25 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
             and parsed_config.delivery_method.delivery_type == "use_file_transfer"
         )
         return use_file_transfer
+
+    @staticmethod
+    def _preserve_directory_structure(parsed_config: AbstractFileBasedSpec) -> bool:
+        """
+        Determines whether to preserve directory structure during file transfer.
+
+        When enabled, files maintain their subdirectory paths in the destination.
+        When disabled, files are flattened to the root of the destination.
+
+        Args:
+            parsed_config: The parsed configuration containing delivery method settings
+
+        Returns:
+            True if directory structure should be preserved (default), False otherwise
+        """
+        if (
+            FileBasedSource._use_file_transfer(parsed_config)
+            and hasattr(parsed_config.delivery_method, "preserve_directory_structure")
+            and parsed_config.delivery_method.preserve_directory_structure is not None
+        ):
+            return parsed_config.delivery_method.preserve_directory_structure
+        return True

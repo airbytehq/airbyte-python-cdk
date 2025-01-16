@@ -72,6 +72,8 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     CsvParser,
     GzipParser,
     JsonLineParser,
+    JsonParser,
+    Parser,
 )
 from airbyte_cdk.sources.declarative.extractors import (
     DpathExtractor,
@@ -249,6 +251,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     JsonLineParser as JsonLineParserModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    JsonParser as JsonParserModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     JwtAuthenticator as JwtAuthenticatorModel,
@@ -526,6 +531,7 @@ class ModelToComponentFactory:
             JsonDecoderModel: self.create_json_decoder,
             JsonlDecoderModel: self.create_jsonl_decoder,
             JsonLineParserModel: self.create_json_line_parser,
+            JsonParserModel: self.create_json_parser,
             GzipJsonDecoderModel: self.create_gzipjson_decoder,
             GzipParserModel: self.create_gzip_parser,
             KeysToLowerModel: self.create_keys_to_lower_transformation,
@@ -1042,17 +1048,17 @@ class ModelToComponentFactory:
         self, model: CursorPaginationModel, config: Config, decoder: Decoder, **kwargs: Any
     ) -> CursorPaginationStrategy:
         if isinstance(decoder, PaginationDecoderDecorator):
-            if not isinstance(decoder.decoder, (JsonDecoder, XmlDecoder)):
-                raise ValueError(
-                    f"Provided decoder of {type(decoder.decoder)=} is not supported. Please set JsonDecoder or XmlDecoder instead."
-                )
+            inner_decoder = decoder.decoder
+        else:
+            inner_decoder = decoder
+            decoder = PaginationDecoderDecorator(decoder=decoder)
+
+        if self._is_supported_decoder_for_pagination(inner_decoder):
             decoder_to_use = decoder
         else:
-            if not isinstance(decoder, (JsonDecoder, XmlDecoder)):
-                raise ValueError(
-                    f"Provided decoder of {type(decoder)=} is not supported. Please set JsonDecoder or XmlDecoder instead."
-                )
-            decoder_to_use = PaginationDecoderDecorator(decoder=decoder)
+            raise ValueError(
+                self._UNSUPPORTED_DECODER_ERROR.format(decoder_type=type(inner_decoder))
+            )
 
         return CursorPaginationStrategy(
             cursor_value=model.cursor_value,
@@ -1525,11 +1531,10 @@ class ModelToComponentFactory:
         cursor_used_for_stop_condition: Optional[DeclarativeCursor] = None,
     ) -> Union[DefaultPaginator, PaginatorTestReadDecorator]:
         if decoder:
-            if not isinstance(decoder, (JsonDecoder, XmlDecoder)):
-                raise ValueError(
-                    f"Provided decoder of {type(decoder)=} is not supported. Please set JsonDecoder or XmlDecoder instead."
-                )
-            decoder_to_use = PaginationDecoderDecorator(decoder=decoder)
+            if self._is_supported_decoder_for_pagination(decoder):
+                decoder_to_use = PaginationDecoderDecorator(decoder=decoder)
+            else:
+                raise ValueError(self._UNSUPPORTED_DECODER_ERROR.format(decoder_type=type(decoder)))
         else:
             decoder_to_use = PaginationDecoderDecorator(decoder=JsonDecoder(parameters={}))
         page_size_option = (
@@ -1759,6 +1764,11 @@ class ModelToComponentFactory:
         return JsonDecoder(parameters={})
 
     @staticmethod
+    def create_json_parser(model: JsonParserModel, config: Config, **kwargs: Any) -> JsonParser:
+        encoding = model.encoding if model.encoding else "utf-8"
+        return JsonParser(encoding=encoding)
+
+    @staticmethod
     def create_jsonl_decoder(
         model: JsonlDecoderModel, config: Config, **kwargs: Any
     ) -> JsonlDecoder:
@@ -1895,8 +1905,14 @@ class ModelToComponentFactory:
                 expires_in_name=InterpolatedString.create(
                     model.expires_in_name or "expires_in", parameters=model.parameters or {}
                 ).eval(config),
+                client_id_name=InterpolatedString.create(
+                    model.client_id_name or "client_id", parameters=model.parameters or {}
+                ).eval(config),
                 client_id=InterpolatedString.create(
                     model.client_id, parameters=model.parameters or {}
+                ).eval(config),
+                client_secret_name=InterpolatedString.create(
+                    model.client_secret_name or "client_secret", parameters=model.parameters or {}
                 ).eval(config),
                 client_secret=InterpolatedString.create(
                     model.client_secret, parameters=model.parameters or {}
@@ -1904,6 +1920,9 @@ class ModelToComponentFactory:
                 access_token_config_path=model.refresh_token_updater.access_token_config_path,
                 refresh_token_config_path=model.refresh_token_updater.refresh_token_config_path,
                 token_expiry_date_config_path=model.refresh_token_updater.token_expiry_date_config_path,
+                grant_type_name=InterpolatedString.create(
+                    model.grant_type_name or "grant_type", parameters=model.parameters or {}
+                ).eval(config),
                 grant_type=InterpolatedString.create(
                     model.grant_type or "refresh_token", parameters=model.parameters or {}
                 ).eval(config),
@@ -1921,11 +1940,15 @@ class ModelToComponentFactory:
         return DeclarativeOauth2Authenticator(  # type: ignore
             access_token_name=model.access_token_name or "access_token",
             access_token_value=model.access_token_value,
+            client_id_name=model.client_id_name or "client_id",
             client_id=model.client_id,
+            client_secret_name=model.client_secret_name or "client_secret",
             client_secret=model.client_secret,
             expires_in_name=model.expires_in_name or "expires_in",
+            grant_type_name=model.grant_type_name or "grant_type",
             grant_type=model.grant_type or "refresh_token",
             refresh_request_body=model.refresh_request_body,
+            refresh_token_name=model.refresh_token_name or "refresh_token",
             refresh_token=model.refresh_token,
             scopes=model.scopes,
             token_expiry_date=model.token_expiry_date,
@@ -1937,22 +1960,22 @@ class ModelToComponentFactory:
             message_repository=self._message_repository,
         )
 
-    @staticmethod
     def create_offset_increment(
-        model: OffsetIncrementModel, config: Config, decoder: Decoder, **kwargs: Any
+        self, model: OffsetIncrementModel, config: Config, decoder: Decoder, **kwargs: Any
     ) -> OffsetIncrement:
         if isinstance(decoder, PaginationDecoderDecorator):
-            if not isinstance(decoder.decoder, (JsonDecoder, XmlDecoder)):
-                raise ValueError(
-                    f"Provided decoder of {type(decoder.decoder)=} is not supported. Please set JsonDecoder or XmlDecoder instead."
-                )
+            inner_decoder = decoder.decoder
+        else:
+            inner_decoder = decoder
+            decoder = PaginationDecoderDecorator(decoder=decoder)
+
+        if self._is_supported_decoder_for_pagination(inner_decoder):
             decoder_to_use = decoder
         else:
-            if not isinstance(decoder, (JsonDecoder, XmlDecoder)):
-                raise ValueError(
-                    f"Provided decoder of {type(decoder)=} is not supported. Please set JsonDecoder or XmlDecoder instead."
-                )
-            decoder_to_use = PaginationDecoderDecorator(decoder=decoder)
+            raise ValueError(
+                self._UNSUPPORTED_DECODER_ERROR.format(decoder_type=type(inner_decoder))
+            )
+
         return OffsetIncrement(
             page_size=model.page_size,
             config=config,
@@ -2552,3 +2575,25 @@ class ModelToComponentFactory:
             components_mapping=components_mapping,
             parameters=model.parameters or {},
         )
+
+    _UNSUPPORTED_DECODER_ERROR = (
+        "Specified decoder of {decoder_type} is not supported for pagination."
+        "Please set as `JsonDecoder`, `XmlDecoder`, or a `CompositeRawDecoder` with an inner_parser of `JsonParser` or `GzipParser` instead."
+        "If using `GzipParser`, please ensure that the lowest level inner_parser is a `JsonParser`."
+    )
+
+    def _is_supported_decoder_for_pagination(self, decoder: Decoder) -> bool:
+        if isinstance(decoder, (JsonDecoder, XmlDecoder)):
+            return True
+        elif isinstance(decoder, CompositeRawDecoder):
+            return self._is_supported_parser_for_pagination(decoder.parser)
+        else:
+            return False
+
+    def _is_supported_parser_for_pagination(self, parser: Parser) -> bool:
+        if isinstance(parser, JsonParser):
+            return True
+        elif isinstance(parser, GzipParser):
+            return isinstance(parser.inner_parser, JsonParser)
+        else:
+            return False

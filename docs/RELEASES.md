@@ -9,9 +9,9 @@ A few seconds after any PR is merged to `main` , a release draft will be created
 3. Optionally tweak the text in the release notes - for instance to call out contributors, to make a specific change more intuitive for readers to understand, or to move updates into a different category than they were assigned by default. (Note: You can also do this retroactively after publishing the release.)
 4. Publish the release by pressing the “Publish release” button.
 
-*Note:*
+_Note:_
 
-- *Only maintainers can see release drafts. Non-maintainers will only see published releases.*
+- _Only maintainers can see release drafts. Non-maintainers will only see published releases._
 - If you create a tag on accident that you need to remove, contact a maintainer to delete the tag and the release.
 - You can monitor the PyPI release process here in the GitHub Actions view: https://github.com/airbytehq/airbyte-python-cdk/actions/workflows/pypi_publish.yml
 
@@ -49,7 +49,7 @@ The first option is to look in the `declarative_manifest_image_version` database
 
 If that is not available as an option, you can run an Builder-created connector in Cloud and note the version number printed in the logs. Warning: this may not be indicative if that connector instance has been manually pinned to a specific version.
 
-TODO: Would be great to find a way to inspect directly without requiring direct prod DB access. 
+TODO: Would be great to find a way to inspect directly without requiring direct prod DB access.
 
 ### How to pretest changes to SDM images manually
 
@@ -57,15 +57,15 @@ To manually test changes against a dev image of SDM before committing to a relea
 
 #### Pretesting Manifest-Only connectors
 
-Once the publish pipeline has completed, choose a connector to test. Set the base_image in the connector's metadata to your pre-release version in Dockerhub (make sure to update the SHA as well). 
-Next, build the pre-release image locally using `airbyte-ci connectors —name=<source> build`. 
+Once the publish pipeline has completed, choose a connector to test. Set the base_image in the connector's metadata to your pre-release version in Dockerhub (make sure to update the SHA as well).
+Next, build the pre-release image locally using `airbyte-ci connectors —name=<source> build`.
 You can now run connector interfaces against the built image using the pattern `docker run airbyte/<source-name>:dev <spec/check/discover/read>`.
 The connector's README should include a list of these commands, which can be copy/pasted and run from the connector's directory for quick testing against a local config.
 You can also run `airbyte-ci connectors —name=<source> test` to run the CI test suite against the dev image.
 
 #### Pretesting Low-Code Python connectors
 
-Once the publish pipeline has completed, set the version of `airbyte-cdk` in the connector's pyproject.toml file to the pre-release version in PyPI. 
+Once the publish pipeline has completed, set the version of `airbyte-cdk` in the connector's pyproject.toml file to the pre-release version in PyPI.
 Update the lockfile and run connector interfaces via poetry: `poetry run source-<name> spec/check/discover/read`.
 You can also run `airbyte-ci connectors —name=<source> test` to run the CI test suite against the dev image.  
 
