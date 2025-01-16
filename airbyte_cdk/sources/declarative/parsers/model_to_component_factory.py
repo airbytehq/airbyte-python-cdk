@@ -990,9 +990,7 @@ class ModelToComponentFactory:
         :param config: The custom defined connector config
         :return: The declarative component built from the Pydantic model to be used at runtime
         """
-        custom_component_class = self._get_class_from_fully_qualified_class_name(
-            full_qualified_class_name=model.class_name,
-        )
+        custom_component_class = self._get_class_from_fully_qualified_class_name(model.class_name)
         component_fields = get_type_hints(custom_component_class)
         model_args = model.dict()
         model_args["config"] = config
