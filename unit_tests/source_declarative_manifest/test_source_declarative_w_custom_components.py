@@ -52,6 +52,9 @@ def test_components_module_from_string() -> None:
     # Call the function to get the module
     components_module: types.ModuleType = register_components_module_from_string(
         components_py_text=SAMPLE_COMPONENTS_PY_TEXT,
+        checksums={
+            "md5": _hash_text(SAMPLE_COMPONENTS_PY_TEXT, "md5"),
+        },
     )
 
     # Check that the module is created and is of the correct type
@@ -125,8 +128,9 @@ def get_py_components_config_dict(failing_components: bool = False) -> dict[str,
 )
 def test_given_injected_declarative_manifest_and_py_components(
     failing_components: bool,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    os.environ[ENV_VAR_ALLOW_CUSTOM_CODE] = "true"
+    monkeypatch.setenv(ENV_VAR_ALLOW_CUSTOM_CODE, "true")
 
     py_components_config_dict = get_py_components_config_dict(failing_components)
     # Truncate the start_date to speed up tests
@@ -178,8 +182,12 @@ def test_given_injected_declarative_manifest_and_py_components(
             assert msg
 
 
-def test_missing_checksum_fails_to_run() -> None:
+def test_missing_checksum_fails_to_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Assert that missing checksum in the config will raise an error."""
+    monkeypatch.setenv(ENV_VAR_ALLOW_CUSTOM_CODE, "true")
+
     py_components_config_dict = get_py_components_config_dict()
     # Truncate the start_date to speed up tests
     py_components_config_dict["start_date"] = (
@@ -192,12 +200,10 @@ def test_missing_checksum_fails_to_run() -> None:
         json_str = json.dumps(py_components_config_dict)
         Path(temp_config_file.name).write_text(json_str)
         temp_config_file.flush()
-        source = create_declarative_source(
-            ["check", "--config", temp_config_file.name],
-        )
-        assert isinstance(source, ManifestDeclarativeSource)
         with pytest.raises(ValueError):
-            source.check(logger=logging.getLogger(), config=py_components_config_dict)
+            source = create_declarative_source(
+                ["check", "--config", temp_config_file.name],
+            )
 
 
 @pytest.mark.parametrize(
@@ -207,8 +213,13 @@ def test_missing_checksum_fails_to_run() -> None:
         "sha256",
     ],
 )
-def test_invalid_checksum_fails_to_run(hash_type: str) -> None:
+def test_invalid_checksum_fails_to_run(
+    hash_type: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Assert that an invalid checksum in the config will raise an error."""
+    monkeypatch.setenv(ENV_VAR_ALLOW_CUSTOM_CODE, "true")
+
     py_components_config_dict = get_py_components_config_dict()
     # Truncate the start_date to speed up tests
     py_components_config_dict["start_date"] = (
@@ -221,12 +232,10 @@ def test_invalid_checksum_fails_to_run(hash_type: str) -> None:
         json_str = json.dumps(py_components_config_dict)
         Path(temp_config_file.name).write_text(json_str)
         temp_config_file.flush()
-        source = create_declarative_source(
-            ["check", "--config", temp_config_file.name],
-        )
-        assert isinstance(source, ManifestDeclarativeSource)
         with pytest.raises(AirbyteCodeTamperedError):
-            source.check(logger=logging.getLogger(), config=py_components_config_dict)
+            source = create_declarative_source(
+                ["check", "--config", temp_config_file.name],
+            )
 
 
 @pytest.mark.parametrize(
@@ -245,15 +254,16 @@ def test_invalid_checksum_fails_to_run(hash_type: str) -> None:
 def test_fail_unless_custom_code_enabled_explicitly(
     env_value: Any,
     should_raise: bool,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Fails if the environment variable to allow custom code is not set.
 
     A missing value should fail.
     Any value other than "true" (case insensitive) should fail.
     """
-    os.environ.pop(ENV_VAR_ALLOW_CUSTOM_CODE, None)
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
     if env_value is not None:
-        os.environ[ENV_VAR_ALLOW_CUSTOM_CODE] = env_value
+        monkeypatch.setenv(ENV_VAR_ALLOW_CUSTOM_CODE, env_value)
 
     assert custom_code_execution_permitted() == (not should_raise)
 
