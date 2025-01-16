@@ -1764,9 +1764,7 @@ definitions:
             items:
               type: string
       condition:
-        anyOf:
-          - type: string
-          - type: boolean
+        type: string
         interpolation_context:
           - raw_schema
   SchemaTypeIdentifier:

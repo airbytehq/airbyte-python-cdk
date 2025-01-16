@@ -54,7 +54,7 @@ class TypesMap:
 
     target_type: Union[List[str], str]
     current_type: Union[List[str], str]
-    condition: Optional[Union[str, bool]]
+    condition: Optional[str]
 
 
 @deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)
