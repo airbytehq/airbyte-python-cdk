@@ -5,9 +5,9 @@
 from __future__ import annotations
 
 import datetime
-import importlib
 import inspect
 import re
+import sys
 from functools import partial
 from typing import (
     Any,
@@ -355,6 +355,10 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     XmlDecoder as XmlDecoderModel,
+)
+from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
+    COMPONENTS_MODULE_NAME,
+    SDM_COMPONENTS_MODULE_NAME,
 )
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
@@ -1077,7 +1081,6 @@ class ModelToComponentFactory:
         :param config: The custom defined connector config
         :return: The declarative component built from the Pydantic model to be used at runtime
         """
-
         custom_component_class = self._get_class_from_fully_qualified_class_name(model.class_name)
         component_fields = get_type_hints(custom_component_class)
         model_args = model.dict()
@@ -1131,14 +1134,35 @@ class ModelToComponentFactory:
         return custom_component_class(**kwargs)
 
     @staticmethod
-    def _get_class_from_fully_qualified_class_name(full_qualified_class_name: str) -> Any:
+    def _get_class_from_fully_qualified_class_name(
+        full_qualified_class_name: str,
+    ) -> Any:
+        """Get a class from its fully qualified name.
+
+        If a custom components module is needed, we assume it is already registered - probably
+        as `source_declarative_manifest.components` or `components`.
+
+        Args:
+            full_qualified_class_name (str): The fully qualified name of the class (e.g., "module.ClassName").
+
+        Returns:
+            Any: The class object.
+
+        Raises:
+            ValueError: If the class cannot be loaded.
+        """
         split = full_qualified_class_name.split(".")
-        module = ".".join(split[:-1])
+        module_name_full = ".".join(split[:-1])
         class_name = split[-1]
+
+        if module_name_full == COMPONENTS_MODULE_NAME:
+            # Assume "components" on its own means "source_declarative_manifest.components"
+            module_name_full = SDM_COMPONENTS_MODULE_NAME
+
         try:
-            return getattr(importlib.import_module(module), class_name)
-        except AttributeError:
-            raise ValueError(f"Could not load class {full_qualified_class_name}.")
+            return getattr(sys.modules[module_name_full], class_name)
+        except (AttributeError, ModuleNotFoundError) as e:
+            raise ValueError(f"Could not load class {full_qualified_class_name}.") from e
 
     @staticmethod
     def _derive_component_type_from_type_hints(field_type: Any) -> Optional[str]:

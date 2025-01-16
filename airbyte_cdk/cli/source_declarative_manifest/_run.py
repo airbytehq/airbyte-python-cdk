@@ -171,6 +171,12 @@ def create_declarative_source(
                 "Invalid config: `__injected_declarative_manifest` should be provided at the root "
                 f"of the config but config only has keys: {list(config.keys() if config else [])}"
             )
+        if not isinstance(config["__injected_declarative_manifest"], dict):
+            raise ValueError(
+                "Invalid config: `__injected_declarative_manifest` should be a dictionary, "
+                f"but got type: {type(config['__injected_declarative_manifest'])}"
+            )
+
         return ConcurrentDeclarativeSource(
             config=config,
             catalog=catalog,

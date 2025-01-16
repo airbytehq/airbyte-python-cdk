@@ -52,6 +52,7 @@ def get_limits(config: Mapping[str, Any]) -> TestReadLimits:
 def create_source(config: Mapping[str, Any], limits: TestReadLimits) -> ManifestDeclarativeSource:
     manifest = config["__injected_declarative_manifest"]
     return ManifestDeclarativeSource(
+        config=config,
         emit_connector_builder_messages=True,
         source_config=manifest,
         component_factory=ModelToComponentFactory(

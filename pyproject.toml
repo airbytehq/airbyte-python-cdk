@@ -125,6 +125,7 @@ select = ["I"]
 [tool.poe.tasks]
 # Installation
 install = { shell = "poetry install --all-extras" }
+lock = { shell = "poetry lock --no-update" }
 
 # Build tasks
 assemble = {cmd = "bin/generate-component-manifest-dagger.sh", help = "Generate component manifest files."}
