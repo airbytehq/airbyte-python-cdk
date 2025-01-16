@@ -61,7 +61,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
     def __init__(
         self,
-        config: dict[str, Any],
+        config: dict[str, Any] | None,
         source_config: ConnectionDefinition,
         debug: bool = False,
         emit_connector_builder_messages: bool = False,
@@ -70,9 +70,10 @@ class ManifestDeclarativeSource(DeclarativeSource):
         """
         Args:
             config: The provided config dict.
-            source_config: The manifest of low-code components that describe the source connector
-            debug: True if debug mode is enabled
-            component_factory: optional factory if ModelToComponentFactory's default behaviour needs to be tweaked
+            source_config: The manifest of low-code components that describe the source connector.
+            debug: True if debug mode is enabled.
+            emit_connector_builder_messages: True if messages should be emitted to the connector builder.
+            component_factory: optional factory if ModelToComponentFactory's default behavior needs to be tweaked.
         """
         self.logger = logging.getLogger(f"airbyte.{self.name}")
         # For ease of use we don't require the type to be specified at the top level manifest, but it should be included during processing

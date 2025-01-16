@@ -17,7 +17,6 @@ source-declarative-manifest spec
 from __future__ import annotations
 
 import json
-import os
 import pkgutil
 import sys
 import traceback
@@ -42,13 +41,6 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
-)
-from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
-    ENV_VAR_ALLOW_CUSTOM_CODE,
-    INJECTED_COMPONENTS_PY,
-    INJECTED_MANIFEST,
-    AirbyteCustomCodeNotPermittedError,
-    custom_code_execution_permitted,
 )
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.sources.source import TState
@@ -189,7 +181,7 @@ def create_declarative_source(
             config=config,
             catalog=catalog,
             state=state,
-            source_config=cast(dict[str, Any], config[INJECTED_MANIFEST]),
+            source_config=cast(dict[str, Any], config["__injected_declarative_manifest"]),
         )
     except Exception as error:
         print(

@@ -61,9 +61,12 @@ def custom_code_execution_permitted() -> bool:
 
 def validate_python_code(
     code_text: str,
-    checksums: dict[ChecksumType, str] | None,
+    checksums: dict[str, str] | None,
 ) -> None:
-    """"""
+    """Validate the provided Python code text against the provided checksums.
+
+    Currently we fail if no checksums are provided, although this may change in the future.
+    """
     if not checksums:
         raise ValueError(f"A checksum is required to validate the code. Received: {checksums}")
 
@@ -85,7 +88,7 @@ def validate_python_code(
 
 
 def get_registered_components_module(
-    config: dict,
+    config: dict[str, Any],
 ) -> ModuleType | None:
     """Get a components module object based on the provided config.
 

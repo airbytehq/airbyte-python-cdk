@@ -8,7 +8,6 @@ import datetime
 import inspect
 import re
 import sys
-import types
 from functools import partial
 from typing import (
     Any,
@@ -20,7 +19,6 @@ from typing import (
     Optional,
     Type,
     Union,
-    cast,
     get_args,
     get_origin,
     get_type_hints,
@@ -1066,9 +1064,6 @@ class ModelToComponentFactory:
         """
         split = full_qualified_class_name.split(".")
         module_name_full = ".".join(split[:-1])
-        module_name = (  # If bare class name passed, assume "components" module name
-            split[-2] or "components"
-        )
         class_name = split[-1]
 
         if module_name_full == COMPONENTS_MODULE_NAME:

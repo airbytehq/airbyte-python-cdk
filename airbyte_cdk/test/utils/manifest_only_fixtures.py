@@ -2,8 +2,6 @@
 
 
 import importlib.util
-import sys
-import types
 from pathlib import Path
 from types import ModuleType
 

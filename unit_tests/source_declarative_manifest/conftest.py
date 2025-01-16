@@ -7,13 +7,8 @@ import os
 import pytest
 import yaml
 
-from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
-    # CustomCodeCompiler,
-    _hash_text,
-)
 
-
-def get_fixture_path(file_name) -> str:
+def get_fixture_path(file_name):
     return os.path.join(os.path.dirname(__file__), file_name)
 
 
