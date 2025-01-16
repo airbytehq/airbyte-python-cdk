@@ -3,6 +3,7 @@
 #
 
 import json
+from copy import deepcopy
 from unittest.mock import MagicMock
 
 import pytest
@@ -289,27 +290,28 @@ def test_dynamic_schema_loader_manifest_flow():
 
 
 def test_dynamic_schema_loader_with_type_conditions():
-    _MANIFEST["definitions"]["party_members_stream"]["schema_loader"]["schema_type_identifier"][
-        "types_mapping"
-    ].append(
+    _MANIFEST_WITH_TYPE_CONDITIONS = deepcopy(_MANIFEST)
+    _MANIFEST_WITH_TYPE_CONDITIONS["definitions"]["party_members_stream"]["schema_loader"][
+        "schema_type_identifier"
+    ]["types_mapping"].append(
         {
             "target_type": "number",
             "current_type": "formula",
             "condition": "{{ raw_schema['result']['type'] == 'number' }}",
         }
     )
-    _MANIFEST["definitions"]["party_members_stream"]["schema_loader"]["schema_type_identifier"][
-        "types_mapping"
-    ].append(
+    _MANIFEST_WITH_TYPE_CONDITIONS["definitions"]["party_members_stream"]["schema_loader"][
+        "schema_type_identifier"
+    ]["types_mapping"].append(
         {
             "target_type": "number",
             "current_type": "formula",
             "condition": "{{ raw_schema['result']['type'] == 'currency' }}",
         }
     )
-    _MANIFEST["definitions"]["party_members_stream"]["schema_loader"]["schema_type_identifier"][
-        "types_mapping"
-    ].append({"target_type": "array", "current_type": "formula"})
+    _MANIFEST_WITH_TYPE_CONDITIONS["definitions"]["party_members_stream"]["schema_loader"][
+        "schema_type_identifier"
+    ]["types_mapping"].append({"target_type": "array", "current_type": "formula"})
 
     expected_schema = {
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -325,7 +327,7 @@ def test_dynamic_schema_loader_with_type_conditions():
         },
     }
     source = ConcurrentDeclarativeSource(
-        source_config=_MANIFEST, config=_CONFIG, catalog=None, state=None
+        source_config=_MANIFEST_WITH_TYPE_CONDITIONS, config=_CONFIG, catalog=None, state=None
     )
     with HttpMocker() as http_mocker:
         http_mocker.get(

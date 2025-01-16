@@ -1689,7 +1689,7 @@ class ModelToComponentFactory:
         return TypesMap(
             target_type=model.target_type,
             current_type=model.current_type,
-            condition=model.condition if model.condition is not None else True,
+            condition=model.condition if model.condition is not None else "true",
         )
 
     def create_schema_type_identifier(
