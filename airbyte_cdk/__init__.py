@@ -16,6 +16,16 @@ the following classes and modules:
 - `airbyte_cdk.sources.file_based`
 - `airbyte_cdk.sources.streams`
 
+## Key Classes for Declarative Sources
+
+Developers can implement these interfaces for custom declarative sources.
+
+- `airbyte_cdk.sources.declarative.retrievers.Retriever`
+- `airbyte_cdk.sources.declarative.SimpleRetriever` - takes a partition of a stream, and returns records.
+- `airbyte_cdk.sources.declarative.Requester` - makes HTTP requests.
+- `airbyte_cdk.sources.declarative.extractors.HttpSelector` - extracts data from HTTP responses.
+- `airbyte_cdk.sources.streams.http.error_handlers.ErrorHandler` - handles errors from HTTP requests.
+
 ## Building Destination Connectors
 
 To build a destination connector, you will want to refer to

@@ -5,6 +5,8 @@ import logging
 from dataclasses import InitVar, dataclass, field
 from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Union
 
+from typing_extensions import deprecated
+
 from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.declarative.incremental import (
     GlobalSubstreamCursor,
@@ -28,18 +30,13 @@ from airbyte_cdk.sources.types import Config, StreamSlice
 
 
 @dataclass
+@deprecated("Please use `DefaultStream` instead.")
 class DeclarativeStream(Stream):
     """
-    DeclarativeStream is a Stream that delegates most of its logic to its schema_load and retriever
+    Deprecated. Please use `DefaultStream` instead.
 
-    Attributes:
-        name (str): stream name
-        primary_key (Optional[Union[str, List[str], List[List[str]]]]): the primary key of the stream
-        schema_loader (SchemaLoader): The schema loader
-        retriever (Retriever): The retriever
-        config (Config): The user-provided configuration as specified by the source's spec
-        stream_cursor_field (Optional[Union[InterpolatedString, str]]): The cursor field
-        stream. Transformations are applied in the order in which they are defined.
+    Currently we do use this for model-to-component factory, but this will be refactored in the
+    future so that this class can be removed.
     """
 
     retriever: Retriever

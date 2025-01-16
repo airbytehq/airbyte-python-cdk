@@ -6,6 +6,8 @@ import logging
 from collections import OrderedDict
 from typing import Any, Callable, Iterable, Mapping, Optional, Union
 
+from typing_extensions import deprecated
+
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
 from airbyte_cdk.sources.streams.checkpoint.per_partition_key_serializer import (
@@ -24,8 +26,11 @@ class CursorFactory:
         return self._create_function()
 
 
+@deprecated("Please use `ConcurrentCursor` instead.")
 class PerPartitionCursor(DeclarativeCursor):
     """
+    Deprecated. Please use `ConcurrentCursor` instead.
+
     Manages state per partition when a stream has many partitions, to prevent data loss or duplication.
 
     **Partition Limitation and Limit Reached Logic**

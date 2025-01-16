@@ -8,6 +8,7 @@ from datetime import timedelta
 from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optional, Union
 
 from isodate import Duration, duration_isoformat, parse_duration
+from typing_extensions import deprecated
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, Type
 from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser
@@ -23,9 +24,12 @@ from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 
 
+@deprecated("Please use `ConcurrentCursor` instead.")
 @dataclass
 class DatetimeBasedCursor(DeclarativeCursor):
     """
+    Deprecated. Please use `ConcurrentCursor` instead.
+
     Slices the stream over a datetime range and create a state with format {<cursor_field>: <datetime> }
 
     Given a start time, end time, a step function, and an optional lookback window,

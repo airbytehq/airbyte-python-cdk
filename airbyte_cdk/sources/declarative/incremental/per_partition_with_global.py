@@ -3,6 +3,8 @@
 #
 from typing import Any, Iterable, Mapping, MutableMapping, Optional, Union
 
+from typing_extensions import deprecated
+
 from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.sources.declarative.incremental.global_substream_cursor import (
@@ -17,8 +19,11 @@ from airbyte_cdk.sources.declarative.partition_routers.partition_router import P
 from airbyte_cdk.sources.types import Record, StreamSlice, StreamState
 
 
+@deprecated("Please use `ConcurrentCursor` instead.")
 class PerPartitionWithGlobalCursor(DeclarativeCursor):
     """
+    Deprecated. Please use `ConcurrentCursor` instead.
+
     Manages state for streams with multiple partitions, with an optional fallback to a global cursor when specific conditions are met.
 
     This cursor handles partitioned streams by maintaining individual state per partition using `PerPartitionCursor`. If the number of partitions exceeds a defined limit, it switches to a global cursor (`GlobalSubstreamCursor`) to manage state more efficiently.

@@ -6,6 +6,8 @@ import threading
 import time
 from typing import Any, Callable, Iterable, Mapping, Optional, TypeVar, Union
 
+from typing_extensions import deprecated
+
 from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
@@ -65,8 +67,11 @@ class Timer:
             raise RuntimeError("Global substream cursor timer not started")
 
 
+@deprecated("Please use `ConcurrentCursor` instead.")
 class GlobalSubstreamCursor(DeclarativeCursor):
     """
+    Deprecated. Please use `ConcurrentCursor` instead.
+
     The GlobalSubstreamCursor is designed to track the state of substreams using a single global cursor.
     This class is beneficial for streams with many partitions, as it allows the state to be managed globally
     instead of per partition, simplifying state management and reducing the size of state messages.
