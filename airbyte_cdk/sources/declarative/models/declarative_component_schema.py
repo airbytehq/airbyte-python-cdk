@@ -52,6 +52,15 @@ class CheckStream(BaseModel):
     )
 
 
+class CheckDynamicStream(BaseModel):
+    type: Literal["CheckDynamicStream"]
+    stream_count: int = Field(
+        ...,
+        description="Numbers of the streams to try reading from when running a check operation.",
+        title="Stream Count",
+    )
+
+
 class ConcurrencyLevel(BaseModel):
     type: Optional[Literal["ConcurrencyLevel"]] = None
     default_concurrency: Union[int, str] = Field(
@@ -1614,7 +1623,7 @@ class DeclarativeSource1(BaseModel):
         extra = Extra.forbid
 
     type: Literal["DeclarativeSource"]
-    check: CheckStream
+    check: Union[CheckStream, CheckDynamicStream]
     streams: List[DeclarativeStream]
     dynamic_streams: Optional[List[DynamicDeclarativeStream]] = None
     version: str = Field(
@@ -1640,7 +1649,7 @@ class DeclarativeSource2(BaseModel):
         extra = Extra.forbid
 
     type: Literal["DeclarativeSource"]
-    check: CheckStream
+    check: Union[CheckStream, CheckDynamicStream]
     streams: Optional[List[DeclarativeStream]] = None
     dynamic_streams: List[DynamicDeclarativeStream]
     version: str = Field(
