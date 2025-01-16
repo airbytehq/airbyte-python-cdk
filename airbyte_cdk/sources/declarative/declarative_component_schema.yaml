@@ -307,7 +307,7 @@ definitions:
           - ["users", "contacts"]
   CheckDynamicStream:
     title: Dynamic Streams to Check
-    description: Defines the dynamic streams to try reading when running a check operation.
+    description: (This component is experimental. Use at your own risk.) Defines the dynamic streams to try reading when running a check operation.
     type: object
     required:
       - type
