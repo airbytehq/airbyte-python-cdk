@@ -18,7 +18,9 @@ properties:
     type: string
     enum: [DeclarativeSource]
   check:
-    "$ref": "#/definitions/CheckStream"
+    anyOf:
+      - "$ref": "#/definitions/CheckStream"
+      - "$ref": "#/definitions/CheckDynamicStream"
   streams:
     type: array
     items:
@@ -303,6 +305,21 @@ definitions:
         examples:
           - ["users"]
           - ["users", "contacts"]
+  CheckDynamicStream:
+    title: Dynamic Streams to Check
+    description: (This component is experimental. Use at your own risk.) Defines the dynamic streams to try reading when running a check operation.
+    type: object
+    required:
+      - type
+      - stream_count
+    properties:
+      type:
+        type: string
+        enum: [CheckDynamicStream]
+      stream_count:
+        title: Stream Count
+        description: Numbers of the streams to try reading from when running a check operation.
+        type: integer
   CompositeErrorHandler:
     title: Composite Error Handler
     description: Error handler that sequentially iterates over a list of error handlers.
