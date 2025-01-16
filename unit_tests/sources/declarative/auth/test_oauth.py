@@ -81,13 +81,16 @@ class TestOauth2Authenticator:
             config=config,
             token_expiry_date="{{ config['token_expiry_date'] }}",
             refresh_request_headers={
-                "Authorization": "<TOKEN>",
+                "Authorization": "Basic {{ [config['client_id'], config['client_secret']] | join(':') | base64encode }}",
                 "Content-Type": "application/x-www-form-urlencoded",
             },
             parameters=parameters,
         )
         headers = oauth.build_refresh_request_headers()
-        expected = {"Authorization": "<TOKEN>", "Content-Type": "application/x-www-form-urlencoded"}
+        expected = {
+            "Authorization": "Basic c29tZV9jbGllbnRfaWQ6c29tZV9jbGllbnRfc2VjcmV0",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
         assert headers == expected
 
         oauth = DeclarativeOauth2Authenticator(
