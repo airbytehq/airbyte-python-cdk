@@ -4,6 +4,7 @@
 
 import json
 import logging
+
 import pytest
 
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (

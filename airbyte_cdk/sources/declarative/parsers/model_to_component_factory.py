@@ -54,8 +54,7 @@ from airbyte_cdk.sources.declarative.auth.token_provider import (
     SessionTokenProvider,
     TokenProvider,
 )
-from airbyte_cdk.sources.declarative.checks import CheckStream
-from airbyte_cdk.sources.declarative.checks import CheckDynamicStream
+from airbyte_cdk.sources.declarative.checks import CheckDynamicStream, CheckStream
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
 from airbyte_cdk.sources.declarative.datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
@@ -123,10 +122,10 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     BearerAuthenticator as BearerAuthenticatorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    CheckStream as CheckStreamModel,
+    CheckDynamicStream as CheckDynamicStreamModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    CheckDynamicStream as CheckDynamicStreamModel,
+    CheckStream as CheckStreamModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ComponentMappingDefinition as ComponentMappingDefinitionModel,
