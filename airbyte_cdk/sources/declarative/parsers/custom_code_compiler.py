@@ -4,6 +4,7 @@ import hashlib
 import os
 import sys
 from types import ModuleType
+from typing import Any, cast
 
 from typing_extensions import Literal
 
@@ -13,6 +14,7 @@ CHECKSUM_FUNCTIONS = {
     "sha256": hashlib.sha256,
 }
 COMPONENTS_MODULE_NAME = "components"
+SDM_COMPONENTS_MODULE_NAME = "source_declarative_manifest.components"
 INJECTED_MANIFEST = "__injected_declarative_manifest"
 INJECTED_COMPONENTS_PY = "__injected_components_py"
 INJECTED_COMPONENTS_PY_CHECKSUMS = "__injected_components_py_checksums"
@@ -82,20 +84,65 @@ def validate_python_code(
             continue
 
 
-def components_module_from_string(components_py_text: str) -> ModuleType:
+def get_registered_components_module(
+    config: dict,
+) -> ModuleType | None:
+    """Get a components module object based on the provided config.
+
+    If custom python components is provided, this will be loaded. Otherwise, we will
+    attempt to load from the `components` module already imported/registered in sys.modules.
+
+    If custom `components.py` text is provided in config, it will be registered with sys.modules
+    so that it can be later imported by manifest declarations which reference the provided classes.
+
+    Returns `None` if no components is provided and the `components` module is not found.
+    """
+    if INJECTED_COMPONENTS_PY in config:
+        if not custom_code_execution_permitted():
+            raise AirbyteCustomCodeNotPermittedError
+
+        # Create a new module object and execute the provided Python code text within it
+        python_text = config[INJECTED_COMPONENTS_PY]
+        return register_components_module_from_string(
+            components_py_text=python_text,
+            checksums=config.get(INJECTED_COMPONENTS_PY_CHECKSUMS, None),
+        )
+
+    # Check for `components` or `source_declarative_manifest.components`.
+    if SDM_COMPONENTS_MODULE_NAME in sys.modules:
+        return cast(ModuleType, sys.modules.get(SDM_COMPONENTS_MODULE_NAME))
+
+    if COMPONENTS_MODULE_NAME in sys.modules:
+        return cast(ModuleType, sys.modules.get(COMPONENTS_MODULE_NAME))
+
+    # Could not find module 'components' in `sys.modules`
+    # and INJECTED_COMPONENTS_PY was not provided in config.
+    return None
+
+
+def register_components_module_from_string(
+    components_py_text: str,
+    checksums: dict[str, Any] | None,
+) -> ModuleType:
     """Load and return the components module from a provided string containing the python code.
 
     This assumes the components module is located at <connector_dir>/components.py.
     """
-    module_name = "components"
+    # First validate the code
+    validate_python_code(
+        code_text=components_py_text,
+        checksums=checksums,
+    )
 
     # Create a new module object
-    components_module = ModuleType(name=module_name)
+    components_module = ModuleType(name=COMPONENTS_MODULE_NAME)
 
     # Execute the module text in the module's namespace
     exec(components_py_text, components_module.__dict__)
 
-    # Add the module to sys.modules so it can be imported
+    # Register the module in `sys.modules`` so it can be imported as
+    # `source_declarative_manifest.components` and/or `components`.
+    sys.modules[SDM_COMPONENTS_MODULE_NAME] = components_module
     sys.modules[COMPONENTS_MODULE_NAME] = components_module
 
     # Now you can import and use the module

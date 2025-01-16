@@ -81,6 +81,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         )
 
         super().__init__(
+            config=config,
             source_config=source_config,
             debug=debug,
             emit_connector_builder_messages=emit_connector_builder_messages,

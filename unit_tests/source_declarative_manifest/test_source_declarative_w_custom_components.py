@@ -6,6 +6,7 @@ import datetime
 import json
 import logging
 import os
+import sys
 import types
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -29,8 +30,8 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     AirbyteCodeTamperedError,
     AirbyteCustomCodeNotPermittedError,
     _hash_text,
-    components_module_from_string,
     custom_code_execution_permitted,
+    register_components_module_from_string,
 )
 
 SAMPLE_COMPONENTS_PY_TEXT = """
@@ -49,7 +50,9 @@ def get_fixture_path(file_name) -> str:
 
 def test_components_module_from_string() -> None:
     # Call the function to get the module
-    components_module: types.ModuleType = components_module_from_string(SAMPLE_COMPONENTS_PY_TEXT)
+    components_module: types.ModuleType = register_components_module_from_string(
+        components_py_text=SAMPLE_COMPONENTS_PY_TEXT,
+    )
 
     # Check that the module is created and is of the correct type
     assert isinstance(components_module, types.ModuleType)
@@ -65,6 +68,19 @@ def test_components_module_from_string() -> None:
     obj = components_module.SimpleClass()
     assert isinstance(obj, components_module.SimpleClass)
     assert obj.sample_method() == "Hello, World!"
+
+    # Check we can get the class definition from sys.modules
+    module_lookup = sys.modules[components_module.__name__]
+    class_lookup = getattr(sys.modules[components_module.__name__], "SimpleClass")
+
+    assert module_lookup == components_module
+    assert class_lookup == components_module.SimpleClass
+    assert class_lookup().sample_method() == "Hello, World!"
+
+    # Check we can import the module by name
+    from source_declarative_manifest.components import sample_function as imported_sample_function  # type: ignore [import]  # noqa: I001
+
+    assert imported_sample_function() == "Hello, World!"
 
 
 def get_py_components_config_dict(failing_components: bool = False) -> dict[str, Any]:

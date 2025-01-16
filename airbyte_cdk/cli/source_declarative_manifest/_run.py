@@ -184,8 +184,6 @@ def create_declarative_source(
                 "Invalid config: `__injected_declarative_manifest` should be a dictionary, "
                 f"but got type: {type(config['__injected_declarative_manifest'])}"
             )
-        if INJECTED_COMPONENTS_PY in config and not custom_code_execution_permitted():
-            raise AirbyteCustomCodeNotPermittedError
 
         return ConcurrentDeclarativeSource(
             config=config,

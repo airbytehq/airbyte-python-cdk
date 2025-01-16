@@ -320,11 +320,7 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     COMPONENTS_MODULE_NAME,
-    INJECTED_COMPONENTS_PY,
-    INJECTED_COMPONENTS_PY_CHECKSUMS,
-    AirbyteCodeTamperedError,
-    components_module_from_string,
-    validate_python_code,
+    SDM_COMPONENTS_MODULE_NAME,
 )
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
@@ -998,7 +994,6 @@ class ModelToComponentFactory:
         """
         custom_component_class = self._get_class_from_fully_qualified_class_name(
             full_qualified_class_name=model.class_name,
-            components_module=self._get_components_module_object(config=config),
         )
         component_fields = get_type_hints(custom_component_class)
         model_args = model.dict()
@@ -1054,14 +1049,14 @@ class ModelToComponentFactory:
     @staticmethod
     def _get_class_from_fully_qualified_class_name(
         full_qualified_class_name: str,
-        components_module: types.ModuleType,
     ) -> Any:
-        """
-        Get a class from its fully qualified name, optionally using a pre-parsed module.
+        """Get a class from its fully qualified name.
+
+        If a custom components module is needed, we assume it is already registered - probably
+        as `source_declarative_manifest.components` or `components`.
 
         Args:
             full_qualified_class_name (str): The fully qualified name of the class (e.g., "module.ClassName").
-            components_module (Optional[ModuleType]): An optional pre-parsed module.
 
         Returns:
             Any: The class object.
@@ -1076,51 +1071,14 @@ class ModelToComponentFactory:
         )
         class_name = split[-1]
 
-        if module_name != "components":
-            raise ValueError(
-                "Custom components must be defined in a module named "
-                f"`components`. Found `{module_name}` instead."
-            )
-        if module_name_full not in {"components", "source_declarative_manifest.components"}:
-            raise ValueError(
-                "Custom components must be defined in a module named `components` or "
-                f"`source_declarative_manifest.components`. Found `{module_name_full}` instead."
-            )
+        if module_name_full == COMPONENTS_MODULE_NAME:
+            # Assume "components" on its own means "source_declarative_manifest.components"
+            module_name_full = SDM_COMPONENTS_MODULE_NAME
 
         try:
-            return getattr(components_module, class_name)
+            return getattr(sys.modules[module_name_full], class_name)
         except (AttributeError, ModuleNotFoundError) as e:
             raise ValueError(f"Could not load class {full_qualified_class_name}.") from e
-
-    @staticmethod
-    def _get_components_module_object(
-        config: Config,
-    ) -> types.ModuleType:
-        """Get a components module object based on the provided config.
-
-        If custom python components is provided, this will be loaded. Otherwise, we will
-        attempt to load from the `components` module already imported.
-        """
-
-        components_module: types.ModuleType | None
-        if not INJECTED_COMPONENTS_PY in config:
-            # Use the existing components module. We expect this to be already grafted into the
-            # connector module.
-            if COMPONENTS_MODULE_NAME not in sys.modules:
-                raise ValueError(
-                    f"Could not find module '{COMPONENTS_MODULE_NAME}' in `sys.modules` "
-                    f"and '{INJECTED_COMPONENTS_PY}' was not provided in config"
-                )
-
-            # We now know this is not `None`
-            components_module = cast(types.ModuleType, sys.modules.get(COMPONENTS_MODULE_NAME))
-            return components_module
-
-        # Create a new module object and execute the provided Python code text within it
-        python_text = config[INJECTED_COMPONENTS_PY]
-        validate_python_code(python_text, config.get(INJECTED_COMPONENTS_PY_CHECKSUMS, None))
-        components_module = components_module_from_string(components_py_text=python_text)
-        return components_module
 
     @staticmethod
     def _derive_component_type_from_type_hints(field_type: Any) -> Optional[str]:
