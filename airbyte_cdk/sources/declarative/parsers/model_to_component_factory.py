@@ -1686,7 +1686,11 @@ class ModelToComponentFactory:
 
     @staticmethod
     def create_types_map(model: TypesMapModel, **kwargs: Any) -> TypesMap:
-        return TypesMap(target_type=model.target_type, current_type=model.current_type)
+        return TypesMap(
+            target_type=model.target_type,
+            current_type=model.current_type,
+            condition=model.condition if model.condition is not None else True,
+        )
 
     def create_schema_type_identifier(
         self, model: SchemaTypeIdentifierModel, config: Config, **kwargs: Any

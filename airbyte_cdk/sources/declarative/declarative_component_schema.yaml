@@ -1763,6 +1763,12 @@ definitions:
           - type: array
             items:
               type: string
+      condition:
+        anyOf:
+          - type: string
+          - type: boolean
+        interpolation_context:
+          - raw_schema
   SchemaTypeIdentifier:
     title: Schema Type Identifier
     description: (This component is experimental. Use at your own risk.) Identifies schema details for dynamic schema extraction and processing.

@@ -11,6 +11,7 @@ import dpath
 from typing_extensions import deprecated
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
+from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
@@ -53,6 +54,7 @@ class TypesMap:
 
     target_type: Union[List[str], str]
     current_type: Union[List[str], str]
+    condition: Optional[Union[str, bool]]
 
 
 @deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)
@@ -177,7 +179,7 @@ class DynamicSchemaLoader(SchemaLoader):
             if field_type_path
             else "string"
         )
-        mapped_field_type = self._replace_type_if_not_valid(raw_field_type)
+        mapped_field_type = self._replace_type_if_not_valid(raw_field_type, raw_schema)
         if (
             isinstance(mapped_field_type, list)
             and len(mapped_field_type) == 2
@@ -194,14 +196,19 @@ class DynamicSchemaLoader(SchemaLoader):
             )
 
     def _replace_type_if_not_valid(
-        self, field_type: Union[List[str], str]
+        self,
+        field_type: Union[List[str], str],
+        raw_schema: MutableMapping[str, Any],
     ) -> Union[List[str], str]:
         """
         Replaces a field type if it matches a type mapping in `types_map`.
         """
         if self.schema_type_identifier.types_mapping:
             for types_map in self.schema_type_identifier.types_mapping:
-                if field_type == types_map.current_type:
+                condition = InterpolatedBoolean(condition=types_map.condition, parameters={}).eval(
+                    config={}, raw_schema=raw_schema
+                )
+                if field_type == types_map.current_type and condition:
                     return types_map.target_type
         return field_type
 
