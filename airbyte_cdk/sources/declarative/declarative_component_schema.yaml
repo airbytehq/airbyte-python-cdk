@@ -2908,7 +2908,6 @@ definitions:
     title: JsonParser
     description: Parser used for parsing str, bytes, or bytearray data and returning data in a dictionary format.
     type: object
-    additionalProperties: true
     required:
       - type
     properties:
