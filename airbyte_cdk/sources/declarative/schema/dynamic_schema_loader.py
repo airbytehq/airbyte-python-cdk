@@ -207,7 +207,7 @@ class DynamicSchemaLoader(SchemaLoader):
             for types_map in self.schema_type_identifier.types_mapping:
                 # conditional is optional param, setting to true if not provided
                 condition = InterpolatedBoolean(
-                    condition=types_map.condition if types_map.condition is not None else "true",
+                    condition=types_map.condition if types_map.condition is not None else "True",
                     parameters={},
                 ).eval(config=self.config, raw_schema=raw_schema)
 
