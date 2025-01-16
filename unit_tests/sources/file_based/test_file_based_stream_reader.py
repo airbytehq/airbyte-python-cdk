@@ -3,6 +3,7 @@
 #
 
 import logging
+from datetime import datetime
 from io import IOBase
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Set
 
@@ -365,3 +366,75 @@ def test_globs_and_prefixes_from_globs(
         == expected_matches
     )
     assert set(reader.get_prefixes_from_globs(globs)) == expected_path_prefixes
+
+
+@pytest.mark.parametrize(
+    "config, source_file, expected_file_relative_path, expected_local_file_path, expected_absolute_file_path",
+    [
+        pytest.param(
+            {
+                "streams": [],
+                "delivery_method": {
+                    "delivery_type": "use_file_transfer",
+                    "preserve_directory_structure": True,
+                },
+            },
+            "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
+            "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
+            "/tmp/transfer-files/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
+            "/tmp/transfer-files/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
+            id="preserve_directories_present_and_true",
+        ),
+        pytest.param(
+            {
+                "streams": [],
+                "delivery_method": {
+                    "delivery_type": "use_file_transfer",
+                    "preserve_directory_structure": False,
+                },
+            },
+            "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
+            "monthly-kickoff-202402.mpeg",
+            "/tmp/transfer-files/monthly-kickoff-202402.mpeg",
+            "/tmp/transfer-files/monthly-kickoff-202402.mpeg",
+            id="preserve_directories_present_and_false",
+        ),
+        pytest.param(
+            {"streams": [], "delivery_method": {"delivery_type": "use_file_transfer"}},
+            "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
+            "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
+            "/tmp/transfer-files/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
+            "/tmp/transfer-files/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
+            id="preserve_directories_not_present_defaults_true",
+        ),
+        pytest.param(
+            {"streams": []},
+            "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
+            "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
+            "/tmp/transfer-files/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
+            "/tmp/transfer-files/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
+            id="file_transfer_flag_not_present_defaults_true",
+        ),
+    ],
+)
+def test_preserve_sub_directories_scenarios(
+    config: Mapping[str, Any],
+    source_file: str,
+    expected_file_relative_path: str,
+    expected_local_file_path: str,
+    expected_absolute_file_path: str,
+) -> None:
+    remote_file = RemoteFile(
+        uri=source_file,
+        last_modified=datetime(2025, 1, 9, 11, 27, 20),
+        mime_type=None,
+    )
+    reader = TestStreamReader()
+    reader.config = TestSpec(**config)
+    file_relative_path, local_file_path, absolute_file_path = reader._get_file_transfer_paths(
+        remote_file, "/tmp/transfer-files/"
+    )
+
+    assert file_relative_path == expected_file_relative_path
+    assert local_file_path == expected_local_file_path
+    assert absolute_file_path == expected_absolute_file_path

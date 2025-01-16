@@ -7,9 +7,12 @@ from dataclasses import dataclass
 from io import BufferedIOBase, TextIOWrapper
 from typing import Any, Generator, MutableMapping, Optional
 
+import orjson
 import requests
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
+from airbyte_cdk.utils import AirbyteTracedException
 
 logger = logging.getLogger("airbyte")
 
@@ -40,6 +43,46 @@ class GzipParser(Parser):
         """
         with gzip.GzipFile(fileobj=data, mode="rb") as gzipobj:
             yield from self.inner_parser.parse(gzipobj)
+
+
+@dataclass
+class JsonParser(Parser):
+    encoding: str = "utf-8"
+
+    def parse(self, data: BufferedIOBase) -> Generator[MutableMapping[str, Any], None, None]:
+        """
+        Attempts to deserialize data using orjson library. As an extra layer of safety we fallback on the json library to deserialize the data.
+        """
+        raw_data = data.read()
+        body_json = self._parse_orjson(raw_data) or self._parse_json(raw_data)
+
+        if body_json is None:
+            raise AirbyteTracedException(
+                message="Response JSON data failed to be parsed. See logs for more information.",
+                internal_message=f"Response JSON data failed to be parsed.",
+                failure_type=FailureType.system_error,
+            )
+
+        if isinstance(body_json, list):
+            yield from body_json
+        else:
+            yield from [body_json]
+
+    def _parse_orjson(self, raw_data: bytes) -> Optional[Any]:
+        try:
+            return orjson.loads(raw_data.decode(self.encoding))
+        except Exception as exc:
+            logger.debug(
+                f"Failed to parse JSON data using orjson library. Falling back to json library. {exc}"
+            )
+            return None
+
+    def _parse_json(self, raw_data: bytes) -> Optional[Any]:
+        try:
+            return json.loads(raw_data.decode(self.encoding))
+        except Exception as exc:
+            logger.error(f"Failed to parse JSON data using json library. {exc}")
+            return None
 
 
 @dataclass
