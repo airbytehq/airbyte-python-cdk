@@ -120,10 +120,7 @@ def register_components_module_from_string(
     components_py_text: str,
     checksums: dict[str, Any] | None,
 ) -> ModuleType:
-    """Load and return the components module from a provided string containing the python code.
-
-    This assumes the components module is located at <connector_dir>/components.py.
-    """
+    """Load and return the components module from a provided string containing the python code."""
     # First validate the code
     validate_python_code(
         code_text=components_py_text,
