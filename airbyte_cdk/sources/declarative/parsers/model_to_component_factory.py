@@ -476,6 +476,7 @@ class ModelToComponentFactory:
         disable_cache: bool = False,
         disable_resumable_full_refresh: bool = False,
         message_repository: Optional[MessageRepository] = None,
+        state_manager: Optional[ConnectorStateManager] = None
     ):
         self._init_mappings()
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
@@ -487,6 +488,7 @@ class ModelToComponentFactory:
         self._message_repository = message_repository or InMemoryMessageRepository(
             self._evaluate_log_level(emit_connector_builder_messages)
         )
+        self._state_manager = state_manager
 
     def _init_mappings(self) -> None:
         self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Mapping[Type[BaseModel], Callable[..., Any]] = {
@@ -880,13 +882,11 @@ class ModelToComponentFactory:
 
     def create_concurrent_cursor_from_datetime_based_cursor(
         self,
-        state_manager: ConnectorStateManager,
         model_type: Type[BaseModel],
         component_definition: ComponentDefinition,
         stream_name: str,
         stream_namespace: Optional[str],
         config: Config,
-        stream_state: MutableMapping[str, Any],
         **kwargs: Any,
     ) -> ConcurrentCursor:
         component_type = component_definition.get("type")
@@ -1021,9 +1021,9 @@ class ModelToComponentFactory:
         return ConcurrentCursor(
             stream_name=stream_name,
             stream_namespace=stream_namespace,
-            stream_state=stream_state,
+            stream_state=self._state_manager.get_stream_state(stream_name, stream_namespace),
             message_repository=self._message_repository,
-            connector_state_manager=state_manager,
+            connector_state_manager=self._state_manager,
             connector_state_converter=connector_state_converter,
             cursor_field=cursor_field,
             slice_boundary_fields=slice_boundary_fields,
@@ -1476,6 +1476,17 @@ class ModelToComponentFactory:
                     stream_cursor=cursor_component,
                 )
         elif model.incremental_sync:
+            if model.retriever.type == "AsyncRetriever":
+                if model.incremental_sync.type != "DatetimeBasedCursor":
+                    # TODO explain why it isn't supported
+                    raise ValueError("AsyncRetriever with cursor other than DatetimeBasedCursor is not supported yet")
+                return self.create_concurrent_cursor_from_datetime_based_cursor(
+                    model_type=DatetimeBasedCursorModel,
+                    component_definition=model.incremental_sync.__dict__,
+                    stream_name=model.name,
+                    stream_namespace=None,
+                    config=config or {},
+                )
             return (
                 self._create_component_from_model(model=model.incremental_sync, config=config)
                 if model.incremental_sync

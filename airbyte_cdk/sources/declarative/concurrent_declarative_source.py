@@ -31,6 +31,7 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
+from airbyte_cdk.sources.declarative.partition_routers import AsyncJobPartitionRouter
 from airbyte_cdk.sources.declarative.requesters import HttpRequester
 from airbyte_cdk.sources.declarative.retrievers import SimpleRetriever
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
@@ -66,6 +67,10 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         component_factory: Optional[ModelToComponentFactory] = None,
         **kwargs: Any,
     ) -> None:
+        # todo: We could remove state from initialization. Now that streams are grouped during the read(), a source
+        #  no longer needs to store the original incoming state. But maybe there's an edge case?
+        self._state_manager = ConnectorStateManager(state=state)  # type: ignore  # state is always in the form of List[AirbyteStateMessage]. The ConnectorStateManager should use generics, but this can be done later
+
         # To reduce the complexity of the concurrent framework, we are not enabling RFR with synthetic
         # cursors. We do this by no longer automatically instantiating RFR cursors when converting
         # the declarative models into runtime components. Concurrent sources will continue to checkpoint
@@ -73,6 +78,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         component_factory = component_factory or ModelToComponentFactory(
             emit_connector_builder_messages=emit_connector_builder_messages,
             disable_resumable_full_refresh=True,
+            state_manager=self._state_manager,
         )
 
         super().__init__(
@@ -81,10 +87,6 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             emit_connector_builder_messages=emit_connector_builder_messages,
             component_factory=component_factory,
         )
-
-        # todo: We could remove state from initialization. Now that streams are grouped during the read(), a source
-        #  no longer needs to store the original incoming state. But maybe there's an edge case?
-        self._state = state
 
         concurrency_level_from_manifest = self._source_config.get("concurrency_level")
         if concurrency_level_from_manifest:
@@ -175,8 +177,6 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         concurrent_streams: List[AbstractStream] = []
         synchronous_streams: List[Stream] = []
 
-        state_manager = ConnectorStateManager(state=self._state)  # type: ignore  # state is always in the form of List[AirbyteStateMessage]. The ConnectorStateManager should use generics, but this can be done later
-
         # Combine streams and dynamic_streams. Note: both cannot be empty at the same time,
         # and this is validated during the initialization of the source.
         streams = self._stream_configs(self._source_config) + self._dynamic_stream_configs(
@@ -216,19 +216,6 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                 if self._is_datetime_incremental_without_partition_routing(
                     declarative_stream, incremental_sync_component_definition
                 ):
-                    stream_state = state_manager.get_stream_state(
-                        stream_name=declarative_stream.name, namespace=declarative_stream.namespace
-                    )
-
-                    cursor = self._constructor.create_concurrent_cursor_from_datetime_based_cursor(
-                        state_manager=state_manager,
-                        model_type=DatetimeBasedCursorModel,
-                        component_definition=incremental_sync_component_definition,  # type: ignore  # Not None because of the if condition above
-                        stream_name=declarative_stream.name,
-                        stream_namespace=declarative_stream.namespace,
-                        config=config or {},
-                        stream_state=stream_state,
-                    )
 
                     retriever = declarative_stream.retriever
 
@@ -241,11 +228,21 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                         # like StopConditionPaginationStrategyDecorator and ClientSideIncrementalRecordFilterDecorator
                         # still rely on a DatetimeBasedCursor that is properly initialized with state.
                         if retriever.cursor:
+                            stream_state = self._state_manager.get_stream_state(
+                                stream_name=declarative_stream.name, namespace=declarative_stream.namespace
+                            )
                             retriever.cursor.set_initial_state(stream_state=stream_state)
                         # We zero it out here, but since this is a cursor reference, the state is still properly
                         # instantiated for the other components that reference it
                         retriever.cursor = None
 
+                    cursor = self._constructor.create_concurrent_cursor_from_datetime_based_cursor(
+                        model_type=DatetimeBasedCursorModel,
+                        component_definition=incremental_sync_component_definition,  # type: ignore  # Not None because of the if condition above
+                        stream_name=declarative_stream.name,
+                        stream_namespace=declarative_stream.namespace,
+                        config=config or {},
+                    ) if type(declarative_stream.retriever).__name__ != "AsyncRetriever" else declarative_stream.retriever.stream_slicer.stream_slicer  # type: ignore  # AsyncRetriever has stream_slicer
                     partition_generator = StreamSlicerPartitionGenerator(
                         DeclarativePartitionFactory(
                             declarative_stream.name,
@@ -253,7 +250,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             retriever,
                             self.message_repository,
                         ),
-                        cursor,
+                        cursor if type(declarative_stream.retriever).__name__ != "AsyncRetriever"  else declarative_stream.retriever.stream_slicer,  # type: ignore  # AsyncRetriever has stream_slicer
                     )
 
                     concurrent_streams.append(
@@ -325,7 +322,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                 declarative_stream=declarative_stream
             )
             and hasattr(declarative_stream.retriever, "stream_slicer")
-            and isinstance(declarative_stream.retriever.stream_slicer, DatetimeBasedCursor)
+            and (isinstance(declarative_stream.retriever.stream_slicer, DatetimeBasedCursor) or isinstance(declarative_stream.retriever.stream_slicer, AsyncJobPartitionRouter))
         )
 
     def _stream_supports_concurrent_partition_processing(
