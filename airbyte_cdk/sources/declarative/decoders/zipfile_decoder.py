@@ -32,7 +32,21 @@ class ZipfileDecoder(Decoder):
         self, response: requests.Response
     ) -> Generator[MutableMapping[str, Any], None, None]:
         try:
-            zip_file = zipfile.ZipFile(BytesIO(response.content))
+            with zipfile.ZipFile(BytesIO(response.content)) as zip_file:
+                for file_name in zip_file.namelist():
+                    unzipped_content = zip_file.read(file_name)
+                    buffered_content = BytesIO(unzipped_content)
+                    try:
+                        yield from self.parser.parse(buffered_content)
+                    except Exception as e:
+                        logger.error(
+                            f"Failed to parse file: {file_name} from zip file: {response.request.url} with exception {e}."
+                        )
+                        raise AirbyteTracedException(
+                            message=f"Failed to parse file: {file_name} from zip file.",
+                            internal_message=f"Failed to parse file: {file_name} from zip file: {response.request.url}.",
+                            failure_type=FailureType.system_error,
+                        ) from e
         except zipfile.BadZipFile as e:
             logger.error(
                 f"Received an invalid zip file in response to URL: {response.request.url}. "
@@ -43,8 +57,3 @@ class ZipfileDecoder(Decoder):
                 internal_message=f"Received an invalid zip file in response to URL: {response.request.url}.",
                 failure_type=FailureType.system_error,
             ) from e
-
-        for file_name in zip_file.namelist():
-            unzipped_content = zip_file.read(file_name)
-            buffered_content = BytesIO(unzipped_content)
-            yield from self.parser.parse(buffered_content)

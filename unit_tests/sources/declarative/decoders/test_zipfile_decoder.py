@@ -20,6 +20,16 @@ def create_zip_from_dict(data: Union[dict, list]) -> bytes:
     return zip_buffer.getvalue()
 
 
+def create_multi_zip_from_dict(data: list) -> bytes:
+    zip_buffer = BytesIO()
+
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        for i, content in enumerate(data):
+            file_content = json.dumps(content).encode("utf-8")
+            zip_file.writestr(f"file_{i}.json", file_content)
+    return zip_buffer.getvalue()
+
+
 @pytest.mark.parametrize(
     "json_data",
     [
@@ -29,7 +39,7 @@ def create_zip_from_dict(data: Union[dict, list]) -> bytes:
         {},
     ],
 )
-def test_zipfile_decoder_with_valid_response(requests_mock, json_data):
+def test_zipfile_decoder_with_single_file_response(requests_mock, json_data):
     zipfile_decoder = ZipfileDecoder(parser=GzipParser(inner_parser=JsonParser()))
     compressed_data = gzip.compress(json.dumps(json_data).encode())
     zipped_data = create_zip_from_dict(compressed_data)
@@ -41,3 +51,18 @@ def test_zipfile_decoder_with_valid_response(requests_mock, json_data):
             assert actual == json_data[i]
     else:
         assert next(zipfile_decoder.decode(response=response)) == json_data
+
+
+def test_zipfile_decoder_with_multi_file_response(requests_mock):
+    data_to_zip = [{"key1": "value1"}, {"key2": "value2"}, {"key3": "value3"}]
+
+    mocked_response = create_multi_zip_from_dict(data_to_zip)
+
+    decoder = ZipfileDecoder(parser=JsonParser())
+    requests_mock.register_uri("GET", "https://airbyte.io/", content=mocked_response)
+    response = requests.get("https://airbyte.io/")
+    results = list(decoder.decode(response))
+
+    assert len(results) == 3
+    for i, actual in enumerate(results):
+        assert actual == data_to_zip[i]
