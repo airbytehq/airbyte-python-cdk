@@ -1662,7 +1662,7 @@ class ZipfileDecoder(BaseModel):
         extra = Extra.allow
 
     type: Literal["ZipfileDecoder"]
-    parser: Union[GzipParser, JsonParser] = Field(
+    parser: Union[GzipParser, JsonParser, JsonLineParser, CsvParser] = Field(
         ...,
         description="Parser to parse the decompressed data from the zipfile(s).",
         title="Parser",
