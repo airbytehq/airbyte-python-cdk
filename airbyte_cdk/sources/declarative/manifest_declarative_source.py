@@ -22,6 +22,7 @@ from airbyte_cdk.models import (
     ConnectorSpecification,
     FailureType,
 )
+from airbyte_cdk.sources.declarative.checks import COMPONENTS_CHECKER_TYPE_MAPPING
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -107,7 +108,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         if "type" not in check:
             check["type"] = "CheckStream"
         check_stream = self._constructor.create_component(
-            CheckStreamModel,
+            COMPONENTS_CHECKER_TYPE_MAPPING[check["type"]],
             check,
             dict(),
             emit_connector_builder_messages=self._emit_connector_builder_messages,

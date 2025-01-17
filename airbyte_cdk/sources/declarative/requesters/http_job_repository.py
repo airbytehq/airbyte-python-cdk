@@ -31,6 +31,10 @@ LOGGER = logging.getLogger("airbyte")
 
 @dataclass
 class AsyncHttpJobRepository(AsyncJobRepository):
+    """
+    See Readme file for more details about flow.
+    """
+
     creation_requester: Requester
     polling_requester: Requester
     download_retriever: SimpleRetriever
@@ -43,6 +47,9 @@ class AsyncHttpJobRepository(AsyncJobRepository):
     job_timeout: Optional[timedelta] = None
     record_extractor: RecordExtractor = field(
         init=False, repr=False, default_factory=lambda: ResponseToFileExtractor({})
+    )
+    url_requester: Optional[Requester] = (
+        None  # use it in case polling_requester provides some <id> and extra request is needed to obtain list of urls to download from
     )
 
     def __post_init__(self) -> None:
@@ -186,10 +193,13 @@ class AsyncHttpJobRepository(AsyncJobRepository):
 
         """
 
-        for url in self.urls_extractor.extract_records(
-            self._polling_job_response_by_id[job.api_job_id()]
-        ):
-            stream_slice: StreamSlice = StreamSlice(partition={"url": url}, cursor_slice={})
+        for url in self._get_download_url(job):
+            job_slice = job.job_parameters()
+            stream_slice = StreamSlice(
+                partition=job_slice.partition,
+                cursor_slice=job_slice.cursor_slice,
+                extra_fields={**job_slice.extra_fields, "url": url},
+            )
             for message in self.download_retriever.read_records({}, stream_slice):
                 if isinstance(message, Record):
                     yield message.data
@@ -226,3 +236,22 @@ class AsyncHttpJobRepository(AsyncJobRepository):
             cursor_slice={},
         )
         return stream_slice
+
+    def _get_download_url(self, job: AsyncJob) -> Iterable[str]:
+        if not self.url_requester:
+            url_response = self._polling_job_response_by_id[job.api_job_id()]
+        else:
+            stream_slice: StreamSlice = StreamSlice(
+                partition={
+                    "polling_job_response": self._polling_job_response_by_id[job.api_job_id()]
+                },
+                cursor_slice={},
+            )
+            url_response = self.url_requester.send_request(stream_slice=stream_slice)  # type: ignore # we expect url_requester to always be presented, otherwise raise an exception as we cannot proceed with the report
+            if not url_response:
+                raise AirbyteTracedException(
+                    internal_message="Always expect a response or an exception from url_requester",
+                    failure_type=FailureType.system_error,
+                )
+
+        yield from self.urls_extractor.extract_records(url_response)  # type: ignore # we expect urls_extractor to always return list of strings

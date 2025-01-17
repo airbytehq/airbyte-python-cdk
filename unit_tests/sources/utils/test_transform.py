@@ -66,7 +66,6 @@ VERY_NESTED_SCHEMA = {
     "schema, actual, expected, expected_warns",
     [
         (SIMPLE_SCHEMA, {"value": 12}, {"value": "12"}, None),
-        (SIMPLE_SCHEMA, {"value": 12}, {"value": "12"}, None),
         (
             SIMPLE_SCHEMA,
             {"value": 12, "unexpected_value": "unexpected"},
@@ -104,14 +103,14 @@ VERY_NESTED_SCHEMA = {
             COMPLEX_SCHEMA,
             {"prop": 12, "number_prop": "aa12", "array": [12]},
             {"prop": "12", "number_prop": "aa12", "array": ["12"]},
-            "Failed to transform value 'aa12' of type 'string' to 'number', key path: '.number_prop'",
+            "Failed to transform value from type 'string' to type 'number' at path: 'number_prop'",
         ),
         # Field too_many_types have ambigious type, skip formatting
         (
             COMPLEX_SCHEMA,
             {"prop": 12, "too_many_types": 1212, "array": [12]},
             {"prop": "12", "too_many_types": 1212, "array": ["12"]},
-            "Failed to transform value 1212 of type 'integer' to '['boolean', 'null', 'string']', key path: '.too_many_types'",
+            "Failed to transform value from type 'integer' to type '['boolean', 'null', 'string']' at path: 'too_many_types'",
         ),
         # Test null field
         (COMPLEX_SCHEMA, {"prop": None, "array": [12]}, {"prop": "None", "array": ["12"]}, None),
@@ -196,7 +195,7 @@ VERY_NESTED_SCHEMA = {
             },
             {"value": "string"},
             {"value": "string"},
-            "Failed to transform value 'string' of type 'string' to 'array', key path: '.value'",
+            "Failed to transform value from type 'string' to type 'array' at path: 'value'",
         ),
         (
             {
@@ -205,21 +204,21 @@ VERY_NESTED_SCHEMA = {
             },
             {"value": {"key": "value"}},
             {"value": {"key": "value"}},
-            "Failed to transform value {'key': 'value'} of type 'object' to 'array', key path: '.value'",
+            "Failed to transform value from type '{'key': 'string'}' to type 'array' at path: 'value'",
         ),
         (
             # Schema root object is not an object, no convertion should happen
             {"type": "integer"},
             {"value": "12"},
             {"value": "12"},
-            "Failed to transform value {'value': '12'} of type 'object' to 'integer', key path: '.'",
+            "Failed to transform value from type '{'value': 'string'}' to type 'integer' at path: ''",
         ),
         (
             # More than one type except null, no conversion should happen
             {"type": "object", "properties": {"value": {"type": ["string", "boolean", "null"]}}},
             {"value": 12},
             {"value": 12},
-            "Failed to transform value 12 of type 'integer' to '['string', 'boolean', 'null']', key path: '.value'",
+            "Failed to transform value from type 'integer' to type '['string', 'boolean', 'null']' at path: 'value'",
         ),
         (
             # Oneof not suported, no conversion for one_of_value should happen
@@ -252,7 +251,7 @@ VERY_NESTED_SCHEMA = {
             },
             {"value": {"key": "value"}},
             {"value": {"key": "value"}},
-            "Failed to transform value {'key': 'value'} of type 'object' to 'array', key path: '.value'",
+            "Failed to transform value from type '{'key': 'string'}' to type 'array' at path: 'value'",
         ),
         (
             {
@@ -263,7 +262,7 @@ VERY_NESTED_SCHEMA = {
             },
             {"value1": "value2"},
             {"value1": "value2"},
-            "Failed to transform value 'value2' of type 'string' to 'object', key path: '.value1'",
+            "Failed to transform value from type 'string' to type 'object' at path: 'value1'",
         ),
         (
             {
@@ -272,8 +271,54 @@ VERY_NESTED_SCHEMA = {
             },
             {"value": ["one", "two"]},
             {"value": ["one", "two"]},
-            "Failed to transform value 'one' of type 'string' to 'object', key path: '.value.0'",
+            "Failed to transform value from type 'string' to type 'object' at path: 'value.0'",
         ),
+        (
+            {"type": "string"},
+            None,
+            None,
+            "Failed to transform value from type 'null' to type 'string' at path: ''",
+        ),
+        (
+            {"type": "string"},
+            {"a": {"b": {"c": {"d": {"e": "deep value"}}}}},
+            {"a": {"b": {"c": {"d": {"e": "deep value"}}}}},
+            "Failed to transform value from type '{'a': {'b': {'c': 'object'}}}' to type 'string' at path: ''",
+        ),
+    ],
+    ids=[
+        "simple_number_to_string",
+        "preserve_unexpected_fields",
+        "array_with_mixed_types",
+        "nested_list_conversion",
+        "array_in_nested_object",
+        "string_to_boolean_nested",
+        "empty_object",
+        "string_to_integer",
+        "skip_invalid_number_format",
+        "skip_ambiguous_types",
+        "null_to_string",
+        "preserve_null_when_allowed",
+        "very_nested_object_conversion",
+        "null_in_nested_structure",
+        "object_without_properties",
+        "array_without_items",
+        "non_array_to_array",
+        "number_to_array",
+        "null_to_array",
+        "null_preserved_for_nullable_array",
+        "number_to_string_array",
+        "string_fails_object_array",
+        "object_fails_array_with_string_array_items",
+        "non_object_root_schema",
+        "multiple_allowed_types",
+        "oneof_not_supported",
+        "facebook_cpc_number_conversion",
+        "object_fails_array_with_string_item",
+        "string_fails_object_conversion",
+        "string_fails_object_in_array",
+        "null_input_data",
+        "max_nesting_depth_protection",
     ],
 )
 def test_transform(schema, actual, expected, expected_warns, caplog):

@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, Generator, Mapping, Optional, cast
 
 from jsonschema import Draft7Validator, RefResolver, ValidationError, Validator, validators
 
+MAX_NESTING_DEPTH = 3
 json_to_python_simple = {
     "string": str,
     "number": float,
@@ -225,6 +226,31 @@ class TypeTransformer:
             logger.warning(self.get_error_message(e))
 
     def get_error_message(self, e: ValidationError) -> str:
-        instance_json_type = python_to_json[type(e.instance)]
-        key_path = "." + ".".join(map(str, e.path))
-        return f"Failed to transform value {repr(e.instance)} of type '{instance_json_type}' to '{e.validator_value}', key path: '{key_path}'"
+        """
+        Construct a sanitized error message from a ValidationError instance.
+        """
+        field_path = ".".join(map(str, e.path))
+        type_structure = self._get_type_structure(e.instance)
+
+        return f"Failed to transform value from type '{type_structure}' to type '{e.validator_value}' at path: '{field_path}'"
+
+    def _get_type_structure(self, input_data: Any, current_depth: int = 0) -> Any:
+        """
+        Get the structure of a given input data for use in error message construction.
+        """
+        # Handle null values
+        if input_data is None:
+            return "null"
+
+        # Avoid recursing too deep
+        if current_depth >= MAX_NESTING_DEPTH:
+            return "object" if isinstance(input_data, dict) else python_to_json[type(input_data)]
+
+        if isinstance(input_data, dict):
+            return {
+                key: self._get_type_structure(field_value, current_depth + 1)
+                for key, field_value in input_data.items()
+            }
+
+        else:
+            return python_to_json[type(input_data)]

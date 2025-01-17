@@ -31,6 +31,17 @@ class DeliverRawFiles(BaseModel):
 
     delivery_type: Literal["use_file_transfer"] = Field("use_file_transfer", const=True)
 
+    preserve_directory_structure: bool = Field(
+        title="Preserve Sub-Directories in File Paths",
+        description=(
+            "If enabled, sends subdirectory folder structure "
+            "along with source file names to the destination. "
+            "Otherwise, files will be synced by their names only. "
+            "This option is ignored when file-based replication is not enabled."
+        ),
+        default=True,
+    )
+
 
 class AbstractFileBasedSpec(BaseModel):
     """

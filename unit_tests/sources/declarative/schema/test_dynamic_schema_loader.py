@@ -3,6 +3,7 @@
 #
 
 import json
+from copy import deepcopy
 from unittest.mock import MagicMock
 
 import pytest
@@ -276,6 +277,96 @@ def test_dynamic_schema_loader_manifest_flow():
                             {"name": "Id", "type": "integer"},
                             {"name": "FirstName", "type": "string"},
                             {"name": "Description", "type": "singleLineText"},
+                        ]
+                    }
+                )
+            ),
+        )
+
+        actual_catalog = source.discover(logger=source.logger, config=_CONFIG)
+
+    assert len(actual_catalog.streams) == 1
+    assert actual_catalog.streams[0].json_schema == expected_schema
+
+
+def test_dynamic_schema_loader_with_type_conditions():
+    _MANIFEST_WITH_TYPE_CONDITIONS = deepcopy(_MANIFEST)
+    _MANIFEST_WITH_TYPE_CONDITIONS["definitions"]["party_members_stream"]["schema_loader"][
+        "schema_type_identifier"
+    ]["types_mapping"].append(
+        {
+            "target_type": "number",
+            "current_type": "formula",
+            "condition": "{{ raw_schema['result']['type'] == 'number' }}",
+        }
+    )
+    _MANIFEST_WITH_TYPE_CONDITIONS["definitions"]["party_members_stream"]["schema_loader"][
+        "schema_type_identifier"
+    ]["types_mapping"].append(
+        {
+            "target_type": "number",
+            "current_type": "formula",
+            "condition": "{{ raw_schema['result']['type'] == 'currency' }}",
+        }
+    )
+    _MANIFEST_WITH_TYPE_CONDITIONS["definitions"]["party_members_stream"]["schema_loader"][
+        "schema_type_identifier"
+    ]["types_mapping"].append({"target_type": "array", "current_type": "formula"})
+
+    expected_schema = {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+            "id": {"type": ["null", "integer"]},
+            "first_name": {"type": ["null", "string"]},
+            "description": {"type": ["null", "string"]},
+            "static_field": {"type": ["null", "string"]},
+            "currency": {"type": ["null", "number"]},
+            "salary": {"type": ["null", "number"]},
+            "working_days": {"type": ["null", "array"]},
+        },
+    }
+    source = ConcurrentDeclarativeSource(
+        source_config=_MANIFEST_WITH_TYPE_CONDITIONS, config=_CONFIG, catalog=None, state=None
+    )
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/party_members"),
+            HttpResponse(
+                body=json.dumps(
+                    [
+                        {
+                            "id": 1,
+                            "first_name": "member_1",
+                            "description": "First member",
+                            "salary": 20000,
+                            "currency": 10.4,
+                            "working_days": ["Monday", "Tuesday"],
+                        },
+                        {
+                            "id": 2,
+                            "first_name": "member_2",
+                            "description": "Second member",
+                            "salary": 22000,
+                            "currency": 10.4,
+                            "working_days": ["Tuesday", "Wednesday"],
+                        },
+                    ]
+                )
+            ),
+        )
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/party_members/schema"),
+            HttpResponse(
+                body=json.dumps(
+                    {
+                        "fields": [
+                            {"name": "Id", "type": "integer"},
+                            {"name": "FirstName", "type": "string"},
+                            {"name": "Description", "type": "singleLineText"},
+                            {"name": "Salary", "type": "formula", "result": {"type": "number"}},
+                            {"name": "Currency", "type": "formula", "result": {"type": "currency"}},
+                            {"name": "WorkingDays", "type": "formula"},
                         ]
                     }
                 )
