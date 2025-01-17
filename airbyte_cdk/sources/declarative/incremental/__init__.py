@@ -2,6 +2,10 @@
 # Copyright (c) 2022 Airbyte, Inc., all rights reserved.
 #
 
+from airbyte_cdk.sources.declarative.incremental.concurrent_partition_cursor import (
+    ConcurrentCursorFactory,
+    ConcurrentPerPartitionCursor,
+)
 from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.sources.declarative.incremental.global_substream_cursor import (
@@ -21,6 +25,8 @@ from airbyte_cdk.sources.declarative.incremental.resumable_full_refresh_cursor i
 
 __all__ = [
     "CursorFactory",
+    "ConcurrentCursorFactory",
+    "ConcurrentPerPartitionCursor",
     "DatetimeBasedCursor",
     "DeclarativeCursor",
     "GlobalSubstreamCursor",

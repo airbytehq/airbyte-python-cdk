@@ -64,6 +64,9 @@ class Timer:
         else:
             raise RuntimeError("Global substream cursor timer not started")
 
+    def is_running(self) -> bool:
+        return self._start is not None
+
 
 class GlobalSubstreamCursor(DeclarativeCursor):
     """

@@ -303,6 +303,21 @@ class PerPartitionCursor(DeclarativeCursor):
             raise ValueError("A partition needs to be provided in order to get request body json")
 
     def should_be_synced(self, record: Record) -> bool:
+        if (
+            record.associated_slice
+            and self._to_partition_key(record.associated_slice.partition)
+            not in self._cursor_per_partition
+        ):
+            partition_state = (
+                self._state_to_migrate_from
+                if self._state_to_migrate_from
+                else self._NO_CURSOR_STATE
+            )
+            cursor = self._create_cursor(partition_state)
+
+            self._cursor_per_partition[
+                self._to_partition_key(record.associated_slice.partition)
+            ] = cursor
         return self._get_cursor(record).should_be_synced(
             self._convert_record_to_cursor_record(record)
         )

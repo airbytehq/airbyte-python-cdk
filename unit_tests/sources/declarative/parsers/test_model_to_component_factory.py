@@ -1255,7 +1255,7 @@ list_stream:
         stream.retriever.record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
     )
     assert isinstance(
-        stream.retriever.record_selector.record_filter._substream_cursor,
+        stream.retriever.record_selector.record_filter._cursor,
         PerPartitionWithGlobalCursor,
     )
 

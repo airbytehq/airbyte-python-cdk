@@ -87,6 +87,8 @@ from airbyte_cdk.sources.declarative.extractors.record_filter import (
 )
 from airbyte_cdk.sources.declarative.incremental import (
     ChildPartitionResumableFullRefreshCursor,
+    ConcurrentCursorFactory,
+    ConcurrentPerPartitionCursor,
     CursorFactory,
     DatetimeBasedCursor,
     DeclarativeCursor,
@@ -450,6 +452,7 @@ from airbyte_cdk.sources.message import (
     InMemoryMessageRepository,
     LogAppenderMessageRepositoryDecorator,
     MessageRepository,
+    NoopMessageRepository,
 )
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
@@ -892,6 +895,8 @@ class ModelToComponentFactory:
         stream_namespace: Optional[str],
         config: Config,
         stream_state: MutableMapping[str, Any],
+        message_repository: Optional[MessageRepository] = None,
+        runtime_lookback_window: Optional[int] = None,
         **kwargs: Any,
     ) -> ConcurrentCursor:
         component_type = component_definition.get("type")
@@ -948,6 +953,11 @@ class ModelToComponentFactory:
             evaluated_lookback_window = interpolated_lookback_window.eval(config=config)
             if evaluated_lookback_window:
                 lookback_window = parse_duration(evaluated_lookback_window)
+
+        if runtime_lookback_window and lookback_window:
+            lookback_window = max(lookback_window, runtime_lookback_window)
+        elif runtime_lookback_window:
+            lookback_window = runtime_lookback_window
 
         connector_state_converter: DateTimeStreamStateConverter
         connector_state_converter = CustomFormatConcurrentStreamStateConverter(
@@ -1027,7 +1037,7 @@ class ModelToComponentFactory:
             stream_name=stream_name,
             stream_namespace=stream_namespace,
             stream_state=stream_state,
-            message_repository=self._message_repository,
+            message_repository=message_repository or self._message_repository,
             connector_state_manager=state_manager,
             connector_state_converter=connector_state_converter,
             cursor_field=cursor_field,
@@ -1037,6 +1047,63 @@ class ModelToComponentFactory:
             lookback_window=lookback_window,
             slice_range=step_length,
             cursor_granularity=cursor_granularity,
+        )
+
+    def create_concurrent_cursor_from_perpartition_cursor(
+        self,
+        state_manager: ConnectorStateManager,
+        model_type: Type[BaseModel],
+        component_definition: ComponentDefinition,
+        stream_name: str,
+        stream_namespace: Optional[str],
+        config: Config,
+        stream_state: MutableMapping[str, Any],
+        partition_router: PartitionRouter,
+        **kwargs: Any,
+    ) -> ConcurrentPerPartitionCursor:
+        component_type = component_definition.get("type")
+        if component_definition.get("type") != model_type.__name__:
+            raise ValueError(
+                f"Expected manifest component of type {model_type.__name__}, but received {component_type} instead"
+            )
+
+        datetime_based_cursor_model = model_type.parse_obj(component_definition)
+
+        if not isinstance(datetime_based_cursor_model, DatetimeBasedCursorModel):
+            raise ValueError(
+                f"Expected {model_type.__name__} component, but received {datetime_based_cursor_model.__class__.__name__}"
+            )
+
+        interpolated_cursor_field = InterpolatedString.create(
+            datetime_based_cursor_model.cursor_field,
+            parameters=datetime_based_cursor_model.parameters or {},
+        )
+        cursor_field = CursorField(interpolated_cursor_field.eval(config=config))
+
+        # Create the cursor factory
+        cursor_factory = ConcurrentCursorFactory(
+            partial(
+                self.create_concurrent_cursor_from_datetime_based_cursor,
+                state_manager=state_manager,
+                model_type=model_type,
+                component_definition=component_definition,
+                stream_name=stream_name,
+                stream_namespace=stream_namespace,
+                config=config,
+                message_repository=NoopMessageRepository(),
+            )
+        )
+
+        # Return the concurrent cursor and state converter
+        return ConcurrentPerPartitionCursor(
+            cursor_factory=cursor_factory,
+            partition_router=partition_router,
+            stream_name=stream_name,
+            stream_namespace=stream_namespace,
+            stream_state=stream_state,
+            message_repository=self._message_repository,  # type: ignore
+            connector_state_manager=state_manager,
+            cursor_field=cursor_field,
         )
 
     @staticmethod
@@ -1321,18 +1388,15 @@ class ModelToComponentFactory:
                 raise ValueError(
                     "Unsupported Slicer is used. PerPartitionWithGlobalCursor should be used here instead"
                 )
-            client_side_incremental_sync = {
-                "date_time_based_cursor": self._create_component_from_model(
-                    model=model.incremental_sync, config=config
-                ),
-                "substream_cursor": (
-                    combined_slicers
-                    if isinstance(
-                        combined_slicers, (PerPartitionWithGlobalCursor, GlobalSubstreamCursor)
-                    )
-                    else None
-                ),
-            }
+            cursor = (
+                combined_slicers
+                if isinstance(
+                    combined_slicers, (PerPartitionWithGlobalCursor, GlobalSubstreamCursor)
+                )
+                else self._create_component_from_model(model=model.incremental_sync, config=config)
+            )
+
+            client_side_incremental_sync = {"cursor": cursor}
 
         if model.incremental_sync and isinstance(model.incremental_sync, DatetimeBasedCursorModel):
             cursor_model = model.incremental_sync
@@ -2179,7 +2243,7 @@ class ModelToComponentFactory:
         if (
             not isinstance(stream_slicer, DatetimeBasedCursor)
             or type(stream_slicer) is not DatetimeBasedCursor
-        ):
+        ) and not isinstance(stream_slicer, PerPartitionWithGlobalCursor):
             # Many of the custom component implementations of DatetimeBasedCursor override get_request_params() (or other methods).
             # Because we're decoupling RequestOptionsProvider from the Cursor, custom components will eventually need to reimplement
             # their own RequestOptionsProvider. However, right now the existing StreamSlicer/Cursor still can act as the SimpleRetriever's
