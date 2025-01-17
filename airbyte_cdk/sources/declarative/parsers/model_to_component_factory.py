@@ -220,6 +220,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     FlattenFields as FlattenFieldsModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    DpathFlattenFields as DpathFlattenFieldsModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     GzipJsonDecoder as GzipJsonDecoderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -433,6 +436,9 @@ from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFiel
 from airbyte_cdk.sources.declarative.transformations.flatten_fields import (
     FlattenFields,
 )
+from airbyte_cdk.sources.declarative.transformations.dpath_flatten_fields import (
+    DpathFlattenFields,
+)
 from airbyte_cdk.sources.declarative.transformations.keys_replace_transformation import (
     KeysReplaceTransformation,
 )
@@ -538,6 +544,7 @@ class ModelToComponentFactory:
             KeysToSnakeCaseModel: self.create_keys_to_snake_transformation,
             KeysReplaceModel: self.create_keys_replace_transformation,
             FlattenFieldsModel: self.create_flatten_fields,
+            DpathFlattenFieldsModel: self.create_dpath_flatten_fields,
             IterableDecoderModel: self.create_iterable_decoder,
             XmlDecoderModel: self.create_xml_decoder,
             JsonFileSchemaLoaderModel: self.create_json_file_schema_loader,
@@ -670,6 +677,18 @@ class ModelToComponentFactory:
     ) -> FlattenFields:
         return FlattenFields(
             flatten_lists=model.flatten_lists if model.flatten_lists is not None else True
+        )
+
+    def create_dpath_flatten_fields(
+        self, model: DpathFlattenFieldsModel, config: Config, **kwargs: Any
+    ) -> DpathFlattenFields:
+        return DpathFlattenFields(
+            config=config,
+            field_path=model.field_path,
+            delete_origin_value=model.delete_origin_value
+            if model.delete_origin_value is not None
+            else False,
+            parameters=model.parameters or {},
         )
 
     @staticmethod

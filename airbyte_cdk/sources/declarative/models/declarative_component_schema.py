@@ -792,6 +792,25 @@ class FlattenFields(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class DpathFlattenFields(BaseModel):
+    type: Literal["DpathFlattenFields"]
+    field_path: List[str] = Field(
+        ...,
+        description="A path to field that needs to be flattened.",
+        examples=[
+            ["data"],
+            ["data", "*", "field"],
+        ],
+        title="Field Path",
+    )
+    delete_origin_value: Optional[bool] = Field(
+        False,
+        description="Whether to delete the origin value or keep it. Default is False.",
+        title="Delete Origin Value",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class KeysReplace(BaseModel):
     type: Literal["KeysReplace"]
     old: str = Field(
@@ -1810,6 +1829,7 @@ class DeclarativeStream(BaseModel):
                 KeysToLower,
                 KeysToSnakeCase,
                 FlattenFields,
+                DpathFlattenFields,
                 KeysReplace,
             ]
         ]
@@ -1985,6 +2005,7 @@ class DynamicSchemaLoader(BaseModel):
                 KeysToLower,
                 KeysToSnakeCase,
                 FlattenFields,
+                DpathFlattenFields,
                 KeysReplace,
             ]
         ]
