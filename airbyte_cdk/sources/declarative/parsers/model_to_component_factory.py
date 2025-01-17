@@ -211,6 +211,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     DpathExtractor as DpathExtractorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    DpathFlattenFields as DpathFlattenFieldsModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DynamicSchemaLoader as DynamicSchemaLoaderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -218,9 +221,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     FlattenFields as FlattenFieldsModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    DpathFlattenFields as DpathFlattenFieldsModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     GzipJsonDecoder as GzipJsonDecoderModel,
@@ -433,11 +433,11 @@ from airbyte_cdk.sources.declarative.transformations import (
     RemoveFields,
 )
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
-from airbyte_cdk.sources.declarative.transformations.flatten_fields import (
-    FlattenFields,
-)
 from airbyte_cdk.sources.declarative.transformations.dpath_flatten_fields import (
     DpathFlattenFields,
+)
+from airbyte_cdk.sources.declarative.transformations.flatten_fields import (
+    FlattenFields,
 )
 from airbyte_cdk.sources.declarative.transformations.keys_replace_transformation import (
     KeysReplaceTransformation,

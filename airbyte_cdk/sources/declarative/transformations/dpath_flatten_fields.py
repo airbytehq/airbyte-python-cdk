@@ -1,11 +1,11 @@
-from dataclasses import dataclass, InitVar
-from typing import Any, Dict, Optional, List, Union, Mapping
+from dataclasses import InitVar, dataclass
+from typing import Any, Dict, List, Mapping, Optional, Union
 
 import dpath
 
+from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
-from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 
 
 @dataclass
