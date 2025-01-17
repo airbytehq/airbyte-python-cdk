@@ -682,9 +682,10 @@ class ModelToComponentFactory:
     def create_dpath_flatten_fields(
         self, model: DpathFlattenFieldsModel, config: Config, **kwargs: Any
     ) -> DpathFlattenFields:
+        model_field_path: List[Union[InterpolatedString, str]] = [x for x in model.field_path]
         return DpathFlattenFields(
             config=config,
-            field_path=model.field_path,
+            field_path=model_field_path,
             delete_origin_value=model.delete_origin_value
             if model.delete_origin_value is not None
             else False,
