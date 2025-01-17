@@ -24,14 +24,18 @@ class Paginator(ABC, RequestOptionsProvider):
     """
 
     @abstractmethod
-    def reset(self, reset_value: Optional[Any] = None) -> None:
+    def get_initial_token(self) -> Optional[Any]:
         """
-        Reset the pagination's inner state
+        Get the page token that should be included in the request to get the first page of records
         """
 
     @abstractmethod
     def next_page_token(
-        self, response: requests.Response, last_page_size: int, last_record: Optional[Record]
+        self,
+        response: requests.Response,
+        last_page_size: int,
+        last_record: Optional[Record],
+        last_page_token_value: Optional[Any],
     ) -> Optional[Mapping[str, Any]]:
         """
         Returns the next_page_token to use to fetch the next page of records.
@@ -39,12 +43,13 @@ class Paginator(ABC, RequestOptionsProvider):
         :param response: the response to process
         :param last_page_size: the number of records read from the response
         :param last_record: the last record extracted from the response
+        :param last_page_token_value: The current value of the page token made on the last request
         :return: A mapping {"next_page_token": <token>} for the next page from the input response object. Returning None means there are no more pages to read in this response.
         """
         pass
 
     @abstractmethod
-    def path(self) -> Optional[str]:
+    def path(self, next_page_token: Optional[Mapping[str, Any]]) -> Optional[str]:
         """
         Returns the URL path to hit to fetch the next page of records
 

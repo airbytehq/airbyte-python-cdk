@@ -1,6 +1,6 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
-from typing import Any, Callable, Iterable, Mapping, Optional
+from typing import Any, Iterable, Mapping, Optional
 
 from airbyte_cdk.sources.declarative.retrievers import Retriever
 from airbyte_cdk.sources.message import MessageRepository
@@ -16,7 +16,7 @@ class DeclarativePartitionFactory:
         self,
         stream_name: str,
         json_schema: Mapping[str, Any],
-        retriever_factory: Callable[[], Retriever],
+        retriever: Retriever,
         message_repository: MessageRepository,
     ) -> None:
         """
@@ -26,14 +26,14 @@ class DeclarativePartitionFactory:
         """
         self._stream_name = stream_name
         self._json_schema = json_schema
-        self._retriever_factory = retriever_factory
+        self._retriever = retriever
         self._message_repository = message_repository
 
     def create(self, stream_slice: StreamSlice) -> Partition:
         return DeclarativePartition(
             self._stream_name,
             self._json_schema,
-            self._retriever_factory(),
+            self._retriever,
             self._message_repository,
             stream_slice,
         )

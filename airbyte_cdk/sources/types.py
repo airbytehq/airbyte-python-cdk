@@ -152,3 +152,6 @@ class StreamSlice(Mapping[str, Any]):
 
     def __hash__(self) -> int:
         return hash(orjson.dumps(self._stream_slice, option=orjson.OPT_SORT_KEYS))
+
+    def __bool__(self) -> bool:
+        return bool(self._stream_slice) or bool(self._extra_fields)

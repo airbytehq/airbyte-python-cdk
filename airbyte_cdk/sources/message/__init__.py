@@ -10,4 +10,10 @@ from .repository import (
     NoopMessageRepository,
 )
 
-__all__ = ["InMemoryMessageRepository", "LogAppenderMessageRepositoryDecorator", "LogMessage", "MessageRepository", "NoopMessageRepository"]
+__all__ = [
+    "InMemoryMessageRepository",
+    "LogAppenderMessageRepositoryDecorator",
+    "LogMessage",
+    "MessageRepository",
+    "NoopMessageRepository",
+]

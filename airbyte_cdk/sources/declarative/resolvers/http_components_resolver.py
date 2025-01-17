@@ -88,19 +88,25 @@ class HttpComponentsResolver(ComponentsResolver):
         """
         kwargs = {"stream_template_config": stream_template_config}
 
-        for components_values in self.retriever.read_records({}):
-            updated_config = deepcopy(stream_template_config)
-            kwargs["components_values"] = components_values  # type: ignore[assignment] # component_values will always be of type Mapping[str, Any]
+        for stream_slice in self.retriever.stream_slices():
+            for components_values in self.retriever.read_records(
+                records_schema={}, stream_slice=stream_slice
+            ):
+                updated_config = deepcopy(stream_template_config)
+                kwargs["components_values"] = components_values  # type: ignore[assignment] # component_values will always be of type Mapping[str, Any]
+                kwargs["stream_slice"] = stream_slice  # type: ignore[assignment] # stream_slice will always be of type Mapping[str, Any]
 
-            for resolved_component in self._resolved_components:
-                valid_types = (
-                    (resolved_component.value_type,) if resolved_component.value_type else None
-                )
-                value = resolved_component.value.eval(
-                    self.config, valid_types=valid_types, **kwargs
-                )
+                for resolved_component in self._resolved_components:
+                    valid_types = (
+                        (resolved_component.value_type,) if resolved_component.value_type else None
+                    )
+                    value = resolved_component.value.eval(
+                        self.config, valid_types=valid_types, **kwargs
+                    )
 
-                path = [path.eval(self.config, **kwargs) for path in resolved_component.field_path]
-                dpath.set(updated_config, path, value)
+                    path = [
+                        path.eval(self.config, **kwargs) for path in resolved_component.field_path
+                    ]
+                    dpath.set(updated_config, path, value)
 
-            yield updated_config
+                yield updated_config

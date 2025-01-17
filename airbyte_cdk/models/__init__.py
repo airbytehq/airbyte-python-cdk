@@ -7,7 +7,6 @@
 # of airbyte-cdk rather than a standalone package.
 from .airbyte_protocol import (
     AdvancedAuth,
-    AirbyteStateStats,
     AirbyteAnalyticsTraceMessage,
     AirbyteCatalog,
     AirbyteConnectionStatus,
@@ -22,13 +21,14 @@ from .airbyte_protocol import (
     AirbyteRecordMessage,
     AirbyteStateBlob,
     AirbyteStateMessage,
+    AirbyteStateStats,
     AirbyteStateType,
     AirbyteStream,
     AirbyteStreamState,
     AirbyteStreamStatus,
-    AirbyteStreamStatusTraceMessage,
     AirbyteStreamStatusReason,
     AirbyteStreamStatusReasonType,
+    AirbyteStreamStatusTraceMessage,
     AirbyteTraceMessage,
     AuthFlowType,
     ConfiguredAirbyteCatalog,
@@ -48,6 +48,14 @@ from .airbyte_protocol import (
     TraceType,
     Type,
 )
+from .airbyte_protocol_serializers import (
+    AirbyteMessageSerializer,
+    AirbyteStateMessageSerializer,
+    AirbyteStreamStateSerializer,
+    ConfiguredAirbyteCatalogSerializer,
+    ConfiguredAirbyteStreamSerializer,
+    ConnectorSpecificationSerializer,
+)
 from .well_known_types import (
     BinaryData,
     Boolean,
@@ -60,13 +68,4 @@ from .well_known_types import (
     TimestampWithTimezone,
     TimeWithoutTimezone,
     TimeWithTimezone,
-)
-
-from .airbyte_protocol_serializers import (
-AirbyteStreamStateSerializer,
-AirbyteStateMessageSerializer,
-AirbyteMessageSerializer,
-ConfiguredAirbyteCatalogSerializer,
-ConfiguredAirbyteStreamSerializer,
-ConnectorSpecificationSerializer,
 )

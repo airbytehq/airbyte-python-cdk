@@ -112,27 +112,39 @@ class DefaultPaginator(Paginator):
             )
         if isinstance(self.url_base, str):
             self.url_base = InterpolatedString(string=self.url_base, parameters=parameters)
-        self._token: Optional[Any] = self.pagination_strategy.initial_token
+
+    def get_initial_token(self) -> Optional[Any]:
+        """
+        Return the page token that should be used for the first request of a stream
+
+        WARNING: get_initial_token() should not be used by streams that use RFR that perform checkpointing
+        of state using page numbers. Because paginators are stateless
+        """
+        return self.pagination_strategy.initial_token
 
     def next_page_token(
-        self, response: requests.Response, last_page_size: int, last_record: Optional[Record]
+        self,
+        response: requests.Response,
+        last_page_size: int,
+        last_record: Optional[Record],
+        last_page_token_value: Optional[Any] = None,
     ) -> Optional[Mapping[str, Any]]:
-        self._token = self.pagination_strategy.next_page_token(
-            response, last_page_size, last_record
+        next_page_token = self.pagination_strategy.next_page_token(
+            response=response,
+            last_page_size=last_page_size,
+            last_record=last_record,
+            last_page_token_value=last_page_token_value,
         )
-        if self._token:
-            return {"next_page_token": self._token}
+        if next_page_token:
+            return {"next_page_token": next_page_token}
         else:
             return None
 
-    def path(self) -> Optional[str]:
-        if (
-            self._token
-            and self.page_token_option
-            and isinstance(self.page_token_option, RequestPath)
-        ):
+    def path(self, next_page_token: Optional[Mapping[str, Any]]) -> Optional[str]:
+        token = next_page_token.get("next_page_token") if next_page_token else None
+        if token and self.page_token_option and isinstance(self.page_token_option, RequestPath):
             # Replace url base to only return the path
-            return str(self._token).replace(self.url_base.eval(self.config), "")  # type: ignore # url_base is casted to a InterpolatedString in __post_init__
+            return str(token).replace(self.url_base.eval(self.config), "")  # type: ignore # url_base is casted to a InterpolatedString in __post_init__
         else:
             return None
 
@@ -143,7 +155,7 @@ class DefaultPaginator(Paginator):
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> MutableMapping[str, Any]:
-        return self._get_request_options(RequestOptionType.request_parameter)
+        return self._get_request_options(RequestOptionType.request_parameter, next_page_token)
 
     def get_request_headers(
         self,
@@ -152,7 +164,7 @@ class DefaultPaginator(Paginator):
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Mapping[str, str]:
-        return self._get_request_options(RequestOptionType.header)
+        return self._get_request_options(RequestOptionType.header, next_page_token)
 
     def get_request_body_data(
         self,
@@ -161,7 +173,7 @@ class DefaultPaginator(Paginator):
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Mapping[str, Any]:
-        return self._get_request_options(RequestOptionType.body_data)
+        return self._get_request_options(RequestOptionType.body_data, next_page_token)
 
     def get_request_body_json(
         self,
@@ -170,25 +182,21 @@ class DefaultPaginator(Paginator):
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Mapping[str, Any]:
-        return self._get_request_options(RequestOptionType.body_json)
+        return self._get_request_options(RequestOptionType.body_json, next_page_token)
 
-    def reset(self, reset_value: Optional[Any] = None) -> None:
-        if reset_value:
-            self.pagination_strategy.reset(reset_value=reset_value)
-        else:
-            self.pagination_strategy.reset()
-        self._token = self.pagination_strategy.initial_token
-
-    def _get_request_options(self, option_type: RequestOptionType) -> MutableMapping[str, Any]:
+    def _get_request_options(
+        self, option_type: RequestOptionType, next_page_token: Optional[Mapping[str, Any]]
+    ) -> MutableMapping[str, Any]:
         options = {}
 
+        token = next_page_token.get("next_page_token") if next_page_token else None
         if (
             self.page_token_option
-            and self._token is not None
+            and token is not None
             and isinstance(self.page_token_option, RequestOption)
             and self.page_token_option.inject_into == option_type
         ):
-            options[self.page_token_option.field_name.eval(config=self.config)] = self._token  # type: ignore # field_name is always cast to an interpolated string
+            options[self.page_token_option.field_name.eval(config=self.config)] = token  # type: ignore # field_name is always cast to an interpolated string
         if (
             self.page_size_option
             and self.pagination_strategy.get_page_size()
@@ -204,6 +212,9 @@ class PaginatorTestReadDecorator(Paginator):
     """
     In some cases, we want to limit the number of requests that are made to the backend source. This class allows for limiting the number of
     pages that are queried throughout a read command.
+
+    WARNING: This decorator is not currently thread-safe like the rest of the low-code framework because it has
+    an internal state to track the current number of pages counted so that it can exit early during a test read
     """
 
     _PAGE_COUNT_BEFORE_FIRST_NEXT_CALL = 1
@@ -217,17 +228,27 @@ class PaginatorTestReadDecorator(Paginator):
         self._decorated = decorated
         self._page_count = self._PAGE_COUNT_BEFORE_FIRST_NEXT_CALL
 
+    def get_initial_token(self) -> Optional[Any]:
+        self._page_count = self._PAGE_COUNT_BEFORE_FIRST_NEXT_CALL
+        return self._decorated.get_initial_token()
+
     def next_page_token(
-        self, response: requests.Response, last_page_size: int, last_record: Optional[Record]
+        self,
+        response: requests.Response,
+        last_page_size: int,
+        last_record: Optional[Record],
+        last_page_token_value: Optional[Any] = None,
     ) -> Optional[Mapping[str, Any]]:
         if self._page_count >= self._maximum_number_of_pages:
             return None
 
         self._page_count += 1
-        return self._decorated.next_page_token(response, last_page_size, last_record)
+        return self._decorated.next_page_token(
+            response, last_page_size, last_record, last_page_token_value
+        )
 
-    def path(self) -> Optional[str]:
-        return self._decorated.path()
+    def path(self, next_page_token: Optional[Mapping[str, Any]]) -> Optional[str]:
+        return self._decorated.path(next_page_token)
 
     def get_request_params(
         self,
@@ -272,7 +293,3 @@ class PaginatorTestReadDecorator(Paginator):
         return self._decorated.get_request_body_json(
             stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
         )
-
-    def reset(self, reset_value: Optional[Any] = None) -> None:
-        self._decorated.reset()
-        self._page_count = self._PAGE_COUNT_BEFORE_FIRST_NEXT_CALL

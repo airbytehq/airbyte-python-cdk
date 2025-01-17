@@ -11,6 +11,8 @@ from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 
 @dataclass
 class FlattenFields(RecordTransformation):
+    flatten_lists: bool = True
+
     def transform(
         self,
         record: Dict[str, Any],
@@ -39,7 +41,7 @@ class FlattenFields(RecordTransformation):
                     )
                     stack.append((value, new_key))
 
-            elif isinstance(current_record, list):
+            elif isinstance(current_record, list) and self.flatten_lists:
                 for i, item in enumerate(current_record):
                     force_with_parent_name = True
                     stack.append((item, f"{parent_key}.{i}"))

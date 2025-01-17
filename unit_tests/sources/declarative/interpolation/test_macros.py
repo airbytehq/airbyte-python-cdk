@@ -15,6 +15,7 @@ from airbyte_cdk.sources.declarative.interpolation.macros import macros
         ("test_now_utc", "now_utc", True),
         ("test_today_utc", "today_utc", True),
         ("test_max", "max", True),
+        ("test_min", "min", True),
         ("test_day_delta", "day_delta", True),
         ("test_format_datetime", "format_datetime", True),
         ("test_duration", "duration", True),

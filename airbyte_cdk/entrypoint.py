@@ -5,6 +5,7 @@
 import argparse
 import importlib
 import ipaddress
+import json
 import logging
 import os.path
 import socket
@@ -46,6 +47,7 @@ logger = init_logger("airbyte")
 
 VALID_URL_SCHEMES = ["https"]
 CLOUD_DEPLOYMENT_MODE = "cloud"
+_HAS_LOGGED_FOR_SERIALIZATION_ERROR = False
 
 
 class AirbyteEntrypoint(object):
@@ -291,7 +293,17 @@ class AirbyteEntrypoint(object):
 
     @staticmethod
     def airbyte_message_to_string(airbyte_message: AirbyteMessage) -> str:
-        return orjson.dumps(AirbyteMessageSerializer.dump(airbyte_message)).decode()
+        global _HAS_LOGGED_FOR_SERIALIZATION_ERROR
+        serialized_message = AirbyteMessageSerializer.dump(airbyte_message)
+        try:
+            return orjson.dumps(serialized_message).decode()
+        except Exception as exception:
+            if not _HAS_LOGGED_FOR_SERIALIZATION_ERROR:
+                logger.warning(
+                    f"There was an error during the serialization of an AirbyteMessage: `{exception}`. This might impact the sync performances."
+                )
+                _HAS_LOGGED_FOR_SERIALIZATION_ERROR = True
+            return json.dumps(serialized_message)
 
     @classmethod
     def extract_state(cls, args: List[str]) -> Optional[Any]:
