@@ -1,5 +1,5 @@
-from dataclasses import dataclass, InitVar
-from typing import Any, Dict, Optional, List, Union, Mapping
+from dataclasses import InitVar, dataclass
+from typing import Any, Dict, List, Mapping, Optional, Union
 
 import dpath
 
