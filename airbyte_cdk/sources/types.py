@@ -8,6 +8,8 @@ from typing import Any, ItemsView, Iterator, KeysView, List, Mapping, Optional, 
 
 import orjson
 
+from airbyte_cdk.utils.slice_hasher import SliceHasher
+
 # A FieldPointer designates a path to a field inside a mapping. For example, retrieving ["k1", "k1.2"] in the object {"k1" :{"k1.2":
 # "hello"}] returns "hello"
 FieldPointer = List[str]
@@ -151,7 +153,7 @@ class StreamSlice(Mapping[str, Any]):
         return self._stream_slice
 
     def __hash__(self) -> int:
-        return hash(orjson.dumps(self._stream_slice, option=orjson.OPT_SORT_KEYS))
+        return SliceHasher.hash("dummy_name", self._stream_slice)
 
     def __bool__(self) -> bool:
         return bool(self._stream_slice) or bool(self._extra_fields)

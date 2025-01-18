@@ -322,6 +322,7 @@ _MANIFEST = {
                     "http_method": "GET",
                 },
             },
+            "incremental_sync": {"$ref": "#/definitions/incremental_cursor"},
             "schema_loader": {
                 "type": "InlineSchemaLoader",
                 "schema": {
