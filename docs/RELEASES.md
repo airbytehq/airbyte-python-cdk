@@ -57,7 +57,7 @@ To manually test changes against a dev image of SDM before committing to a relea
 
 #### Pretesting Manifest-Only connectors
 
-Once the publish pipeline has completed, choose a connector to test. Set the base_image in the connector's metadata to your pre-release version in Dockerhub (make sure to update the SHA as well).
+Once the publishing pipeline has completed, choose a connector to test. Set the base_image in the connector's metadata to your pre-release version in Dockerhub (make sure to update the SHA as well).
 Next, build the pre-release image locally using `airbyte-ci connectors —name=<source> build`.
 You can now run connector interfaces against the built image using the pattern `docker run airbyte/<source-name>:dev <spec/check/discover/read>`.
 The connector's README should include a list of these commands, which can be copy/pasted and run from the connector's directory for quick testing against a local config.

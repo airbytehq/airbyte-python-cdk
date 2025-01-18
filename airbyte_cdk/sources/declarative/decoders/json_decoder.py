@@ -35,22 +35,19 @@ class JsonDecoder(Decoder):
         try:
             body_json = response.json()
             yield from self.parse_body_json(body_json)
-        except requests.exceptions.JSONDecodeError:
-            logger.warning(
-                f"Response cannot be parsed into json: {response.status_code=}, {response.text=}"
-            )
-            yield {}
+        except requests.exceptions.JSONDecodeError as ex:
+            logger.warning("Response cannot be parsed into json: %s", ex)
+            logger.debug("Response to parse: %s", response.text, exc_info=True, stack_info=True)
+            yield {}  # Keep the exiting contract
 
     @staticmethod
     def parse_body_json(
         body_json: MutableMapping[str, Any] | List[MutableMapping[str, Any]],
     ) -> Generator[MutableMapping[str, Any], None, None]:
-        if not isinstance(body_json, list):
-            body_json = [body_json]
-        if len(body_json) == 0:
-            yield {}
-        else:
+        if isinstance(body_json, list):
             yield from body_json
+        else:
+            yield from [body_json]
 
 
 @dataclass

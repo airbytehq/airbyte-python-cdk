@@ -8,7 +8,10 @@ from typing import Any, Iterable, List, Mapping, Optional, Union
 import requests
 
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
-from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
+from airbyte_cdk.sources.declarative.extractors.record_extractor import (
+    RecordExtractor,
+    exclude_service_keys,
+)
 from airbyte_cdk.sources.declarative.extractors.record_filter import RecordFilter
 from airbyte_cdk.sources.declarative.extractors.type_transformer import (
     TypeTransformer as DeclarativeTypeTransformer,
@@ -106,7 +109,8 @@ class RecordSelector(HttpSelector):
         """
         filtered_data = self._filter(all_data, stream_state, stream_slice, next_page_token)
         transformed_data = self._transform(filtered_data, stream_state, stream_slice)
-        normalized_data = self._normalize_by_schema(transformed_data, schema=records_schema)
+        no_service_fields_data = self._remove_service_keys(transformed_data)
+        normalized_data = self._normalize_by_schema(no_service_fields_data, schema=records_schema)
         for data in normalized_data:
             yield Record(data=data, stream_name=self.name, associated_slice=stream_slice)
 
@@ -154,3 +158,10 @@ class RecordSelector(HttpSelector):
                     stream_slice=stream_slice,
                 )
             yield record
+
+    def _remove_service_keys(
+        self, records: Iterable[Mapping[str, Any]]
+    ) -> Iterable[Mapping[str, Any]]:
+        for record in records:
+            clean_record = exclude_service_keys(record)
+            yield clean_record

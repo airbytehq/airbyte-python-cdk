@@ -322,6 +322,7 @@ def run_incremental_parent_state_test(
         # For each intermediate state, perform another read starting from that state
         for state, records_before_state in intermediate_states[:-1]:
             output_intermediate = _run_read(manifest, config, _stream_name, [state])
+
             records_from_state = [
                 message.record.data for message in output_intermediate if message.record
             ]
