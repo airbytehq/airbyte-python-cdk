@@ -21,7 +21,7 @@ def test_combine_with_string():
 
 def test_overlapping_keys():
     mappings = [{"a": 1, "b": 2}, {"b": 3}]
-    with pytest.raises(ValueError, match="Duplicate keys found"):
+    with pytest.raises(ValueError, match="Duplicate keys"):
         combine_mappings(mappings)
 
 
@@ -53,3 +53,27 @@ def test_combine_with_string_and_empty_mappings():
     mappings = ["option", {}]
     result = combine_mappings(mappings)
     assert result == "option"
+
+
+def test_nested_merge():
+    mappings = [{"a": {"b": 1}}, {"c": {"d": 2}}]
+    result = combine_mappings(mappings)
+    assert result == {"a": {"b": 1}, "c": {"d": 2}}
+
+
+def test_nested_conflict():
+    mappings = [{"a": {"b": 1}}, {"a": {"b": 2}}]
+    with pytest.raises(ValueError, match="nested path conflict"):
+        combine_mappings(mappings)
+
+
+def test_nested_path_conflict():
+    mappings = [{"a": 1}, {"a": {"b": 2}}]
+    with pytest.raises(ValueError, match="nested path conflict"):
+        combine_mappings(mappings)
+
+
+def test_deep_nested_merge():
+    mappings = [{"a": {"b": {"c": 1}}}, {"d": {"e": {"f": 2}}}]
+    result = combine_mappings(mappings)
+    assert result == {"a": {"b": {"c": 1}}, "d": {"e": {"f": 2}}}

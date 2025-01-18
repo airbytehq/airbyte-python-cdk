@@ -2769,22 +2769,32 @@ definitions:
         enum: [RequestPath]
   RequestOption:
     title: Request Option
-    description: Specifies the key field and where in the request a component's value should be injected.
+    description: Specifies the key field or path and where in the request a component's value should be injected.
     type: object
     required:
       - type
-      - field_name
       - inject_into
     properties:
       type:
         type: string
         enum: [RequestOption]
       field_name:
-        title: Request Option
+        title: Field Name
         description: Configures which key should be used in the location that the descriptor is being injected into
         type: string
         examples:
           - segment_id
+        interpolation_context:
+          - config
+          - parameters
+      field_path:
+        title: Field Path
+        description: Configures a path to be used for nested structures in JSON body requests (e.g. GraphQL queries)
+        type: array
+        items:
+          type: string
+        examples:
+          - ["data", "viewer", "id"]
         interpolation_context:
           - config
           - parameters

@@ -5,7 +5,7 @@
 import base64
 import logging
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Union
+from typing import Any, Mapping, MutableMapping, Union
 
 import requests
 from cachetools import TTLCache, cached
@@ -45,11 +45,6 @@ class ApiKeyAuthenticator(DeclarativeAuthenticator):
     config: Config
     parameters: InitVar[Mapping[str, Any]]
 
-    def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        self._field_name = InterpolatedString.create(
-            self.request_option.field_name, parameters=parameters
-        )
-
     @property
     def auth_header(self) -> str:
         options = self._get_request_options(RequestOptionType.header)
@@ -60,9 +55,9 @@ class ApiKeyAuthenticator(DeclarativeAuthenticator):
         return self.token_provider.get_token()
 
     def _get_request_options(self, option_type: RequestOptionType) -> Mapping[str, Any]:
-        options = {}
+        options: MutableMapping[str, Any] = {}
         if self.request_option.inject_into == option_type:
-            options[self._field_name.eval(self.config)] = self.token
+            self.request_option.inject_into_request(options, self.token, self.config)
         return options
 
     def get_request_params(self) -> Mapping[str, Any]:
