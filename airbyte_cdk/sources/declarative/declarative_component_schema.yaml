@@ -1316,6 +1316,7 @@ definitions:
             - "$ref": "#/definitions/KeysToLower"
             - "$ref": "#/definitions/KeysToSnakeCase"
             - "$ref": "#/definitions/FlattenFields"
+            - "$ref": "#/definitions/DpathFlattenFields"
             - "$ref": "#/definitions/KeysReplace"
       state_migrations:
         title: State Migrations
@@ -1866,6 +1867,7 @@ definitions:
             - "$ref": "#/definitions/KeysToLower"
             - "$ref": "#/definitions/KeysToSnakeCase"
             - "$ref": "#/definitions/FlattenFields"
+            - "$ref": "#/definitions/DpathFlattenFields"
             - "$ref": "#/definitions/KeysReplace"
       schema_type_identifier:
         "$ref": "#/definitions/SchemaTypeIdentifier"
@@ -1967,6 +1969,33 @@ definitions:
         description: Whether to flatten lists or leave it as is. Default is True.
         type: boolean
         default: true
+      $parameters:
+        type: object
+        additionalProperties: true
+  DpathFlattenFields:
+    title: Dpath Flatten Fields
+    description: A transformation that flatten field values to the to top of the record.
+    type: object
+    required:
+      - type
+      - field_path
+    properties:
+      type:
+        type: string
+        enum: [DpathFlattenFields]
+      field_path:
+        title: Field Path
+        description: A path to field that needs to be flattened.
+        type: array
+        items:
+          - type: string
+        examples:
+          - ["data"]
+          - ["data", "*", "field"]
+      delete_origin_value:
+        title: Delete Origin Value
+        description: Whether to delete the origin value or keep it. Default is False.
+        type: boolean
       $parameters:
         type: object
         additionalProperties: true
