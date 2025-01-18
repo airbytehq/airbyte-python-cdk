@@ -8,6 +8,7 @@ from typing import Any, List, Mapping, Optional, Union
 import requests
 
 from airbyte_cdk.sources.streams.http.error_handlers import ErrorHandler
+from airbyte_cdk.sources.streams.http.error_handlers.backoff_strategy import BackoffStrategy
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
     ErrorResolution,
     ResponseAction,
@@ -77,3 +78,19 @@ class CompositeErrorHandler(ErrorHandler):
             return matched_error_resolution
 
         return create_fallback_error_resolution(response_or_exception)
+
+    @property
+    def backoff_strategies(self) -> Optional[List[BackoffStrategy]]:
+        """
+        Combines backoff strategies from all child error handlers into a single flattened list.
+        Note: The first non-None strategy in this list becomes the default strategy for ALL retryable errors,
+        including both user-defined response filters and errors that fall back to DEFAULT_ERROR_MAPPING.
+        The list structure is currently not used to map different strategies to different error conditions.
+
+        Returns None if no handlers have strategies defined, which will result in the default backoff strategy being used.
+        """
+        all_strategies = []
+        for handler in self.error_handlers:
+            if hasattr(handler, "backoff_strategies") and handler.backoff_strategies:
+                all_strategies.extend(handler.backoff_strategies)
+        return all_strategies if all_strategies else None
