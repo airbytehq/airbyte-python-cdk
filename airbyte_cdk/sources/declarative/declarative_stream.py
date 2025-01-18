@@ -1,6 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+
 import logging
 from dataclasses import InitVar, dataclass, field
 from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Union
@@ -13,7 +14,7 @@ from airbyte_cdk.sources.declarative.incremental import (
 )
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.migrations.state_migration import StateMigration
-from airbyte_cdk.sources.declarative.retrievers import SimpleRetriever
+from airbyte_cdk.sources.declarative.retrievers import AsyncRetriever, SimpleRetriever
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.schema import DefaultSchemaLoader
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
@@ -189,7 +190,10 @@ class DeclarativeStream(Stream):
         return None
 
     def get_cursor(self) -> Optional[Cursor]:
-        if self.retriever and isinstance(self.retriever, SimpleRetriever):
+        if self.retriever and (
+            isinstance(self.retriever, SimpleRetriever)
+            or isinstance(self.retriever, AsyncRetriever)
+        ):
             return self.retriever.cursor
         return None
 

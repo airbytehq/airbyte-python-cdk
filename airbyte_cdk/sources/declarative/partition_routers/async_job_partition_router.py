@@ -8,6 +8,8 @@ from airbyte_cdk.sources.declarative.async_job.job_orchestrator import (
     AsyncJobOrchestrator,
     AsyncPartition,
 )
+from airbyte_cdk.sources.declarative.incremental import DatetimeBasedCursor
+from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.sources.declarative.partition_routers.single_partition_router import (
     SinglePartitionRouter,
 )
@@ -35,6 +37,14 @@ class AsyncJobPartitionRouter(StreamSlicer):
         self._job_orchestrator_factory = self.job_orchestrator_factory
         self._job_orchestrator: Optional[AsyncJobOrchestrator] = None
         self._parameters = parameters
+        if isinstance(self.stream_slicer, DatetimeBasedCursor):
+            self._cursor: Optional[DeclarativeCursor] = self.stream_slicer
+        else:
+            self._cursor = None
+
+    @property
+    def cursor(self) -> Optional[DeclarativeCursor]:
+        return self._cursor
 
     def stream_slices(self) -> Iterable[StreamSlice]:
         slices = self.stream_slicer.stream_slices()
