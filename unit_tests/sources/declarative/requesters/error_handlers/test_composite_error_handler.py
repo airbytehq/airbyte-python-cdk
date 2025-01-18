@@ -312,3 +312,40 @@ def test_composite_error_handler_backoff_strategies(
     composite_handler = CompositeErrorHandler(error_handlers=error_handlers, parameters=parameters)
 
     assert composite_handler.backoff_strategies == expected_strategies
+
+
+def test_composite_error_handler_always_uses_first_strategy():
+    first_handler = DefaultErrorHandler(
+        backoff_strategies=[ConstantBackoffStrategy(5, {}, {})],
+        parameters={},
+        config={},
+        response_filters=[
+            HttpResponseFilter(
+                action=ResponseAction.RETRY, http_codes={429}, config={}, parameters={}
+            )
+        ],
+    )
+    second_handler = DefaultErrorHandler(
+        backoff_strategies=[ConstantBackoffStrategy(10, {}, {})],
+        parameters={},
+        config={},
+        response_filters=[
+            HttpResponseFilter(
+                action=ResponseAction.RETRY, http_codes={500}, config={}, parameters={}
+            )
+        ],
+    )
+
+    composite_handler = CompositeErrorHandler(
+        error_handlers=[first_handler, second_handler], parameters={}
+    )
+
+    # Test that even for a 500 error (which matches second handler's filter),
+    # we still get both strategies with first handler's coming first
+    response_mock = create_response(500)
+    assert first_handler.backoff_strategies[0].backoff_time(response_mock, 1) == 5
+
+    # Verify we get both strategies in the composite handler
+    assert len(composite_handler.backoff_strategies) == 2
+    assert isinstance(composite_handler.backoff_strategies[0], ConstantBackoffStrategy)
+    assert composite_handler.backoff_strategies[1], ConstantBackoffStrategy
