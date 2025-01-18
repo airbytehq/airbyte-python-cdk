@@ -1223,9 +1223,6 @@ class LegacySessionTokenAuthenticator(BaseModel):
 
 
 class JsonParser(BaseModel):
-    class Config:
-        extra = Extra.allow
-
     type: Literal["JsonParser"]
     encoding: Optional[str] = "utf-8"
 
@@ -1661,6 +1658,18 @@ class CompositeErrorHandler(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class ZipfileDecoder(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    type: Literal["ZipfileDecoder"]
+    parser: Union[GzipParser, JsonParser, JsonLineParser, CsvParser] = Field(
+        ...,
+        description="Parser to parse the decompressed data from the zipfile(s).",
+        title="Parser",
+    )
+
+
 class CompositeRawDecoder(BaseModel):
     type: Literal["CompositeRawDecoder"]
     parser: Union[GzipParser, JsonParser, JsonLineParser, CsvParser]
@@ -1866,7 +1875,7 @@ class SessionTokenAuthenticator(BaseModel):
         description="Authentication method to use for requests sent to the API, specifying how to inject the session token.",
         title="Data Request Authentication",
     )
-    decoder: Optional[Union[JsonDecoder, XmlDecoder]] = Field(
+    decoder: Optional[Union[JsonDecoder, XmlDecoder, CompositeRawDecoder]] = Field(
         None, description="Component used to decode the response.", title="Decoder"
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
@@ -2071,6 +2080,7 @@ class SimpleRetriever(BaseModel):
             XmlDecoder,
             GzipJsonDecoder,
             CompositeRawDecoder,
+            ZipfileDecoder,
         ]
     ] = Field(
         None,
@@ -2147,6 +2157,8 @@ class AsyncRetriever(BaseModel):
             IterableDecoder,
             XmlDecoder,
             GzipJsonDecoder,
+            CompositeRawDecoder,
+            ZipfileDecoder,
         ]
     ] = Field(
         None,
@@ -2161,6 +2173,8 @@ class AsyncRetriever(BaseModel):
             IterableDecoder,
             XmlDecoder,
             GzipJsonDecoder,
+            CompositeRawDecoder,
+            ZipfileDecoder,
         ]
     ] = Field(
         None,

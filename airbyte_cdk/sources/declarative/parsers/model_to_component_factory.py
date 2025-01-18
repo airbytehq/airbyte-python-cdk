@@ -66,6 +66,7 @@ from airbyte_cdk.sources.declarative.decoders import (
     JsonlDecoder,
     PaginationDecoderDecorator,
     XmlDecoder,
+    ZipfileDecoder,
 )
 from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     CompositeRawDecoder,
@@ -356,6 +357,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     XmlDecoder as XmlDecoderModel,
 )
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ZipfileDecoder as ZipfileDecoderModel,
+)
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
     ListPartitionRouter,
@@ -571,6 +575,7 @@ class ModelToComponentFactory:
             ConfigComponentsResolverModel: self.create_config_components_resolver,
             StreamConfigModel: self.create_stream_config,
             ComponentMappingDefinitionModel: self.create_components_mapping_definition,
+            ZipfileDecoderModel: self.create_zipfile_decoder,
         }
 
         # Needed for the case where we need to perform a second parse on the fields of a custom component
@@ -1799,6 +1804,12 @@ class ModelToComponentFactory:
         model: GzipJsonDecoderModel, config: Config, **kwargs: Any
     ) -> GzipJsonDecoder:
         return GzipJsonDecoder(parameters={}, encoding=model.encoding)
+
+    def create_zipfile_decoder(
+        self, model: ZipfileDecoderModel, config: Config, **kwargs: Any
+    ) -> ZipfileDecoder:
+        parser = self._create_component_from_model(model=model.parser, config=config)
+        return ZipfileDecoder(parser=parser)
 
     def create_gzip_parser(
         self, model: GzipParserModel, config: Config, **kwargs: Any
