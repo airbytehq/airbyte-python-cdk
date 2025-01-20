@@ -8,6 +8,7 @@ import datetime
 import importlib
 import inspect
 import re
+from datetime import timedelta
 from functools import partial
 from typing import (
     Any,
@@ -101,6 +102,7 @@ from airbyte_cdk.sources.declarative.migrations.legacy_to_per_partition_state_mi
     LegacyToPerPartitionStateMigration,
 )
 from airbyte_cdk.sources.declarative.models import (
+    Clamping,
     CustomStateMigration,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -456,6 +458,14 @@ from airbyte_cdk.sources.message import (
     InMemoryMessageRepository,
     LogAppenderMessageRepositoryDecorator,
     MessageRepository,
+)
+from airbyte_cdk.sources.streams.concurrent.clamping import (
+    ClampingEndProvider,
+    DayClampingStrategy,
+    MonthClampingStrategy,
+    NoClamping,
+    WeekClampingStrategy,
+    Weekday,
 )
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
@@ -1043,6 +1053,22 @@ class ModelToComponentFactory:
             if evaluated_step:
                 step_length = parse_duration(evaluated_step)
 
+        clamping_strategy = NoClamping()
+        if datetime_based_cursor_model.clamping:
+             match datetime_based_cursor_model.clamping.target:
+                 case Clamping.target.DAY:
+                    clamping_strategy = DayClampingStrategy()
+                    end_date_provider = ClampingEndProvider(DayClampingStrategy(is_ceiling=False), end_date_provider, granularity=timedelta(days=1))
+                 case Clamping.target.WEEK:
+                    if "weekday" not in datetime_based_cursor_model.clamping.target_details:
+                        raise ValueError("Given WEEK clamping, weekday needs to be provided as target_details")
+                    weekday = self._assemble_weekday(datetime_based_cursor_model.clamping.target_details["weekday"])
+                    clamping_strategy = WeekClampingStrategy(weekday)
+                    end_date_provider = ClampingEndProvider(WeekClampingStrategy(weekday, is_ceiling=False), end_date_provider, granularity=timedelta(days=1))
+                 case Clamping.target.MONTH:
+                    clamping_strategy = MonthClampingStrategy()
+                    end_date_provider = ClampingEndProvider(MonthClampingStrategy(is_ceiling=False), end_date_provider, granularity=timedelta(days=1))
+
         return ConcurrentCursor(
             stream_name=stream_name,
             stream_namespace=stream_namespace,
@@ -1057,7 +1083,27 @@ class ModelToComponentFactory:
             lookback_window=lookback_window,
             slice_range=step_length,
             cursor_granularity=cursor_granularity,
+            clamping_strategy=clamping_strategy,
         )
+
+    def _assemble_weekday(self, weekday) -> Weekday:
+        match weekday:
+            case "MONDAY":
+                return Weekday.MONDAY
+            case "TUESDAY":
+                return Weekday.TUESDAY
+            case "WEDNESDAY":
+                return Weekday.WEDNESDAY
+            case "THURSDAY":
+                return Weekday.THURSDAY
+            case "FRIDAY":
+                return Weekday.FRIDAY
+            case "SATURDAY":
+                return Weekday.SATURDAY
+            case "SUNDAY":
+                return Weekday.SUNDAY
+            case _:
+                raise ValueError(f"Unknown weekday {weekday}")
 
     @staticmethod
     def create_constant_backoff_strategy(
