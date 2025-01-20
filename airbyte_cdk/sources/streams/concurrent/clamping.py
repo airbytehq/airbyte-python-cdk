@@ -17,7 +17,12 @@ class NoClamping(ClampingStrategy):
 
 
 class ClampingEndProvider:
-    def __init__(self, clamping_strategy: ClampingStrategy, end_provider: Callable[[], CursorValueType], granularity: timedelta) -> None:
+    def __init__(
+        self,
+        clamping_strategy: ClampingStrategy,
+        end_provider: Callable[[], CursorValueType],
+        granularity: timedelta,
+    ) -> None:
         self._clamping_strategy = clamping_strategy
         self._end_provider = end_provider
         self._granularity = granularity
@@ -31,7 +36,11 @@ class DayClampingStrategy(ClampingStrategy):
         self._is_ceiling = is_ceiling
 
     def clamp(self, value: datetime) -> datetime:
-        return value.replace(hour=23, minute=59, second=59) if self._is_ceiling else value.replace(hour=0, minute=0, second=0)
+        return (
+            value.replace(hour=23, minute=59, second=59)
+            if self._is_ceiling
+            else value.replace(hour=0, minute=0, second=0)
+        )
 
 
 class MonthClampingStrategy(ClampingStrategy):
@@ -39,27 +48,22 @@ class MonthClampingStrategy(ClampingStrategy):
         self._is_ceiling = is_ceiling
 
     def clamp(self, value: datetime) -> datetime:
-        return_value = value.replace(
-            hour=0,
-            minute=0,
-            second=0,
-            microsecond=0
-        )
+        return_value = value.replace(hour=0, minute=0, second=0, microsecond=0)
         needs_to_round = value.day != 1
         if not needs_to_round:
             return return_value
-        
+
         return self._ceil(return_value) if self._is_ceiling else return_value.replace(day=1)
 
     def _ceil(self, value: datetime) -> datetime:
         return value.replace(
             year=value.year + 1 if value.month == 12 else value.year,
             month=(value.month % 12) + 1,
-            day= 1,
+            day=1,
             hour=0,
             minute=0,
             second=0,
-            microsecond=0
+            microsecond=0,
         )
 
 
@@ -79,6 +83,14 @@ class WeekClampingStrategy(ClampingStrategy):
         self._is_ceiling = is_ceiling
 
     def clamp(self, value: datetime) -> datetime:
-        days_diff_to_ceiling = 7 - (value.weekday() - self._day_of_week) if value.weekday() > self._day_of_week else abs(value.weekday() - self._day_of_week)
-        delta = timedelta(days_diff_to_ceiling) if self._is_ceiling else timedelta(days_diff_to_ceiling - 7)
+        days_diff_to_ceiling = (
+            7 - (value.weekday() - self._day_of_week)
+            if value.weekday() > self._day_of_week
+            else abs(value.weekday() - self._day_of_week)
+        )
+        delta = (
+            timedelta(days_diff_to_ceiling)
+            if self._is_ceiling
+            else timedelta(days_diff_to_ceiling - 7)
+        )
         return value.replace(hour=0, minute=0, second=0, microsecond=0) + delta

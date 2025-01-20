@@ -8,6 +8,7 @@ class GapType(Protocol):
     * if cursor values are datetimes, GapType is timedelta
     * if cursor values are integer, GapType will also be integer
     """
+
     pass
 
 

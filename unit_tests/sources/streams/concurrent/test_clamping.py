@@ -32,11 +32,15 @@ class MonthClampingStrategyTest(TestCase):
         result = self._strategy.clamp(first_day_of_the_month)
         assert result == first_day_of_the_month
 
-    def test_given_day_of_month_is_not_1_when_clamp_then_return_first_day_of_next_month(self) -> None:
+    def test_given_day_of_month_is_not_1_when_clamp_then_return_first_day_of_next_month(
+        self,
+    ) -> None:
         result = self._strategy.clamp(datetime(2024, 1, 2))
         assert result == datetime(2024, 2, 1)
 
-    def test_given_not_ceiling_and_day_of_month_is_not_1_when_clamp_then_return_first_day_of_next_month(self) -> None:
+    def test_given_not_ceiling_and_day_of_month_is_not_1_when_clamp_then_return_first_day_of_next_month(
+        self,
+    ) -> None:
         strategy = MonthClampingStrategy(is_ceiling=False)
         result = strategy.clamp(datetime(2024, 1, 2))
         assert result == datetime(2024, 1, 1)
@@ -58,17 +62,33 @@ class WeekClampingStrategyTest(TestCase):
         result = strategy.clamp(_DATETIME_ON_TUESDAY)
         assert result == _DATETIME_ON_TUESDAY
 
-    def test_given_not_weekday_before_target_when_clamp_then_return_next_occurrence_of_same_weekday(self) -> None:
+    def test_given_not_weekday_before_target_when_clamp_then_return_next_occurrence_of_same_weekday(
+        self,
+    ) -> None:
         strategy = WeekClampingStrategy(Weekday.TUESDAY)
         result = strategy.clamp(_DATETIME_ON_WEDNESDAY)
-        assert result == datetime(_DATETIME_ON_WEDNESDAY.year, _DATETIME_ON_WEDNESDAY.month, _DATETIME_ON_WEDNESDAY.day + 6)
+        assert result == datetime(
+            _DATETIME_ON_WEDNESDAY.year,
+            _DATETIME_ON_WEDNESDAY.month,
+            _DATETIME_ON_WEDNESDAY.day + 6,
+        )
 
-    def test_given_not_weekday_after_target_when_clamp_then_return_next_occurrence_of_same_weekday(self) -> None:
+    def test_given_not_weekday_after_target_when_clamp_then_return_next_occurrence_of_same_weekday(
+        self,
+    ) -> None:
         strategy = WeekClampingStrategy(Weekday.FRIDAY)
         result = strategy.clamp(_DATETIME_ON_WEDNESDAY)
-        assert result == datetime(_DATETIME_ON_WEDNESDAY.year, _DATETIME_ON_WEDNESDAY.month, _DATETIME_ON_WEDNESDAY.day + 2)
+        assert result == datetime(
+            _DATETIME_ON_WEDNESDAY.year,
+            _DATETIME_ON_WEDNESDAY.month,
+            _DATETIME_ON_WEDNESDAY.day + 2,
+        )
 
     def test_given_not_ceiling_when_clamp_then_round_down(self) -> None:
         strategy = WeekClampingStrategy(Weekday.FRIDAY, is_ceiling=False)
         result = strategy.clamp(_DATETIME_ON_WEDNESDAY)
-        assert result == datetime(_DATETIME_ON_WEDNESDAY.year, _DATETIME_ON_WEDNESDAY.month, _DATETIME_ON_WEDNESDAY.day - 5)
+        assert result == datetime(
+            _DATETIME_ON_WEDNESDAY.year,
+            _DATETIME_ON_WEDNESDAY.month,
+            _DATETIME_ON_WEDNESDAY.day - 5,
+        )

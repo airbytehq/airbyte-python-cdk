@@ -1055,19 +1055,35 @@ class ModelToComponentFactory:
 
         clamping_strategy = NoClamping()
         if datetime_based_cursor_model.clamping:
-             match datetime_based_cursor_model.clamping.target:
-                 case Clamping.target.DAY:
+            match datetime_based_cursor_model.clamping.target:
+                case Clamping.target.DAY:
                     clamping_strategy = DayClampingStrategy()
-                    end_date_provider = ClampingEndProvider(DayClampingStrategy(is_ceiling=False), end_date_provider, granularity=timedelta(days=1))
-                 case Clamping.target.WEEK:
+                    end_date_provider = ClampingEndProvider(
+                        DayClampingStrategy(is_ceiling=False),
+                        end_date_provider,
+                        granularity=timedelta(days=1),
+                    )
+                case Clamping.target.WEEK:
                     if "weekday" not in datetime_based_cursor_model.clamping.target_details:
-                        raise ValueError("Given WEEK clamping, weekday needs to be provided as target_details")
-                    weekday = self._assemble_weekday(datetime_based_cursor_model.clamping.target_details["weekday"])
+                        raise ValueError(
+                            "Given WEEK clamping, weekday needs to be provided as target_details"
+                        )
+                    weekday = self._assemble_weekday(
+                        datetime_based_cursor_model.clamping.target_details["weekday"]
+                    )
                     clamping_strategy = WeekClampingStrategy(weekday)
-                    end_date_provider = ClampingEndProvider(WeekClampingStrategy(weekday, is_ceiling=False), end_date_provider, granularity=timedelta(days=1))
-                 case Clamping.target.MONTH:
+                    end_date_provider = ClampingEndProvider(
+                        WeekClampingStrategy(weekday, is_ceiling=False),
+                        end_date_provider,
+                        granularity=timedelta(days=1),
+                    )
+                case Clamping.target.MONTH:
                     clamping_strategy = MonthClampingStrategy()
-                    end_date_provider = ClampingEndProvider(MonthClampingStrategy(is_ceiling=False), end_date_provider, granularity=timedelta(days=1))
+                    end_date_provider = ClampingEndProvider(
+                        MonthClampingStrategy(is_ceiling=False),
+                        end_date_provider,
+                        granularity=timedelta(days=1),
+                    )
 
         return ConcurrentCursor(
             stream_name=stream_name,

@@ -988,19 +988,27 @@ class ConcurrentCursorStateTest(TestCase):
 
 
 class ClampingIntegrationTest(TestCase):
-
     def setUp(self) -> None:
         self._message_repository = Mock(spec=MessageRepository)
         self._state_manager = Mock(spec=ConnectorStateManager)
 
-    def _cursor(self, start: datetime, end_provider, slice_range: timedelta, granularity: Optional[timedelta], clamping_strategy: ClampingStrategy) -> ConcurrentCursor:
+    def _cursor(
+        self,
+        start: datetime,
+        end_provider,
+        slice_range: timedelta,
+        granularity: Optional[timedelta],
+        clamping_strategy: ClampingStrategy,
+    ) -> ConcurrentCursor:
         return ConcurrentCursor(
             _A_STREAM_NAME,
             _A_STREAM_NAMESPACE,
             {},
             self._message_repository,
             self._state_manager,
-            CustomFormatConcurrentStreamStateConverter("%Y-%m-%dT%H:%M:%SZ", is_sequential_state=_NOT_SEQUENTIAL),
+            CustomFormatConcurrentStreamStateConverter(
+                "%Y-%m-%dT%H:%M:%SZ", is_sequential_state=_NOT_SEQUENTIAL
+            ),
             CursorField(_A_CURSOR_FIELD_KEY),
             _SLICE_BOUNDARY_FIELDS,
             start,
@@ -1011,10 +1019,16 @@ class ClampingIntegrationTest(TestCase):
         )
 
     @freezegun.freeze_time(time_to_freeze=datetime(2025, 1, 3, tzinfo=timezone.utc))
-    def test_given_monthly_clamp_without_granularity_when_stream_slices_then_upper_boundaries_equals_next_lower_boundary(self) -> None:
+    def test_given_monthly_clamp_without_granularity_when_stream_slices_then_upper_boundaries_equals_next_lower_boundary(
+        self,
+    ) -> None:
         cursor = self._cursor(
             start=datetime(2023, 12, 31, tzinfo=timezone.utc),
-            end_provider=ClampingEndProvider(MonthClampingStrategy(is_ceiling=False), CustomFormatConcurrentStreamStateConverter.get_end_provider(), granularity=timedelta(days=1)),
+            end_provider=ClampingEndProvider(
+                MonthClampingStrategy(is_ceiling=False),
+                CustomFormatConcurrentStreamStateConverter.get_end_provider(),
+                granularity=timedelta(days=1),
+            ),
             slice_range=timedelta(days=27),
             granularity=None,
             clamping_strategy=MonthClampingStrategy(),
@@ -1036,10 +1050,16 @@ class ClampingIntegrationTest(TestCase):
         ]
 
     @freezegun.freeze_time(time_to_freeze=datetime(2025, 1, 3, tzinfo=timezone.utc))
-    def test_given_monthly_clamp_and_granularity_when_stream_slices_then_consider_number_of_days_per_month(self) -> None:
+    def test_given_monthly_clamp_and_granularity_when_stream_slices_then_consider_number_of_days_per_month(
+        self,
+    ) -> None:
         cursor = self._cursor(
             start=datetime(2023, 12, 31, tzinfo=timezone.utc),
-            end_provider=ClampingEndProvider(MonthClampingStrategy(is_ceiling=False), CustomFormatConcurrentStreamStateConverter.get_end_provider(), granularity=timedelta(days=1)),
+            end_provider=ClampingEndProvider(
+                MonthClampingStrategy(is_ceiling=False),
+                CustomFormatConcurrentStreamStateConverter.get_end_provider(),
+                granularity=timedelta(days=1),
+            ),
             slice_range=timedelta(days=27),
             granularity=timedelta(days=1),
             clamping_strategy=MonthClampingStrategy(),
@@ -1061,10 +1081,18 @@ class ClampingIntegrationTest(TestCase):
         ]
 
     @freezegun.freeze_time(time_to_freeze=datetime(2024, 1, 31, tzinfo=timezone.utc))
-    def test_given_weekly_clamp_and_granularity_when_stream_slices_then_slice_per_week(self) -> None:
+    def test_given_weekly_clamp_and_granularity_when_stream_slices_then_slice_per_week(
+        self,
+    ) -> None:
         cursor = self._cursor(
-            start=datetime(2023, 12, 31, tzinfo=timezone.utc),  # this is Sunday so we expect start to be 2 days after
-            end_provider=ClampingEndProvider(WeekClampingStrategy(Weekday.TUESDAY, is_ceiling=False), CustomFormatConcurrentStreamStateConverter.get_end_provider(), granularity=timedelta(days=1)),
+            start=datetime(
+                2023, 12, 31, tzinfo=timezone.utc
+            ),  # this is Sunday so we expect start to be 2 days after
+            end_provider=ClampingEndProvider(
+                WeekClampingStrategy(Weekday.TUESDAY, is_ceiling=False),
+                CustomFormatConcurrentStreamStateConverter.get_end_provider(),
+                granularity=timedelta(days=1),
+            ),
             slice_range=timedelta(days=7),
             granularity=timedelta(days=1),
             clamping_strategy=WeekClampingStrategy(Weekday.TUESDAY),

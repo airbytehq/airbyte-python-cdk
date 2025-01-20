@@ -124,7 +124,6 @@ class FinalStateCursor(Cursor):
         self._message_repository.emit_message(state_message)
 
 
-
 class ConcurrentCursor(Cursor):
     _START_BOUNDARY = 0
     _END_BOUNDARY = 1
@@ -144,7 +143,7 @@ class ConcurrentCursor(Cursor):
         lookback_window: Optional[GapType] = None,
         slice_range: Optional[GapType] = None,
         cursor_granularity: Optional[GapType] = None,
-        clamping_strategy: ClampingStrategy= NoClamping(),
+        clamping_strategy: ClampingStrategy = NoClamping(),
     ) -> None:
         self._stream_name = stream_name
         self._stream_namespace = stream_namespace
@@ -409,7 +408,11 @@ class ConcurrentCursor(Cursor):
                 )
                 has_reached_upper_boundary = current_upper_boundary >= upper
 
-                clamped_upper = self._clamping_strategy.clamp(current_upper_boundary) if current_upper_boundary != upper else current_upper_boundary
+                clamped_upper = (
+                    self._clamping_strategy.clamp(current_upper_boundary)
+                    if current_upper_boundary != upper
+                    else current_upper_boundary
+                )
                 clamped_lower = self._clamping_strategy.clamp(current_lower_boundary)
                 if clamped_lower >= clamped_upper:
                     # clamping collapsed both values which means that it is time to stop processing
