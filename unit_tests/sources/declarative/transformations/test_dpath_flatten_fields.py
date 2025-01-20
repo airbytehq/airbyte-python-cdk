@@ -82,6 +82,22 @@ _DO_NOT_DELETE_ORIGIN_VALUE = False
             {"field1": _ANY_VALUE, "field2": {"field3": _ANY_VALUE}},
             id="flatten by non-existing dpath with *, don't delete origin value",
         ),
+        pytest.param(
+            {"field1": _ANY_VALUE, "field2": {"field3": _ANY_VALUE}, "field3": _ANY_VALUE},
+            {},
+            ["field2"],
+            _DO_NOT_DELETE_ORIGIN_VALUE,
+            {"field1": _ANY_VALUE, "field2": {"field3": _ANY_VALUE}, "field3": _ANY_VALUE},
+            id="flatten by dpath, not to update when record has field conflicts, don't delete origin value",
+        ),
+        pytest.param(
+            {"field1": _ANY_VALUE, "field2": {"field3": _ANY_VALUE}, "field3": _ANY_VALUE},
+            {},
+            ["field2"],
+            _DO_NOT_DELETE_ORIGIN_VALUE,
+            {"field1": _ANY_VALUE, "field2": {"field3": _ANY_VALUE}, "field3": _ANY_VALUE},
+            id="flatten by dpath, not to update when record has field conflicts, delete origin value",
+        ),
     ],
 )
 def test_dpath_flatten_lists(

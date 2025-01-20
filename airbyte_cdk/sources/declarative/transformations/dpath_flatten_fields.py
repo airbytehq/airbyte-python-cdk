@@ -47,8 +47,9 @@ class DpathFlattenFields(RecordTransformation):
         else:
             extracted = dpath.get(record, path, default=[])
 
-        if self.delete_origin_value:
-            dpath.delete(record, path)
-
         if isinstance(extracted, dict):
-            record.update(extracted)
+            conflicts = set(extracted.keys()) & set(record.keys())
+            if not conflicts:
+                if self.delete_origin_value:
+                    dpath.delete(record, path)
+                record.update(extracted)
