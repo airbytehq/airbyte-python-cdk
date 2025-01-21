@@ -344,7 +344,7 @@ def test_resolve_manifest(valid_resolve_manifest_config_file):
     config = copy.deepcopy(RESOLVE_MANIFEST_CONFIG)
     command = "resolve_manifest"
     config["__command"] = command
-    source = ManifestDeclarativeSource(MANIFEST)
+    source = ManifestDeclarativeSource(source_config=MANIFEST)
     limits = TestReadLimits()
     resolved_manifest = handle_connector_builder_request(
         source, command, config, create_configured_catalog("dummy_stream"), _A_STATE, limits
@@ -505,7 +505,7 @@ def test_resolve_manifest_error_returns_error_response():
 
 def test_read():
     config = TEST_READ_CONFIG
-    source = ManifestDeclarativeSource(MANIFEST)
+    source = ManifestDeclarativeSource(source_config=MANIFEST)
 
     real_record = AirbyteRecordMessage(
         data={"id": "1234", "key": "value"}, emitted_at=1, stream=_stream_name
@@ -592,7 +592,7 @@ def test_config_update() -> None:
         "client_secret": "a client secret",
         "refresh_token": "a refresh token",
     }
-    source = ManifestDeclarativeSource(manifest)
+    source = ManifestDeclarativeSource(source_config=manifest)
 
     refresh_request_response = {
         "access_token": "an updated access token",

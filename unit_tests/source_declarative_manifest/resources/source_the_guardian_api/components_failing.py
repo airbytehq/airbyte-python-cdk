@@ -22,7 +22,13 @@ class CustomPageIncrement(PageIncrement):
     Starts page from 1 instead of the default value that is 0. Stops Pagination when currentPage is equal to totalPages.
     """
 
-    def next_page_token(self, response: requests.Response, *args) -> Optional[Any]:
+    def next_page_token(
+        self,
+        response: requests.Response,
+        last_page_size: int,
+        last_record: Optional[Record],
+        last_page_token_value: Optional[Any],
+    ) -> Optional[Mapping[str, Any]]:
         raise IntentionalException()
 
     def __post_init__(self, parameters: Mapping[str, Any]):

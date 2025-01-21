@@ -62,8 +62,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
     def __init__(
         self,
-        config: Mapping[str, Any] | None,
         source_config: ConnectionDefinition,
+        *,
+        config: Mapping[str, Any] | None = None,
         debug: bool = False,
         emit_connector_builder_messages: bool = False,
         component_factory: Optional[ModelToComponentFactory] = None,
