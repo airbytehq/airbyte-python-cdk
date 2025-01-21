@@ -218,10 +218,12 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     def set_token_expiry_date(self, value: Union[str, int]) -> None:
         self._token_expiry_date = self._parse_token_expiration_date(value)
 
-    def get_assertion_name(self):
+    def get_assertion_name(self) -> str:
         return self.assertion_name
 
-    def get_assertion(self):
+    def get_assertion(self) -> str:
+        if self.profile_assertion is None:
+            raise ValueError("profile_assertion is not set")
         return self.profile_assertion.token
 
     def build_refresh_request_body(self) -> Mapping[str, Any]:
