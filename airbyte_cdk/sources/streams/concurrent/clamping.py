@@ -35,7 +35,7 @@ class DayClampingStrategy(ClampingStrategy):
     def __init__(self, is_ceiling: bool = True) -> None:
         self._is_ceiling = is_ceiling
 
-    def clamp(self, value: datetime) -> datetime:
+    def clamp(self, value: datetime) -> datetime:  # type: ignore  # datetime implements method from CursorValueType
         return_value = value.replace(hour=0, minute=0, second=0, microsecond=0)
         if self._is_ceiling:
             return return_value + timedelta(days=1)
@@ -46,7 +46,7 @@ class MonthClampingStrategy(ClampingStrategy):
     def __init__(self, is_ceiling: bool = True) -> None:
         self._is_ceiling = is_ceiling
 
-    def clamp(self, value: datetime) -> datetime:
+    def clamp(self, value: datetime) -> datetime:  # type: ignore  # datetime implements method from CursorValueType
         return_value = value.replace(hour=0, minute=0, second=0, microsecond=0)
         needs_to_round = value.day != 1
         if not needs_to_round:
@@ -81,7 +81,7 @@ class WeekClampingStrategy(ClampingStrategy):
         self._day_of_week = day_of_week.value
         self._is_ceiling = is_ceiling
 
-    def clamp(self, value: datetime) -> datetime:
+    def clamp(self, value: datetime) -> datetime:  # type: ignore  # datetime implements method from CursorValueType
         days_diff_to_ceiling = (
             7 - (value.weekday() - self._day_of_week)
             if value.weekday() > self._day_of_week

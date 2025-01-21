@@ -1102,7 +1102,7 @@ class ModelToComponentFactory:
             clamping_strategy=clamping_strategy,
         )
 
-    def _assemble_weekday(self, weekday) -> Weekday:
+    def _assemble_weekday(self, weekday: str) -> Weekday:
         match weekday:
             case "MONDAY":
                 return Weekday.MONDAY
