@@ -2,14 +2,14 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from dataclasses import dataclass
-from typing import Any, Mapping, Optional
+from dataclasses import InitVar, dataclass
+from typing import Any, Mapping, Optional, Union
 
 import requests
 
-from airbyte_cdk.sources.declarative.requesters.paginators.strategies.page_increment import (
-    PageIncrement,
-)
+from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
+from airbyte_cdk.sources.declarative.requesters.paginators import PaginationStrategy
+from airbyte_cdk.sources.declarative.types import Config, Record
 
 
 class IntentionalException(Exception):
@@ -17,10 +17,29 @@ class IntentionalException(Exception):
 
 
 @dataclass
-class CustomPageIncrement(PageIncrement):
+class CustomPageIncrement(PaginationStrategy):
     """
     Starts page from 1 instead of the default value that is 0. Stops Pagination when currentPage is equal to totalPages.
     """
+
+    config: Config
+    page_size: Optional[Union[str, int]]
+    parameters: InitVar[Mapping[str, Any]]
+    start_from_page: int = 0
+    inject_on_first_request: bool = False
+
+    def __post_init__(self, parameters: Mapping[str, Any]) -> None:
+        if isinstance(self.page_size, int) or (self.page_size is None):
+            self._page_size = self.page_size
+        else:
+            page_size = InterpolatedString(self.page_size, parameters=parameters).eval(self.config)
+            if not isinstance(page_size, int):
+                raise Exception(f"{page_size} is of type {type(page_size)}. Expected {int}")
+            self._page_size = page_size
+
+    @property
+    def initial_token(self) -> Optional[Any]:
+        raise IntentionalException()
 
     def next_page_token(
         self,
@@ -28,12 +47,8 @@ class CustomPageIncrement(PageIncrement):
         last_page_size: int,
         last_record: Optional[Record],
         last_page_token_value: Optional[Any],
-    ) -> Optional[Mapping[str, Any]]:
+    ) -> Optional[Any]:
         raise IntentionalException()
 
-    def __post_init__(self, parameters: Mapping[str, Any]):
-        super().__post_init__(parameters)
-        self._page = 1
-
-    def reset(self):
-        self._page = 1
+    def get_page_size(self) -> Optional[int]:
+        return self._page_size
