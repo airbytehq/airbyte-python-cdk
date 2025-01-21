@@ -36,11 +36,10 @@ class DayClampingStrategy(ClampingStrategy):
         self._is_ceiling = is_ceiling
 
     def clamp(self, value: datetime) -> datetime:
-        return (
-            value.replace(day=value.day + 1, hour=0, minute=0, second=0)
-            if self._is_ceiling
-            else value.replace(hour=0, minute=0, second=0)
-        )
+        return_value = value.replace(hour=0, minute=0, second=0, microsecond=0)
+        if self._is_ceiling:
+            return return_value + timedelta(days=1)
+        return return_value
 
 
 class MonthClampingStrategy(ClampingStrategy):

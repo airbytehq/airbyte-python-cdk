@@ -1,7 +1,8 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from unittest import TestCase
 
 from airbyte_cdk.sources.streams.concurrent.clamping import (
+    DayClampingStrategy,
     MonthClampingStrategy,
     WeekClampingStrategy,
     Weekday,
@@ -12,8 +13,24 @@ _DATETIME_ON_WEDNESDAY = datetime(2025, 1, 15)
 
 
 class DayClampingStrategyTest(TestCase):
-    def test_todo(self):
-        assert False
+    def setUp(self) -> None:
+        self._strategy = DayClampingStrategy()
+
+    def test_when_clamp_then_remove_every_unit_smaller_than_days(self) -> None:
+        result = self._strategy.clamp(datetime(2024, 1, 1, 20, 23, 3, 2039))
+        assert result.hour == 0
+        assert result.minute == 0
+        assert result.second == 0
+        assert result.microsecond == 0
+
+    def test_given_last_day_of_month_when_clamp_then_result_is_next_month(self) -> None:
+        result = self._strategy.clamp(datetime(2024, 1, 31))
+        assert result == datetime(2024, 2, 1)
+
+    def test_given_is_not_ceiling_when_clamp_then_just_remove_unit_smaller_than_days(self) -> None:
+        strategy = DayClampingStrategy(is_ceiling=False)
+        result = strategy.clamp(datetime(2024, 1, 1, 20, 23, 3, 1029))
+        assert result == datetime(2024, 1, 1)
 
 
 class MonthClampingStrategyTest(TestCase):
