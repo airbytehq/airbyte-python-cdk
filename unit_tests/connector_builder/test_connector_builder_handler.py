@@ -123,7 +123,7 @@ MANIFEST = {
                 "values": ["0", "1", "2", "3", "4", "5", "6", "7"],
                 "cursor_field": "item_id",
             },
-            "" "requester": {
+            "requester": {
                 "path": "/v3/marketing/lists",
                 "authenticator": {
                     "type": "BearerAuthenticator",
@@ -174,7 +174,7 @@ OAUTH_MANIFEST = {
                 "values": ["0", "1", "2", "3", "4", "5", "6", "7"],
                 "cursor_field": "item_id",
             },
-            "" "requester": {
+            "requester": {
                 "path": "/v3/marketing/lists",
                 "authenticator": {"type": "OAuthAuthenticator", "api_token": "{{ config.apikey }}"},
                 "request_parameters": {"a_param": "10"},
@@ -1040,9 +1040,9 @@ def test_handle_read_external_requests(deployment_mode, url_base, expected_error
             source, config, catalog, _A_PER_PARTITION_STATE, limits
         ).record.data
         if expected_error:
-            assert (
-                len(output_data["logs"]) > 0
-            ), "Expected at least one log message with the expected error"
+            assert len(output_data["logs"]) > 0, (
+                "Expected at least one log message with the expected error"
+            )
             error_message = output_data["logs"][0]
             assert error_message["level"] == "ERROR"
             assert expected_error in error_message["stacktrace"]
@@ -1136,9 +1136,9 @@ def test_handle_read_external_oauth_request(deployment_mode, token_url, expected
             source, config, catalog, _A_PER_PARTITION_STATE, limits
         ).record.data
         if expected_error:
-            assert (
-                len(output_data["logs"]) > 0
-            ), "Expected at least one log message with the expected error"
+            assert len(output_data["logs"]) > 0, (
+                "Expected at least one log message with the expected error"
+            )
             error_message = output_data["logs"][0]
             assert error_message["level"] == "ERROR"
             assert expected_error in error_message["stacktrace"]
