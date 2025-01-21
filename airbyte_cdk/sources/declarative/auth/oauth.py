@@ -3,7 +3,7 @@
 #
 
 from dataclasses import InitVar, dataclass, field
-from typing import Any, List, MutableMapping, Mapping, Optional, Union
+from typing import Any, List, Mapping, MutableMapping, Optional, Union
 
 import pendulum
 
@@ -102,7 +102,12 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         self.grant_type_name = InterpolatedString.create(
             self.grant_type_name, parameters=parameters
         )
-        self.grant_type = InterpolatedString.create("urn:ietf:params:oauth:grant-type:jwt-bearer" if self.use_profile_assertion else self.grant_type, parameters=parameters)
+        self.grant_type = InterpolatedString.create(
+            "urn:ietf:params:oauth:grant-type:jwt-bearer"
+            if self.use_profile_assertion
+            else self.grant_type,
+            parameters=parameters,
+        )
         self._refresh_request_body = InterpolatedMapping(
             self.refresh_request_body or {}, parameters=parameters
         )
@@ -137,7 +142,8 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         )
 
         if not self.use_profile_assertion and any(
-                client_creds is None for client_creds in [self.client_id, self.client_secret]):
+            client_creds is None for client_creds in [self.client_id, self.client_secret]
+        ):
             raise ValueError(
                 "OAuthAuthenticator configuration error: Both 'client_id' and 'client_secret' are required for the "
                 "basic OAuth flow."
@@ -227,7 +233,6 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         payload: MutableMapping[str, Any] = {
             self.get_grant_type_name(): self.get_grant_type(),
             self.get_assertion_name(): self.get_assertion(),
-
         }
 
         return payload if self.use_profile_assertion else super().build_refresh_request_body()

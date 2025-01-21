@@ -2,8 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-import json
 import base64
+import json
 import logging
 from unittest.mock import Mock
 
@@ -13,9 +13,9 @@ import pytest
 import requests
 from requests import Response
 
-from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
-from airbyte_cdk.sources.declarative.auth.jwt import JwtAuthenticator
 from airbyte_cdk.sources.declarative.auth import DeclarativeOauth2Authenticator
+from airbyte_cdk.sources.declarative.auth.jwt import JwtAuthenticator
+from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 
 LOGGER = logging.getLogger(__name__)
@@ -428,7 +428,10 @@ class TestOauth2Authenticator:
                 iss="iss",
             )
 
-            mocker.patch("airbyte_cdk.sources.declarative.auth.jwt.JwtAuthenticator.token", new_callable=lambda: "token")
+            mocker.patch(
+                "airbyte_cdk.sources.declarative.auth.jwt.JwtAuthenticator.token",
+                new_callable=lambda: "token",
+            )
 
             oauth = DeclarativeOauth2Authenticator(
                 token_refresh_endpoint="https://refresh_endpoint.com/",
@@ -438,7 +441,10 @@ class TestOauth2Authenticator:
                 use_profile_assertion=True,
             )
             http_mocker.post(
-                HttpRequest(url="https://refresh_endpoint.com/", body="grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=token"),
+                HttpRequest(
+                    url="https://refresh_endpoint.com/",
+                    body="grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=token",
+                ),
                 HttpResponse(body=json.dumps({"access_token": "access_token", "expires_in": 1000})),
             )
 
