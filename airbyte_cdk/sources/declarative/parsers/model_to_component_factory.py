@@ -1925,6 +1925,8 @@ class ModelToComponentFactory:
     def create_oauth_authenticator(
         self, model: OAuthAuthenticatorModel, config: Config, **kwargs: Any
     ) -> DeclarativeOauth2Authenticator:
+        profile_assertion = self._create_component_from_model(model.profile_assertion, config=config) if model.profile_assertion else None
+
         if model.refresh_token_updater:
             # ignore type error because fixing it would have a lot of dependencies, revisit later
             return DeclarativeSingleUseRefreshTokenOauth2Authenticator(  # type: ignore
@@ -1997,6 +1999,7 @@ class ModelToComponentFactory:
             config=config,
             parameters=model.parameters or {},
             message_repository=self._message_repository,
+            profile_assertion=profile_assertion,
         )
 
     def create_offset_increment(
