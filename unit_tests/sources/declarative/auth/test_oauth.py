@@ -26,6 +26,7 @@ config = {
     "custom_field": "in_outbound_request",
     "another_field": "exists_in_body",
     "grant_type": "some_grant_type",
+    "access_token": "some_access_token",
 }
 parameters = {"refresh_token": "some_refresh_token"}
 
@@ -67,6 +68,42 @@ class TestOauth2Authenticator:
             "another_field": "exists_in_body",
         }
         assert body == expected
+
+    def test_refresh_request_headers(self):
+        """
+        Request headers should match given configuration.
+        """
+        oauth = DeclarativeOauth2Authenticator(
+            token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
+            client_id="{{ config['client_id'] }}",
+            client_secret="{{ config['client_secret'] }}",
+            refresh_token="{{ parameters['refresh_token'] }}",
+            config=config,
+            token_expiry_date="{{ config['token_expiry_date'] }}",
+            refresh_request_headers={
+                "Authorization": "Basic {{ [config['client_id'], config['client_secret']] | join(':') | base64encode }}",
+                "Content-Type": "application/x-www-form-urlencoded",
+            },
+            parameters=parameters,
+        )
+        headers = oauth.build_refresh_request_headers()
+        expected = {
+            "Authorization": "Basic c29tZV9jbGllbnRfaWQ6c29tZV9jbGllbnRfc2VjcmV0",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        assert headers == expected
+
+        oauth = DeclarativeOauth2Authenticator(
+            token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
+            client_id="{{ config['client_id'] }}",
+            client_secret="{{ config['client_secret'] }}",
+            refresh_token="{{ parameters['refresh_token'] }}",
+            config=config,
+            token_expiry_date="{{ config['token_expiry_date'] }}",
+            parameters=parameters,
+        )
+        headers = oauth.build_refresh_request_headers()
+        assert headers is None
 
     def test_refresh_with_encode_config_params(self):
         oauth = DeclarativeOauth2Authenticator(
@@ -129,6 +166,24 @@ class TestOauth2Authenticator:
         }
         assert body == expected
 
+    def test_get_auth_header_without_refresh_token_and_without_refresh_token_endpoint(self):
+        """
+        Coverred the case when the `access_token_value` is supplied,
+        without `token_refresh_endpoint` or `refresh_token` provided.
+
+        In this case, it's expected to have the `access_token_value` provided to return the permanent `auth header`,
+        contains the authentication.
+        """
+        oauth = DeclarativeOauth2Authenticator(
+            access_token_value="{{ config['access_token'] }}",
+            client_id="{{ config['client_id'] }}",
+            client_secret="{{ config['client_secret'] }}",
+            config=config,
+            parameters={},
+            grant_type="client_credentials",
+        )
+        assert oauth.get_auth_header() == {"Authorization": "Bearer some_access_token"}
+
     def test_error_on_refresh_token_grant_without_refresh_token(self):
         """
         Should throw an error if grant_type refresh_token is configured without refresh_token.
@@ -171,6 +226,36 @@ class TestOauth2Authenticator:
 
         filtered = filter_secrets("access_token")
         assert filtered == "****"
+
+    def test_refresh_access_token_when_headers_provided(self, mocker):
+        expected_headers = {
+            "Authorization": "Bearer some_access_token",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        oauth = DeclarativeOauth2Authenticator(
+            token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
+            client_id="{{ config['client_id'] }}",
+            client_secret="{{ config['client_secret'] }}",
+            refresh_token="{{ config['refresh_token'] }}",
+            config=config,
+            scopes=["scope1", "scope2"],
+            token_expiry_date="{{ config['token_expiry_date'] }}",
+            refresh_request_headers=expected_headers,
+            parameters={},
+        )
+
+        resp.status_code = 200
+        mocker.patch.object(
+            resp, "json", return_value={"access_token": "access_token", "expires_in": 1000}
+        )
+        mocked_request = mocker.patch.object(
+            requests, "request", side_effect=mock_request, autospec=True
+        )
+        token = oauth.refresh_access_token()
+
+        assert ("access_token", 1000) == token
+
+        assert mocked_request.call_args.kwargs["headers"] == expected_headers
 
     def test_refresh_access_token_missing_access_token(self, mocker):
         oauth = DeclarativeOauth2Authenticator(
@@ -352,7 +437,9 @@ class TestOauth2Authenticator:
             assert e.value.errno == 400
 
 
-def mock_request(method, url, data):
+def mock_request(method, url, data, headers):
     if url == "refresh_end":
         return resp
-    raise Exception(f"Error while refreshing access token with request: {method}, {url}, {data}")
+    raise Exception(
+        f"Error while refreshing access token with request: {method}, {url}, {data}, {headers}"
+    )

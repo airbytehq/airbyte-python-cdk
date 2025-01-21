@@ -30,12 +30,17 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         client_id: str,
         client_secret: str,
         refresh_token: str,
+        client_id_name: str = "client_id",
+        client_secret_name: str = "client_secret",
+        refresh_token_name: str = "refresh_token",
         scopes: List[str] | None = None,
         token_expiry_date: pendulum.DateTime | None = None,
         token_expiry_date_format: str | None = None,
         access_token_name: str = "access_token",
         expires_in_name: str = "expires_in",
         refresh_request_body: Mapping[str, Any] | None = None,
+        refresh_request_headers: Mapping[str, Any] | None = None,
+        grant_type_name: str = "grant_type",
         grant_type: str = "refresh_token",
         token_expiry_is_time_of_expiration: bool = False,
         refresh_token_error_status_codes: Tuple[int, ...] = (),
@@ -43,13 +48,18 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         refresh_token_error_values: Tuple[str, ...] = (),
     ):
         self._token_refresh_endpoint = token_refresh_endpoint
+        self._client_secret_name = client_secret_name
         self._client_secret = client_secret
+        self._client_id_name = client_id_name
         self._client_id = client_id
+        self._refresh_token_name = refresh_token_name
         self._refresh_token = refresh_token
         self._scopes = scopes
         self._access_token_name = access_token_name
         self._expires_in_name = expires_in_name
         self._refresh_request_body = refresh_request_body
+        self._refresh_request_headers = refresh_request_headers
+        self._grant_type_name = grant_type_name
         self._grant_type = grant_type
 
         self._token_expiry_date = token_expiry_date or pendulum.now().subtract(days=1)  # type: ignore [no-untyped-call]
@@ -63,11 +73,20 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
     def get_token_refresh_endpoint(self) -> str:
         return self._token_refresh_endpoint
 
+    def get_client_id_name(self) -> str:
+        return self._client_id_name
+
     def get_client_id(self) -> str:
         return self._client_id
 
+    def get_client_secret_name(self) -> str:
+        return self._client_secret_name
+
     def get_client_secret(self) -> str:
         return self._client_secret
+
+    def get_refresh_token_name(self) -> str:
+        return self._refresh_token_name
 
     def get_refresh_token(self) -> str:
         return self._refresh_token
@@ -83,6 +102,12 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
 
     def get_refresh_request_body(self) -> Mapping[str, Any]:
         return self._refresh_request_body  # type: ignore [return-value]
+
+    def get_refresh_request_headers(self) -> Mapping[str, Any]:
+        return self._refresh_request_headers  # type: ignore [return-value]
+
+    def get_grant_type_name(self) -> str:
+        return self._grant_type_name
 
     def get_grant_type(self) -> str:
         return self._grant_type
@@ -129,8 +154,12 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         expires_in_name: str = "expires_in",
         refresh_token_name: str = "refresh_token",
         refresh_request_body: Mapping[str, Any] | None = None,
+        refresh_request_headers: Mapping[str, Any] | None = None,
+        grant_type_name: str = "grant_type",
         grant_type: str = "refresh_token",
+        client_id_name: str = "client_id",
         client_id: Optional[str] = None,
+        client_secret_name: str = "client_secret",
         client_secret: Optional[str] = None,
         access_token_config_path: Sequence[str] = ("credentials", "access_token"),
         refresh_token_config_path: Sequence[str] = ("credentials", "refresh_token"),
@@ -151,6 +180,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             expires_in_name (str, optional): Name of the name of the field that characterizes when the current access token will expire, used to parse the refresh token response. Defaults to "expires_in".
             refresh_token_name (str, optional): Name of the name of the refresh token field, used to parse the refresh token response. Defaults to "refresh_token".
             refresh_request_body (Mapping[str, Any], optional): Custom key value pair that will be added to the refresh token request body. Defaults to None.
+            refresh_request_headers (Mapping[str, Any], optional): Custom key value pair that will be added to the refresh token request headers. Defaults to None.
             grant_type (str, optional): OAuth grant type. Defaults to "refresh_token".
             client_id (Optional[str]): The client id to authenticate. If not specified, defaults to credentials.client_id in the config object.
             client_secret (Optional[str]): The client secret to authenticate. If not specified, defaults to credentials.client_secret in the config object.
@@ -174,23 +204,31 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
                 ("credentials", "client_secret"),
             )
         )
+        self._client_id_name = client_id_name
+        self._client_secret_name = client_secret_name
         self._access_token_config_path = access_token_config_path
         self._refresh_token_config_path = refresh_token_config_path
         self._token_expiry_date_config_path = token_expiry_date_config_path
         self._token_expiry_date_format = token_expiry_date_format
         self._refresh_token_name = refresh_token_name
+        self._grant_type_name = grant_type_name
         self._connector_config = connector_config
         self.__message_repository = message_repository
         super().__init__(
-            token_refresh_endpoint,
-            self.get_client_id(),
-            self.get_client_secret(),
-            self.get_refresh_token(),
+            token_refresh_endpoint=token_refresh_endpoint,
+            client_id_name=self._client_id_name,
+            client_id=self.get_client_id(),
+            client_secret_name=self._client_secret_name,
+            client_secret=self.get_client_secret(),
+            refresh_token=self.get_refresh_token(),
+            refresh_token_name=self._refresh_token_name,
             scopes=scopes,
             token_expiry_date=self.get_token_expiry_date(),
             access_token_name=access_token_name,
             expires_in_name=expires_in_name,
             refresh_request_body=refresh_request_body,
+            refresh_request_headers=refresh_request_headers,
+            grant_type_name=self._grant_type_name,
             grant_type=grant_type,
             token_expiry_date_format=token_expiry_date_format,
             token_expiry_is_time_of_expiration=token_expiry_is_time_of_expiration,

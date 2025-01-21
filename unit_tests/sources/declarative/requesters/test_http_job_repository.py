@@ -84,7 +84,7 @@ class HttpJobRepositoryTest(TestCase):
             requester=HttpRequester(
                 name="stream <name>: fetch_result",
                 url_base="",
-                path="{{stream_slice['url']}}",
+                path="{{stream_slice.extra_fields['url']}}",
                 error_handler=error_handler,
                 http_method=HttpMethod.GET,
                 config=_ANY_CONFIG,

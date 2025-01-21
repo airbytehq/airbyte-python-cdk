@@ -94,6 +94,26 @@ def max(*args: typing.Any) -> typing.Any:
     return builtins.max(*args)
 
 
+def min(*args: typing.Any) -> typing.Any:
+    """
+    Returns smallest object of an iterable, or two or more arguments.
+
+    min(iterable, *[, default=obj, key=func]) -> value
+    min(arg1, arg2, *args, *[, key=func]) -> value
+
+    Usage:
+    `"{{ min(2,3) }}"
+
+    With a single iterable argument, return its smallest item. The
+    default keyword-only argument specifies an object to return if
+    the provided iterable is empty.
+    With two or more arguments, return the smallest argument.
+    :param args: args to compare
+    :return: smallest argument
+    """
+    return builtins.min(*args)
+
+
 def day_delta(num_days: int, format: str = "%Y-%m-%dT%H:%M:%S.%f%z") -> str:
     """
     Returns datetime of now() + num_days
@@ -147,6 +167,7 @@ _macros_list = [
     today_utc,
     timestamp,
     max,
+    min,
     day_delta,
     duration,
     format_datetime,

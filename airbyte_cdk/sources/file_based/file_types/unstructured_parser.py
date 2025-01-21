@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 import logging
+import os
 import traceback
 from datetime import datetime
 from io import BytesIO, IOBase
@@ -42,12 +43,34 @@ unstructured_partition_pdf = None
 unstructured_partition_docx = None
 unstructured_partition_pptx = None
 
+AIRBYTE_NLTK_DATA_DIR = "/airbyte/nltk_data"
+TMP_NLTK_DATA_DIR = "/tmp/nltk_data"
+
+
+def get_nltk_temp_folder() -> str:
+    """
+    For non-root connectors /tmp is not currently writable, but we should allow it in the future.
+    It's safe to use /airbyte for now. Fallback to /tmp for local development.
+    """
+    try:
+        nltk_data_dir = AIRBYTE_NLTK_DATA_DIR
+        os.makedirs(nltk_data_dir, exist_ok=True)
+    except OSError:
+        nltk_data_dir = TMP_NLTK_DATA_DIR
+        os.makedirs(nltk_data_dir, exist_ok=True)
+    return nltk_data_dir
+
+
 try:
+    nltk_data_dir = get_nltk_temp_folder()
+    nltk.data.path.append(nltk_data_dir)
     nltk.data.find("tokenizers/punkt.zip")
     nltk.data.find("tokenizers/punkt_tab.zip")
+    nltk.data.find("tokenizers/averaged_perceptron_tagger_eng.zip")
 except LookupError:
-    nltk.download("punkt")
-    nltk.download("punkt_tab")
+    nltk.download("punkt", download_dir=nltk_data_dir, quiet=True)
+    nltk.download("punkt_tab", download_dir=nltk_data_dir, quiet=True)
+    nltk.download("averaged_perceptron_tagger_eng", download_dir=nltk_data_dir, quiet=True)
 
 
 def optional_decode(contents: Union[str, bytes]) -> str:

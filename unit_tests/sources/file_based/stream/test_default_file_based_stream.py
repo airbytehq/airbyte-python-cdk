@@ -4,6 +4,7 @@
 
 import traceback
 import unittest
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Iterable, Iterator, Mapping
 from unittest import mock
@@ -17,7 +18,11 @@ from airbyte_cdk.sources.file_based.availability_strategy import (
     AbstractFileBasedAvailabilityStrategy,
 )
 from airbyte_cdk.sources.file_based.discovery_policy import AbstractDiscoveryPolicy
-from airbyte_cdk.sources.file_based.exceptions import FileBasedErrorsCollector, FileBasedSourceError
+from airbyte_cdk.sources.file_based.exceptions import (
+    DuplicatedFilesError,
+    FileBasedErrorsCollector,
+    FileBasedSourceError,
+)
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
 from airbyte_cdk.sources.file_based.file_types import FileTransfer
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
@@ -302,6 +307,20 @@ class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
             use_file_transfer=True,
         )
 
+        self._stream_not_mirroring = DefaultFileBasedStream(
+            config=self._stream_config,
+            catalog_schema=self._catalog_schema,
+            stream_reader=self._stream_reader,
+            availability_strategy=self._availability_strategy,
+            discovery_policy=self._discovery_policy,
+            parsers={MockFormat: self._parser},
+            validation_policy=self._validation_policy,
+            cursor=self._cursor,
+            errors_collector=FileBasedErrorsCollector(),
+            use_file_transfer=True,
+            preserve_directory_structure=False,
+        )
+
     def test_when_read_records_from_slice_then_return_records(self) -> None:
         """Verify that we have the new file method and data is empty"""
         with mock.patch.object(FileTransfer, "get_file", return_value=[self._A_RECORD]):
@@ -319,3 +338,132 @@ class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
         transformed_record = self._stream.transform_record_for_file_transfer(self._A_RECORD, file)
         assert transformed_record[self._stream.modified] == last_updated
         assert transformed_record[self._stream.source_file_url] == file.uri
+
+    def test_when_compute_slices(self) -> None:
+        all_files = [
+            RemoteFile(
+                uri="mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
+                last_modified=datetime(2025, 1, 9, 11, 27, 20),
+                mime_type=None,
+            ),
+            RemoteFile(
+                uri="mirror_paths_testing/not_duplicates/data/feb/monthly-kickoff-202401.mpeg",
+                last_modified=datetime(2025, 1, 9, 11, 27, 20),
+                mime_type=None,
+            ),
+            RemoteFile(
+                uri="mirror_paths_testing/not_duplicates/data/mar/monthly-kickoff-202403.mpeg",
+                last_modified=datetime(2025, 1, 9, 11, 27, 20),
+                mime_type=None,
+            ),
+        ]
+        with (
+            mock.patch.object(DefaultFileBasedStream, "list_files", return_value=all_files),
+            mock.patch.object(self._stream._cursor, "get_files_to_sync", return_value=all_files),
+        ):
+            returned_slices = self._stream.compute_slices()
+        assert returned_slices == [
+            {"files": sorted(all_files, key=lambda f: (f.last_modified, f.uri))}
+        ]
+
+
+class DefaultFileBasedStreamFileTransferTestNotMirroringDirectories(unittest.TestCase):
+    _NOW = datetime(2022, 10, 22, tzinfo=timezone.utc)
+
+    def setUp(self) -> None:
+        self._stream_config = Mock()
+        self._stream_config.format = MockFormat()
+        self._stream_config.name = "a stream name"
+        self._catalog_schema = Mock()
+        self._stream_reader = Mock(spec=AbstractFileBasedStreamReader)
+        self._availability_strategy = Mock(spec=AbstractFileBasedAvailabilityStrategy)
+        self._discovery_policy = Mock(spec=AbstractDiscoveryPolicy)
+        self._parser = Mock(spec=FileTypeParser)
+        self._validation_policy = Mock(spec=AbstractSchemaValidationPolicy)
+        self._validation_policy.name = "validation policy name"
+        self._cursor = Mock(spec=AbstractFileBasedCursor)
+
+        self._stream = DefaultFileBasedStream(
+            config=self._stream_config,
+            catalog_schema=self._catalog_schema,
+            stream_reader=self._stream_reader,
+            availability_strategy=self._availability_strategy,
+            discovery_policy=self._discovery_policy,
+            parsers={MockFormat: self._parser},
+            validation_policy=self._validation_policy,
+            cursor=self._cursor,
+            errors_collector=FileBasedErrorsCollector(),
+            use_file_transfer=True,
+            preserve_directory_structure=False,
+        )
+
+        self._all_files = [
+            RemoteFile(
+                uri="mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
+                last_modified=datetime(2025, 1, 9, 11, 27, 20),
+                mime_type=None,
+            ),
+            RemoteFile(
+                uri="mirror_paths_testing/not_duplicates/data/feb/monthly-kickoff-202401.mpeg",
+                last_modified=datetime(2025, 1, 9, 11, 27, 20),
+                mime_type=None,
+            ),
+            RemoteFile(
+                uri="mirror_paths_testing/not_duplicates/data/mar/monthly-kickoff-202403.mpeg",
+                last_modified=datetime(2025, 1, 9, 11, 27, 20),
+                mime_type=None,
+            ),
+        ]
+
+    def test_when_compute_slices_with_not_duplicates(self) -> None:
+        with (
+            mock.patch.object(DefaultFileBasedStream, "list_files", return_value=self._all_files),
+            mock.patch.object(
+                self._stream._cursor, "get_files_to_sync", return_value=self._all_files
+            ),
+        ):
+            returned_slices = self._stream.compute_slices()
+        assert returned_slices == [
+            {"files": sorted(self._all_files, key=lambda f: (f.last_modified, f.uri))}
+        ]
+
+    def test_when_compute_slices_with_duplicates(self) -> None:
+        all_files = deepcopy(self._all_files)
+        all_files.append(
+            RemoteFile(
+                uri="mirror_paths_testing/not_duplicates/data/apr/monthly-kickoff-202402.mpeg",
+                last_modified=datetime(2025, 1, 9, 11, 27, 20),
+                mime_type=None,
+            )
+        )
+        all_files.append(
+            RemoteFile(
+                uri="mirror_paths_testing/not_duplicates/data/may/monthly-kickoff-202401.mpeg",
+                last_modified=datetime(2025, 1, 9, 11, 27, 20),
+                mime_type=None,
+            )
+        )
+        all_files.append(
+            RemoteFile(
+                uri="mirror_paths_testing/not_duplicates/data/jun/monthly-kickoff-202403.mpeg",
+                last_modified=datetime(2025, 1, 9, 11, 27, 20),
+                mime_type=None,
+            )
+        )
+        all_files.append(
+            RemoteFile(
+                uri="mirror_paths_testing/not_duplicates/data/jul/monthly-kickoff-202403.mpeg",
+                last_modified=datetime(2025, 1, 9, 11, 27, 20),
+                mime_type=None,
+            )
+        )
+        with (
+            mock.patch.object(DefaultFileBasedStream, "list_files", return_value=all_files),
+            mock.patch.object(self._stream._cursor, "get_files_to_sync", return_value=all_files),
+        ):
+            with pytest.raises(DuplicatedFilesError) as exc_info:
+                self._stream.compute_slices()
+        assert "Duplicate filenames found for stream" in str(exc_info.value)
+        assert "2 duplicates found for file name monthly-kickoff-202402.mpeg" in str(exc_info.value)
+        assert "2 duplicates found for file name monthly-kickoff-202401.mpeg" in str(exc_info.value)
+        assert "3 duplicates found for file name monthly-kickoff-202403.mpeg" in str(exc_info.value)

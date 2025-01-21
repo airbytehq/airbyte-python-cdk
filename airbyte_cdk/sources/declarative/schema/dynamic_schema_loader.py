@@ -4,17 +4,19 @@
 
 
 from copy import deepcopy
-from dataclasses import InitVar, dataclass
+from dataclasses import InitVar, dataclass, field
 from typing import Any, List, Mapping, MutableMapping, Optional, Union
 
 import dpath
 from typing_extensions import deprecated
 
+from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
+from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.source import ExperimentalClassWarning
-from airbyte_cdk.sources.types import Config
+from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 
 AIRBYTE_DATA_TYPES: Mapping[str, Mapping[str, Any]] = {
     "string": {"type": ["null", "string"]},
@@ -52,6 +54,7 @@ class TypesMap:
 
     target_type: Union[List[str], str]
     current_type: Union[List[str], str]
+    condition: Optional[str]
 
 
 @deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)
@@ -103,6 +106,7 @@ class DynamicSchemaLoader(SchemaLoader):
     config: Config
     parameters: InitVar[Mapping[str, Any]]
     schema_type_identifier: SchemaTypeIdentifier
+    schema_transformations: List[RecordTransformation] = field(default_factory=lambda: [])
 
     def get_json_schema(self) -> Mapping[str, Any]:
         """
@@ -128,11 +132,26 @@ class DynamicSchemaLoader(SchemaLoader):
             )
             properties[key] = value
 
+        transformed_properties = self._transform(properties, {})
+
         return {
             "$schema": "http://json-schema.org/draft-07/schema#",
             "type": "object",
-            "properties": properties,
+            "properties": transformed_properties,
         }
+
+    def _transform(
+        self,
+        properties: Mapping[str, Any],
+        stream_state: StreamState,
+        stream_slice: Optional[StreamSlice] = None,
+    ) -> Mapping[str, Any]:
+        for transformation in self.schema_transformations:
+            transformation.transform(
+                properties,  # type: ignore  # properties has type Mapping[str, Any], but Dict[str, Any] expected
+                config=self.config,
+            )
+        return properties
 
     def _get_key(
         self,
@@ -160,7 +179,7 @@ class DynamicSchemaLoader(SchemaLoader):
             if field_type_path
             else "string"
         )
-        mapped_field_type = self._replace_type_if_not_valid(raw_field_type)
+        mapped_field_type = self._replace_type_if_not_valid(raw_field_type, raw_schema)
         if (
             isinstance(mapped_field_type, list)
             and len(mapped_field_type) == 2
@@ -177,14 +196,22 @@ class DynamicSchemaLoader(SchemaLoader):
             )
 
     def _replace_type_if_not_valid(
-        self, field_type: Union[List[str], str]
+        self,
+        field_type: Union[List[str], str],
+        raw_schema: MutableMapping[str, Any],
     ) -> Union[List[str], str]:
         """
         Replaces a field type if it matches a type mapping in `types_map`.
         """
         if self.schema_type_identifier.types_mapping:
             for types_map in self.schema_type_identifier.types_mapping:
-                if field_type == types_map.current_type:
+                # conditional is optional param, setting to true if not provided
+                condition = InterpolatedBoolean(
+                    condition=types_map.condition if types_map.condition is not None else "True",
+                    parameters={},
+                ).eval(config=self.config, raw_schema=raw_schema)
+
+                if field_type == types_map.current_type and condition:
                     return types_map.target_type
         return field_type
 

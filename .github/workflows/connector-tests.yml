@@ -129,11 +129,10 @@ jobs:
         env:
           GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
-        # TODO: Revert below to use `tools.airbyte-ci-binary.install` after Airbyte CI released:
         run: |
           cd airbyte
-          make tools.airbyte-ci-dev.install
-          airbyte-ci-dev \
+          make tools.airbyte-ci-binary.install
+          airbyte-ci \
           --ci-report-bucket-name=airbyte-ci-reports-multi \
           connectors \
           --name ${{matrix.connector}} \
