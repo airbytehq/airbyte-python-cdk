@@ -37,7 +37,7 @@ class DayClampingStrategy(ClampingStrategy):
 
     def clamp(self, value: datetime) -> datetime:
         return (
-            value.replace(hour=23, minute=59, second=59)
+            value.replace(day=value.day + 1, hour=0, minute=0, second=0)
             if self._is_ceiling
             else value.replace(hour=0, minute=0, second=0)
         )

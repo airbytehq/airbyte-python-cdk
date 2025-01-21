@@ -1061,7 +1061,7 @@ class ModelToComponentFactory:
                     end_date_provider = ClampingEndProvider(
                         DayClampingStrategy(is_ceiling=False),
                         end_date_provider,
-                        granularity=timedelta(days=1),
+                        granularity=timedelta(seconds=1),
                     )
                 case Clamping.target.WEEK:
                     if "weekday" not in datetime_based_cursor_model.clamping.target_details:
