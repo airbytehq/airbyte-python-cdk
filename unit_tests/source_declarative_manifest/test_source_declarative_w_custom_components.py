@@ -86,7 +86,11 @@ def test_components_module_from_string() -> None:
     assert imported_sample_function() == "Hello, World!"
 
 
-def get_py_components_config_dict(failing_components: bool = False) -> dict[str, Any]:
+def get_py_components_config_dict(
+    *,
+    failing_components: bool = False,
+    needs_secrets: bool = True,
+) -> dict[str, Any]:
     connector_dir = Path(get_fixture_path("resources/source_the_guardian_api"))
     manifest_yml_path: Path = connector_dir / "manifest.yaml"
     custom_py_code_path: Path = connector_dir / (
@@ -111,10 +115,126 @@ def get_py_components_config_dict(failing_components: bool = False) -> dict[str,
         },
     }
     combined_config_dict.update(yaml.safe_load(config_yaml_path.read_text()))
-    combined_config_dict.update(yaml.safe_load(secrets_yaml_path.read_text()))
+    if needs_secrets:
+        combined_config_dict.update(yaml.safe_load(secrets_yaml_path.read_text()))
+
     return combined_config_dict
 
 
+def test_missing_checksum_fails_to_run(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Assert that missing checksum in the config will raise an error."""
+    monkeypatch.setenv(ENV_VAR_ALLOW_CUSTOM_CODE, "true")
+
+    py_components_config_dict = get_py_components_config_dict(
+        needs_secrets=False,
+    )
+    # Truncate the start_date to speed up tests
+    py_components_config_dict["start_date"] = (
+        datetime.datetime.now() - datetime.timedelta(days=2)
+    ).strftime("%Y-%m-%d")
+
+    py_components_config_dict.pop("__injected_components_py_checksums")
+
+    with NamedTemporaryFile(delete=False, suffix=".json") as temp_config_file:
+        json_str = json.dumps(py_components_config_dict)
+        Path(temp_config_file.name).write_text(json_str)
+        temp_config_file.flush()
+        with pytest.raises(ValueError):
+            source = create_declarative_source(
+                ["check", "--config", temp_config_file.name],
+            )
+
+
+@pytest.mark.parametrize(
+    "hash_type",
+    [
+        "md5",
+        "sha256",
+    ],
+)
+def test_invalid_checksum_fails_to_run(
+    hash_type: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Assert that an invalid checksum in the config will raise an error."""
+    monkeypatch.setenv(ENV_VAR_ALLOW_CUSTOM_CODE, "true")
+
+    py_components_config_dict = get_py_components_config_dict(
+        needs_secrets=False,
+    )
+    # Truncate the start_date to speed up tests
+    py_components_config_dict["start_date"] = (
+        datetime.datetime.now() - datetime.timedelta(days=2)
+    ).strftime("%Y-%m-%d")
+
+    py_components_config_dict["__injected_components_py_checksums"][hash_type] = "invalid_checksum"
+
+    with NamedTemporaryFile(delete=False, suffix=".json") as temp_config_file:
+        json_str = json.dumps(py_components_config_dict)
+        Path(temp_config_file.name).write_text(json_str)
+        temp_config_file.flush()
+        with pytest.raises(AirbyteCodeTamperedError):
+            source = create_declarative_source(
+                ["check", "--config", temp_config_file.name],
+            )
+
+
+@pytest.mark.parametrize(
+    "env_value, should_raise",
+    [
+        ("true", False),
+        ("True", False),
+        ("TRUE", False),
+        ("1", True),  # Not accepted as truthy as of now
+        ("false", True),
+        ("False", True),
+        ("", True),
+        ("0", True),
+    ],
+)
+def test_fail_unless_custom_code_enabled_explicitly(
+    env_value: str | None,
+    should_raise: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Assert that we properly fail if the environment variable to allow custom code is not set.
+
+    A missing value should fail.
+    Any value other than "true" (case insensitive) should fail.
+    """
+    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
+    if env_value is not None:
+        monkeypatch.setenv(ENV_VAR_ALLOW_CUSTOM_CODE, env_value)
+
+    assert custom_code_execution_permitted() == (not should_raise)
+
+    py_components_config_dict = get_py_components_config_dict(
+        needs_secrets=False,
+    )
+    # Truncate the start_date to speed up tests
+    py_components_config_dict["start_date"] = (
+        datetime.datetime.now() - datetime.timedelta(days=2)
+    ).strftime("%Y-%m-%d")
+
+    with NamedTemporaryFile(delete=False, suffix=".json") as temp_config_file:
+        json_str = json.dumps(py_components_config_dict)
+        Path(temp_config_file.name).write_text(json_str)
+        temp_config_file.flush()
+        fn: Callable = lambda: create_declarative_source(
+            ["check", "--config", temp_config_file.name],
+        )
+        if should_raise:
+            with pytest.raises(AirbyteCustomCodeNotPermittedError):
+                fn()
+
+            return  # Success
+
+        fn()
+
+
+# TODO: Create a new test source that doesn't require credentials to run.
 @pytest.mark.skipif(
     condition=not Path(get_fixture_path("resources/source_the_guardian_api/secrets.yaml")).exists(),
     reason="Skipped due to missing 'secrets.yaml'.",
@@ -126,13 +246,15 @@ def get_py_components_config_dict(failing_components: bool = False) -> dict[str,
         True,
     ],
 )
-def test_given_injected_declarative_manifest_and_py_components(
+def test_sync_with_injected_py_components(
     failing_components: bool,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv(ENV_VAR_ALLOW_CUSTOM_CODE, "true")
 
-    py_components_config_dict = get_py_components_config_dict(failing_components)
+    py_components_config_dict = get_py_components_config_dict(
+        failing_components=failing_components,
+    )
     # Truncate the start_date to speed up tests
     py_components_config_dict["start_date"] = (
         datetime.datetime.now() - datetime.timedelta(days=2)
@@ -180,110 +302,3 @@ def test_given_injected_declarative_manifest_and_py_components(
 
         for msg in msg_iterator:
             assert msg
-
-
-def test_missing_checksum_fails_to_run(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Assert that missing checksum in the config will raise an error."""
-    monkeypatch.setenv(ENV_VAR_ALLOW_CUSTOM_CODE, "true")
-
-    py_components_config_dict = get_py_components_config_dict()
-    # Truncate the start_date to speed up tests
-    py_components_config_dict["start_date"] = (
-        datetime.datetime.now() - datetime.timedelta(days=2)
-    ).strftime("%Y-%m-%d")
-
-    py_components_config_dict.pop("__injected_components_py_checksums")
-
-    with NamedTemporaryFile(delete=False, suffix=".json") as temp_config_file:
-        json_str = json.dumps(py_components_config_dict)
-        Path(temp_config_file.name).write_text(json_str)
-        temp_config_file.flush()
-        with pytest.raises(ValueError):
-            source = create_declarative_source(
-                ["check", "--config", temp_config_file.name],
-            )
-
-
-@pytest.mark.parametrize(
-    "hash_type",
-    [
-        "md5",
-        "sha256",
-    ],
-)
-def test_invalid_checksum_fails_to_run(
-    hash_type: str,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Assert that an invalid checksum in the config will raise an error."""
-    monkeypatch.setenv(ENV_VAR_ALLOW_CUSTOM_CODE, "true")
-
-    py_components_config_dict = get_py_components_config_dict()
-    # Truncate the start_date to speed up tests
-    py_components_config_dict["start_date"] = (
-        datetime.datetime.now() - datetime.timedelta(days=2)
-    ).strftime("%Y-%m-%d")
-
-    py_components_config_dict["__injected_components_py_checksums"][hash_type] = "invalid_checksum"
-
-    with NamedTemporaryFile(delete=False, suffix=".json") as temp_config_file:
-        json_str = json.dumps(py_components_config_dict)
-        Path(temp_config_file.name).write_text(json_str)
-        temp_config_file.flush()
-        with pytest.raises(AirbyteCodeTamperedError):
-            source = create_declarative_source(
-                ["check", "--config", temp_config_file.name],
-            )
-
-
-@pytest.mark.parametrize(
-    "env_value, should_raise",
-    [
-        ("true", False),
-        ("True", False),
-        ("TRUE", False),
-        ("1", True),  # Not accepted as truthy as of now
-        ("false", True),
-        ("False", True),
-        ("", True),
-        ("0", True),
-    ],
-)
-def test_fail_unless_custom_code_enabled_explicitly(
-    env_value: Any,
-    should_raise: bool,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Assert that we properly fail if the environment variable to allow custom code is not set.
-
-    A missing value should fail.
-    Any value other than "true" (case insensitive) should fail.
-    """
-    monkeypatch.delenv(ENV_VAR_ALLOW_CUSTOM_CODE, raising=False)
-    if env_value is not None:
-        monkeypatch.setenv(ENV_VAR_ALLOW_CUSTOM_CODE, env_value)
-
-    assert custom_code_execution_permitted() == (not should_raise)
-
-    py_components_config_dict = get_py_components_config_dict()
-    # Truncate the start_date to speed up tests
-    py_components_config_dict["start_date"] = (
-        datetime.datetime.now() - datetime.timedelta(days=2)
-    ).strftime("%Y-%m-%d")
-
-    with NamedTemporaryFile(delete=False, suffix=".json") as temp_config_file:
-        json_str = json.dumps(py_components_config_dict)
-        Path(temp_config_file.name).write_text(json_str)
-        temp_config_file.flush()
-        fn: Callable = lambda: create_declarative_source(
-            ["check", "--config", temp_config_file.name],
-        )
-        if should_raise:
-            with pytest.raises(AirbyteCustomCodeNotPermittedError):
-                fn()
-
-            return  # Success
-
-        fn()
