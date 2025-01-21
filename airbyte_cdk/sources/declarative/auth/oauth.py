@@ -118,6 +118,11 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
             if self.token_expiry_date
             else pendulum.now().subtract(days=1)  # type: ignore # substract does not have type hints
         )
+        self.use_profile_assertion = (
+            InterpolatedBoolean(self.use_profile_assertion, parameters=parameters)
+            if isinstance(self.use_profile_assertion, str)
+            else self.use_profile_assertion
+        )
         self.assertion_name = "assertion"
 
         if self.access_token_value is not None:
