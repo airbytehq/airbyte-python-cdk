@@ -115,12 +115,7 @@ source-declarative-manifest = "airbyte_cdk.cli.source_declarative_manifest:run"
 [tool.isort]
 skip = ["__init__.py"]  # TODO: Remove after this is fixed: https://github.com/airbytehq/airbyte-python-cdk/issues/12
 
-[tool.ruff]
-target-version = "py310"
-line-length = 100
-
-[tool.ruff.lint]
-select = ["I"]
+# Ruff configuration moved to ruff.toml
 
 [tool.poe.tasks]
 # Installation
