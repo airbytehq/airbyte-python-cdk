@@ -3,6 +3,7 @@
 import hashlib
 import os
 import sys
+from collections.abc import Mapping
 from types import ModuleType
 from typing import Any, cast
 
@@ -41,7 +42,7 @@ class AirbyteCustomCodeNotPermittedError(Exception):
         )
 
 
-def _hash_text(input_text: str, hash_type: Literal["md5", "sha256"] = "md5") -> str:
+def _hash_text(input_text: str, hash_type: str = "md5") -> str:
     """Return the hash of the input text using the specified hash type."""
     if not input_text:
         raise ValueError("Input text cannot be empty.")
@@ -81,7 +82,7 @@ def validate_python_code(
 
 
 def get_registered_components_module(
-    config: dict[str, Any],
+    config: Mapping[str, Any] | None,
 ) -> ModuleType | None:
     """Get a components module object based on the provided config.
 
@@ -93,12 +94,12 @@ def get_registered_components_module(
 
     Returns `None` if no components is provided and the `components` module is not found.
     """
-    if INJECTED_COMPONENTS_PY in config:
+    if config and INJECTED_COMPONENTS_PY in config:
         if not custom_code_execution_permitted():
             raise AirbyteCustomCodeNotPermittedError
 
         # Create a new module object and execute the provided Python code text within it
-        python_text = config[INJECTED_COMPONENTS_PY]
+        python_text: str = config[INJECTED_COMPONENTS_PY]
         return register_components_module_from_string(
             components_py_text=python_text,
             checksums=config.get(INJECTED_COMPONENTS_PY_CHECKSUMS, None),
