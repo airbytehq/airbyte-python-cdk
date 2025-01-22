@@ -328,6 +328,16 @@ class LegacyToPerPartitionStateMigration(BaseModel):
     type: Optional[Literal["LegacyToPerPartitionStateMigration"]] = None
 
 
+class Clamping(BaseModel):
+    target: str = Field(
+        ...,
+        description="The period of time that datetime windows will be clamped by",
+        examples=["DAY", "WEEK", "MONTH", "{{ config['target'] }}"],
+        title="Target",
+    )
+    target_details: Optional[Dict[str, Any]] = None
+
+
 class Algorithm(Enum):
     HS256 = "HS256"
     HS384 = "HS384"
@@ -719,7 +729,7 @@ class HttpResponseFilter(BaseModel):
 class TypesMap(BaseModel):
     target_type: Union[str, List[str]]
     current_type: Union[str, List[str]]
-    condition: Optional[str]
+    condition: Optional[str] = None
 
 
 class SchemaTypeIdentifier(BaseModel):
@@ -788,6 +798,22 @@ class FlattenFields(BaseModel):
         True,
         description="Whether to flatten lists or leave it as is. Default is True.",
         title="Flatten Lists",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class DpathFlattenFields(BaseModel):
+    type: Literal["DpathFlattenFields"]
+    field_path: List[str] = Field(
+        ...,
+        description="A path to field that needs to be flattened.",
+        examples=[["data"], ["data", "*", "field"]],
+        title="Field Path",
+    )
+    delete_origin_value: Optional[bool] = Field(
+        None,
+        description="Whether to delete the origin value or keep it. Default is False.",
+        title="Delete Origin Value",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -1435,6 +1461,11 @@ class AuthFlow(BaseModel):
 
 class DatetimeBasedCursor(BaseModel):
     type: Literal["DatetimeBasedCursor"]
+    clamping: Optional[Clamping] = Field(
+        None,
+        description="This option is used to adjust the upper and lower boundaries of each datetime window to beginning and end of the provided target period (day, week, month)",
+        title="Date Range Clamping",
+    )
     cursor_field: str = Field(
         ...,
         description="The location of the value on a record that will be used as a bookmark during sync. To ensure no data loss, the API must return records in ascending order based on the cursor field. Nested fields are not supported, so the field must be at the top level of the record. You can use a combination of Add Field and Remove Field transformations to move the nested field to the top.",
@@ -1819,6 +1850,7 @@ class DeclarativeStream(BaseModel):
                 KeysToLower,
                 KeysToSnakeCase,
                 FlattenFields,
+                DpathFlattenFields,
                 KeysReplace,
             ]
         ]
@@ -1994,6 +2026,7 @@ class DynamicSchemaLoader(BaseModel):
                 KeysToLower,
                 KeysToSnakeCase,
                 FlattenFields,
+                DpathFlattenFields,
                 KeysReplace,
             ]
         ]

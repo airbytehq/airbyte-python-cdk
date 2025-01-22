@@ -784,6 +784,29 @@ definitions:
       type:
         type: string
         enum: [DatetimeBasedCursor]
+      clamping:
+        title: Date Range Clamping
+        description: This option is used to adjust the upper and lower boundaries of each datetime window to beginning and end of the provided target period (day, week, month)
+        type: object
+        required:
+        - target
+        properties:
+          target:
+            title: Target
+            description: The period of time that datetime windows will be clamped by
+            # This should ideally be an enum. However, we don't use an enum because we want to allow for connectors
+            # to support interpolation on the connector config to get the target which is an arbitrary string
+            type: string
+            interpolation_context:
+              - config
+            examples:
+              - "DAY"
+              - "WEEK"
+              - "MONTH"
+              - "{{ config['target'] }}"
+          target_details:
+            type: object
+            additionalProperties: true
       cursor_field:
         title: Cursor Field
         description: The location of the value on a record that will be used as a bookmark during sync. To ensure no data loss, the API must return records in ascending order based on the cursor field. Nested fields are not supported, so the field must be at the top level of the record. You can use a combination of Add Field and Remove Field transformations to move the nested field to the top.
@@ -1316,6 +1339,7 @@ definitions:
             - "$ref": "#/definitions/KeysToLower"
             - "$ref": "#/definitions/KeysToSnakeCase"
             - "$ref": "#/definitions/FlattenFields"
+            - "$ref": "#/definitions/DpathFlattenFields"
             - "$ref": "#/definitions/KeysReplace"
       state_migrations:
         title: State Migrations
@@ -1866,6 +1890,7 @@ definitions:
             - "$ref": "#/definitions/KeysToLower"
             - "$ref": "#/definitions/KeysToSnakeCase"
             - "$ref": "#/definitions/FlattenFields"
+            - "$ref": "#/definitions/DpathFlattenFields"
             - "$ref": "#/definitions/KeysReplace"
       schema_type_identifier:
         "$ref": "#/definitions/SchemaTypeIdentifier"
@@ -1967,6 +1992,33 @@ definitions:
         description: Whether to flatten lists or leave it as is. Default is True.
         type: boolean
         default: true
+      $parameters:
+        type: object
+        additionalProperties: true
+  DpathFlattenFields:
+    title: Dpath Flatten Fields
+    description: A transformation that flatten field values to the to top of the record.
+    type: object
+    required:
+      - type
+      - field_path
+    properties:
+      type:
+        type: string
+        enum: [DpathFlattenFields]
+      field_path:
+        title: Field Path
+        description: A path to field that needs to be flattened.
+        type: array
+        items:
+          - type: string
+        examples:
+          - ["data"]
+          - ["data", "*", "field"]
+      delete_origin_value:
+        title: Delete Origin Value
+        description: Whether to delete the origin value or keep it. Default is False.
+        type: boolean
       $parameters:
         type: object
         additionalProperties: true

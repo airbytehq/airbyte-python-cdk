@@ -135,6 +135,14 @@ from airbyte_cdk.sources.declarative.spec import Spec
 from airbyte_cdk.sources.declarative.transformations import AddFields, RemoveFields
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
+from airbyte_cdk.sources.streams.concurrent.clamping import (
+    ClampingEndProvider,
+    DayClampingStrategy,
+    MonthClampingStrategy,
+    NoClamping,
+    WeekClampingStrategy,
+    Weekday,
+)
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
@@ -3319,6 +3327,111 @@ def test_create_concurrent_cursor_uses_min_max_datetime_format_if_defined():
         "state_type": "date-range",
         "legacy": {},
     }
+
+
+@pytest.mark.parametrize(
+    "clamping,expected_clamping_strategy,expected_error",
+    [
+        pytest.param(
+            {"target": "DAY", "target_details": {}},
+            DayClampingStrategy,
+            None,
+            id="test_day_clamping_strategy",
+        ),
+        pytest.param(
+            {"target": "WEEK", "target_details": {"weekday": "SUNDAY"}},
+            WeekClampingStrategy,
+            None,
+            id="test_week_clamping_strategy",
+        ),
+        pytest.param(
+            {"target": "MONTH", "target_details": {}},
+            MonthClampingStrategy,
+            None,
+            id="test_month_clamping_strategy",
+        ),
+        pytest.param(
+            {"target": "WEEK", "target_details": {}},
+            None,
+            ValueError,
+            id="test_week_clamping_strategy_no_target_details",
+        ),
+        pytest.param(
+            {"target": "FAKE", "target_details": {}},
+            None,
+            ValueError,
+            id="test_invalid_clamping_target",
+        ),
+        pytest.param(
+            {"target": "{{ config['clamping_target'] }}"},
+            MonthClampingStrategy,
+            None,
+            id="test_clamping_with_interpolation",
+        ),
+    ],
+)
+def test_create_concurrent_cursor_from_datetime_based_cursor_with_clamping(
+    clamping,
+    expected_clamping_strategy,
+    expected_error,
+):
+    config = {
+        "start_time": "2024-08-01T00:00:00.000000Z",
+        "end_time": "2024-10-15T00:00:00.000000Z",
+        "clamping_target": "MONTH",
+    }
+
+    cursor_component_definition = {
+        "type": "DatetimeBasedCursor",
+        "cursor_field": "updated_at",
+        "datetime_format": "%Y-%m-%dT%H:%M:%S.%fZ",
+        "start_datetime": "{{ config['start_time'] }}",
+        "end_datetime": "{{ config['end_time'] }}",
+        "partition_field_start": "custom_start",
+        "partition_field_end": "custom_end",
+        "step": "P10D",
+        "cursor_granularity": "PT1S",
+        "lookback_window": "P3D",
+        "clamping": clamping,
+    }
+
+    connector_state_manager = ConnectorStateManager()
+
+    connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
+
+    stream_name = "test"
+
+    if expected_error:
+        with pytest.raises(ValueError):
+            connector_builder_factory.create_concurrent_cursor_from_datetime_based_cursor(
+                state_manager=connector_state_manager,
+                model_type=DatetimeBasedCursorModel,
+                component_definition=cursor_component_definition,
+                stream_name=stream_name,
+                stream_namespace=None,
+                config=config,
+                stream_state={},
+            )
+
+    else:
+        concurrent_cursor = (
+            connector_builder_factory.create_concurrent_cursor_from_datetime_based_cursor(
+                state_manager=connector_state_manager,
+                model_type=DatetimeBasedCursorModel,
+                component_definition=cursor_component_definition,
+                stream_name=stream_name,
+                stream_namespace=None,
+                config=config,
+                stream_state={},
+            )
+        )
+
+        assert concurrent_cursor._clamping_strategy.__class__ == expected_clamping_strategy
+        assert isinstance(concurrent_cursor._end_provider, ClampingEndProvider)
+        assert isinstance(
+            concurrent_cursor._end_provider._clamping_strategy, expected_clamping_strategy
+        )
+        assert concurrent_cursor._end_provider._granularity == datetime.timedelta(seconds=1)
 
 
 class CustomRecordExtractor(RecordExtractor):
