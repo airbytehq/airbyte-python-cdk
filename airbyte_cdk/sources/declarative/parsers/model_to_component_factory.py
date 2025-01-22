@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import datetime
-import importlib
 import inspect
 import re
 import sys
