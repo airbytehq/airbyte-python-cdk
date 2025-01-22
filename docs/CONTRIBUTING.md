@@ -44,6 +44,8 @@ To see all available scripts, run `poetry run poe`.
 
 To see all available `ruff` options, run `poetry run ruff`.
 
+The Ruff configuration is stored in `ruff.toml` at the root of the repository. This file contains settings for line length, target Python version, and linting rules.
+
 ## Auto-Generating the Declarative Schema File
 
 Low-code CDK models are generated from `sources/declarative/declarative_component_schema.yaml`. If the iteration you are working on includes changes to the models or the connector generator, you may need to regenerate them. In order to do that, you can run:

@@ -1,3 +1,10 @@
+# This Dockerfile is used to build `airbyte/source-declarative-manifest` image that in turn is used
+# 1. to build Manifest-only connectors themselves
+# 2. to run manifest (Builder) connectors published into a particular user's workspace in Airbyte
+#
+# A new version of source-declarative-manifest is built for every new Airbyte CDK release, and their versions are kept in sync.
+#
+
 FROM docker.io/airbyte/python-connector-base:3.0.0@sha256:1a0845ff2b30eafa793c6eee4e8f4283c2e52e1bbd44eed6cb9e9abd5d34d844
 
 WORKDIR /airbyte/integration_code
