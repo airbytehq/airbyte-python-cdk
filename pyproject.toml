@@ -7,14 +7,14 @@ build-backend = "poetry_dynamic_versioning.backend"
 name = "airbyte-cdk"
 version = "0.0.0"  # Version will be calculated dynamically
 description = "A framework for writing Airbyte Connectors."
-authors = [
-    {name = "Airbyte", email = "contact@airbyte.io"}
-]
+authors = ["Airbyte <contact@airbyte.io>"]
 license = "MIT"
 readme = "README.md"
-urls.Homepage = "https://airbyte.com"
-urls.Repository = "https://github.com/airbytehq/airbyte-python-cdk"
-urls.Documentation = "https://docs.airbyte.io/"
+urls = {
+    "Homepage" = "https://airbyte.com",
+    "Repository" = "https://github.com/airbytehq/airbyte-python-cdk",
+    "Documentation" = "https://docs.airbyte.io/"
+}
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -27,8 +27,6 @@ keywords = ["airbyte", "connector-development-kit", "cdk"]
 packages = [
     { include = "airbyte_cdk" }
 ]
-
-[project]
 dependencies = [
     "python (>=3.10.0, <3.13)",
     "airbyte-protocol-models-dataclasses (>=0.14.0, <0.15.0)",
@@ -112,27 +110,7 @@ dev = [
 [tool.poetry-dynamic-versioning]
 enable = true
 
-[tool.poetry.extras]
-file-based = [
-    "avro",
-    "fastavro",
-    "pyarrow",
-    "unstructured",
-    "pdf2image",
-    "pdfminer.six",
-    "unstructured.pytesseract",
-    "pytesseract",
-    "markdown",
-    "python-calamine",
-    "python-snappy"
-]
-vector-db-based = [
-    "langchain",
-    "openai",
-    "cohere",
-    "tiktoken"
-]
-sql = ["sqlalchemy"]
+# Extras have been migrated to [project.optional-dependencies]
 
 [tool.poetry.scripts]
 
