@@ -53,7 +53,7 @@ requests = "*"
 requests_cache = "*"
 wcmatch = "10.0"
 # Extras depedencies
-avro = { version = "~1.11.2", optional = true }
+avro = { version = ">=1.11.2,<1.13.0", optional = true }
 cohere = { version = "4.21", optional = true }
 fastavro = { version = "~1.8.0", optional = true }
 langchain = { version = "0.1.16", optional = true }
@@ -120,6 +120,7 @@ skip = ["__init__.py"]  # TODO: Remove after this is fixed: https://github.com/a
 [tool.poe.tasks]
 # Installation
 install = { shell = "poetry install --all-extras" }
+lock = { shell = "poetry lock --no-update" }
 
 # Build tasks
 assemble = {cmd = "bin/generate-component-manifest-dagger.sh", help = "Generate component manifest files."}
