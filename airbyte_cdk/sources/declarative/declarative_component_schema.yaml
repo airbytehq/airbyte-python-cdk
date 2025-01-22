@@ -1513,6 +1513,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/JsonDecoder"
           - "$ref": "#/definitions/XmlDecoder"
+          - "$ref": "#/definitions/CompositeRawDecoder"
       $parameters:
         type: object
         additionalProperties: true
@@ -2071,6 +2072,26 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  ZipfileDecoder:
+    title: Zipfile Decoder
+    description: Decoder for response data that is returned as zipfile(s).
+    type: object
+    additionalProperties: true
+    required:
+      - type
+      - parser
+    properties:
+      type:
+        type: string
+        enum: [ZipfileDecoder]
+      parser:
+        title: Parser
+        description: Parser to parse the decompressed data from the zipfile(s).
+        anyOf:
+          - "$ref": "#/definitions/GzipParser"
+          - "$ref": "#/definitions/JsonParser"
+          - "$ref": "#/definitions/JsonLineParser"
+          - "$ref": "#/definitions/CsvParser"
   ListPartitionRouter:
     title: List Partition Router
     description: A Partition router that specifies a list of attributes where each attribute describes a portion of the complete data set for a stream. During a sync, each value is iterated over and can be used as input to outbound API requests.
@@ -2899,6 +2920,7 @@ definitions:
           - "$ref": "#/definitions/XmlDecoder"
           - "$ref": "#/definitions/GzipJsonDecoder"
           - "$ref": "#/definitions/CompositeRawDecoder"
+          - "$ref": "#/definitions/ZipfileDecoder"
       $parameters:
         type: object
         additionalProperties: true
@@ -3097,6 +3119,8 @@ definitions:
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
           - "$ref": "#/definitions/GzipJsonDecoder"
+          - "$ref": "#/definitions/CompositeRawDecoder"
+          - "$ref": "#/definitions/ZipfileDecoder"
       download_decoder:
         title: Download Decoder
         description: Component decoding the download response so records can be extracted.
@@ -3107,6 +3131,8 @@ definitions:
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
           - "$ref": "#/definitions/GzipJsonDecoder"
+          - "$ref": "#/definitions/CompositeRawDecoder"
+          - "$ref": "#/definitions/ZipfileDecoder"
       $parameters:
         type: object
         additionalProperties: true
