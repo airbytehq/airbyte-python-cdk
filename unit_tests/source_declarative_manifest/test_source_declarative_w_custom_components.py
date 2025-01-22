@@ -242,7 +242,7 @@ def test_fail_unless_custom_code_enabled_explicitly(
 @pytest.mark.parametrize(
     "failing_components",
     [
-        False,
+        pytest.param(False, marks=pytest.mark.slow),  # Slow because we run a full sync
         True,
     ],
 )
