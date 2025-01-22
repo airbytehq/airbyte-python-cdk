@@ -10,11 +10,10 @@ description = "A framework for writing Airbyte Connectors."
 authors = ["Airbyte <contact@airbyte.io>"]
 license = "MIT"
 readme = "README.md"
-urls = {
-    homepage = "https://airbyte.com",
-    repository = "https://github.com/airbytehq/airbyte-python-cdk",
-    documentation = "https://docs.airbyte.io/"
-}
+[project.urls]
+homepage = "https://airbyte.com"
+repository = "https://github.com/airbytehq/airbyte-python-cdk"
+documentation = "https://docs.airbyte.io/"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
