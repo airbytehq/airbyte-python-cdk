@@ -83,11 +83,16 @@ class CompositeErrorHandler(ErrorHandler):
     def backoff_strategies(self) -> Optional[List[BackoffStrategy]]:
         """
         Combines backoff strategies from all child error handlers into a single flattened list.
-        Note: The first non-None strategy in this list becomes the default strategy for ALL retryable errors,
-        including both user-defined response filters and errors that fall back to DEFAULT_ERROR_MAPPING.
-        The list structure is currently not used to map different strategies to different error conditions.
 
-        Returns None if no handlers have strategies defined, which will result in the default backoff strategy being used.
+        When used with HttpRequester, note the following behavior:
+        - In HttpRequester.__post_init__, the entire list of backoff strategies is assigned to the error handler
+        - However, the error handler's backoff_time() method only ever uses the first non-None strategy in the list
+        - This means that if any backoff strategies are present, the first non-None strategy becomes the default
+        - This applies to both user-defined response filters and errors from DEFAULT_ERROR_MAPPING
+        - The list structure is not used to map different strategies to different error conditions
+        - Therefore, subsequent strategies in the list will not be used
+
+        Returns None if no handlers have strategies defined, which will result in HttpRequester using its default backoff strategy.
         """
         all_strategies = []
         for handler in self.error_handlers:
