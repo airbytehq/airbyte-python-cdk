@@ -1,10 +1,11 @@
 import hashlib
 import json
-from typing import Any, Final, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any, Final
 
 
 class SliceEncoder(json.JSONEncoder):
-    def default(self, obj: Any) -> Any:
+    def default(self, obj: Any) -> Any:  # noqa: ANN401
         if hasattr(obj, "__json_serializable__"):
             return obj.__json_serializable__()
 
@@ -16,13 +17,13 @@ class SliceHasher:
     _ENCODING: Final = "utf-8"
 
     @classmethod
-    def hash(cls, stream_name: str, stream_slice: Optional[Mapping[str, Any]] = None) -> int:
+    def hash(cls, stream_name: str, stream_slice: Mapping[str, Any] | None = None) -> int:
         if stream_slice:
             try:
                 s = json.dumps(stream_slice, sort_keys=True, cls=SliceEncoder)
                 hash_input = f"{stream_name}:{s}".encode(cls._ENCODING)
             except TypeError as e:
-                raise ValueError(f"Failed to serialize stream slice: {e}")
+                raise ValueError(f"Failed to serialize stream slice: {e}")  # noqa: B904
         else:
             hash_input = stream_name.encode(cls._ENCODING)
 

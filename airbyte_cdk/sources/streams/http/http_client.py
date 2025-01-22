@@ -5,8 +5,9 @@
 import logging
 import os
 import urllib
+from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Any
 
 import orjson
 import requests
@@ -53,6 +54,7 @@ from airbyte_cdk.utils.stream_status_utils import (
 )
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
+
 BODY_REQUEST_METHODS = ("GET", "POST", "PUT", "PATCH")
 
 
@@ -68,7 +70,7 @@ class MessageRepresentationAirbyteTracedErrors(AirbyteTracedException):
     def __str__(self) -> str:
         if self.message:
             return self.message
-        elif self.internal_message:
+        if self.internal_message:
             return self.internal_message
         return ""
 
@@ -76,21 +78,21 @@ class MessageRepresentationAirbyteTracedErrors(AirbyteTracedException):
 class HttpClient:
     _DEFAULT_MAX_RETRY: int = 5
     _DEFAULT_MAX_TIME: int = 60 * 10
-    _ACTIONS_TO_RETRY_ON = {ResponseAction.RETRY, ResponseAction.RATE_LIMITED}
+    _ACTIONS_TO_RETRY_ON = {ResponseAction.RETRY, ResponseAction.RATE_LIMITED}  # noqa: RUF012
 
-    def __init__(
+    def __init__(  # noqa: ANN204, PLR0913, PLR0917
         self,
         name: str,
         logger: logging.Logger,
-        error_handler: Optional[ErrorHandler] = None,
-        api_budget: Optional[APIBudget] = None,
-        session: Optional[Union[requests.Session, requests_cache.CachedSession]] = None,
-        authenticator: Optional[AuthBase] = None,
-        use_cache: bool = False,
-        backoff_strategy: Optional[Union[BackoffStrategy, List[BackoffStrategy]]] = None,
-        error_message_parser: Optional[ErrorMessageParser] = None,
-        disable_retries: bool = False,
-        message_repository: Optional[MessageRepository] = None,
+        error_handler: ErrorHandler | None = None,
+        api_budget: APIBudget | None = None,
+        session: requests.Session | requests_cache.CachedSession | None = None,
+        authenticator: AuthBase | None = None,
+        use_cache: bool = False,  # noqa: FBT001, FBT002
+        backoff_strategy: BackoffStrategy | list[BackoffStrategy] | None = None,
+        error_message_parser: ErrorMessageParser | None = None,
+        disable_retries: bool = False,  # noqa: FBT001, FBT002
+        message_repository: MessageRepository | None = None,
     ):
         self._name = name
         self._api_budget: APIBudget = api_budget or APIBudget(policies=[])
@@ -117,7 +119,7 @@ class HttpClient:
         else:
             self._backoff_strategies = [DefaultBackoffStrategy()]
         self._error_message_parser = error_message_parser or JsonErrorMessageParser()
-        self._request_attempt_count: Dict[requests.PreparedRequest, int] = {}
+        self._request_attempt_count: dict[requests.PreparedRequest, int] = {}
         self._disable_retries = disable_retries
         self._message_repository = message_repository
 
@@ -155,8 +157,7 @@ class HttpClient:
             return CachedLimiterSession(
                 sqlite_path, backend=backend, api_budget=self._api_budget, match_headers=True
             )
-        else:
-            return LimiterSession(api_budget=self._api_budget)
+        return LimiterSession(api_budget=self._api_budget)
 
     def clear_cache(self) -> None:
         """
@@ -165,9 +166,7 @@ class HttpClient:
         if isinstance(self._session, requests_cache.CachedSession):
             self._session.cache.clear()  # type: ignore # cache.clear is not typed
 
-    def _dedupe_query_params(
-        self, url: str, params: Optional[Mapping[str, str]]
-    ) -> Mapping[str, str]:
+    def _dedupe_query_params(self, url: str, params: Mapping[str, str] | None) -> Mapping[str, str]:
         """
         Remove query parameters from params mapping if they are already encoded in the URL.
         :param url: URL with
@@ -180,7 +179,7 @@ class HttpClient:
         query_dict = {k: v[0] for k, v in urllib.parse.parse_qs(query_string).items()}
 
         duplicate_keys_with_same_value = {
-            k for k in query_dict.keys() if str(params.get(k)) == str(query_dict[k])
+            k for k in query_dict if str(params.get(k)) == str(query_dict[k])
         }
         return {k: v for k, v in params.items() if k not in duplicate_keys_with_same_value}
 
@@ -188,11 +187,11 @@ class HttpClient:
         self,
         http_method: str,
         url: str,
-        dedupe_query_params: bool = False,
-        headers: Optional[Mapping[str, str]] = None,
-        params: Optional[Mapping[str, str]] = None,
-        json: Optional[Mapping[str, Any]] = None,
-        data: Optional[Union[str, Mapping[str, Any]]] = None,
+        dedupe_query_params: bool = False,  # noqa: FBT001, FBT002
+        headers: Mapping[str, str] | None = None,
+        params: Mapping[str, str] | None = None,
+        json: Mapping[str, Any] | None = None,
+        data: str | Mapping[str, Any] | None = None,
     ) -> requests.PreparedRequest:
         if dedupe_query_params:
             query_params = self._dedupe_query_params(url, params)
@@ -204,7 +203,7 @@ class HttpClient:
                 raise RequestBodyException(
                     "At the same time only one of the 'request_body_data' and 'request_body_json' functions can return data"
                 )
-            elif json:
+            if json:
                 args["json"] = json
             elif data:
                 args["data"] = data
@@ -220,7 +219,7 @@ class HttpClient:
         Determines the max retries based on the provided error handler.
         """
         max_retries = None
-        if self._disable_retries:
+        if self._disable_retries:  # noqa: SIM108
             max_retries = 0
         else:
             max_retries = self._error_handler.max_retries
@@ -241,8 +240,8 @@ class HttpClient:
         self,
         request: requests.PreparedRequest,
         request_kwargs: Mapping[str, Any],
-        log_formatter: Optional[Callable[[requests.Response], Any]] = None,
-        exit_on_rate_limit: Optional[bool] = False,
+        log_formatter: Callable[[requests.Response], Any] | None = None,
+        exit_on_rate_limit: bool | None = False,  # noqa: FBT001, FBT002
     ) -> requests.Response:
         """
         Sends a request with retry logic.
@@ -280,8 +279,8 @@ class HttpClient:
         self,
         request: requests.PreparedRequest,
         request_kwargs: Mapping[str, Any],
-        log_formatter: Optional[Callable[[requests.Response], Any]] = None,
-        exit_on_rate_limit: Optional[bool] = False,
+        log_formatter: Callable[[requests.Response], Any] | None = None,
+        exit_on_rate_limit: bool | None = False,  # noqa: FBT001, FBT002
     ) -> requests.Response:
         if request not in self._request_attempt_count:
             self._request_attempt_count[request] = 1
@@ -295,8 +294,8 @@ class HttpClient:
             extra={"headers": request.headers, "url": request.url, "request_body": request.body},
         )
 
-        response: Optional[requests.Response] = None
-        exc: Optional[requests.RequestException] = None
+        response: requests.Response | None = None
+        exc: requests.RequestException | None = None
 
         try:
             response = self._session.send(request, **request_kwargs)
@@ -347,7 +346,7 @@ class HttpClient:
 
         return response  # type: ignore # will either return a valid response of type requests.Response or raise an exception
 
-    def _get_response_body(self, response: requests.Response) -> Optional[JsonType]:
+    def _get_response_body(self, response: requests.Response) -> JsonType | None:
         """
         Extracts and returns the body of an HTTP response.
 
@@ -383,11 +382,11 @@ class HttpClient:
 
     def _handle_error_resolution(
         self,
-        response: Optional[requests.Response],
-        exc: Optional[requests.RequestException],
+        response: requests.Response | None,
+        exc: requests.RequestException | None,
         request: requests.PreparedRequest,
         error_resolution: ErrorResolution,
-        exit_on_rate_limit: Optional[bool] = False,
+        exit_on_rate_limit: bool | None = False,  # noqa: FBT001, FBT002
     ) -> None:
         if error_resolution.response_action not in self._ACTIONS_TO_RETRY_ON:
             self._evict_key(request)
@@ -413,7 +412,7 @@ class HttpClient:
         if error_resolution.response_action == ResponseAction.FAIL:
             if response is not None:
                 filtered_response_message = filter_secrets(
-                    f"Request (body): '{str(request.body)}'. Response (body): '{self._get_response_body(response)}'. Response (headers): '{response.headers}'."
+                    f"Request (body): '{request.body!s}'. Response (body): '{self._get_response_body(response)}'. Response (headers): '{response.headers}'."
                 )
                 error_message = f"'{request.method}' request to '{request.url}' failed with status code '{response.status_code}' and error message: '{self._error_message_parser.parse_response_error_message(response)}'. {filtered_response_message}"
             else:
@@ -430,7 +429,7 @@ class HttpClient:
                 failure_type=error_resolution.failure_type,
             )
 
-        elif error_resolution.response_action == ResponseAction.IGNORE:
+        if error_resolution.response_action == ResponseAction.IGNORE:
             if response is not None:
                 log_message = f"Ignoring response for '{request.method}' request to '{request.url}' with response code '{response.status_code}'"
             else:
@@ -440,7 +439,7 @@ class HttpClient:
 
         # TODO: Consider dynamic retry count depending on subsequent error codes
         elif (
-            error_resolution.response_action == ResponseAction.RETRY
+            error_resolution.response_action == ResponseAction.RETRY  # noqa: PLR1714
             or error_resolution.response_action == ResponseAction.RATE_LIMITED
         ):
             user_defined_backoff_time = None
@@ -470,7 +469,7 @@ class HttpClient:
                     error_message=error_message,
                 )
 
-            elif retry_endlessly:
+            if retry_endlessly:
                 raise RateLimitBackoffException(
                     request=request,
                     response=(response if response is not None else exc),
@@ -488,25 +487,25 @@ class HttpClient:
                 response.raise_for_status()
             except requests.HTTPError as e:
                 self._logger.error(response.text)
-                raise e
+                raise e  # noqa: TRY201
 
     @property
     def name(self) -> str:
         return self._name
 
-    def send_request(
+    def send_request(  # noqa: PLR0913, PLR0917
         self,
         http_method: str,
         url: str,
         request_kwargs: Mapping[str, Any],
-        headers: Optional[Mapping[str, str]] = None,
-        params: Optional[Mapping[str, str]] = None,
-        json: Optional[Mapping[str, Any]] = None,
-        data: Optional[Union[str, Mapping[str, Any]]] = None,
-        dedupe_query_params: bool = False,
-        log_formatter: Optional[Callable[[requests.Response], Any]] = None,
-        exit_on_rate_limit: Optional[bool] = False,
-    ) -> Tuple[requests.PreparedRequest, requests.Response]:
+        headers: Mapping[str, str] | None = None,
+        params: Mapping[str, str] | None = None,
+        json: Mapping[str, Any] | None = None,
+        data: str | Mapping[str, Any] | None = None,
+        dedupe_query_params: bool = False,  # noqa: FBT001, FBT002
+        log_formatter: Callable[[requests.Response], Any] | None = None,
+        exit_on_rate_limit: bool | None = False,  # noqa: FBT001, FBT002
+    ) -> tuple[requests.PreparedRequest, requests.Response]:
         """
         Prepares and sends request and return request and response objects.
         """

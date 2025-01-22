@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
-from typing import Any, List, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any
 
 from airbyte_cdk import AbstractSource
 from airbyte_cdk.models import AirbyteStateMessage, ConfiguredAirbyteCatalog, SyncMode
@@ -18,9 +19,9 @@ def read_records(
     config: Mapping[str, Any],
     stream_name: str,
     sync_mode: SyncMode,
-    state: Optional[List[AirbyteStateMessage]] = None,
-    expecting_exception: bool = False,
+    state: list[AirbyteStateMessage] | None = None,
+    expecting_exception: bool = False,  # noqa: FBT001, FBT002
 ) -> EntrypointOutput:
     """Read records from a stream."""
-    _catalog = catalog(stream_name, sync_mode)
+    _catalog = catalog(stream_name, sync_mode)  # noqa: RUF052
     return read(source, config, _catalog, state, expecting_exception)

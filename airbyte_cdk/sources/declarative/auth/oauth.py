@@ -2,8 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, List, Mapping, Optional, Union
+from typing import Any
 
 import pendulum
 
@@ -44,33 +45,33 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         message_repository (MessageRepository): the message repository used to emit logs on HTTP requests
     """
 
-    client_id: Union[InterpolatedString, str]
-    client_secret: Union[InterpolatedString, str]
+    client_id: InterpolatedString | str
+    client_secret: InterpolatedString | str
     config: Mapping[str, Any]
     parameters: InitVar[Mapping[str, Any]]
-    token_refresh_endpoint: Optional[Union[InterpolatedString, str]] = None
-    refresh_token: Optional[Union[InterpolatedString, str]] = None
-    scopes: Optional[List[str]] = None
-    token_expiry_date: Optional[Union[InterpolatedString, str]] = None
-    _token_expiry_date: Optional[pendulum.DateTime] = field(init=False, repr=False, default=None)
-    token_expiry_date_format: Optional[str] = None
+    token_refresh_endpoint: InterpolatedString | str | None = None
+    refresh_token: InterpolatedString | str | None = None
+    scopes: list[str] | None = None
+    token_expiry_date: InterpolatedString | str | None = None
+    _token_expiry_date: pendulum.DateTime | None = field(init=False, repr=False, default=None)
+    token_expiry_date_format: str | None = None
     token_expiry_is_time_of_expiration: bool = False
-    access_token_name: Union[InterpolatedString, str] = "access_token"
-    access_token_value: Optional[Union[InterpolatedString, str]] = None
-    client_id_name: Union[InterpolatedString, str] = "client_id"
-    client_secret_name: Union[InterpolatedString, str] = "client_secret"
-    expires_in_name: Union[InterpolatedString, str] = "expires_in"
-    refresh_token_name: Union[InterpolatedString, str] = "refresh_token"
-    refresh_request_body: Optional[Mapping[str, Any]] = None
-    refresh_request_headers: Optional[Mapping[str, Any]] = None
-    grant_type_name: Union[InterpolatedString, str] = "grant_type"
-    grant_type: Union[InterpolatedString, str] = "refresh_token"
-    message_repository: MessageRepository = NoopMessageRepository()
+    access_token_name: InterpolatedString | str = "access_token"
+    access_token_value: InterpolatedString | str | None = None
+    client_id_name: InterpolatedString | str = "client_id"
+    client_secret_name: InterpolatedString | str = "client_secret"
+    expires_in_name: InterpolatedString | str = "expires_in"
+    refresh_token_name: InterpolatedString | str = "refresh_token"
+    refresh_request_body: Mapping[str, Any] | None = None
+    refresh_request_headers: Mapping[str, Any] | None = None
+    grant_type_name: InterpolatedString | str = "grant_type"
+    grant_type: InterpolatedString | str = "refresh_token"
+    message_repository: MessageRepository = NoopMessageRepository()  # noqa: RUF009
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         super().__init__()
         if self.token_refresh_endpoint is not None:
-            self._token_refresh_endpoint: Optional[InterpolatedString] = InterpolatedString.create(
+            self._token_refresh_endpoint: InterpolatedString | None = InterpolatedString.create(
                 self.token_refresh_endpoint, parameters=parameters
             )
         else:
@@ -85,7 +86,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
             self.refresh_token_name, parameters=parameters
         )
         if self.refresh_token is not None:
-            self._refresh_token: Optional[InterpolatedString] = InterpolatedString.create(
+            self._refresh_token: InterpolatedString | None = InterpolatedString.create(
                 self.refresh_token, parameters=parameters
             )
         else:
@@ -122,7 +123,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         else:
             self._access_token_value = None
 
-        self._access_token: Optional[str] = (
+        self._access_token: str | None = (
             self._access_token_value if self.access_token_value else None
         )
 
@@ -131,7 +132,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
                 "OAuthAuthenticator needs a refresh_token parameter if grant_type is set to `refresh_token`"
             )
 
-    def get_token_refresh_endpoint(self) -> Optional[str]:
+    def get_token_refresh_endpoint(self) -> str | None:
         if self._token_refresh_endpoint is not None:
             refresh_token_endpoint: str = self._token_refresh_endpoint.eval(self.config)
             if not refresh_token_endpoint:
@@ -162,10 +163,10 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     def get_refresh_token_name(self) -> str:
         return self._refresh_token_name.eval(self.config)  # type: ignore # eval returns a string in this context
 
-    def get_refresh_token(self) -> Optional[str]:
+    def get_refresh_token(self) -> str | None:
         return None if self._refresh_token is None else str(self._refresh_token.eval(self.config))
 
-    def get_scopes(self) -> List[str]:
+    def get_scopes(self) -> list[str]:
         return self.scopes or []
 
     def get_access_token_name(self) -> str:
@@ -189,7 +190,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     def get_token_expiry_date(self) -> pendulum.DateTime:
         return self._token_expiry_date  # type: ignore # _token_expiry_date is a pendulum.DateTime. It is never None despite what mypy thinks
 
-    def set_token_expiry_date(self, value: Union[str, int]) -> None:
+    def set_token_expiry_date(self, value: str | int) -> None:
         self._token_expiry_date = self._parse_token_expiration_date(value)
 
     @property
@@ -218,5 +219,5 @@ class DeclarativeSingleUseRefreshTokenOauth2Authenticator(
     Declarative version of SingleUseRefreshTokenOauth2Authenticator which can be used in declarative connectors.
     """
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:  # noqa: ANN401
         super().__init__(*args, **kwargs)

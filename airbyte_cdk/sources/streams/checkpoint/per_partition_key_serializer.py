@@ -1,7 +1,8 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 import json
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 
 class PerPartitionKeySerializer:
@@ -13,10 +14,10 @@ class PerPartitionKeySerializer:
     """
 
     @staticmethod
-    def to_partition_key(to_serialize: Any) -> str:
+    def to_partition_key(to_serialize: Any) -> str:  # noqa: ANN401
         # separators have changed in Python 3.4. To avoid being impacted by further change, we explicitly specify our own value
         return json.dumps(to_serialize, indent=None, separators=(",", ":"), sort_keys=True)
 
     @staticmethod
-    def to_partition(to_deserialize: Any) -> Mapping[str, Any]:
+    def to_partition(to_deserialize: Any) -> Mapping[str, Any]:  # noqa: ANN401
         return json.loads(to_deserialize)  # type: ignore # The partition is known to be a dict, but the type hint is Any

@@ -4,8 +4,9 @@
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Iterable, MutableMapping
 from datetime import datetime
-from typing import Any, Iterable, MutableMapping
+from typing import Any
 
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
@@ -18,7 +19,7 @@ class AbstractFileBasedCursor(ABC):
     """
 
     @abstractmethod
-    def __init__(self, stream_config: FileBasedStreamConfig, **kwargs: Any):
+    def __init__(self, stream_config: FileBasedStreamConfig, **kwargs: Any):  # noqa: ANN204, ANN401
         """
         Common interface for all cursors.
         """

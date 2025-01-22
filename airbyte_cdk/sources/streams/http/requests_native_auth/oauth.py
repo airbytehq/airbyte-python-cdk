@@ -2,7 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Any, List, Mapping, Optional, Sequence, Tuple, Union
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import dpath
 import pendulum
@@ -24,7 +25,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
     If a connector_config is provided any mutation of it's value in the scope of this class will emit AirbyteControlConnectorConfigMessage.
     """
 
-    def __init__(
+    def __init__(  # noqa: ANN204, PLR0913, PLR0917
         self,
         token_refresh_endpoint: str,
         client_id: str,
@@ -33,7 +34,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         client_id_name: str = "client_id",
         client_secret_name: str = "client_secret",
         refresh_token_name: str = "refresh_token",
-        scopes: List[str] | None = None,
+        scopes: list[str] | None = None,
         token_expiry_date: pendulum.DateTime | None = None,
         token_expiry_date_format: str | None = None,
         access_token_name: str = "access_token",
@@ -42,10 +43,10 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         refresh_request_headers: Mapping[str, Any] | None = None,
         grant_type_name: str = "grant_type",
         grant_type: str = "refresh_token",
-        token_expiry_is_time_of_expiration: bool = False,
-        refresh_token_error_status_codes: Tuple[int, ...] = (),
+        token_expiry_is_time_of_expiration: bool = False,  # noqa: FBT001, FBT002
+        refresh_token_error_status_codes: tuple[int, ...] = (),
         refresh_token_error_key: str = "",
-        refresh_token_error_values: Tuple[str, ...] = (),
+        refresh_token_error_values: tuple[str, ...] = (),
     ):
         self._token_refresh_endpoint = token_refresh_endpoint
         self._client_secret_name = client_secret_name
@@ -115,7 +116,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
     def get_token_expiry_date(self) -> pendulum.DateTime:
         return self._token_expiry_date
 
-    def set_token_expiry_date(self, value: Union[str, int]) -> None:
+    def set_token_expiry_date(self, value: str | int) -> None:
         self._token_expiry_date = self._parse_token_expiration_date(value)
 
     @property
@@ -123,7 +124,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         return self._token_expiry_is_time_of_expiration
 
     @property
-    def token_expiry_date_format(self) -> Optional[str]:
+    def token_expiry_date_format(self) -> str | None:
         return self._token_expiry_date_format
 
     @property
@@ -145,11 +146,11 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
     client_secret_config_path, refresh_token_config_path constructor arguments.
     """
 
-    def __init__(
+    def __init__(  # noqa: ANN204, PLR0913, PLR0917
         self,
         connector_config: Mapping[str, Any],
         token_refresh_endpoint: str,
-        scopes: List[str] | None = None,
+        scopes: list[str] | None = None,
         access_token_name: str = "access_token",
         expires_in_name: str = "expires_in",
         refresh_token_name: str = "refresh_token",
@@ -158,18 +159,18 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         grant_type_name: str = "grant_type",
         grant_type: str = "refresh_token",
         client_id_name: str = "client_id",
-        client_id: Optional[str] = None,
+        client_id: str | None = None,
         client_secret_name: str = "client_secret",
-        client_secret: Optional[str] = None,
+        client_secret: str | None = None,
         access_token_config_path: Sequence[str] = ("credentials", "access_token"),
         refresh_token_config_path: Sequence[str] = ("credentials", "refresh_token"),
         token_expiry_date_config_path: Sequence[str] = ("credentials", "token_expiry_date"),
-        token_expiry_date_format: Optional[str] = None,
-        message_repository: MessageRepository = NoopMessageRepository(),
-        token_expiry_is_time_of_expiration: bool = False,
-        refresh_token_error_status_codes: Tuple[int, ...] = (),
+        token_expiry_date_format: str | None = None,
+        message_repository: MessageRepository = NoopMessageRepository(),  # noqa: B008
+        token_expiry_is_time_of_expiration: bool = False,  # noqa: FBT001, FBT002
+        refresh_token_error_status_codes: tuple[int, ...] = (),
         refresh_token_error_key: str = "",
-        refresh_token_error_values: Tuple[str, ...] = (),
+        refresh_token_error_values: tuple[str, ...] = (),
     ):
         """
         Args:
@@ -282,7 +283,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             self._token_expiry_date_config_path,
             default="",
         )
-        return pendulum.now().subtract(days=1) if expiry_date == "" else pendulum.parse(expiry_date)  # type: ignore [arg-type, return-value, no-untyped-call]
+        return pendulum.now().subtract(days=1) if expiry_date == "" else pendulum.parse(expiry_date)  # type: ignore [arg-type, return-value, no-untyped-call]  # noqa: PLC1901
 
     def set_token_expiry_date(  # type: ignore[override]
         self,
@@ -305,8 +306,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
     ) -> pendulum.DateTime:
         if token_expiry_date_format:
             return pendulum.from_format(access_token_expires_in, token_expiry_date_format)
-        else:
-            return pendulum.now("UTC").add(seconds=int(access_token_expires_in))
+        return pendulum.now("UTC").add(seconds=int(access_token_expires_in))
 
     def get_access_token(self) -> str:
         """Retrieve new access and refresh token if the access token has expired.
@@ -324,7 +324,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             self.access_token = new_access_token
             self.set_refresh_token(new_refresh_token)
             self.set_token_expiry_date(new_token_expiry_date)
-            # FIXME emit_configuration_as_airbyte_control_message as been deprecated in favor of package airbyte_cdk.sources.message
+            # FIXME emit_configuration_as_airbyte_control_message as been deprecated in favor of package airbyte_cdk.sources.message  # noqa: FIX001, TD001, TD004
             #  Usually, a class shouldn't care about the implementation details but to keep backward compatibility where we print the
             #  message directly in the console, this is needed
             if not isinstance(self._message_repository, NoopMessageRepository):
@@ -337,7 +337,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
 
     def refresh_access_token(  # type: ignore[override]  # Signature doesn't match base class
         self,
-    ) -> Tuple[str, str, str]:
+    ) -> tuple[str, str, str]:
         response_json = self._get_refresh_access_token_response()
         return (
             response_json[self.get_access_token_name()],

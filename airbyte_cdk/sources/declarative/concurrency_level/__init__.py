@@ -4,4 +4,5 @@
 
 from airbyte_cdk.sources.declarative.concurrency_level.concurrency_level import ConcurrencyLevel
 
+
 __all__ = ["ConcurrencyLevel"]

@@ -1,11 +1,11 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 
+from collections.abc import Mapping
 from types import MappingProxyType
-from typing import Mapping
 
 
 class HttpResponse:
-    def __init__(
+    def __init__(  # noqa: ANN204
         self, body: str, status_code: int = 200, headers: Mapping[str, str] = MappingProxyType({})
     ):
         self._body = body

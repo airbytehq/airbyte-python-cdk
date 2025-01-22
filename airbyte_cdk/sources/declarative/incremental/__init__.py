@@ -19,6 +19,7 @@ from airbyte_cdk.sources.declarative.incremental.resumable_full_refresh_cursor i
     ResumableFullRefreshCursor,
 )
 
+
 __all__ = [
     "CursorFactory",
     "DatetimeBasedCursor",

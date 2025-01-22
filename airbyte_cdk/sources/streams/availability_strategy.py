@@ -5,10 +5,12 @@
 import logging
 import typing
 from abc import ABC, abstractmethod
-from typing import Any, Mapping, Optional, Tuple
+from collections.abc import Mapping
+from typing import Any, Optional
 
 from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.streams.core import Stream, StreamData
+
 
 if typing.TYPE_CHECKING:
     from airbyte_cdk.sources import Source
@@ -22,7 +24,7 @@ class AvailabilityStrategy(ABC):
     @abstractmethod
     def check_availability(
         self, stream: Stream, logger: logging.Logger, source: Optional["Source"] = None
-    ) -> Tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """
         Checks stream availability.
 
@@ -36,7 +38,7 @@ class AvailabilityStrategy(ABC):
         """
 
     @staticmethod
-    def get_first_stream_slice(stream: Stream) -> Optional[Mapping[str, Any]]:
+    def get_first_stream_slice(stream: Stream) -> Mapping[str, Any] | None:
         """
         Gets the first stream_slice from a given stream's stream_slices.
         :param stream: stream
@@ -55,7 +57,7 @@ class AvailabilityStrategy(ABC):
 
     @staticmethod
     def get_first_record_for_slice(
-        stream: Stream, stream_slice: Optional[Mapping[str, Any]]
+        stream: Stream, stream_slice: Mapping[str, Any] | None
     ) -> StreamData:
         """
         Gets the first record for a stream_slice of a stream.

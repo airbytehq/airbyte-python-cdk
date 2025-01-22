@@ -4,9 +4,9 @@
 
 from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     CompositeRawDecoder,
-    GzipParser,
+    GzipParser,  # noqa: F401
     JsonParser,
-    Parser,
+    Parser,  # noqa: F401
 )
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
 from airbyte_cdk.sources.declarative.decoders.json_decoder import (
@@ -21,6 +21,7 @@ from airbyte_cdk.sources.declarative.decoders.pagination_decoder_decorator impor
 )
 from airbyte_cdk.sources.declarative.decoders.xml_decoder import XmlDecoder
 from airbyte_cdk.sources.declarative.decoders.zipfile_decoder import ZipfileDecoder
+
 
 __all__ = [
     "Decoder",

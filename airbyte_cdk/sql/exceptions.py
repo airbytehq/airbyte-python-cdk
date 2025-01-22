@@ -44,6 +44,7 @@ from pathlib import Path
 from textwrap import indent
 from typing import Any
 
+
 NEW_ISSUE_URL = "https://github.com/airbytehq/airbyte/issues/new/choose"
 DOCS_URL_BASE = "https://https://docs.airbyte.com/"
 DOCS_URL = f"{DOCS_URL_BASE}/airbyte.html"

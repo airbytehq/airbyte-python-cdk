@@ -1,11 +1,12 @@
-#
+#  # noqa: A005
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
 import base64
 import logging
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Union
+from typing import Any
 
 import requests
 from cachetools import TTLCache, cached
@@ -68,7 +69,7 @@ class ApiKeyAuthenticator(DeclarativeAuthenticator):
     def get_request_params(self) -> Mapping[str, Any]:
         return self._get_request_options(RequestOptionType.request_parameter)
 
-    def get_request_body_data(self) -> Union[Mapping[str, Any], str]:
+    def get_request_body_data(self) -> Mapping[str, Any] | str:
         return self._get_request_options(RequestOptionType.body_data)
 
     def get_request_body_json(self) -> Mapping[str, Any]:
@@ -118,10 +119,10 @@ class BasicHttpAuthenticator(DeclarativeAuthenticator):
         parameters (Mapping[str, Any]): Additional runtime parameters to be used for string interpolation
     """
 
-    username: Union[InterpolatedString, str]
+    username: InterpolatedString | str
     config: Config
     parameters: InitVar[Mapping[str, Any]]
-    password: Union[InterpolatedString, str] = ""
+    password: InterpolatedString | str = ""
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._username = InterpolatedString.create(self.username, parameters=parameters)
@@ -134,7 +135,7 @@ class BasicHttpAuthenticator(DeclarativeAuthenticator):
     @property
     def token(self) -> str:
         auth_string = (
-            f"{self._username.eval(self.config)}:{self._password.eval(self.config)}".encode("utf8")
+            f"{self._username.eval(self.config)}:{self._password.eval(self.config)}".encode()
         )
         b64_encoded = base64.b64encode(auth_string).decode("utf8")
         return f"Basic {b64_encoded}"
@@ -148,7 +149,7 @@ class BasicHttpAuthenticator(DeclarativeAuthenticator):
     i.e. by adding another item the cache would exceed its maximum size, the cache must choose which item(s) to discard
     ttl=86400 means that cached token will live for 86400 seconds (one day)
 """
-cacheSessionTokenAuthenticator: TTLCache[str, str] = TTLCache(maxsize=1000, ttl=86400)
+cacheSessionTokenAuthenticator: TTLCache[str, str] = TTLCache(maxsize=1000, ttl=86400)  # noqa: N816
 
 
 @cached(cacheSessionTokenAuthenticator)
@@ -201,16 +202,16 @@ class LegacySessionTokenAuthenticator(DeclarativeAuthenticator):
         validate_session_url (Union[InterpolatedString, str]): Url to validate passed session token
     """
 
-    api_url: Union[InterpolatedString, str]
-    header: Union[InterpolatedString, str]
-    session_token: Union[InterpolatedString, str]
-    session_token_response_key: Union[InterpolatedString, str]
-    username: Union[InterpolatedString, str]
+    api_url: InterpolatedString | str
+    header: InterpolatedString | str
+    session_token: InterpolatedString | str
+    session_token_response_key: InterpolatedString | str
+    username: InterpolatedString | str
     config: Config
     parameters: InitVar[Mapping[str, Any]]
-    login_url: Union[InterpolatedString, str]
-    validate_session_url: Union[InterpolatedString, str]
-    password: Union[InterpolatedString, str] = ""
+    login_url: InterpolatedString | str
+    validate_session_url: InterpolatedString | str
+    password: InterpolatedString | str = ""
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._username = InterpolatedString.create(self.username, parameters=parameters)
@@ -234,7 +235,7 @@ class LegacySessionTokenAuthenticator(DeclarativeAuthenticator):
 
     @property
     def token(self) -> str:
-        if self._session_token.eval(self.config):
+        if self._session_token.eval(self.config):  # noqa: SIM102
             if self.is_valid_session_token():
                 return str(self._session_token.eval(self.config))
         if self._password.eval(self.config) and self._username.eval(self.config):
@@ -259,14 +260,12 @@ class LegacySessionTokenAuthenticator(DeclarativeAuthenticator):
             response.raise_for_status()
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == requests.codes["unauthorized"]:
-                self.logger.info(f"Unable to connect by session token from config due to {str(e)}")
+                self.logger.info(f"Unable to connect by session token from config due to {e!s}")
                 return False
-            else:
-                raise ConnectionError(f"Error while validating session token: {e}")
+            raise ConnectionError(f"Error while validating session token: {e}")  # noqa: B904
         if response.ok:
             self.logger.info("Connection check for source is successful.")
             return True
-        else:
-            raise ConnectionError(
-                f"Failed to retrieve new session token, response code {response.status_code} because {response.reason}"
-            )
+        raise ConnectionError(
+            f"Failed to retrieve new session token, response code {response.status_code} because {response.reason}"
+        )

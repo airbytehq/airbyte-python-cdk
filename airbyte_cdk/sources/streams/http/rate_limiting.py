@@ -5,7 +5,8 @@
 import logging
 import sys
 import time
-from typing import Any, Callable, Mapping, Optional
+from collections.abc import Callable, Mapping
+from typing import Any
 
 import backoff
 from requests import PreparedRequest, RequestException, Response, codes, exceptions
@@ -15,6 +16,7 @@ from .exceptions import (
     RateLimitBackoffException,
     UserDefinedBackoffException,
 )
+
 
 TRANSIENT_EXCEPTIONS = (
     DefaultBackoffException,
@@ -31,7 +33,10 @@ SendRequestCallableType = Callable[[PreparedRequest, Mapping[str, Any]], Respons
 
 
 def default_backoff_handler(
-    max_tries: Optional[int], factor: float, max_time: Optional[int] = None, **kwargs: Any
+    max_tries: int | None,
+    factor: float,
+    max_time: int | None = None,
+    **kwargs: Any,  # noqa: ANN401
 ) -> Callable[[SendRequestCallableType], SendRequestCallableType]:
     def log_retry_attempt(details: Mapping[str, Any]) -> None:
         _, exc, _ = sys.exc_info()
@@ -40,17 +45,17 @@ def default_backoff_handler(
                 f"Status code: {exc.response.status_code!r}, Response Content: {exc.response.content!r}"
             )
         logger.info(
-            f"Caught retryable error '{str(exc)}' after {details['tries']} tries. Waiting {details['wait']} seconds then retrying..."
+            f"Caught retryable error '{exc!s}' after {details['tries']} tries. Waiting {details['wait']} seconds then retrying..."
         )
 
     def should_give_up(exc: Exception) -> bool:
         # If a non-rate-limiting related 4XX error makes it this far, it means it was unexpected and probably consistent, so we shouldn't back off
-        if isinstance(exc, RequestException):
+        if isinstance(exc, RequestException):  # noqa: SIM102
             if exc.response is not None:
                 give_up: bool = (
                     exc.response is not None
                     and exc.response.status_code != codes.too_many_requests
-                    and 400 <= exc.response.status_code < 500
+                    and 400 <= exc.response.status_code < 500  # noqa: PLR2004
                 )
                 if give_up:
                     logger.info(f"Giving up for returned HTTP status: {exc.response.status_code!r}")
@@ -72,7 +77,9 @@ def default_backoff_handler(
 
 
 def http_client_default_backoff_handler(
-    max_tries: Optional[int], max_time: Optional[int] = None, **kwargs: Any
+    max_tries: int | None,
+    max_time: int | None = None,
+    **kwargs: Any,  # noqa: ANN401
 ) -> Callable[[SendRequestCallableType], SendRequestCallableType]:
     def log_retry_attempt(details: Mapping[str, Any]) -> None:
         _, exc, _ = sys.exc_info()
@@ -81,10 +88,10 @@ def http_client_default_backoff_handler(
                 f"Status code: {exc.response.status_code!r}, Response Content: {exc.response.content!r}"
             )
         logger.info(
-            f"Caught retryable error '{str(exc)}' after {details['tries']} tries. Waiting {details['wait']} seconds then retrying..."
+            f"Caught retryable error '{exc!s}' after {details['tries']} tries. Waiting {details['wait']} seconds then retrying..."
         )
 
-    def should_give_up(exc: Exception) -> bool:
+    def should_give_up(exc: Exception) -> bool:  # noqa: ARG001
         # If made it here, the ResponseAction was RETRY and therefore should not give up
         return False
 
@@ -101,9 +108,11 @@ def http_client_default_backoff_handler(
 
 
 def user_defined_backoff_handler(
-    max_tries: Optional[int], max_time: Optional[int] = None, **kwargs: Any
+    max_tries: int | None,
+    max_time: int | None = None,
+    **kwargs: Any,  # noqa: ANN401
 ) -> Callable[[SendRequestCallableType], SendRequestCallableType]:
-    def sleep_on_ratelimit(details: Mapping[str, Any]) -> None:
+    def sleep_on_ratelimit(details: Mapping[str, Any]) -> None:  # noqa: ARG001
         _, exc, _ = sys.exc_info()
         if isinstance(exc, UserDefinedBackoffException):
             if exc.response:
@@ -137,7 +146,7 @@ def user_defined_backoff_handler(
 
 
 def rate_limit_default_backoff_handler(
-    **kwargs: Any,
+    **kwargs: Any,  # noqa: ANN401
 ) -> Callable[[SendRequestCallableType], SendRequestCallableType]:
     def log_retry_attempt(details: Mapping[str, Any]) -> None:
         _, exc, _ = sys.exc_info()
@@ -146,7 +155,7 @@ def rate_limit_default_backoff_handler(
                 f"Status code: {exc.response.status_code!r}, Response Content: {exc.response.content!r}"
             )
         logger.info(
-            f"Caught retryable error '{str(exc)}' after {details['tries']} tries. Waiting {details['wait']} seconds then retrying..."
+            f"Caught retryable error '{exc!s}' after {details['tries']} tries. Waiting {details['wait']} seconds then retrying..."
         )
 
     return backoff.on_exception(  # type: ignore # Decorator function returns a function with a different signature than the input function, so mypy can't infer the type of the returned function

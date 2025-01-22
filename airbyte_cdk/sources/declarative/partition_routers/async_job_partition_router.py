@@ -1,7 +1,8 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Callable, Iterable, Mapping, Optional
+from typing import Any
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import (
@@ -33,7 +34,7 @@ class AsyncJobPartitionRouter(StreamSlicer):
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._job_orchestrator_factory = self.job_orchestrator_factory
-        self._job_orchestrator: Optional[AsyncJobOrchestrator] = None
+        self._job_orchestrator: AsyncJobOrchestrator | None = None
         self._parameters = parameters
 
     def stream_slices(self) -> Iterable[StreamSlice]:

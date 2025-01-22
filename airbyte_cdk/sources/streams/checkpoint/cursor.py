@@ -3,7 +3,7 @@
 #
 
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 from airbyte_cdk.sources.types import Record, StreamSlice, StreamState
 
@@ -23,7 +23,7 @@ class Cursor(ABC):
         :param stream_state: The state of the stream as returned by get_stream_state
         """
 
-    def observe(self, stream_slice: StreamSlice, record: Record) -> None:
+    def observe(self, stream_slice: StreamSlice, record: Record) -> None:  # noqa: B027
         """
         Register a record with the cursor; the cursor instance can then use it to manage the state of the in-progress stream read.
 
@@ -34,7 +34,7 @@ class Cursor(ABC):
         pass
 
     @abstractmethod
-    def close_slice(self, stream_slice: StreamSlice, *args: Any) -> None:
+    def close_slice(self, stream_slice: StreamSlice, *args: Any) -> None:  # noqa: ANN401
         """
         Update state based on the stream slice. Note that `stream_slice.cursor_slice` and `most_recent_record.associated_slice` are expected
         to be the same but we make it explicit here that `stream_slice` should be leveraged to update the state. We do not pass in the
@@ -69,7 +69,7 @@ class Cursor(ABC):
         """
 
     @abstractmethod
-    def select_state(self, stream_slice: Optional[StreamSlice] = None) -> Optional[StreamState]:
+    def select_state(self, stream_slice: StreamSlice | None = None) -> StreamState | None:
         """
         Get the state value of a specific stream_slice. For incremental or resumable full refresh cursors which only manage state in
         a single dimension this is the entire state object. For per-partition cursors used by substreams, this returns the state of

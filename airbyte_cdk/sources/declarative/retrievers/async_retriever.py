@@ -1,8 +1,9 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 
+from collections.abc import Iterable, Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any
 
 from typing_extensions import deprecated
 
@@ -58,7 +59,7 @@ class AsyncRetriever(Retriever):
         return self.state
 
     def _validate_and_get_stream_slice_partition(
-        self, stream_slice: Optional[StreamSlice] = None
+        self, stream_slice: StreamSlice | None = None
     ) -> AsyncPartition:
         """
         Validates the stream_slice argument and returns the partition from it.
@@ -80,13 +81,13 @@ class AsyncRetriever(Retriever):
             )
         return stream_slice["partition"]  # type: ignore  # stream_slice["partition"] has been added as an AsyncPartition as part of stream_slices
 
-    def stream_slices(self) -> Iterable[Optional[StreamSlice]]:
+    def stream_slices(self) -> Iterable[StreamSlice | None]:
         return self.stream_slicer.stream_slices()
 
     def read_records(
         self,
         records_schema: Mapping[str, Any],
-        stream_slice: Optional[StreamSlice] = None,
+        stream_slice: StreamSlice | None = None,
     ) -> Iterable[StreamData]:
         stream_state: StreamState = self._get_stream_state()
         partition: AsyncPartition = self._validate_and_get_stream_slice_partition(stream_slice)

@@ -2,9 +2,10 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
 from enum import Enum
-from typing import Any, Mapping, Union
+from typing import Any
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 
@@ -30,7 +31,7 @@ class RequestOption:
         inject_into (RequestOptionType): Describes where in the HTTP request to inject the parameter
     """
 
-    field_name: Union[InterpolatedString, str]
+    field_name: InterpolatedString | str
     inject_into: RequestOptionType
     parameters: InitVar[Mapping[str, Any]]
 

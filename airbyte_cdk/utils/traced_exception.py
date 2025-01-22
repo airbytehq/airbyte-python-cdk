@@ -3,7 +3,7 @@
 #
 import time
 import traceback
-from typing import Any, Optional
+from typing import Any
 
 import orjson
 
@@ -27,13 +27,13 @@ class AirbyteTracedException(Exception):
     An exception that should be emitted as an AirbyteTraceMessage
     """
 
-    def __init__(
+    def __init__(  # noqa: ANN204
         self,
-        internal_message: Optional[str] = None,
-        message: Optional[str] = None,
+        internal_message: str | None = None,
+        message: str | None = None,
         failure_type: FailureType = FailureType.system_error,
-        exception: Optional[BaseException] = None,
-        stream_descriptor: Optional[StreamDescriptor] = None,
+        exception: BaseException | None = None,
+        stream_descriptor: StreamDescriptor | None = None,
     ):
         """
         :param internal_message: the internal error that caused the failure
@@ -50,7 +50,7 @@ class AirbyteTracedException(Exception):
         super().__init__(internal_message)
 
     def as_airbyte_message(
-        self, stream_descriptor: Optional[StreamDescriptor] = None
+        self, stream_descriptor: StreamDescriptor | None = None
     ) -> AirbyteMessage:
         """
         Builds an AirbyteTraceMessage from the exception
@@ -80,7 +80,7 @@ class AirbyteTracedException(Exception):
 
         return AirbyteMessage(type=MessageType.TRACE, trace=trace_message)
 
-    def as_connection_status_message(self) -> Optional[AirbyteMessage]:
+    def as_connection_status_message(self) -> AirbyteMessage | None:
         if self.failure_type == FailureType.config_error:
             return AirbyteMessage(
                 type=MessageType.CONNECTION_STATUS,
@@ -103,9 +103,9 @@ class AirbyteTracedException(Exception):
     def from_exception(
         cls,
         exc: BaseException,
-        stream_descriptor: Optional[StreamDescriptor] = None,
-        *args: Any,
-        **kwargs: Any,
+        stream_descriptor: StreamDescriptor | None = None,
+        *args: Any,  # noqa: ANN401
+        **kwargs: Any,  # noqa: ANN401
     ) -> "AirbyteTracedException":
         """
         Helper to create an AirbyteTracedException from an existing exception
@@ -116,12 +116,12 @@ class AirbyteTracedException(Exception):
             internal_message=str(exc),
             exception=exc,
             stream_descriptor=stream_descriptor,
-            *args,
+            *args,  # noqa: B026
             **kwargs,
         )  # type: ignore  # ignoring because of args and kwargs
 
     def as_sanitized_airbyte_message(
-        self, stream_descriptor: Optional[StreamDescriptor] = None
+        self, stream_descriptor: StreamDescriptor | None = None
     ) -> AirbyteMessage:
         """
         Builds an AirbyteTraceMessage from the exception and sanitizes any secrets from the message body

@@ -2,8 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional, Union
+from typing import Any
 
 import requests
 
@@ -25,7 +26,7 @@ class PageIncrement(PaginationStrategy):
     """
 
     config: Config
-    page_size: Optional[Union[str, int]]
+    page_size: str | int | None
     parameters: InitVar[Mapping[str, Any]]
     start_from_page: int = 0
     inject_on_first_request: bool = False
@@ -36,36 +37,35 @@ class PageIncrement(PaginationStrategy):
         else:
             page_size = InterpolatedString(self.page_size, parameters=parameters).eval(self.config)
             if not isinstance(page_size, int):
-                raise Exception(f"{page_size} is of type {type(page_size)}. Expected {int}")
+                raise Exception(f"{page_size} is of type {type(page_size)}. Expected {int}")  # noqa: TRY002
             self._page_size = page_size
 
     @property
-    def initial_token(self) -> Optional[Any]:
+    def initial_token(self) -> Any | None:  # noqa: ANN401
         if self.inject_on_first_request:
             return self.start_from_page
         return None
 
     def next_page_token(
         self,
-        response: requests.Response,
+        response: requests.Response,  # noqa: ARG002
         last_page_size: int,
-        last_record: Optional[Record],
-        last_page_token_value: Optional[Any],
-    ) -> Optional[Any]:
+        last_record: Record | None,  # noqa: ARG002
+        last_page_token_value: Any | None,  # noqa: ANN401
+    ) -> Any | None:  # noqa: ANN401
         # Stop paginating when there are fewer records than the page size or the current page has no records
         if (self._page_size and last_page_size < self._page_size) or last_page_size == 0:
             return None
-        elif last_page_token_value is None:
+        if last_page_token_value is None:
             # If the PageIncrement strategy does not inject on the first request, the incoming last_page_token_value
             # may be None. When this is the case, we assume we've already requested the first page specified by
             # start_from_page and must now get the next page
             return self.start_from_page + 1
-        elif not isinstance(last_page_token_value, int):
-            raise ValueError(
+        if not isinstance(last_page_token_value, int):
+            raise ValueError(  # noqa: TRY004
                 f"Last page token value {last_page_token_value} for PageIncrement pagination strategy was not an integer"
             )
-        else:
-            return last_page_token_value + 1
+        return last_page_token_value + 1
 
-    def get_page_size(self) -> Optional[int]:
+    def get_page_size(self) -> int | None:
         return self._page_size

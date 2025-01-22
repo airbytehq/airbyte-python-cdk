@@ -2,8 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping, MutableMapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Mapping, MutableMapping, Optional, Union
+from typing import Any
 
 import requests
 
@@ -97,13 +98,13 @@ class DefaultPaginator(Paginator):
 
     pagination_strategy: PaginationStrategy
     config: Config
-    url_base: Union[InterpolatedString, str]
+    url_base: InterpolatedString | str
     parameters: InitVar[Mapping[str, Any]]
     decoder: Decoder = field(
         default_factory=lambda: PaginationDecoderDecorator(decoder=JsonDecoder(parameters={}))
     )
-    page_size_option: Optional[RequestOption] = None
-    page_token_option: Optional[Union[RequestPath, RequestOption]] = None
+    page_size_option: RequestOption | None = None
+    page_token_option: RequestPath | RequestOption | None = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if self.page_size_option and not self.pagination_strategy.get_page_size():
@@ -113,7 +114,7 @@ class DefaultPaginator(Paginator):
         if isinstance(self.url_base, str):
             self.url_base = InterpolatedString(string=self.url_base, parameters=parameters)
 
-    def get_initial_token(self) -> Optional[Any]:
+    def get_initial_token(self) -> Any | None:  # noqa: ANN401
         """
         Return the page token that should be used for the first request of a stream
 
@@ -126,9 +127,9 @@ class DefaultPaginator(Paginator):
         self,
         response: requests.Response,
         last_page_size: int,
-        last_record: Optional[Record],
-        last_page_token_value: Optional[Any] = None,
-    ) -> Optional[Mapping[str, Any]]:
+        last_record: Record | None,
+        last_page_token_value: Any | None = None,  # noqa: ANN401
+    ) -> Mapping[str, Any] | None:
         next_page_token = self.pagination_strategy.next_page_token(
             response=response,
             last_page_size=last_page_size,
@@ -137,55 +138,53 @@ class DefaultPaginator(Paginator):
         )
         if next_page_token:
             return {"next_page_token": next_page_token}
-        else:
-            return None
+        return None
 
-    def path(self, next_page_token: Optional[Mapping[str, Any]]) -> Optional[str]:
+    def path(self, next_page_token: Mapping[str, Any] | None) -> str | None:
         token = next_page_token.get("next_page_token") if next_page_token else None
         if token and self.page_token_option and isinstance(self.page_token_option, RequestPath):
             # Replace url base to only return the path
             return str(token).replace(self.url_base.eval(self.config), "")  # type: ignore # url_base is casted to a InterpolatedString in __post_init__
-        else:
-            return None
+        return None
 
     def get_request_params(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,  # noqa: ARG002
+        stream_slice: StreamSlice | None = None,  # noqa: ARG002
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> MutableMapping[str, Any]:
         return self._get_request_options(RequestOptionType.request_parameter, next_page_token)
 
     def get_request_headers(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,  # noqa: ARG002
+        stream_slice: StreamSlice | None = None,  # noqa: ARG002
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, str]:
         return self._get_request_options(RequestOptionType.header, next_page_token)
 
     def get_request_body_data(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,  # noqa: ARG002
+        stream_slice: StreamSlice | None = None,  # noqa: ARG002
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return self._get_request_options(RequestOptionType.body_data, next_page_token)
 
     def get_request_body_json(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,  # noqa: ARG002
+        stream_slice: StreamSlice | None = None,  # noqa: ARG002
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return self._get_request_options(RequestOptionType.body_json, next_page_token)
 
     def _get_request_options(
-        self, option_type: RequestOptionType, next_page_token: Optional[Mapping[str, Any]]
+        self, option_type: RequestOptionType, next_page_token: Mapping[str, Any] | None
     ) -> MutableMapping[str, Any]:
         options = {}
 
@@ -228,7 +227,7 @@ class PaginatorTestReadDecorator(Paginator):
         self._decorated = decorated
         self._page_count = self._PAGE_COUNT_BEFORE_FIRST_NEXT_CALL
 
-    def get_initial_token(self) -> Optional[Any]:
+    def get_initial_token(self) -> Any | None:  # noqa: ANN401
         self._page_count = self._PAGE_COUNT_BEFORE_FIRST_NEXT_CALL
         return self._decorated.get_initial_token()
 
@@ -236,9 +235,9 @@ class PaginatorTestReadDecorator(Paginator):
         self,
         response: requests.Response,
         last_page_size: int,
-        last_record: Optional[Record],
-        last_page_token_value: Optional[Any] = None,
-    ) -> Optional[Mapping[str, Any]]:
+        last_record: Record | None,
+        last_page_token_value: Any | None = None,  # noqa: ANN401
+    ) -> Mapping[str, Any] | None:
         if self._page_count >= self._maximum_number_of_pages:
             return None
 
@@ -247,15 +246,15 @@ class PaginatorTestReadDecorator(Paginator):
             response, last_page_size, last_record, last_page_token_value
         )
 
-    def path(self, next_page_token: Optional[Mapping[str, Any]]) -> Optional[str]:
+    def path(self, next_page_token: Mapping[str, Any] | None) -> str | None:
         return self._decorated.path(next_page_token)
 
     def get_request_params(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return self._decorated.get_request_params(
             stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
@@ -264,9 +263,9 @@ class PaginatorTestReadDecorator(Paginator):
     def get_request_headers(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, str]:
         return self._decorated.get_request_headers(
             stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
@@ -275,10 +274,10 @@ class PaginatorTestReadDecorator(Paginator):
     def get_request_body_data(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Union[Mapping[str, Any], str]:
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any] | str:
         return self._decorated.get_request_body_data(
             stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
         )
@@ -286,9 +285,9 @@ class PaginatorTestReadDecorator(Paginator):
     def get_request_body_json(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return self._decorated.get_request_body_json(
             stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token

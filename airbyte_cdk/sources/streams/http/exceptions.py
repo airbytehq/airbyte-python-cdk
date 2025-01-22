@@ -3,16 +3,14 @@
 #
 
 
-from typing import Optional, Union
-
 import requests
 
 
 class BaseBackoffException(requests.exceptions.HTTPError):
-    def __init__(
+    def __init__(  # noqa: ANN204
         self,
         request: requests.PreparedRequest,
-        response: Optional[Union[requests.Response, Exception]],
+        response: requests.Response | Exception | None,
         error_message: str = "",
     ):
         if isinstance(response, requests.Response):
@@ -37,11 +35,11 @@ class UserDefinedBackoffException(BaseBackoffException):
     An exception that exposes how long it attempted to backoff
     """
 
-    def __init__(
+    def __init__(  # noqa: ANN204
         self,
-        backoff: Union[int, float],
+        backoff: int | float,  # noqa: PYI041
         request: requests.PreparedRequest,
-        response: Optional[Union[requests.Response, Exception]],
+        response: requests.Response | Exception | None,
         error_message: str = "",
     ):
         """

@@ -10,9 +10,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast, final
 
-from airbyte_cdk.models import ConfiguredAirbyteCatalog
+from airbyte_cdk.models import ConfiguredAirbyteCatalog  # noqa: TC001
 from airbyte_cdk.sql import exceptions as exc
 from airbyte_cdk.sql._util.name_normalizers import LowerCaseNormalizer
+
 
 if TYPE_CHECKING:
     from airbyte_cdk.models import ConfiguredAirbyteStream
@@ -40,7 +41,7 @@ class CatalogProvider:
         self._catalog: ConfiguredAirbyteCatalog = self.validate_catalog(configured_catalog)
 
     @staticmethod
-    def validate_catalog(catalog: ConfiguredAirbyteCatalog) -> Any:
+    def validate_catalog(catalog: ConfiguredAirbyteCatalog) -> Any:  # noqa: ANN401
         """Validate the catalog to ensure it is valid.
 
         This requires ensuring that `generationId` and `minGenerationId` are both set. If
@@ -107,14 +108,14 @@ class CatalogProvider:
         stream_name: str,
     ) -> dict[str, Any]:
         """Return the column definitions for the given stream."""
-        return cast(dict[str, Any], self.get_configured_stream_info(stream_name).stream.json_schema)
+        return cast(dict[str, Any], self.get_configured_stream_info(stream_name).stream.json_schema)  # noqa: TC006
 
     def get_stream_properties(
         self,
         stream_name: str,
     ) -> dict[str, dict[str, Any]]:
         """Return the names of the top-level properties for the given stream."""
-        return cast(dict[str, Any], self.get_stream_json_schema(stream_name)["properties"])
+        return cast(dict[str, Any], self.get_stream_json_schema(stream_name)["properties"])  # noqa: TC006
 
     def get_primary_keys(
         self,

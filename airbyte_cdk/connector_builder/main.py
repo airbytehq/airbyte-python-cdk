@@ -4,7 +4,8 @@
 
 
 import sys
-from typing import Any, List, Mapping, Optional, Tuple
+from collections.abc import Mapping
+from typing import Any
 
 import orjson
 
@@ -30,8 +31,8 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
 def get_config_and_catalog_from_args(
-    args: List[str],
-) -> Tuple[str, Mapping[str, Any], Optional[ConfiguredAirbyteCatalog], Any]:
+    args: list[str],
+) -> tuple[str, Mapping[str, Any], ConfiguredAirbyteCatalog | None, Any]:
     # TODO: Add functionality for the `debug` logger.
     #  Currently, no one `debug` level log will be displayed during `read` a stream for a connector created through `connector-builder`.
     parsed_args = AirbyteEntrypoint.parse_args(args)
@@ -70,22 +71,21 @@ def handle_connector_builder_request(
     source: ManifestDeclarativeSource,
     command: str,
     config: Mapping[str, Any],
-    catalog: Optional[ConfiguredAirbyteCatalog],
-    state: List[AirbyteStateMessage],
+    catalog: ConfiguredAirbyteCatalog | None,
+    state: list[AirbyteStateMessage],
     limits: TestReadLimits,
 ) -> AirbyteMessage:
     if command == "resolve_manifest":
         return resolve_manifest(source)
-    elif command == "test_read":
-        assert (
-            catalog is not None
-        ), "`test_read` requires a valid `ConfiguredAirbyteCatalog`, got None."
+    if command == "test_read":
+        assert catalog is not None, (
+            "`test_read` requires a valid `ConfiguredAirbyteCatalog`, got None."
+        )
         return read_stream(source, config, catalog, state, limits)
-    else:
-        raise ValueError(f"Unrecognized command {command}.")
+    raise ValueError(f"Unrecognized command {command}.")
 
 
-def handle_request(args: List[str]) -> str:
+def handle_request(args: list[str]) -> str:
     command, config, catalog, state = get_config_and_catalog_from_args(args)
     limits = get_limits(config)
     source = create_source(config, limits)
@@ -101,7 +101,7 @@ if __name__ == "__main__":
         print(handle_request(sys.argv[1:]))
     except Exception as exc:
         error = AirbyteTracedException.from_exception(
-            exc, message=f"Error handling request: {str(exc)}"
+            exc, message=f"Error handling request: {exc!s}"
         )
         m = error.as_airbyte_message()
         print(orjson.dumps(AirbyteMessageSerializer.dump(m)).decode())

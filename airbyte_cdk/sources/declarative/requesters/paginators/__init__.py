@@ -12,6 +12,7 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination
     PaginationStrategy,
 )
 
+
 __all__ = [
     "DefaultPaginator",
     "NoPagination",

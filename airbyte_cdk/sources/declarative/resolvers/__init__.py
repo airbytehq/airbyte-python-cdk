@@ -2,7 +2,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Mapping
+from collections.abc import Mapping
 
 from pydantic.v1 import BaseModel
 
@@ -24,6 +24,7 @@ from airbyte_cdk.sources.declarative.resolvers.config_components_resolver import
 from airbyte_cdk.sources.declarative.resolvers.http_components_resolver import (
     HttpComponentsResolver,
 )
+
 
 COMPONENTS_RESOLVER_TYPE_MAPPING: Mapping[str, type[BaseModel]] = {
     "HttpComponentsResolver": HttpComponentsResolverModel,

@@ -2,8 +2,9 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping, MutableMapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, MutableMapping, Optional, Union
+from typing import Any
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.requesters.request_option import (
@@ -25,10 +26,10 @@ class DatetimeBasedRequestOptionsProvider(RequestOptionsProvider):
 
     config: Config
     parameters: InitVar[Mapping[str, Any]]
-    start_time_option: Optional[RequestOption] = None
-    end_time_option: Optional[RequestOption] = None
-    partition_field_start: Optional[str] = None
-    partition_field_end: Optional[str] = None
+    start_time_option: RequestOption | None = None
+    end_time_option: RequestOption | None = None
+    partition_field_start: str | None = None
+    partition_field_end: str | None = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._partition_field_start = InterpolatedString.create(
@@ -41,41 +42,41 @@ class DatetimeBasedRequestOptionsProvider(RequestOptionsProvider):
     def get_request_params(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,  # noqa: ARG002
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,  # noqa: ARG002
     ) -> Mapping[str, Any]:
         return self._get_request_options(RequestOptionType.request_parameter, stream_slice)
 
     def get_request_headers(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,  # noqa: ARG002
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,  # noqa: ARG002
     ) -> Mapping[str, Any]:
         return self._get_request_options(RequestOptionType.header, stream_slice)
 
     def get_request_body_data(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Union[Mapping[str, Any], str]:
+        stream_state: StreamState | None = None,  # noqa: ARG002
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,  # noqa: ARG002
+    ) -> Mapping[str, Any] | str:
         return self._get_request_options(RequestOptionType.body_data, stream_slice)
 
     def get_request_body_json(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,  # noqa: ARG002
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,  # noqa: ARG002
     ) -> Mapping[str, Any]:
         return self._get_request_options(RequestOptionType.body_json, stream_slice)
 
     def _get_request_options(
-        self, option_type: RequestOptionType, stream_slice: Optional[StreamSlice]
+        self, option_type: RequestOptionType, stream_slice: StreamSlice | None
     ) -> Mapping[str, Any]:
         options: MutableMapping[str, Any] = {}
         if not stream_slice:

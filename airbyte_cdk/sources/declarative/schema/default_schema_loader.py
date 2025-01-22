@@ -3,8 +3,9 @@
 #
 
 import logging
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping
+from typing import Any
 
 from airbyte_cdk.sources.declarative.schema.json_file_schema_loader import JsonFileSchemaLoader
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
@@ -41,7 +42,7 @@ class DefaultSchemaLoader(SchemaLoader):
             # A slight hack since we don't directly have the stream name. However, when building the default filepath we assume the
             # runtime options stores stream name 'name' so we'll do the same here
             stream_name = self._parameters.get("name", "")
-            logging.info(
+            logging.info(  # noqa: LOG015
                 f"Could not find schema for stream {stream_name}, defaulting to the empty schema"
             )
             return {}

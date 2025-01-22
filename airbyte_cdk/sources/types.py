@@ -1,28 +1,30 @@
-#
+#  # noqa: A005
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
 from __future__ import annotations
 
-from typing import Any, ItemsView, Iterator, KeysView, List, Mapping, Optional, ValuesView
+from collections.abc import ItemsView, Iterator, KeysView, Mapping, ValuesView
+from typing import Any
 
 import orjson
 
+
 # A FieldPointer designates a path to a field inside a mapping. For example, retrieving ["k1", "k1.2"] in the object {"k1" :{"k1.2":
 # "hello"}] returns "hello"
-FieldPointer = List[str]
+FieldPointer = list[str]
 Config = Mapping[str, Any]
 ConnectionDefinition = Mapping[str, Any]
 StreamState = Mapping[str, Any]
 
 
-class Record(Mapping[str, Any]):
-    def __init__(
+class Record(Mapping[str, Any]):  # noqa: PLW1641
+    def __init__(  # noqa: ANN204
         self,
         data: Mapping[str, Any],
         stream_name: str,
-        associated_slice: Optional[StreamSlice] = None,
-        is_file_transfer_message: bool = False,
+        associated_slice: StreamSlice | None = None,
+        is_file_transfer_message: bool = False,  # noqa: FBT001, FBT002
     ):
         self._data = data
         self._associated_slice = associated_slice
@@ -34,19 +36,19 @@ class Record(Mapping[str, Any]):
         return self._data
 
     @property
-    def associated_slice(self) -> Optional[StreamSlice]:
+    def associated_slice(self) -> StreamSlice | None:
         return self._associated_slice
 
     def __repr__(self) -> str:
         return repr(self._data)
 
-    def __getitem__(self, key: str) -> Any:
+    def __getitem__(self, key: str) -> Any:  # noqa: ANN401
         return self._data[key]
 
     def __len__(self) -> int:
         return len(self._data)
 
-    def __iter__(self) -> Any:
+    def __iter__(self) -> Any:  # noqa: ANN401
         return iter(self._data)
 
     def __contains__(self, item: object) -> bool:
@@ -68,7 +70,7 @@ class StreamSlice(Mapping[str, Any]):
         *,
         partition: Mapping[str, Any],
         cursor_slice: Mapping[str, Any],
-        extra_fields: Optional[Mapping[str, Any]] = None,
+        extra_fields: Mapping[str, Any] | None = None,
     ) -> None:
         """
         :param partition: The partition keys representing a unique partition in the stream.
@@ -109,10 +111,10 @@ class StreamSlice(Mapping[str, Any]):
     def __repr__(self) -> str:
         return repr(self._stream_slice)
 
-    def __setitem__(self, key: str, value: Any) -> None:
+    def __setitem__(self, key: str, value: Any) -> None:  # noqa: ANN401
         raise ValueError("StreamSlice is immutable")
 
-    def __getitem__(self, key: str) -> Any:
+    def __getitem__(self, key: str) -> Any:  # noqa: ANN401
         return self._stream_slice[key]
 
     def __len__(self) -> int:
@@ -121,7 +123,7 @@ class StreamSlice(Mapping[str, Any]):
     def __iter__(self) -> Iterator[str]:
         return iter(self._stream_slice)
 
-    def __contains__(self, item: Any) -> bool:
+    def __contains__(self, item: Any) -> bool:  # noqa: ANN401
         return item in self._stream_slice
 
     def keys(self) -> KeysView[str]:
@@ -133,10 +135,10 @@ class StreamSlice(Mapping[str, Any]):
     def values(self) -> ValuesView[Any]:
         return self._stream_slice.values()
 
-    def get(self, key: str, default: Any = None) -> Optional[Any]:
+    def get(self, key: str, default: Any = None) -> Any | None:  # noqa: ANN401
         return self._stream_slice.get(key, default)
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, dict):
             return self._stream_slice == other
         if isinstance(other, StreamSlice):
@@ -144,10 +146,10 @@ class StreamSlice(Mapping[str, Any]):
             return self._partition == other._partition and self._cursor_slice == other._cursor_slice
         return False
 
-    def __ne__(self, other: Any) -> bool:
+    def __ne__(self, other: object) -> bool:
         return not self.__eq__(other)
 
-    def __json_serializable__(self) -> Any:
+    def __json_serializable__(self) -> Any:  # noqa: ANN401, PLW3201
         return self._stream_slice
 
     def __hash__(self) -> int:

@@ -1,7 +1,8 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 from abc import abstractmethod
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 
 class StateMigration:

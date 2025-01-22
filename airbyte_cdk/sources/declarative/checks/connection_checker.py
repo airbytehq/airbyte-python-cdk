@@ -4,7 +4,8 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Mapping, Tuple
+from collections.abc import Mapping
+from typing import Any
 
 from airbyte_cdk import AbstractSource
 
@@ -17,7 +18,7 @@ class ConnectionChecker(ABC):
     @abstractmethod
     def check_connection(
         self, source: AbstractSource, logger: logging.Logger, config: Mapping[str, Any]
-    ) -> Tuple[bool, Any]:
+    ) -> tuple[bool, Any]:
         """
         Tests if the input configuration can be used to successfully connect to the integration e.g: if a provided Stripe API token can be used to connect
         to the Stripe API.

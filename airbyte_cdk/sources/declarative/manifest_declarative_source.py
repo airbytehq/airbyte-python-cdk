@@ -5,10 +5,11 @@
 import json
 import logging
 import pkgutil
+from collections.abc import Iterator, Mapping
 from copy import deepcopy
 from importlib import metadata
 from types import ModuleType
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Set
+from typing import Any
 
 import yaml
 from jsonschema.exceptions import ValidationError
@@ -26,9 +27,6 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.declarative.checks import COMPONENTS_CHECKER_TYPE_MAPPING
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    CheckStream as CheckStreamModel,
-)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DeclarativeStream as DeclarativeStreamModel,
 )
@@ -60,14 +58,14 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 class ManifestDeclarativeSource(DeclarativeSource):
     """Declarative source defined by a manifest of low-code components that define source connector behavior"""
 
-    def __init__(
+    def __init__(  # noqa: ANN204
         self,
         source_config: ConnectionDefinition,
         *,
         config: Mapping[str, Any] | None = None,
         debug: bool = False,
         emit_connector_builder_messages: bool = False,
-        component_factory: Optional[ModelToComponentFactory] = None,
+        component_factory: ModelToComponentFactory | None = None,
     ):
         """
         Args:
@@ -94,7 +92,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         self._debug = debug
         self._emit_connector_builder_messages = emit_connector_builder_messages
         self._constructor = (
-            component_factory
+            component_factory  # noqa: FURB110
             if component_factory
             else ModelToComponentFactory(emit_connector_builder_messages)
         )
@@ -121,17 +119,16 @@ class ManifestDeclarativeSource(DeclarativeSource):
         check_stream = self._constructor.create_component(
             COMPONENTS_CHECKER_TYPE_MAPPING[check["type"]],
             check,
-            dict(),
+            dict(),  # noqa: C408
             emit_connector_builder_messages=self._emit_connector_builder_messages,
         )
         if isinstance(check_stream, ConnectionChecker):
             return check_stream
-        else:
-            raise ValueError(
-                f"Expected to generate a ConnectionChecker component, but received {check_stream.__class__}"
-            )
+        raise ValueError(
+            f"Expected to generate a ConnectionChecker component, but received {check_stream.__class__}"
+        )
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> list[Stream]:
         self._emit_manifest_debug_message(
             extra_args={"source_name": self.name, "parsed_config": json.dumps(self._source_config)}
         )
@@ -154,8 +151,8 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
     @staticmethod
     def _initialize_cache_for_parent_streams(
-        stream_configs: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        stream_configs: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         parent_streams = set()
 
         def update_with_cache_parent_configs(parent_configs: list[dict[str, Any]]) -> None:
@@ -204,10 +201,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
         if spec:
             if "type" not in spec:
                 spec["type"] = "Spec"
-            spec_component = self._constructor.create_component(SpecModel, spec, dict())
+            spec_component = self._constructor.create_component(SpecModel, spec, dict())  # noqa: C408
             return spec_component.generate_spec()
-        else:
-            return super().spec(logger)
+        return super().spec(logger)
 
     def check(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteConnectionStatus:
         self._configure_logger_level(logger)
@@ -218,7 +214,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         logger: logging.Logger,
         config: Mapping[str, Any],
         catalog: ConfiguredAirbyteCatalog,
-        state: Optional[List[AirbyteStateMessage]] = None,
+        state: list[AirbyteStateMessage] | None = None,
     ) -> Iterator[AirbyteMessage]:
         self._configure_logger_level(logger)
         yield from super().read(logger, config, catalog, state)
@@ -247,7 +243,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
                     "Failed to read manifest component json schema required for validation"
                 )
         except FileNotFoundError as e:
-            raise FileNotFoundError(
+            raise FileNotFoundError(  # noqa: B904
                 f"Failed to read manifest component json schema required for validation: {e}"
             )
 
@@ -314,9 +310,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
             # No exception
             return parsed_version
 
-    def _stream_configs(self, manifest: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    def _stream_configs(self, manifest: Mapping[str, Any]) -> list[dict[str, Any]]:
         # This has a warning flag for static, but after we finish part 4 we'll replace manifest with self._source_config
-        stream_configs: List[Dict[str, Any]] = manifest.get("streams", [])
+        stream_configs: list[dict[str, Any]] = manifest.get("streams", [])
         for s in stream_configs:
             if "type" not in s:
                 s["type"] = "DeclarativeStream"
@@ -324,10 +320,10 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
     def _dynamic_stream_configs(
         self, manifest: Mapping[str, Any], config: Mapping[str, Any]
-    ) -> List[Dict[str, Any]]:
-        dynamic_stream_definitions: List[Dict[str, Any]] = manifest.get("dynamic_streams", [])
-        dynamic_stream_configs: List[Dict[str, Any]] = []
-        seen_dynamic_streams: Set[str] = set()
+    ) -> list[dict[str, Any]]:
+        dynamic_stream_definitions: list[dict[str, Any]] = manifest.get("dynamic_streams", [])
+        dynamic_stream_configs: list[dict[str, Any]] = []
+        seen_dynamic_streams: set[str] = set()
 
         for dynamic_definition in dynamic_stream_definitions:
             components_resolver_config = dynamic_definition["components_resolver"]

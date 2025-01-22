@@ -3,8 +3,9 @@
 #
 import logging
 import threading
+from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import Any, Callable, List, Optional
+from typing import Any
 
 
 class ThreadPoolManager:
@@ -14,7 +15,7 @@ class ThreadPoolManager:
 
     DEFAULT_MAX_QUEUE_SIZE = 10_000
 
-    def __init__(
+    def __init__(  # noqa: ANN204
         self,
         threadpool: ThreadPoolExecutor,
         logger: logging.Logger,
@@ -28,9 +29,9 @@ class ThreadPoolManager:
         self._threadpool = threadpool
         self._logger = logger
         self._max_concurrent_tasks = max_concurrent_tasks
-        self._futures: List[Future[Any]] = []
+        self._futures: list[Future[Any]] = []
         self._lock = threading.Lock()
-        self._most_recently_seen_exception: Optional[Exception] = None
+        self._most_recently_seen_exception: Exception | None = None
 
         self._logging_threshold = max_concurrent_tasks * 2
 
@@ -42,10 +43,10 @@ class ThreadPoolManager:
             )
         return len(self._futures) >= self._max_concurrent_tasks
 
-    def submit(self, function: Callable[..., Any], *args: Any) -> None:
+    def submit(self, function: Callable[..., Any], *args: Any) -> None:  # noqa: ANN401
         self._futures.append(self._threadpool.submit(function, *args))
 
-    def _prune_futures(self, futures: List[Future[Any]]) -> None:
+    def _prune_futures(self, futures: list[Future[Any]]) -> None:
         """
         Take a list in input and remove the futures that are completed. If a future has an exception, it'll raise and kill the stream
         operation.
@@ -79,7 +80,7 @@ class ThreadPoolManager:
         self._threadpool.shutdown(wait=False, cancel_futures=True)
 
     def is_done(self) -> bool:
-        return all([f.done() for f in self._futures])
+        return all([f.done() for f in self._futures])  # noqa: C419
 
     def check_for_errors_and_shutdown(self) -> None:
         """

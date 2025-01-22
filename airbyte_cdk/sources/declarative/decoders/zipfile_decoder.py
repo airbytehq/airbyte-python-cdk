@@ -4,11 +4,11 @@
 
 import logging
 import zipfile
+from collections.abc import Generator, MutableMapping
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Any, Generator, MutableMapping
+from typing import Any
 
-import orjson
 import requests
 
 from airbyte_cdk.models import FailureType
@@ -17,6 +17,7 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     Parser,
 )
 from airbyte_cdk.utils import AirbyteTracedException
+
 
 logger = logging.getLogger("airbyte")
 

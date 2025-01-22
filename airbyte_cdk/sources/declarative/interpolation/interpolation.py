@@ -3,7 +3,7 @@
 #
 
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 from airbyte_cdk.sources.types import Config
 
@@ -18,9 +18,9 @@ class Interpolation(ABC):
         self,
         input_str: str,
         config: Config,
-        default: Optional[str] = None,
-        **additional_options: Any,
-    ) -> Any:
+        default: str | None = None,
+        **additional_options: Any,  # noqa: ANN401
+    ) -> Any:  # noqa: ANN401
         """
         Interpolates the input string using the config, and additional options passed as parameter.
 

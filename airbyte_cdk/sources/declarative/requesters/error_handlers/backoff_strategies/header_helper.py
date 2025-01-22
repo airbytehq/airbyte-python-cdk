@@ -4,14 +4,13 @@
 
 import numbers
 from re import Pattern
-from typing import Optional
 
 import requests
 
 
 def get_numeric_value_from_header(
-    response: requests.Response, header: str, regex: Optional[Pattern[str]]
-) -> Optional[float]:
+    response: requests.Response, header: str, regex: Pattern[str] | None
+) -> float | None:
     """
     Extract a header value from the response as a float
     :param response: response the extract header value from
@@ -28,13 +27,12 @@ def get_numeric_value_from_header(
             if match:
                 header_value = match.group()
         return _as_float(header_value)
-    elif isinstance(header_value, numbers.Number):
+    if isinstance(header_value, numbers.Number):
         return float(header_value)  # type: ignore[arg-type]
-    else:
-        return None
+    return None
 
 
-def _as_float(s: str) -> Optional[float]:
+def _as_float(s: str) -> float | None:
     try:
         return float(s)
     except ValueError:

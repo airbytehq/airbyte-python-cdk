@@ -10,8 +10,10 @@
 # so we add the split directive below to tell isort to sort imports while keeping RecordTransformation as the first import
 from .transformation import RecordTransformation
 
+
 # isort: split
 from .add_fields import AddFields
 from .remove_fields import RemoveFields
+
 
 __all__ = ["AddFields", "RecordTransformation", "RemoveFields"]

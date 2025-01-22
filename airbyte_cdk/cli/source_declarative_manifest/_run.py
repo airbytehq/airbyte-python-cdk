@@ -43,7 +43,7 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
-from airbyte_cdk.sources.source import TState
+from airbyte_cdk.sources.source import TState  # noqa: TC001
 
 
 class SourceLocalYaml(YamlDeclarativeSource):
@@ -56,7 +56,7 @@ class SourceLocalYaml(YamlDeclarativeSource):
         catalog: ConfiguredAirbyteCatalog | None,
         config: Mapping[str, Any] | None,
         state: TState,
-        **kwargs: Any,
+        **kwargs: Any,  # noqa: ANN401, ARG002
     ) -> None:
         """
         HACK!
@@ -77,7 +77,7 @@ class SourceLocalYaml(YamlDeclarativeSource):
         )
 
 
-def _is_local_manifest_command(args: list[str]) -> bool:
+def _is_local_manifest_command(args: list[str]) -> bool:  # noqa: ARG001
     # Check for a local manifest.yaml file
     return Path("/airbyte/integration_code/source_declarative_manifest/manifest.yaml").exists()
 
@@ -111,7 +111,7 @@ def _get_local_yaml_source(args: list[str]) -> SourceLocalYaml:
                 )
             ).decode()
         )
-        raise error
+        raise error  # noqa: TRY201
 
 
 def handle_local_manifest_command(args: list[str]) -> None:
@@ -167,12 +167,12 @@ def create_declarative_source(
         state: list[AirbyteStateMessage]
         config, catalog, state = _parse_inputs_into_config_catalog_state(args)
         if config is None or "__injected_declarative_manifest" not in config:
-            raise ValueError(
+            raise ValueError(  # noqa: TRY301
                 "Invalid config: `__injected_declarative_manifest` should be provided at the root "
                 f"of the config but config only has keys: {list(config.keys() if config else [])}"
             )
         if not isinstance(config["__injected_declarative_manifest"], dict):
-            raise ValueError(
+            raise ValueError(  # noqa: TRY004, TRY301
                 "Invalid config: `__injected_declarative_manifest` should be a dictionary, "
                 f"but got type: {type(config['__injected_declarative_manifest'])}"
             )
@@ -181,7 +181,7 @@ def create_declarative_source(
             config=config,
             catalog=catalog,
             state=state,
-            source_config=cast(dict[str, Any], config["__injected_declarative_manifest"]),
+            source_config=cast(dict[str, Any], config["__injected_declarative_manifest"]),  # noqa: TC006
         )
     except Exception as error:
         print(
@@ -201,7 +201,7 @@ def create_declarative_source(
                 )
             ).decode()
         )
-        raise error
+        raise error  # noqa: TRY201
 
 
 def _parse_inputs_into_config_catalog_state(

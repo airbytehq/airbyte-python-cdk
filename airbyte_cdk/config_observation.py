@@ -7,8 +7,9 @@ from __future__ import (  # Used to evaluate type hints at runtime, a NameError:
 )
 
 import time
+from collections.abc import MutableMapping
 from copy import copy
-from typing import Any, List, MutableMapping
+from typing import Any
 
 import orjson
 
@@ -27,7 +28,7 @@ class ObservedDict(dict):  # type: ignore # disallow_any_generics is set to True
         self,
         non_observed_mapping: MutableMapping[Any, Any],
         observer: ConfigObserver,
-        update_on_unchanged_value: bool = True,
+        update_on_unchanged_value: bool = True,  # noqa: FBT001, FBT002
     ) -> None:
         non_observed_mapping = copy(non_observed_mapping)
         self.observer = observer
@@ -38,13 +39,13 @@ class ObservedDict(dict):  # type: ignore # disallow_any_generics is set to True
                 non_observed_mapping[item] = ObservedDict(value, observer)
 
             # Observe nested list of dicts
-            if isinstance(value, List):
+            if isinstance(value, list):
                 for i, sub_value in enumerate(value):
                     if isinstance(sub_value, MutableMapping):
                         value[i] = ObservedDict(sub_value, observer)
         super().__init__(non_observed_mapping)
 
-    def __setitem__(self, item: Any, value: Any) -> None:
+    def __setitem__(self, item: Any, value: Any) -> None:  # noqa: ANN401
         """Override dict.__setitem__ by:
         1. Observing the new value if it is a dict
         2. Call observer update if the new value is different from the previous one
@@ -52,11 +53,11 @@ class ObservedDict(dict):  # type: ignore # disallow_any_generics is set to True
         previous_value = self.get(item)
         if isinstance(value, MutableMapping):
             value = ObservedDict(value, self.observer)
-        if isinstance(value, List):
+        if isinstance(value, list):
             for i, sub_value in enumerate(value):
                 if isinstance(sub_value, MutableMapping):
                     value[i] = ObservedDict(sub_value, self.observer)
-        super(ObservedDict, self).__setitem__(item, value)
+        super(ObservedDict, self).__setitem__(item, value)  # noqa: UP008
         if self.update_on_unchanged_value or value != previous_value:
             self.observer.update()
 
@@ -77,7 +78,7 @@ def observe_connector_config(
     non_observed_connector_config: MutableMapping[str, Any],
 ) -> ObservedDict:
     if isinstance(non_observed_connector_config, ObservedDict):
-        raise ValueError("This connector configuration is already observed")
+        raise ValueError("This connector configuration is already observed")  # noqa: TRY004
     connector_config_observer = ConfigObserver()
     observed_connector_config = ObservedDict(
         non_observed_connector_config, connector_config_observer

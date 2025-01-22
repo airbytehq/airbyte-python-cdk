@@ -16,6 +16,7 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies.stop_condi
     StopConditionPaginationStrategyDecorator,
 )
 
+
 __all__ = [
     "CursorPaginationStrategy",
     "CursorStopCondition",

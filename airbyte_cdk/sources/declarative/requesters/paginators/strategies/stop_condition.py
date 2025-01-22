@@ -3,7 +3,7 @@
 #
 
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 import requests
 
@@ -23,11 +23,11 @@ class PaginationStopCondition(ABC):
 
         :param record: a record used to evaluate the condition
         """
-        raise NotImplementedError()
+        raise NotImplementedError
 
 
 class CursorStopCondition(PaginationStopCondition):
-    def __init__(
+    def __init__(  # noqa: ANN204
         self,
         cursor: DeclarativeCursor
         | ConcurrentCursor,  # migrate to use both old and concurrent versions
@@ -39,7 +39,7 @@ class CursorStopCondition(PaginationStopCondition):
 
 
 class StopConditionPaginationStrategyDecorator(PaginationStrategy):
-    def __init__(self, _delegate: PaginationStrategy, stop_condition: PaginationStopCondition):
+    def __init__(self, _delegate: PaginationStrategy, stop_condition: PaginationStopCondition):  # noqa: ANN204
         self._delegate = _delegate
         self._stop_condition = stop_condition
 
@@ -47,9 +47,9 @@ class StopConditionPaginationStrategyDecorator(PaginationStrategy):
         self,
         response: requests.Response,
         last_page_size: int,
-        last_record: Optional[Record],
-        last_page_token_value: Optional[Any] = None,
-    ) -> Optional[Any]:
+        last_record: Record | None,
+        last_page_token_value: Any | None = None,  # noqa: ANN401
+    ) -> Any | None:  # noqa: ANN401
         # We evaluate in reverse order because the assumption is that most of the APIs using data feed structure
         # will return records in descending order. In terms of performance/memory, we return the records lazily
         if last_record and self._stop_condition.is_met(last_record):
@@ -58,9 +58,9 @@ class StopConditionPaginationStrategyDecorator(PaginationStrategy):
             response, last_page_size, last_record, last_page_token_value
         )
 
-    def get_page_size(self) -> Optional[int]:
+    def get_page_size(self) -> int | None:
         return self._delegate.get_page_size()
 
     @property
-    def initial_token(self) -> Optional[Any]:
+    def initial_token(self) -> Any | None:  # noqa: ANN401
         return self._delegate.initial_token

@@ -6,9 +6,9 @@ from __future__ import annotations
 
 import logging
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING
 
-from airbyte_cdk.sources import Source
+from airbyte_cdk.sources import Source  # noqa: TC001
 from airbyte_cdk.sources.streams.availability_strategy import AvailabilityStrategy
 from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
     AbstractAvailabilityStrategy,
@@ -16,7 +16,8 @@ from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
     StreamAvailable,
     StreamUnavailable,
 )
-from airbyte_cdk.sources.streams.core import Stream
+from airbyte_cdk.sources.streams.core import Stream  # noqa: TC001
+
 
 if TYPE_CHECKING:
     from airbyte_cdk.sources.file_based.stream import AbstractFileBasedStream
@@ -28,8 +29,8 @@ class AbstractFileBasedAvailabilityStrategy(AvailabilityStrategy):
         self,
         stream: Stream,
         logger: logging.Logger,
-        _: Optional[Source],
-    ) -> Tuple[bool, Optional[str]]:
+        _: Source | None,
+    ) -> tuple[bool, str | None]:
         """
         Perform a connection check for the stream.
 
@@ -42,8 +43,8 @@ class AbstractFileBasedAvailabilityStrategy(AvailabilityStrategy):
         self,
         stream: AbstractFileBasedStream,
         logger: logging.Logger,
-        _: Optional[Source],
-    ) -> Tuple[bool, Optional[str]]:
+        _: Source | None,
+    ) -> tuple[bool, str | None]:
         """
         Performs a connection check for the stream, as well as additional checks that
         verify that the connection is working as expected.
@@ -65,9 +66,7 @@ class AbstractFileBasedAvailabilityStrategyWrapper(AbstractAvailabilityStrategy)
             return StreamAvailable()
         return StreamUnavailable(reason or "")
 
-    def check_availability_and_parsability(
-        self, logger: logging.Logger
-    ) -> Tuple[bool, Optional[str]]:
+    def check_availability_and_parsability(self, logger: logging.Logger) -> tuple[bool, str | None]:
         return self.stream.availability_strategy.check_availability_and_parsability(
             self.stream, logger, None
         )

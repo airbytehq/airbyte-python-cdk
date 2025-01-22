@@ -3,8 +3,9 @@
 #
 
 import ast
+from collections.abc import Mapping
 from functools import cache
-from typing import Any, Mapping, Optional, Set, Tuple, Type
+from typing import Any
 
 from jinja2 import meta
 from jinja2.environment import Template
@@ -24,8 +25,8 @@ class StreamPartitionAccessEnvironment(SandboxedEnvironment):
     parameter
     """
 
-    def is_safe_attribute(self, obj: Any, attr: str, value: Any) -> bool:
-        if attr in ["_partition"]:
+    def is_safe_attribute(self, obj: Any, attr: str, value: Any) -> bool:  # noqa: ANN401
+        if attr in ["_partition"]:  # noqa: FURB171
             return True
         return super().is_safe_attribute(obj, attr, value)  # type: ignore  # for some reason, mypy says 'Returning Any from function declared to return "bool"'
 
@@ -80,10 +81,10 @@ class JinjaInterpolation(Interpolation):
         self,
         input_str: str,
         config: Config,
-        default: Optional[str] = None,
-        valid_types: Optional[Tuple[Type[Any]]] = None,
-        **additional_parameters: Any,
-    ) -> Any:
+        default: str | None = None,
+        valid_types: tuple[type[Any]] | None = None,
+        **additional_parameters: Any,  # noqa: ANN401
+    ) -> Any:  # noqa: ANN401
         context = {"config": config, **additional_parameters}
 
         for alias, equivalent in _ALIASES.items():
@@ -92,7 +93,7 @@ class JinjaInterpolation(Interpolation):
                 raise ValueError(
                     f"Found reserved keyword {alias} in interpolation context. This is unexpected and indicative of a bug in the CDK."
                 )
-            elif equivalent in context:
+            if equivalent in context:
                 context[alias] = context[equivalent]
 
         try:
@@ -102,14 +103,14 @@ class JinjaInterpolation(Interpolation):
                     return self._literal_eval(result, valid_types)
             else:
                 # If input is not a string, return it as is
-                raise Exception(f"Expected a string, got {input_str}")
+                raise Exception(f"Expected a string, got {input_str}")  # noqa: TRY002, TRY004
         except UndefinedError:
             pass
 
         # If result is empty or resulted in an undefined error, evaluate and return the default string
         return self._literal_eval(self._eval(default, context), valid_types)
 
-    def _literal_eval(self, result: Optional[str], valid_types: Optional[Tuple[Type[Any]]]) -> Any:
+    def _literal_eval(self, result: str | None, valid_types: tuple[type[Any]] | None) -> Any:  # noqa: ANN401
         try:
             evaluated = ast.literal_eval(result)  # type: ignore # literal_eval is able to handle None
         except (ValueError, SyntaxError):
@@ -118,7 +119,7 @@ class JinjaInterpolation(Interpolation):
             return evaluated
         return result
 
-    def _eval(self, s: Optional[str], context: Mapping[str, Any]) -> Optional[str]:
+    def _eval(self, s: str | None, context: Mapping[str, Any]) -> str | None:
         try:
             undeclared = self._find_undeclared_variables(s)
             undeclared_not_in_context = {var for var in undeclared if var not in context}
@@ -132,15 +133,15 @@ class JinjaInterpolation(Interpolation):
             # It can be returned as is
             return s
 
-    @cache
-    def _find_undeclared_variables(self, s: Optional[str]) -> Set[str]:
+    @cache  # noqa: B019
+    def _find_undeclared_variables(self, s: str | None) -> set[str]:
         """
         Find undeclared variables and cache them
         """
         ast = _ENVIRONMENT.parse(s)  # type: ignore # parse is able to handle None
         return meta.find_undeclared_variables(ast)
 
-    @cache
+    @cache  # noqa: B019
     def _compile(self, s: str) -> Template:
         """
         We must cache the Jinja Template ourselves because we're using `from_string` instead of a template loader

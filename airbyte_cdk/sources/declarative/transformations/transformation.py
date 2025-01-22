@@ -4,13 +4,13 @@
 
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 
 
 @dataclass
-class RecordTransformation:
+class RecordTransformation:  # noqa: PLW1641
     """
     Implementations of this class define transformations that can be applied to records of a stream.
     """
@@ -18,10 +18,10 @@ class RecordTransformation:
     @abstractmethod
     def transform(
         self,
-        record: Dict[str, Any],
-        config: Optional[Config] = None,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
+        record: dict[str, Any],
+        config: Config | None = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
     ) -> None:
         """
         Transform a record by adding, deleting, or mutating fields directly from the record reference passed in argument.

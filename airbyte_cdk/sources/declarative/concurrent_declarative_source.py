@@ -3,7 +3,8 @@
 #
 
 import logging
-from typing import Any, Generic, Iterator, List, Mapping, Optional, Tuple
+from collections.abc import Iterator, Mapping
+from typing import Any, Generic
 
 from airbyte_cdk.models import (
     AirbyteCatalog,
@@ -57,14 +58,14 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
     def __init__(
         self,
-        catalog: Optional[ConfiguredAirbyteCatalog],
-        config: Optional[Mapping[str, Any]],
+        catalog: ConfiguredAirbyteCatalog | None,  # noqa: ARG002
+        config: Mapping[str, Any] | None,
         state: TState,
         source_config: ConnectionDefinition,
-        debug: bool = False,
-        emit_connector_builder_messages: bool = False,
-        component_factory: Optional[ModelToComponentFactory] = None,
-        **kwargs: Any,
+        debug: bool = False,  # noqa: FBT001, FBT002
+        emit_connector_builder_messages: bool = False,  # noqa: FBT001, FBT002
+        component_factory: ModelToComponentFactory | None = None,
+        **kwargs: Any,  # noqa: ANN401, ARG002
     ) -> None:
         # To reduce the complexity of the concurrent framework, we are not enabling RFR with synthetic
         # cursors. We do this by no longer automatically instantiating RFR cursors when converting
@@ -83,7 +84,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             component_factory=component_factory,
         )
 
-        # todo: We could remove state from initialization. Now that streams are grouped during the read(), a source
+        # TODO: We could remove state from initialization. Now that streams are grouped during the read(), a source
         #  no longer needs to store the original incoming state. But maybe there's an edge case?
         self._state = state
 
@@ -120,7 +121,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         logger: logging.Logger,
         config: Mapping[str, Any],
         catalog: ConfiguredAirbyteCatalog,
-        state: Optional[List[AirbyteStateMessage]] = None,
+        state: list[AirbyteStateMessage] | None = None,
     ) -> Iterator[AirbyteMessage]:
         concurrent_streams, _ = self._group_streams(config=config)
 
@@ -128,7 +129,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         # the concurrent streams must be saved so that they can be removed from the catalog before starting
         # synchronous streams
         if len(concurrent_streams) > 0:
-            concurrent_stream_names = set(
+            concurrent_stream_names = set(  # noqa: C403
                 [concurrent_stream.name for concurrent_stream in concurrent_streams]
             )
 
@@ -151,7 +152,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
         yield from super().read(logger, config, filtered_catalog, state)
 
-    def discover(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteCatalog:
+    def discover(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteCatalog:  # noqa: ARG002
         concurrent_streams, synchronous_streams = self._group_streams(config=config)
         return AirbyteCatalog(
             streams=[
@@ -159,7 +160,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             ]
         )
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> list[Stream]:
         """
         The `streams` method is used as part of the AbstractSource in the following cases:
         * ConcurrentDeclarativeSource.check -> ManifestDeclarativeSource.check -> AbstractSource.check -> DeclarativeSource.check_connection -> CheckStream.check_connection -> streams
@@ -172,9 +173,9 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
     def _group_streams(
         self, config: Mapping[str, Any]
-    ) -> Tuple[List[AbstractStream], List[Stream]]:
-        concurrent_streams: List[AbstractStream] = []
-        synchronous_streams: List[Stream] = []
+    ) -> tuple[list[AbstractStream], list[Stream]]:
+        concurrent_streams: list[AbstractStream] = []
+        synchronous_streams: list[Stream] = []
 
         state_manager = ConnectorStateManager(state=self._state)  # type: ignore  # state is always in the form of List[AirbyteStateMessage]. The ConnectorStateManager should use generics, but this can be done later
 
@@ -268,7 +269,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             if hasattr(cursor, "cursor_field")
                             and hasattr(
                                 cursor.cursor_field, "cursor_field_key"
-                            )  # FIXME this will need to be updated once we do the per partition
+                            )  # FIXME this will need to be updated once we do the per partition  # noqa: FIX001, TD001, TD004
                             else None,
                             logger=self.logger,
                             cursor=cursor,
@@ -347,13 +348,13 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             declarative_stream.retriever.requester, HttpRequester
         ):
             http_requester = declarative_stream.retriever.requester
-            if "stream_state" in http_requester._path.string:
+            if "stream_state" in http_requester._path.string:  # noqa: SLF001
                 self.logger.warning(
                     f"Low-code stream '{declarative_stream.name}' uses interpolation of stream_state in the HttpRequester which is not thread-safe. Defaulting to synchronous processing"
                 )
                 return False
 
-            request_options_provider = http_requester._request_options_provider
+            request_options_provider = http_requester._request_options_provider  # noqa: SLF001
             if request_options_provider.request_options_contain_stream_state():
                 self.logger.warning(
                     f"Low-code stream '{declarative_stream.name}' uses interpolation of stream_state in the HttpRequester which is not thread-safe. Defaulting to synchronous processing"
@@ -397,10 +398,10 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
     @staticmethod
     def _select_streams(
-        streams: List[AbstractStream], configured_catalog: ConfiguredAirbyteCatalog
-    ) -> List[AbstractStream]:
+        streams: list[AbstractStream], configured_catalog: ConfiguredAirbyteCatalog
+    ) -> list[AbstractStream]:
         stream_name_to_instance: Mapping[str, AbstractStream] = {s.name: s for s in streams}
-        abstract_streams: List[AbstractStream] = []
+        abstract_streams: list[AbstractStream] = []
         for configured_stream in configured_catalog.streams:
             stream_instance = stream_name_to_instance.get(configured_stream.stream.name)
             if stream_instance:

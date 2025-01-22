@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from airbyte_cdk.sql import exceptions as exc
 
+
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
@@ -69,7 +70,7 @@ class LowerCaseNormalizer(NameNormalizerBase):
         result = name
 
         # Replace all non-alphanumeric characters with underscores.
-        result = re.sub("[^A-Za-z0-9]", "_", result.lower())
+        result = re.sub("[^A-Za-z0-9]", "_", result.lower())  # noqa: RUF039
 
         # Check if name starts with a number and prepend "_" if it does.
         if result and result[0].isdigit():

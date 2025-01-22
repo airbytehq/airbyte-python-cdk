@@ -3,8 +3,9 @@
 #
 
 import logging
+from collections.abc import Iterable, MutableMapping
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Iterable, List, MutableMapping, Optional
+from typing import TYPE_CHECKING, Any
 
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
@@ -18,6 +19,7 @@ from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.types import Record
 
+
 if TYPE_CHECKING:
     from airbyte_cdk.sources.file_based.stream.concurrent.adapters import FileBasedStreamPartition
 
@@ -25,12 +27,12 @@ if TYPE_CHECKING:
 class FileBasedFinalStateCursor(AbstractConcurrentFileBasedCursor):
     """Cursor that is used to guarantee at least one state message is emitted for a concurrent file-based stream."""
 
-    def __init__(
+    def __init__(  # noqa: ANN204
         self,
         stream_config: FileBasedStreamConfig,
         message_repository: MessageRepository,
-        stream_namespace: Optional[str],
-        **kwargs: Any,
+        stream_namespace: str | None,
+        **kwargs: Any,  # noqa: ANN401, ARG002
     ):
         self._stream_name = stream_config.name
         self._stream_namespace = stream_namespace
@@ -50,25 +52,27 @@ class FileBasedFinalStateCursor(AbstractConcurrentFileBasedCursor):
     def close_partition(self, partition: Partition) -> None:
         pass
 
-    def set_pending_partitions(self, partitions: List["FileBasedStreamPartition"]) -> None:
+    def set_pending_partitions(self, partitions: list["FileBasedStreamPartition"]) -> None:
         pass
 
     def add_file(self, file: RemoteFile) -> None:
         pass
 
     def get_files_to_sync(
-        self, all_files: Iterable[RemoteFile], logger: logging.Logger
+        self,
+        all_files: Iterable[RemoteFile],
+        logger: logging.Logger,  # noqa: ARG002
     ) -> Iterable[RemoteFile]:
         return all_files
 
     def get_state(self) -> MutableMapping[str, Any]:
         return {}
 
-    def set_initial_state(self, value: StreamState) -> None:
+    def set_initial_state(self, value: StreamState) -> None:  # noqa: ARG002
         return None
 
     def get_start_time(self) -> datetime:
-        return datetime.min
+        return datetime.min  # noqa: DTZ901
 
     def emit_state_message(self) -> None:
         pass

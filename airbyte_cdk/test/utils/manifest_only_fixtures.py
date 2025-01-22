@@ -7,6 +7,7 @@ from types import ModuleType
 
 import pytest
 
+
 # The following fixtures are used to load a manifest-only connector's components module and manifest file.
 # They can be accessed from any test file in the connector's unit_tests directory by importing them as follows:
 

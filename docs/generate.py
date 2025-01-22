@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3  # noqa: EXE001
 
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 """Generate docs for all public modules in the Airbyte CDK and save them to docs/generated.
@@ -49,14 +49,14 @@ def run() -> None:
         for file_name in files:
             if not file_name.endswith(".py"):
                 continue
-            if file_name in ["py.typed"]:
+            if file_name in ["py.typed"]:  # noqa: FURB171
                 continue
             if file_name.startswith((".", "_")):
                 continue
 
-            print(f"Found module file: {'|'.join([parent_dir, file_name])}")
+            print(f"Found module file: {'|'.join([parent_dir, file_name])}")  # noqa: FLY002
             module = (
-                cast(str, ".".join([parent_dir, file_name])).replace("/", ".").removesuffix(".py")
+                cast(str, ".".join([parent_dir, file_name])).replace("/", ".").removesuffix(".py")  # noqa: FLY002, TC006
             )
             public_modules.append(module)
 

@@ -3,7 +3,8 @@
 #
 
 from abc import ABC, abstractmethod
-from typing import Generic, Iterable, Optional, TypeVar
+from collections.abc import Iterable
+from typing import Generic, TypeVar
 
 from airbyte_cdk.connector import TConfig
 from airbyte_cdk.models import AirbyteRecordMessage, AirbyteStateMessage, SyncMode, Type
@@ -16,27 +17,28 @@ from airbyte_cdk.sources.embedded.runner import SourceRunner
 from airbyte_cdk.sources.embedded.tools import get_defined_id
 from airbyte_cdk.sources.utils.schema_helpers import check_config_against_spec_or_exit
 
+
 TOutput = TypeVar("TOutput")
 
 
 class BaseEmbeddedIntegration(ABC, Generic[TConfig, TOutput]):
-    def __init__(self, runner: SourceRunner[TConfig], config: TConfig):
+    def __init__(self, runner: SourceRunner[TConfig], config: TConfig):  # noqa: ANN204
         check_config_against_spec_or_exit(config, runner.spec())
 
         self.source = runner
         self.config = config
 
-        self.last_state: Optional[AirbyteStateMessage] = None
+        self.last_state: AirbyteStateMessage | None = None
 
     @abstractmethod
-    def _handle_record(self, record: AirbyteRecordMessage, id: Optional[str]) -> Optional[TOutput]:
+    def _handle_record(self, record: AirbyteRecordMessage, id: str | None) -> TOutput | None:  # noqa: A002
         """
         Turn an Airbyte record into the appropriate output type for the integration.
         """
         pass
 
     def _load_data(
-        self, stream_name: str, state: Optional[AirbyteStateMessage] = None
+        self, stream_name: str, state: AirbyteStateMessage | None = None
     ) -> Iterable[TOutput]:
         catalog = self.source.discover(self.config)
         stream = get_stream(catalog, stream_name)

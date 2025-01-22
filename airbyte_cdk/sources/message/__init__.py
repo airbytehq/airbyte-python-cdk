@@ -10,6 +10,7 @@ from .repository import (
     NoopMessageRepository,
 )
 
+
 __all__ = [
     "InMemoryMessageRepository",
     "LogAppenderMessageRepositoryDecorator",

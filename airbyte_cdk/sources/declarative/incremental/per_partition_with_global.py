@@ -1,7 +1,8 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-from typing import Any, Iterable, Mapping, MutableMapping, Optional, Union
+from collections.abc import Iterable, Mapping, MutableMapping
+from typing import Any
 
 from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
@@ -66,7 +67,7 @@ class PerPartitionWithGlobalCursor(DeclarativeCursor):
     Suitable for streams where the number of partitions may vary significantly, requiring dynamic switching between per-partition and global state management to ensure data consistency and efficient synchronization.
     """
 
-    def __init__(
+    def __init__(  # noqa: ANN204
         self,
         cursor_factory: CursorFactory,
         partition_router: PartitionRouter,
@@ -76,11 +77,11 @@ class PerPartitionWithGlobalCursor(DeclarativeCursor):
         self._per_partition_cursor = PerPartitionCursor(cursor_factory, partition_router)
         self._global_cursor = GlobalSubstreamCursor(stream_cursor, partition_router)
         self._use_global_cursor = False
-        self._current_partition: Optional[Mapping[str, Any]] = None
+        self._current_partition: Mapping[str, Any] | None = None
         self._last_slice: bool = False
-        self._parent_state: Optional[Mapping[str, Any]] = None
+        self._parent_state: Mapping[str, Any] | None = None
 
-    def _get_active_cursor(self) -> Union[PerPartitionCursor, GlobalSubstreamCursor]:
+    def _get_active_cursor(self) -> PerPartitionCursor | GlobalSubstreamCursor:
         return self._global_cursor if self._use_global_cursor else self._per_partition_cursor
 
     def stream_slices(self) -> Iterable[StreamSlice]:
@@ -92,7 +93,7 @@ class PerPartitionWithGlobalCursor(DeclarativeCursor):
         ):
             # Generate slices for the current cursor and handle the last slice using the flag
             self._parent_state = parent_state
-            for slice, is_last_slice, _ in iterate_with_last_flag_and_state(
+            for slice, is_last_slice, _ in iterate_with_last_flag_and_state(  # noqa: A001
                 self._get_active_cursor().generate_slices_from_partition(partition=partition),
                 lambda: None,
             ):
@@ -120,7 +121,7 @@ class PerPartitionWithGlobalCursor(DeclarativeCursor):
             self._per_partition_cursor.observe(stream_slice, record)
         self._global_cursor.observe(stream_slice, record)
 
-    def close_slice(self, stream_slice: StreamSlice, *args: Any) -> None:
+    def close_slice(self, stream_slice: StreamSlice, *args: Any) -> None:  # noqa: ANN401
         if not self._use_global_cursor:
             self._per_partition_cursor.close_slice(stream_slice, *args)
         self._global_cursor.close_slice(stream_slice, *args)
@@ -138,15 +139,15 @@ class PerPartitionWithGlobalCursor(DeclarativeCursor):
 
         return final_state
 
-    def select_state(self, stream_slice: Optional[StreamSlice] = None) -> Optional[StreamState]:
+    def select_state(self, stream_slice: StreamSlice | None = None) -> StreamState | None:
         return self._get_active_cursor().select_state(stream_slice)
 
     def get_request_params(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return self._get_active_cursor().get_request_params(
             stream_state=stream_state,
@@ -157,9 +158,9 @@ class PerPartitionWithGlobalCursor(DeclarativeCursor):
     def get_request_headers(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return self._get_active_cursor().get_request_headers(
             stream_state=stream_state,
@@ -170,10 +171,10 @@ class PerPartitionWithGlobalCursor(DeclarativeCursor):
     def get_request_body_data(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Union[Mapping[str, Any], str]:
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any] | str:
         return self._get_active_cursor().get_request_body_data(
             stream_state=stream_state,
             stream_slice=stream_slice,
@@ -183,9 +184,9 @@ class PerPartitionWithGlobalCursor(DeclarativeCursor):
     def get_request_body_json(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return self._get_active_cursor().get_request_body_json(
             stream_state=stream_state,

@@ -5,15 +5,17 @@ import logging
 import os
 import uuid
 import zlib
+from collections.abc import Iterable, Mapping
 from contextlib import closing
 from dataclasses import InitVar, dataclass
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
+from typing import Any
 
 import pandas as pd
 import requests
 from numpy import nan
 
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
+
 
 EMPTY_STR: str = ""
 DEFAULT_ENCODING: str = "utf-8"
@@ -35,7 +37,7 @@ class ResponseToFileExtractor(RecordExtractor):
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.logger = logging.getLogger("airbyte")
 
-    def _get_response_encoding(self, headers: Dict[str, Any]) -> str:
+    def _get_response_encoding(self, headers: dict[str, Any]) -> str:
         """
         Get the encoding of the response based on the provided headers. This method is heavily inspired by the requests library
         implementation.
@@ -78,7 +80,7 @@ class ResponseToFileExtractor(RecordExtractor):
             )
         return res
 
-    def _save_to_file(self, response: requests.Response) -> Tuple[str, str]:
+    def _save_to_file(self, response: requests.Response) -> tuple[str, str]:
         """
         Saves the binary data from the given response to a temporary file and returns the filepath and response encoding.
 
@@ -96,7 +98,7 @@ class ResponseToFileExtractor(RecordExtractor):
         needs_decompression = True  # we will assume at first that the response is compressed and change the flag if not
 
         tmp_file = str(uuid.uuid4())
-        with closing(response) as response, open(tmp_file, "wb") as data_file:
+        with closing(response) as response, open(tmp_file, "wb") as data_file:  # noqa: PTH123, PLR1704
             response_encoding = self._get_response_encoding(dict(response.headers or {}))
             for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):
                 try:
@@ -110,12 +112,11 @@ class ResponseToFileExtractor(RecordExtractor):
                     needs_decompression = False
 
         # check the file exists
-        if os.path.isfile(tmp_file):
+        if os.path.isfile(tmp_file):  # noqa: PTH113
             return tmp_file, response_encoding
-        else:
-            raise ValueError(
-                f"The IO/Error occured while verifying binary data. Tmp file {tmp_file} doesn't exist."
-            )
+        raise ValueError(
+            f"The IO/Error occured while verifying binary data. Tmp file {tmp_file} doesn't exist."
+        )
 
     def _read_with_chunks(
         self, path: str, file_encoding: str, chunk_size: int = 100
@@ -136,25 +137,25 @@ class ResponseToFileExtractor(RecordExtractor):
         """
 
         try:
-            with open(path, "r", encoding=file_encoding) as data:
+            with open(path, encoding=file_encoding) as data:  # noqa: PTH123
                 chunks = pd.read_csv(
                     data, chunksize=chunk_size, iterator=True, dialect="unix", dtype=object
                 )
                 for chunk in chunks:
-                    chunk = chunk.replace({nan: None}).to_dict(orient="records")
-                    for row in chunk:
+                    chunk = chunk.replace({nan: None}).to_dict(orient="records")  # noqa: PLW2901
+                    for row in chunk:  # noqa: UP028
                         yield row
         except pd.errors.EmptyDataError as e:
             self.logger.info(f"Empty data received. {e}")
             yield from []
-        except IOError as ioe:
-            raise ValueError(f"The IO/Error occured while reading tmp data. Called: {path}", ioe)
+        except OSError as ioe:
+            raise ValueError(f"The IO/Error occured while reading tmp data. Called: {path}", ioe)  # noqa: B904
         finally:
             # remove binary tmp file, after data is read
-            os.remove(path)
+            os.remove(path)  # noqa: PTH107
 
     def extract_records(
-        self, response: Optional[requests.Response] = None
+        self, response: requests.Response | None = None
     ) -> Iterable[Mapping[str, Any]]:
         """
         Extracts records from the given response by:

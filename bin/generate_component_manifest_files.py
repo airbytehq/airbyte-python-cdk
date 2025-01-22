@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2024 Airbyte, Inc., all rights reserved.  # noqa: EXE002
 
 import sys
 from glob import glob
@@ -6,6 +6,7 @@ from pathlib import Path
 
 import anyio
 import dagger
+
 
 PYTHON_IMAGE = "python:3.10"
 LOCAL_YAML_DIR_PATH = "airbyte_cdk/sources/declarative"
@@ -18,7 +19,7 @@ PIP_DEPENDENCIES = [
 
 
 def get_all_yaml_files_without_ext() -> list[str]:
-    return [Path(f).stem for f in glob(f"{LOCAL_YAML_DIR_PATH}/*.yaml")]
+    return [Path(f).stem for f in glob(f"{LOCAL_YAML_DIR_PATH}/*.yaml")]  # noqa: PTH207
 
 
 def generate_init_module_content() -> str:
@@ -28,7 +29,7 @@ def generate_init_module_content() -> str:
     return header
 
 
-async def post_process_codegen(codegen_container: dagger.Container):
+async def post_process_codegen(codegen_container: dagger.Container):  # noqa: ANN201
     codegen_container = codegen_container.with_exec(
         ["mkdir", "/generated_post_processed"], use_entrypoint=True
     )
@@ -47,7 +48,7 @@ async def post_process_codegen(codegen_container: dagger.Container):
     return codegen_container
 
 
-async def main():
+async def main():  # noqa: ANN201
     init_module_content = generate_init_module_content()
 
     async with dagger.Connection(dagger.Config(log_output=sys.stderr)) as dagger_client:

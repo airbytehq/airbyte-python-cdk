@@ -4,7 +4,8 @@
 
 import json
 import logging
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Union
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 import orjson
 
@@ -27,7 +28,7 @@ class JsonlParser(FileTypeParser):
     MAX_BYTES_PER_FILE_FOR_SCHEMA_INFERENCE = 1_000_000
     ENCODING = "utf8"
 
-    def check_config(self, config: FileBasedStreamConfig) -> Tuple[bool, Optional[str]]:
+    def check_config(self, config: FileBasedStreamConfig) -> tuple[bool, str | None]:  # noqa: ARG002
         """
         JsonlParser does not require config checks, implicit pydantic validation is enough.
         """
@@ -35,7 +36,7 @@ class JsonlParser(FileTypeParser):
 
     async def infer_schema(
         self,
-        config: FileBasedStreamConfig,
+        config: FileBasedStreamConfig,  # noqa: ARG002
         file: RemoteFile,
         stream_reader: AbstractFileBasedStreamReader,
         logger: logging.Logger,
@@ -54,12 +55,12 @@ class JsonlParser(FileTypeParser):
 
     def parse_records(
         self,
-        config: FileBasedStreamConfig,
+        config: FileBasedStreamConfig,  # noqa: ARG002
         file: RemoteFile,
         stream_reader: AbstractFileBasedStreamReader,
         logger: logging.Logger,
-        discovered_schema: Optional[Mapping[str, SchemaType]],
-    ) -> Iterable[Dict[str, Any]]:
+        discovered_schema: Mapping[str, SchemaType] | None,  # noqa: ARG002
+    ) -> Iterable[dict[str, Any]]:
         """
         This code supports parsing json objects over multiple lines even though this does not align with the JSONL format. This is for
         backward compatibility reasons i.e. the previous source-s3 parser did support this. The drawback is:
@@ -73,7 +74,7 @@ class JsonlParser(FileTypeParser):
         yield from self._parse_jsonl_entries(file, stream_reader, logger)
 
     @classmethod
-    def _infer_schema_for_record(cls, record: Dict[str, Any]) -> Dict[str, Any]:
+    def _infer_schema_for_record(cls, record: dict[str, Any]) -> dict[str, Any]:
         record_schema = {}
         for key, value in record.items():
             if value is None:
@@ -92,8 +93,8 @@ class JsonlParser(FileTypeParser):
         file: RemoteFile,
         stream_reader: AbstractFileBasedStreamReader,
         logger: logging.Logger,
-        read_limit: bool = False,
-    ) -> Iterable[Dict[str, Any]]:
+        read_limit: bool = False,  # noqa: FBT001, FBT002
+    ) -> Iterable[dict[str, Any]]:
         with stream_reader.open_file(file, self.file_read_mode, self.ENCODING, logger) as fp:
             read_bytes = 0
 
@@ -137,9 +138,9 @@ class JsonlParser(FileTypeParser):
                     FileBasedSourceError.ERROR_PARSING_RECORD, filename=file.uri, lineno=line
                 )
 
-    @staticmethod
-    def _instantiate_accumulator(line: Union[bytes, str]) -> Union[bytes, str]:
+    @staticmethod  # noqa: RET503
+    def _instantiate_accumulator(line: bytes | str) -> bytes | str:
         if isinstance(line, bytes):
             return bytes("", json.detect_encoding(line))
-        elif isinstance(line, str):
+        if isinstance(line, str):  # noqa: RET503, RUF100
             return ""

@@ -3,8 +3,8 @@
 #
 import concurrent
 import logging
+from collections.abc import Iterable, Iterator
 from queue import Queue
-from typing import Iterable, Iterator, List
 
 from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.sources.concurrent_source.concurrent_read_processor import ConcurrentReadProcessor
@@ -49,9 +49,9 @@ class ConcurrentSource:
         too_many_generator = (
             not is_single_threaded and initial_number_of_partitions_to_generate >= num_workers
         )
-        assert (
-            not too_many_generator
-        ), "It is required to have more workers than threads generating partitions"
+        assert not too_many_generator, (
+            "It is required to have more workers than threads generating partitions"
+        )
         threadpool = ThreadPoolManager(
             concurrent.futures.ThreadPoolExecutor(
                 max_workers=num_workers, thread_name_prefix="workerpool"
@@ -71,8 +71,8 @@ class ConcurrentSource:
         self,
         threadpool: ThreadPoolManager,
         logger: logging.Logger,
-        slice_logger: SliceLogger = DebugSliceLogger(),
-        message_repository: MessageRepository = InMemoryMessageRepository(),
+        slice_logger: SliceLogger = DebugSliceLogger(),  # noqa: B008
+        message_repository: MessageRepository = InMemoryMessageRepository(),  # noqa: B008
         initial_number_partitions_to_generate: int = 1,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
     ) -> None:
@@ -93,7 +93,7 @@ class ConcurrentSource:
 
     def read(
         self,
-        streams: List[AbstractStream],
+        streams: list[AbstractStream],
     ) -> Iterator[AirbyteMessage]:
         self._logger.info("Starting syncing")
 
@@ -162,4 +162,4 @@ class ConcurrentSource:
         elif isinstance(queue_item, Record):
             yield from concurrent_stream_processor.on_record(queue_item)
         else:
-            raise ValueError(f"Unknown queue item type: {type(queue_item)}")
+            raise ValueError(f"Unknown queue item type: {type(queue_item)}")  # noqa: TRY004

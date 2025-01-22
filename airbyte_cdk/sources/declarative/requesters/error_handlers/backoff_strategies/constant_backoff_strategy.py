@@ -2,8 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional, Union
+from typing import Any
 
 import requests
 
@@ -21,7 +22,7 @@ class ConstantBackoffStrategy(BackoffStrategy):
         backoff_time_in_seconds (float): time to backoff before retrying a retryable request.
     """
 
-    backoff_time_in_seconds: Union[float, InterpolatedString, str]
+    backoff_time_in_seconds: float | InterpolatedString | str
     parameters: InitVar[Mapping[str, Any]]
     config: Config
 
@@ -39,7 +40,7 @@ class ConstantBackoffStrategy(BackoffStrategy):
 
     def backoff_time(
         self,
-        response_or_exception: Optional[Union[requests.Response, requests.RequestException]],
-        attempt_count: int,
-    ) -> Optional[float]:
+        response_or_exception: requests.Response | requests.RequestException | None,  # noqa: ARG002
+        attempt_count: int,  # noqa: ARG002
+    ) -> float | None:
         return self.backoff_time_in_seconds.eval(self.config)  # type: ignore # backoff_time_in_seconds is always cast to an interpolated string

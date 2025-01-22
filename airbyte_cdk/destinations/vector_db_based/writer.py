@@ -4,7 +4,7 @@
 
 
 from collections import defaultdict
-from typing import Dict, Iterable, List, Tuple
+from collections.abc import Iterable
 
 from airbyte_cdk.destinations.vector_db_based.config import ProcessingConfigModel
 from airbyte_cdk.destinations.vector_db_based.document_processor import Chunk, DocumentProcessor
@@ -32,7 +32,7 @@ class Writer:
         indexer: Indexer,
         embedder: Embedder,
         batch_size: int,
-        omit_raw_text: bool,
+        omit_raw_text: bool,  # noqa: FBT001
     ) -> None:
         self.processing_config = processing_config
         self.indexer = indexer
@@ -42,8 +42,8 @@ class Writer:
         self._init_batch()
 
     def _init_batch(self) -> None:
-        self.chunks: Dict[Tuple[str, str], List[Chunk]] = defaultdict(list)
-        self.ids_to_delete: Dict[Tuple[str, str], List[str]] = defaultdict(list)
+        self.chunks: dict[tuple[str, str], list[Chunk]] = defaultdict(list)
+        self.ids_to_delete: dict[tuple[str, str], list[str]] = defaultdict(list)
         self.number_of_chunks = 0
 
     def _convert_to_document(self, chunk: Chunk) -> Document:
@@ -59,9 +59,9 @@ class Writer:
             self.indexer.delete(ids, namespace, stream)
 
         for (namespace, stream), chunks in self.chunks.items():
-            embeddings = self.embedder.embed_documents(
-                [self._convert_to_document(chunk) for chunk in chunks]
-            )
+            embeddings = self.embedder.embed_documents([
+                self._convert_to_document(chunk) for chunk in chunks
+            ])
             for i, document in enumerate(chunks):
                 document.embedding = embeddings[i]
                 if self.omit_raw_text:
@@ -84,14 +84,14 @@ class Writer:
             elif message.type == Type.RECORD:
                 record_chunks, record_id_to_delete = self.processor.process(message.record)
                 self.chunks[
-                    (  # type: ignore [index] # expected "tuple[str, str]", got "tuple[str | Any | None, str | Any]"
+                    (  # type: ignore [index] # expected "tuple[str, str]", got "tuple[str | Any | None, str | Any]"  # noqa: RUF031
                         message.record.namespace,  # type: ignore [union-attr] # record not None
                         message.record.stream,  # type: ignore [union-attr] # record not None
                     )
                 ].extend(record_chunks)
                 if record_id_to_delete is not None:
                     self.ids_to_delete[
-                        (  # type: ignore [index] # expected "tuple[str, str]", got "tuple[str | Any | None, str | Any]"
+                        (  # type: ignore [index] # expected "tuple[str, str]", got "tuple[str | Any | None, str | Any]"  # noqa: RUF031
                             message.record.namespace,  # type: ignore [union-attr] # record not None
                             message.record.stream,  # type: ignore [union-attr] # record not None
                         )

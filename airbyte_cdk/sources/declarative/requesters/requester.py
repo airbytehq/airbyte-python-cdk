@@ -3,8 +3,9 @@
 #
 
 from abc import abstractmethod
+from collections.abc import Callable, Mapping, MutableMapping
 from enum import Enum
-from typing import Any, Callable, Mapping, MutableMapping, Optional, Union
+from typing import Any
 
 import requests
 
@@ -44,9 +45,9 @@ class Requester(RequestOptionsProvider):
     def get_path(
         self,
         *,
-        stream_state: Optional[StreamState],
-        stream_slice: Optional[StreamSlice],
-        next_page_token: Optional[Mapping[str, Any]],
+        stream_state: StreamState | None,
+        stream_slice: StreamSlice | None,
+        next_page_token: Mapping[str, Any] | None,
     ) -> str:
         """
         Returns the URL path for the API endpoint e.g: if you wanted to hit https://myapi.com/v1/some_entity then this should return "some_entity"
@@ -62,9 +63,9 @@ class Requester(RequestOptionsProvider):
     def get_request_params(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> MutableMapping[str, Any]:
         """
         Specifies the query parameters that should be set on an outgoing HTTP request given the inputs.
@@ -76,9 +77,9 @@ class Requester(RequestOptionsProvider):
     def get_request_headers(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         """
         Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.
@@ -88,10 +89,10 @@ class Requester(RequestOptionsProvider):
     def get_request_body_data(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Union[Mapping[str, Any], str]:
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any] | str:
         """
         Specifies how to populate the body of the request with a non-JSON payload.
 
@@ -106,9 +107,9 @@ class Requester(RequestOptionsProvider):
     def get_request_body_json(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         """
         Specifies how to populate the body of the request with a JSON payload.
@@ -117,18 +118,18 @@ class Requester(RequestOptionsProvider):
         """
 
     @abstractmethod
-    def send_request(
+    def send_request(  # noqa: PLR0913, PLR0917
         self,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-        path: Optional[str] = None,
-        request_headers: Optional[Mapping[str, Any]] = None,
-        request_params: Optional[Mapping[str, Any]] = None,
-        request_body_data: Optional[Union[Mapping[str, Any], str]] = None,
-        request_body_json: Optional[Mapping[str, Any]] = None,
-        log_formatter: Optional[Callable[[requests.Response], Any]] = None,
-    ) -> Optional[requests.Response]:
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
+        path: str | None = None,
+        request_headers: Mapping[str, Any] | None = None,
+        request_params: Mapping[str, Any] | None = None,
+        request_body_data: Mapping[str, Any] | str | None = None,
+        request_body_json: Mapping[str, Any] | None = None,
+        log_formatter: Callable[[requests.Response], Any] | None = None,
+    ) -> requests.Response | None:
         """
         Sends a request and returns the response. Might return no response if the error handler chooses to ignore the response or throw an exception in case of an error.
         If path is set, the path configured on the requester itself is ignored.

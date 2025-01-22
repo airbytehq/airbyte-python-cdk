@@ -3,8 +3,9 @@
 #
 
 import copy
-import typing
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
+
 
 PARAMETERS_STR = "$parameters"
 
@@ -149,7 +150,7 @@ class ManifestComponentTransformer:
                 )
                 if excluded_parameter:
                     current_parameters[field_name] = excluded_parameter
-            elif isinstance(field_value, typing.List):
+            elif isinstance(field_value, list):
                 # We exclude propagating a parameter that matches the current field name because that would result in an infinite cycle
                 excluded_parameter = current_parameters.pop(field_name, None)
                 for i, element in enumerate(field_value):

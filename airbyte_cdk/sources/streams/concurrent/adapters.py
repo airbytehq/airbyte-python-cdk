@@ -5,8 +5,9 @@
 import copy
 import json
 import logging
-from functools import lru_cache
-from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Tuple, Union
+from collections.abc import Iterable, Mapping, MutableMapping
+from functools import cache
+from typing import Any, Optional
 
 from typing_extensions import deprecated
 
@@ -45,6 +46,7 @@ from airbyte_cdk.sources.utils.schema_helpers import InternalConfig
 from airbyte_cdk.sources.utils.slice_logger import SliceLogger
 from airbyte_cdk.utils.slice_hasher import SliceHasher
 
+
 """
 This module contains adapters to help enabling concurrency on Stream objects without needing to migrate to AbstractStream
 """
@@ -68,7 +70,7 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
         stream: Stream,
         source: AbstractSource,
         logger: logging.Logger,
-        state: Optional[MutableMapping[str, Any]],
+        state: MutableMapping[str, Any] | None,
         cursor: Cursor,
     ) -> Stream:
         """
@@ -109,7 +111,7 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
             ),
             stream,
             cursor,
-            slice_logger=source._slice_logger,
+            slice_logger=source._slice_logger,  # noqa: SLF001
             logger=logger,
         )
 
@@ -124,7 +126,7 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
         if "state" in dir(self._legacy_stream):
             self._legacy_stream.state = value  # type: ignore  # validating `state` is attribute of stream using `if` above
 
-    def __init__(
+    def __init__(  # noqa: ANN204
         self,
         stream: DefaultStream,
         legacy_stream: Stream,
@@ -143,21 +145,21 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
 
     def read(
         self,
-        configured_stream: ConfiguredAirbyteStream,
-        logger: logging.Logger,
-        slice_logger: SliceLogger,
-        stream_state: MutableMapping[str, Any],
-        state_manager: ConnectorStateManager,
-        internal_config: InternalConfig,
+        configured_stream: ConfiguredAirbyteStream,  # noqa: ARG002
+        logger: logging.Logger,  # noqa: ARG002
+        slice_logger: SliceLogger,  # noqa: ARG002
+        stream_state: MutableMapping[str, Any],  # noqa: ARG002
+        state_manager: ConnectorStateManager,  # noqa: ARG002
+        internal_config: InternalConfig,  # noqa: ARG002
     ) -> Iterable[StreamData]:
         yield from self._read_records()
 
     def read_records(
         self,
-        sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        sync_mode: SyncMode,  # noqa: ARG002
+        cursor_field: list[str] | None = None,  # noqa: ARG002
+        stream_slice: Mapping[str, Any] | None = None,  # noqa: ARG002
+        stream_state: Mapping[str, Any] | None = None,  # noqa: ARG002
     ) -> Iterable[StreamData]:
         try:
             yield from self._read_records()
@@ -173,7 +175,7 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
                     level=Level.ERROR, message=f"Cursor State at time of exception: {state}"
                 ),
             )
-            raise exc
+            raise exc  # noqa: TRY201
 
     def _read_records(self) -> Iterable[StreamData]:
         for partition in self._abstract_stream.generate_partitions():
@@ -187,22 +189,21 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
         return self._abstract_stream.name
 
     @property
-    def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
+    def primary_key(self) -> str | list[str] | list[list[str]] | None:
         # This method is not expected to be called directly. It is only implemented for backward compatibility with the old interface
         return self.as_airbyte_stream().source_defined_primary_key  # type: ignore # source_defined_primary_key is known to be an Optional[List[List[str]]]
 
     @property
-    def cursor_field(self) -> Union[str, List[str]]:
+    def cursor_field(self) -> str | list[str]:
         if self._abstract_stream.cursor_field is None:
             return []
-        else:
-            return self._abstract_stream.cursor_field
+        return self._abstract_stream.cursor_field
 
     @property
-    def cursor(self) -> Optional[Cursor]:  # type: ignore[override] # StreamFaced expects to use only airbyte_cdk.sources.streams.concurrent.cursor.Cursor
+    def cursor(self) -> Cursor | None:  # type: ignore[override] # StreamFaced expects to use only airbyte_cdk.sources.streams.concurrent.cursor.Cursor
         return self._cursor
 
-    @lru_cache(maxsize=None)
+    @cache  # noqa: B019
     def get_json_schema(self) -> Mapping[str, Any]:
         return self._abstract_stream.get_json_schema()
 
@@ -211,8 +212,10 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
         return self._legacy_stream.supports_incremental
 
     def check_availability(
-        self, logger: logging.Logger, source: Optional["Source"] = None
-    ) -> Tuple[bool, Optional[str]]:
+        self,
+        logger: logging.Logger,  # noqa: ARG002
+        source: Optional["Source"] = None,  # noqa: ARG002
+    ) -> tuple[bool, str | None]:
         """
         Verifies the stream is available. Delegates to the underlying AbstractStream and ignores the parameters
         :param logger: (ignored)
@@ -233,7 +236,7 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
 
 
 class SliceEncoder(json.JSONEncoder):
-    def default(self, obj: Any) -> Any:
+    def default(self, obj: Any) -> Any:  # noqa: ANN401
         if hasattr(obj, "__json_serializable__"):
             return obj.__json_serializable__()
 
@@ -251,14 +254,14 @@ class StreamPartition(Partition):
     In the long-run, it would be preferable to update the connectors, but we don't have the tooling or need to justify the effort at this time.
     """
 
-    def __init__(
+    def __init__(  # noqa: ANN204
         self,
         stream: Stream,
-        _slice: Optional[Mapping[str, Any]],
+        _slice: Mapping[str, Any] | None,
         message_repository: MessageRepository,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]],
-        state: Optional[MutableMapping[str, Any]],
+        cursor_field: list[str] | None,
+        state: MutableMapping[str, Any] | None,
     ):
         """
         :param stream: The stream to delegate to
@@ -309,9 +312,9 @@ class StreamPartition(Partition):
             if display_message:
                 raise ExceptionWithDisplayMessage(display_message) from e
             else:
-                raise e
+                raise e  # noqa: TRY201
 
-    def to_slice(self) -> Optional[Mapping[str, Any]]:
+    def to_slice(self) -> Mapping[str, Any] | None:
         return self._slice
 
     def __hash__(self) -> int:
@@ -332,13 +335,13 @@ class StreamPartitionGenerator(PartitionGenerator):
     In the long-run, it would be preferable to update the connectors, but we don't have the tooling or need to justify the effort at this time.
     """
 
-    def __init__(
+    def __init__(  # noqa: ANN204
         self,
         stream: Stream,
         message_repository: MessageRepository,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]],
-        state: Optional[MutableMapping[str, Any]],
+        cursor_field: list[str] | None,
+        state: MutableMapping[str, Any] | None,
     ):
         """
         :param stream: The stream to delegate to
@@ -369,12 +372,15 @@ class StreamPartitionGenerator(PartitionGenerator):
     category=ExperimentalClassWarning,
 )
 class AvailabilityStrategyFacade(AvailabilityStrategy):
-    def __init__(self, abstract_availability_strategy: AbstractAvailabilityStrategy):
+    def __init__(self, abstract_availability_strategy: AbstractAvailabilityStrategy):  # noqa: ANN204
         self._abstract_availability_strategy = abstract_availability_strategy
 
     def check_availability(
-        self, stream: Stream, logger: logging.Logger, source: Optional["Source"] = None
-    ) -> Tuple[bool, Optional[str]]:
+        self,
+        stream: Stream,  # noqa: ARG002
+        logger: logging.Logger,
+        source: Optional["Source"] = None,  # noqa: ARG002
+    ) -> tuple[bool, str | None]:
         """
         Checks stream availability.
 

@@ -6,7 +6,7 @@ from pydantic import FilePath
 def get_unit_test_folder(execution_folder: str) -> FilePath:
     path = FilePath(execution_folder)
     while path.name != "unit_tests":
-        if path.name == path.root or path.name == path.drive:
+        if path.name == path.root or path.name == path.drive:  # noqa: PLR1714
             raise ValueError(
                 f"Could not find `unit_tests` folder as a parent of {execution_folder}"
             )
@@ -19,6 +19,6 @@ def read_resource_file_contents(resource: str, test_location: str) -> str:
     file_path = str(
         get_unit_test_folder(test_location) / "resource" / "http" / "response" / f"{resource}"
     )
-    with open(file_path) as f:
+    with open(file_path) as f:  # noqa: FURB101, PLW1514, PTH123
         response = f.read()
     return response

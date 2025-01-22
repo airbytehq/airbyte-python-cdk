@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Union
 
 import requests
 from requests import HTTPError
@@ -21,13 +20,13 @@ class ResponseAction(Enum):
 
 @dataclass
 class ErrorResolution:
-    response_action: Optional[ResponseAction] = None
-    failure_type: Optional[FailureType] = None
-    error_message: Optional[str] = None
+    response_action: ResponseAction | None = None
+    failure_type: FailureType | None = None
+    error_message: str | None = None
 
 
 def _format_exception_error_message(exception: Exception) -> str:
-    return f"{type(exception).__name__}: {str(exception)}"
+    return f"{type(exception).__name__}: {exception!s}"
 
 
 def _format_response_error_message(response: requests.Response) -> str:
@@ -35,7 +34,7 @@ def _format_response_error_message(response: requests.Response) -> str:
         response.raise_for_status()
     except HTTPError as exception:
         return filter_secrets(
-            f"Response was not ok: `{str(exception)}`. Response content is: {response.text}"
+            f"Response was not ok: `{exception!s}`. Response content is: {response.text}"
         )
     # We purposefully do not add the response.content because the response is "ok" so there might be sensitive information in the payload.
     # Feel free the
@@ -43,7 +42,7 @@ def _format_response_error_message(response: requests.Response) -> str:
 
 
 def create_fallback_error_resolution(
-    response_or_exception: Optional[Union[requests.Response, Exception]],
+    response_or_exception: requests.Response | Exception | None,
 ) -> ErrorResolution:
     if response_or_exception is None:
         # We do not expect this case to happen but if it does, it would be good to understand the cause and improve the error message

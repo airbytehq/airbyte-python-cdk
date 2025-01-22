@@ -5,7 +5,7 @@
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import List, Optional, Union, cast
+from typing import cast
 
 from langchain.embeddings.cohere import CohereEmbeddings
 from langchain.embeddings.fake import FakeEmbeddings
@@ -41,15 +41,15 @@ class Embedder(ABC):
     The CDK defines basic embedders that should be supported in each destination. It is possible to implement custom embedders for special destinations if needed.
     """
 
-    def __init__(self) -> None:
+    def __init__(self) -> None:  # noqa: B027
         pass
 
     @abstractmethod
-    def check(self) -> Optional[str]:
+    def check(self) -> str | None:
         pass
 
     @abstractmethod
-    def embed_documents(self, documents: List[Document]) -> List[Optional[List[float]]]:
+    def embed_documents(self, documents: list[Document]) -> list[list[float] | None]:
         """
         Embed the text of each chunk and return the resulting embedding vectors.
         If a chunk cannot be embedded or is configured to not be embedded, return None for that chunk.
@@ -68,19 +68,19 @@ OPEN_AI_TOKEN_LIMIT = 150_000  # limit of tokens per minute
 
 
 class BaseOpenAIEmbedder(Embedder):
-    def __init__(self, embeddings: OpenAIEmbeddings, chunk_size: int):
+    def __init__(self, embeddings: OpenAIEmbeddings, chunk_size: int):  # noqa: ANN204
         super().__init__()
         self.embeddings = embeddings
         self.chunk_size = chunk_size
 
-    def check(self) -> Optional[str]:
+    def check(self) -> str | None:
         try:
             self.embeddings.embed_query("test")
         except Exception as e:
             return format_exception(e)
         return None
 
-    def embed_documents(self, documents: List[Document]) -> List[Optional[List[float]]]:
+    def embed_documents(self, documents: list[Document]) -> list[list[float] | None]:
         """
         Embed the text of each chunk and return the resulting embedding vectors.
 
@@ -91,7 +91,7 @@ class BaseOpenAIEmbedder(Embedder):
         # Each chunk can hold at most self.chunk_size tokens, so tokens-per-minute by maximum tokens per chunk is the number of documents that can be embedded at once without exhausting the limit in a single request
         embedding_batch_size = OPEN_AI_TOKEN_LIMIT // self.chunk_size
         batches = create_chunks(documents, batch_size=embedding_batch_size)
-        embeddings: List[Optional[List[float]]] = []
+        embeddings: list[list[float] | None] = []
         for batch in batches:
             embeddings.extend(
                 self.embeddings.embed_documents([chunk.page_content for chunk in batch])
@@ -105,7 +105,7 @@ class BaseOpenAIEmbedder(Embedder):
 
 
 class OpenAIEmbedder(BaseOpenAIEmbedder):
-    def __init__(self, config: OpenAIEmbeddingConfigModel, chunk_size: int):
+    def __init__(self, config: OpenAIEmbeddingConfigModel, chunk_size: int):  # noqa: ANN204
         super().__init__(
             OpenAIEmbeddings(  # type: ignore [call-arg]
                 openai_api_key=config.openai_key, max_retries=15, disallowed_special=()
@@ -115,7 +115,7 @@ class OpenAIEmbedder(BaseOpenAIEmbedder):
 
 
 class AzureOpenAIEmbedder(BaseOpenAIEmbedder):
-    def __init__(self, config: AzureOpenAIEmbeddingConfigModel, chunk_size: int):
+    def __init__(self, config: AzureOpenAIEmbeddingConfigModel, chunk_size: int):  # noqa: ANN204
         # Azure OpenAI API has — as of 20230927 — a limit of 16 documents per request
         super().__init__(
             OpenAIEmbeddings(  # type: ignore [call-arg]
@@ -136,23 +136,23 @@ COHERE_VECTOR_SIZE = 1024
 
 
 class CohereEmbedder(Embedder):
-    def __init__(self, config: CohereEmbeddingConfigModel):
+    def __init__(self, config: CohereEmbeddingConfigModel):  # noqa: ANN204
         super().__init__()
         # Client is set internally
         self.embeddings = CohereEmbeddings(
             cohere_api_key=config.cohere_key, model="embed-english-light-v2.0"
         )  # type: ignore
 
-    def check(self) -> Optional[str]:
+    def check(self) -> str | None:
         try:
             self.embeddings.embed_query("test")
         except Exception as e:
             return format_exception(e)
         return None
 
-    def embed_documents(self, documents: List[Document]) -> List[Optional[List[float]]]:
+    def embed_documents(self, documents: list[Document]) -> list[list[float] | None]:
         return cast(
-            List[Optional[List[float]]],
+            list[list[float] | None],  # noqa: TC006
             self.embeddings.embed_documents([document.page_content for document in documents]),
         )
 
@@ -163,20 +163,20 @@ class CohereEmbedder(Embedder):
 
 
 class FakeEmbedder(Embedder):
-    def __init__(self, config: FakeEmbeddingConfigModel):
+    def __init__(self, config: FakeEmbeddingConfigModel):  # noqa: ANN204, ARG002
         super().__init__()
         self.embeddings = FakeEmbeddings(size=OPEN_AI_VECTOR_SIZE)
 
-    def check(self) -> Optional[str]:
+    def check(self) -> str | None:
         try:
             self.embeddings.embed_query("test")
         except Exception as e:
             return format_exception(e)
         return None
 
-    def embed_documents(self, documents: List[Document]) -> List[Optional[List[float]]]:
+    def embed_documents(self, documents: list[Document]) -> list[list[float] | None]:
         return cast(
-            List[Optional[List[float]]],
+            list[list[float] | None],  # noqa: TC006
             self.embeddings.embed_documents([document.page_content for document in documents]),
         )
 
@@ -190,7 +190,7 @@ CLOUD_DEPLOYMENT_MODE = "cloud"
 
 
 class OpenAICompatibleEmbedder(Embedder):
-    def __init__(self, config: OpenAICompatibleEmbeddingConfigModel):
+    def __init__(self, config: OpenAICompatibleEmbeddingConfigModel):  # noqa: ANN204
         super().__init__()
         self.config = config
         # Client is set internally
@@ -203,7 +203,7 @@ class OpenAICompatibleEmbedder(Embedder):
             disallowed_special=(),
         )  # type: ignore
 
-    def check(self) -> Optional[str]:
+    def check(self) -> str | None:
         deployment_mode = os.environ.get("DEPLOYMENT_MODE", "")
         if (
             deployment_mode.casefold() == CLOUD_DEPLOYMENT_MODE
@@ -217,9 +217,9 @@ class OpenAICompatibleEmbedder(Embedder):
             return format_exception(e)
         return None
 
-    def embed_documents(self, documents: List[Document]) -> List[Optional[List[float]]]:
+    def embed_documents(self, documents: list[Document]) -> list[list[float] | None]:
         return cast(
-            List[Optional[List[float]]],
+            list[list[float] | None],  # noqa: TC006
             self.embeddings.embed_documents([document.page_content for document in documents]),
         )
 
@@ -230,19 +230,19 @@ class OpenAICompatibleEmbedder(Embedder):
 
 
 class FromFieldEmbedder(Embedder):
-    def __init__(self, config: FromFieldEmbeddingConfigModel):
+    def __init__(self, config: FromFieldEmbeddingConfigModel):  # noqa: ANN204
         super().__init__()
         self.config = config
 
-    def check(self) -> Optional[str]:
+    def check(self) -> str | None:
         return None
 
-    def embed_documents(self, documents: List[Document]) -> List[Optional[List[float]]]:
+    def embed_documents(self, documents: list[Document]) -> list[list[float] | None]:
         """
         From each chunk, pull the embedding from the field specified in the config.
         Check that the field exists, is a list of numbers and is the correct size. If not, raise an AirbyteTracedException explaining the problem.
         """
-        embeddings: List[Optional[List[float]]] = []
+        embeddings: list[list[float] | None] = []
         for document in documents:
             data = document.record.data
             if self.config.field_name not in data:
@@ -252,7 +252,7 @@ class FromFieldEmbedder(Embedder):
                     message=f"Record {str(data)[:250]}... in stream {document.record.stream}  does not contain embedding vector field {self.config.field_name}. Please check your embedding configuration, the embedding vector field has to be set correctly on every record.",
                 )
             field = data[self.config.field_name]
-            if not isinstance(field, list) or not all(isinstance(x, (int, float)) for x in field):
+            if not isinstance(field, list) or not all(isinstance(x, (int, float)) for x in field):  # noqa: UP038
                 raise AirbyteTracedException(
                     internal_message="Embedding vector field not a list of numbers",
                     failure_type=FailureType.config_error,
@@ -284,20 +284,17 @@ embedder_map = {
 
 
 def create_from_config(
-    embedding_config: Union[
-        AzureOpenAIEmbeddingConfigModel,
-        CohereEmbeddingConfigModel,
-        FakeEmbeddingConfigModel,
-        FromFieldEmbeddingConfigModel,
-        OpenAIEmbeddingConfigModel,
-        OpenAICompatibleEmbeddingConfigModel,
-    ],
+    embedding_config: AzureOpenAIEmbeddingConfigModel
+    | CohereEmbeddingConfigModel
+    | FakeEmbeddingConfigModel
+    | FromFieldEmbeddingConfigModel
+    | OpenAIEmbeddingConfigModel
+    | OpenAICompatibleEmbeddingConfigModel,
     processing_config: ProcessingConfigModel,
 ) -> Embedder:
-    if embedding_config.mode == "azure_openai" or embedding_config.mode == "openai":
+    if embedding_config.mode == "azure_openai" or embedding_config.mode == "openai":  # noqa: PLR1714
         return cast(
-            Embedder,
+            Embedder,  # noqa: TC006
             embedder_map[embedding_config.mode](embedding_config, processing_config.chunk_size),
         )
-    else:
-        return cast(Embedder, embedder_map[embedding_config.mode](embedding_config))
+    return cast(Embedder, embedder_map[embedding_config.mode](embedding_config))  # noqa: TC006

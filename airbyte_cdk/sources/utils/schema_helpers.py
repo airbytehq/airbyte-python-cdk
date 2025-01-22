@@ -7,7 +7,8 @@ import importlib
 import json
 import os
 import pkgutil
-from typing import Any, ClassVar, Dict, List, Mapping, MutableMapping, Optional, Tuple
+from collections.abc import Mapping, MutableMapping
+from typing import Any, ClassVar
 
 import jsonref
 from jsonschema import RefResolver, validate
@@ -25,21 +26,20 @@ class JsonFileLoader:
     pointing to shared_schema.json file instead of shared/shared_schema.json
     """
 
-    def __init__(self, uri_base: str, shared: str):
+    def __init__(self, uri_base: str, shared: str):  # noqa: ANN204
         self.shared = shared
         self.uri_base = uri_base
 
-    def __call__(self, uri: str) -> Dict[str, Any]:
+    def __call__(self, uri: str) -> dict[str, Any]:
         uri = uri.replace(self.uri_base, f"{self.uri_base}/{self.shared}/")
-        with open(uri) as f:
+        with open(uri) as f:  # noqa: PLW1514, PTH123
             data = json.load(f)
             if isinstance(data, dict):
                 return data
-            else:
-                raise ValueError(f"Expected to read a dictionary from {uri}. Got: {data}")
+            raise ValueError(f"Expected to read a dictionary from {uri}. Got: {data}")
 
 
-def resolve_ref_links(obj: Any) -> Any:
+def resolve_ref_links(obj: Any) -> Any:  # noqa: ANN401
     """
     Scan resolved schema and convert jsonref.JsonRef object to JSON serializable dict.
 
@@ -53,17 +53,15 @@ def resolve_ref_links(obj: Any) -> Any:
         if isinstance(obj, dict):
             obj.pop("definitions", None)
             return obj
-        else:
-            raise ValueError(f"Expected obj to be a dict. Got {obj}")
-    elif isinstance(obj, dict):
+        raise ValueError(f"Expected obj to be a dict. Got {obj}")
+    if isinstance(obj, dict):
         return {k: resolve_ref_links(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
+    if isinstance(obj, list):
         return [resolve_ref_links(item) for item in obj]
-    else:
-        return obj
+    return obj
 
 
-def _expand_refs(schema: Any, ref_resolver: Optional[RefResolver] = None) -> None:
+def _expand_refs(schema: Any, ref_resolver: RefResolver | None = None) -> None:  # noqa: ANN401
     """Internal function to iterate over schema and replace all occurrences of $ref with their definitions. Recursive.
 
     :param schema: schema that will be patched
@@ -80,14 +78,14 @@ def _expand_refs(schema: Any, ref_resolver: Optional[RefResolver] = None) -> Non
             )  # expand refs in definitions as well
             schema.update(definition)
         else:
-            for key, value in schema.items():
+            for key, value in schema.items():  # noqa: B007, PERF102
                 _expand_refs(value, ref_resolver=ref_resolver)
-    elif isinstance(schema, List):
+    elif isinstance(schema, list):
         for value in schema:
             _expand_refs(value, ref_resolver=ref_resolver)
 
 
-def expand_refs(schema: Any) -> None:
+def expand_refs(schema: Any) -> None:  # noqa: ANN401
     """Iterate over schema and replace all occurrences of $ref with their definitions.
 
     :param schema: schema that will be patched
@@ -96,7 +94,7 @@ def expand_refs(schema: Any) -> None:
     schema.pop("definitions", None)  # remove definitions created by $ref
 
 
-def rename_key(schema: Any, old_key: str, new_key: str) -> None:
+def rename_key(schema: Any, old_key: str, new_key: str) -> None:  # noqa: ANN401
     """Iterate over nested dictionary and replace one key with another. Used to replace anyOf with oneOf. Recursive."
 
     :param schema: schema that will be patched
@@ -106,7 +104,7 @@ def rename_key(schema: Any, old_key: str, new_key: str) -> None:
     if not isinstance(schema, MutableMapping):
         return
 
-    for key, value in schema.items():
+    for key, value in schema.items():  # noqa: B007, PERF102
         rename_key(value, old_key, new_key)
         if old_key in schema:
             schema[new_key] = schema.pop(old_key)
@@ -115,7 +113,7 @@ def rename_key(schema: Any, old_key: str, new_key: str) -> None:
 class ResourceSchemaLoader:
     """JSONSchema loader from package resources"""
 
-    def __init__(self, package_name: str):
+    def __init__(self, package_name: str):  # noqa: ANN204
         self.package_name = package_name
 
     def get_schema(self, name: str) -> dict[str, Any]:
@@ -134,7 +132,7 @@ class ResourceSchemaLoader:
         schema_filename = f"schemas/{name}.json"
         raw_file = pkgutil.get_data(self.package_name, schema_filename)
         if not raw_file:
-            raise IOError(f"Cannot find file {schema_filename}")
+            raise OSError(f"Cannot find file {schema_filename}")
         try:
             raw_schema = json.loads(raw_file)
         except ValueError as err:
@@ -152,7 +150,7 @@ class ResourceSchemaLoader:
 
         package = importlib.import_module(self.package_name)
         if package.__file__:
-            base = os.path.dirname(package.__file__) + "/"
+            base = os.path.dirname(package.__file__) + "/"  # noqa: PTH120
         else:
             raise ValueError(f"Package {package} does not have a valid __file__ field")
         resolved = jsonref.JsonRef.replace_refs(
@@ -161,8 +159,7 @@ class ResourceSchemaLoader:
         resolved = resolve_ref_links(resolved)
         if isinstance(resolved, dict):
             return resolved
-        else:
-            raise ValueError(f"Expected resolved to be a dict. Got {resolved}")
+        raise ValueError(f"Expected resolved to be a dict. Got {resolved}")
 
 
 def check_config_against_spec_or_exit(
@@ -191,7 +188,7 @@ class InternalConfig(BaseModel):
     limit: int = Field(None, alias="_limit")
     page_size: int = Field(None, alias="_page_size")
 
-    def dict(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+    def dict(self, *args: Any, **kwargs: Any) -> dict[str, Any]:  # noqa: ANN401
         kwargs["by_alias"] = True
         kwargs["exclude_unset"] = True
         return super().dict(*args, **kwargs)
@@ -202,13 +199,13 @@ class InternalConfig(BaseModel):
         :param records_counter - number of records already red
         :return True if limit reached, False otherwise
         """
-        if self.limit:
+        if self.limit:  # noqa: SIM102
             if records_counter >= self.limit:
                 return True
         return False
 
 
-def split_config(config: Mapping[str, Any]) -> Tuple[dict[str, Any], InternalConfig]:
+def split_config(config: Mapping[str, Any]) -> tuple[dict[str, Any], InternalConfig]:
     """
     Break config map object into 2 instances: first is a dict with user defined
     configuration and second is internal config that contains private keys for

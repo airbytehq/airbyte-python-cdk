@@ -2,8 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Iterable, Mapping, MutableMapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Iterable, List, Mapping, MutableMapping, Union
+from typing import Any
 
 import dpath
 import requests
@@ -53,7 +54,7 @@ class DpathExtractor(RecordExtractor):
         decoder (Decoder): The decoder responsible to transfom the response in a Mapping
     """
 
-    field_path: List[Union[InterpolatedString, str]]
+    field_path: list[InterpolatedString | str]
     config: Config
     parameters: InitVar[Mapping[str, Any]]
     decoder: Decoder = field(default_factory=lambda: JsonDecoder(parameters={}))

@@ -19,6 +19,7 @@ from airbyte_cdk.sources.declarative.partition_routers.substream_partition_route
     SubstreamPartitionRouter,
 )
 
+
 __all__ = [
     "AsyncJobPartitionRouter",
     "CartesianProductStreamSlicer",

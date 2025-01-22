@@ -2,7 +2,7 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Mapping
+from collections.abc import Mapping
 
 from pydantic.v1 import BaseModel
 
@@ -15,6 +15,7 @@ from airbyte_cdk.sources.declarative.models import (
 from airbyte_cdk.sources.declarative.models import (
     CheckStream as CheckStreamModel,
 )
+
 
 COMPONENTS_CHECKER_TYPE_MAPPING: Mapping[str, type[BaseModel]] = {
     "CheckStream": CheckStreamModel,

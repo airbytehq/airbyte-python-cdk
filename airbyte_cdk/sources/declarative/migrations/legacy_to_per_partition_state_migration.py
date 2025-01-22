@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.migrations.state_migration import StateMigration
@@ -33,7 +34,7 @@ class LegacyToPerPartitionStateMigration(StateMigration):
     }
     """
 
-    def __init__(
+    def __init__(  # noqa: ANN204
         self,
         partition_router: SubstreamPartitionRouter,
         cursor: CustomIncrementalSync | DatetimeBasedCursor,
@@ -79,7 +80,7 @@ class LegacyToPerPartitionStateMigration(StateMigration):
         }
         """
         if stream_state:
-            for key, value in stream_state.items():
+            for key, value in stream_state.items():  # noqa: B007, PERF102
                 if isinstance(value, dict):
                     keys = list(value.keys())
                     if len(keys) != 1:

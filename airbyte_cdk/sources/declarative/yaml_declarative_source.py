@@ -3,7 +3,8 @@
 #
 
 import pkgutil
-from typing import Any, List, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any
 
 import yaml
 
@@ -14,16 +15,16 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
 from airbyte_cdk.sources.types import ConnectionDefinition
 
 
-class YamlDeclarativeSource(ConcurrentDeclarativeSource[List[AirbyteStateMessage]]):
+class YamlDeclarativeSource(ConcurrentDeclarativeSource[list[AirbyteStateMessage]]):
     """Declarative source defined by a yaml file"""
 
     def __init__(
         self,
         path_to_yaml: str,
-        debug: bool = False,
-        catalog: Optional[ConfiguredAirbyteCatalog] = None,
-        config: Optional[Mapping[str, Any]] = None,
-        state: Optional[List[AirbyteStateMessage]] = None,
+        debug: bool = False,  # noqa: FBT001, FBT002, ARG002
+        catalog: ConfiguredAirbyteCatalog | None = None,
+        config: Mapping[str, Any] | None = None,
+        state: list[AirbyteStateMessage] | None = None,
     ) -> None:
         """
         :param path_to_yaml: Path to the yaml file describing the source
@@ -45,8 +46,7 @@ class YamlDeclarativeSource(ConcurrentDeclarativeSource[List[AirbyteStateMessage
         if yaml_config:
             decoded_yaml = yaml_config.decode()
             return self._parse(decoded_yaml)
-        else:
-            return {}
+        return {}
 
     def _emit_manifest_debug_message(self, extra_args: dict[str, Any]) -> None:
         extra_args["path_to_yaml"] = self._path_to_yaml

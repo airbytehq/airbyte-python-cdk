@@ -10,7 +10,7 @@ class ExceptionWithDisplayMessage(Exception):
     Exception that can be used to display a custom message to the user.
     """
 
-    def __init__(self, display_message: str, **kwargs: Any):
+    def __init__(self, display_message: str, **kwargs: Any):  # noqa: ANN204, ANN401
         super().__init__(**kwargs)
         self.display_message = display_message
 

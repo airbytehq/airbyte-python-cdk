@@ -3,12 +3,14 @@
 #
 
 import re
-from typing import Any, Mapping, Set, Tuple, Union
+from collections.abc import Mapping
+from typing import Any
 
 from airbyte_cdk.sources.declarative.parsers.custom_exceptions import (
     CircularReferenceException,
     UndefinedReferenceException,
 )
+
 
 REF_TAG = "$ref"
 
@@ -106,7 +108,7 @@ class ManifestReferenceResolver:
         """
         return self._evaluate_node(manifest, manifest, set())  # type: ignore[no-any-return]
 
-    def _evaluate_node(self, node: Any, manifest: Mapping[str, Any], visited: Set[Any]) -> Any:
+    def _evaluate_node(self, node: Any, manifest: Mapping[str, Any], visited: set[Any]) -> Any:  # noqa: ANN401
         if isinstance(node, dict):
             evaluated_dict = {
                 k: self._evaluate_node(v, manifest, visited)
@@ -118,24 +120,21 @@ class ManifestReferenceResolver:
                 evaluated_ref = self._evaluate_node(node[REF_TAG], manifest, visited)
                 if not isinstance(evaluated_ref, dict):
                     return evaluated_ref
-                else:
-                    # The values defined on the component take precedence over the reference values
-                    return evaluated_ref | evaluated_dict
-            else:
-                return evaluated_dict
-        elif isinstance(node, list):
+                # The values defined on the component take precedence over the reference values
+                return evaluated_ref | evaluated_dict
+            return evaluated_dict
+        if isinstance(node, list):
             return [self._evaluate_node(v, manifest, visited) for v in node]
-        elif self._is_ref(node):
+        if self._is_ref(node):
             if node in visited:
                 raise CircularReferenceException(node)
             visited.add(node)
             ret = self._evaluate_node(self._lookup_ref_value(node, manifest), manifest, visited)
             visited.remove(node)
             return ret
-        else:
-            return node
+        return node
 
-    def _lookup_ref_value(self, ref: str, manifest: Mapping[str, Any]) -> Any:
+    def _lookup_ref_value(self, ref: str, manifest: Mapping[str, Any]) -> Any:  # noqa: ANN401
         ref_match = re.match(r"#/(.*)", ref)
         if not ref_match:
             raise ValueError(f"Invalid reference format {ref}")
@@ -143,10 +142,10 @@ class ManifestReferenceResolver:
             path = ref_match.groups()[0]
             return self._read_ref_value(path, manifest)
         except (AttributeError, KeyError, IndexError):
-            raise UndefinedReferenceException(path, ref)
+            raise UndefinedReferenceException(path, ref)  # noqa: B904
 
     @staticmethod
-    def _is_ref(node: Any) -> bool:
+    def _is_ref(node: Any) -> bool:  # noqa: ANN401
         return isinstance(node, str) and node.startswith("#/")
 
     @staticmethod
@@ -154,7 +153,7 @@ class ManifestReferenceResolver:
         return bool(key == REF_TAG)
 
     @staticmethod
-    def _read_ref_value(ref: str, manifest_node: Mapping[str, Any]) -> Any:
+    def _read_ref_value(ref: str, manifest_node: Mapping[str, Any]) -> Any:  # noqa: ANN401
         """
         Read the value at the referenced location of the manifest.
 
@@ -185,7 +184,7 @@ class ManifestReferenceResolver:
         return manifest_node
 
 
-def _parse_path(ref: str) -> Tuple[Union[str, int], str]:
+def _parse_path(ref: str) -> tuple[str | int, str]:
     """
     Return the next path component, together with the rest of the path.
 

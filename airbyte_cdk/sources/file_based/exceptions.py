@@ -3,7 +3,7 @@
 #
 
 from enum import Enum
-from typing import Any, List, Union
+from typing import Any
 
 from airbyte_cdk.models import AirbyteMessage, FailureType
 from airbyte_cdk.utils import AirbyteTracedException
@@ -43,9 +43,9 @@ class FileBasedErrorsCollector:
     The placeholder for all errors collected.
     """
 
-    errors: List[AirbyteMessage] = []
+    errors: list[AirbyteMessage] = []  # noqa: RUF012
 
-    def yield_and_raise_collected(self) -> Any:
+    def yield_and_raise_collected(self) -> Any:  # noqa: ANN401
         if self.errors:
             # emit collected logged messages
             yield from self.errors
@@ -63,7 +63,7 @@ class FileBasedErrorsCollector:
 
 
 class BaseFileBasedSourceError(Exception):
-    def __init__(self, error: Union[FileBasedSourceError, str], **kwargs):  # type: ignore # noqa
+    def __init__(self, error: FileBasedSourceError | str, **kwargs) -> None:  # type: ignore
         if isinstance(error, FileBasedSourceError):
             error = FileBasedSourceError(error).value
         super().__init__(
@@ -112,7 +112,7 @@ class ErrorListingFiles(BaseFileBasedSourceError):
 
 
 class DuplicatedFilesError(BaseFileBasedSourceError):
-    def __init__(self, duplicated_files_names: List[dict[str, List[str]]], **kwargs: Any):
+    def __init__(self, duplicated_files_names: list[dict[str, list[str]]], **kwargs) -> None:
         self._duplicated_files_names = duplicated_files_names
         self._stream_name: str = kwargs["stream"]
         super().__init__(self._format_duplicate_files_error_message(), **kwargs)

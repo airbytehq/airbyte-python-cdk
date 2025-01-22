@@ -1,8 +1,10 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 
 import json
-from typing import Any, List, Mapping, Optional, Union
+from collections.abc import Mapping
+from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
+
 
 ANY_QUERY_PARAMS = "any query_parameters"
 
@@ -11,13 +13,13 @@ def _is_subdict(small: Mapping[str, str], big: Mapping[str, str]) -> bool:
     return dict(big, **small) == big
 
 
-class HttpRequest:
+class HttpRequest:  # noqa: PLW1641
     def __init__(
         self,
         url: str,
-        query_params: Optional[Union[str, Mapping[str, Union[str, List[str]]]]] = None,
-        headers: Optional[Mapping[str, str]] = None,
-        body: Optional[Union[str, bytes, Mapping[str, Any]]] = None,
+        query_params: str | Mapping[str, str | list[str]] | None = None,
+        headers: Mapping[str, str] | None = None,
+        body: str | bytes | Mapping[str, Any] | None = None,
     ) -> None:
         self._parsed_url = urlparse(url)
         self._query_params = query_params
@@ -32,12 +34,12 @@ class HttpRequest:
         self._body = body
 
     @staticmethod
-    def _encode_qs(query_params: Union[str, Mapping[str, Union[str, List[str]]]]) -> str:
+    def _encode_qs(query_params: str | Mapping[str, str | list[str]]) -> str:
         if isinstance(query_params, str):
             return query_params
         return urlencode(query_params, doseq=True)
 
-    def matches(self, other: Any) -> bool:
+    def matches(self, other: Any) -> bool:  # noqa: ANN401
         """
         If the body of any request is a Mapping, we compare as Mappings which means that the order is not important.
         If the body is a string, encoding ISO-8859-1 will be assumed
@@ -45,41 +47,41 @@ class HttpRequest:
         """
         if isinstance(other, HttpRequest):
             # if `other` is a mapping, we match as an object and formatting is not considers
-            if isinstance(self._body, Mapping) or isinstance(other._body, Mapping):
-                body_match = self._to_mapping(self._body) == self._to_mapping(other._body)
+            if isinstance(self._body, Mapping) or isinstance(other._body, Mapping):  # noqa: SLF001
+                body_match = self._to_mapping(self._body) == self._to_mapping(other._body)  # noqa: SLF001
             else:
-                body_match = self._to_bytes(self._body) == self._to_bytes(other._body)
+                body_match = self._to_bytes(self._body) == self._to_bytes(other._body)  # noqa: SLF001
 
             return (
-                self._parsed_url.scheme == other._parsed_url.scheme
-                and self._parsed_url.hostname == other._parsed_url.hostname
-                and self._parsed_url.path == other._parsed_url.path
+                self._parsed_url.scheme == other._parsed_url.scheme  # noqa: SLF001
+                and self._parsed_url.hostname == other._parsed_url.hostname  # noqa: SLF001
+                and self._parsed_url.path == other._parsed_url.path  # noqa: SLF001
                 and (
-                    ANY_QUERY_PARAMS in (self._query_params, other._query_params)
-                    or parse_qs(self._parsed_url.query) == parse_qs(other._parsed_url.query)
+                    ANY_QUERY_PARAMS in (self._query_params, other._query_params)  # noqa: SLF001
+                    or parse_qs(self._parsed_url.query) == parse_qs(other._parsed_url.query)  # noqa: SLF001
                 )
-                and _is_subdict(other._headers, self._headers)
+                and _is_subdict(other._headers, self._headers)  # noqa: SLF001
                 and body_match
             )
         return False
 
     @staticmethod
     def _to_mapping(
-        body: Optional[Union[str, bytes, Mapping[str, Any]]],
-    ) -> Optional[Mapping[str, Any]]:
+        body: str | bytes | Mapping[str, Any] | None,
+    ) -> Mapping[str, Any] | None:
         if isinstance(body, Mapping):
             return body
-        elif isinstance(body, bytes):
+        if isinstance(body, bytes):
             return json.loads(body.decode())  # type: ignore  # assumes return type of Mapping[str, Any]
-        elif isinstance(body, str):
+        if isinstance(body, str):
             return json.loads(body)  # type: ignore  # assumes return type of Mapping[str, Any]
         return None
 
     @staticmethod
-    def _to_bytes(body: Optional[Union[str, bytes]]) -> bytes:
+    def _to_bytes(body: str | bytes | None) -> bytes:
         if isinstance(body, bytes):
             return body
-        elif isinstance(body, str):
+        if isinstance(body, str):
             # `ISO-8859-1` is the default encoding used by requests
             return body.encode("ISO-8859-1")
         return b""
@@ -92,7 +94,7 @@ class HttpRequest:
             f"HttpRequest(request={self._parsed_url}, headers={self._headers}, body={self._body!r})"
         )
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         if isinstance(other, HttpRequest):
             return (
                 self._parsed_url == other._parsed_url

@@ -13,11 +13,12 @@ from typing import TYPE_CHECKING, Any, final
 import pandas as pd
 import sqlalchemy
 import ulid
-from airbyte_protocol_dataclasses.models import AirbyteStateMessage
 from pandas import Index
 from pydantic import BaseModel, Field
 from sqlalchemy import Column, Table, and_, create_engine, insert, null, select, text, update
 from sqlalchemy.exc import ProgrammingError, SQLAlchemyError
+
+from airbyte_protocol_dataclasses.models import AirbyteStateMessage  # noqa: TC001
 
 from airbyte_cdk.sql import exceptions as exc
 from airbyte_cdk.sql._util.hashing import one_way_hash
@@ -30,6 +31,7 @@ from airbyte_cdk.sql.constants import (
 )
 from airbyte_cdk.sql.secrets import SecretString
 from airbyte_cdk.sql.types import SQLTypeConverter
+
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -79,13 +81,11 @@ class SqlConfig(BaseModel, abc.ABC):
         """
         return one_way_hash(
             SecretString(
-                ":".join(
-                    [
-                        str(self.get_sql_alchemy_url()),
-                        self.schema_name or "",
-                        self.table_prefix or "",
-                    ]
-                )
+                ":".join([
+                    str(self.get_sql_alchemy_url()),
+                    self.schema_name or "",
+                    self.table_prefix or "",
+                ])
             )
         )
 
@@ -112,7 +112,7 @@ class SqlConfig(BaseModel, abc.ABC):
         )
 
 
-class SqlProcessorBase(abc.ABC):
+class SqlProcessorBase(abc.ABC):  # noqa: B024
     """A base class to be used for SQL Caches."""
 
     type_converter_class: type[SQLTypeConverter] = SQLTypeConverter
@@ -326,9 +326,9 @@ class SqlProcessorBase(abc.ABC):
 
         if DEBUG_MODE:
             found_schemas = schemas_list
-            assert (
-                schema_name in found_schemas
-            ), f"Schema {schema_name} was not created. Found: {found_schemas}"
+            assert schema_name in found_schemas, (
+                f"Schema {schema_name} was not created. Found: {found_schemas}"
+            )
 
     def _quote_identifier(self, identifier: str) -> str:
         """Return the given identifier, quoted."""
@@ -617,10 +617,10 @@ class SqlProcessorBase(abc.ABC):
         self._execute_sql(
             f"""
             INSERT INTO {self._fully_qualified(final_table_name)} (
-            {f',{nl}  '.join(columns)}
+            {f",{nl}  ".join(columns)}
             )
             SELECT
-            {f',{nl}  '.join(columns)}
+            {f",{nl}  ".join(columns)}
             FROM {self._fully_qualified(temp_table_name)}
             """,
         )
@@ -643,15 +643,11 @@ class SqlProcessorBase(abc.ABC):
 
         _ = stream_name
         deletion_name = f"{final_table_name}_deleteme"
-        commands = "\n".join(
-            [
-                f"ALTER TABLE {self._fully_qualified(final_table_name)} RENAME "
-                f"TO {deletion_name};",
-                f"ALTER TABLE {self._fully_qualified(temp_table_name)} RENAME "
-                f"TO {final_table_name};",
-                f"DROP TABLE {self._fully_qualified(deletion_name)};",
-            ]
-        )
+        commands = "\n".join([
+            f"ALTER TABLE {self._fully_qualified(final_table_name)} RENAME TO {deletion_name};",
+            f"ALTER TABLE {self._fully_qualified(temp_table_name)} RENAME TO {final_table_name};",
+            f"DROP TABLE {self._fully_qualified(deletion_name)};",
+        ])
         self._execute_sql(commands)
 
     def _merge_temp_table_to_final_table(
@@ -686,10 +682,10 @@ class SqlProcessorBase(abc.ABC):
                 {set_clause}
             WHEN NOT MATCHED THEN INSERT
             (
-                {f',{nl}    '.join(columns)}
+                {f",{nl}    ".join(columns)}
             )
             VALUES (
-                tmp.{f',{nl}    tmp.'.join(columns)}
+                tmp.{f",{nl}    tmp.".join(columns)}
             );
             """,
         )

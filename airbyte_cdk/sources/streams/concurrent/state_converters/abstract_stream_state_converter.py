@@ -3,8 +3,10 @@
 #
 
 from abc import ABC, abstractmethod
+from collections.abc import MutableMapping
 from enum import Enum
-from typing import TYPE_CHECKING, Any, List, MutableMapping, Optional, Tuple
+from typing import TYPE_CHECKING, Any
+
 
 if TYPE_CHECKING:
     from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
@@ -20,14 +22,14 @@ class AbstractStreamStateConverter(ABC):
     MOST_RECENT_RECORD_KEY = "most_recent_cursor_value"
 
     @abstractmethod
-    def _from_state_message(self, value: Any) -> Any:
+    def _from_state_message(self, value: Any) -> Any:  # noqa: ANN401
         pass
 
     @abstractmethod
-    def _to_state_message(self, value: Any) -> Any:
+    def _to_state_message(self, value: Any) -> Any:  # noqa: ANN401
         pass
 
-    def __init__(self, is_sequential_state: bool = True):
+    def __init__(self, is_sequential_state: bool = True):  # noqa: ANN204, FBT001, FBT002
         self._is_sequential_state = is_sequential_state
 
     def convert_to_state_message(
@@ -43,14 +45,13 @@ class AbstractStreamStateConverter(ABC):
             legacy_state = stream_state.get("legacy", {})
             latest_complete_time = self._get_latest_complete_time(stream_state.get("slices", []))
             if latest_complete_time is not None:
-                legacy_state.update(
-                    {cursor_field.cursor_field_key: self._to_state_message(latest_complete_time)}
-                )
+                legacy_state.update({
+                    cursor_field.cursor_field_key: self._to_state_message(latest_complete_time)
+                })
             return legacy_state or {}
-        else:
-            return self.serialize(stream_state, ConcurrencyCompatibleStateType.date_range)
+        return self.serialize(stream_state, ConcurrencyCompatibleStateType.date_range)
 
-    def _get_latest_complete_time(self, slices: List[MutableMapping[str, Any]]) -> Any:
+    def _get_latest_complete_time(self, slices: list[MutableMapping[str, Any]]) -> Any:  # noqa: ANN401
         """
         Get the latest time before which all records have been processed.
         """
@@ -102,8 +103,8 @@ class AbstractStreamStateConverter(ABC):
         self,
         cursor_field: "CursorField",  # to deprecate as it is only needed for sequential state
         stream_state: MutableMapping[str, Any],
-        start: Optional[Any],
-    ) -> Tuple[Any, MutableMapping[str, Any]]:
+        start: Any | None,  # noqa: ANN401
+    ) -> tuple[Any, MutableMapping[str, Any]]:
         """
         Convert the state message to the format required by the ConcurrentCursor.
 
@@ -118,22 +119,22 @@ class AbstractStreamStateConverter(ABC):
         ...
 
     @abstractmethod
-    def increment(self, value: Any) -> Any:
+    def increment(self, value: Any) -> Any:  # noqa: ANN401
         """
         Increment a timestamp by a single unit.
         """
         ...
 
     @abstractmethod
-    def output_format(self, value: Any) -> Any:
+    def output_format(self, value: Any) -> Any:  # noqa: ANN401
         """
         Convert the cursor value type to a JSON valid type.
         """
         ...
 
     def merge_intervals(
-        self, intervals: List[MutableMapping[str, Any]]
-    ) -> List[MutableMapping[str, Any]]:
+        self, intervals: list[MutableMapping[str, Any]]
+    ) -> list[MutableMapping[str, Any]]:
         """
         Compute and return a list of merged intervals.
 
@@ -144,7 +145,8 @@ class AbstractStreamStateConverter(ABC):
             return []
 
         sorted_intervals = sorted(
-            intervals, key=lambda interval: (interval[self.START_KEY], interval[self.END_KEY])
+            intervals,
+            key=lambda interval: (interval[self.START_KEY], interval[self.END_KEY]),  # noqa: FURB118
         )
         merged_intervals = [sorted_intervals[0]]
 
@@ -170,7 +172,7 @@ class AbstractStreamStateConverter(ABC):
         return merged_intervals
 
     @abstractmethod
-    def parse_value(self, value: Any) -> Any:
+    def parse_value(self, value: Any) -> Any:  # noqa: ANN401
         """
         Parse the value of the cursor field into a comparable value.
         """
@@ -178,4 +180,4 @@ class AbstractStreamStateConverter(ABC):
 
     @property
     @abstractmethod
-    def zero_value(self) -> Any: ...
+    def zero_value(self) -> Any: ...  # noqa: ANN401

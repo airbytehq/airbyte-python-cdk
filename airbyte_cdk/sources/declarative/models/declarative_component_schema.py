@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Literal
 
 from pydantic.v1 import BaseModel, Extra, Field
 
@@ -22,13 +22,13 @@ class BasicHttpAuthenticator(BaseModel):
         examples=["{{ config['username'] }}", "{{ config['api_key'] }}"],
         title="Username",
     )
-    password: Optional[str] = Field(
+    password: str | None = Field(
         "",
         description="The password that will be combined with the username, base64 encoded and used to make requests. Fill it in the user inputs.",
         examples=["{{ config['password'] }}", ""],
         title="Password",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class BearerAuthenticator(BaseModel):
@@ -39,12 +39,12 @@ class BearerAuthenticator(BaseModel):
         examples=["{{ config['api_key'] }}", "{{ config['token'] }}"],
         title="Bearer Token",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class CheckStream(BaseModel):
     type: Literal["CheckStream"]
-    stream_names: List[str] = Field(
+    stream_names: list[str] = Field(
         ...,
         description="Names of the streams to try reading from when running a check operation.",
         examples=[["users"], ["users", "contacts"]],
@@ -62,31 +62,31 @@ class CheckDynamicStream(BaseModel):
 
 
 class ConcurrencyLevel(BaseModel):
-    type: Optional[Literal["ConcurrencyLevel"]] = None
-    default_concurrency: Union[int, str] = Field(
+    type: Literal["ConcurrencyLevel"] | None = None
+    default_concurrency: int | str = Field(
         ...,
         description="The amount of concurrency that will applied during a sync. This value can be hardcoded or user-defined in the config if different users have varying volume thresholds in the target API.",
         examples=[10, "{{ config['num_workers'] or 10 }}"],
         title="Default Concurrency",
     )
-    max_concurrency: Optional[int] = Field(
+    max_concurrency: int | None = Field(
         None,
         description="The maximum level of concurrency that will be used during a sync. This becomes a required field when the default_concurrency derives from the config, because it serves as a safeguard against a user-defined threshold that is too high.",
         examples=[20, 100],
         title="Max Concurrency",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class ConstantBackoffStrategy(BaseModel):
     type: Literal["ConstantBackoffStrategy"]
-    backoff_time_in_seconds: Union[float, str] = Field(
+    backoff_time_in_seconds: float | str = Field(
         ...,
         description="Backoff time in seconds.",
         examples=[30, 30.5, "{{ config['backoff_time'] }}"],
         title="Backoff Time",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class CursorPagination(BaseModel):
@@ -101,13 +101,13 @@ class CursorPagination(BaseModel):
         ],
         title="Cursor Value",
     )
-    page_size: Optional[int] = Field(
+    page_size: int | None = Field(
         None,
         description="The number of records to include in each pages.",
         examples=[100],
         title="Page Size",
     )
-    stop_condition: Optional[str] = Field(
+    stop_condition: str | None = Field(
         None,
         description="Template string evaluating when to stop paginating.",
         examples=[
@@ -116,7 +116,7 @@ class CursorPagination(BaseModel):
         ],
         title="Stop Condition",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class CustomAuthenticator(BaseModel):
@@ -130,7 +130,7 @@ class CustomAuthenticator(BaseModel):
         examples=["source_railz.components.ShortLivedTokenAuthenticator"],
         title="Class Name",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class CustomBackoffStrategy(BaseModel):
@@ -144,7 +144,7 @@ class CustomBackoffStrategy(BaseModel):
         examples=["source_railz.components.MyCustomBackoffStrategy"],
         title="Class Name",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class CustomErrorHandler(BaseModel):
@@ -158,7 +158,7 @@ class CustomErrorHandler(BaseModel):
         examples=["source_railz.components.MyCustomErrorHandler"],
         title="Class Name",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class CustomIncrementalSync(BaseModel):
@@ -176,7 +176,7 @@ class CustomIncrementalSync(BaseModel):
         ...,
         description="The location of the value on a record that will be used as a bookmark during sync.",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class CustomPaginationStrategy(BaseModel):
@@ -190,7 +190,7 @@ class CustomPaginationStrategy(BaseModel):
         examples=["source_railz.components.MyCustomPaginationStrategy"],
         title="Class Name",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class CustomRecordExtractor(BaseModel):
@@ -204,7 +204,7 @@ class CustomRecordExtractor(BaseModel):
         examples=["source_railz.components.MyCustomRecordExtractor"],
         title="Class Name",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class CustomRecordFilter(BaseModel):
@@ -218,7 +218,7 @@ class CustomRecordFilter(BaseModel):
         examples=["source_railz.components.MyCustomCustomRecordFilter"],
         title="Class Name",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class CustomRequester(BaseModel):
@@ -232,7 +232,7 @@ class CustomRequester(BaseModel):
         examples=["source_railz.components.MyCustomRecordExtractor"],
         title="Class Name",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class CustomRetriever(BaseModel):
@@ -246,7 +246,7 @@ class CustomRetriever(BaseModel):
         examples=["source_railz.components.MyCustomRetriever"],
         title="Class Name",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class CustomPartitionRouter(BaseModel):
@@ -260,7 +260,7 @@ class CustomPartitionRouter(BaseModel):
         examples=["source_railz.components.MyCustomPartitionRouter"],
         title="Class Name",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class CustomSchemaLoader(BaseModel):
@@ -274,7 +274,7 @@ class CustomSchemaLoader(BaseModel):
         examples=["source_railz.components.MyCustomSchemaLoader"],
         title="Class Name",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class CustomSchemaNormalization(BaseModel):
@@ -290,7 +290,7 @@ class CustomSchemaNormalization(BaseModel):
         ],
         title="Class Name",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class CustomStateMigration(BaseModel):
@@ -304,7 +304,7 @@ class CustomStateMigration(BaseModel):
         examples=["source_railz.components.MyCustomStateMigration"],
         title="Class Name",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class CustomTransformation(BaseModel):
@@ -318,14 +318,14 @@ class CustomTransformation(BaseModel):
         examples=["source_railz.components.MyCustomTransformation"],
         title="Class Name",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class LegacyToPerPartitionStateMigration(BaseModel):
     class Config:
         extra = Extra.allow
 
-    type: Optional[Literal["LegacyToPerPartitionStateMigration"]] = None
+    type: Literal["LegacyToPerPartitionStateMigration"] | None = None
 
 
 class Algorithm(Enum):
@@ -349,19 +349,19 @@ class JwtHeaders(BaseModel):
     class Config:
         extra = Extra.forbid
 
-    kid: Optional[str] = Field(
+    kid: str | None = Field(
         None,
         description="Private key ID for user account.",
         examples=["{{ config['kid'] }}"],
         title="Key Identifier",
     )
-    typ: Optional[str] = Field(
+    typ: str | None = Field(
         "JWT",
         description="The media type of the complete JWT.",
         examples=["JWT"],
         title="Type",
     )
-    cty: Optional[str] = Field(
+    cty: str | None = Field(
         None,
         description="Content type of JWT header.",
         examples=["JWT"],
@@ -373,18 +373,18 @@ class JwtPayload(BaseModel):
     class Config:
         extra = Extra.forbid
 
-    iss: Optional[str] = Field(
+    iss: str | None = Field(
         None,
         description="The user/principal that issued the JWT. Commonly a value unique to the user.",
         examples=["{{ config['iss'] }}"],
         title="Issuer",
     )
-    sub: Optional[str] = Field(
+    sub: str | None = Field(
         None,
         description="The subject of the JWT. Commonly defined by the API.",
         title="Subject",
     )
-    aud: Optional[str] = Field(
+    aud: str | None = Field(
         None,
         description="The recipient that the JWT is intended for. Commonly defined by the API.",
         examples=["appstoreconnect-v1"],
@@ -399,8 +399,8 @@ class JwtAuthenticator(BaseModel):
         description="Secret used to sign the JSON web token.",
         examples=["{{ config['secret_key'] }}"],
     )
-    base64_encode_secret_key: Optional[bool] = Field(
-        False,
+    base64_encode_secret_key: bool | None = Field(
+        False,  # noqa: FBT003
         description='When set to true, the secret key will be base64 encoded prior to being encoded as part of the JWT. Only set to "true" when required by the API.',
     )
     algorithm: Algorithm = Field(
@@ -408,79 +408,79 @@ class JwtAuthenticator(BaseModel):
         description="Algorithm used to sign the JSON web token.",
         examples=["ES256", "HS256", "RS256", "{{ config['algorithm'] }}"],
     )
-    token_duration: Optional[int] = Field(
+    token_duration: int | None = Field(
         1200,
         description="The amount of time in seconds a JWT token can be valid after being issued.",
         examples=[1200, 3600],
         title="Token Duration",
     )
-    header_prefix: Optional[str] = Field(
+    header_prefix: str | None = Field(
         None,
         description="The prefix to be used within the Authentication header.",
         examples=["Bearer", "Basic"],
         title="Header Prefix",
     )
-    jwt_headers: Optional[JwtHeaders] = Field(
+    jwt_headers: JwtHeaders | None = Field(
         None,
         description="JWT headers used when signing JSON web token.",
         title="JWT Headers",
     )
-    additional_jwt_headers: Optional[Dict[str, Any]] = Field(
+    additional_jwt_headers: dict[str, Any] | None = Field(
         None,
         description="Additional headers to be included with the JWT headers object.",
         title="Additional JWT Headers",
     )
-    jwt_payload: Optional[JwtPayload] = Field(
+    jwt_payload: JwtPayload | None = Field(
         None,
         description="JWT Payload used when signing JSON web token.",
         title="JWT Payload",
     )
-    additional_jwt_payload: Optional[Dict[str, Any]] = Field(
+    additional_jwt_payload: dict[str, Any] | None = Field(
         None,
         description="Additional properties to be added to the JWT payload.",
         title="Additional JWT Payload Properties",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class RefreshTokenUpdater(BaseModel):
-    refresh_token_name: Optional[str] = Field(
+    refresh_token_name: str | None = Field(
         "refresh_token",
         description="The name of the property which contains the updated refresh token in the response from the token refresh endpoint.",
         examples=["refresh_token"],
         title="Refresh Token Property Name",
     )
-    access_token_config_path: Optional[List[str]] = Field(
+    access_token_config_path: list[str] | None = Field(
         ["credentials", "access_token"],
         description="Config path to the access token. Make sure the field actually exists in the config.",
         examples=[["credentials", "access_token"], ["access_token"]],
         title="Config Path To Access Token",
     )
-    refresh_token_config_path: Optional[List[str]] = Field(
+    refresh_token_config_path: list[str] | None = Field(
         ["credentials", "refresh_token"],
         description="Config path to the access token. Make sure the field actually exists in the config.",
         examples=[["credentials", "refresh_token"], ["refresh_token"]],
         title="Config Path To Refresh Token",
     )
-    token_expiry_date_config_path: Optional[List[str]] = Field(
+    token_expiry_date_config_path: list[str] | None = Field(
         ["credentials", "token_expiry_date"],
         description="Config path to the expiry date. Make sure actually exists in the config.",
         examples=[["credentials", "token_expiry_date"]],
         title="Config Path To Expiry Date",
     )
-    refresh_token_error_status_codes: Optional[List[int]] = Field(
+    refresh_token_error_status_codes: list[int] | None = Field(
         [],
         description="Status Codes to Identify refresh token error in response (Refresh Token Error Key and Refresh Token Error Values should be also specified). Responses with one of the error status code and containing an error value will be flagged as a config error",
         examples=[[400, 500]],
         title="Refresh Token Error Status Codes",
     )
-    refresh_token_error_key: Optional[str] = Field(
+    refresh_token_error_key: str | None = Field(
         "",
         description="Key to Identify refresh token error in response (Refresh Token Error Status Codes and Refresh Token Error Values should be also specified).",
         examples=["error"],
         title="Refresh Token Error Key",
     )
-    refresh_token_error_values: Optional[List[str]] = Field(
+    refresh_token_error_values: list[str] | None = Field(
         [],
         description='List of values to check for exception during token refresh process. Used to check if the error found in the response matches the key from the Refresh Token Error Key field (e.g. response={"error": "invalid_grant"}). Only responses with one of the error status code and containing an error value will be flagged as a config error',
         examples=[["invalid_grant", "invalid_permissions"]],
@@ -490,7 +490,7 @@ class RefreshTokenUpdater(BaseModel):
 
 class OAuthAuthenticator(BaseModel):
     type: Literal["OAuthAuthenticator"]
-    client_id_name: Optional[str] = Field(
+    client_id_name: str | None = Field(
         "client_id",
         description="The name of the property to use to refresh the `access_token`.",
         examples=["custom_app_id"],
@@ -502,7 +502,7 @@ class OAuthAuthenticator(BaseModel):
         examples=["{{ config['client_id }}", "{{ config['credentials']['client_id }}"],
         title="Client ID",
     )
-    client_secret_name: Optional[str] = Field(
+    client_secret_name: str | None = Field(
         "client_secret",
         description="The name of the property to use to refresh the `access_token`.",
         examples=["custom_app_secret"],
@@ -517,13 +517,13 @@ class OAuthAuthenticator(BaseModel):
         ],
         title="Client Secret",
     )
-    refresh_token_name: Optional[str] = Field(
+    refresh_token_name: str | None = Field(
         "refresh_token",
         description="The name of the property to use to refresh the `access_token`.",
         examples=["custom_app_refresh_value"],
         title="Refresh Token Property Name",
     )
-    refresh_token: Optional[str] = Field(
+    refresh_token: str | None = Field(
         None,
         description="Credential artifact used to get a new access token.",
         examples=[
@@ -532,43 +532,43 @@ class OAuthAuthenticator(BaseModel):
         ],
         title="Refresh Token",
     )
-    token_refresh_endpoint: Optional[str] = Field(
+    token_refresh_endpoint: str | None = Field(
         None,
         description="The full URL to call to obtain a new access token.",
         examples=["https://connect.squareup.com/oauth2/token"],
         title="Token Refresh Endpoint",
     )
-    access_token_name: Optional[str] = Field(
+    access_token_name: str | None = Field(
         "access_token",
         description="The name of the property which contains the access token in the response from the token refresh endpoint.",
         examples=["access_token"],
         title="Access Token Property Name",
     )
-    access_token_value: Optional[str] = Field(
+    access_token_value: str | None = Field(
         None,
         description="The value of the access_token to bypass the token refreshing using `refresh_token`.",
         examples=["secret_access_token_value"],
         title="Access Token Value",
     )
-    expires_in_name: Optional[str] = Field(
+    expires_in_name: str | None = Field(
         "expires_in",
         description="The name of the property which contains the expiry date in the response from the token refresh endpoint.",
         examples=["expires_in"],
         title="Token Expiry Property Name",
     )
-    grant_type_name: Optional[str] = Field(
+    grant_type_name: str | None = Field(
         "grant_type",
         description="The name of the property to use to refresh the `access_token`.",
         examples=["custom_grant_type"],
         title="Grant Type Property Name",
     )
-    grant_type: Optional[str] = Field(
+    grant_type: str | None = Field(
         "refresh_token",
         description="Specifies the OAuth2 grant type. If set to refresh_token, the refresh_token needs to be provided as well. For client_credentials, only client id and secret are required. Other grant types are not officially supported.",
         examples=["refresh_token", "client_credentials"],
         title="Grant Type",
     )
-    refresh_request_body: Optional[Dict[str, Any]] = Field(
+    refresh_request_body: dict[str, Any] | None = Field(
         None,
         description="Body of the request sent to get a new access token.",
         examples=[
@@ -580,7 +580,7 @@ class OAuthAuthenticator(BaseModel):
         ],
         title="Refresh Request Body",
     )
-    refresh_request_headers: Optional[Dict[str, Any]] = Field(
+    refresh_request_headers: dict[str, Any] | None = Field(
         None,
         description="Headers of the request sent to get a new access token.",
         examples=[
@@ -591,35 +591,35 @@ class OAuthAuthenticator(BaseModel):
         ],
         title="Refresh Request Headers",
     )
-    scopes: Optional[List[str]] = Field(
+    scopes: list[str] | None = Field(
         None,
         description="List of scopes that should be granted to the access token.",
         examples=[["crm.list.read", "crm.objects.contacts.read", "crm.schema.contacts.read"]],
         title="Scopes",
     )
-    token_expiry_date: Optional[str] = Field(
+    token_expiry_date: str | None = Field(
         None,
         description="The access token expiry date.",
         examples=["2023-04-06T07:12:10.421833+00:00", 1680842386],
         title="Token Expiry Date",
     )
-    token_expiry_date_format: Optional[str] = Field(
+    token_expiry_date_format: str | None = Field(
         None,
         description="The format of the time to expiration datetime. Provide it if the time is returned as a date-time string instead of seconds.",
         examples=["%Y-%m-%d %H:%M:%S.%f+00:00"],
         title="Token Expiry Date Format",
     )
-    refresh_token_updater: Optional[RefreshTokenUpdater] = Field(
+    refresh_token_updater: RefreshTokenUpdater | None = Field(
         None,
         description="When the token updater is defined, new refresh tokens, access tokens and the access token expiry date are written back from the authentication response to the config object. This is important if the refresh token can only used once.",
         title="Token Updater",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class DpathExtractor(BaseModel):
     type: Literal["DpathExtractor"]
-    field_path: List[str] = Field(
+    field_path: list[str] = Field(
         ...,
         description='List of potentially nested fields describing the full path of the field to extract. Use "*" to extract all values from an array. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/record-selector).',
         examples=[
@@ -630,23 +630,23 @@ class DpathExtractor(BaseModel):
         ],
         title="Field Path",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class ResponseToFileExtractor(BaseModel):
     type: Literal["ResponseToFileExtractor"]
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class ExponentialBackoffStrategy(BaseModel):
     type: Literal["ExponentialBackoffStrategy"]
-    factor: Optional[Union[float, str]] = Field(
+    factor: float | str | None = Field(
         5,
         description="Multiplicative constant applied on each retry.",
         examples=[5, 5.5, "10"],
         title="Factor",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class SessionTokenRequestBearerAuthenticator(BaseModel):
@@ -674,37 +674,37 @@ class FailureType(Enum):
 
 class HttpResponseFilter(BaseModel):
     type: Literal["HttpResponseFilter"]
-    action: Optional[Action] = Field(
+    action: Action | None = Field(
         None,
         description="Action to execute if a response matches the filter.",
         examples=["SUCCESS", "FAIL", "RETRY", "IGNORE", "RATE_LIMITED"],
         title="Action",
     )
-    failure_type: Optional[FailureType] = Field(
+    failure_type: FailureType | None = Field(
         None,
         description="Failure type of traced exception if a response matches the filter.",
         examples=["system_error", "config_error", "transient_error"],
         title="Failure Type",
     )
-    error_message: Optional[str] = Field(
+    error_message: str | None = Field(
         None,
         description="Error Message to display if the response matches the filter.",
         title="Error Message",
     )
-    error_message_contains: Optional[str] = Field(
+    error_message_contains: str | None = Field(
         None,
         description="Match the response if its error message contains the substring.",
         example=["This API operation is not enabled for this site"],
         title="Error Message Substring",
     )
-    http_codes: Optional[List[int]] = Field(
+    http_codes: list[int] | None = Field(
         None,
         description="Match the response if its HTTP code is included in this list.",
         examples=[[420, 429], [500]],
         title="HTTP Codes",
         unique_items=True,
     )
-    predicate: Optional[str] = Field(
+    predicate: str | None = Field(
         None,
         description="Match the response if the predicate evaluates to true.",
         examples=[
@@ -713,39 +713,39 @@ class HttpResponseFilter(BaseModel):
         ],
         title="Predicate",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class TypesMap(BaseModel):
-    target_type: Union[str, List[str]]
-    current_type: Union[str, List[str]]
-    condition: Optional[str]
+    target_type: str | list[str]
+    current_type: str | list[str]
+    condition: str | None
 
 
 class SchemaTypeIdentifier(BaseModel):
-    type: Optional[Literal["SchemaTypeIdentifier"]] = None
-    schema_pointer: Optional[List[str]] = Field(
+    type: Literal["SchemaTypeIdentifier"] | None = None
+    schema_pointer: list[str] | None = Field(
         [],
         description="List of nested fields defining the schema field path to extract. Defaults to [].",
         title="Schema Path",
     )
-    key_pointer: List[str] = Field(
+    key_pointer: list[str] = Field(
         ...,
         description="List of potentially nested fields describing the full path of the field key to extract.",
         title="Key Path",
     )
-    type_pointer: Optional[List[str]] = Field(
+    type_pointer: list[str] | None = Field(
         None,
         description="List of potentially nested fields describing the full path of the field type to extract.",
         title="Type Path",
     )
-    types_mapping: Optional[List[TypesMap]] = None
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    types_mapping: list[TypesMap] | None = None
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class InlineSchemaLoader(BaseModel):
     type: Literal["InlineSchemaLoader"]
-    schema_: Optional[Dict[str, Any]] = Field(
+    schema_: dict[str, Any] | None = Field(
         None,
         alias="schema",
         description='Describes a streams\' schema. Refer to the <a href="https://docs.airbyte.com/understanding-airbyte/supported-data-types/">Data Types documentation</a> for more details on which types are valid.',
@@ -755,13 +755,13 @@ class InlineSchemaLoader(BaseModel):
 
 class JsonFileSchemaLoader(BaseModel):
     type: Literal["JsonFileSchemaLoader"]
-    file_path: Optional[str] = Field(
+    file_path: str | None = Field(
         None,
         description="Path to the JSON file defining the schema. The path is relative to the connector module's root.",
         example=["./schemas/users.json"],
         title="File Path",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class JsonDecoder(BaseModel):
@@ -774,27 +774,27 @@ class JsonlDecoder(BaseModel):
 
 class KeysToLower(BaseModel):
     type: Literal["KeysToLower"]
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class KeysToSnakeCase(BaseModel):
     type: Literal["KeysToSnakeCase"]
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class FlattenFields(BaseModel):
     type: Literal["FlattenFields"]
-    flatten_lists: Optional[bool] = Field(
-        True,
+    flatten_lists: bool | None = Field(
+        True,  # noqa: FBT003
         description="Whether to flatten lists or leave it as is. Default is True.",
         title="Flatten Lists",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class DpathFlattenFields(BaseModel):
     type: Literal["DpathFlattenFields"]
-    field_path: List[str] = Field(
+    field_path: list[str] = Field(
         ...,
         description="A path to field that needs to be flattened.",
         examples=[
@@ -803,12 +803,12 @@ class DpathFlattenFields(BaseModel):
         ],
         title="Field Path",
     )
-    delete_origin_value: Optional[bool] = Field(
-        False,
+    delete_origin_value: bool | None = Field(
+        False,  # noqa: FBT003
         description="Whether to delete the origin value or keep it. Default is False.",
         title="Delete Origin Value",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class KeysReplace(BaseModel):
@@ -835,7 +835,7 @@ class KeysReplace(BaseModel):
         ],
         title="New value",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class IterableDecoder(BaseModel):
@@ -857,7 +857,7 @@ class CustomDecoder(BaseModel):
         examples=["source_amazon_ads.components.GzipJsonlDecoder"],
         title="Class Name",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class GzipJsonDecoder(BaseModel):
@@ -865,8 +865,8 @@ class GzipJsonDecoder(BaseModel):
         extra = Extra.allow
 
     type: Literal["GzipJsonDecoder"]
-    encoding: Optional[str] = "utf-8"
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    encoding: str | None = "utf-8"
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class MinMaxDatetime(BaseModel):
@@ -877,30 +877,30 @@ class MinMaxDatetime(BaseModel):
         examples=["2021-01-01", "2021-01-01T00:00:00Z", "{{ config['start_time'] }}"],
         title="Datetime",
     )
-    datetime_format: Optional[str] = Field(
+    datetime_format: str | None = Field(
         "",
         description='Format of the datetime value. Defaults to "%Y-%m-%dT%H:%M:%S.%f%z" if left empty. Use placeholders starting with "%" to describe the format the API is using. The following placeholders are available:\n  * **%s**: Epoch unix timestamp - `1686218963`\n  * **%s_as_float**: Epoch unix timestamp in seconds as float with microsecond precision - `1686218963.123456`\n  * **%ms**: Epoch unix timestamp - `1686218963123`\n  * **%a**: Weekday (abbreviated) - `Sun`\n  * **%A**: Weekday (full) - `Sunday`\n  * **%w**: Weekday (decimal) - `0` (Sunday), `6` (Saturday)\n  * **%d**: Day of the month (zero-padded) - `01`, `02`, ..., `31`\n  * **%b**: Month (abbreviated) - `Jan`\n  * **%B**: Month (full) - `January`\n  * **%m**: Month (zero-padded) - `01`, `02`, ..., `12`\n  * **%y**: Year (without century, zero-padded) - `00`, `01`, ..., `99`\n  * **%Y**: Year (with century) - `0001`, `0002`, ..., `9999`\n  * **%H**: Hour (24-hour, zero-padded) - `00`, `01`, ..., `23`\n  * **%I**: Hour (12-hour, zero-padded) - `01`, `02`, ..., `12`\n  * **%p**: AM/PM indicator\n  * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`\n  * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`\n  * **%f**: Microsecond (zero-padded to 6 digits) - `000000`, `000001`, ..., `999999`\n  * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`\n  * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`\n  * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`\n  * **%U**: Week number of the year (Sunday as first day) - `00`, `01`, ..., `53`\n  * **%W**: Week number of the year (Monday as first day) - `00`, `01`, ..., `53`\n  * **%c**: Date and time representation - `Tue Aug 16 21:30:00 1988`\n  * **%x**: Date representation - `08/16/1988`\n  * **%X**: Time representation - `21:30:00`\n  * **%%**: Literal \'%\' character\n\n  Some placeholders depend on the locale of the underlying system - in most cases this locale is configured as en/US. For more information see the [Python documentation](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes).\n',
         examples=["%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%d", "%s"],
         title="Datetime Format",
     )
-    max_datetime: Optional[str] = Field(
+    max_datetime: str | None = Field(
         None,
         description="Ceiling applied on the datetime value. Must be formatted with the datetime_format field.",
         examples=["2021-01-01T00:00:00Z", "2021-01-01"],
         title="Max Datetime",
     )
-    min_datetime: Optional[str] = Field(
+    min_datetime: str | None = Field(
         None,
         description="Floor applied on the datetime value. Must be formatted with the datetime_format field.",
         examples=["2010-01-01T00:00:00Z", "2010-01-01"],
         title="Min Datetime",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class NoAuth(BaseModel):
     type: Literal["NoAuth"]
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class NoPagination(BaseModel):
@@ -928,7 +928,7 @@ class OauthConnectorInputSpecification(BaseModel):
         ],
         title="Consent URL",
     )
-    scope: Optional[str] = Field(
+    scope: str | None = Field(
         None,
         description="The DeclarativeOAuth Specific string of the scopes needed to be grant for authenticated user.",
         examples=["user:read user:read_orders workspaces:read"],
@@ -942,7 +942,7 @@ class OauthConnectorInputSpecification(BaseModel):
         ],
         title="Access Token URL",
     )
-    access_token_headers: Optional[Dict[str, Any]] = Field(
+    access_token_headers: dict[str, Any] | None = Field(
         None,
         description="The DeclarativeOAuth Specific optional headers to inject while exchanging the `auth_code` to `access_token` during `completeOAuthFlow` step.",
         examples=[
@@ -952,7 +952,7 @@ class OauthConnectorInputSpecification(BaseModel):
         ],
         title="Access Token Headers",
     )
-    access_token_params: Optional[Dict[str, Any]] = Field(
+    access_token_params: dict[str, Any] | None = Field(
         None,
         description="The DeclarativeOAuth Specific optional query parameters to inject while exchanging the `auth_code` to `access_token` during `completeOAuthFlow` step.\nWhen this property is provided, the query params will be encoded as `Json` and included in the outgoing API request.",
         examples=[
@@ -964,49 +964,49 @@ class OauthConnectorInputSpecification(BaseModel):
         ],
         title="Access Token Query Params (Json Encoded)",
     )
-    extract_output: Optional[List[str]] = Field(
+    extract_output: list[str] | None = Field(
         None,
         description="The DeclarativeOAuth Specific list of strings to indicate which keys should be extracted and returned back to the input config.",
         examples=[["access_token", "refresh_token", "other_field"]],
         title="Extract Output",
     )
-    state: Optional[State] = Field(
+    state: State | None = Field(
         None,
         description="The DeclarativeOAuth Specific object to provide the criteria of how the `state` query param should be constructed,\nincluding length and complexity.",
         examples=[{"min": 7, "max": 128}],
         title="Configurable State Query Param",
     )
-    client_id_key: Optional[str] = Field(
+    client_id_key: str | None = Field(
         None,
         description="The DeclarativeOAuth Specific optional override to provide the custom `client_id` key name, if required by data-provider.",
         examples=["my_custom_client_id_key_name"],
         title="Client ID Key Override",
     )
-    client_secret_key: Optional[str] = Field(
+    client_secret_key: str | None = Field(
         None,
         description="The DeclarativeOAuth Specific optional override to provide the custom `client_secret` key name, if required by data-provider.",
         examples=["my_custom_client_secret_key_name"],
         title="Client Secret Key Override",
     )
-    scope_key: Optional[str] = Field(
+    scope_key: str | None = Field(
         None,
         description="The DeclarativeOAuth Specific optional override to provide the custom `scope` key name, if required by data-provider.",
         examples=["my_custom_scope_key_key_name"],
         title="Scopes Key Override",
     )
-    state_key: Optional[str] = Field(
+    state_key: str | None = Field(
         None,
         description="The DeclarativeOAuth Specific optional override to provide the custom `state` key name, if required by data-provider.",
         examples=["my_custom_state_key_key_name"],
         title="State Key Override",
     )
-    auth_code_key: Optional[str] = Field(
+    auth_code_key: str | None = Field(
         None,
         description="The DeclarativeOAuth Specific optional override to provide the custom `code` key name to something like `auth_code` or `custom_auth_code`, if required by data-provider.",
         examples=["my_custom_auth_code_key_name"],
         title="Auth Code Key Override",
     )
-    redirect_uri_key: Optional[str] = Field(
+    redirect_uri_key: str | None = Field(
         None,
         description="The DeclarativeOAuth Specific optional override to provide the custom `redirect_uri` key name to something like `callback_uri`, if required by data-provider.",
         examples=["my_custom_redirect_uri_key_name"],
@@ -1018,7 +1018,7 @@ class OAuthConfigSpecification(BaseModel):
     class Config:
         extra = Extra.allow
 
-    oauth_user_input_from_connector_config_specification: Optional[Dict[str, Any]] = Field(
+    oauth_user_input_from_connector_config_specification: dict[str, Any] | None = Field(
         None,
         description="OAuth specific blob. This is a Json Schema used to validate Json configurations used as input to OAuth.\nMust be a valid non-nested JSON that refers to properties from ConnectorSpecification.connectionSpecification\nusing special annotation 'path_in_connector_config'.\nThese are input values the user is entering through the UI to authenticate to the connector, that might also shared\nas inputs for syncing data via the connector.\nExamples:\nif no connector values is shared during oauth flow, oauth_user_input_from_connector_config_specification=[]\nif connector values such as 'app_id' inside the top level are used to generate the API url for the oauth flow,\n  oauth_user_input_from_connector_config_specification={\n    app_id: {\n      type: string\n      path_in_connector_config: ['app_id']\n    }\n  }\nif connector values such as 'info.app_id' nested inside another object are used to generate the API url for the oauth flow,\n  oauth_user_input_from_connector_config_specification={\n    app_id: {\n      type: string\n      path_in_connector_config: ['info', 'app_id']\n    }\n  }",
         examples=[
@@ -1032,12 +1032,12 @@ class OAuthConfigSpecification(BaseModel):
         ],
         title="OAuth user input",
     )
-    oauth_connector_input_specification: Optional[OauthConnectorInputSpecification] = Field(
+    oauth_connector_input_specification: OauthConnectorInputSpecification | None = Field(
         None,
         description='The DeclarativeOAuth specific blob.\nPertains to the fields defined by the connector relating to the OAuth flow.\n\nInterpolation capabilities:\n- The variables placeholders are declared as `{{my_var}}`.\n- The nested resolution variables like `{{ {{my_nested_var}} }}` is allowed as well.\n\n- The allowed interpolation context is:\n  + base64Encoder - encode to `base64`, {{ {{my_var_a}}:{{my_var_b}} | base64Encoder }}\n  + base64Decorer - decode from `base64` encoded string, {{ {{my_string_variable_or_string_value}} | base64Decoder }}\n  + urlEncoder - encode the input string to URL-like format, {{ https://test.host.com/endpoint | urlEncoder}}\n  + urlDecorer - decode the input url-encoded string into text format, {{ urlDecoder:https%3A%2F%2Fairbyte.io | urlDecoder}}\n  + codeChallengeS256 - get the `codeChallenge` encoded value to provide additional data-provider specific authorisation values, {{ {{state_value}} | codeChallengeS256 }}\n\nExamples:\n  - The TikTok Marketing DeclarativeOAuth spec:\n  {\n    "oauth_connector_input_specification": {\n      "type": "object",\n      "additionalProperties": false,\n      "properties": {\n          "consent_url": "https://ads.tiktok.com/marketing_api/auth?{{client_id_key}}={{client_id_value}}&{{redirect_uri_key}}={{ {{redirect_uri_value}} | urlEncoder}}&{{state_key}}={{state_value}}",\n          "access_token_url": "https://business-api.tiktok.com/open_api/v1.3/oauth2/access_token/",\n          "access_token_params": {\n              "{{ auth_code_key }}": "{{ auth_code_value }}",\n              "{{ client_id_key }}": "{{ client_id_value }}",\n              "{{ client_secret_key }}": "{{ client_secret_value }}"\n          },\n          "access_token_headers": {\n              "Content-Type": "application/json",\n              "Accept": "application/json"\n          },\n          "extract_output": ["data.access_token"],\n          "client_id_key": "app_id",\n          "client_secret_key": "secret",\n          "auth_code_key": "auth_code"\n      }\n    }\n  }',
         title="DeclarativeOAuth Connector Specification",
     )
-    complete_oauth_output_specification: Optional[Dict[str, Any]] = Field(
+    complete_oauth_output_specification: dict[str, Any] | None = Field(
         None,
         description="OAuth specific blob. This is a Json Schema used to validate Json configurations produced by the OAuth flows as they are\nreturned by the distant OAuth APIs.\nMust be a valid JSON describing the fields to merge back to `ConnectorSpecification.connectionSpecification`.\nFor each field, a special annotation `path_in_connector_config` can be specified to determine where to merge it,\nExamples:\n    complete_oauth_output_specification={\n      refresh_token: {\n        type: string,\n        path_in_connector_config: ['credentials', 'refresh_token']\n      }\n    }",
         examples=[
@@ -1050,13 +1050,13 @@ class OAuthConfigSpecification(BaseModel):
         ],
         title="OAuth output specification",
     )
-    complete_oauth_server_input_specification: Optional[Dict[str, Any]] = Field(
+    complete_oauth_server_input_specification: dict[str, Any] | None = Field(
         None,
         description="OAuth specific blob. This is a Json Schema used to validate Json configurations persisted as Airbyte Server configurations.\nMust be a valid non-nested JSON describing additional fields configured by the Airbyte Instance or Workspace Admins to be used by the\nserver when completing an OAuth flow (typically exchanging an auth code for refresh token).\nExamples:\n    complete_oauth_server_input_specification={\n      client_id: {\n        type: string\n      },\n      client_secret: {\n        type: string\n      }\n    }",
         examples=[{"client_id": {"type": "string"}, "client_secret": {"type": "string"}}],
         title="OAuth input specification",
     )
-    complete_oauth_server_output_specification: Optional[Dict[str, Any]] = Field(
+    complete_oauth_server_output_specification: dict[str, Any] | None = Field(
         None,
         description="OAuth specific blob. This is a Json Schema used to validate Json configurations persisted as Airbyte Server configurations that\nalso need to be merged back into the connector configuration at runtime.\nThis is a subset configuration of `complete_oauth_server_input_specification` that filters fields out to retain only the ones that\nare necessary for the connector to function with OAuth. (some fields could be used during oauth flows but not needed afterwards, therefore\nthey would be listed in the `complete_oauth_server_input_specification` but not `complete_oauth_server_output_specification`)\nMust be a valid non-nested JSON describing additional fields configured by the Airbyte Instance or Workspace Admins to be used by the\nconnector when using OAuth flow APIs.\nThese fields are to be merged back to `ConnectorSpecification.connectionSpecification`.\nFor each field, a special annotation `path_in_connector_config` can be specified to determine where to merge it,\nExamples:\n      complete_oauth_server_output_specification={\n        client_id: {\n          type: string,\n          path_in_connector_config: ['credentials', 'client_id']\n        },\n        client_secret: {\n          type: string,\n          path_in_connector_config: ['credentials', 'client_secret']\n        }\n      }",
         examples=[
@@ -1077,44 +1077,44 @@ class OAuthConfigSpecification(BaseModel):
 
 class OffsetIncrement(BaseModel):
     type: Literal["OffsetIncrement"]
-    page_size: Optional[Union[int, str]] = Field(
+    page_size: int | str | None = Field(
         None,
         description="The number of records to include in each pages.",
         examples=[100, "{{ config['page_size'] }}"],
         title="Limit",
     )
-    inject_on_first_request: Optional[bool] = Field(
-        False,
+    inject_on_first_request: bool | None = Field(
+        False,  # noqa: FBT003
         description="Using the `offset` with value `0` during the first request",
         title="Inject Offset",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class PageIncrement(BaseModel):
     type: Literal["PageIncrement"]
-    page_size: Optional[Union[int, str]] = Field(
+    page_size: int | str | None = Field(
         None,
         description="The number of records to include in each pages.",
         examples=[100, "100", "{{ config['page_size'] }}"],
         title="Page Size",
     )
-    start_from_page: Optional[int] = Field(
+    start_from_page: int | None = Field(
         0,
         description="Index of the first page to request.",
         examples=[0, 1],
         title="Start From Page",
     )
-    inject_on_first_request: Optional[bool] = Field(
-        False,
+    inject_on_first_request: bool | None = Field(
+        False,  # noqa: FBT003
         description="Using the `page number` with value defined by `start_from_page` during the first request",
         title="Inject Page Number",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class PrimaryKey(BaseModel):
-    __root__: Union[str, List[str], List[List[str]]] = Field(
+    __root__: str | list[str] | list[list[str]] = Field(
         ...,
         description="The stream field to be used to distinguish unique records. Can either be a single field, an array of fields representing a composite key, or an array of arrays representing a composite key where the fields are nested fields.",
         examples=["id", ["code", "type"]],
@@ -1124,7 +1124,7 @@ class PrimaryKey(BaseModel):
 
 class RecordFilter(BaseModel):
     type: Literal["RecordFilter"]
-    condition: Optional[str] = Field(
+    condition: str | None = Field(
         "",
         description="The predicate to filter a record. Records will be removed if evaluated to False.",
         examples=[
@@ -1132,7 +1132,7 @@ class RecordFilter(BaseModel):
             "{{ record.status in ['active', 'expired'] }}",
         ],
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class SchemaNormalization(Enum):
@@ -1142,7 +1142,7 @@ class SchemaNormalization(Enum):
 
 class RemoveFields(BaseModel):
     type: Literal["RemoveFields"]
-    condition: Optional[str] = Field(
+    condition: str | None = Field(
         "",
         description="The predicate to filter a property by a property value. Property will be removed if it is empty OR expression is evaluated to True.,",
         examples=[
@@ -1152,7 +1152,7 @@ class RemoveFields(BaseModel):
             "{{ property == 'some_string_to_match' }}",
         ],
     )
-    field_pointers: List[List[str]] = Field(
+    field_pointers: list[list[str]] = Field(
         ...,
         description="Array of paths defining the field to remove. Each item is an array whose field describe the path of a field to remove.",
         examples=[["tags"], [["content", "html"], ["content", "plain_text"]]],
@@ -1208,7 +1208,7 @@ class LegacySessionTokenAuthenticator(BaseModel):
         examples=["session"],
         title="Login Path",
     )
-    session_token: Optional[str] = Field(
+    session_token: str | None = Field(
         None,
         description="Session token to use if using a pre-defined token. Not needed if authenticating with username + password pair",
         example=["{{ config['session_token'] }}"],
@@ -1220,13 +1220,13 @@ class LegacySessionTokenAuthenticator(BaseModel):
         examples=["id"],
         title="Response Token Response Key",
     )
-    username: Optional[str] = Field(
+    username: str | None = Field(
         None,
         description="Username used to authenticate and obtain a session token",
         examples=[" {{ config['username'] }}"],
         title="Username",
     )
-    password: Optional[str] = Field(
+    password: str | None = Field(
         "",
         description="Password used to authenticate and obtain a session token",
         examples=["{{ config['password'] }}", ""],
@@ -1238,31 +1238,31 @@ class LegacySessionTokenAuthenticator(BaseModel):
         examples=["user/current"],
         title="Validate Session Path",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class JsonParser(BaseModel):
     type: Literal["JsonParser"]
-    encoding: Optional[str] = "utf-8"
+    encoding: str | None = "utf-8"
 
 
 class JsonLineParser(BaseModel):
     type: Literal["JsonLineParser"]
-    encoding: Optional[str] = "utf-8"
+    encoding: str | None = "utf-8"
 
 
 class CsvParser(BaseModel):
     type: Literal["CsvParser"]
-    encoding: Optional[str] = "utf-8"
-    delimiter: Optional[str] = ","
+    encoding: str | None = "utf-8"
+    delimiter: str | None = ","
 
 
 class AsyncJobStatusMap(BaseModel):
-    type: Optional[Literal["AsyncJobStatusMap"]] = None
-    running: List[str]
-    completed: List[str]
-    failed: List[str]
-    timeout: List[str]
+    type: Literal["AsyncJobStatusMap"] | None = None
+    running: list[str]
+    completed: list[str]
+    failed: list[str]
+    timeout: list[str]
 
 
 class ValueType(Enum):
@@ -1280,19 +1280,19 @@ class WaitTimeFromHeader(BaseModel):
         examples=["Retry-After"],
         title="Response Header Name",
     )
-    regex: Optional[str] = Field(
+    regex: str | None = Field(
         None,
         description="Optional regex to apply on the header to extract its value. The regex should define a capture group defining the wait time.",
         examples=["([-+]?\\d+)"],
         title="Extraction Regex",
     )
-    max_waiting_time_in_seconds: Optional[float] = Field(
+    max_waiting_time_in_seconds: float | None = Field(
         None,
         description="Given the value extracted from the header is greater than this value, stop the stream.",
         examples=[3600],
         title="Max Waiting Time in Seconds",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class WaitUntilTimeFromHeader(BaseModel):
@@ -1303,24 +1303,24 @@ class WaitUntilTimeFromHeader(BaseModel):
         examples=["wait_time"],
         title="Response Header",
     )
-    min_wait: Optional[Union[float, str]] = Field(
+    min_wait: float | str | None = Field(
         None,
         description="Minimum time to wait before retrying.",
         examples=[10, "60"],
         title="Minimum Wait Time",
     )
-    regex: Optional[str] = Field(
+    regex: str | None = Field(
         None,
         description="Optional regex to apply on the header to extract its value. The regex should define a capture group defining the wait time.",
         examples=["([-+]?\\d+)"],
         title="Extraction Regex",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class ComponentMappingDefinition(BaseModel):
     type: Literal["ComponentMappingDefinition"]
-    field_path: List[str] = Field(
+    field_path: list[str] = Field(
         ...,
         description="A list of potentially nested fields indicating the full path where value will be added or updated.",
         examples=[
@@ -1345,35 +1345,35 @@ class ComponentMappingDefinition(BaseModel):
         ],
         title="Value",
     )
-    value_type: Optional[ValueType] = Field(
+    value_type: ValueType | None = Field(
         None,
         description="The expected data type of the value. If omitted, the type will be inferred from the value provided.",
         title="Value Type",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class StreamConfig(BaseModel):
     type: Literal["StreamConfig"]
-    configs_pointer: List[str] = Field(
+    configs_pointer: list[str] = Field(
         ...,
         description="A list of potentially nested fields indicating the full path in source config file where streams configs located.",
         examples=[["data"], ["data", "streams"], ["data", "{{ parameters.name }}"]],
         title="Configs Pointer",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class ConfigComponentsResolver(BaseModel):
     type: Literal["ConfigComponentsResolver"]
     stream_config: StreamConfig
-    components_mapping: List[ComponentMappingDefinition]
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    components_mapping: list[ComponentMappingDefinition]
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class AddedFieldDefinition(BaseModel):
     type: Literal["AddedFieldDefinition"]
-    path: List[str] = Field(
+    path: list[str] = Field(
         ...,
         description="List of strings defining the path where to add the value on the record.",
         examples=[["segment_id"], ["metadata", "segment_id"]],
@@ -1389,39 +1389,39 @@ class AddedFieldDefinition(BaseModel):
         ],
         title="Value",
     )
-    value_type: Optional[ValueType] = Field(
+    value_type: ValueType | None = Field(
         None,
         description="Type of the value. If not specified, the type will be inferred from the value.",
         title="Value Type",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class AddFields(BaseModel):
     type: Literal["AddFields"]
-    fields: List[AddedFieldDefinition] = Field(
+    fields: list[AddedFieldDefinition] = Field(
         ...,
         description="List of transformations (path and corresponding value) that will be added to the record.",
         title="Fields",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class ApiKeyAuthenticator(BaseModel):
     type: Literal["ApiKeyAuthenticator"]
-    api_token: Optional[str] = Field(
+    api_token: str | None = Field(
         None,
         description="The API key to inject in the request. Fill it in the user inputs.",
         examples=["{{ config['api_key'] }}", "Token token={{ config['api_key'] }}"],
         title="API Key",
     )
-    header: Optional[str] = Field(
+    header: str | None = Field(
         None,
         description="The name of the HTTP header that will be set to the API key. This setting is deprecated, use inject_into instead. Header and inject_into can not be defined at the same time.",
         examples=["Authorization", "Api-Token", "X-Auth-Token"],
         title="Header Name",
     )
-    inject_into: Optional[RequestOption] = Field(
+    inject_into: RequestOption | None = Field(
         None,
         description="Configure how the API Key will be sent in requests to the source API. Either inject_into or header has to be defined.",
         examples=[
@@ -1430,26 +1430,26 @@ class ApiKeyAuthenticator(BaseModel):
         ],
         title="Inject API Key Into Outgoing HTTP Request",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class AuthFlow(BaseModel):
-    auth_flow_type: Optional[AuthFlowType] = Field(
+    auth_flow_type: AuthFlowType | None = Field(
         None, description="The type of auth to use", title="Auth flow type"
     )
-    predicate_key: Optional[List[str]] = Field(
+    predicate_key: list[str] | None = Field(
         None,
         description="JSON path to a field in the connectorSpecification that should exist for the advanced auth to be applicable.",
         examples=[["credentials", "auth_type"]],
         title="Predicate key",
     )
-    predicate_value: Optional[str] = Field(
+    predicate_value: str | None = Field(
         None,
         description="Value of the predicate_key fields for the advanced auth to be applicable.",
         examples=["Oauth"],
         title="Predicate value",
     )
-    oauth_config_specification: Optional[OAuthConfigSpecification] = None
+    oauth_config_specification: OAuthConfigSpecification | None = None
 
 
 class DatetimeBasedCursor(BaseModel):
@@ -1466,129 +1466,128 @@ class DatetimeBasedCursor(BaseModel):
         examples=["%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%d", "%s", "%ms", "%s_as_float"],
         title="Outgoing Datetime Format",
     )
-    start_datetime: Union[str, MinMaxDatetime] = Field(
+    start_datetime: str | MinMaxDatetime = Field(
         ...,
         description="The datetime that determines the earliest record that should be synced.",
         examples=["2020-01-1T00:00:00Z", "{{ config['start_time'] }}"],
         title="Start Datetime",
     )
-    cursor_datetime_formats: Optional[List[str]] = Field(
+    cursor_datetime_formats: list[str] | None = Field(
         None,
         description="The possible formats for the cursor field, in order of preference. The first format that matches the cursor field value will be used to parse it. If not provided, the `datetime_format` will be used.",
         title="Cursor Datetime Formats",
     )
-    cursor_granularity: Optional[str] = Field(
+    cursor_granularity: str | None = Field(
         None,
         description="Smallest increment the datetime_format has (ISO 8601 duration) that is used to ensure the start of a slice does not overlap with the end of the previous one, e.g. for %Y-%m-%d the granularity should be P1D, for %Y-%m-%dT%H:%M:%SZ the granularity should be PT1S. Given this field is provided, `step` needs to be provided as well.",
         examples=["PT1S"],
         title="Cursor Granularity",
     )
-    end_datetime: Optional[Union[str, MinMaxDatetime]] = Field(
+    end_datetime: str | MinMaxDatetime | None = Field(
         None,
         description="The datetime that determines the last record that should be synced. If not provided, `{{ now_utc() }}` will be used.",
         examples=["2021-01-1T00:00:00Z", "{{ now_utc() }}", "{{ day_delta(-1) }}"],
         title="End Datetime",
     )
-    end_time_option: Optional[RequestOption] = Field(
+    end_time_option: RequestOption | None = Field(
         None,
         description="Optionally configures how the end datetime will be sent in requests to the source API.",
         title="Inject End Time Into Outgoing HTTP Request",
     )
-    is_data_feed: Optional[bool] = Field(
+    is_data_feed: bool | None = Field(
         None,
         description="A data feed API is an API that does not allow filtering and paginates the content from the most recent to the least recent. Given this, the CDK needs to know when to stop paginating and this field will generate a stop condition for pagination.",
         title="Whether the target API is formatted as a data feed",
     )
-    is_client_side_incremental: Optional[bool] = Field(
+    is_client_side_incremental: bool | None = Field(
         None,
         description="If the target API endpoint does not take cursor values to filter records and returns all records anyway, the connector with this cursor will filter out records locally, and only emit new records from the last sync, hence incremental. This means that all records would be read from the API, but only new records will be emitted to the destination.",
         title="Whether the target API does not support filtering and returns all data (the cursor filters records in the client instead of the API side)",
     )
-    is_compare_strictly: Optional[bool] = Field(
-        False,
+    is_compare_strictly: bool | None = Field(
+        False,  # noqa: FBT003
         description="Set to True if the target API does not accept queries where the start time equal the end time.",
         title="Whether to skip requests if the start time equals the end time",
     )
-    global_substream_cursor: Optional[bool] = Field(
-        False,
+    global_substream_cursor: bool | None = Field(
+        False,  # noqa: FBT003
         description="This setting optimizes performance when the parent stream has thousands of partitions by storing the cursor as a single value rather than per partition. Notably, the substream state is updated only at the end of the sync, which helps prevent data loss in case of a sync failure. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/incremental-syncs).",
         title="Whether to store cursor as one value instead of per partition",
     )
-    lookback_window: Optional[str] = Field(
+    lookback_window: str | None = Field(
         None,
         description="Time interval before the start_datetime to read data for, e.g. P1M for looking back one month.",
         examples=["P1D", "P{{ config['lookback_days'] }}D"],
         title="Lookback Window",
     )
-    partition_field_end: Optional[str] = Field(
+    partition_field_end: str | None = Field(
         None,
         description="Name of the partition start time field.",
         examples=["ending_time"],
         title="Partition Field End",
     )
-    partition_field_start: Optional[str] = Field(
+    partition_field_start: str | None = Field(
         None,
         description="Name of the partition end time field.",
         examples=["starting_time"],
         title="Partition Field Start",
     )
-    start_time_option: Optional[RequestOption] = Field(
+    start_time_option: RequestOption | None = Field(
         None,
         description="Optionally configures how the start datetime will be sent in requests to the source API.",
         title="Inject Start Time Into Outgoing HTTP Request",
     )
-    step: Optional[str] = Field(
+    step: str | None = Field(
         None,
         description="The size of the time window (ISO8601 duration). Given this field is provided, `cursor_granularity` needs to be provided as well.",
         examples=["P1W", "{{ config['step_increment'] }}"],
         title="Step",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class DefaultErrorHandler(BaseModel):
     type: Literal["DefaultErrorHandler"]
-    backoff_strategies: Optional[
-        List[
-            Union[
-                ConstantBackoffStrategy,
-                CustomBackoffStrategy,
-                ExponentialBackoffStrategy,
-                WaitTimeFromHeader,
-                WaitUntilTimeFromHeader,
-            ]
+    backoff_strategies: (
+        list[
+            ConstantBackoffStrategy
+            | CustomBackoffStrategy
+            | ExponentialBackoffStrategy
+            | WaitTimeFromHeader
+            | WaitUntilTimeFromHeader
         ]
-    ] = Field(
+        | None
+    ) = Field(
         None,
         description="List of backoff strategies to use to determine how long to wait before retrying a retryable request.",
         title="Backoff Strategies",
     )
-    max_retries: Optional[int] = Field(
+    max_retries: int | None = Field(
         5,
         description="The maximum number of time to retry a retryable request before giving up and failing.",
         examples=[5, 0, 10],
         title="Max Retry Count",
     )
-    response_filters: Optional[List[HttpResponseFilter]] = Field(
+    response_filters: list[HttpResponseFilter] | None = Field(
         None,
         description="List of response filters to iterate on when deciding how to handle an error. When using an array of multiple filters, the filters will be applied sequentially and the response will be selected if it matches any of the filter's predicate.",
         title="Response Filters",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class DefaultPaginator(BaseModel):
     type: Literal["DefaultPaginator"]
-    pagination_strategy: Union[
-        CursorPagination, CustomPaginationStrategy, OffsetIncrement, PageIncrement
-    ] = Field(
+    pagination_strategy: (
+        CursorPagination | CustomPaginationStrategy | OffsetIncrement | PageIncrement
+    ) = Field(
         ...,
         description="Strategy defining how records are paginated.",
         title="Pagination Strategy",
     )
-    page_size_option: Optional[RequestOption] = None
-    page_token_option: Optional[Union[RequestOption, RequestPath]] = None
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    page_size_option: RequestOption | None = None
+    page_token_option: RequestOption | RequestPath | None = None
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class SessionTokenRequestApiKeyAuthenticator(BaseModel):
@@ -1612,55 +1611,55 @@ class ListPartitionRouter(BaseModel):
         examples=["section", "{{ config['section_key'] }}"],
         title="Current Partition Value Identifier",
     )
-    values: Union[str, List[str]] = Field(
+    values: str | list[str] = Field(
         ...,
         description="The list of attributes being iterated over and used as input for the requests made to the source API.",
         examples=[["section_a", "section_b", "section_c"], "{{ config['sections'] }}"],
         title="Partition Values",
     )
-    request_option: Optional[RequestOption] = Field(
+    request_option: RequestOption | None = Field(
         None,
         description="A request option describing where the list value should be injected into and under what field name if applicable.",
         title="Inject Partition Value Into Outgoing HTTP Request",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class RecordSelector(BaseModel):
     type: Literal["RecordSelector"]
-    extractor: Union[CustomRecordExtractor, DpathExtractor]
-    record_filter: Optional[Union[CustomRecordFilter, RecordFilter]] = Field(
+    extractor: CustomRecordExtractor | DpathExtractor
+    record_filter: CustomRecordFilter | RecordFilter | None = Field(
         None,
         description="Responsible for filtering records to be emitted by the Source.",
         title="Record Filter",
     )
-    schema_normalization: Optional[Union[SchemaNormalization, CustomSchemaNormalization]] = Field(
+    schema_normalization: SchemaNormalization | CustomSchemaNormalization | None = Field(
         SchemaNormalization.None_,
         description="Responsible for normalization according to the schema.",
         title="Schema Normalization",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class GzipParser(BaseModel):
     type: Literal["GzipParser"]
-    inner_parser: Union[JsonLineParser, CsvParser, JsonParser]
+    inner_parser: JsonLineParser | CsvParser | JsonParser
 
 
 class Spec(BaseModel):
     type: Literal["Spec"]
-    connection_specification: Dict[str, Any] = Field(
+    connection_specification: dict[str, Any] = Field(
         ...,
         description="A connection specification describing how a the connector can be configured.",
         title="Connection Specification",
     )
-    documentation_url: Optional[str] = Field(
+    documentation_url: str | None = Field(
         None,
         description="URL of the connector's documentation page.",
         examples=["https://docs.airbyte.com/integrations/sources/dremio"],
         title="Documentation URL",
     )
-    advanced_auth: Optional[AuthFlow] = Field(
+    advanced_auth: AuthFlow | None = Field(
         None,
         description="Advanced specification for configuring the authentication flow.",
         title="Advanced Auth",
@@ -1669,12 +1668,12 @@ class Spec(BaseModel):
 
 class CompositeErrorHandler(BaseModel):
     type: Literal["CompositeErrorHandler"]
-    error_handlers: List[Union[CompositeErrorHandler, DefaultErrorHandler]] = Field(
+    error_handlers: list[CompositeErrorHandler | DefaultErrorHandler] = Field(
         ...,
         description="List of error handlers to iterate on to determine how to handle a failed response.",
         title="Error Handlers",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class ZipfileDecoder(BaseModel):
@@ -1682,7 +1681,7 @@ class ZipfileDecoder(BaseModel):
         extra = Extra.allow
 
     type: Literal["ZipfileDecoder"]
-    parser: Union[GzipParser, JsonParser, JsonLineParser, CsvParser] = Field(
+    parser: GzipParser | JsonParser | JsonLineParser | CsvParser = Field(
         ...,
         description="Parser to parse the decompressed data from the zipfile(s).",
         title="Parser",
@@ -1691,7 +1690,7 @@ class ZipfileDecoder(BaseModel):
 
 class CompositeRawDecoder(BaseModel):
     type: Literal["CompositeRawDecoder"]
-    parser: Union[GzipParser, JsonParser, JsonLineParser, CsvParser]
+    parser: GzipParser | JsonParser | JsonLineParser | CsvParser
 
 
 class DeclarativeSource1(BaseModel):
@@ -1699,22 +1698,22 @@ class DeclarativeSource1(BaseModel):
         extra = Extra.forbid
 
     type: Literal["DeclarativeSource"]
-    check: Union[CheckStream, CheckDynamicStream]
-    streams: List[DeclarativeStream]
-    dynamic_streams: Optional[List[DynamicDeclarativeStream]] = None
+    check: CheckStream | CheckDynamicStream
+    streams: list[DeclarativeStream]
+    dynamic_streams: list[DynamicDeclarativeStream] | None = None
     version: str = Field(
         ...,
         description="The version of the Airbyte CDK used to build and test the source.",
     )
-    schemas: Optional[Schemas] = None
-    definitions: Optional[Dict[str, Any]] = None
-    spec: Optional[Spec] = None
-    concurrency_level: Optional[ConcurrencyLevel] = None
-    metadata: Optional[Dict[str, Any]] = Field(
+    schemas: Schemas | None = None
+    definitions: dict[str, Any] | None = None
+    spec: Spec | None = None
+    concurrency_level: ConcurrencyLevel | None = None
+    metadata: dict[str, Any] | None = Field(
         None,
         description="For internal Airbyte use only - DO NOT modify manually. Used by consumers of declarative manifests for storing related metadata.",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         None,
         description="A description of the connector. It will be presented on the Source documentation page.",
     )
@@ -1725,22 +1724,22 @@ class DeclarativeSource2(BaseModel):
         extra = Extra.forbid
 
     type: Literal["DeclarativeSource"]
-    check: Union[CheckStream, CheckDynamicStream]
-    streams: Optional[List[DeclarativeStream]] = None
-    dynamic_streams: List[DynamicDeclarativeStream]
+    check: CheckStream | CheckDynamicStream
+    streams: list[DeclarativeStream] | None = None
+    dynamic_streams: list[DynamicDeclarativeStream]
     version: str = Field(
         ...,
         description="The version of the Airbyte CDK used to build and test the source.",
     )
-    schemas: Optional[Schemas] = None
-    definitions: Optional[Dict[str, Any]] = None
-    spec: Optional[Spec] = None
-    concurrency_level: Optional[ConcurrencyLevel] = None
-    metadata: Optional[Dict[str, Any]] = Field(
+    schemas: Schemas | None = None
+    definitions: dict[str, Any] | None = None
+    spec: Spec | None = None
+    concurrency_level: ConcurrencyLevel | None = None
+    metadata: dict[str, Any] | None = Field(
         None,
         description="For internal Airbyte use only - DO NOT modify manually. Used by consumers of declarative manifests for storing related metadata.",
     )
-    description: Optional[str] = Field(
+    description: str | None = Field(
         None,
         description="A description of the connector. It will be presented on the Source documentation page.",
     )
@@ -1750,7 +1749,7 @@ class DeclarativeSource(BaseModel):
     class Config:
         extra = Extra.forbid
 
-    __root__: Union[DeclarativeSource1, DeclarativeSource2] = Field(
+    __root__: DeclarativeSource1 | DeclarativeSource2 = Field(
         ...,
         description="An API source that extracts data according to its declarative components.",
         title="DeclarativeSource",
@@ -1762,25 +1761,23 @@ class SelectiveAuthenticator(BaseModel):
         extra = Extra.allow
 
     type: Literal["SelectiveAuthenticator"]
-    authenticator_selection_path: List[str] = Field(
+    authenticator_selection_path: list[str] = Field(
         ...,
         description="Path of the field in config with selected authenticator name",
         examples=[["auth"], ["auth", "type"]],
         title="Authenticator Selection Path",
     )
-    authenticators: Dict[
+    authenticators: dict[
         str,
-        Union[
-            ApiKeyAuthenticator,
-            BasicHttpAuthenticator,
-            BearerAuthenticator,
-            CustomAuthenticator,
-            OAuthAuthenticator,
-            JwtAuthenticator,
-            NoAuth,
-            SessionTokenAuthenticator,
-            LegacySessionTokenAuthenticator,
-        ],
+        ApiKeyAuthenticator
+        | BasicHttpAuthenticator
+        | BearerAuthenticator
+        | CustomAuthenticator
+        | OAuthAuthenticator
+        | JwtAuthenticator
+        | NoAuth
+        | SessionTokenAuthenticator
+        | LegacySessionTokenAuthenticator,
     ] = Field(
         ...,
         description="Authenticators to select from.",
@@ -1795,7 +1792,7 @@ class SelectiveAuthenticator(BaseModel):
         ],
         title="Authenticators",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class DeclarativeStream(BaseModel):
@@ -1803,58 +1800,52 @@ class DeclarativeStream(BaseModel):
         extra = Extra.allow
 
     type: Literal["DeclarativeStream"]
-    retriever: Union[AsyncRetriever, CustomRetriever, SimpleRetriever] = Field(
+    retriever: AsyncRetriever | CustomRetriever | SimpleRetriever = Field(
         ...,
         description="Component used to coordinate how records are extracted across stream slices and request pages.",
         title="Retriever",
     )
-    incremental_sync: Optional[Union[CustomIncrementalSync, DatetimeBasedCursor]] = Field(
+    incremental_sync: CustomIncrementalSync | DatetimeBasedCursor | None = Field(
         None,
         description="Component used to fetch data incrementally based on a time field in the data.",
         title="Incremental Sync",
     )
-    name: Optional[str] = Field("", description="The stream name.", example=["Users"], title="Name")
-    primary_key: Optional[PrimaryKey] = Field(
+    name: str | None = Field("", description="The stream name.", example=["Users"], title="Name")
+    primary_key: PrimaryKey | None = Field(
         "", description="The primary key of the stream.", title="Primary Key"
     )
-    schema_loader: Optional[
-        Union[
-            DynamicSchemaLoader,
-            InlineSchemaLoader,
-            JsonFileSchemaLoader,
-            CustomSchemaLoader,
-        ]
-    ] = Field(
+    schema_loader: (
+        DynamicSchemaLoader | InlineSchemaLoader | JsonFileSchemaLoader | CustomSchemaLoader | None
+    ) = Field(
         None,
         description="Component used to retrieve the schema for the current stream.",
         title="Schema Loader",
     )
-    transformations: Optional[
-        List[
-            Union[
-                AddFields,
-                CustomTransformation,
-                RemoveFields,
-                KeysToLower,
-                KeysToSnakeCase,
-                FlattenFields,
-                DpathFlattenFields,
-                KeysReplace,
-            ]
+    transformations: (
+        list[
+            AddFields
+            | CustomTransformation
+            | RemoveFields
+            | KeysToLower
+            | KeysToSnakeCase
+            | FlattenFields
+            | DpathFlattenFields
+            | KeysReplace
         ]
-    ] = Field(
+        | None
+    ) = Field(
         None,
         description="A list of transformations to be applied to each output record.",
         title="Transformations",
     )
-    state_migrations: Optional[
-        List[Union[LegacyToPerPartitionStateMigration, CustomStateMigration]]
-    ] = Field(
-        [],
-        description="Array of state migrations to be applied on the input state",
-        title="State Migrations",
+    state_migrations: list[LegacyToPerPartitionStateMigration | CustomStateMigration] | None = (
+        Field(
+            [],
+            description="Array of state migrations to be applied on the input state",
+            title="State Migrations",
+        )
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class SessionTokenAuthenticator(BaseModel):
@@ -1876,29 +1867,29 @@ class SessionTokenAuthenticator(BaseModel):
         ],
         title="Login Requester",
     )
-    session_token_path: List[str] = Field(
+    session_token_path: list[str] = Field(
         ...,
         description="The path in the response body returned from the login requester to the session token.",
         examples=[["access_token"], ["result", "token"]],
         title="Session Token Path",
     )
-    expiration_duration: Optional[str] = Field(
+    expiration_duration: str | None = Field(
         None,
         description="The duration in ISO 8601 duration notation after which the session token expires, starting from the time it was obtained. Omitting it will result in the session token being refreshed for every request.",
         examples=["PT1H", "P1D"],
         title="Expiration Duration",
     )
-    request_authentication: Union[
-        SessionTokenRequestApiKeyAuthenticator, SessionTokenRequestBearerAuthenticator
-    ] = Field(
+    request_authentication: (
+        SessionTokenRequestApiKeyAuthenticator | SessionTokenRequestBearerAuthenticator
+    ) = Field(
         ...,
         description="Authentication method to use for requests sent to the API, specifying how to inject the session token.",
         title="Data Request Authentication",
     )
-    decoder: Optional[Union[JsonDecoder, XmlDecoder, CompositeRawDecoder]] = Field(
+    decoder: JsonDecoder | XmlDecoder | CompositeRawDecoder | None = Field(
         None, description="Component used to decode the response.", title="Decoder"
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class HttpRequester(BaseModel):
@@ -1922,38 +1913,35 @@ class HttpRequester(BaseModel):
         ],
         title="URL Path",
     )
-    authenticator: Optional[
-        Union[
-            ApiKeyAuthenticator,
-            BasicHttpAuthenticator,
-            BearerAuthenticator,
-            CustomAuthenticator,
-            OAuthAuthenticator,
-            JwtAuthenticator,
-            NoAuth,
-            SessionTokenAuthenticator,
-            LegacySessionTokenAuthenticator,
-            SelectiveAuthenticator,
-        ]
-    ] = Field(
+    authenticator: (
+        ApiKeyAuthenticator
+        | BasicHttpAuthenticator
+        | BearerAuthenticator
+        | CustomAuthenticator
+        | OAuthAuthenticator
+        | JwtAuthenticator
+        | NoAuth
+        | SessionTokenAuthenticator
+        | LegacySessionTokenAuthenticator
+        | SelectiveAuthenticator
+        | None
+    ) = Field(
         None,
         description="Authentication method to use for requests sent to the API.",
         title="Authenticator",
     )
-    error_handler: Optional[
-        Union[DefaultErrorHandler, CustomErrorHandler, CompositeErrorHandler]
-    ] = Field(
+    error_handler: DefaultErrorHandler | CustomErrorHandler | CompositeErrorHandler | None = Field(
         None,
         description="Error handler component that defines how to handle errors.",
         title="Error Handler",
     )
-    http_method: Optional[HttpMethod] = Field(
+    http_method: HttpMethod | None = Field(
         HttpMethod.GET,
         description="The HTTP method used to fetch data from the source (can be GET or POST).",
         examples=["GET", "POST"],
         title="HTTP Method",
     )
-    request_body_data: Optional[Union[str, Dict[str, str]]] = Field(
+    request_body_data: str | dict[str, str] | None = Field(
         None,
         description="Specifies how to populate the body of the request with a non-JSON payload. Plain text will be sent as is, whereas objects will be converted to a urlencoded form.",
         examples=[
@@ -1961,7 +1949,7 @@ class HttpRequester(BaseModel):
         ],
         title="Request Body Payload (Non-JSON)",
     )
-    request_body_json: Optional[Union[str, Dict[str, Any]]] = Field(
+    request_body_json: str | dict[str, Any] | None = Field(
         None,
         description="Specifies how to populate the body of the request with a JSON payload. Can contain nested objects.",
         examples=[
@@ -1971,13 +1959,13 @@ class HttpRequester(BaseModel):
         ],
         title="Request Body JSON Payload",
     )
-    request_headers: Optional[Union[str, Dict[str, str]]] = Field(
+    request_headers: str | dict[str, str] | None = Field(
         None,
         description="Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.",
         examples=[{"Output-Format": "JSON"}, {"Version": "{{ config['version'] }}"}],
         title="Request Headers",
     )
-    request_parameters: Optional[Union[str, Dict[str, str]]] = Field(
+    request_parameters: str | dict[str, str] | None = Field(
         None,
         description="Specifies the query parameters that should be set on an outgoing HTTP request given the inputs.",
         examples=[
@@ -1990,41 +1978,40 @@ class HttpRequester(BaseModel):
         ],
         title="Query Parameters",
     )
-    use_cache: Optional[bool] = Field(
-        False,
+    use_cache: bool | None = Field(
+        False,  # noqa: FBT003
         description="Enables stream requests caching. This field is automatically set by the CDK.",
         title="Use Cache",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class DynamicSchemaLoader(BaseModel):
     type: Literal["DynamicSchemaLoader"]
-    retriever: Union[AsyncRetriever, CustomRetriever, SimpleRetriever] = Field(
+    retriever: AsyncRetriever | CustomRetriever | SimpleRetriever = Field(
         ...,
         description="Component used to coordinate how records are extracted across stream slices and request pages.",
         title="Retriever",
     )
-    schema_transformations: Optional[
-        List[
-            Union[
-                AddFields,
-                CustomTransformation,
-                RemoveFields,
-                KeysToLower,
-                KeysToSnakeCase,
-                FlattenFields,
-                DpathFlattenFields,
-                KeysReplace,
-            ]
+    schema_transformations: (
+        list[
+            AddFields
+            | CustomTransformation
+            | RemoveFields
+            | KeysToLower
+            | KeysToSnakeCase
+            | FlattenFields
+            | DpathFlattenFields
+            | KeysReplace
         ]
-    ] = Field(
+        | None
+    ) = Field(
         None,
         description="A list of transformations to be applied to the schema.",
         title="Schema Transformations",
     )
     schema_type_identifier: SchemaTypeIdentifier
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class ParentStreamConfig(BaseModel):
@@ -2044,22 +2031,22 @@ class ParentStreamConfig(BaseModel):
         examples=["parent_id", "{{ config['parent_partition_field'] }}"],
         title="Current Parent Key Value Identifier",
     )
-    request_option: Optional[RequestOption] = Field(
+    request_option: RequestOption | None = Field(
         None,
         description="A request option describing where the parent key value should be injected into and under what field name if applicable.",
         title="Request Option",
     )
-    incremental_dependency: Optional[bool] = Field(
-        False,
+    incremental_dependency: bool | None = Field(
+        False,  # noqa: FBT003
         description="Indicates whether the parent stream should be read incrementally based on updates in the child stream.",
         title="Incremental Dependency",
     )
-    extra_fields: Optional[List[List[str]]] = Field(
+    extra_fields: list[list[str]] | None = Field(
         None,
         description="Array of field paths to include as additional fields in the stream slice. Each path is an array of strings representing keys to access fields in the respective parent record. Accessible via `stream_slice.extra_fields`. Missing fields are set to `None`.",
         title="Extra Fields",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class SimpleRetriever(BaseModel):
@@ -2068,47 +2055,45 @@ class SimpleRetriever(BaseModel):
         ...,
         description="Component that describes how to extract records from a HTTP response.",
     )
-    requester: Union[CustomRequester, HttpRequester] = Field(
+    requester: CustomRequester | HttpRequester = Field(
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API.",
     )
-    paginator: Optional[Union[DefaultPaginator, NoPagination]] = Field(
+    paginator: DefaultPaginator | NoPagination | None = Field(
         None,
         description="Paginator component that describes how to navigate through the API's pages.",
     )
-    ignore_stream_slicer_parameters_on_paginated_requests: Optional[bool] = Field(
-        False,
+    ignore_stream_slicer_parameters_on_paginated_requests: bool | None = Field(
+        False,  # noqa: FBT003
         description="If true, the partition router and incremental request options will be ignored when paginating requests. Request options set directly on the requester will not be ignored.",
     )
-    partition_router: Optional[
-        Union[
-            CustomPartitionRouter,
-            ListPartitionRouter,
-            SubstreamPartitionRouter,
-            List[Union[CustomPartitionRouter, ListPartitionRouter, SubstreamPartitionRouter]],
-        ]
-    ] = Field(
+    partition_router: (
+        CustomPartitionRouter
+        | ListPartitionRouter
+        | SubstreamPartitionRouter
+        | list[CustomPartitionRouter | ListPartitionRouter | SubstreamPartitionRouter]
+        | None
+    ) = Field(
         [],
         description="PartitionRouter component that describes how to partition the stream, enabling incremental syncs and checkpointing.",
         title="Partition Router",
     )
-    decoder: Optional[
-        Union[
-            CustomDecoder,
-            JsonDecoder,
-            JsonlDecoder,
-            IterableDecoder,
-            XmlDecoder,
-            GzipJsonDecoder,
-            CompositeRawDecoder,
-            ZipfileDecoder,
-        ]
-    ] = Field(
+    decoder: (
+        CustomDecoder
+        | JsonDecoder
+        | JsonlDecoder
+        | IterableDecoder
+        | XmlDecoder
+        | GzipJsonDecoder
+        | CompositeRawDecoder
+        | ZipfileDecoder
+        | None
+    ) = Field(
         None,
         description="Component decoding the response so records can be extracted.",
         title="Decoder",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class AsyncRetriever(BaseModel):
@@ -2120,110 +2105,107 @@ class AsyncRetriever(BaseModel):
     status_mapping: AsyncJobStatusMap = Field(
         ..., description="Async Job Status to Airbyte CDK Async Job Status mapping."
     )
-    status_extractor: Union[CustomRecordExtractor, DpathExtractor] = Field(
+    status_extractor: CustomRecordExtractor | DpathExtractor = Field(
         ..., description="Responsible for fetching the actual status of the async job."
     )
-    urls_extractor: Union[CustomRecordExtractor, DpathExtractor] = Field(
+    urls_extractor: CustomRecordExtractor | DpathExtractor = Field(
         ...,
         description="Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.",
     )
-    download_extractor: Optional[
-        Union[CustomRecordExtractor, DpathExtractor, ResponseToFileExtractor]
-    ] = Field(None, description="Responsible for fetching the records from provided urls.")
-    creation_requester: Union[CustomRequester, HttpRequester] = Field(
+    download_extractor: CustomRecordExtractor | DpathExtractor | ResponseToFileExtractor | None = (
+        Field(None, description="Responsible for fetching the records from provided urls.")
+    )
+    creation_requester: CustomRequester | HttpRequester = Field(
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to create the async server-side job.",
     )
-    polling_requester: Union[CustomRequester, HttpRequester] = Field(
+    polling_requester: CustomRequester | HttpRequester = Field(
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to fetch the status of the running async job.",
     )
-    url_requester: Optional[Union[CustomRequester, HttpRequester]] = Field(
+    url_requester: CustomRequester | HttpRequester | None = Field(
         None,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to extract the url from polling response by the completed async job.",
     )
-    download_requester: Union[CustomRequester, HttpRequester] = Field(
+    download_requester: CustomRequester | HttpRequester = Field(
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to download the data provided by the completed async job.",
     )
-    download_paginator: Optional[Union[DefaultPaginator, NoPagination]] = Field(
+    download_paginator: DefaultPaginator | NoPagination | None = Field(
         None,
         description="Paginator component that describes how to navigate through the API's pages during download.",
     )
-    abort_requester: Optional[Union[CustomRequester, HttpRequester]] = Field(
+    abort_requester: CustomRequester | HttpRequester | None = Field(
         None,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to abort a job once it is timed out from the source's perspective.",
     )
-    delete_requester: Optional[Union[CustomRequester, HttpRequester]] = Field(
+    delete_requester: CustomRequester | HttpRequester | None = Field(
         None,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to delete a job once the records are extracted.",
     )
-    partition_router: Optional[
-        Union[
-            CustomPartitionRouter,
-            ListPartitionRouter,
-            SubstreamPartitionRouter,
-            List[Union[CustomPartitionRouter, ListPartitionRouter, SubstreamPartitionRouter]],
-        ]
-    ] = Field(
+    partition_router: (
+        CustomPartitionRouter
+        | ListPartitionRouter
+        | SubstreamPartitionRouter
+        | list[CustomPartitionRouter | ListPartitionRouter | SubstreamPartitionRouter]
+        | None
+    ) = Field(
         [],
         description="PartitionRouter component that describes how to partition the stream, enabling incremental syncs and checkpointing.",
         title="Partition Router",
     )
-    decoder: Optional[
-        Union[
-            CustomDecoder,
-            JsonDecoder,
-            JsonlDecoder,
-            IterableDecoder,
-            XmlDecoder,
-            GzipJsonDecoder,
-            CompositeRawDecoder,
-            ZipfileDecoder,
-        ]
-    ] = Field(
+    decoder: (
+        CustomDecoder
+        | JsonDecoder
+        | JsonlDecoder
+        | IterableDecoder
+        | XmlDecoder
+        | GzipJsonDecoder
+        | CompositeRawDecoder
+        | ZipfileDecoder
+        | None
+    ) = Field(
         None,
         description="Component decoding the response so records can be extracted.",
         title="Decoder",
     )
-    download_decoder: Optional[
-        Union[
-            CustomDecoder,
-            JsonDecoder,
-            JsonlDecoder,
-            IterableDecoder,
-            XmlDecoder,
-            GzipJsonDecoder,
-            CompositeRawDecoder,
-            ZipfileDecoder,
-        ]
-    ] = Field(
+    download_decoder: (
+        CustomDecoder
+        | JsonDecoder
+        | JsonlDecoder
+        | IterableDecoder
+        | XmlDecoder
+        | GzipJsonDecoder
+        | CompositeRawDecoder
+        | ZipfileDecoder
+        | None
+    ) = Field(
         None,
         description="Component decoding the download response so records can be extracted.",
         title="Download Decoder",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class SubstreamPartitionRouter(BaseModel):
     type: Literal["SubstreamPartitionRouter"]
-    parent_stream_configs: List[ParentStreamConfig] = Field(
+    parent_stream_configs: list[ParentStreamConfig] = Field(
         ...,
         description="Specifies which parent streams are being iterated over and how parent records should be used to partition the child stream data set.",
         title="Parent Stream Configs",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class HttpComponentsResolver(BaseModel):
     type: Literal["HttpComponentsResolver"]
-    retriever: Union[AsyncRetriever, CustomRetriever, SimpleRetriever] = Field(
+    retriever: AsyncRetriever | CustomRetriever | SimpleRetriever = Field(
         ...,
         description="Component used to coordinate how records are extracted across stream slices and request pages.",
         title="Retriever",
     )
-    components_mapping: List[ComponentMappingDefinition]
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+    components_mapping: list[ComponentMappingDefinition]
+    parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
 
 class DynamicDeclarativeStream(BaseModel):
@@ -2231,7 +2213,7 @@ class DynamicDeclarativeStream(BaseModel):
     stream_template: DeclarativeStream = Field(
         ..., description="Reference to the stream template.", title="Stream Template"
     )
-    components_resolver: Union[HttpComponentsResolver, ConfigComponentsResolver] = Field(
+    components_resolver: HttpComponentsResolver | ConfigComponentsResolver = Field(
         ...,
         description="Component resolve and populates stream templates with components values.",
         title="Components Resolver",

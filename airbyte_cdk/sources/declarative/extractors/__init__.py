@@ -11,6 +11,7 @@ from airbyte_cdk.sources.declarative.extractors.response_to_file_extractor impor
 )
 from airbyte_cdk.sources.declarative.extractors.type_transformer import TypeTransformer
 
+
 __all__ = [
     "TypeTransformer",
     "HttpSelector",

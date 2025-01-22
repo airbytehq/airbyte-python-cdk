@@ -7,6 +7,7 @@ from airbyte_cdk.sources.file_based.discovery_policy.abstract_discovery_policy i
 )
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
 
+
 DEFAULT_N_CONCURRENT_REQUESTS = 10
 DEFAULT_MAX_N_FILES_FOR_STREAM_SCHEMA_INFERENCE = 10
 

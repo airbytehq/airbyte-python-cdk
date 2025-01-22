@@ -2,19 +2,22 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
-from typing import Annotated, Any, Dict, List, Mapping, Optional, Union
+from typing import Annotated, Any
 
-from airbyte_protocol_dataclasses.models import *  # noqa: F403  # Allow '*'
 from serpyco_rs.metadata import Alias
 
+from airbyte_protocol_dataclasses.models import *  # noqa: F403  # Allow '*'
+
 from airbyte_cdk.models.file_transfer_record_message import AirbyteFileTransferRecordMessage
+
 
 # ruff: noqa: F405  # ignore fuzzy import issues with 'import *'
 
 
 @dataclass
-class AirbyteStateBlob:
+class AirbyteStateBlob:  # noqa: PLW1641
     """
     A dataclass that dynamically sets attributes based on provided keyword arguments and positional arguments.
     Used to "mimic" pydantic Basemodel with ConfigDict(extra='allow') option.
@@ -37,7 +40,7 @@ class AirbyteStateBlob:
 
     kwargs: InitVar[Mapping[str, Any]]
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:  # noqa: ANN401
         # Set any attribute passed in through kwargs
         for arg in args:
             self.__dict__.update(arg)
@@ -56,35 +59,35 @@ class AirbyteStateBlob:
 @dataclass
 class AirbyteStreamState:
     stream_descriptor: StreamDescriptor  # type: ignore [name-defined]
-    stream_state: Optional[AirbyteStateBlob] = None
+    stream_state: AirbyteStateBlob | None = None
 
 
 @dataclass
 class AirbyteGlobalState:
-    stream_states: List[AirbyteStreamState]
-    shared_state: Optional[AirbyteStateBlob] = None
+    stream_states: list[AirbyteStreamState]
+    shared_state: AirbyteStateBlob | None = None
 
 
 @dataclass
 class AirbyteStateMessage:
-    type: Optional[AirbyteStateType] = None  # type: ignore [name-defined]
-    stream: Optional[AirbyteStreamState] = None
+    type: AirbyteStateType | None = None  # type: ignore [name-defined]
+    stream: AirbyteStreamState | None = None
     global_: Annotated[AirbyteGlobalState | None, Alias("global")] = (
         None  # "global" is a reserved keyword in python ⇒ Alias is used for (de-)serialization
     )
-    data: Optional[Dict[str, Any]] = None
-    sourceStats: Optional[AirbyteStateStats] = None  # type: ignore [name-defined]
-    destinationStats: Optional[AirbyteStateStats] = None  # type: ignore [name-defined]
+    data: dict[str, Any] | None = None
+    sourceStats: AirbyteStateStats | None = None  # type: ignore [name-defined]  # noqa: N815
+    destinationStats: AirbyteStateStats | None = None  # type: ignore [name-defined]  # noqa: N815
 
 
 @dataclass
 class AirbyteMessage:
     type: Type  # type: ignore [name-defined]
-    log: Optional[AirbyteLogMessage] = None  # type: ignore [name-defined]
-    spec: Optional[ConnectorSpecification] = None  # type: ignore [name-defined]
-    connectionStatus: Optional[AirbyteConnectionStatus] = None  # type: ignore [name-defined]
-    catalog: Optional[AirbyteCatalog] = None  # type: ignore [name-defined]
-    record: Optional[Union[AirbyteFileTransferRecordMessage, AirbyteRecordMessage]] = None  # type: ignore [name-defined]
-    state: Optional[AirbyteStateMessage] = None
-    trace: Optional[AirbyteTraceMessage] = None  # type: ignore [name-defined]
-    control: Optional[AirbyteControlMessage] = None  # type: ignore [name-defined]
+    log: AirbyteLogMessage | None = None  # type: ignore [name-defined]
+    spec: ConnectorSpecification | None = None  # type: ignore [name-defined]
+    connectionStatus: AirbyteConnectionStatus | None = None  # type: ignore [name-defined]  # noqa: N815
+    catalog: AirbyteCatalog | None = None  # type: ignore [name-defined]
+    record: AirbyteFileTransferRecordMessage | AirbyteRecordMessage | None = None  # type: ignore [name-defined]
+    state: AirbyteStateMessage | None = None
+    trace: AirbyteTraceMessage | None = None  # type: ignore [name-defined]
+    control: AirbyteControlMessage | None = None  # type: ignore [name-defined]

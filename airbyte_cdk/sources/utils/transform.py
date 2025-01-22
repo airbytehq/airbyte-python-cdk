@@ -3,11 +3,13 @@
 #
 
 import logging
+from collections.abc import Callable, Generator, Mapping
 from distutils.util import strtobool
 from enum import Flag, auto
-from typing import Any, Callable, Dict, Generator, Mapping, Optional, cast
+from typing import Any, cast
 
 from jsonschema import Draft7Validator, RefResolver, ValidationError, Validator, validators
+
 
 MAX_NESTING_DEPTH = 3
 json_to_python_simple = {
@@ -17,7 +19,7 @@ json_to_python_simple = {
     "boolean": bool,
     "null": type(None),
 }
-json_to_python = {**json_to_python_simple, **{"object": dict, "array": list}}
+json_to_python = {**json_to_python_simple, "object": dict, "array": list}
 python_to_json = {v: k for k, v in json_to_python.items()}
 
 logger = logging.getLogger("airbyte")
@@ -47,15 +49,15 @@ class TypeTransformer:
     Class for transforming object before output.
     """
 
-    _custom_normalizer: Optional[Callable[[Any, Dict[str, Any]], Any]] = None
+    _custom_normalizer: Callable[[Any, dict[str, Any]], Any] | None = None
 
-    def __init__(self, config: TransformConfig):
+    def __init__(self, config: TransformConfig):  # noqa: ANN204
         """
         Initialize TypeTransformer instance.
         :param config Transform config that would be applied to object
         """
         if TransformConfig.NoTransform in config and config != TransformConfig.NoTransform:
-            raise Exception("NoTransform option cannot be combined with other flags.")
+            raise Exception("NoTransform option cannot be combined with other flags.")  # noqa: TRY002
         self._config = config
         all_validators = {
             key: self.__get_normalizer(key, orig_validator)
@@ -67,7 +69,7 @@ class TypeTransformer:
             meta_schema=Draft7Validator.META_SCHEMA, validators=all_validators
         )
 
-    def registerCustomTransform(
+    def registerCustomTransform(  # noqa: N802
         self, normalization_callback: Callable[[Any, dict[str, Any]], Any]
     ) -> Callable[[Any, dict[str, Any]], Any]:
         """
@@ -79,13 +81,13 @@ class TypeTransformer:
         :return Same callback, this is useful for using registerCustomTransform function as decorator.
         """
         if TransformConfig.CustomSchemaNormalization not in self._config:
-            raise Exception(
+            raise Exception(  # noqa: TRY002
                 "Please set TransformConfig.CustomSchemaNormalization config before registering custom normalizer"
             )
         self._custom_normalizer = normalization_callback
         return normalization_callback
 
-    def __normalize(self, original_item: Any, subschema: Dict[str, Any]) -> Any:
+    def __normalize(self, original_item: Any, subschema: dict[str, Any]) -> Any:  # noqa: ANN401
         """
         Applies different transform function to object's field according to config.
         :param original_item original value of field.
@@ -100,7 +102,7 @@ class TypeTransformer:
         return original_item
 
     @staticmethod
-    def default_convert(original_item: Any, subschema: Dict[str, Any]) -> Any:
+    def default_convert(original_item: Any, subschema: dict[str, Any]) -> Any:  # noqa: ANN401, PLR0911
         """
         Default transform function that is used when TransformConfig.DefaultSchemaNormalization flag set.
         :param original_item original value of field.
@@ -123,15 +125,15 @@ class TypeTransformer:
         try:
             if target_type == "string":
                 return str(original_item)
-            elif target_type == "number":
+            if target_type == "number":
                 return float(original_item)
-            elif target_type == "integer":
+            if target_type == "integer":
                 return int(original_item)
-            elif target_type == "boolean":
+            if target_type == "boolean":
                 if isinstance(original_item, str):
                     return strtobool(original_item) == 1
                 return bool(original_item)
-            elif target_type == "array":
+            if target_type == "array":
                 item_types = set(subschema.get("items", {}).get("type", set()))
                 if (
                     item_types.issubset(json_to_python_simple)
@@ -155,9 +157,9 @@ class TypeTransformer:
 
         def normalizator(
             validator_instance: Validator,
-            property_value: Any,
-            instance: Any,
-            schema: Dict[str, Any],
+            property_value: Any,  # noqa: ANN401
+            instance: Any,  # noqa: ANN401
+            schema: dict[str, Any],
         ) -> Generator[Any, Any, None]:
             """
             Jsonschema validator callable it uses for validating instance. We
@@ -174,10 +176,10 @@ class TypeTransformer:
             def resolve(subschema: dict[str, Any]) -> dict[str, Any]:
                 if "$ref" in subschema:
                     _, resolved = cast(
-                        RefResolver,
+                        RefResolver,  # noqa: TC006
                         validator_instance.resolver,
                     ).resolve(subschema["$ref"])
-                    return cast(dict[str, Any], resolved)
+                    return cast(dict[str, Any], resolved)  # noqa: TC006
                 return subschema
 
             # Transform object and array values before running json schema type checking for each element.
@@ -186,7 +188,7 @@ class TypeTransformer:
             if schema_key == "properties" and isinstance(instance, dict):
                 for k, subschema in property_value.items():
                     if k in instance:
-                        subschema = resolve(subschema)
+                        subschema = resolve(subschema)  # noqa: PLW2901
                         instance[k] = self.__normalize(instance[k], subschema)
             # Recursively normalize every item of the "instance" sub-array,
             # if "instance" is an incorrect type - skip recursive normalization of "instance"
@@ -207,7 +209,7 @@ class TypeTransformer:
 
     def transform(
         self,
-        record: Dict[str, Any],
+        record: dict[str, Any],
         schema: Mapping[str, Any],
     ) -> None:
         """
@@ -234,7 +236,7 @@ class TypeTransformer:
 
         return f"Failed to transform value from type '{type_structure}' to type '{e.validator_value}' at path: '{field_path}'"
 
-    def _get_type_structure(self, input_data: Any, current_depth: int = 0) -> Any:
+    def _get_type_structure(self, input_data: Any, current_depth: int = 0) -> Any:  # noqa: ANN401
         """
         Get the structure of a given input data for use in error message construction.
         """
@@ -252,5 +254,4 @@ class TypeTransformer:
                 for key, field_value in input_data.items()
             }
 
-        else:
-            return python_to_json[type(input_data)]
+        return python_to_json[type(input_data)]

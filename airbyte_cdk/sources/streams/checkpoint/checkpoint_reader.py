@@ -1,12 +1,12 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterable, Mapping
 from enum import Enum
-from typing import Any, Iterable, Mapping, Optional
-
-from airbyte_cdk.sources.types import StreamSlice
+from typing import Any
 
 from .cursor import Cursor
+from airbyte_cdk.sources.types import StreamSlice
 
 
 class CheckpointMode(Enum):
@@ -25,7 +25,7 @@ class CheckpointReader(ABC):
     """
 
     @abstractmethod
-    def next(self) -> Optional[Mapping[str, Any]]:
+    def next(self) -> Mapping[str, Any] | None:
         """
         Returns the next slice that will be used to fetch the next group of records. Returning None indicates that the reader
         has finished iterating over all slices.
@@ -41,7 +41,7 @@ class CheckpointReader(ABC):
         """
 
     @abstractmethod
-    def get_checkpoint(self) -> Optional[Mapping[str, Any]]:
+    def get_checkpoint(self) -> Mapping[str, Any] | None:
         """
         Retrieves the current state value of the stream. The connector does not emit state messages if the checkpoint value is None.
         """
@@ -53,18 +53,18 @@ class IncrementalCheckpointReader(CheckpointReader):
     before syncing data.
     """
 
-    def __init__(
-        self, stream_state: Mapping[str, Any], stream_slices: Iterable[Optional[Mapping[str, Any]]]
+    def __init__(  # noqa: ANN204
+        self, stream_state: Mapping[str, Any], stream_slices: Iterable[Mapping[str, Any] | None]
     ):
-        self._state: Optional[Mapping[str, Any]] = stream_state
+        self._state: Mapping[str, Any] | None = stream_state
         self._stream_slices = iter(stream_slices)
         self._has_slices = False
 
-    def next(self) -> Optional[Mapping[str, Any]]:
+    def next(self) -> Mapping[str, Any] | None:
         try:
             next_slice = next(self._stream_slices)
             self._has_slices = True
-            return next_slice
+            return next_slice  # noqa: TRY300
         except StopIteration:
             # This is used to avoid sending a duplicate state message at the end of a sync since the stream has already
             # emitted state at the end of each slice. If we want to avoid this extra complexity, we can also just accept
@@ -76,7 +76,7 @@ class IncrementalCheckpointReader(CheckpointReader):
     def observe(self, new_state: Mapping[str, Any]) -> None:
         self._state = new_state
 
-    def get_checkpoint(self) -> Optional[Mapping[str, Any]]:
+    def get_checkpoint(self) -> Mapping[str, Any] | None:
         return self._state
 
 
@@ -89,25 +89,25 @@ class CursorBasedCheckpointReader(CheckpointReader):
     that belongs to the Concurrent CDK.
     """
 
-    def __init__(
+    def __init__(  # noqa: ANN204
         self,
         cursor: Cursor,
-        stream_slices: Iterable[Optional[Mapping[str, Any]]],
-        read_state_from_cursor: bool = False,
+        stream_slices: Iterable[Mapping[str, Any] | None],
+        read_state_from_cursor: bool = False,  # noqa: FBT001, FBT002
     ):
         self._cursor = cursor
         self._stream_slices = iter(stream_slices)
         # read_state_from_cursor is used to delineate that partitions should determine when to stop syncing dynamically according
         # to the value of the state at runtime. This currently only applies to streams that use resumable full refresh.
         self._read_state_from_cursor = read_state_from_cursor
-        self._current_slice: Optional[StreamSlice] = None
+        self._current_slice: StreamSlice | None = None
         self._finished_sync = False
-        self._previous_state: Optional[Mapping[str, Any]] = None
+        self._previous_state: Mapping[str, Any] | None = None
 
-    def next(self) -> Optional[Mapping[str, Any]]:
+    def next(self) -> Mapping[str, Any] | None:
         try:
             self.current_slice = self._find_next_slice()
-            return self.current_slice
+            return self.current_slice  # noqa: TRY300
         except StopIteration:
             self._finished_sync = True
             return None
@@ -117,14 +117,13 @@ class CursorBasedCheckpointReader(CheckpointReader):
         # while processing records
         pass
 
-    def get_checkpoint(self) -> Optional[Mapping[str, Any]]:
+    def get_checkpoint(self) -> Mapping[str, Any] | None:
         # This is used to avoid sending a duplicate state messages
         new_state = self._cursor.get_stream_state()
         if new_state != self._previous_state:
             self._previous_state = new_state
             return new_state
-        else:
-            return None
+        return None
 
     def _find_next_slice(self) -> StreamSlice:
         """
@@ -165,36 +164,34 @@ class CursorBasedCheckpointReader(CheckpointReader):
                     partition=next_slice.partition,
                     extra_fields=next_slice.extra_fields,
                 )
-            else:
-                state_for_slice = self._cursor.select_state(self.current_slice)
-                if state_for_slice == FULL_REFRESH_COMPLETE_STATE:
-                    # If the current slice is is complete, move to the next slice and skip the next slices that already
-                    # have the terminal complete value indicating that a previous attempt was successfully read.
-                    # Dummy initialization for mypy since we'll iterate at least once to get the next slice
-                    next_candidate_slice = StreamSlice(cursor_slice={}, partition={})
-                    has_more = True
-                    while has_more:
-                        next_candidate_slice = self.read_and_convert_slice()
-                        state_for_slice = self._cursor.select_state(next_candidate_slice)
-                        has_more = state_for_slice == FULL_REFRESH_COMPLETE_STATE
-                    return StreamSlice(
-                        cursor_slice=state_for_slice or {},
-                        partition=next_candidate_slice.partition,
-                        extra_fields=next_candidate_slice.extra_fields,
-                    )
-                # The reader continues to process the current partition if it's state is still in progress
+            state_for_slice = self._cursor.select_state(self.current_slice)
+            if state_for_slice == FULL_REFRESH_COMPLETE_STATE:
+                # If the current slice is is complete, move to the next slice and skip the next slices that already
+                # have the terminal complete value indicating that a previous attempt was successfully read.
+                # Dummy initialization for mypy since we'll iterate at least once to get the next slice
+                next_candidate_slice = StreamSlice(cursor_slice={}, partition={})
+                has_more = True
+                while has_more:
+                    next_candidate_slice = self.read_and_convert_slice()
+                    state_for_slice = self._cursor.select_state(next_candidate_slice)
+                    has_more = state_for_slice == FULL_REFRESH_COMPLETE_STATE
                 return StreamSlice(
                     cursor_slice=state_for_slice or {},
-                    partition=self.current_slice.partition,
-                    extra_fields=self.current_slice.extra_fields,
+                    partition=next_candidate_slice.partition,
+                    extra_fields=next_candidate_slice.extra_fields,
                 )
-        else:
-            # Unlike RFR cursors that iterate dynamically according to how stream state is updated, most cursors operate
-            # on a fixed set of slices determined before reading records. They just iterate to the next slice
-            return self.read_and_convert_slice()
+            # The reader continues to process the current partition if it's state is still in progress
+            return StreamSlice(
+                cursor_slice=state_for_slice or {},
+                partition=self.current_slice.partition,
+                extra_fields=self.current_slice.extra_fields,
+            )
+        # Unlike RFR cursors that iterate dynamically according to how stream state is updated, most cursors operate
+        # on a fixed set of slices determined before reading records. They just iterate to the next slice
+        return self.read_and_convert_slice()
 
     @property
-    def current_slice(self) -> Optional[StreamSlice]:
+    def current_slice(self) -> StreamSlice | None:
         return self._current_slice
 
     @current_slice.setter
@@ -204,7 +201,7 @@ class CursorBasedCheckpointReader(CheckpointReader):
     def read_and_convert_slice(self) -> StreamSlice:
         next_slice = next(self._stream_slices)
         if not isinstance(next_slice, StreamSlice):
-            raise ValueError(
+            raise ValueError(  # noqa: TRY004
                 f"{self.current_slice} should be of type StreamSlice. This is likely a bug in the CDK, please contact Airbyte support"
             )
         return next_slice
@@ -231,11 +228,11 @@ class LegacyCursorBasedCheckpointReader(CursorBasedCheckpointReader):
     }
     """
 
-    def __init__(
+    def __init__(  # noqa: ANN204
         self,
         cursor: Cursor,
-        stream_slices: Iterable[Optional[Mapping[str, Any]]],
-        read_state_from_cursor: bool = False,
+        stream_slices: Iterable[Mapping[str, Any] | None],
+        read_state_from_cursor: bool = False,  # noqa: FBT001, FBT002
     ):
         super().__init__(
             cursor=cursor,
@@ -243,13 +240,13 @@ class LegacyCursorBasedCheckpointReader(CursorBasedCheckpointReader):
             read_state_from_cursor=read_state_from_cursor,
         )
 
-    def next(self) -> Optional[Mapping[str, Any]]:
+    def next(self) -> Mapping[str, Any] | None:
         try:
             self.current_slice = self._find_next_slice()
 
             if "partition" in dict(self.current_slice):
                 raise ValueError("Stream is configured to use invalid stream slice key 'partition'")
-            elif "cursor_slice" in dict(self.current_slice):
+            if "cursor_slice" in dict(self.current_slice):
                 raise ValueError(
                     "Stream is configured to use invalid stream slice key 'cursor_slice'"
                 )
@@ -268,7 +265,7 @@ class LegacyCursorBasedCheckpointReader(CursorBasedCheckpointReader):
     def read_and_convert_slice(self) -> StreamSlice:
         next_mapping_slice = next(self._stream_slices)
         if not isinstance(next_mapping_slice, Mapping):
-            raise ValueError(
+            raise ValueError(  # noqa: TRY004
                 f"{self.current_slice} should be of type Mapping. This is likely a bug in the CDK, please contact Airbyte support"
             )
 
@@ -287,25 +284,24 @@ class ResumableFullRefreshCheckpointReader(CheckpointReader):
     fetching more pages or stopping the sync.
     """
 
-    def __init__(self, stream_state: Mapping[str, Any]):
+    def __init__(self, stream_state: Mapping[str, Any]):  # noqa: ANN204
         # The first attempt of an RFR stream has an empty {} incoming state, but should still make a first attempt to read records
         # from the first page in next().
         self._first_page = bool(stream_state == {})
         self._state: Mapping[str, Any] = stream_state
 
-    def next(self) -> Optional[Mapping[str, Any]]:
+    def next(self) -> Mapping[str, Any] | None:
         if self._first_page:
             self._first_page = False
             return self._state
-        elif self._state == FULL_REFRESH_COMPLETE_STATE:
+        if self._state == FULL_REFRESH_COMPLETE_STATE:
             return None
-        else:
-            return self._state
+        return self._state
 
     def observe(self, new_state: Mapping[str, Any]) -> None:
         self._state = new_state
 
-    def get_checkpoint(self) -> Optional[Mapping[str, Any]]:
+    def get_checkpoint(self) -> Mapping[str, Any] | None:
         return self._state or {}
 
 
@@ -315,11 +311,11 @@ class FullRefreshCheckpointReader(CheckpointReader):
     is not capable of managing state. At the end of a sync, a final state message is emitted to signal completion.
     """
 
-    def __init__(self, stream_slices: Iterable[Optional[Mapping[str, Any]]]):
+    def __init__(self, stream_slices: Iterable[Mapping[str, Any] | None]):  # noqa: ANN204
         self._stream_slices = iter(stream_slices)
         self._final_checkpoint = False
 
-    def next(self) -> Optional[Mapping[str, Any]]:
+    def next(self) -> Mapping[str, Any] | None:
         try:
             return next(self._stream_slices)
         except StopIteration:
@@ -329,7 +325,7 @@ class FullRefreshCheckpointReader(CheckpointReader):
     def observe(self, new_state: Mapping[str, Any]) -> None:
         pass
 
-    def get_checkpoint(self) -> Optional[Mapping[str, Any]]:
+    def get_checkpoint(self) -> Mapping[str, Any] | None:
         if self._final_checkpoint:
             return {"__ab_no_cursor_state_message": True}
         return None

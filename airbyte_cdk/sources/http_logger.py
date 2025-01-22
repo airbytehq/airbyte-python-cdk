@@ -2,7 +2,6 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Optional, Union
 
 import requests
 
@@ -13,8 +12,8 @@ def format_http_message(
     response: requests.Response,
     title: str,
     description: str,
-    stream_name: Optional[str],
-    is_auxiliary: bool | None = None,
+    stream_name: str | None,
+    is_auxiliary: bool | None = None,  # noqa: FBT001
 ) -> LogMessage:
     request = response.request
     log_message = {
@@ -48,5 +47,5 @@ def format_http_message(
     return log_message  # type: ignore [return-value]  # got "dict[str, object]", expected "dict[str, JsonType]"
 
 
-def _normalize_body_string(body_str: Optional[Union[str, bytes]]) -> Optional[str]:
-    return body_str.decode() if isinstance(body_str, (bytes, bytearray)) else body_str
+def _normalize_body_string(body_str: str | bytes | None) -> str | None:
+    return body_str.decode() if isinstance(body_str, (bytes, bytearray)) else body_str  # noqa: UP038

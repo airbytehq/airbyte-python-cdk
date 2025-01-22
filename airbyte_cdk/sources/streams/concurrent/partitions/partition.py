@@ -3,7 +3,8 @@
 #
 
 from abc import ABC, abstractmethod
-from typing import Any, Iterable, Mapping, Optional
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 from airbyte_cdk.sources.types import Record
 
@@ -22,7 +23,7 @@ class Partition(ABC):
         pass
 
     @abstractmethod
-    def to_slice(self) -> Optional[Mapping[str, Any]]:
+    def to_slice(self) -> Mapping[str, Any] | None:
         """
         Converts the partition to a slice that can be serialized and deserialized.
 

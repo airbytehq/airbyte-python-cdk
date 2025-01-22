@@ -2,15 +2,16 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Union
 
 from airbyte_cdk.sources.declarative.interpolation.jinja import JinjaInterpolation
 from airbyte_cdk.sources.types import Config
 
 
 @dataclass
-class InterpolatedString:
+class InterpolatedString:  # noqa: PLW1641
     """
     Wrapper around a raw string to be interpolated with the Jinja2 templating engine
 
@@ -22,7 +23,7 @@ class InterpolatedString:
 
     string: str
     parameters: InitVar[Mapping[str, Any]]
-    default: Optional[str] = None
+    default: str | None = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.default = self.default or self.string
@@ -32,7 +33,7 @@ class InterpolatedString:
         # This allows for optimization, but we do not know it yet at this stage
         self._is_plain_string = None
 
-    def eval(self, config: Config, **kwargs: Any) -> Any:
+    def eval(self, config: Config, **kwargs: Any) -> Any:  # noqa: ANN401
         """
         Interpolates the input string using the config and other optional arguments passed as parameter.
 
@@ -54,7 +55,7 @@ class InterpolatedString:
             self.string, config, self.default, parameters=self._parameters, **kwargs
         )
 
-    def __eq__(self, other: Any) -> bool:
+    def __eq__(self, other: object) -> bool:
         if not isinstance(other, InterpolatedString):
             return False
         return self.string == other.string and self.default == other.default
@@ -75,5 +76,4 @@ class InterpolatedString:
         """
         if isinstance(string_or_interpolated, str):
             return InterpolatedString(string=string_or_interpolated, parameters=parameters)
-        else:
-            return string_or_interpolated
+        return string_or_interpolated

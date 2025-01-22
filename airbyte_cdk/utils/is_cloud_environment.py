@@ -4,6 +4,7 @@
 
 import os
 
+
 CLOUD_DEPLOYMENT_MODE = "cloud"
 
 

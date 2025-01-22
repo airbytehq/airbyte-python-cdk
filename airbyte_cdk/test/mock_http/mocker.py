@@ -2,9 +2,9 @@
 
 import contextlib
 import functools
+from collections.abc import Callable
 from enum import Enum
 from types import TracebackType
-from typing import Callable, List, Optional, Union
 
 import requests_mock
 
@@ -39,7 +39,7 @@ class HttpMocker(contextlib.ContextDecorator):
 
     def __init__(self) -> None:
         self._mocker = requests_mock.Mocker()
-        self._matchers: List[HttpRequestMatcher] = []
+        self._matchers: list[HttpRequestMatcher] = []
 
     def __enter__(self) -> "HttpMocker":
         self._mocker.__enter__()
@@ -47,9 +47,9 @@ class HttpMocker(contextlib.ContextDecorator):
 
     def __exit__(
         self,
-        exc_type: Optional[BaseException],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: BaseException | None,  # noqa: PYI036
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         self._mocker.__exit__(exc_type, exc_val, exc_tb)
 
@@ -62,7 +62,7 @@ class HttpMocker(contextlib.ContextDecorator):
         self,
         method: SupportedHttpMethods,
         request: HttpRequest,
-        responses: Union[HttpResponse, List[HttpResponse]],
+        responses: HttpResponse | list[HttpResponse],
     ) -> None:
         if isinstance(responses, HttpResponse):
             responses = [responses]
@@ -85,22 +85,16 @@ class HttpMocker(contextlib.ContextDecorator):
             ],
         )
 
-    def get(self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]) -> None:
+    def get(self, request: HttpRequest, responses: HttpResponse | list[HttpResponse]) -> None:
         self._mock_request_method(SupportedHttpMethods.GET, request, responses)
 
-    def patch(
-        self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]
-    ) -> None:
+    def patch(self, request: HttpRequest, responses: HttpResponse | list[HttpResponse]) -> None:
         self._mock_request_method(SupportedHttpMethods.PATCH, request, responses)
 
-    def post(
-        self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]
-    ) -> None:
+    def post(self, request: HttpRequest, responses: HttpResponse | list[HttpResponse]) -> None:
         self._mock_request_method(SupportedHttpMethods.POST, request, responses)
 
-    def delete(
-        self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]
-    ) -> None:
+    def delete(self, request: HttpRequest, responses: HttpResponse | list[HttpResponse]) -> None:
         self._mock_request_method(SupportedHttpMethods.DELETE, request, responses)
 
     @staticmethod
@@ -131,9 +125,9 @@ class HttpMocker(contextlib.ContextDecorator):
         assert corresponding_matchers[0].actual_number_of_matches == number_of_calls
 
     # trying to type that using callables provides the error `incompatible with return type "_F" in supertype "ContextDecorator"`
-    def __call__(self, f):  # type: ignore
+    def __call__(self, f):  # type: ignore  # noqa: ANN001, ANN204
         @functools.wraps(f)
-        def wrapper(*args, **kwargs):  # type: ignore  # this is a very generic wrapper that does not need to be typed
+        def wrapper(*args, **kwargs):  # type: ignore  # this is a very generic wrapper that does not need to be typed  # noqa: ANN002, ANN202
             with self:
                 assertion_error = None
 
@@ -142,7 +136,7 @@ class HttpMocker(contextlib.ContextDecorator):
                     result = f(*args, **kwargs)
                 except requests_mock.NoMockAddress as no_mock_exception:
                     matchers_as_string = "\n\t".join(
-                        map(lambda matcher: str(matcher.request), self._matchers)
+                        map(lambda matcher: str(matcher.request), self._matchers)  # noqa: C417
                     )
                     raise ValueError(
                         f"No matcher matches {no_mock_exception.args[0]} with headers `{no_mock_exception.request.headers}` "

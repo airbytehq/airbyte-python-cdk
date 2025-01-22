@@ -3,7 +3,8 @@
 #
 
 from abc import abstractmethod
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 import requests
 from requests.auth import AuthBase
@@ -12,7 +13,7 @@ from requests.auth import AuthBase
 class AbstractHeaderAuthenticator(AuthBase):
     """Abstract class for an header-based authenticators that add a header to outgoing HTTP requests."""
 
-    def __call__(self, request: requests.PreparedRequest) -> Any:
+    def __call__(self, request: requests.PreparedRequest) -> Any:  # noqa: ANN401
         """Attach the HTTP headers required to authenticate on the HTTP request"""
         request.headers.update(self.get_auth_header())
         return request

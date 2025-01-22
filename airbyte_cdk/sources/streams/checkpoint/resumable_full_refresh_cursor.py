@@ -1,7 +1,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from airbyte_cdk.sources.streams.checkpoint import Cursor
 from airbyte_cdk.sources.types import Record, StreamSlice, StreamState
@@ -30,22 +30,22 @@ class ResumableFullRefreshCursor(Cursor):
         """
         pass
 
-    def close_slice(self, stream_slice: StreamSlice, *args: Any) -> None:
+    def close_slice(self, stream_slice: StreamSlice, *args: Any) -> None:  # noqa: ANN401, ARG002
         self._cursor = stream_slice.cursor_slice
 
-    def should_be_synced(self, record: Record) -> bool:
+    def should_be_synced(self, record: Record) -> bool:  # noqa: ARG002
         """
         Unlike date-based cursors which filter out records outside slice boundaries, resumable full refresh records exist within pages
         that don't have filterable bounds. We should always return them.
         """
         return True
 
-    def is_greater_than_or_equal(self, first: Record, second: Record) -> bool:
+    def is_greater_than_or_equal(self, first: Record, second: Record) -> bool:  # noqa: ARG002
         """
         RFR record don't have ordering to be compared between one another.
         """
         return False
 
-    def select_state(self, stream_slice: Optional[StreamSlice] = None) -> Optional[StreamState]:
+    def select_state(self, stream_slice: StreamSlice | None = None) -> StreamState | None:  # noqa: ARG002
         # A top-level RFR cursor only manages the state of a single partition
         return self._cursor

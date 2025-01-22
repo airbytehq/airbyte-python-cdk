@@ -5,7 +5,6 @@ import time
 from io import StringIO
 from threading import RLock
 from types import TracebackType
-from typing import Optional
 
 
 class PrintBuffer:
@@ -37,7 +36,7 @@ class PrintBuffer:
             Exits the runtime context and restores the original stdout and stderr.
     """
 
-    def __init__(self, flush_interval: float = 0.1):
+    def __init__(self, flush_interval: float = 0.1):  # noqa: ANN204
         self.buffer = StringIO()
         self.flush_interval = flush_interval
         self.last_flush_time = time.monotonic()
@@ -67,9 +66,9 @@ class PrintBuffer:
 
     def __exit__(
         self,
-        exc_type: Optional[BaseException],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: BaseException | None,  # noqa: PYI036
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         self.flush()
         sys.stdout, sys.stderr = self.old_stdout, self.old_stderr

@@ -5,12 +5,12 @@
 import builtins
 import datetime
 import typing
-from typing import Optional, Union
 
 import isodate
 import pytz
 from dateutil import parser
 from isodate import parse_duration
+
 
 """
 This file contains macros that can be evaluated by a `JinjaInterpolation` object
@@ -47,7 +47,7 @@ def today_with_timezone(timezone: str) -> datetime.date:
     return datetime.datetime.now(tz=pytz.timezone(timezone)).date()
 
 
-def timestamp(dt: Union[float, str]) -> Union[int, float]:
+def timestamp(dt: float | str) -> int | float:
     """
     Converts a number or a string to a timestamp
 
@@ -60,10 +60,9 @@ def timestamp(dt: Union[float, str]) -> Union[int, float]:
     :param dt: datetime to convert to timestamp
     :return: unix timestamp
     """
-    if isinstance(dt, (int, float)):
+    if isinstance(dt, (int, float)):  # noqa: UP038
         return int(dt)
-    else:
-        return _str_to_datetime(dt).astimezone(pytz.utc).timestamp()
+    return _str_to_datetime(dt).astimezone(pytz.utc).timestamp()
 
 
 def _str_to_datetime(s: str) -> datetime.datetime:
@@ -74,7 +73,7 @@ def _str_to_datetime(s: str) -> datetime.datetime:
     return parsed_date.astimezone(pytz.utc)
 
 
-def max(*args: typing.Any) -> typing.Any:
+def max(*args: typing.Any) -> typing.Any:  # noqa: ANN401, A001
     """
     Returns biggest object of an iterable, or two or more arguments.
 
@@ -94,7 +93,7 @@ def max(*args: typing.Any) -> typing.Any:
     return builtins.max(*args)
 
 
-def min(*args: typing.Any) -> typing.Any:
+def min(*args: typing.Any) -> typing.Any:  # noqa: ANN401, A001
     """
     Returns smallest object of an iterable, or two or more arguments.
 
@@ -114,7 +113,7 @@ def min(*args: typing.Any) -> typing.Any:
     return builtins.min(*args)
 
 
-def day_delta(num_days: int, format: str = "%Y-%m-%dT%H:%M:%S.%f%z") -> str:
+def day_delta(num_days: int, format: str = "%Y-%m-%dT%H:%M:%S.%f%z") -> str:  # noqa: A002
     """
     Returns datetime of now() + num_days
 
@@ -129,7 +128,7 @@ def day_delta(num_days: int, format: str = "%Y-%m-%dT%H:%M:%S.%f%z") -> str:
     ).strftime(format)
 
 
-def duration(datestring: str) -> Union[datetime.timedelta, isodate.Duration]:
+def duration(datestring: str) -> datetime.timedelta | isodate.Duration:
     """
     Converts ISO8601 duration to datetime.timedelta
 
@@ -140,7 +139,9 @@ def duration(datestring: str) -> Union[datetime.timedelta, isodate.Duration]:
 
 
 def format_datetime(
-    dt: Union[str, datetime.datetime], format: str, input_format: Optional[str] = None
+    dt: str | datetime.datetime,
+    format: str,  # noqa: A002
+    input_format: str | None = None,
 ) -> str:
     """
     Converts datetime to another format

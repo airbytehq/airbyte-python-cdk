@@ -3,14 +3,16 @@
 #
 
 import logging
+from collections.abc import Generator, Mapping, MutableMapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Generator, Mapping, MutableMapping
+from typing import Any
 from xml.parsers.expat import ExpatError
 
 import requests
 import xmltodict
 
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
+
 
 logger = logging.getLogger("airbyte")
 

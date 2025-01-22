@@ -3,9 +3,10 @@
 #
 
 import datetime
+from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from dataclasses import InitVar, dataclass, field
 from datetime import timedelta
-from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optional, Union
+from typing import Any
 
 from isodate import Duration, duration_isoformat, parse_duration
 
@@ -52,28 +53,28 @@ class DatetimeBasedCursor(DeclarativeCursor):
         lookback_window (Optional[InterpolatedString]): how many days before start_datetime to read data for (ISO8601 duration)
     """
 
-    start_datetime: Union[MinMaxDatetime, str]
-    cursor_field: Union[InterpolatedString, str]
+    start_datetime: MinMaxDatetime | str
+    cursor_field: InterpolatedString | str
     datetime_format: str
     config: Config
     parameters: InitVar[Mapping[str, Any]]
-    _highest_observed_cursor_field_value: Optional[str] = field(
+    _highest_observed_cursor_field_value: str | None = field(
         repr=False, default=None
     )  # tracks the latest observed datetime, which may not be safe to emit in the case of out-of-order records
-    _cursor: Optional[str] = field(
+    _cursor: str | None = field(
         repr=False, default=None
     )  # tracks the latest observed datetime that is appropriate to emit as stream state
-    end_datetime: Optional[Union[MinMaxDatetime, str]] = None
-    step: Optional[Union[InterpolatedString, str]] = None
-    cursor_granularity: Optional[str] = None
-    start_time_option: Optional[RequestOption] = None
-    end_time_option: Optional[RequestOption] = None
-    partition_field_start: Optional[str] = None
-    partition_field_end: Optional[str] = None
-    lookback_window: Optional[Union[InterpolatedString, str]] = None
-    message_repository: Optional[MessageRepository] = None
-    is_compare_strictly: Optional[bool] = False
-    cursor_datetime_formats: List[str] = field(default_factory=lambda: [])
+    end_datetime: MinMaxDatetime | str | None = None
+    step: InterpolatedString | str | None = None
+    cursor_granularity: str | None = None
+    start_time_option: RequestOption | None = None
+    end_time_option: RequestOption | None = None
+    partition_field_start: str | None = None
+    partition_field_end: str | None = None
+    lookback_window: InterpolatedString | str | None = None
+    message_repository: MessageRepository | None = None
+    is_compare_strictly: bool | None = False
+    cursor_datetime_formats: list[str] = field(default_factory=list)
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if (self.step and not self.cursor_granularity) or (
@@ -166,12 +167,12 @@ class DatetimeBasedCursor(DeclarativeCursor):
         ):
             self._highest_observed_cursor_field_value = record_cursor_value
 
-    def close_slice(self, stream_slice: StreamSlice, *args: Any) -> None:
+    def close_slice(self, stream_slice: StreamSlice, *args: Any) -> None:  # noqa: ANN401, ARG002
         if stream_slice.partition:
             raise ValueError(
                 f"Stream slice {stream_slice} should not have a partition. Got {stream_slice.partition}."
             )
-        cursor_value_str_by_cursor_value_datetime = dict(
+        cursor_value_str_by_cursor_value_datetime = dict(  # noqa: C417
             map(
                 # we need to ensure the cursor value is preserved as is in the state else the CATs might complain of something like
                 # 2023-01-04T17:30:19.000Z' <= '2023-01-04T17:30:19.000000Z'
@@ -202,7 +203,7 @@ class DatetimeBasedCursor(DeclarativeCursor):
         start_datetime = self._calculate_earliest_possible_value(self.select_best_end_datetime())
         return self._partition_daterange(start_datetime, end_datetime, self._step)
 
-    def select_state(self, stream_slice: Optional[StreamSlice] = None) -> Optional[StreamState]:
+    def select_state(self, stream_slice: StreamSlice | None = None) -> StreamState | None:  # noqa: ARG002
         # Datetime based cursors operate over slices made up of datetime ranges. Stream state is based on the progress
         # through each slice and does not belong to a specific slice. We just return stream state as it is.
         return self.get_stream_state()
@@ -254,8 +255,8 @@ class DatetimeBasedCursor(DeclarativeCursor):
         self,
         start: datetime.datetime,
         end: datetime.datetime,
-        step: Union[datetime.timedelta, Duration],
-    ) -> List[StreamSlice]:
+        step: datetime.timedelta | Duration,
+    ) -> list[StreamSlice]:
         start_field = self._partition_field_start.eval(self.config)
         end_field = self._partition_field_end.eval(self.config)
         dates = []
@@ -303,7 +304,7 @@ class DatetimeBasedCursor(DeclarativeCursor):
         return comparator(cursor_date, default_date)
 
     def parse_date(self, date: str) -> datetime.datetime:
-        for datetime_format in self.cursor_datetime_formats + [self.datetime_format]:
+        for datetime_format in self.cursor_datetime_formats + [self.datetime_format]:  # noqa: RUF005
             try:
                 return self._parser.parse(date, datetime_format)
             except ValueError:
@@ -311,7 +312,7 @@ class DatetimeBasedCursor(DeclarativeCursor):
         raise ValueError(f"No format in {self.cursor_datetime_formats} matching {date}")
 
     @classmethod
-    def _parse_timedelta(cls, time_str: Optional[str]) -> Union[datetime.timedelta, Duration]:
+    def _parse_timedelta(cls, time_str: str | None) -> datetime.timedelta | Duration:
         """
         :return Parses an ISO 8601 durations into datetime.timedelta or Duration objects.
         """
@@ -322,36 +323,36 @@ class DatetimeBasedCursor(DeclarativeCursor):
     def get_request_params(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,  # noqa: ARG002
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,  # noqa: ARG002
     ) -> Mapping[str, Any]:
         return self._get_request_options(RequestOptionType.request_parameter, stream_slice)
 
     def get_request_headers(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,  # noqa: ARG002
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,  # noqa: ARG002
     ) -> Mapping[str, Any]:
         return self._get_request_options(RequestOptionType.header, stream_slice)
 
     def get_request_body_data(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,  # noqa: ARG002
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,  # noqa: ARG002
     ) -> Mapping[str, Any]:
         return self._get_request_options(RequestOptionType.body_data, stream_slice)
 
     def get_request_body_json(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,  # noqa: ARG002
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,  # noqa: ARG002
     ) -> Mapping[str, Any]:
         return self._get_request_options(RequestOptionType.body_json, stream_slice)
 
@@ -360,7 +361,7 @@ class DatetimeBasedCursor(DeclarativeCursor):
         return {}
 
     def _get_request_options(
-        self, option_type: RequestOptionType, stream_slice: Optional[StreamSlice]
+        self, option_type: RequestOptionType, stream_slice: StreamSlice | None
     ) -> Mapping[str, Any]:
         options: MutableMapping[str, Any] = {}
         if not stream_slice:
@@ -395,8 +396,8 @@ class DatetimeBasedCursor(DeclarativeCursor):
     def _is_within_daterange_boundaries(
         self,
         record: Record,
-        start_datetime_boundary: Union[datetime.datetime, str],
-        end_datetime_boundary: Union[datetime.datetime, str],
+        start_datetime_boundary: datetime.datetime | str,
+        end_datetime_boundary: datetime.datetime | str,
     ) -> bool:
         cursor_field = self.cursor_field.eval(self.config)  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
         record_cursor_value = record.get(cursor_field)
@@ -429,10 +430,9 @@ class DatetimeBasedCursor(DeclarativeCursor):
         second_cursor_value = second.get(cursor_field)
         if first_cursor_value and second_cursor_value:
             return self.parse_date(first_cursor_value) >= self.parse_date(second_cursor_value)
-        elif first_cursor_value:
+        if first_cursor_value:  # noqa: SIM103
             return True
-        else:
-            return False
+        return False
 
     def set_runtime_lookback_window(self, lookback_window_in_seconds: int) -> None:
         """

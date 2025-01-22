@@ -3,12 +3,13 @@
 #
 
 
-from typing import Any, List, Mapping, Optional, Set, Union
+from collections.abc import Mapping
+from typing import Any
 
 
 def combine_mappings(
-    mappings: List[Optional[Union[Mapping[str, Any], str]]],
-) -> Union[Mapping[str, Any], str]:
+    mappings: list[Mapping[str, Any] | str | None],
+) -> Mapping[str, Any] | str:
     """
     Combine multiple mappings into a single mapping. If any of the mappings are a string, return
     that string. Raise errors in the following cases:
@@ -16,7 +17,7 @@ def combine_mappings(
     * If there are multiple string mappings
     * If there are multiple mappings containing keys and one of them is a string
     """
-    all_keys: List[Set[str]] = []
+    all_keys: list[set[str]] = []
     for part in mappings:
         if part is None:
             continue

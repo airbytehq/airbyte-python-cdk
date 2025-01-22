@@ -6,7 +6,8 @@ import logging
 import traceback
 from abc import ABC
 from collections import Counter
-from typing import Any, Iterator, List, Mapping, Optional, Tuple, Type, Union
+from collections.abc import Iterator, Mapping
+from typing import Any
 
 from pydantic.v1.error_wrappers import ValidationError
 
@@ -63,6 +64,7 @@ from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
 from airbyte_cdk.utils.analytics_message import create_analytics_message
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
+
 DEFAULT_CONCURRENCY = 100
 MAX_CONCURRENCY = 100
 INITIAL_N_PARTITIONS = MAX_CONCURRENCY // 2
@@ -72,21 +74,21 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
     # We make each source override the concurrency level to give control over when they are upgraded.
     _concurrency_level = None
 
-    def __init__(
+    def __init__(  # noqa: ANN204, PLR0913, PLR0917
         self,
         stream_reader: AbstractFileBasedStreamReader,
-        spec_class: Type[AbstractFileBasedSpec],
-        catalog: Optional[ConfiguredAirbyteCatalog],
-        config: Optional[Mapping[str, Any]],
-        state: Optional[List[AirbyteStateMessage]],
-        availability_strategy: Optional[AbstractFileBasedAvailabilityStrategy] = None,
-        discovery_policy: AbstractDiscoveryPolicy = DefaultDiscoveryPolicy(),
-        parsers: Mapping[Type[Any], FileTypeParser] = default_parsers,
+        spec_class: type[AbstractFileBasedSpec],
+        catalog: ConfiguredAirbyteCatalog | None,
+        config: Mapping[str, Any] | None,
+        state: list[AirbyteStateMessage] | None,
+        availability_strategy: AbstractFileBasedAvailabilityStrategy | None = None,
+        discovery_policy: AbstractDiscoveryPolicy = DefaultDiscoveryPolicy(),  # noqa: B008
+        parsers: Mapping[type[Any], FileTypeParser] = default_parsers,
         validation_policies: Mapping[
             ValidationPolicy, AbstractSchemaValidationPolicy
         ] = DEFAULT_SCHEMA_VALIDATION_POLICIES,
-        cursor_cls: Type[
-            Union[AbstractConcurrentFileBasedCursor, AbstractFileBasedCursor]
+        cursor_cls: type[
+            AbstractConcurrentFileBasedCursor | AbstractFileBasedCursor
         ] = FileBasedConcurrentCursor,
     ):
         self.stream_reader = stream_reader
@@ -106,7 +108,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         self.cursor_cls = cursor_cls
         self.logger = init_logger(f"airbyte.{self.name}")
         self.errors_collector: FileBasedErrorsCollector = FileBasedErrorsCollector()
-        self._message_repository: Optional[MessageRepository] = None
+        self._message_repository: MessageRepository | None = None
         concurrent_source = ConcurrentSource.create(
             MAX_CONCURRENCY,
             INITIAL_N_PARTITIONS,
@@ -127,7 +129,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
 
     def check_connection(
         self, logger: logging.Logger, config: Mapping[str, Any]
-    ) -> Tuple[bool, Optional[Any]]:
+    ) -> tuple[bool, Any | None]:
         """
         Check that the source can be accessed using the user-provided configuration.
 
@@ -140,7 +142,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         try:
             streams = self.streams(config)
         except Exception as config_exception:
-            raise AirbyteTracedException(
+            raise AirbyteTracedException(  # noqa: B904
                 internal_message="Please check the logged errors for more information.",
                 message=FileBasedSourceError.CONFIG_VALIDATION_ERROR.value,
                 exception=AirbyteTracedException(exception=config_exception),
@@ -158,7 +160,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         tracebacks = []
         for stream in streams:
             if not isinstance(stream, AbstractFileBasedStream):
-                raise ValueError(f"Stream {stream} is not a file-based stream.")
+                raise ValueError(f"Stream {stream} is not a file-based stream.")  # noqa: TRY004
             try:
                 parsed_config = self._get_parsed_config(config)
                 availability_method = (
@@ -191,7 +193,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                 message=f"{errors[0]}",
                 failure_type=FailureType.config_error,
             )
-        elif len(errors) > 1:
+        if len(errors) > 1:
             raise AirbyteTracedException(
                 internal_message="\n".join(tracebacks),
                 message=f"{len(errors)} streams with errors: {', '.join(error for error in errors)}",
@@ -200,12 +202,12 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
 
         return not bool(errors), (errors or None)
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> list[Stream]:
         """
         Return a list of this source's streams.
         """
 
-        if self.catalog:
+        if self.catalog:  # noqa: SIM108
             state_manager = ConnectorStateManager(state=self.state)
         else:
             # During `check` operations we don't have a catalog so cannot create a state manager.
@@ -215,7 +217,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         try:
             parsed_config = self._get_parsed_config(config)
             self.stream_reader.config = parsed_config
-            streams: List[Stream] = []
+            streams: list[Stream] = []
             for stream_config in parsed_config.streams:
                 # Like state_manager, `catalog_stream` may be None during `check`
                 catalog_stream = self._get_stream_from_catalog(stream_config)
@@ -256,9 +258,9 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                     and hasattr(self, "_concurrency_level")
                     and self._concurrency_level is not None
                 ):
-                    assert (
-                        state_manager is not None
-                    ), "No ConnectorStateManager was created, but it is required for incremental syncs. This is unexpected. Please contact Support."
+                    assert state_manager is not None, (
+                        "No ConnectorStateManager was created, but it is required for incremental syncs. This is unexpected. Please contact Support."
+                    )
 
                     cursor = self.cursor_cls(
                         stream_config,
@@ -289,7 +291,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                     )
 
                 streams.append(stream)
-            return streams
+            return streams  # noqa: TRY300
 
         except ValidationError as exc:
             raise ConfigValidationError(FileBasedSourceError.CONFIG_VALIDATION_ERROR) from exc
@@ -297,7 +299,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
     def _make_default_stream(
         self,
         stream_config: FileBasedStreamConfig,
-        cursor: Optional[AbstractFileBasedCursor],
+        cursor: AbstractFileBasedCursor | None,
         parsed_config: AbstractFileBasedSpec,
     ) -> AbstractFileBasedStream:
         return DefaultFileBasedStream(
@@ -316,14 +318,14 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
 
     def _get_stream_from_catalog(
         self, stream_config: FileBasedStreamConfig
-    ) -> Optional[AirbyteStream]:
+    ) -> AirbyteStream | None:
         if self.catalog:
             for stream in self.catalog.streams or []:
                 if stream.stream.name == stream_config.name:
                     return stream.stream
         return None
 
-    def _get_sync_mode_from_catalog(self, stream_name: str) -> Optional[SyncMode]:
+    def _get_sync_mode_from_catalog(self, stream_name: str) -> SyncMode | None:
         if self.catalog:
             for catalog_stream in self.catalog.streams:
                 if stream_name == catalog_stream.stream.name:
@@ -336,7 +338,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         logger: logging.Logger,
         config: Mapping[str, Any],
         catalog: ConfiguredAirbyteCatalog,
-        state: Optional[List[AirbyteStateMessage]] = None,
+        state: list[AirbyteStateMessage] | None = None,
     ) -> Iterator[AirbyteMessage]:
         yield from super().read(logger, config, catalog, state)
         # emit all the errors collected
@@ -348,7 +350,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         ).items():
             yield create_analytics_message(f"file-cdk-{parser}-stream-count", count)
 
-    def spec(self, *args: Any, **kwargs: Any) -> ConnectorSpecification:
+    def spec(self, *args: Any, **kwargs: Any) -> ConnectorSpecification:  # noqa: ANN401, ARG002
         """
         Returns the specification describing what fields can be configured by a user when setting up a file-based source.
         """

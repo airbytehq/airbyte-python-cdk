@@ -5,7 +5,8 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Generic, Iterable, Optional
+from collections.abc import Iterable
+from typing import Generic
 
 from airbyte_cdk.connector import TConfig
 from airbyte_cdk.models import (
@@ -32,13 +33,13 @@ class SourceRunner(ABC, Generic[TConfig]):
         self,
         config: TConfig,
         catalog: ConfiguredAirbyteCatalog,
-        state: Optional[AirbyteStateMessage],
+        state: AirbyteStateMessage | None,
     ) -> Iterable[AirbyteMessage]:
         pass
 
 
 class CDKRunner(SourceRunner[TConfig]):
-    def __init__(self, source: Source, name: str):
+    def __init__(self, source: Source, name: str):  # noqa: ANN204
         self._source = source
         self._logger = logging.getLogger(name)
 
@@ -52,6 +53,6 @@ class CDKRunner(SourceRunner[TConfig]):
         self,
         config: TConfig,
         catalog: ConfiguredAirbyteCatalog,
-        state: Optional[AirbyteStateMessage],
+        state: AirbyteStateMessage | None,
     ) -> Iterable[AirbyteMessage]:
         return self._source.read(self._logger, config, catalog, state=[state] if state else [])

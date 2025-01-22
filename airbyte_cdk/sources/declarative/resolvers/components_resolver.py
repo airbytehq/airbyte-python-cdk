@@ -3,12 +3,13 @@
 #
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterable, Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Type, Union
+from typing import Any, Union
 
 from typing_extensions import deprecated
 
-from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
+from airbyte_cdk.sources.declarative.interpolation import InterpolatedString  # noqa: TC001
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 
 
@@ -18,9 +19,9 @@ class ComponentMappingDefinition:
     what field in the stream template should be updated with value, supporting dynamic interpolation
     and type enforcement."""
 
-    field_path: List["InterpolatedString"]
+    field_path: list["InterpolatedString"]
     value: Union["InterpolatedString", str]
-    value_type: Optional[Type[Any]]
+    value_type: type[Any] | None
     parameters: InitVar[Mapping[str, Any]]
 
 
@@ -30,9 +31,9 @@ class ResolvedComponentMappingDefinition:
     what field in the stream template should be updated with value, supporting dynamic interpolation
     and type enforcement."""
 
-    field_path: List["InterpolatedString"]
+    field_path: list["InterpolatedString"]
     value: "InterpolatedString"
-    value_type: Optional[Type[Any]]
+    value_type: type[Any] | None
     parameters: InitVar[Mapping[str, Any]]
 
 
@@ -45,8 +46,8 @@ class ComponentsResolver(ABC):
 
     @abstractmethod
     def resolve_components(
-        self, stream_template_config: Dict[str, Any]
-    ) -> Iterable[Dict[str, Any]]:
+        self, stream_template_config: dict[str, Any]
+    ) -> Iterable[dict[str, Any]]:
         """
         Maps and populates values into a stream template configuration.
         :param stream_template_config: The stream template with placeholders for components.

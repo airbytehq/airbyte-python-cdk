@@ -4,9 +4,10 @@
 import logging
 import os
 import traceback
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from io import BytesIO, IOBase
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
+from typing import Any
 
 import backoff
 import dpath
@@ -39,6 +40,7 @@ from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
 from airbyte_cdk.utils import is_cloud_environment
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
+
 unstructured_partition_pdf = None
 unstructured_partition_docx = None
 unstructured_partition_pptx = None
@@ -54,10 +56,10 @@ def get_nltk_temp_folder() -> str:
     """
     try:
         nltk_data_dir = AIRBYTE_NLTK_DATA_DIR
-        os.makedirs(nltk_data_dir, exist_ok=True)
+        os.makedirs(nltk_data_dir, exist_ok=True)  # noqa: PTH103
     except OSError:
         nltk_data_dir = TMP_NLTK_DATA_DIR
-        os.makedirs(nltk_data_dir, exist_ok=True)
+        os.makedirs(nltk_data_dir, exist_ok=True)  # noqa: PTH103
     return nltk_data_dir
 
 
@@ -73,7 +75,7 @@ except LookupError:
     nltk.download("averaged_perceptron_tagger_eng", download_dir=nltk_data_dir, quiet=True)
 
 
-def optional_decode(contents: Union[str, bytes]) -> str:
+def optional_decode(contents: str | bytes) -> str:
     if isinstance(contents, bytes):
         return contents.decode("utf-8")
     return contents
@@ -81,12 +83,12 @@ def optional_decode(contents: Union[str, bytes]) -> str:
 
 def _import_unstructured() -> None:
     """Dynamically imported as needed, due to slow import speed."""
-    global unstructured_partition_pdf
+    global unstructured_partition_pdf  # noqa: FURB154
     global unstructured_partition_docx
     global unstructured_partition_pptx
-    from unstructured.partition.docx import partition_docx
-    from unstructured.partition.pdf import partition_pdf
-    from unstructured.partition.pptx import partition_pptx
+    from unstructured.partition.docx import partition_docx  # noqa: PLC0415
+    from unstructured.partition.pdf import partition_pdf  # noqa: PLC0415
+    from unstructured.partition.pptx import partition_pptx  # noqa: PLC0415
 
     # separate global variables to properly propagate typing
     unstructured_partition_pdf = partition_pdf
@@ -102,7 +104,7 @@ def user_error(e: Exception) -> bool:
         return False
     if not isinstance(e, requests.exceptions.RequestException):
         return False
-    return bool(e.response and 400 <= e.response.status_code < 500)
+    return bool(e.response and 400 <= e.response.status_code < 500)  # noqa: PLR2004
 
 
 CLOUD_DEPLOYMENT_MODE = "cloud"
@@ -110,20 +112,20 @@ CLOUD_DEPLOYMENT_MODE = "cloud"
 
 class UnstructuredParser(FileTypeParser):
     @property
-    def parser_max_n_files_for_schema_inference(self) -> Optional[int]:
+    def parser_max_n_files_for_schema_inference(self) -> int | None:
         """
         Just check one file as the schema is static
         """
         return 1
 
     @property
-    def parser_max_n_files_for_parsability(self) -> Optional[int]:
+    def parser_max_n_files_for_parsability(self) -> int | None:
         """
         Do not check any files for parsability because it might be an expensive operation and doesn't give much confidence whether the sync will succeed.
         """
         return 0
 
-    def get_parser_defined_primary_key(self, config: FileBasedStreamConfig) -> Optional[str]:
+    def get_parser_defined_primary_key(self, config: FileBasedStreamConfig) -> str | None:  # noqa: ARG002
         """
         Return the document_key field as the primary key.
 
@@ -138,7 +140,7 @@ class UnstructuredParser(FileTypeParser):
         stream_reader: AbstractFileBasedStreamReader,
         logger: logging.Logger,
     ) -> SchemaType:
-        format = _extract_format(config)
+        format = _extract_format(config)  # noqa: A001
         with stream_reader.open_file(file, self.file_read_mode, None, logger) as file_handle:
             filetype = self._get_filetype(file_handle, file)
             if filetype not in self._supported_file_types() and not format.skip_unprocessable_files:
@@ -168,9 +170,9 @@ class UnstructuredParser(FileTypeParser):
         file: RemoteFile,
         stream_reader: AbstractFileBasedStreamReader,
         logger: logging.Logger,
-        discovered_schema: Optional[Mapping[str, SchemaType]],
-    ) -> Iterable[Dict[str, Any]]:
-        format = _extract_format(config)
+        discovered_schema: Mapping[str, SchemaType] | None,  # noqa: ARG002
+    ) -> Iterable[dict[str, Any]]:
+        format = _extract_format(config)  # noqa: A001
         with stream_reader.open_file(file, self.file_read_mode, None, logger) as file_handle:
             try:
                 markdown = self._read_file(file_handle, file, format, logger)
@@ -193,18 +195,18 @@ class UnstructuredParser(FileTypeParser):
                     }
                     logger.warn(f"File {file.uri} cannot be parsed. Skipping it.")
                 else:
-                    raise e
+                    raise e  # noqa: TRY201
             except Exception as e:
                 exception_str = str(e)
                 logger.error(f"File {file.uri} caused an error during parsing: {exception_str}.")
-                raise e
+                raise e  # noqa: TRY201
 
-    def _read_file(
+    def _read_file(  # noqa: RET503
         self,
         file_handle: IOBase,
         remote_file: RemoteFile,
-        format: UnstructuredFormat,
-        logger: logging.Logger,
+        format: UnstructuredFormat,  # noqa: A002
+        logger: logging.Logger,  # noqa: ARG002
     ) -> str:
         _import_unstructured()
         if (
@@ -213,7 +215,7 @@ class UnstructuredParser(FileTypeParser):
             or (not unstructured_partition_pptx)
         ):
             # check whether unstructured library is actually available for better error message and to ensure proper typing (can't be None after this point)
-            raise Exception("unstructured library is not available")
+            raise Exception("unstructured library is not available")  # noqa: TRY002
 
         filetype: FileType | None = self._get_filetype(file_handle, remote_file)
 
@@ -233,7 +235,7 @@ class UnstructuredParser(FileTypeParser):
                 format.strategy,
                 remote_file,
             )
-        elif format.processing.mode == "api":
+        if format.processing.mode == "api":  # noqa: RET503, RUF100
             try:
                 result: str = self._read_file_remotely_with_retries(
                     file_handle,
@@ -248,17 +250,17 @@ class UnstructuredParser(FileTypeParser):
                 # For other exceptions, re-throw as config error so the sync is stopped as problems with the external API need to be resolved by the user and are not considered part of the SLA.
                 # Once this parser leaves experimental stage, we should consider making this a system error instead for issues that might be transient.
                 if isinstance(e, RecordParseError):
-                    raise e
-                raise AirbyteTracedException.from_exception(
+                    raise e  # noqa: TRY201
+                raise AirbyteTracedException.from_exception(  # noqa: B904
                     e, failure_type=FailureType.config_error
                 )
 
             return result
 
     def _params_to_dict(
-        self, params: Optional[List[APIParameterConfigModel]], strategy: str
-    ) -> Dict[str, Union[str, List[str]]]:
-        result_dict: Dict[str, Union[str, List[str]]] = {"strategy": strategy}
+        self, params: list[APIParameterConfigModel] | None, strategy: str
+    ) -> dict[str, str | list[str]]:
+        result_dict: dict[str, str | list[str]] = {"strategy": strategy}
         if params is None:
             return result_dict
         for item in params:
@@ -277,7 +279,7 @@ class UnstructuredParser(FileTypeParser):
 
         return result_dict
 
-    def check_config(self, config: FileBasedStreamConfig) -> Tuple[bool, Optional[str]]:
+    def check_config(self, config: FileBasedStreamConfig) -> tuple[bool, str | None]:
         """
         Perform a connection check for the parser config:
         - Verify that encryption is enabled if the API is hosted on a cloud instance.
@@ -313,7 +315,7 @@ class UnstructuredParser(FileTypeParser):
     def _read_file_remotely_with_retries(
         self,
         file_handle: IOBase,
-        format: APIProcessingConfigModel,
+        format: APIProcessingConfigModel,  # noqa: A002
         filetype: FileType,
         strategy: str,
         remote_file: RemoteFile,
@@ -326,7 +328,7 @@ class UnstructuredParser(FileTypeParser):
     def _read_file_remotely(
         self,
         file_handle: IOBase,
-        format: APIProcessingConfigModel,
+        format: APIProcessingConfigModel,  # noqa: A002
         filetype: FileType,
         strategy: str,
         remote_file: RemoteFile,
@@ -341,12 +343,11 @@ class UnstructuredParser(FileTypeParser):
             f"{format.api_url}/general/v0/general", headers=headers, data=data, files=file_data
         )
 
-        if response.status_code == 422:
+        if response.status_code == 422:  # noqa: PLR2004
             # 422 means the file couldn't be processed, but the API is working. Treat this as a parsing error (passing an error record to the destination).
             raise self._create_parse_error(remote_file, response.json())
-        else:
-            # Other error statuses are raised as requests exceptions (retry everything except user errors)
-            response.raise_for_status()
+        # Other error statuses are raised as requests exceptions (retry everything except user errors)
+        response.raise_for_status()
 
         json_response = response.json()
 
@@ -362,7 +363,7 @@ class UnstructuredParser(FileTypeParser):
             or (not unstructured_partition_pptx)
         ):
             # check whether unstructured library is actually available for better error message and to ensure proper typing (can't be None after this point)
-            raise Exception("unstructured library is not available")
+            raise Exception("unstructured library is not available")  # noqa: TRY002
 
         file: Any = file_handle
 
@@ -383,7 +384,7 @@ class UnstructuredParser(FileTypeParser):
             elif filetype == FileType.PPTX:
                 elements = unstructured_partition_pptx(file=file)
         except Exception as e:
-            raise self._create_parse_error(remote_file, str(e))
+            raise self._create_parse_error(remote_file, str(e))  # noqa: B904
 
         return self._render_markdown([element.to_dict() for element in elements])
 
@@ -396,7 +397,7 @@ class UnstructuredParser(FileTypeParser):
             FileBasedSourceError.ERROR_PARSING_RECORD, filename=remote_file.uri, message=message
         )
 
-    def _get_filetype(self, file: IOBase, remote_file: RemoteFile) -> Optional[FileType]:
+    def _get_filetype(self, file: IOBase, remote_file: RemoteFile) -> FileType | None:
         """
         Detect the file type based on the file name and the file content.
 
@@ -416,7 +417,7 @@ class UnstructuredParser(FileTypeParser):
         # if possible, try to leverage the file name to detect the file type
         # if the file name is not available, use the file content
         file_type: FileType | None = None
-        try:
+        try:  # noqa: SIM105
             file_type = detect_filetype(
                 filename=remote_file.uri,
             )
@@ -439,34 +440,33 @@ class UnstructuredParser(FileTypeParser):
 
         return None
 
-    def _supported_file_types(self) -> List[Any]:
+    def _supported_file_types(self) -> list[Any]:
         return [FileType.MD, FileType.PDF, FileType.DOCX, FileType.PPTX, FileType.TXT]
 
     def _get_file_type_error_message(
         self,
         file_type: FileType | None,
     ) -> str:
-        supported_file_types = ", ".join([str(type) for type in self._supported_file_types()])
+        supported_file_types = ", ".join([str(type) for type in self._supported_file_types()])  # noqa: A001
         return f"File type {file_type or 'None'!s} is not supported. Supported file types are {supported_file_types}"
 
-    def _render_markdown(self, elements: List[Any]) -> str:
-        return "\n\n".join((self._convert_to_markdown(el) for el in elements))
+    def _render_markdown(self, elements: list[Any]) -> str:
+        return "\n\n".join(self._convert_to_markdown(el) for el in elements)
 
-    def _convert_to_markdown(self, el: Dict[str, Any]) -> str:
+    def _convert_to_markdown(self, el: dict[str, Any]) -> str:
         if dpath.get(el, "type") == "Title":
             category_depth = dpath.get(el, "metadata/category_depth", default=1) or 1
             if not isinstance(category_depth, int):
                 category_depth = (
-                    int(category_depth) if isinstance(category_depth, (str, float)) else 1
+                    int(category_depth) if isinstance(category_depth, (str, float)) else 1  # noqa: UP038
                 )
             heading_str = "#" * category_depth
             return f"{heading_str} {dpath.get(el, 'text')}"
-        elif dpath.get(el, "type") == "ListItem":
+        if dpath.get(el, "type") == "ListItem":
             return f"- {dpath.get(el, 'text')}"
-        elif dpath.get(el, "type") == "Formula":
+        if dpath.get(el, "type") == "Formula":
             return f"```\n{dpath.get(el, 'text')}\n```"
-        else:
-            return str(dpath.get(el, "text", default=""))
+        return str(dpath.get(el, "text", default=""))
 
     @property
     def file_read_mode(self) -> FileReadMode:
@@ -476,5 +476,5 @@ class UnstructuredParser(FileTypeParser):
 def _extract_format(config: FileBasedStreamConfig) -> UnstructuredFormat:
     config_format = config.format
     if not isinstance(config_format, UnstructuredFormat):
-        raise ValueError(f"Invalid format config: {config_format}")
+        raise ValueError(f"Invalid format config: {config_format}")  # noqa: TRY004
     return config_format

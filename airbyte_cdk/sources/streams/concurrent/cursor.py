@@ -5,17 +5,10 @@
 import functools
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from typing import (
     Any,
-    Callable,
-    Iterable,
-    List,
-    Mapping,
-    MutableMapping,
-    Optional,
     Protocol,
-    Tuple,
-    Union,
 )
 
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
@@ -28,10 +21,11 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_sta
 )
 from airbyte_cdk.sources.types import Record, StreamSlice
 
+
 LOGGER = logging.getLogger("airbyte")
 
 
-def _extract_value(mapping: Mapping[str, Any], path: List[str]) -> Any:
+def _extract_value(mapping: Mapping[str, Any], path: list[str]) -> Any:  # noqa: ANN401
     return functools.reduce(lambda a, b: a[b], path, mapping)
 
 
@@ -86,14 +80,14 @@ class Cursor(StreamSlicer, ABC):
         """
         Indicate to the cursor that the record has been emitted
         """
-        raise NotImplementedError()
+        raise NotImplementedError
 
     @abstractmethod
     def close_partition(self, partition: Partition) -> None:
         """
         Indicate to the cursor that the partition has been successfully processed
         """
-        raise NotImplementedError()
+        raise NotImplementedError
 
     @abstractmethod
     def ensure_at_least_one_state_emitted(self) -> None:
@@ -101,7 +95,7 @@ class Cursor(StreamSlicer, ABC):
         State messages are emitted when a partition is closed. However, the platform expects at least one state to be emitted per sync per
         stream. Hence, if no partitions are generated, this method needs to be called.
         """
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def stream_slices(self) -> Iterable[StreamSlice]:
         """
@@ -117,7 +111,7 @@ class FinalStateCursor(Cursor):
     def __init__(
         self,
         stream_name: str,
-        stream_namespace: Optional[str],
+        stream_namespace: str | None,
         message_repository: MessageRepository,
     ) -> None:
         self._stream_name = stream_name
@@ -157,21 +151,21 @@ class ConcurrentCursor(Cursor):
     _START_BOUNDARY = 0
     _END_BOUNDARY = 1
 
-    def __init__(
+    def __init__(  # noqa: PLR0913, PLR0917
         self,
         stream_name: str,
-        stream_namespace: Optional[str],
-        stream_state: Any,
+        stream_namespace: str | None,
+        stream_state: Any,  # noqa: ANN401
         message_repository: MessageRepository,
         connector_state_manager: ConnectorStateManager,
         connector_state_converter: AbstractStreamStateConverter,
         cursor_field: CursorField,
-        slice_boundary_fields: Optional[Tuple[str, str]],
-        start: Optional[CursorValueType],
+        slice_boundary_fields: tuple[str, str] | None,
+        start: CursorValueType | None,
         end_provider: Callable[[], CursorValueType],
-        lookback_window: Optional[GapType] = None,
-        slice_range: Optional[GapType] = None,
-        cursor_granularity: Optional[GapType] = None,
+        lookback_window: GapType | None = None,
+        slice_range: GapType | None = None,
+        cursor_granularity: GapType | None = None,
     ) -> None:
         self._stream_name = stream_name
         self._stream_namespace = stream_namespace
@@ -187,7 +181,7 @@ class ConcurrentCursor(Cursor):
         self._lookback_window = lookback_window
         self._slice_range = slice_range
         self._most_recent_cursor_value_per_partition: MutableMapping[
-            Union[StreamSlice, Mapping[str, Any], None], Any
+            StreamSlice | Mapping[str, Any] | None, Any
         ] = {}
         self._has_closed_at_least_one_slice = False
         self._cursor_granularity = cursor_granularity
@@ -203,9 +197,9 @@ class ConcurrentCursor(Cursor):
         return self._cursor_field
 
     @property
-    def _slice_boundary_fields_wrapper(self) -> Tuple[str, str]:
+    def _slice_boundary_fields_wrapper(self) -> tuple[str, str]:
         return (
-            self._slice_boundary_fields
+            self._slice_boundary_fields  # noqa: FURB110
             if self._slice_boundary_fields
             else (
                 self._connector_state_converter.START_KEY,
@@ -215,7 +209,7 @@ class ConcurrentCursor(Cursor):
 
     def _get_concurrent_state(
         self, state: MutableMapping[str, Any]
-    ) -> Tuple[CursorValueType, MutableMapping[str, Any]]:
+    ) -> tuple[CursorValueType, MutableMapping[str, Any]]:
         if self._connector_state_converter.is_state_message_compatible(state):
             return (
                 self._start or self._connector_state_converter.zero_value,
@@ -237,7 +231,7 @@ class ConcurrentCursor(Cursor):
         except ValueError:
             self._log_for_record_without_cursor_value()
 
-    def _extract_cursor_value(self, record: Record) -> Any:
+    def _extract_cursor_value(self, record: Record) -> Any:  # noqa: ANN401
         return self._connector_state_converter.parse_value(self._cursor_field.extract_value(record))
 
     def close_partition(self, partition: Partition) -> None:
@@ -260,17 +254,15 @@ class ConcurrentCursor(Cursor):
                 raise RuntimeError(
                     f"The state for stream {self._stream_name} should have at least one slice to delineate the sync start time, but no slices are present. This is unexpected. Please contact Support."
                 )
-            self.state["slices"].append(
-                {
-                    self._connector_state_converter.START_KEY: self._extract_from_slice(
-                        partition, self._slice_boundary_fields[self._START_BOUNDARY]
-                    ),
-                    self._connector_state_converter.END_KEY: self._extract_from_slice(
-                        partition, self._slice_boundary_fields[self._END_BOUNDARY]
-                    ),
-                    self._connector_state_converter.MOST_RECENT_RECORD_KEY: most_recent_cursor_value,
-                }
-            )
+            self.state["slices"].append({
+                self._connector_state_converter.START_KEY: self._extract_from_slice(
+                    partition, self._slice_boundary_fields[self._START_BOUNDARY]
+                ),
+                self._connector_state_converter.END_KEY: self._extract_from_slice(
+                    partition, self._slice_boundary_fields[self._END_BOUNDARY]
+                ),
+                self._connector_state_converter.MOST_RECENT_RECORD_KEY: most_recent_cursor_value,
+            })
         elif most_recent_cursor_value:
             if self._has_closed_at_least_one_slice:
                 # If we track state value using records cursor field, we can only do that if there is one partition. This is because we save
@@ -288,13 +280,11 @@ class ConcurrentCursor(Cursor):
                     "expected. Please contact the Airbyte team."
                 )
 
-            self.state["slices"].append(
-                {
-                    self._connector_state_converter.START_KEY: self.start,
-                    self._connector_state_converter.END_KEY: most_recent_cursor_value,
-                    self._connector_state_converter.MOST_RECENT_RECORD_KEY: most_recent_cursor_value,
-                }
-            )
+            self.state["slices"].append({
+                self._connector_state_converter.START_KEY: self.start,
+                self._connector_state_converter.END_KEY: most_recent_cursor_value,
+                self._connector_state_converter.MOST_RECENT_RECORD_KEY: most_recent_cursor_value,
+            })
 
     def _emit_state_message(self) -> None:
         self._connector_state_manager.update_state_for_stream(
@@ -314,9 +304,9 @@ class ConcurrentCursor(Cursor):
 
     def _extract_from_slice(self, partition: Partition, key: str) -> CursorValueType:
         try:
-            _slice = partition.to_slice()
+            _slice = partition.to_slice()  # noqa: RUF052
             if not _slice:
-                raise KeyError(f"Could not find key `{key}` in empty slice")
+                raise KeyError(f"Could not find key `{key}` in empty slice")  # noqa: TRY301
             return self._connector_state_converter.parse_value(_slice[key])  # type: ignore  # we expect the devs to specify a key that would return a CursorValueType
         except KeyError as exception:
             raise KeyError(
@@ -348,7 +338,7 @@ class ConcurrentCursor(Cursor):
             yield from self._split_per_slice_range(
                 self._start,
                 self.state["slices"][0][self._connector_state_converter.START_KEY],
-                False,
+                False,  # noqa: FBT003
             )
 
         if len(self.state["slices"]) == 1:
@@ -357,7 +347,7 @@ class ConcurrentCursor(Cursor):
                     self.state["slices"][0][self._connector_state_converter.END_KEY]
                 ),
                 self._end_provider(),
-                True,
+                True,  # noqa: FBT003
             )
         elif len(self.state["slices"]) > 1:
             for i in range(len(self.state["slices"]) - 1):
@@ -366,20 +356,20 @@ class ConcurrentCursor(Cursor):
                         self.state["slices"][i][self._connector_state_converter.END_KEY]
                         + self._cursor_granularity,
                         self.state["slices"][i + 1][self._connector_state_converter.START_KEY],
-                        False,
+                        False,  # noqa: FBT003
                     )
                 else:
                     yield from self._split_per_slice_range(
                         self.state["slices"][i][self._connector_state_converter.END_KEY],
                         self.state["slices"][i + 1][self._connector_state_converter.START_KEY],
-                        False,
+                        False,  # noqa: FBT003
                     )
             yield from self._split_per_slice_range(
                 self._calculate_lower_boundary_of_last_slice(
                     self.state["slices"][-1][self._connector_state_converter.END_KEY]
                 ),
                 self._end_provider(),
-                True,
+                True,  # noqa: FBT003
             )
         else:
             raise ValueError("Expected at least one slice")
@@ -398,7 +388,10 @@ class ConcurrentCursor(Cursor):
         return lower_boundary
 
     def _split_per_slice_range(
-        self, lower: CursorValueType, upper: CursorValueType, upper_is_end: bool
+        self,
+        lower: CursorValueType,
+        upper: CursorValueType,
+        upper_is_end: bool,  # noqa: FBT001
     ) -> Iterable[StreamSlice]:
         if lower >= upper:
             return

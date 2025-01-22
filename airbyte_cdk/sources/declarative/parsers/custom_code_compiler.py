@@ -5,9 +5,8 @@ import os
 import sys
 from collections.abc import Mapping
 from types import ModuleType
-from typing import Any, cast
+from typing import Any, Literal, cast
 
-from typing_extensions import Literal
 
 ChecksumType = Literal["md5", "sha256"]
 CHECKSUM_FUNCTIONS = {
@@ -107,10 +106,10 @@ def get_registered_components_module(
 
     # Check for `components` or `source_declarative_manifest.components`.
     if SDM_COMPONENTS_MODULE_NAME in sys.modules:
-        return cast(ModuleType, sys.modules.get(SDM_COMPONENTS_MODULE_NAME))
+        return cast(ModuleType, sys.modules.get(SDM_COMPONENTS_MODULE_NAME))  # noqa: TC006
 
     if COMPONENTS_MODULE_NAME in sys.modules:
-        return cast(ModuleType, sys.modules.get(COMPONENTS_MODULE_NAME))
+        return cast(ModuleType, sys.modules.get(COMPONENTS_MODULE_NAME))  # noqa: TC006
 
     # Could not find module 'components' in `sys.modules`
     # and INJECTED_COMPONENTS_PY was not provided in config.

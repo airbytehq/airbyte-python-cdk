@@ -3,7 +3,7 @@
 #
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
@@ -15,18 +15,18 @@ class FlattenFields(RecordTransformation):
 
     def transform(
         self,
-        record: Dict[str, Any],
-        config: Optional[Config] = None,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
+        record: dict[str, Any],
+        config: Config | None = None,  # noqa: ARG002
+        stream_state: StreamState | None = None,  # noqa: ARG002
+        stream_slice: StreamSlice | None = None,  # noqa: ARG002
     ) -> None:
         transformed_record = self.flatten_record(record)
         record.clear()
         record.update(transformed_record)
 
-    def flatten_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
+    def flatten_record(self, record: dict[str, Any]) -> dict[str, Any]:
         stack = [(record, "_")]
-        transformed_record: Dict[str, Any] = {}
+        transformed_record: dict[str, Any] = {}
         force_with_parent_name = False
 
         while stack:

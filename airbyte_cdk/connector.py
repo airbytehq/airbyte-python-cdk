@@ -8,7 +8,8 @@ import logging
 import os
 import pkgutil
 from abc import ABC, abstractmethod
-from typing import Any, Generic, Mapping, Optional, Protocol, TypeVar
+from collections.abc import Mapping
+from typing import Any, Generic, Protocol, TypeVar
 
 import yaml
 
@@ -19,7 +20,7 @@ from airbyte_cdk.models import (
 )
 
 
-def load_optional_package_file(package: str, filename: str) -> Optional[bytes]:
+def load_optional_package_file(package: str, filename: str) -> bytes | None:
     """Gets a resource from a package, returning None if it does not exist"""
     try:
         return pkgutil.get_data(package, filename)
@@ -45,29 +46,28 @@ class BaseConnector(ABC, Generic[TConfig]):
         config = BaseConnector._read_json_file(config_path)
         if isinstance(config, Mapping):
             return config
-        else:
-            raise ValueError(
-                f"The content of {config_path} is not an object and therefore is not a valid config. Please ensure the file represent a config."
-            )
+        raise ValueError(
+            f"The content of {config_path} is not an object and therefore is not a valid config. Please ensure the file represent a config."
+        )
 
     @staticmethod
-    def _read_json_file(file_path: str) -> Any:
-        with open(file_path, "r") as file:
+    def _read_json_file(file_path: str) -> Any:  # noqa: ANN401
+        with open(file_path) as file:  # noqa: FURB101, PLW1514, PTH123
             contents = file.read()
 
         try:
             return json.loads(contents)
         except json.JSONDecodeError as error:
-            raise ValueError(
+            raise ValueError(  # noqa: B904
                 f"Could not read json file {file_path}: {error}. Please ensure that it is a valid JSON."
             )
 
     @staticmethod
     def write_config(config: TConfig, config_path: str) -> None:
-        with open(config_path, "w") as fh:
+        with open(config_path, "w") as fh:  # noqa: FURB103, PLW1514, PTH123
             fh.write(json.dumps(config))
 
-    def spec(self, logger: logging.Logger) -> ConnectorSpecification:
+    def spec(self, logger: logging.Logger) -> ConnectorSpecification:  # noqa: ARG002
         """
         Returns the spec for this integration. The spec is a JSON-Schema object describing the required configurations (e.g: username and password)
         required to run this integration. By default, this will be loaded from a "spec.yaml" or a "spec.json" in the package root.
@@ -89,7 +89,7 @@ class BaseConnector(ABC, Generic[TConfig]):
             try:
                 spec_obj = json.loads(json_spec)
             except json.JSONDecodeError as error:
-                raise ValueError(
+                raise ValueError(  # noqa: B904
                     f"Could not read json spec file: {error}. Please ensure that it is a valid JSON."
                 )
         else:
@@ -115,7 +115,7 @@ class DefaultConnectorMixin:
     def configure(
         self: _WriteConfigProtocol, config: Mapping[str, Any], temp_dir: str
     ) -> Mapping[str, Any]:
-        config_path = os.path.join(temp_dir, "config.json")
+        config_path = os.path.join(temp_dir, "config.json")  # noqa: PTH118
         self.write_config(config, config_path)
         return config
 

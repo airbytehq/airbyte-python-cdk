@@ -16,8 +16,8 @@ from .embedder import CohereEmbedder, Embedder, FakeEmbedder, OpenAIEmbedder
 from .indexer import Indexer
 from .writer import Writer
 
+
 __all__ = [
-    "AzureOpenAIEmbedder",
     "AzureOpenAIEmbeddingConfigModel",
     "Chunk",
     "CohereEmbedder",
@@ -26,10 +26,8 @@ __all__ = [
     "Embedder",
     "FakeEmbedder",
     "FakeEmbeddingConfigModel",
-    "FromFieldEmbedder",
     "FromFieldEmbeddingConfigModel",
     "Indexer",
-    "OpenAICompatibleEmbedder",
     "OpenAICompatibleEmbeddingConfigModel",
     "OpenAIEmbedder",
     "OpenAIEmbeddingConfigModel",

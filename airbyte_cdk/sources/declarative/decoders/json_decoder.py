@@ -3,14 +3,16 @@
 #
 import codecs
 import logging
+from collections.abc import Generator, Mapping, MutableMapping
 from dataclasses import InitVar, dataclass
 from gzip import decompress
-from typing import Any, Generator, List, Mapping, MutableMapping, Optional
+from typing import Any
 
 import orjson
 import requests
 
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
+
 
 logger = logging.getLogger("airbyte")
 
@@ -43,7 +45,7 @@ class JsonDecoder(Decoder):
 
     @staticmethod
     def parse_body_json(
-        body_json: MutableMapping[str, Any] | List[MutableMapping[str, Any]],
+        body_json: MutableMapping[str, Any] | list[MutableMapping[str, Any]],
     ) -> Generator[MutableMapping[str, Any], None, None]:
         if not isinstance(body_json, list):
             body_json = [body_json]
@@ -85,7 +87,7 @@ class JsonlDecoder(Decoder):
     def decode(
         self, response: requests.Response
     ) -> Generator[MutableMapping[str, Any], None, None]:
-        # TODO???: set delimiter? usually it is `\n` but maybe it would be useful to set optional?
+        # TODO???: set delimiter? usually it is `\n` but maybe it would be useful to set optional?  # noqa: TD004
         #  https://github.com/airbytehq/airbyte-internal-issues/issues/8436
         for record in response.iter_lines():
             yield orjson.loads(record)
@@ -93,14 +95,14 @@ class JsonlDecoder(Decoder):
 
 @dataclass
 class GzipJsonDecoder(JsonDecoder):
-    encoding: Optional[str]
+    encoding: str | None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if self.encoding:
             try:
                 codecs.lookup(self.encoding)
             except LookupError:
-                raise ValueError(
+                raise ValueError(  # noqa: B904
                     f"Invalid encoding '{self.encoding}'. Please check provided encoding"
                 )
 

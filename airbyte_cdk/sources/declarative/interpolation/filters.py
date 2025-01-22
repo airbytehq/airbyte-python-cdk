@@ -5,10 +5,10 @@ import base64
 import hashlib
 import json
 import re
-from typing import Any, Optional
+from typing import Any
 
 
-def hash(value: Any, hash_type: str = "md5", salt: Optional[str] = None) -> str:
+def hash(value: Any, hash_type: str = "md5", salt: str | None = None) -> str:  # noqa: ANN401, A001
     """
       Implementation of a custom Jinja2 hash filter
       Hash type defaults to 'md5' if one is not specified.
@@ -49,7 +49,7 @@ def hash(value: Any, hash_type: str = "md5", salt: Optional[str] = None) -> str:
             hash_obj.update(str(salt).encode("utf-8"))
         computed_hash: str = hash_obj.hexdigest()
     else:
-        raise AttributeError("No hashing function named {hname}".format(hname=hash_type))
+        raise AttributeError(f"No hashing function named {hash_type}")
 
     return computed_hash
 
@@ -92,7 +92,7 @@ def base64decode(value: str) -> str:
     return base64.b64decode(value.encode("utf-8")).decode()
 
 
-def string(value: Any) -> str:
+def string(value: Any) -> str:  # noqa: ANN401
     """
     Converts the input value to a string.
     If the value is already a string, it is returned as is.

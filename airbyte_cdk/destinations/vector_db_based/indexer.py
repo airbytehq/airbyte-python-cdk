@@ -4,7 +4,8 @@
 
 import itertools
 from abc import ABC, abstractmethod
-from typing import Any, Generator, Iterable, List, Optional, Tuple, TypeVar
+from collections.abc import Generator, Iterable
+from typing import Any, TypeVar
 
 from airbyte_cdk.destinations.vector_db_based.document_processor import Chunk
 from airbyte_cdk.models import AirbyteMessage, ConfiguredAirbyteCatalog
@@ -18,11 +19,11 @@ class Indexer(ABC):
     In a destination connector, implement a custom indexer by extending this class and implementing the abstract methods.
     """
 
-    def __init__(self, config: Any):
+    def __init__(self, config: Any):  # noqa: ANN204, ANN401
         self.config = config
         pass
 
-    def pre_sync(self, catalog: ConfiguredAirbyteCatalog) -> None:
+    def pre_sync(self, catalog: ConfiguredAirbyteCatalog) -> None:  # noqa: B027
         """
         Run before the sync starts. This method should be used to make sure all records in the destination that belong to streams with a destination mode of overwrite are deleted.
 
@@ -31,14 +32,14 @@ class Indexer(ABC):
         """
         pass
 
-    def post_sync(self) -> List[AirbyteMessage]:
+    def post_sync(self) -> list[AirbyteMessage]:
         """
         Run after the sync finishes. This method should be used to perform any cleanup operations and can return a list of AirbyteMessages to be logged.
         """
         return []
 
     @abstractmethod
-    def index(self, document_chunks: List[Chunk], namespace: str, stream: str) -> None:
+    def index(self, document_chunks: list[Chunk], namespace: str, stream: str) -> None:
         """
         Index a list of document chunks.
 
@@ -48,7 +49,7 @@ class Indexer(ABC):
         pass
 
     @abstractmethod
-    def delete(self, delete_ids: List[str], namespace: str, stream: str) -> None:
+    def delete(self, delete_ids: list[str], namespace: str, stream: str) -> None:
         """
         Delete document chunks belonging to certain record ids.
 
@@ -59,7 +60,7 @@ class Indexer(ABC):
         pass
 
     @abstractmethod
-    def check(self) -> Optional[str]:
+    def check(self) -> str | None:
         """
         Check if the indexer is configured correctly. This method should be used to check if the indexer is configured correctly and return an error message if it is not.
         """
@@ -69,7 +70,7 @@ class Indexer(ABC):
 T = TypeVar("T")
 
 
-def chunks(iterable: Iterable[T], batch_size: int) -> Generator[Tuple[T, ...], None, None]:
+def chunks(iterable: Iterable[T], batch_size: int) -> Generator[tuple[T, ...], None, None]:
     """A helper function to break an iterable into chunks of size batch_size."""
     it = iter(iterable)
     chunk = tuple(itertools.islice(it, batch_size))

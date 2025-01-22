@@ -4,17 +4,9 @@
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Iterable, Iterator, Mapping, MutableMapping
 from typing import (
     Any,
-    Dict,
-    Iterable,
-    Iterator,
-    List,
-    Mapping,
-    MutableMapping,
-    Optional,
-    Tuple,
-    Union,
 )
 
 from airbyte_cdk.exception_handler import generate_failed_streams_error_message
@@ -46,6 +38,7 @@ from airbyte_cdk.utils.stream_status_utils import (
 )
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
+
 _default_message_repository = InMemoryMessageRepository()
 
 
@@ -58,7 +51,7 @@ class AbstractSource(Source, ABC):
     @abstractmethod
     def check_connection(
         self, logger: logging.Logger, config: Mapping[str, Any]
-    ) -> Tuple[bool, Optional[Any]]:
+    ) -> tuple[bool, Any | None]:
         """
         :param logger: source logger
         :param config: The user-provided configuration as specified by the source's spec.
@@ -71,7 +64,7 @@ class AbstractSource(Source, ABC):
         """
 
     @abstractmethod
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> list[Stream]:
         """
         :param config: The user-provided configuration as specified by the source's spec.
         Any stream construction related operation should happen here.
@@ -79,10 +72,10 @@ class AbstractSource(Source, ABC):
         """
 
     # Stream name to instance map for applying output object transformation
-    _stream_to_instance_map: Dict[str, Stream] = {}
+    _stream_to_instance_map: dict[str, Stream] = {}  # noqa: RUF012
     _slice_logger: SliceLogger = DebugSliceLogger()
 
-    def discover(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteCatalog:
+    def discover(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteCatalog:  # noqa: ARG002
         """Implements the Discover operation from the Airbyte Specification.
         See https://docs.airbyte.com/understanding-airbyte/airbyte-protocol/#discover.
         """
@@ -98,17 +91,17 @@ class AbstractSource(Source, ABC):
             return AirbyteConnectionStatus(status=Status.FAILED, message=repr(error))
         return AirbyteConnectionStatus(status=Status.SUCCEEDED)
 
-    def read(
+    def read(  # noqa: PLR0915
         self,
         logger: logging.Logger,
         config: Mapping[str, Any],
         catalog: ConfiguredAirbyteCatalog,
-        state: Optional[List[AirbyteStateMessage]] = None,
+        state: list[AirbyteStateMessage] | None = None,
     ) -> Iterator[AirbyteMessage]:
         """Implements the Read operation from the Airbyte Specification. See https://docs.airbyte.com/understanding-airbyte/airbyte-protocol/."""
         logger.info(f"Starting syncing {self.name}")
         config, internal_config = split_config(config)
-        # TODO assert all streams exist in the connector
+        # TODO assert all streams exist in the connector  # noqa: TD004
         # get the streams once in case the connector needs to make any queries to generate them
         stream_instances = {s.name: s for s in self.streams(config)}
         state_manager = ConnectorStateManager(state=state)
@@ -137,7 +130,7 @@ class AbstractSource(Source, ABC):
                         # Use configured_stream as stream_instance to support references in error handling.
                         stream_instance = configured_stream.stream
 
-                        raise AirbyteTracedException(
+                        raise AirbyteTracedException(  # noqa: TRY301
                             message="A stream listed in your configuration was not found in the source. Please check the logs for more "
                             "details.",
                             internal_message=error_message,
@@ -198,9 +191,9 @@ class AbstractSource(Source, ABC):
                         logger.info(timer.report())
 
         if len(stream_name_to_exception) > 0:
-            error_message = generate_failed_streams_error_message(
-                {key: [value] for key, value in stream_name_to_exception.items()}
-            )
+            error_message = generate_failed_streams_error_message({
+                key: [value] for key, value in stream_name_to_exception.items()
+            })
             logger.info(error_message)
             # We still raise at least one exception when a stream raises an exception because the platform currently relies
             # on a non-zero exit code to determine if a sync attempt has failed. We also raise the exception as a config_error
@@ -212,7 +205,7 @@ class AbstractSource(Source, ABC):
 
     @staticmethod
     def _serialize_exception(
-        stream_descriptor: StreamDescriptor, e: Exception, stream_instance: Optional[Stream] = None
+        stream_descriptor: StreamDescriptor, e: Exception, stream_instance: Stream | None = None
     ) -> AirbyteTracedException:
         display_message = stream_instance.get_error_display_message(e) if stream_instance else None
         if display_message:
@@ -294,7 +287,7 @@ class AbstractSource(Source, ABC):
         return
 
     def _get_message(
-        self, record_data_or_message: Union[StreamData, AirbyteMessage], stream: Stream
+        self, record_data_or_message: StreamData | AirbyteMessage, stream: Stream
     ) -> AirbyteMessage:
         """
         Converts the input to an AirbyteMessage if it is a StreamData. Returns the input as is if it is already an AirbyteMessage
@@ -311,7 +304,7 @@ class AbstractSource(Source, ABC):
                 )
 
     @property
-    def message_repository(self) -> Union[None, MessageRepository]:
+    def message_repository(self) -> None | MessageRepository:  # noqa: RUF036
         return _default_message_repository
 
     @property

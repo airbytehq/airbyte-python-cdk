@@ -1,9 +1,10 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 import logging
 import uuid
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Any, Dict, Iterable, Mapping, Optional
+from typing import Any
 
 import requests
 from requests import Response
@@ -26,6 +27,7 @@ from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRe
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.utils import AirbyteTracedException
 
+
 LOGGER = logging.getLogger("airbyte")
 
 
@@ -38,23 +40,23 @@ class AsyncHttpJobRepository(AsyncJobRepository):
     creation_requester: Requester
     polling_requester: Requester
     download_retriever: SimpleRetriever
-    abort_requester: Optional[Requester]
-    delete_requester: Optional[Requester]
+    abort_requester: Requester | None
+    delete_requester: Requester | None
     status_extractor: DpathExtractor
     status_mapping: Mapping[str, AsyncJobStatus]
     urls_extractor: DpathExtractor
 
-    job_timeout: Optional[timedelta] = None
+    job_timeout: timedelta | None = None
     record_extractor: RecordExtractor = field(
         init=False, repr=False, default_factory=lambda: ResponseToFileExtractor({})
     )
-    url_requester: Optional[Requester] = (
+    url_requester: Requester | None = (
         None  # use it in case polling_requester provides some <id> and extra request is needed to obtain list of urls to download from
     )
 
     def __post_init__(self) -> None:
-        self._create_job_response_by_id: Dict[str, Response] = {}
-        self._polling_job_response_by_id: Dict[str, Response] = {}
+        self._create_job_response_by_id: dict[str, Response] = {}
+        self._polling_job_response_by_id: dict[str, Response] = {}
 
     def _get_validated_polling_response(self, stream_slice: StreamSlice) -> requests.Response:
         """
@@ -70,7 +72,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
             AirbyteTracedException: If the polling request returns an empty response.
         """
 
-        polling_response: Optional[requests.Response] = self.polling_requester.send_request(
+        polling_response: requests.Response | None = self.polling_requester.send_request(
             stream_slice=stream_slice
         )
         if polling_response is None:
@@ -117,7 +119,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
             AirbyteTracedException: If no response is received from the creation requester.
         """
 
-        response: Optional[requests.Response] = self.creation_requester.send_request(
+        response: requests.Response | None = self.creation_requester.send_request(
             stream_slice=stream_slice
         )
         if not response:
@@ -168,13 +170,13 @@ class AsyncHttpJobRepository(AsyncJobRepository):
                 lazy_log(
                     LOGGER,
                     logging.DEBUG,
-                    lambda: f"Status of job {job.api_job_id()} changed from {job.status()} to {job_status}",
+                    lambda: f"Status of job {job.api_job_id()} changed from {job.status()} to {job_status}",  # noqa: B023
                 )
             else:
                 lazy_log(
                     LOGGER,
                     logging.DEBUG,
-                    lambda: f"Status of job {job.api_job_id()} is still {job.status()}",
+                    lambda: f"Status of job {job.api_job_id()} is still {job.status()}",  # noqa: B023
                 )
 
             job.update_status(job_status)
@@ -206,7 +208,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
                 elif isinstance(message, AirbyteMessage):
                     if message.type == Type.RECORD:
                         yield message.record.data  # type: ignore  # message.record won't be None here as the message is a record
-                elif isinstance(message, (dict, Mapping)):
+                elif isinstance(message, (dict, Mapping)):  # noqa: UP038
                     yield message
                 else:
                     raise TypeError(f"Unknown type `{type(message)}` for message")

@@ -2,12 +2,10 @@
 
 
 from datetime import timedelta
-from typing import Optional
-
-from airbyte_cdk.sources.declarative.async_job.timer import Timer
-from airbyte_cdk.sources.types import StreamSlice
 
 from .status import AsyncJobStatus
+from airbyte_cdk.sources.declarative.async_job.timer import Timer
+from airbyte_cdk.sources.types import StreamSlice
 
 
 class AsyncJob:
@@ -19,13 +17,13 @@ class AsyncJob:
     """
 
     def __init__(
-        self, api_job_id: str, job_parameters: StreamSlice, timeout: Optional[timedelta] = None
+        self, api_job_id: str, job_parameters: StreamSlice, timeout: timedelta | None = None
     ) -> None:
         self._api_job_id = api_job_id
         self._job_parameters = job_parameters
         self._status = AsyncJobStatus.RUNNING
 
-        timeout = timeout if timeout else timedelta(minutes=60)
+        timeout = timeout if timeout else timedelta(minutes=60)  # noqa: FURB110
         self._timer = Timer(timeout)
         self._timer.start()
 

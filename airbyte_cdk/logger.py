@@ -5,7 +5,8 @@
 import json
 import logging
 import logging.config
-from typing import Any, Callable, Mapping, Optional, Tuple
+from collections.abc import Callable, Mapping
+from typing import Any
 
 import orjson
 
@@ -17,6 +18,7 @@ from airbyte_cdk.models import (
     Type,
 )
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
+
 
 LOGGING_CONFIG = {
     "version": 1,
@@ -37,7 +39,7 @@ LOGGING_CONFIG = {
 }
 
 
-def init_logger(name: Optional[str] = None) -> logging.Logger:
+def init_logger(name: str | None = None) -> logging.Logger:
     """Initial set up of logger"""
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
@@ -57,7 +59,7 @@ class AirbyteLogFormatter(logging.Formatter):
     """Output log records using AirbyteMessage"""
 
     # Transforming Python log levels to Airbyte protocol log levels
-    level_mapping = {
+    level_mapping = {  # noqa: RUF012
         logging.FATAL: Level.FATAL,
         logging.ERROR: Level.ERROR,
         logging.WARNING: Level.WARN,
@@ -72,13 +74,12 @@ class AirbyteLogFormatter(logging.Formatter):
             extras = self.extract_extra_args_from_record(record)
             debug_dict = {"type": "DEBUG", "message": record.getMessage(), "data": extras}
             return filter_secrets(json.dumps(debug_dict))
-        else:
-            message = super().format(record)
-            message = filter_secrets(message)
-            log_message = AirbyteMessage(
-                type=Type.LOG, log=AirbyteLogMessage(level=airbyte_level, message=message)
-            )
-            return orjson.dumps(AirbyteMessageSerializer.dump(log_message)).decode()
+        message = super().format(record)
+        message = filter_secrets(message)
+        log_message = AirbyteMessage(
+            type=Type.LOG, log=AirbyteLogMessage(level=airbyte_level, message=message)
+        )
+        return orjson.dumps(AirbyteMessageSerializer.dump(log_message)).decode()
 
     @staticmethod
     def extract_extra_args_from_record(record: logging.LogRecord) -> Mapping[str, Any]:
@@ -91,7 +92,7 @@ class AirbyteLogFormatter(logging.Formatter):
         return {k: str(getattr(record, k)) for k in extra_keys if hasattr(record, k)}
 
 
-def log_by_prefix(msg: str, default_level: str) -> Tuple[int, str]:
+def log_by_prefix(msg: str, default_level: str) -> tuple[int, str]:
     """Custom method, which takes log level from first word of message"""
     valid_log_types = ["FATAL", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"]
     split_line = msg.split()

@@ -2,7 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from airbyte_cdk.models import AirbyteRecordMessage
 from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser
@@ -15,7 +15,7 @@ class DatetimeFormatInferrer:
 
     def __init__(self) -> None:
         self._parser = DatetimeParser()
-        self._datetime_candidates: Optional[Dict[str, str]] = None
+        self._datetime_candidates: dict[str, str] | None = None
         self._formats = [
             "%Y-%m-%d",
             "%Y-%m-%d %H:%M:%S",
@@ -34,12 +34,12 @@ class DatetimeFormatInferrer:
             range(1_000_000_000_000, 2_000_000_000_000),
         ]
 
-    def _can_be_datetime(self, value: Any) -> bool:
+    def _can_be_datetime(self, value: Any) -> bool:  # noqa: ANN401
         """Checks if the value can be a datetime.
         This is the case if the value is a string or an integer between 1_000_000_000 and 2_000_000_000 for seconds
         or between 1_000_000_000_000 and 2_000_000_000_000 for milliseconds.
         This is separate from the format check for performance reasons"""
-        if isinstance(value, (str, int)):
+        if isinstance(value, (str, int)):  # noqa: UP038
             try:
                 value_as_int = int(value)
                 for timestamp_range in self._timestamp_heuristic_ranges:
@@ -50,11 +50,11 @@ class DatetimeFormatInferrer:
                 return True
         return False
 
-    def _matches_format(self, value: Any, format: str) -> bool:
+    def _matches_format(self, value: Any, format: str) -> bool:  # noqa: ANN401, A002
         """Checks if the value matches the format"""
         try:
             self._parser.parse(value, format)
-            return True
+            return True  # noqa: TRY300
         except ValueError:
             return False
 
@@ -64,7 +64,7 @@ class DatetimeFormatInferrer:
         for field_name, field_value in record.data.items():
             if not self._can_be_datetime(field_value):
                 continue
-            for format in self._formats:
+            for format in self._formats:  # noqa: A001
                 if self._matches_format(field_value, format):
                     self._datetime_candidates[field_name] = format
                     break
@@ -86,7 +86,7 @@ class DatetimeFormatInferrer:
         """Analyzes the record and updates the internal state of candidate datetime fields"""
         self._initialize(record) if self._datetime_candidates is None else self._validate(record)
 
-    def get_inferred_datetime_formats(self) -> Dict[str, str]:
+    def get_inferred_datetime_formats(self) -> dict[str, str]:
         """
         Returns the list of candidate datetime fields - the keys are the field names and the values are the inferred datetime formats.
         For these fields the format was consistent across all visited records.
