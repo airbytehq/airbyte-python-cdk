@@ -1478,8 +1478,11 @@ class ModelToComponentFactory:
         elif model.incremental_sync:
             if model.retriever.type == "AsyncRetriever":
                 if model.incremental_sync.type != "DatetimeBasedCursor":
-                    # TODO explain why it isn't supported
+                    # We are currently in a transition to the Concurrent CDK and AsyncRetriever can only work with the support or unordered slices (for example, when we trigger reports for January and February, the report in February can be completed first). Once we have support for custom concurrent cursor or have a new implementation available in the CDK, we can enable more cursors here.
                     raise ValueError("AsyncRetriever with cursor other than DatetimeBasedCursor is not supported yet")
+                if model.retriever.partition_router:
+                    # Note that this development is also done in parallel to the per partition development which once merged we could support here by calling `create_concurrent_cursor_from_perpartition_cursor`
+                    raise ValueError("Per partition state is not supported yet for AsyncRetriever")
                 return self.create_concurrent_cursor_from_datetime_based_cursor(
                     model_type=DatetimeBasedCursorModel,
                     component_definition=model.incremental_sync.__dict__,
