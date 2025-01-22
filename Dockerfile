@@ -1,5 +1,5 @@
 # This Dockerfile is used to build `airbyte/source-declarative-manifest` image that in turn is used
-# to build Manifest-only connectors themselves, and is used to run manifest (Builder) connectors
+# 1. to build Manifest-only connectors themselves
 # published into a particular user's workspace in Airbyte.
 #
 # A new version of source-declarative-manifest is built for every new Airbyte CDK release, and their versions are kept in sync.
