@@ -53,7 +53,7 @@ requests = "*"
 requests_cache = "*"
 wcmatch = "10.0"
 # Extras depedencies
-avro = { version = "~1.11.2", optional = true }
+avro = { version = ">=1.11.2,<1.13.0", optional = true }
 cohere = { version = "4.21", optional = true }
 fastavro = { version = "~1.8.0", optional = true }
 langchain = { version = "0.1.16", optional = true }
