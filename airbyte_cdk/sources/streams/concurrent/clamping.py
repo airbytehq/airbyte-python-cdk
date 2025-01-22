@@ -67,6 +67,10 @@ class MonthClampingStrategy(ClampingStrategy):
 
 
 class Weekday(Enum):
+    """
+    These integer values map to the same ones used by the Datetime.date.weekday() implementation
+    """
+
     MONDAY = 0
     TUESDAY = 1
     WEDNESDAY = 2

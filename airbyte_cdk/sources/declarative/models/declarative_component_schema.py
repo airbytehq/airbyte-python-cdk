@@ -328,14 +328,13 @@ class LegacyToPerPartitionStateMigration(BaseModel):
     type: Optional[Literal["LegacyToPerPartitionStateMigration"]] = None
 
 
-class Target(Enum):
-    DAY = "DAY"
-    WEEK = "WEEK"
-    MONTH = "MONTH"
-
-
 class Clamping(BaseModel):
-    target: Target
+    target: str = Field(
+        ...,
+        description="The period of time that datetime windows will be clamped by",
+        examples=["DAY", "WEEK", "MONTH", "{{ config['target'] }}"],
+        title="Target",
+    )
     target_details: Optional[Dict[str, Any]] = None
 
 
@@ -808,14 +807,11 @@ class DpathFlattenFields(BaseModel):
     field_path: List[str] = Field(
         ...,
         description="A path to field that needs to be flattened.",
-        examples=[
-            ["data"],
-            ["data", "*", "field"],
-        ],
+        examples=[["data"], ["data", "*", "field"]],
         title="Field Path",
     )
     delete_origin_value: Optional[bool] = Field(
-        False,
+        None,
         description="Whether to delete the origin value or keep it. Default is False.",
         title="Delete Origin Value",
     )
@@ -1465,7 +1461,11 @@ class AuthFlow(BaseModel):
 
 class DatetimeBasedCursor(BaseModel):
     type: Literal["DatetimeBasedCursor"]
-    clamping: Optional[Clamping] = None
+    clamping: Optional[Clamping] = Field(
+        None,
+        description="This option is used to adjust the upper and lower boundaries of each datetime window to beginning and end of the provided target period (day, week, month)",
+        title="Date Range Clamping",
+    )
     cursor_field: str = Field(
         ...,
         description="The location of the value on a record that will be used as a bookmark during sync. To ensure no data loss, the API must return records in ascending order based on the cursor field. Nested fields are not supported, so the field must be at the top level of the record. You can use a combination of Add Field and Remove Field transformations to move the nested field to the top.",

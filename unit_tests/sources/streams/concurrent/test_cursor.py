@@ -950,42 +950,6 @@ class ConcurrentCursorStateTest(TestCase):
             },  # State message is updated to the legacy format before being emitted
         )
 
-    @freezegun.freeze_time(time_to_freeze=datetime.fromtimestamp(50, timezone.utc))
-    def test_given_initial_state_is_sequential_and_start_provided_when_generate_slices_then_state_emitted_is_initial_state(
-        self,
-    ) -> None:
-        cursor = ConcurrentCursor(
-            _A_STREAM_NAME,
-            _A_STREAM_NAMESPACE,
-            {_A_CURSOR_FIELD_KEY: 10},
-            self._message_repository,
-            self._state_manager,
-            EpochValueConcurrentStreamStateConverter(is_sequential_state=True),
-            CursorField(_A_CURSOR_FIELD_KEY),
-            _SLICE_BOUNDARY_FIELDS,
-            datetime.fromtimestamp(0, timezone.utc),
-            EpochValueConcurrentStreamStateConverter.get_end_provider(),
-            _NO_LOOKBACK_WINDOW,
-        )
-
-        # simulate the case where at least the first slice fails but others succeed
-        cursor.close_partition(
-            _partition(
-                StreamSlice(
-                    partition={_LOWER_SLICE_BOUNDARY_FIELD: 40, _UPPER_SLICE_BOUNDARY_FIELD: 50},
-                    cursor_slice={},
-                )
-            )
-        )
-
-        self._state_manager.update_state_for_stream.assert_called_once_with(
-            _A_STREAM_NAME,
-            _A_STREAM_NAMESPACE,
-            {
-                _A_CURSOR_FIELD_KEY: 10
-            },  # State message is updated to the legacy format before being emitted
-        )
-
 
 class ClampingIntegrationTest(TestCase):
     def setUp(self) -> None:

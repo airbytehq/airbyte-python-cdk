@@ -785,13 +785,25 @@ definitions:
         type: string
         enum: [DatetimeBasedCursor]
       clamping:
+        title: Date Range Clamping
+        description: This option is used to adjust the upper and lower boundaries of each datetime window to beginning and end of the provided target period (day, week, month)
         type: object
         required:
         - target
         properties:
           target:
+            title: Target
+            description: The period of time that datetime windows will be clamped by
+            # This should ideally be an enum. However, we don't use an enum because we want to allow for connectors
+            # to support interpolation on the connector config to get the target which is an arbitrary string
             type: string
-            enum: [DAY, WEEK, MONTH]
+            interpolation_context:
+              - config
+            examples:
+              - "DAY"
+              - "WEEK"
+              - "MONTH"
+              - "{{ config['target'] }}"
           target_details:
             type: object
             additionalProperties: true
