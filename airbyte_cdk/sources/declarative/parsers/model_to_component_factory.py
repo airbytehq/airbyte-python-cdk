@@ -8,8 +8,6 @@ import datetime
 import importlib
 import inspect
 import re
-from datetime import timedelta
-import sys
 from functools import partial
 from typing import (
     Any,
@@ -1075,7 +1073,7 @@ class ModelToComponentFactory:
                     end_date_provider = ClampingEndProvider(
                         DayClampingStrategy(is_ceiling=False),
                         end_date_provider,  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
-                        granularity=cursor_granularity or timedelta(seconds=1),
+                        granularity=cursor_granularity or datetime.timedelta(seconds=1),
                     )
                 case "WEEK":
                     if (
@@ -1092,14 +1090,14 @@ class ModelToComponentFactory:
                     end_date_provider = ClampingEndProvider(
                         WeekClampingStrategy(weekday, is_ceiling=False),
                         end_date_provider,  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
-                        granularity=cursor_granularity or timedelta(days=1),
+                        granularity=cursor_granularity or datetime.timedelta(days=1),
                     )
                 case "MONTH":
                     clamping_strategy = MonthClampingStrategy()
                     end_date_provider = ClampingEndProvider(
                         MonthClampingStrategy(is_ceiling=False),
                         end_date_provider,  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
-                        granularity=cursor_granularity or timedelta(days=1),
+                        granularity=cursor_granularity or datetime.timedelta(days=1),
                     )
                 case _:
                     raise ValueError(
