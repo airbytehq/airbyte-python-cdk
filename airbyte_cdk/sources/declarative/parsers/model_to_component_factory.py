@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import datetime
+import importlib
 import inspect
 import re
 import sys
@@ -1180,14 +1181,17 @@ class ModelToComponentFactory:
         module_name_full = ".".join(split[:-1])
         class_name = split[-1]
 
-        if module_name_full == COMPONENTS_MODULE_NAME:
-            # Assume "components" on its own means "source_declarative_manifest.components"
-            module_name_full = SDM_COMPONENTS_MODULE_NAME
+        try:
+            module_ref = importlib.import_module(module_name_full)
+        except ModuleNotFoundError as e:
+            raise ValueError(f"Could not load module `{module_name_full}`.") from e
 
         try:
-            return getattr(sys.modules[module_name_full], class_name)
-        except (AttributeError, ModuleNotFoundError) as e:
-            raise ValueError(f"Could not load class {full_qualified_class_name}.") from e
+            return getattr(module_ref, class_name)
+        except AttributeError as e:
+            raise ValueError(
+                f"Could not load class `{class_name}` from module `{module_name_full}`.",
+            ) from e
 
     @staticmethod
     def _derive_component_type_from_type_hints(field_type: Any) -> Optional[str]:
