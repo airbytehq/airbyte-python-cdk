@@ -194,15 +194,11 @@ class AbstractOauth2Authenticator(AuthBase):
             return parse(str(value))
         else:
             try:
-                # Handle both integer and float seconds
+                # Only accept numeric values (as int/float/string) when no format specified
                 seconds = int(float(str(value)))
-                # For token expiry, we want to add the seconds to the current time
                 return add_seconds(now(), seconds)
             except (ValueError, TypeError):
-                # If not a valid number of seconds, try parsing as a datetime string
-                dt = parse(str(value))
-                # If we successfully parsed a datetime, return it directly
-                return dt
+                raise ValueError(f"Invalid expires_in value: {value}. Expected number of seconds when no format specified.")
 
     @property
     def token_expiry_is_time_of_expiration(self) -> bool:
