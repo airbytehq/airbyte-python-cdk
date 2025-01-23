@@ -9,7 +9,7 @@ on:
 
 jobs:
   success_check:
-    name: "Dummy Check (success)"
+    name: "Dummy Check (1)"
     runs-on: ubuntu-22.04
     permissions:
       checks: write
@@ -30,7 +30,7 @@ jobs:
             }
 
   failure_check:
-    name: "Dummy Check (fail)"
+    name: "Dummy Check (2)"
     runs-on: ubuntu-22.04
     permissions:
       checks: write
