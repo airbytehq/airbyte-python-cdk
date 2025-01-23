@@ -122,18 +122,24 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         self._refresh_request_headers = InterpolatedMapping(
             self.refresh_request_headers or {}, parameters=parameters
         )
-        if isinstance(self.token_expiry_date, (int, str)) and str(self.token_expiry_date).isdigit():
-            self._token_expiry_date = parse(self.token_expiry_date)
-        else:
-            self._token_expiry_date = (
-                parse(
-                    InterpolatedString.create(self.token_expiry_date, parameters=parameters).eval(
-                        self.config
+        try:
+            if (
+                isinstance(self.token_expiry_date, (int, str))
+                and str(self.token_expiry_date).isdigit()
+            ):
+                self._token_expiry_date = parse(self.token_expiry_date)
+            else:
+                self._token_expiry_date = (
+                    parse(
+                        InterpolatedString.create(
+                            self.token_expiry_date, parameters=parameters
+                        ).eval(self.config)
                     )
+                    if self.token_expiry_date
+                    else now() - timedelta(days=1)
                 )
-                if self.token_expiry_date
-                else now() - timedelta(days=1)
-            )
+        except ValueError as e:
+            raise ValueError(f"Invalid token expiry date format: {e}")
         self.use_profile_assertion = (
             InterpolatedBoolean(self.use_profile_assertion, parameters=parameters)
             if isinstance(self.use_profile_assertion, str)

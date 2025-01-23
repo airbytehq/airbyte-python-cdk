@@ -191,14 +191,19 @@ class AbstractOauth2Authenticator(AuthBase):
                 raise ValueError(
                     f"Invalid token expiry date format {self.token_expiry_date_format}; a string representing the format is required."
                 )
-            return parse(str(value))
+            try:
+                return parse(str(value))
+            except ValueError as e:
+                raise ValueError(f"Invalid token expiry date format: {e}")
         else:
             try:
                 # Only accept numeric values (as int/float/string) when no format specified
                 seconds = int(float(str(value)))
                 return add_seconds(now(), seconds)
             except (ValueError, TypeError):
-                raise ValueError(f"Invalid expires_in value: {value}. Expected number of seconds when no format specified.")
+                raise ValueError(
+                    f"Invalid expires_in value: {value}. Expected number of seconds when no format specified."
+                )
 
     @property
     def token_expiry_is_time_of_expiration(self) -> bool:
