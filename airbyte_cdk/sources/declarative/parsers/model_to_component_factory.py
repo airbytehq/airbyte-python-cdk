@@ -1951,13 +1951,13 @@ class ModelToComponentFactory:
                 ).eval(config),
                 client_id=InterpolatedString.create(
                     model.client_id, parameters=model.parameters or {}
-                ).eval(config),
+                ).eval(config) if model.client_id else model.client_id,
                 client_secret_name=InterpolatedString.create(
                     model.client_secret_name or "client_secret", parameters=model.parameters or {}
                 ).eval(config),
                 client_secret=InterpolatedString.create(
                     model.client_secret, parameters=model.parameters or {}
-                ).eval(config),
+                ).eval(config) if model.client_secret else model.client_secret,
                 access_token_config_path=model.refresh_token_updater.access_token_config_path,
                 refresh_token_config_path=model.refresh_token_updater.refresh_token_config_path,
                 token_expiry_date_config_path=model.refresh_token_updater.token_expiry_date_config_path,

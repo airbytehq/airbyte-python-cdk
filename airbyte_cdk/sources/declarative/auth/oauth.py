@@ -79,11 +79,11 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         else:
             self._token_refresh_endpoint = None
         self._client_id_name = InterpolatedString.create(self.client_id_name, parameters=parameters)
-        self._client_id = InterpolatedString.create(self.client_id, parameters=parameters)
+        self._client_id = InterpolatedString.create(self.client_id, parameters=parameters) if self.client_id else self.client_id
         self._client_secret_name = InterpolatedString.create(
             self.client_secret_name, parameters=parameters
         )
-        self._client_secret = InterpolatedString.create(self.client_secret, parameters=parameters)
+        self._client_secret = InterpolatedString.create(self.client_secret, parameters=parameters) if self.client_secret else self.client_secret
         self._refresh_token_name = InterpolatedString.create(
             self.refresh_token_name, parameters=parameters
         )
@@ -171,19 +171,19 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         return self._client_id_name.eval(self.config)  # type: ignore # eval returns a string in this context
 
     def get_client_id(self) -> str:
-        client_id: str = self._client_id.eval(self.config)
+        client_id = self._client_id.eval(self.config) if self._client_id else self._client_id
         if not client_id:
             raise ValueError("OAuthAuthenticator was unable to evaluate client_id parameter")
-        return client_id
+        return client_id  # type: ignore # value will be returned as a string, or an error will be raised
 
     def get_client_secret_name(self) -> str:
         return self._client_secret_name.eval(self.config)  # type: ignore # eval returns a string in this context
 
     def get_client_secret(self) -> str:
-        client_secret: str = self._client_secret.eval(self.config)
+        client_secret = self._client_secret.eval(self.config) if self._client_secret else self._client_secret
         if not client_secret:
             raise ValueError("OAuthAuthenticator was unable to evaluate client_secret parameter")
-        return client_secret
+        return client_secret  # type: ignore # value will be returned as a string, or an error will be raised
 
     def get_refresh_token_name(self) -> str:
         return self._refresh_token_name.eval(self.config)  # type: ignore # eval returns a string in this context
