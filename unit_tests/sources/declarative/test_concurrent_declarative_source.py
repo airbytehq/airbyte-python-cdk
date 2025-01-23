@@ -35,7 +35,7 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.partition_routers import AsyncJobPartitionRouter
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
-    StreamSlicerPartitionGenerator
+    StreamSlicerPartitionGenerator,
 )
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.checkpoint import Cursor
@@ -1624,17 +1624,15 @@ def test_async_incremental_stream_uses_concurrent_cursor_with_state():
     )
 
     expected_state = {
-        "legacy": {
-            "updated_at": "2024-08-06"
-        },
+        "legacy": {"updated_at": "2024-08-06"},
         "slices": [
             {
                 "end": datetime(2024, 8, 6, 0, 0, tzinfo=timezone.utc),
                 "most_recent_cursor_value": datetime(2024, 8, 6, 0, 0, tzinfo=timezone.utc),
-                "start": datetime(2024, 7, 1, 0, 0, tzinfo=timezone.utc)
+                "start": datetime(2024, 7, 1, 0, 0, tzinfo=timezone.utc),
             }
         ],
-        "state_type": "date-range"
+        "state_type": "date-range",
     }
 
     concurrent_streams, _ = source._group_streams(config=_CONFIG)
