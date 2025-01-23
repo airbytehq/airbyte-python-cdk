@@ -508,7 +508,14 @@ single_csv_scenario: TestScenario[InMemoryFilesSource] = (
                                         "const": "use_records_transfer",
                                         "enum": ["use_records_transfer"],
                                         "type": "string",
-                                    }
+                                    },
+                                    "sync_metadata": {
+                                        "airbyte_hidden": True,
+                                        "default": False,
+                                        "description": "If enabled, streams will sync files metadata instead of files data.",
+                                        "title": "Make stream sync files metadata",
+                                        "type": "boolean",
+                                    },
                                 },
                                 "description": "Recommended - Extract and load structured records into your destination of choice. This is the classic method of moving data in Airbyte. It allows for blocking and hashing individual fields or files from a structured schema. Data can be flattened, typed and deduped depending on the destination.",
                                 "required": ["delivery_type"],

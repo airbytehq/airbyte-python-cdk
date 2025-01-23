@@ -22,6 +22,13 @@ class DeliverRecords(BaseModel):
 
     delivery_type: Literal["use_records_transfer"] = Field("use_records_transfer", const=True)
 
+    sync_metadata: bool = Field(
+        title="Make stream sync files metadata",
+        description="If enabled, streams will sync files metadata instead of files data.",
+        default=False,
+        airbyte_hidden=True,
+    )
+
 
 class DeliverRawFiles(BaseModel):
     class Config(OneOfOptionConfig):

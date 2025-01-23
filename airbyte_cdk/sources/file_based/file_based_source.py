@@ -312,6 +312,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
             cursor=cursor,
             use_file_transfer=self._use_file_transfer(parsed_config),
             preserve_directory_structure=self._preserve_directory_structure(parsed_config),
+            sync_metadata=self._sync_metadata(parsed_config),
         )
 
     def _get_stream_from_catalog(
@@ -388,6 +389,14 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         return use_file_transfer
 
     @staticmethod
+    def _use_records_transfer(parsed_config: AbstractFileBasedSpec) -> bool:
+        use_records_transfer = (
+            hasattr(parsed_config.delivery_method, "delivery_type")
+            and parsed_config.delivery_method.delivery_type == "use_records_transfer"
+        )
+        return use_records_transfer
+
+    @staticmethod
     def _preserve_directory_structure(parsed_config: AbstractFileBasedSpec) -> bool:
         """
         Determines whether to preserve directory structure during file transfer.
@@ -408,3 +417,13 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         ):
             return parsed_config.delivery_method.preserve_directory_structure
         return True
+
+    @staticmethod
+    def _sync_metadata(parsed_config: AbstractFileBasedSpec) -> bool:
+        if (
+            FileBasedSource._use_records_transfer(parsed_config)
+            and hasattr(parsed_config.delivery_method, "sync_metadata")
+            and parsed_config.delivery_method.sync_metadata is not None
+        ):
+            return parsed_config.delivery_method.sync_metadata
+        return False
