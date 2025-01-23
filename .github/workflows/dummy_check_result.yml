@@ -9,7 +9,7 @@ on:
 
 jobs:
   success_check:
-    name: "Dummy Check (success)"
+    name: "Dummy Job (success)"
     runs-on: ubuntu-22.04
     permissions:
       checks: write
@@ -19,7 +19,7 @@ jobs:
         uses: LouisBrunner/checks-action@v1.6.1
         with:
           token: ${{ github.token }}
-          name: "Dummy Check (success)"
+          name: "Dummy Check (success custom)"
           status: "completed"
           conclusion: "success"
           details_url: "https://www.google.com/search?q=success"
@@ -30,7 +30,7 @@ jobs:
             }
 
   failure_check:
-    name: "Dummy Check (fail)"
+    name: "Dummy Job (fail)"
     runs-on: ubuntu-22.04
     permissions:
       checks: write
@@ -40,7 +40,7 @@ jobs:
         uses: LouisBrunner/checks-action@v1.6.1
         with:
           token: ${{ github.token }}
-          name: "Dummy Check (fail)"
+          name: "Dummy Check (fail custom)"
           status: "completed"
           conclusion: "failure"
           details_url: "https://www.google.com/search?q=failed"

@@ -93,7 +93,7 @@ jobs:
           - connector: source-pokeapi
             cdk_extra: n/a
 
-    name: "${{matrix.connector}} Connector Check (skip=${{needs.cdk_changes.outputs['src'] == 'false' || needs.cdk_changes.outputs[matrix.cdk_extra] == 'false'}})"
+    name: "${{matrix.connector}} Connector Job (skip=${{needs.cdk_changes.outputs['src'] == 'false' || needs.cdk_changes.outputs[matrix.cdk_extra] == 'false'}})"
     permissions:
       checks: write
       contents: read
@@ -136,7 +136,7 @@ jobs:
         uses: LouisBrunner/checks-action@v1.6.1
         with:
           token: ${{ github.token }}
-          name: "${{ matrix.connector }} Test Report"
+          name: "${{ matrix.connector }} Test Report (custom)"
           status: "in_progress"
           output: |
             {
@@ -224,7 +224,7 @@ jobs:
         uses: LouisBrunner/checks-action@v1.6.1
         with:
           token: ${{ github.token }}
-          name: "${{ matrix.connector }} Test Report"
+          name: "${{ matrix.connector }} Test Report (custom)"
           status: "completed"
           conclusion: "${{ steps.evaluate_output.outputs.success == 'true' && 'success' || 'failure' }}"
           details_url: "${{ steps.evaluate_output.outputs.html_report_url }}"
@@ -240,7 +240,7 @@ jobs:
         uses: LouisBrunner/checks-action@v1.6.1
         with:
           token: ${{ github.token }}
-          name: "${{ matrix.connector }} Test Report"
+          name: "${{ matrix.connector }} Test Report (custom)"
           status: "completed"
           conclusion: "failure"
           output: |
