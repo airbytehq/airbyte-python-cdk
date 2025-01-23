@@ -1,0 +1,57 @@
+name: Dummy Check Result
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/dummy_check_result.yml'
+
+jobs:
+  success_check:
+    name: "Dummy Check (success)"
+    runs-on: ubuntu-22.04
+    permissions:
+      checks: write
+      contents: read
+    steps:
+      - name: Create Success Check Run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            repos/${{ github.repository }}/check-runs \
+            -f name="Dummy Check (success)" \
+            -f head_sha="$HEAD_SHA" \
+            -f status="completed" \
+            -f conclusion="success" \
+            -f details_url="https://www.google.com/search?q=success" \
+            -f output="{\"title\":\"Success Check\",\"summary\":\"This is a dummy success check.\"}"
+
+  failure_check:
+    name: "Dummy Check (fail)"
+    runs-on: ubuntu-22.04
+    permissions:
+      checks: write
+      contents: read
+    steps:
+      - name: Create Failure Check Run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            repos/${{ github.repository }}/check-runs \
+            -f name="Dummy Check (fail)" \
+            -f head_sha="$HEAD_SHA" \
+            -f status="completed" \
+            -f conclusion="failure" \
+            -f details_url="https://www.google.com/search?q=failed" \
+            -f output="{\"title\":\"Failure Check\",\"summary\":\"This is a dummy failure check.\"}"
