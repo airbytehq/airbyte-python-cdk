@@ -2,16 +2,17 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from datetime import timedelta
 from typing import Any, List, Mapping, Optional, Sequence, Tuple, Union
 
 import dpath
-import pendulum
 
 from airbyte_cdk.config_observation import (
     create_connector_config_control_message,
     emit_configuration_as_airbyte_control_message,
 )
 from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, add_seconds, now, parse
 from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_oauth import (
     AbstractOauth2Authenticator,
 )
@@ -34,7 +35,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         client_secret_name: str = "client_secret",
         refresh_token_name: str = "refresh_token",
         scopes: List[str] | None = None,
-        token_expiry_date: pendulum.DateTime | None = None,
+        token_expiry_date: AirbyteDateTime | None = None,
         token_expiry_date_format: str | None = None,
         access_token_name: str = "access_token",
         expires_in_name: str = "expires_in",
@@ -62,7 +63,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         self._grant_type_name = grant_type_name
         self._grant_type = grant_type
 
-        self._token_expiry_date = token_expiry_date or pendulum.now().subtract(days=1)  # type: ignore [no-untyped-call]
+        self._token_expiry_date = token_expiry_date or (now() - timedelta(days=1))
         self._token_expiry_date_format = token_expiry_date_format
         self._token_expiry_is_time_of_expiration = token_expiry_is_time_of_expiration
         self._access_token = None
@@ -112,7 +113,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
     def get_grant_type(self) -> str:
         return self._grant_type
 
-    def get_token_expiry_date(self) -> pendulum.DateTime:
+    def get_token_expiry_date(self) -> AirbyteDateTime:
         return self._token_expiry_date
 
     def set_token_expiry_date(self, value: Union[str, int]) -> None:
@@ -282,11 +283,11 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             self._token_expiry_date_config_path,
             default="",
         )
-        return pendulum.now().subtract(days=1) if expiry_date == "" else pendulum.parse(expiry_date)  # type: ignore [arg-type, return-value, no-untyped-call]
+        return now() - timedelta(days=1) if expiry_date == "" else parse(expiry_date)
 
     def set_token_expiry_date(  # type: ignore[override]
         self,
-        new_token_expiry_date: pendulum.DateTime,
+        new_token_expiry_date: AirbyteDateTime,
     ) -> None:
         dpath.new(
             self._connector_config,  # type: ignore [arg-type]
@@ -296,17 +297,17 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
 
     def token_has_expired(self) -> bool:
         """Returns True if the token is expired"""
-        return pendulum.now("UTC") > self.get_token_expiry_date()
+        return now() > self.get_token_expiry_date()
 
     @staticmethod
     def get_new_token_expiry_date(
         access_token_expires_in: str,
         token_expiry_date_format: str | None = None,
-    ) -> pendulum.DateTime:
+    ) -> AirbyteDateTime:
         if token_expiry_date_format:
-            return pendulum.from_format(access_token_expires_in, token_expiry_date_format)
+            return parse(access_token_expires_in)
         else:
-            return pendulum.now("UTC").add(seconds=int(access_token_expires_in))
+            return add_seconds(now(), int(access_token_expires_in))
 
     def get_access_token(self) -> str:
         """Retrieve new access and refresh token if the access token has expired.

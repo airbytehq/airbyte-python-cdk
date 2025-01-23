@@ -8,7 +8,6 @@ from json import JSONDecodeError
 from typing import Any, List, Mapping, MutableMapping, Optional, Tuple, Union
 
 import backoff
-import pendulum
 import requests
 from requests.auth import AuthBase
 
@@ -16,6 +15,7 @@ from airbyte_cdk.models import FailureType, Level
 from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.utils import AirbyteTracedException
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, add_seconds, now, parse
 from airbyte_cdk.utils.airbyte_secrets_utils import add_to_secrets
 
 from ..exceptions import DefaultBackoffException
@@ -72,7 +72,7 @@ class AbstractOauth2Authenticator(AuthBase):
 
     def token_has_expired(self) -> bool:
         """Returns True if the token is expired"""
-        return pendulum.now() > self.get_token_expiry_date()  # type: ignore # this is always a bool despite what mypy thinks
+        return now() > self.get_token_expiry_date()
 
     def build_refresh_request_body(self) -> Mapping[str, Any]:
         """
@@ -179,7 +179,7 @@ class AbstractOauth2Authenticator(AuthBase):
             self.get_expires_in_name()
         ]
 
-    def _parse_token_expiration_date(self, value: Union[str, int]) -> pendulum.DateTime:
+    def _parse_token_expiration_date(self, value: Union[str, int]) -> AirbyteDateTime:
         """
         Return the expiration datetime of the refresh token
 
@@ -191,9 +191,9 @@ class AbstractOauth2Authenticator(AuthBase):
                 raise ValueError(
                     f"Invalid token expiry date format {self.token_expiry_date_format}; a string representing the format is required."
                 )
-            return pendulum.from_format(str(value), self.token_expiry_date_format)
+            return parse(str(value))
         else:
-            return pendulum.now().add(seconds=int(float(value)))
+            return add_seconds(now(), int(float(value)))
 
     @property
     def token_expiry_is_time_of_expiration(self) -> bool:
@@ -244,7 +244,7 @@ class AbstractOauth2Authenticator(AuthBase):
         """List of requested scopes"""
 
     @abstractmethod
-    def get_token_expiry_date(self) -> pendulum.DateTime:
+    def get_token_expiry_date(self) -> AirbyteDateTime:
         """Expiration date of the access token"""
 
     @abstractmethod

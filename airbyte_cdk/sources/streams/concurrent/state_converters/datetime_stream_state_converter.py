@@ -6,12 +6,10 @@ from abc import abstractmethod
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, List, MutableMapping, Optional, Tuple
 
-import pendulum
-from pendulum.datetime import DateTime
-
 # FIXME We would eventually like the Concurrent package do be agnostic of the declarative package. However, this is a breaking change and
 #  the goal in the short term is only to fix the issue we are seeing for source-declarative-manifest.
 from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, now, parse
 from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
     AbstractStreamStateConverter,
@@ -136,10 +134,10 @@ class EpochValueConcurrentStreamStateConverter(DateTimeStreamStateConverter):
         return int(timestamp.timestamp())
 
     def parse_timestamp(self, timestamp: int) -> datetime:
-        dt_object = pendulum.from_timestamp(timestamp)
-        if not isinstance(dt_object, DateTime):
+        dt_object = AirbyteDateTime.fromtimestamp(timestamp, timezone.utc)
+        if not isinstance(dt_object, AirbyteDateTime):
             raise ValueError(
-                f"DateTime object was expected but got {type(dt_object)} from pendulum.parse({timestamp})"
+                f"AirbyteDateTime object was expected but got {type(dt_object)} from AirbyteDateTime.fromtimestamp({timestamp})"
             )
         return dt_object
 
@@ -173,10 +171,10 @@ class IsoMillisConcurrentStreamStateConverter(DateTimeStreamStateConverter):
         return timestamp.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
     def parse_timestamp(self, timestamp: str) -> datetime:
-        dt_object = pendulum.parse(timestamp)
-        if not isinstance(dt_object, DateTime):
+        dt_object = parse(timestamp)
+        if not isinstance(dt_object, AirbyteDateTime):
             raise ValueError(
-                f"DateTime object was expected but got {type(dt_object)} from pendulum.parse({timestamp})"
+                f"AirbyteDateTime object was expected but got {type(dt_object)} from parse({timestamp})"
             )
         return dt_object
 
