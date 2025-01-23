@@ -16,26 +16,18 @@ jobs:
       contents: read
     steps:
       - name: Create Success Check Run
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
-          
-          # Create check run with properly formatted JSON output
-          gh api \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            repos/${{ github.repository }}/check-runs \
-            -f name="Dummy Check (success)" \
-            -f head_sha="$HEAD_SHA" \
-            -f status="completed" \
-            -f conclusion="success" \
-            -f details_url="https://www.google.com/search?q=success" \
-            -f output="$(jq -n \
-              --arg title "Success Check" \
-              --arg summary "This is a dummy success check." \
-              '{title: $title, summary: $summary}')"
+        uses: LouisBrunner/checks-action@v1.6.1
+        with:
+          token: ${{ github.token }}
+          name: "Dummy Check (success)"
+          status: "completed"
+          conclusion: "success"
+          details_url: "https://www.google.com/search?q=success"
+          output: |
+            {
+              "title": "Success Check",
+              "summary": "This is a dummy success check."
+            }
 
   failure_check:
     name: "Dummy Check (fail)"
@@ -45,23 +37,15 @@ jobs:
       contents: read
     steps:
       - name: Create Failure Check Run
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
-          
-          # Create check run with properly formatted JSON output
-          gh api \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            repos/${{ github.repository }}/check-runs \
-            -f name="Dummy Check (fail)" \
-            -f head_sha="$HEAD_SHA" \
-            -f status="completed" \
-            -f conclusion="failure" \
-            -f details_url="https://www.google.com/search?q=failed" \
-            -f output="$(jq -n \
-              --arg title "Failure Check" \
-              --arg summary "This is a dummy failure check." \
-              '{title: $title, summary: $summary}')"
+        uses: LouisBrunner/checks-action@v1.6.1
+        with:
+          token: ${{ github.token }}
+          name: "Dummy Check (fail)"
+          status: "completed"
+          conclusion: "failure"
+          details_url: "https://www.google.com/search?q=failed"
+          output: |
+            {
+              "title": "Failure Check",
+              "summary": "This is a dummy failure check."
+            }

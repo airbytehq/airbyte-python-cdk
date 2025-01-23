@@ -133,25 +133,16 @@ jobs:
       - name: Create Test Report Check Run
         id: create_test_report
         if: steps.no_changes.outputs.status != 'cancelled'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # Get current commit SHA
-          HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
-          echo "Creating test report check run for commit: $HEAD_SHA"
-          
-          # Create a new check run for test results
-          if [ -f "airbyte/airbyte-ci/connectors/pipelines/pipeline_reports/output.json" ]; then
-            gh api \
-              --method POST \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              repos/${{ github.repository }}/check-runs \
-              -f name="${{ matrix.connector }} Test Report" \
-              -f head_sha="$HEAD_SHA" \
-              -f status="in_progress" \
-              -f started_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
-          fi
+        uses: LouisBrunner/checks-action@v1.6.1
+        with:
+          token: ${{ github.token }}
+          name: "${{ matrix.connector }} Test Report"
+          status: "in_progress"
+          output: |
+            {
+              "title": "Test Report",
+              "summary": "Test execution in progress..."
+            }
       - name: Test Connector
         if: steps.no_changes.outputs.status != 'cancelled'
         timeout-minutes: 90
@@ -229,31 +220,34 @@ jobs:
 
       # Update the test report check run with results
       - name: Update Test Report Check Run
-        if: always() && steps.no_changes.outputs.status != 'cancelled'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # Only proceed if we have a report
-          if [ -f "airbyte/airbyte-ci/connectors/pipelines/pipeline_reports/output.json" ]; then
-            HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
-            
-            # Get report details
-            html_report_url="${{ steps.evaluate_output.outputs.html_report_url }}"
-            success="${{ steps.evaluate_output.outputs.success }}"
-            
-            # Update the test report check run
-            gh api \
-              --method POST \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              repos/${{ github.repository }}/check-runs \
-              -f name="${{ matrix.connector }} Test Report" \
-              -f head_sha="$HEAD_SHA" \
-              -f status="completed" \
-              -f conclusion="${{ steps.evaluate_output.outputs.success == 'true' && 'success' || 'failure' }}" \
-              -f details_url="$html_report_url" \
-              -f output="{\"title\":\"Test Results\",\"summary\":\"Click 'Details' to view the full test report.\"}"
-          fi
+        if: always() && steps.no_changes.outputs.status != 'cancelled' && steps.evaluate_output.outcome == 'success'
+        uses: LouisBrunner/checks-action@v1.6.1
+        with:
+          token: ${{ github.token }}
+          name: "${{ matrix.connector }} Test Report"
+          status: "completed"
+          conclusion: "${{ steps.evaluate_output.outputs.success == 'true' && 'success' || 'failure' }}"
+          details_url: "${{ steps.evaluate_output.outputs.html_report_url }}"
+          output: |
+            {
+              "title": "Test Results",
+              "summary": "Click 'Details' to view the full test report."
+            }
+
+      # Create failure check if report generation failed
+      - name: Create Report Generation Failed Check
+        if: always() && steps.no_changes.outputs.status != 'cancelled' && steps.evaluate_output.outcome != 'success'
+        uses: LouisBrunner/checks-action@v1.6.1
+        with:
+          token: ${{ github.token }}
+          name: "${{ matrix.connector }} Test Report"
+          status: "completed"
+          conclusion: "failure"
+          output: |
+            {
+              "title": "Test Report Generation Failed",
+              "summary": "The test execution failed to generate a report. Please check the job logs for details."
+            }
 
       # Upload the job output to the artifacts
       - name: Upload Job Output
