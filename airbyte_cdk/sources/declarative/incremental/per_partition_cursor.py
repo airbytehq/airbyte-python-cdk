@@ -358,9 +358,9 @@ class PerPartitionCursor(DeclarativeCursor):
         Dynamically creates and initializes a cursor for the specified partition.
 
         This method is required for `ConcurrentPerPartitionCursor`. For concurrent cursors,
-        stream slices are executed only for the concurrent cursor, so cursors per partition
+        stream_slices is executed only for the concurrent cursor, so cursors per partition
         are not created for the declarative cursor. This method ensures that a cursor is available
-        to handle requests and maintain state for the specified partition. The cursor is initialized
+        to create requests for the specified partition. The cursor is initialized
         with the per-partition state if present in the initial state, or with the global state
         adjusted by the lookback window, or with the state to migrate from.
 
