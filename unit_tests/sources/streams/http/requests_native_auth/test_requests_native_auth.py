@@ -204,7 +204,7 @@ class TestOauth2Authenticator:
         """
         scopes = ["scope1", "scope2"]
         oauth = Oauth2Authenticator(
-            token_refresh_endpoint="refresh_end",
+            token_refresh_endpoint="https://refresh_endpoint.com",
             client_id_name="custom_client_id_key",
             client_id="some_client_id",
             client_secret_name="custom_client_secret_key",
@@ -235,7 +235,7 @@ class TestOauth2Authenticator:
 
     def test_refresh_access_token(self, mocker):
         oauth = Oauth2Authenticator(
-            token_refresh_endpoint="refresh_end",
+            token_refresh_endpoint="https://refresh_endpoint.com",
             client_id="some_client_id",
             client_secret="some_client_secret",
             refresh_token="some_refresh_token",
@@ -284,7 +284,7 @@ class TestOauth2Authenticator:
             "Content-Type": "application/x-www-form-urlencoded",
         }
         oauth = Oauth2Authenticator(
-            token_refresh_endpoint="refresh_end",
+            token_refresh_endpoint="https://refresh_endpoint.com",
             client_id="some_client_id",
             client_secret="some_client_secret",
             refresh_token="some_refresh_token",
@@ -330,7 +330,7 @@ class TestOauth2Authenticator:
         expected_token_expiry_date: AirbyteDateTime,
     ):
         oauth = Oauth2Authenticator(
-            token_refresh_endpoint="refresh_end",
+            token_refresh_endpoint="https://refresh_endpoint.com",
             client_id="some_client_id",
             client_secret="some_client_secret",
             refresh_token="some_refresh_token",
@@ -620,7 +620,7 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
 
 
 def mock_request(method, url, data, headers):
-    if url == "refresh_end":
+    if url == "https://refresh_endpoint.com":
         return resp
     raise Exception(
         f"Error while refreshing access token with request: {method}, {url}, {data}, {headers}"

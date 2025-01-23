@@ -87,6 +87,8 @@ from airbyte_cdk.sources.declarative.extractors.record_filter import (
 )
 from airbyte_cdk.sources.declarative.incremental import (
     ChildPartitionResumableFullRefreshCursor,
+    ConcurrentCursorFactory,
+    ConcurrentPerPartitionCursor,
     CursorFactory,
     DatetimeBasedCursor,
     DeclarativeCursor,
@@ -101,6 +103,7 @@ from airbyte_cdk.sources.declarative.migrations.legacy_to_per_partition_state_mi
     LegacyToPerPartitionStateMigration,
 )
 from airbyte_cdk.sources.declarative.models import (
+    Clamping,
     CustomStateMigration,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -363,6 +366,10 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ZipfileDecoder as ZipfileDecoderModel,
 )
+from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
+    COMPONENTS_MODULE_NAME,
+    SDM_COMPONENTS_MODULE_NAME,
+)
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
     ListPartitionRouter,
@@ -456,6 +463,16 @@ from airbyte_cdk.sources.message import (
     InMemoryMessageRepository,
     LogAppenderMessageRepositoryDecorator,
     MessageRepository,
+    NoopMessageRepository,
+)
+from airbyte_cdk.sources.streams.concurrent.clamping import (
+    ClampingEndProvider,
+    ClampingStrategy,
+    DayClampingStrategy,
+    MonthClampingStrategy,
+    NoClamping,
+    WeekClampingStrategy,
+    Weekday,
 )
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
@@ -912,6 +929,8 @@ class ModelToComponentFactory:
         stream_namespace: Optional[str],
         config: Config,
         stream_state: MutableMapping[str, Any],
+        message_repository: Optional[MessageRepository] = None,
+        runtime_lookback_window: Optional[datetime.timedelta] = None,
         **kwargs: Any,
     ) -> ConcurrentCursor:
         component_type = component_definition.get("type")
@@ -973,9 +992,21 @@ class ModelToComponentFactory:
         connector_state_converter = CustomFormatConcurrentStreamStateConverter(
             datetime_format=datetime_format,
             input_datetime_formats=datetime_based_cursor_model.cursor_datetime_formats,
-            is_sequential_state=True,
+            is_sequential_state=True,  # ConcurrentPerPartitionCursor only works with sequential state
             cursor_granularity=cursor_granularity,
         )
+
+        # Adjusts the stream state by applying the runtime lookback window.
+        # This is used to ensure correct state handling in case of failed partitions.
+        stream_state_value = stream_state.get(cursor_field.cursor_field_key)
+        if runtime_lookback_window and stream_state_value:
+            new_stream_state = (
+                connector_state_converter.parse_timestamp(stream_state_value)
+                - runtime_lookback_window
+            )
+            stream_state[cursor_field.cursor_field_key] = connector_state_converter.output_format(
+                new_stream_state
+            )
 
         start_date_runtime_value: Union[InterpolatedString, str, MinMaxDatetime]
         if isinstance(datetime_based_cursor_model.start_datetime, MinMaxDatetimeModel):
@@ -1043,11 +1074,58 @@ class ModelToComponentFactory:
             if evaluated_step:
                 step_length = parse_duration(evaluated_step)
 
+        clamping_strategy: ClampingStrategy = NoClamping()
+        if datetime_based_cursor_model.clamping:
+            # While it is undesirable to interpolate within the model factory (as opposed to at runtime),
+            # it is still better than shifting interpolation low-code concept into the ConcurrentCursor runtime
+            # object which we want to keep agnostic of being low-code
+            target = InterpolatedString(
+                string=datetime_based_cursor_model.clamping.target,
+                parameters=datetime_based_cursor_model.parameters or {},
+            )
+            evaluated_target = target.eval(config=config)
+            match evaluated_target:
+                case "DAY":
+                    clamping_strategy = DayClampingStrategy()
+                    end_date_provider = ClampingEndProvider(
+                        DayClampingStrategy(is_ceiling=False),
+                        end_date_provider,  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
+                        granularity=cursor_granularity or datetime.timedelta(seconds=1),
+                    )
+                case "WEEK":
+                    if (
+                        not datetime_based_cursor_model.clamping.target_details
+                        or "weekday" not in datetime_based_cursor_model.clamping.target_details
+                    ):
+                        raise ValueError(
+                            "Given WEEK clamping, weekday needs to be provided as target_details"
+                        )
+                    weekday = self._assemble_weekday(
+                        datetime_based_cursor_model.clamping.target_details["weekday"]
+                    )
+                    clamping_strategy = WeekClampingStrategy(weekday)
+                    end_date_provider = ClampingEndProvider(
+                        WeekClampingStrategy(weekday, is_ceiling=False),
+                        end_date_provider,  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
+                        granularity=cursor_granularity or datetime.timedelta(days=1),
+                    )
+                case "MONTH":
+                    clamping_strategy = MonthClampingStrategy()
+                    end_date_provider = ClampingEndProvider(
+                        MonthClampingStrategy(is_ceiling=False),
+                        end_date_provider,  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
+                        granularity=cursor_granularity or datetime.timedelta(days=1),
+                    )
+                case _:
+                    raise ValueError(
+                        f"Invalid clamping target {evaluated_target}, expected DAY, WEEK, MONTH"
+                    )
+
         return ConcurrentCursor(
             stream_name=stream_name,
             stream_namespace=stream_namespace,
             stream_state=stream_state,
-            message_repository=self._message_repository,
+            message_repository=message_repository or self._message_repository,
             connector_state_manager=state_manager,
             connector_state_converter=connector_state_converter,
             cursor_field=cursor_field,
@@ -1057,6 +1135,83 @@ class ModelToComponentFactory:
             lookback_window=lookback_window,
             slice_range=step_length,
             cursor_granularity=cursor_granularity,
+            clamping_strategy=clamping_strategy,
+        )
+
+    def _assemble_weekday(self, weekday: str) -> Weekday:
+        match weekday:
+            case "MONDAY":
+                return Weekday.MONDAY
+            case "TUESDAY":
+                return Weekday.TUESDAY
+            case "WEDNESDAY":
+                return Weekday.WEDNESDAY
+            case "THURSDAY":
+                return Weekday.THURSDAY
+            case "FRIDAY":
+                return Weekday.FRIDAY
+            case "SATURDAY":
+                return Weekday.SATURDAY
+            case "SUNDAY":
+                return Weekday.SUNDAY
+            case _:
+                raise ValueError(f"Unknown weekday {weekday}")
+
+    def create_concurrent_cursor_from_perpartition_cursor(
+        self,
+        state_manager: ConnectorStateManager,
+        model_type: Type[BaseModel],
+        component_definition: ComponentDefinition,
+        stream_name: str,
+        stream_namespace: Optional[str],
+        config: Config,
+        stream_state: MutableMapping[str, Any],
+        partition_router: PartitionRouter,
+        **kwargs: Any,
+    ) -> ConcurrentPerPartitionCursor:
+        component_type = component_definition.get("type")
+        if component_definition.get("type") != model_type.__name__:
+            raise ValueError(
+                f"Expected manifest component of type {model_type.__name__}, but received {component_type} instead"
+            )
+
+        datetime_based_cursor_model = model_type.parse_obj(component_definition)
+
+        if not isinstance(datetime_based_cursor_model, DatetimeBasedCursorModel):
+            raise ValueError(
+                f"Expected {model_type.__name__} component, but received {datetime_based_cursor_model.__class__.__name__}"
+            )
+
+        interpolated_cursor_field = InterpolatedString.create(
+            datetime_based_cursor_model.cursor_field,
+            parameters=datetime_based_cursor_model.parameters or {},
+        )
+        cursor_field = CursorField(interpolated_cursor_field.eval(config=config))
+
+        # Create the cursor factory
+        cursor_factory = ConcurrentCursorFactory(
+            partial(
+                self.create_concurrent_cursor_from_datetime_based_cursor,
+                state_manager=state_manager,
+                model_type=model_type,
+                component_definition=component_definition,
+                stream_name=stream_name,
+                stream_namespace=stream_namespace,
+                config=config,
+                message_repository=NoopMessageRepository(),
+            )
+        )
+
+        # Return the concurrent cursor and state converter
+        return ConcurrentPerPartitionCursor(
+            cursor_factory=cursor_factory,
+            partition_router=partition_router,
+            stream_name=stream_name,
+            stream_namespace=stream_namespace,
+            stream_state=stream_state,
+            message_repository=self._message_repository,  # type: ignore
+            connector_state_manager=state_manager,
+            cursor_field=cursor_field,
         )
 
     @staticmethod
@@ -1102,7 +1257,6 @@ class ModelToComponentFactory:
         :param config: The custom defined connector config
         :return: The declarative component built from the Pydantic model to be used at runtime
         """
-
         custom_component_class = self._get_class_from_fully_qualified_class_name(model.class_name)
         component_fields = get_type_hints(custom_component_class)
         model_args = model.dict()
@@ -1156,14 +1310,38 @@ class ModelToComponentFactory:
         return custom_component_class(**kwargs)
 
     @staticmethod
-    def _get_class_from_fully_qualified_class_name(full_qualified_class_name: str) -> Any:
+    def _get_class_from_fully_qualified_class_name(
+        full_qualified_class_name: str,
+    ) -> Any:
+        """Get a class from its fully qualified name.
+
+        If a custom components module is needed, we assume it is already registered - probably
+        as `source_declarative_manifest.components` or `components`.
+
+        Args:
+            full_qualified_class_name (str): The fully qualified name of the class (e.g., "module.ClassName").
+
+        Returns:
+            Any: The class object.
+
+        Raises:
+            ValueError: If the class cannot be loaded.
+        """
         split = full_qualified_class_name.split(".")
-        module = ".".join(split[:-1])
+        module_name_full = ".".join(split[:-1])
         class_name = split[-1]
+
         try:
-            return getattr(importlib.import_module(module), class_name)
-        except AttributeError:
-            raise ValueError(f"Could not load class {full_qualified_class_name}.")
+            module_ref = importlib.import_module(module_name_full)
+        except ModuleNotFoundError as e:
+            raise ValueError(f"Could not load module `{module_name_full}`.") from e
+
+        try:
+            return getattr(module_ref, class_name)
+        except AttributeError as e:
+            raise ValueError(
+                f"Could not load class `{class_name}` from module `{module_name_full}`.",
+            ) from e
 
     @staticmethod
     def _derive_component_type_from_type_hints(field_type: Any) -> Optional[str]:
@@ -1341,18 +1519,15 @@ class ModelToComponentFactory:
                 raise ValueError(
                     "Unsupported Slicer is used. PerPartitionWithGlobalCursor should be used here instead"
                 )
-            client_side_incremental_sync = {
-                "date_time_based_cursor": self._create_component_from_model(
-                    model=model.incremental_sync, config=config
-                ),
-                "substream_cursor": (
-                    combined_slicers
-                    if isinstance(
-                        combined_slicers, (PerPartitionWithGlobalCursor, GlobalSubstreamCursor)
-                    )
-                    else None
-                ),
-            }
+            cursor = (
+                combined_slicers
+                if isinstance(
+                    combined_slicers, (PerPartitionWithGlobalCursor, GlobalSubstreamCursor)
+                )
+                else self._create_component_from_model(model=model.incremental_sync, config=config)
+            )
+
+            client_side_incremental_sync = {"cursor": cursor}
 
         if model.incremental_sync and isinstance(model.incremental_sync, DatetimeBasedCursorModel):
             cursor_model = model.incremental_sync
@@ -1925,6 +2100,12 @@ class ModelToComponentFactory:
     def create_oauth_authenticator(
         self, model: OAuthAuthenticatorModel, config: Config, **kwargs: Any
     ) -> DeclarativeOauth2Authenticator:
+        profile_assertion = (
+            self._create_component_from_model(model.profile_assertion, config=config)
+            if model.profile_assertion
+            else None
+        )
+
         if model.refresh_token_updater:
             # ignore type error because fixing it would have a lot of dependencies, revisit later
             return DeclarativeSingleUseRefreshTokenOauth2Authenticator(  # type: ignore
@@ -1945,13 +2126,17 @@ class ModelToComponentFactory:
                 ).eval(config),
                 client_id=InterpolatedString.create(
                     model.client_id, parameters=model.parameters or {}
-                ).eval(config),
+                ).eval(config)
+                if model.client_id
+                else model.client_id,
                 client_secret_name=InterpolatedString.create(
                     model.client_secret_name or "client_secret", parameters=model.parameters or {}
                 ).eval(config),
                 client_secret=InterpolatedString.create(
                     model.client_secret, parameters=model.parameters or {}
-                ).eval(config),
+                ).eval(config)
+                if model.client_secret
+                else model.client_secret,
                 access_token_config_path=model.refresh_token_updater.access_token_config_path,
                 refresh_token_config_path=model.refresh_token_updater.refresh_token_config_path,
                 token_expiry_date_config_path=model.refresh_token_updater.token_expiry_date_config_path,
@@ -1997,6 +2182,8 @@ class ModelToComponentFactory:
             config=config,
             parameters=model.parameters or {},
             message_repository=self._message_repository,
+            profile_assertion=profile_assertion,
+            use_profile_assertion=model.use_profile_assertion,
         )
 
     def create_offset_increment(
