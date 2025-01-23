@@ -195,19 +195,23 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
                         )
                 elif self.sync_metadata:
                     try:
-                        metadata_record = self.stream_reader.get_file_metadata(file, logger=self.logger)
+                        metadata_record = self.stream_reader.get_file_metadata(
+                            file, logger=self.logger
+                        )
                         yield stream_data_to_airbyte_message(
                             self.name, metadata_record, is_file_transfer_message=False
                         )
                     except Exception as e:
-                        self.logger.error(f"Failed to retrieve metadata for file {file.uri}: {str(e)}")
+                        self.logger.error(
+                            f"Failed to retrieve metadata for file {file.uri}: {str(e)}"
+                        )
                         yield AirbyteMessage(
                             type=MessageType.LOG,
                             log=AirbyteLogMessage(
-                            level=Level.ERROR,
-                            message = f"Error retrieving metadata: stream={self.name} file={file.uri}",
-                            stack_trace = traceback.format_exc(),
-                            )
+                                level=Level.ERROR,
+                                message=f"Error retrieving metadata: stream={self.name} file={file.uri}",
+                                stack_trace=traceback.format_exc(),
+                            ),
                         )
                 else:
                     for record in parser.parse_records(
@@ -438,4 +442,3 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
                 format=str(self.config.format),
                 stream=self.name,
             ) from exc
-
