@@ -15,6 +15,7 @@ from typing import (
     Dict,
     List,
     Mapping,
+    MutableMapping,
     Optional,
     Type,
     Union,
@@ -86,6 +87,8 @@ from airbyte_cdk.sources.declarative.extractors.record_filter import (
 )
 from airbyte_cdk.sources.declarative.incremental import (
     ChildPartitionResumableFullRefreshCursor,
+    ConcurrentCursorFactory,
+    ConcurrentPerPartitionCursor,
     CursorFactory,
     DatetimeBasedCursor,
     DeclarativeCursor,
@@ -460,6 +463,7 @@ from airbyte_cdk.sources.message import (
     InMemoryMessageRepository,
     LogAppenderMessageRepositoryDecorator,
     MessageRepository,
+    NoopMessageRepository,
 )
 from airbyte_cdk.sources.streams.concurrent.clamping import (
     ClampingEndProvider,
@@ -925,8 +929,12 @@ class ModelToComponentFactory:
         stream_name: str,
         stream_namespace: Optional[str],
         config: Config,
+        message_repository: Optional[MessageRepository] = None,
+        runtime_lookback_window: Optional[datetime.timedelta] = None,
         **kwargs: Any,
     ) -> ConcurrentCursor:
+        stream_state = self._connector_state_manager.get_stream_state(stream_name, stream_namespace)
+
         component_type = component_definition.get("type")
         if component_definition.get("type") != model_type.__name__:
             raise ValueError(
@@ -986,9 +994,21 @@ class ModelToComponentFactory:
         connector_state_converter = CustomFormatConcurrentStreamStateConverter(
             datetime_format=datetime_format,
             input_datetime_formats=datetime_based_cursor_model.cursor_datetime_formats,
-            is_sequential_state=True,
+            is_sequential_state=True,  # ConcurrentPerPartitionCursor only works with sequential state
             cursor_granularity=cursor_granularity,
         )
+
+        # Adjusts the stream state by applying the runtime lookback window.
+        # This is used to ensure correct state handling in case of failed partitions.
+        stream_state_value = stream_state.get(cursor_field.cursor_field_key)
+        if runtime_lookback_window and stream_state_value:
+            new_stream_state = (
+                connector_state_converter.parse_timestamp(stream_state_value)
+                - runtime_lookback_window
+            )
+            stream_state[cursor_field.cursor_field_key] = connector_state_converter.output_format(
+                new_stream_state
+            )
 
         start_date_runtime_value: Union[InterpolatedString, str, MinMaxDatetime]
         if isinstance(datetime_based_cursor_model.start_datetime, MinMaxDatetimeModel):
@@ -1106,10 +1126,8 @@ class ModelToComponentFactory:
         return ConcurrentCursor(
             stream_name=stream_name,
             stream_namespace=stream_namespace,
-            stream_state=self._connector_state_manager.get_stream_state(
-                stream_name, stream_namespace
-            ),
-            message_repository=self._message_repository,
+            stream_state=stream_state,
+            message_repository=message_repository or self._message_repository,
             connector_state_manager=self._connector_state_manager,
             connector_state_converter=connector_state_converter,
             cursor_field=cursor_field,
@@ -1140,6 +1158,63 @@ class ModelToComponentFactory:
                 return Weekday.SUNDAY
             case _:
                 raise ValueError(f"Unknown weekday {weekday}")
+
+    def create_concurrent_cursor_from_perpartition_cursor(
+        self,
+        state_manager: ConnectorStateManager,
+        model_type: Type[BaseModel],
+        component_definition: ComponentDefinition,
+        stream_name: str,
+        stream_namespace: Optional[str],
+        config: Config,
+        stream_state: MutableMapping[str, Any],
+        partition_router: PartitionRouter,
+        **kwargs: Any,
+    ) -> ConcurrentPerPartitionCursor:
+        component_type = component_definition.get("type")
+        if component_definition.get("type") != model_type.__name__:
+            raise ValueError(
+                f"Expected manifest component of type {model_type.__name__}, but received {component_type} instead"
+            )
+
+        datetime_based_cursor_model = model_type.parse_obj(component_definition)
+
+        if not isinstance(datetime_based_cursor_model, DatetimeBasedCursorModel):
+            raise ValueError(
+                f"Expected {model_type.__name__} component, but received {datetime_based_cursor_model.__class__.__name__}"
+            )
+
+        interpolated_cursor_field = InterpolatedString.create(
+            datetime_based_cursor_model.cursor_field,
+            parameters=datetime_based_cursor_model.parameters or {},
+        )
+        cursor_field = CursorField(interpolated_cursor_field.eval(config=config))
+
+        # Create the cursor factory
+        cursor_factory = ConcurrentCursorFactory(
+            partial(
+                self.create_concurrent_cursor_from_datetime_based_cursor,
+                state_manager=state_manager,
+                model_type=model_type,
+                component_definition=component_definition,
+                stream_name=stream_name,
+                stream_namespace=stream_namespace,
+                config=config,
+                message_repository=NoopMessageRepository(),
+            )
+        )
+
+        # Return the concurrent cursor and state converter
+        return ConcurrentPerPartitionCursor(
+            cursor_factory=cursor_factory,
+            partition_router=partition_router,
+            stream_name=stream_name,
+            stream_namespace=stream_namespace,
+            stream_state=stream_state,
+            message_repository=self._message_repository,  # type: ignore
+            connector_state_manager=state_manager,
+            cursor_field=cursor_field,
+        )
 
     @staticmethod
     def create_constant_backoff_strategy(
@@ -1446,18 +1521,15 @@ class ModelToComponentFactory:
                 raise ValueError(
                     "Unsupported Slicer is used. PerPartitionWithGlobalCursor should be used here instead"
                 )
-            client_side_incremental_sync = {
-                "date_time_based_cursor": self._create_component_from_model(
-                    model=model.incremental_sync, config=config
-                ),
-                "substream_cursor": (
-                    combined_slicers
-                    if isinstance(
-                        combined_slicers, (PerPartitionWithGlobalCursor, GlobalSubstreamCursor)
-                    )
-                    else None
-                ),
-            }
+            cursor = (
+                combined_slicers
+                if isinstance(
+                    combined_slicers, (PerPartitionWithGlobalCursor, GlobalSubstreamCursor)
+                )
+                else self._create_component_from_model(model=model.incremental_sync, config=config)
+            )
+
+            client_side_incremental_sync = {"cursor": cursor}
 
         if model.incremental_sync and isinstance(model.incremental_sync, DatetimeBasedCursorModel):
             cursor_model = model.incremental_sync
@@ -2046,6 +2118,12 @@ class ModelToComponentFactory:
     def create_oauth_authenticator(
         self, model: OAuthAuthenticatorModel, config: Config, **kwargs: Any
     ) -> DeclarativeOauth2Authenticator:
+        profile_assertion = (
+            self._create_component_from_model(model.profile_assertion, config=config)
+            if model.profile_assertion
+            else None
+        )
+
         if model.refresh_token_updater:
             # ignore type error because fixing it would have a lot of dependencies, revisit later
             return DeclarativeSingleUseRefreshTokenOauth2Authenticator(  # type: ignore
@@ -2066,13 +2144,17 @@ class ModelToComponentFactory:
                 ).eval(config),
                 client_id=InterpolatedString.create(
                     model.client_id, parameters=model.parameters or {}
-                ).eval(config),
+                ).eval(config)
+                if model.client_id
+                else model.client_id,
                 client_secret_name=InterpolatedString.create(
                     model.client_secret_name or "client_secret", parameters=model.parameters or {}
                 ).eval(config),
                 client_secret=InterpolatedString.create(
                     model.client_secret, parameters=model.parameters or {}
-                ).eval(config),
+                ).eval(config)
+                if model.client_secret
+                else model.client_secret,
                 access_token_config_path=model.refresh_token_updater.access_token_config_path,
                 refresh_token_config_path=model.refresh_token_updater.refresh_token_config_path,
                 token_expiry_date_config_path=model.refresh_token_updater.token_expiry_date_config_path,
@@ -2118,6 +2200,8 @@ class ModelToComponentFactory:
             config=config,
             parameters=model.parameters or {},
             message_repository=self._message_repository,
+            profile_assertion=profile_assertion,
+            use_profile_assertion=model.use_profile_assertion,
         )
 
     def create_offset_increment(

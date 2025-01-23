@@ -506,8 +506,8 @@ class OAuthAuthenticator(BaseModel):
         examples=["custom_app_id"],
         title="Client ID Property Name",
     )
-    client_id: str = Field(
-        ...,
+    client_id: Optional[str] = Field(
+        None,
         description="The OAuth client ID. Fill it in the user inputs.",
         examples=["{{ config['client_id }}", "{{ config['credentials']['client_id }}"],
         title="Client ID",
@@ -518,8 +518,8 @@ class OAuthAuthenticator(BaseModel):
         examples=["custom_app_secret"],
         title="Client Secret Property Name",
     )
-    client_secret: str = Field(
-        ...,
+    client_secret: Optional[str] = Field(
+        None,
         description="The OAuth client secret. Fill it in the user inputs.",
         examples=[
             "{{ config['client_secret }}",
@@ -623,6 +623,16 @@ class OAuthAuthenticator(BaseModel):
         None,
         description="When the token updater is defined, new refresh tokens, access tokens and the access token expiry date are written back from the authentication response to the config object. This is important if the refresh token can only used once.",
         title="Token Updater",
+    )
+    profile_assertion: Optional[JwtAuthenticator] = Field(
+        None,
+        description="The authenticator being used to authenticate the client authenticator.",
+        title="Profile Assertion",
+    )
+    use_profile_assertion: Optional[bool] = Field(
+        False,
+        description="Enable using profile assertion as a flow for OAuth authorization.",
+        title="Use Profile Assertion",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 

@@ -491,8 +491,8 @@ def test_get_request_headers(test_name, paginator_mapping, expected_mapping):
     paginator.get_request_headers.return_value = paginator_mapping
     requester = MagicMock(use_cache=False)
 
-    stream_slicer = MagicMock()
-    stream_slicer.get_request_headers.return_value = {"key": "value"}
+    request_option_provider = MagicMock()
+    request_option_provider.get_request_headers.return_value = {"key": "value"}
 
     record_selector = MagicMock()
     retriever = SimpleRetriever(
@@ -500,7 +500,7 @@ def test_get_request_headers(test_name, paginator_mapping, expected_mapping):
         primary_key=primary_key,
         requester=requester,
         record_selector=record_selector,
-        stream_slicer=stream_slicer,
+        request_option_provider=request_option_provider,
         paginator=paginator,
         parameters={},
         config={},
@@ -555,7 +555,7 @@ def test_get_request_headers(test_name, paginator_mapping, expected_mapping):
         ),
     ],
 )
-def test_ignore_stream_slicer_parameters_on_paginated_requests(
+def test_ignore_request_option_provider_parameters_on_paginated_requests(
     test_name,
     paginator_mapping,
     ignore_stream_slicer_parameters_on_paginated_requests,
@@ -567,8 +567,8 @@ def test_ignore_stream_slicer_parameters_on_paginated_requests(
     paginator.get_request_headers.return_value = paginator_mapping
     requester = MagicMock(use_cache=False)
 
-    stream_slicer = MagicMock()
-    stream_slicer.get_request_headers.return_value = {"key_from_slicer": "value"}
+    request_option_provider = MagicMock()
+    request_option_provider.get_request_headers.return_value = {"key_from_slicer": "value"}
 
     record_selector = MagicMock()
     retriever = SimpleRetriever(
@@ -576,7 +576,7 @@ def test_ignore_stream_slicer_parameters_on_paginated_requests(
         primary_key=primary_key,
         requester=requester,
         record_selector=record_selector,
-        stream_slicer=stream_slicer,
+        request_option_provider=request_option_provider,
         paginator=paginator,
         ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
         parameters={},

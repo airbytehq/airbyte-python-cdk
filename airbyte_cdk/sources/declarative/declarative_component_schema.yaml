@@ -1081,8 +1081,6 @@ definitions:
     type: object
     required:
       - type
-      - client_id
-      - client_secret
     properties:
       type:
         type: string
@@ -1277,6 +1275,15 @@ definitions:
             default: []
             examples:
               - ["invalid_grant", "invalid_permissions"]
+      profile_assertion:
+        title: Profile Assertion
+        description: The authenticator being used to authenticate the client authenticator.
+        "$ref": "#/definitions/JwtAuthenticator"
+      use_profile_assertion:
+        title: Use Profile Assertion
+        description: Enable using profile assertion as a flow for OAuth authorization.
+        type: boolean
+        default: false
       $parameters:
         type: object
         additionalProperties: true

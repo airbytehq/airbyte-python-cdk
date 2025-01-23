@@ -20,6 +20,9 @@ from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
 from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
+from airbyte_cdk.sources.declarative.incremental.per_partition_with_global import (
+    PerPartitionWithGlobalCursor,
+)
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -237,7 +240,6 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                         # instantiated for the other components that reference it
                         retriever.cursor = None
 
-                    # if type(declarative_stream.retriever).__name__ != "AsyncRetriever":
                     if isinstance(declarative_stream.retriever, AsyncRetriever):
                         cursor = declarative_stream.retriever.stream_slicer.stream_slicer
 
@@ -245,7 +247,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             # This should never happen since we instantiate ConcurrentCursor in
                             # model_to_component_factory.py
                             raise ValueError(
-                                f"Expected AsyncJobPartitionRouter stream_slicer to be of type ConcurrentCursor, but received {cursor.__class__}"
+                                f"Expected AsyncJobPartitionRouter stream_slicer to be of type ConcurrentCursor, but received{cursor.__class__}"
                             )
 
                         partition_generator = StreamSlicerPartitionGenerator(
@@ -323,6 +325,60 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             cursor_field=None,
                             logger=self.logger,
                             cursor=final_state_cursor,
+                        )
+                    )
+                elif (
+                    incremental_sync_component_definition
+                    and incremental_sync_component_definition.get("type", "")
+                    == DatetimeBasedCursorModel.__name__
+                    and self._stream_supports_concurrent_partition_processing(
+                        declarative_stream=declarative_stream
+                    )
+                    and hasattr(declarative_stream.retriever, "stream_slicer")
+                    and isinstance(
+                        declarative_stream.retriever.stream_slicer, PerPartitionWithGlobalCursor
+                    )
+                ):
+                    stream_state = self._connector_state_manager.get_stream_state(
+                        stream_name=declarative_stream.name, namespace=declarative_stream.namespace
+                    )
+                    partition_router = declarative_stream.retriever.stream_slicer._partition_router
+
+                    perpartition_cursor = (
+                        self._constructor.create_concurrent_cursor_from_perpartition_cursor(
+                            state_manager=self._connector_state_manager,
+                            model_type=DatetimeBasedCursorModel,
+                            component_definition=incremental_sync_component_definition,
+                            stream_name=declarative_stream.name,
+                            stream_namespace=declarative_stream.namespace,
+                            config=config or {},
+                            stream_state=stream_state,
+                            partition_router=partition_router,
+                        )
+                    )
+
+                    retriever = declarative_stream.retriever
+
+                    partition_generator = StreamSlicerPartitionGenerator(
+                        DeclarativePartitionFactory(
+                            declarative_stream.name,
+                            declarative_stream.get_json_schema(),
+                            retriever,
+                            self.message_repository,
+                        ),
+                        perpartition_cursor,
+                    )
+
+                    concurrent_streams.append(
+                        DefaultStream(
+                            partition_generator=partition_generator,
+                            name=declarative_stream.name,
+                            json_schema=declarative_stream.get_json_schema(),
+                            availability_strategy=AlwaysAvailableAvailabilityStrategy(),
+                            primary_key=get_primary_key_from_stream(declarative_stream.primary_key),
+                            cursor_field=perpartition_cursor.cursor_field.cursor_field_key,
+                            logger=self.logger,
+                            cursor=perpartition_cursor,
                         )
                     )
                 else:

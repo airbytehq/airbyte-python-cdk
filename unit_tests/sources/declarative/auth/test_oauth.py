@@ -1,7 +1,9 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+
 import base64
+import json
 import logging
 from unittest.mock import Mock
 
@@ -12,6 +14,8 @@ import requests
 from requests import Response
 
 from airbyte_cdk.sources.declarative.auth import DeclarativeOauth2Authenticator
+from airbyte_cdk.sources.declarative.auth.jwt import JwtAuthenticator
+from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 
 LOGGER = logging.getLogger(__name__)
@@ -19,7 +23,7 @@ LOGGER = logging.getLogger(__name__)
 resp = Response()
 
 config = {
-    "refresh_endpoint": "refresh_end",
+    "refresh_endpoint": "https://refresh_endpoint.com",
     "client_id": "some_client_id",
     "client_secret": "some_client_secret",
     "token_expiry_date": pendulum.now().subtract(days=2).to_rfc3339_string(),
@@ -412,6 +416,45 @@ class TestOauth2Authenticator:
             assert "access_token" == token
             assert oauth.get_token_expiry_date() == pendulum.parse(next_day)
 
+    def test_profile_assertion(self, mocker):
+        with HttpMocker() as http_mocker:
+            jwt = JwtAuthenticator(
+                config={},
+                parameters={},
+                secret_key="test",
+                algorithm="HS256",
+                token_duration=1000,
+                typ="JWT",
+                iss="iss",
+            )
+
+            mocker.patch(
+                "airbyte_cdk.sources.declarative.auth.jwt.JwtAuthenticator.token",
+                new_callable=lambda: "token",
+            )
+
+            oauth = DeclarativeOauth2Authenticator(
+                token_refresh_endpoint="https://refresh_endpoint.com/",
+                config=config,
+                parameters={},
+                profile_assertion=jwt,
+                use_profile_assertion=True,
+            )
+            http_mocker.post(
+                HttpRequest(
+                    url="https://refresh_endpoint.com/",
+                    body="grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=token",
+                ),
+                HttpResponse(body=json.dumps({"access_token": "access_token", "expires_in": 1000})),
+            )
+
+            token = oauth.refresh_access_token()
+
+        assert ("access_token", 1000) == token
+
+        filtered = filter_secrets("access_token")
+        assert filtered == "****"
+
     def test_error_handling(self, mocker):
         oauth = DeclarativeOauth2Authenticator(
             token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
@@ -438,7 +481,7 @@ class TestOauth2Authenticator:
 
 
 def mock_request(method, url, data, headers):
-    if url == "refresh_end":
+    if url == "https://refresh_endpoint.com":
         return resp
     raise Exception(
         f"Error while refreshing access token with request: {method}, {url}, {data}, {headers}"

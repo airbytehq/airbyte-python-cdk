@@ -169,7 +169,9 @@ class ConcurrentCursor(Cursor):
 
     @property
     def state(self) -> MutableMapping[str, Any]:
-        return self._concurrent_state
+        return self._connector_state_converter.convert_to_state_message(
+            self.cursor_field, self._concurrent_state
+        )
 
     @property
     def cursor_field(self) -> CursorField:
@@ -214,10 +216,10 @@ class ConcurrentCursor(Cursor):
         return self._connector_state_converter.parse_value(self._cursor_field.extract_value(record))
 
     def close_partition(self, partition: Partition) -> None:
-        slice_count_before = len(self.state.get("slices", []))
+        slice_count_before = len(self._concurrent_state.get("slices", []))
         self._add_slice_to_state(partition)
         if slice_count_before < len(
-            self.state["slices"]
+            self._concurrent_state["slices"]
         ):  # only emit if at least one slice has been processed
             self._merge_partitions()
             self._emit_state_message()
@@ -229,11 +231,11 @@ class ConcurrentCursor(Cursor):
         )
 
         if self._slice_boundary_fields:
-            if "slices" not in self.state:
+            if "slices" not in self._concurrent_state:
                 raise RuntimeError(
                     f"The state for stream {self._stream_name} should have at least one slice to delineate the sync start time, but no slices are present. This is unexpected. Please contact Support."
                 )
-            self.state["slices"].append(
+            self._concurrent_state["slices"].append(
                 {
                     self._connector_state_converter.START_KEY: self._extract_from_slice(
                         partition, self._slice_boundary_fields[self._START_BOUNDARY]
@@ -261,7 +263,7 @@ class ConcurrentCursor(Cursor):
                     "expected. Please contact the Airbyte team."
                 )
 
-            self.state["slices"].append(
+            self._concurrent_state["slices"].append(
                 {
                     self._connector_state_converter.START_KEY: self.start,
                     self._connector_state_converter.END_KEY: most_recent_cursor_value,
@@ -273,9 +275,7 @@ class ConcurrentCursor(Cursor):
         self._connector_state_manager.update_state_for_stream(
             self._stream_name,
             self._stream_namespace,
-            self._connector_state_converter.convert_to_state_message(
-                self._cursor_field, self.state
-            ),
+            self.state,
         )
         state_message = self._connector_state_manager.create_state_message(
             self._stream_name, self._stream_namespace
@@ -283,7 +283,9 @@ class ConcurrentCursor(Cursor):
         self._message_repository.emit_message(state_message)
 
     def _merge_partitions(self) -> None:
-        self.state["slices"] = self._connector_state_converter.merge_intervals(self.state["slices"])
+        self._concurrent_state["slices"] = self._connector_state_converter.merge_intervals(
+            self._concurrent_state["slices"]
+        )
 
     def _extract_from_slice(self, partition: Partition, key: str) -> CursorValueType:
         try:
@@ -320,36 +322,42 @@ class ConcurrentCursor(Cursor):
         if self._start is not None and self._is_start_before_first_slice():
             yield from self._split_per_slice_range(
                 self._start,
-                self.state["slices"][0][self._connector_state_converter.START_KEY],
+                self._concurrent_state["slices"][0][self._connector_state_converter.START_KEY],
                 False,
             )
 
-        if len(self.state["slices"]) == 1:
+        if len(self._concurrent_state["slices"]) == 1:
             yield from self._split_per_slice_range(
                 self._calculate_lower_boundary_of_last_slice(
-                    self.state["slices"][0][self._connector_state_converter.END_KEY]
+                    self._concurrent_state["slices"][0][self._connector_state_converter.END_KEY]
                 ),
                 self._end_provider(),
                 True,
             )
-        elif len(self.state["slices"]) > 1:
-            for i in range(len(self.state["slices"]) - 1):
+        elif len(self._concurrent_state["slices"]) > 1:
+            for i in range(len(self._concurrent_state["slices"]) - 1):
                 if self._cursor_granularity:
                     yield from self._split_per_slice_range(
-                        self.state["slices"][i][self._connector_state_converter.END_KEY]
+                        self._concurrent_state["slices"][i][self._connector_state_converter.END_KEY]
                         + self._cursor_granularity,
-                        self.state["slices"][i + 1][self._connector_state_converter.START_KEY],
+                        self._concurrent_state["slices"][i + 1][
+                            self._connector_state_converter.START_KEY
+                        ],
                         False,
                     )
                 else:
                     yield from self._split_per_slice_range(
-                        self.state["slices"][i][self._connector_state_converter.END_KEY],
-                        self.state["slices"][i + 1][self._connector_state_converter.START_KEY],
+                        self._concurrent_state["slices"][i][
+                            self._connector_state_converter.END_KEY
+                        ],
+                        self._concurrent_state["slices"][i + 1][
+                            self._connector_state_converter.START_KEY
+                        ],
                         False,
                     )
             yield from self._split_per_slice_range(
                 self._calculate_lower_boundary_of_last_slice(
-                    self.state["slices"][-1][self._connector_state_converter.END_KEY]
+                    self._concurrent_state["slices"][-1][self._connector_state_converter.END_KEY]
                 ),
                 self._end_provider(),
                 True,
@@ -360,7 +368,8 @@ class ConcurrentCursor(Cursor):
     def _is_start_before_first_slice(self) -> bool:
         return (
             self._start is not None
-            and self._start < self.state["slices"][0][self._connector_state_converter.START_KEY]
+            and self._start
+            < self._concurrent_state["slices"][0][self._connector_state_converter.START_KEY]
         )
 
     def _calculate_lower_boundary_of_last_slice(
