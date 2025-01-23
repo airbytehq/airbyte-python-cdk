@@ -15,26 +15,26 @@ jobs:
       checks: write
       contents: read
     steps:
-      - name: Create Initial Check Run
+      - name: Create Custom Check Run
         uses: LouisBrunner/checks-action@v1.6.1
         with:
           token: ${{ github.token }}
-          name: "Dummy Check"
+          name: "Custom Test Report"
           status: "in_progress"
           output: |
             {
-              "title": "Test Check",
+              "title": "Test Report",
               "summary": "Running test check..."
             }
 
       - name: Sleep for a moment
         run: sleep 5
 
-      - name: Update Check Run with Details URL
+      - name: Update Custom Check Run
         uses: LouisBrunner/checks-action@v1.6.1
         with:
           token: ${{ github.token }}
-          name: "Dummy Check"
+          name: "Custom Test Report"
           status: "completed"
           conclusion: "failure"
           details_url: "https://www.google.com/search?q=test-failure"
