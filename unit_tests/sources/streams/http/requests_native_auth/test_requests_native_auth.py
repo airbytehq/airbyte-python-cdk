@@ -619,7 +619,7 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
 
 
 def mock_request(method, url, data, headers):
-    if url == "refresh_end":
+    if url == "https://refresh_endpoint.com":
         return resp
     raise Exception(
         f"Error while refreshing access token with request: {method}, {url}, {data}, {headers}"
