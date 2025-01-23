@@ -232,12 +232,12 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
 
         Override to define additional parameters
         """
-        payload: MutableMapping[str, Any] = {
-            self.get_grant_type_name(): self.get_grant_type(),
-            self.get_assertion_name(): self.get_assertion(),
-        }
-
-        return payload if self.use_profile_assertion else super().build_refresh_request_body()
+        if self.use_profile_assertion:
+            return {
+                self.get_grant_type_name(): self.get_grant_type(),
+                self.get_assertion_name(): self.get_assertion(),
+            }
+        return super().build_refresh_request_body()
 
     @property
     def access_token(self) -> str:
