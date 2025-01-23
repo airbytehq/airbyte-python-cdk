@@ -21,9 +21,7 @@ jobs:
         run: |
           HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
           
-          # Create JSON payload file
-          echo '{"title":"Success Check","summary":"This is a dummy success check."}' > output.json
-          
+          # Create check run with properly formatted JSON output
           gh api \
             --method POST \
             -H "Accept: application/vnd.github+json" \
@@ -34,7 +32,10 @@ jobs:
             -f status="completed" \
             -f conclusion="success" \
             -f details_url="https://www.google.com/search?q=success" \
-            -F output=@output.json
+            -f output="$(jq -n \
+              --arg title "Success Check" \
+              --arg summary "This is a dummy success check." \
+              '{title: $title, summary: $summary}')"
 
   failure_check:
     name: "Dummy Check (fail)"
@@ -49,9 +50,7 @@ jobs:
         run: |
           HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
           
-          # Create JSON payload file
-          echo '{"title":"Failure Check","summary":"This is a dummy failure check."}' > output.json
-          
+          # Create check run with properly formatted JSON output
           gh api \
             --method POST \
             -H "Accept: application/vnd.github+json" \
@@ -62,4 +61,7 @@ jobs:
             -f status="completed" \
             -f conclusion="failure" \
             -f details_url="https://www.google.com/search?q=failed" \
-            -F output=@output.json
+            -f output="$(jq -n \
+              --arg title "Failure Check" \
+              --arg summary "This is a dummy failure check." \
+              '{title: $title, summary: $summary}')"
