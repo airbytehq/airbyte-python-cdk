@@ -3,12 +3,20 @@
 #
 
 # mypy: ignore-errors
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Mapping
 
 import freezegun
 import pytest
 import requests
+
+from airbyte_cdk.sources.streams.concurrent.clamping import (
+    ClampingEndProvider,
+    DayClampingStrategy,
+    MonthClampingStrategy,
+    WeekClampingStrategy,
+)
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, now, parse
 
 from airbyte_cdk import AirbyteTracedException
 from airbyte_cdk.models import FailureType, Level
@@ -739,7 +747,7 @@ def test_datetime_based_cursor():
     )
 
     assert isinstance(stream_slicer, DatetimeBasedCursor)
-    assert stream_slicer._step == datetime.timedelta(days=10)
+    assert stream_slicer._step == timedelta(days=10)
     assert stream_slicer.cursor_field.string == "created"
     assert stream_slicer.cursor_granularity == "PT0.000001S"
     assert stream_slicer._lookback_window.string == "P5D"
@@ -3058,9 +3066,9 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
     expected_start_boundary = "custom_start"
     expected_end_boundary = "custom_end"
     expected_step = timedelta(days=10)
-    expected_lookback_window = datetime.timedelta(days=3)
+    expected_lookback_window = timedelta(days=3)
     expected_datetime_format = "%Y-%m-%dT%H:%M:%S.%fZ"
-    expected_cursor_granularity = datetime.timedelta(microseconds=1)
+    expected_cursor_granularity = timedelta(microseconds=1)
 
     expected_start = parse(expected_start)
     expected_end = AirbyteDateTime(
@@ -3431,7 +3439,7 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_with_clamping(
         assert isinstance(
             concurrent_cursor._end_provider._clamping_strategy, expected_clamping_strategy
         )
-        assert concurrent_cursor._end_provider._granularity == datetime.timedelta(seconds=1)
+        assert concurrent_cursor._end_provider._granularity == timedelta(seconds=1)
 
 
 class CustomRecordExtractor(RecordExtractor):

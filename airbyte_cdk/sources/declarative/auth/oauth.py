@@ -134,7 +134,6 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
                 if self.token_expiry_date
                 else now() - timedelta(days=1)
             )
-        )
         self.use_profile_assertion = (
             InterpolatedBoolean(self.use_profile_assertion, parameters=parameters)
             if isinstance(self.use_profile_assertion, str)

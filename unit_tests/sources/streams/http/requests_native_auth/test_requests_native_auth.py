@@ -310,13 +310,13 @@ class TestOauth2Authenticator:
     @pytest.mark.parametrize(
         "expires_in_response, token_expiry_date_format, expected_token_expiry_date",
         [
-            (3600, None, AirbyteDateTime(1970, 1, 1, 1, 0, 0, tzinfo=timezone.utc)),
-            ("90012", None, AirbyteDateTime(1970, 1, 2, 1, 0, 12, tzinfo=timezone.utc)),
-            ("2024-02-28", "YYYY-MM-DD", AirbyteDateTime(2024, 2, 28, tzinfo=timezone.utc)),
+            (3600, None, "2022-01-01T01:00:00+00:00"),
+            ("90012", None, "2022-01-02T01:00:12+00:00"),
+            ("2024-02-28", "YYYY-MM-DD", "2024-02-28T00:00:00+00:00"),
             (
                 "2022-02-12T00:00:00.000000+00:00",
                 "YYYY-MM-DDTHH:mm:ss.SSSSSSZ",
-                AirbyteDateTime(2022, 2, 12, tzinfo=timezone.utc),
+                "2022-02-12T00:00:00+00:00",
             ),
         ],
         ids=["seconds", "string_of_seconds", "simple_date", "simple_datetime"],
@@ -356,7 +356,7 @@ class TestOauth2Authenticator:
         expires_datetime = oauth._parse_token_expiration_date(expire_in)
 
         assert isinstance(expires_datetime, AirbyteDateTime)
-        assert ("access_token", expected_token_expiry_date) == (token, expires_datetime)
+        assert ("access_token", parse(expected_token_expiry_date)) == (token, expires_datetime)
 
     @pytest.mark.usefixtures("mock_sleep")
     @pytest.mark.parametrize("error_code", (429, 500, 502, 504))
