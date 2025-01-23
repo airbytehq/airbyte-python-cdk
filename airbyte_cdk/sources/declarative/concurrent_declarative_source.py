@@ -245,7 +245,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             # This should never happen since we instantiate ConcurrentCursor in
                             # model_to_component_factory.py
                             raise ValueError(
-                                f"Expected AsyncJobPartitionRouter stream_slicer to be of type ConcurrentCursor, but received{cursor.__class__}"
+                                f"Expected AsyncJobPartitionRouter stream_slicer to be of type ConcurrentCursor, but received {cursor.__class__}"
                             )
 
                         partition_generator = StreamSlicerPartitionGenerator(
