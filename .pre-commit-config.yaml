@@ -1,0 +1,30 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+    -   id: trailing-whitespace
+    -   id: end-of-file-fixer
+    -   id: check-yaml
+    -   id: check-added-large-files
+    -   id: check-toml  # Basic TOML syntax checking
+
+-   repo: https://github.com/pappasam/toml-sort
+    rev: v0.23.1
+    hooks:
+    -   id: toml-sort
+        args: [--all]
+
+-   repo: https://github.com/taplo-tools/taplo
+    rev: 0.8.1
+    hooks:
+    -   id: taplo-fmt  # TOML formatting
+    -   id: taplo-check  # TOML linting
+
+-   repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.1.11
+    hooks:
+    -   id: ruff
+        args: [--fix]
+    -   id: ruff-format
