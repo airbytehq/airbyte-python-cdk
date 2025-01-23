@@ -203,6 +203,7 @@ class AbstractFileBasedStreamReader(ABC):
         absolute_file_path = path.abspath(local_file_path)
         return [file_relative_path, local_file_path, absolute_file_path]
 
+    @abstractmethod
     def get_file_metadata(self, file: RemoteFile, logger: logging.Logger) -> Dict[str, Any]:
         """
         This is required for connectors that will support syncing
