@@ -194,11 +194,21 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
                             self.name, record, is_file_transfer_message=True
                         )
                 elif self.sync_metadata:
-                    metadata_record = self.stream_reader.get_file_metadata(file, logger=self.logger)
-                    yield stream_data_to_airbyte_message(
-                        self.name, metadata_record, is_file_transfer_message=False
-                    )
-
+                    try:
+                        metadata_record = self.stream_reader.get_file_metadata(file, logger=self.logger)
+                        yield stream_data_to_airbyte_message(
+                            self.name, metadata_record, is_file_transfer_message=False
+                        )
+                    except Exception as e:
+                        self.logger.error(f"Failed to retrieve metadata for file {file.uri}: {str(e)}")
+                        yield AirbyteMessage(
+                            type=MessageType.LOG,
+                            log=AirbyteLogMessage(
+                            level=Level.ERROR,
+                            message = f"Error retrieving metadata: stream={self.name} file={file.uri}",
+                            stack_trace = traceback.format_exc(),
+                            )
+                        )
                 else:
                     for record in parser.parse_records(
                         self.config, file, self.stream_reader, self.logger, schema
@@ -297,7 +307,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         if self.use_file_transfer:
             return file_transfer_schema
         elif self.sync_metadata:
-            self.stream_reader.get_metadata_schema()
+            return self.stream_reader.get_metadata_schema()
         elif self.config.input_schema:
             return self.config.get_input_schema()  # type: ignore
         elif self.config.schemaless:
@@ -428,3 +438,4 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
                 format=str(self.config.format),
                 stream=self.name,
             ) from exc
+
