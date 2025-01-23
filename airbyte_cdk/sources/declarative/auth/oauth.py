@@ -106,15 +106,18 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         self._refresh_request_headers = InterpolatedMapping(
             self.refresh_request_headers or {}, parameters=parameters
         )
-        self._token_expiry_date: AirbyteDateTime = (
-            parse(
-                InterpolatedString.create(self.token_expiry_date, parameters=parameters).eval(
-                    self.config
+        if isinstance(self.token_expiry_date, (int, str)) and str(self.token_expiry_date).isdigit():
+            self._token_expiry_date = parse(self.token_expiry_date)
+        else:
+            self._token_expiry_date = (
+                parse(
+                    InterpolatedString.create(self.token_expiry_date, parameters=parameters).eval(
+                        self.config
+                    )
                 )
+                if self.token_expiry_date
+                else now() - timedelta(days=1)
             )
-            if self.token_expiry_date
-            else now() - timedelta(days=1)
-        )
         if self.access_token_value is not None:
             self._access_token_value = InterpolatedString.create(
                 self.access_token_value, parameters=parameters

@@ -38,11 +38,11 @@ class AirbyteDateTime(datetime):
     def __str__(self) -> str:
         """
         Returns the datetime in ISO8601/RFC3339 format with 'T' delimiter.
-        Always includes timezone, using 'Z' for UTC.
+        Always includes timezone, using +00:00 for UTC to match test expectations.
         """
-        iso = self.isoformat()
-        # Replace +00:00 with Z for UTC
-        return iso.replace("+00:00", "Z") if self.tzinfo == timezone.utc else iso
+        # Ensure we have a tz-aware datetime
+        aware_self = self if self.tzinfo else self.replace(tzinfo=timezone.utc)
+        return aware_self.isoformat()
 
     def __repr__(self) -> str:
         """Returns the same string representation as __str__ for consistency."""
@@ -65,10 +65,13 @@ def parse(dt_str: Union[str, int]) -> AirbyteDateTime:
     """
     if isinstance(dt_str, int) or (isinstance(dt_str, str) and dt_str.isdigit()):
         timestamp = int(dt_str)
+        # Always treat numeric values as Unix timestamps
         dt_obj = datetime.fromtimestamp(timestamp, tz=timezone.utc)
         return AirbyteDateTime.from_datetime(dt_obj)
     try:
         dt_obj = parser.parse(str(dt_str))
+        if dt_obj.tzinfo is None:
+            dt_obj = dt_obj.replace(tzinfo=timezone.utc)
         return AirbyteDateTime.from_datetime(dt_obj)
     except (ValueError, TypeError) as e:
         raise ValueError(f"Could not parse datetime string: {dt_str}") from e

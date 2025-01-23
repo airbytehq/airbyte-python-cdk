@@ -3,7 +3,7 @@
 #
 
 # mypy: ignore-errors
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone
 from typing import Any, Iterable, Mapping
 
 import freezegun
@@ -2819,9 +2819,9 @@ def test_create_jwt_authenticator(config, manifest, expected):
     jwt_payload = expected["jwt_payload"]
     jwt_payload.update(
         {
-            "iat": int(datetime.datetime.now().timestamp()),
-            "nbf": int(datetime.datetime.now().timestamp()),
-            "exp": int(datetime.datetime.now().timestamp()) + expected["token_duration"],
+            "iat": int(now().timestamp()),
+            "nbf": int(now().timestamp()),
+            "exp": int(now().timestamp()) + expected["token_duration"],
         }
     )
     assert authenticator._get_jwt_payload() == jwt_payload
@@ -3049,7 +3049,7 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
     expected_cursor_field = "updated_at"
     expected_start_boundary = "custom_start"
     expected_end_boundary = "custom_end"
-    expected_step = datetime.timedelta(days=10)
+    expected_step = timedelta(days=10)
     expected_lookback_window = datetime.timedelta(days=3)
     expected_datetime_format = "%Y-%m-%dT%H:%M:%S.%fZ"
     expected_cursor_granularity = datetime.timedelta(microseconds=1)

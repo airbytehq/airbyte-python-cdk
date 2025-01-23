@@ -292,25 +292,22 @@ class TestOauth2Authenticator:
     def test_initialize_declarative_oauth_with_token_expiry_date_as_timestamp(
         self, timestamp, expected_date
     ):
-        # TODO: should be fixed inside DeclarativeOauth2Authenticator, remove next line after fixing
-        with pytest.raises(TypeError):
-            oauth = DeclarativeOauth2Authenticator(
-                token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
-                client_id="{{ config['client_id'] }}",
-                client_secret="{{ config['client_secret'] }}",
-                refresh_token="{{ parameters['refresh_token'] }}",
-                config=config | {"token_expiry_date": timestamp},
-                scopes=["scope1", "scope2"],
-                token_expiry_date="{{ config['token_expiry_date'] }}",
-                refresh_request_body={
-                    "custom_field": "{{ config['custom_field'] }}",
-                    "another_field": "{{ config['another_field'] }}",
-                    "scopes": ["no_override"],
-                },
-                parameters={},
-            )
-
-            assert oauth.get_token_expiry_date() == pendulum.parse(expected_date)
+        oauth = DeclarativeOauth2Authenticator(
+            token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
+            client_id="{{ config['client_id'] }}",
+            client_secret="{{ config['client_secret'] }}",
+            token_expiry_date=timestamp,
+            refresh_token="some_refresh_token",
+            config={
+                "refresh_endpoint": "refresh_end",
+                "client_id": "some_client_id",
+                "client_secret": "some_client_secret",
+            },
+            parameters={},
+            grant_type="client_credentials",
+        )
+        assert isinstance(oauth._token_expiry_date, AirbyteDateTime)
+        assert oauth.get_token_expiry_date() == parse(expected_date)
 
     @pytest.mark.parametrize(
         "expires_in_response, token_expiry_date_format",
