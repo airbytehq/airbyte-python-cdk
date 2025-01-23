@@ -2004,6 +2004,7 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
             message_repository=self._message_repository,
             profile_assertion=profile_assertion,
+            use_profile_assertion=model.use_profile_assertion,
         )
 
     def create_offset_increment(
