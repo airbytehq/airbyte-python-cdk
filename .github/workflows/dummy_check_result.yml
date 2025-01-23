@@ -30,7 +30,7 @@ jobs:
             -f status="completed" \
             -f conclusion="success" \
             -f details_url="https://www.google.com/search?q=success" \
-            -f output='{"title":"Success Check","summary":"This is a dummy success check."}'
+            --raw-field output='{"title":"Success Check","summary":"This is a dummy success check."}'
 
   failure_check:
     name: "Dummy Check (fail)"
@@ -54,4 +54,4 @@ jobs:
             -f status="completed" \
             -f conclusion="failure" \
             -f details_url="https://www.google.com/search?q=failed" \
-            -f output='{"title":"Failure Check","summary":"This is a dummy failure check."}'
+            --raw-field output='{"title":"Failure Check","summary":"This is a dummy failure check."}'
