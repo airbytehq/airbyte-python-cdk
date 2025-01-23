@@ -1634,7 +1634,7 @@ def test_async_incremental_stream_uses_concurrent_cursor_with_state():
     }
 
     concurrent_streams, _ = source._group_streams(config=_CONFIG)
-    async_job_stream = concurrent_streams[5]
+    async_job_stream = concurrent_streams[6]
     assert isinstance(async_job_stream, DefaultStream)
     cursor = async_job_stream._cursor
     assert isinstance(cursor, ConcurrentCursor)
