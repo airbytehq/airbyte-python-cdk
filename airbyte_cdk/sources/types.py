@@ -6,12 +6,7 @@ from __future__ import annotations
 
 from typing import Any, ItemsView, Iterator, KeysView, List, Mapping, Optional, ValuesView
 
-import orjson
-
 from airbyte_cdk.utils.slice_hasher import SliceHasher
-from unit_tests.sources.declarative.requesters.request_options.test_interpolated_request_options_provider import (
-    stream_slice,
-)
 
 # A FieldPointer designates a path to a field inside a mapping. For example, retrieving ["k1", "k1.2"] in the object {"k1" :{"k1.2":
 # "hello"}] returns "hello"
@@ -156,7 +151,9 @@ class StreamSlice(Mapping[str, Any]):
         return self._stream_slice
 
     def __hash__(self) -> int:
-        return SliceHasher.hash(stream_slice=self._stream_slice)  # no need to provide stream_name here as this is used for slicing the cursor
+        return SliceHasher.hash(
+            stream_slice=self._stream_slice
+        )  # no need to provide stream_name here as this is used for slicing the cursor
 
     def __bool__(self) -> bool:
         return bool(self._stream_slice) or bool(self._extra_fields)

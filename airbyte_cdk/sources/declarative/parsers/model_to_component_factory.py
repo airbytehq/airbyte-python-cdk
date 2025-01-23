@@ -15,7 +15,6 @@ from typing import (
     Dict,
     List,
     Mapping,
-    MutableMapping,
     Optional,
     Type,
     Union,
@@ -500,7 +499,7 @@ class ModelToComponentFactory:
         disable_cache: bool = False,
         disable_resumable_full_refresh: bool = False,
         message_repository: Optional[MessageRepository] = None,
-        state_manager: Optional[ConnectorStateManager] = None
+        connector_state_manager: Optional[ConnectorStateManager] = None,
     ):
         self._init_mappings()
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
@@ -512,7 +511,7 @@ class ModelToComponentFactory:
         self._message_repository = message_repository or InMemoryMessageRepository(
             self._evaluate_log_level(emit_connector_builder_messages)
         )
-        self._state_manager = state_manager
+        self._connector_state_manager = connector_state_manager or ConnectorStateManager()
 
     def _init_mappings(self) -> None:
         self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Mapping[Type[BaseModel], Callable[..., Any]] = {
@@ -1107,9 +1106,11 @@ class ModelToComponentFactory:
         return ConcurrentCursor(
             stream_name=stream_name,
             stream_namespace=stream_namespace,
-            stream_state=self._state_manager.get_stream_state(stream_name, stream_namespace),
+            stream_state=self._connector_state_manager.get_stream_state(
+                stream_name, stream_namespace
+            ),
             message_repository=self._message_repository,
-            connector_state_manager=self._state_manager,
+            connector_state_manager=self._connector_state_manager,
             connector_state_converter=connector_state_converter,
             cursor_field=cursor_field,
             slice_boundary_fields=slice_boundary_fields,
@@ -1608,14 +1609,16 @@ class ModelToComponentFactory:
             if model.retriever.type == "AsyncRetriever":
                 if model.incremental_sync.type != "DatetimeBasedCursor":
                     # We are currently in a transition to the Concurrent CDK and AsyncRetriever can only work with the support or unordered slices (for example, when we trigger reports for January and February, the report in February can be completed first). Once we have support for custom concurrent cursor or have a new implementation available in the CDK, we can enable more cursors here.
-                    raise ValueError("AsyncRetriever with cursor other than DatetimeBasedCursor is not supported yet")
+                    raise ValueError(
+                        "AsyncRetriever with cursor other than DatetimeBasedCursor is not supported yet"
+                    )
                 if model.retriever.partition_router:
                     # Note that this development is also done in parallel to the per partition development which once merged we could support here by calling `create_concurrent_cursor_from_perpartition_cursor`
                     raise ValueError("Per partition state is not supported yet for AsyncRetriever")
-                return self.create_concurrent_cursor_from_datetime_based_cursor(
+                return self.create_concurrent_cursor_from_datetime_based_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
                     model_type=DatetimeBasedCursorModel,
                     component_definition=model.incremental_sync.__dict__,
-                    stream_name=model.name,
+                    stream_name=model.name or "",
                     stream_namespace=None,
                     config=config or {},
                 )
