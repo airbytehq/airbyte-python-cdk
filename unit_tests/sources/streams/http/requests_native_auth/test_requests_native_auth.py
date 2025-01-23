@@ -4,11 +4,11 @@
 
 import json
 import logging
+from datetime import timedelta, timezone
 from typing import Optional, Union
 from unittest.mock import Mock
 
 import freezegun
-import pendulum
 import pytest
 import requests
 from requests import Response
@@ -23,6 +23,7 @@ from airbyte_cdk.sources.streams.http.requests_native_auth import (
     TokenAuthenticator,
 )
 from airbyte_cdk.utils import AirbyteTracedException
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, now, parse
 
 LOGGER = logging.getLogger(__name__)
 
@@ -145,7 +146,7 @@ class TestOauth2Authenticator:
             client_secret="some_client_secret",
             refresh_token="some_refresh_token",
             scopes=["scope1", "scope2"],
-            token_expiry_date=pendulum.now().add(days=3),
+            token_expiry_date=now() + timedelta(days=3),
             grant_type="some_grant_type",
             refresh_request_body={
                 "custom_field": "in_outbound_request",
@@ -174,7 +175,7 @@ class TestOauth2Authenticator:
             client_id="some_client_id",
             client_secret="some_client_secret",
             refresh_token="some_refresh_token",
-            token_expiry_date=pendulum.now().add(days=3),
+            token_expiry_date=now() + timedelta(days=3),
             refresh_request_headers={
                 "Authorization": "Bearer some_refresh_token",
                 "Content-Type": "application/x-www-form-urlencoded",
@@ -192,7 +193,7 @@ class TestOauth2Authenticator:
             client_id="some_client_id",
             client_secret="some_client_secret",
             refresh_token="some_refresh_token",
-            token_expiry_date=pendulum.now().add(days=3),
+            token_expiry_date=now() + timedelta(days=3),
         )
         headers = oauth.build_refresh_request_headers()
         assert headers is None
@@ -211,7 +212,7 @@ class TestOauth2Authenticator:
             refresh_token_name="custom_refresh_token_key",
             refresh_token="some_refresh_token",
             scopes=["scope1", "scope2"],
-            token_expiry_date=pendulum.now().add(days=3),
+            token_expiry_date=now() + timedelta(days=3),
             grant_type_name="custom_grant_type",
             grant_type="some_grant_type",
             refresh_request_body={
@@ -239,7 +240,7 @@ class TestOauth2Authenticator:
             client_secret="some_client_secret",
             refresh_token="some_refresh_token",
             scopes=["scope1", "scope2"],
-            token_expiry_date=pendulum.now().add(days=3),
+            token_expiry_date=now() + timedelta(days=3),
             refresh_request_body={
                 "custom_field": "in_outbound_request",
                 "another_field": "exists_in_body",
@@ -288,7 +289,7 @@ class TestOauth2Authenticator:
             client_secret="some_client_secret",
             refresh_token="some_refresh_token",
             scopes=["scope1", "scope2"],
-            token_expiry_date=pendulum.now().add(days=3),
+            token_expiry_date=now() + timedelta(days=3),
             refresh_request_headers=expected_headers,
         )
 
@@ -309,13 +310,13 @@ class TestOauth2Authenticator:
     @pytest.mark.parametrize(
         "expires_in_response, token_expiry_date_format, expected_token_expiry_date",
         [
-            (3600, None, pendulum.datetime(year=2022, month=1, day=1, hour=1)),
-            ("90012", None, pendulum.datetime(year=2022, month=1, day=2, hour=1, second=12)),
-            ("2024-02-28", "YYYY-MM-DD", pendulum.datetime(year=2024, month=2, day=28)),
+            (3600, None, AirbyteDateTime(2022, 1, 1, 1, tzinfo=timezone.utc)),
+            ("90012", None, AirbyteDateTime(2022, 1, 2, 1, 12, tzinfo=timezone.utc)),
+            ("2024-02-28", "YYYY-MM-DD", AirbyteDateTime(2024, 2, 28, tzinfo=timezone.utc)),
             (
                 "2022-02-12T00:00:00.000000+00:00",
                 "YYYY-MM-DDTHH:mm:ss.SSSSSSZ",
-                pendulum.datetime(year=2022, month=2, day=12),
+                AirbyteDateTime(2022, 2, 12, tzinfo=timezone.utc),
             ),
         ],
         ids=["seconds", "string_of_seconds", "simple_date", "simple_datetime"],
@@ -326,7 +327,7 @@ class TestOauth2Authenticator:
         mocker,
         expires_in_response: Union[str, int],
         token_expiry_date_format: Optional[str],
-        expected_token_expiry_date: pendulum.DateTime,
+        expected_token_expiry_date: AirbyteDateTime,
     ):
         oauth = Oauth2Authenticator(
             token_refresh_endpoint="refresh_end",
@@ -334,7 +335,7 @@ class TestOauth2Authenticator:
             client_secret="some_client_secret",
             refresh_token="some_refresh_token",
             scopes=["scope1", "scope2"],
-            token_expiry_date=pendulum.now().subtract(days=3),
+            token_expiry_date=now() - timedelta(days=3),
             token_expiry_date_format=token_expiry_date_format,
             token_expiry_is_time_of_expiration=bool(token_expiry_date_format),
             refresh_request_body={
@@ -354,7 +355,7 @@ class TestOauth2Authenticator:
         token, expire_in = oauth.refresh_access_token()
         expires_datetime = oauth._parse_token_expiration_date(expire_in)
 
-        assert isinstance(expires_datetime, pendulum.DateTime)
+        assert isinstance(expires_datetime, AirbyteDateTime)
         assert ("access_token", expected_token_expiry_date) == (token, expires_datetime)
 
     @pytest.mark.usefixtures("mock_sleep")
@@ -478,7 +479,7 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
         )
         assert authenticator.access_token == connector_config["credentials"]["access_token"]
         assert authenticator.get_refresh_token() == connector_config["credentials"]["refresh_token"]
-        assert authenticator.get_token_expiry_date() == pendulum.parse(
+        assert authenticator.get_token_expiry_date() == parse(
             connector_config["credentials"]["token_expiry_date"]
         )
 
@@ -522,7 +523,7 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
         assert airbyte_message["control"]["connectorConfig"]["config"] == expected_new_config
         assert authenticator.access_token == access_token == "new_access_token"
         assert authenticator.get_refresh_token() == "new_refresh_token"
-        assert authenticator.get_token_expiry_date() > pendulum.now()
+        assert authenticator.get_token_expiry_date() > now()
         authenticator.token_has_expired = mocker.Mock(return_value=False)
         access_token = authenticator.get_access_token()
         captured = capsys.readouterr()

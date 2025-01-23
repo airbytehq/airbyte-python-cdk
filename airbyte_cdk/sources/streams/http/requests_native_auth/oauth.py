@@ -12,10 +12,10 @@ from airbyte_cdk.config_observation import (
     emit_configuration_as_airbyte_control_message,
 )
 from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
-from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, add_seconds, now, parse
 from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_oauth import (
     AbstractOauth2Authenticator,
 )
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, add_seconds, now, parse
 
 
 class Oauth2Authenticator(AbstractOauth2Authenticator):
@@ -277,13 +277,13 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             new_refresh_token,
         )
 
-    def get_token_expiry_date(self) -> pendulum.DateTime:
+    def get_token_expiry_date(self) -> AirbyteDateTime:
         expiry_date = dpath.get(
             self._connector_config,  # type: ignore [arg-type]
             self._token_expiry_date_config_path,
             default="",
         )
-        return now() - timedelta(days=1) if expiry_date == "" else parse(expiry_date)
+        return now() - timedelta(days=1) if expiry_date == "" else parse(str(expiry_date))
 
     def set_token_expiry_date(  # type: ignore[override]
         self,
@@ -319,7 +319,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             new_access_token, access_token_expires_in, new_refresh_token = (
                 self.refresh_access_token()
             )
-            new_token_expiry_date: pendulum.DateTime = self.get_new_token_expiry_date(
+            new_token_expiry_date: AirbyteDateTime = self.get_new_token_expiry_date(
                 access_token_expires_in, self._token_expiry_date_format
             )
             self.access_token = new_access_token

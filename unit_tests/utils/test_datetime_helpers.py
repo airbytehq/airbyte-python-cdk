@@ -88,7 +88,7 @@ def test_format():
 def test_add_subtract_seconds():
     """Test adding and subtracting seconds from datetime objects."""
     dt = AirbyteDateTime(2023, 3, 14, 15, 9, 26, tzinfo=timezone.utc)
-    
+
     # Test adding seconds
     result = add_seconds(dt, 3600)  # Add 1 hour
     assert isinstance(result, AirbyteDateTime)

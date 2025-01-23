@@ -9,12 +9,12 @@ from typing import Any, Callable, List, MutableMapping, Optional, Tuple
 # FIXME We would eventually like the Concurrent package do be agnostic of the declarative package. However, this is a breaking change and
 #  the goal in the short term is only to fix the issue we are seeing for source-declarative-manifest.
 from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser
-from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, now, parse
 from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
     AbstractStreamStateConverter,
     ConcurrencyCompatibleStateType,
 )
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, now, parse
 
 
 class DateTimeStreamStateConverter(AbstractStreamStateConverter):

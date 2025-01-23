@@ -3,16 +3,17 @@
 #
 import base64
 import logging
+from datetime import timedelta, timezone
 from unittest.mock import Mock
 
 import freezegun
-import pendulum
 import pytest
 import requests
 from requests import Response
 
 from airbyte_cdk.sources.declarative.auth import DeclarativeOauth2Authenticator
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, now, parse
 
 LOGGER = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ config = {
     "refresh_endpoint": "refresh_end",
     "client_id": "some_client_id",
     "client_secret": "some_client_secret",
-    "token_expiry_date": pendulum.now().subtract(days=2).to_rfc3339_string(),
+    "token_expiry_date": (now() - timedelta(days=2)).isoformat(),
     "custom_field": "in_outbound_request",
     "another_field": "exists_in_body",
     "grant_type": "some_grant_type",
@@ -325,9 +326,7 @@ class TestOauth2Authenticator:
         self, mocker, expires_in_response, token_expiry_date_format
     ):
         next_day = "2020-01-02T00:00:00Z"
-        config.update(
-            {"token_expiry_date": pendulum.parse(next_day).subtract(days=2).to_rfc3339_string()}
-        )
+        config.update({"token_expiry_date": (parse(next_day) - timedelta(days=2)).isoformat()})
         message_repository = Mock()
         oauth = DeclarativeOauth2Authenticator(
             token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
@@ -357,7 +356,7 @@ class TestOauth2Authenticator:
         mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
         token = oauth.get_access_token()
         assert "access_token" == token
-        assert oauth.get_token_expiry_date() == pendulum.parse(next_day)
+        assert oauth.get_token_expiry_date() == parse(next_day)
         assert message_repository.log_message.call_count == 1
 
     @pytest.mark.parametrize(
@@ -379,9 +378,7 @@ class TestOauth2Authenticator:
     )
     @freezegun.freeze_time("2020-01-01")
     def test_set_token_expiry_date_no_format(self, mocker, expires_in_response, next_day, raises):
-        config.update(
-            {"token_expiry_date": pendulum.parse(next_day).subtract(days=2).to_rfc3339_string()}
-        )
+        config.update({"token_expiry_date": (parse(next_day) - timedelta(days=2)).isoformat()})
         oauth = DeclarativeOauth2Authenticator(
             token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
             client_id="{{ config['client_id'] }}",
@@ -410,7 +407,7 @@ class TestOauth2Authenticator:
         else:
             token = oauth.get_access_token()
             assert "access_token" == token
-            assert oauth.get_token_expiry_date() == pendulum.parse(next_day)
+            assert oauth.get_token_expiry_date() == parse(next_day)
 
     def test_error_handling(self, mocker):
         oauth = DeclarativeOauth2Authenticator(

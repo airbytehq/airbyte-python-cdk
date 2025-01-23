@@ -6,7 +6,7 @@ All datetime strings are formatted according to ISO8601/RFC3339 with 'T' delimit
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 from dateutil import parser
 
@@ -14,7 +14,7 @@ from dateutil import parser
 class AirbyteDateTime(datetime):
     """A datetime class that ensures consistent ISO8601/RFC3339 string representation."""
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> "AirbyteDateTime":
         # Ensure we're creating a timezone-aware datetime
         self = super().__new__(cls, *args, **kwargs)
         if self.tzinfo is None:
@@ -54,14 +54,21 @@ def now() -> AirbyteDateTime:
     return AirbyteDateTime.from_datetime(datetime.now(timezone.utc))
 
 
-def parse(dt_str: str) -> AirbyteDateTime:
+def parse(dt_str: Union[str, int]) -> AirbyteDateTime:
     """
-    Parses a datetime string into an AirbyteDateTime.
-    Handles ISO8601/RFC3339 formats and falls back to dateutil.parser for other formats.
+    Parses a datetime string or timestamp into an AirbyteDateTime.
+    Handles:
+    - ISO8601/RFC3339 format strings
+    - Unix timestamps (as integers or strings)
+    - Falls back to dateutil.parser for other string formats
     Always returns a timezone-aware datetime (defaults to UTC if no timezone specified).
     """
+    if isinstance(dt_str, int) or (isinstance(dt_str, str) and dt_str.isdigit()):
+        timestamp = int(dt_str)
+        dt_obj = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+        return AirbyteDateTime.from_datetime(dt_obj)
     try:
-        dt_obj = parser.parse(dt_str)
+        dt_obj = parser.parse(str(dt_str))
         return AirbyteDateTime.from_datetime(dt_obj)
     except (ValueError, TypeError) as e:
         raise ValueError(f"Could not parse datetime string: {dt_str}") from e
@@ -74,13 +81,15 @@ def format(dt: Union[datetime, AirbyteDateTime]) -> str:
     """
     if isinstance(dt, AirbyteDateTime):
         return str(dt)
-    
+
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.isoformat().replace("+00:00", "Z")
 
 
-def add_seconds(dt: Union[datetime, AirbyteDateTime], seconds: Union[int, float]) -> AirbyteDateTime:
+def add_seconds(
+    dt: Union[datetime, AirbyteDateTime], seconds: Union[int, float]
+) -> AirbyteDateTime:
     """
     Adds the specified number of seconds to a datetime.
     Returns an AirbyteDateTime.
@@ -90,7 +99,9 @@ def add_seconds(dt: Union[datetime, AirbyteDateTime], seconds: Union[int, float]
     return AirbyteDateTime.from_datetime(dt + timedelta(seconds=seconds))
 
 
-def subtract_seconds(dt: Union[datetime, AirbyteDateTime], seconds: Union[int, float]) -> AirbyteDateTime:
+def subtract_seconds(
+    dt: Union[datetime, AirbyteDateTime], seconds: Union[int, float]
+) -> AirbyteDateTime:
     """
     Subtracts the specified number of seconds from a datetime.
     Returns an AirbyteDateTime.

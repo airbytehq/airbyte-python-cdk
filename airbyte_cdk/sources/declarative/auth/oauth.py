@@ -3,9 +3,8 @@
 #
 
 from dataclasses import InitVar, dataclass, field
+from datetime import timedelta
 from typing import Any, List, Mapping, Optional, Union
-
-import pendulum
 
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
@@ -17,6 +16,7 @@ from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_oauth import
 from airbyte_cdk.sources.streams.http.requests_native_auth.oauth import (
     SingleUseRefreshTokenOauth2Authenticator,
 )
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, now, parse
 
 
 @dataclass
@@ -52,7 +52,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     refresh_token: Optional[Union[InterpolatedString, str]] = None
     scopes: Optional[List[str]] = None
     token_expiry_date: Optional[Union[InterpolatedString, str]] = None
-    _token_expiry_date: Optional[pendulum.DateTime] = field(init=False, repr=False, default=None)
+    _token_expiry_date: Optional[AirbyteDateTime] = field(init=False, repr=False, default=None)
     token_expiry_date_format: Optional[str] = None
     token_expiry_is_time_of_expiration: bool = False
     access_token_name: Union[InterpolatedString, str] = "access_token"
@@ -106,14 +106,14 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         self._refresh_request_headers = InterpolatedMapping(
             self.refresh_request_headers or {}, parameters=parameters
         )
-        self._token_expiry_date: pendulum.DateTime = (
-            pendulum.parse(
+        self._token_expiry_date: AirbyteDateTime = (
+            parse(
                 InterpolatedString.create(self.token_expiry_date, parameters=parameters).eval(
                     self.config
                 )
-            )  # type: ignore # pendulum.parse returns a datetime in this context
+            )
             if self.token_expiry_date
-            else pendulum.now().subtract(days=1)  # type: ignore # substract does not have type hints
+            else now() - timedelta(days=1)
         )
         if self.access_token_value is not None:
             self._access_token_value = InterpolatedString.create(
@@ -186,8 +186,8 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     def get_refresh_request_headers(self) -> Mapping[str, Any]:
         return self._refresh_request_headers.eval(self.config)
 
-    def get_token_expiry_date(self) -> pendulum.DateTime:
-        return self._token_expiry_date  # type: ignore # _token_expiry_date is a pendulum.DateTime. It is never None despite what mypy thinks
+    def get_token_expiry_date(self) -> AirbyteDateTime:
+        return self._token_expiry_date  # type: ignore # _token_expiry_date is an AirbyteDateTime. It is never None despite what mypy thinks
 
     def set_token_expiry_date(self, value: Union[str, int]) -> None:
         self._token_expiry_date = self._parse_token_expiration_date(value)
