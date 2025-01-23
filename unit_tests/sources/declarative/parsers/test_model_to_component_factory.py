@@ -10,14 +10,6 @@ import freezegun
 import pytest
 import requests
 
-from airbyte_cdk.sources.streams.concurrent.clamping import (
-    ClampingEndProvider,
-    DayClampingStrategy,
-    MonthClampingStrategy,
-    WeekClampingStrategy,
-)
-from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, now, parse
-
 from airbyte_cdk import AirbyteTracedException
 from airbyte_cdk.models import FailureType, Level
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
