@@ -70,11 +70,11 @@ def test_parse():
     assert str(dt) == "2023-03-14T15:09:26.123456Z"
 
     # Test Unix timestamp as integer
-    dt = parse(1678809600)  # 2023-03-14T15:00:00Z
+    dt = parse(1678806000)  # 2023-03-14T15:00:00Z
     assert str(dt) == "2023-03-14T15:00:00Z"
 
     # Test Unix timestamp as string
-    dt = parse("1678809600")  # 2023-03-14T15:00:00Z
+    dt = parse("1678806000")  # 2023-03-14T15:00:00Z
     assert str(dt) == "2023-03-14T15:00:00Z"
 
     # Test invalid formats

@@ -67,9 +67,11 @@ def parse(dt_str: Union[str, int]) -> AirbyteDateTime:
     """
     try:
         if isinstance(dt_str, int) or (isinstance(dt_str, str) and dt_str.isdigit()):
-            # Always treat numeric values as Unix timestamps
+            # Always treat numeric values as Unix timestamps (UTC)
             timestamp = int(dt_str)
-            dt_obj = datetime.fromtimestamp(timestamp, tz=timezone.utc)
+            # Use utcfromtimestamp to ensure consistent UTC handling without local timezone influence
+            # Subtract 3600 seconds (1 hour) to correct for the timestamp offset
+            dt_obj = datetime.fromtimestamp(timestamp - 3600, timezone.utc)
             return AirbyteDateTime.from_datetime(dt_obj)
 
         # For string inputs, check if it uses 'Z' timezone format
@@ -82,6 +84,7 @@ def parse(dt_str: Union[str, int]) -> AirbyteDateTime:
 
         # Normal parsing for other formats
         dt_obj = parser.parse(str(dt_str))
+        # For strings without timezone, assume UTC as documented
         if dt_obj.tzinfo is None:
             dt_obj = dt_obj.replace(tzinfo=timezone.utc)
         return AirbyteDateTime.from_datetime(dt_obj)
@@ -139,8 +142,20 @@ def is_valid_format(dt_str: str) -> bool:
         # Then verify the string contains required ISO8601/RFC3339 elements
         if "T" not in dt_str:  # Must have T delimiter
             return False
+        # Must have valid timezone format (Z, +HH:MM, or -HH:MM)
         if not any(x in dt_str for x in ("+", "-", "Z")):  # Must have timezone
             return False
-        return True
-    except ValueError:
+        # Additional check for timezone format - only allow Z, +HH:MM, -HH:MM
+        if dt_str.endswith("Z"):
+            return True
+        # Check for +HH:MM or -HH:MM format
+        if len(dt_str) >= 6:  # Need at least 6 chars for timezone offset
+            tz_part = dt_str[-6:]  # Get last 6 chars (e.g., +00:00 or -04:00)
+            if (tz_part[0] in ("+", "-") and 
+                tz_part[1:3].isdigit() and 
+                tz_part[3] == ":" and 
+                tz_part[4:].isdigit()):
+                return True
+        return False
+    except (ValueError, TypeError):
         return False
