@@ -9,10 +9,6 @@ jobs:
     # Only allow slash commands on pull request (not on issues)
     if: ${{ github.event.issue.pull_request }}
     runs-on: ubuntu-24.04
-    outputs:
-      error-message: ${{ steps.dispatch.outputs.error-message }}
-      command: ${{ steps.dispatch.outputs.command }}
-      dispatched: ${{ steps.dispatch.outputs.dispatched }}
     steps:
       - name: Slash Command Dispatch
         id: dispatch
@@ -41,16 +37,11 @@ jobs:
           body: |
             > Error: ${{ steps.dispatch.outputs.error-message }}
 
-  unrecognizedSlashCommand:
-    needs: slashCommandDispatch
-    if: >
-      github.event.issue.pull_request &&
-      startsWith(github.event.comment.body, '/') &&
-      !needs.slashCommandDispatch.outputs.dispatched
-    runs-on: ubuntu-24.04
-    steps:
       - name: Generate help text
         id: help
+        if: >
+          startsWith(github.event.comment.body, '/') &&
+          !steps.dispatch.outputs.dispatched
         run: |
           HELP_TEXT="The following slash commands are available:
 
@@ -68,6 +59,9 @@ jobs:
           fi
 
       - name: Post help message
+        if: >
+          startsWith(github.event.comment.body, '/') &&
+          !steps.dispatch.outputs.dispatched
         uses: peter-evans/create-or-update-comment@v4
         with:
           comment-id: ${{ github.event.comment.id }}
