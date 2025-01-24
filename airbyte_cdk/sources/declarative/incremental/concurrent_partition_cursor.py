@@ -147,7 +147,7 @@ class ConcurrentPerPartitionCursor(Cursor):
                     < cursor.state[self.cursor_field.cursor_field_key]
                 ):
                     self._new_global_cursor = copy.deepcopy(cursor.state)
-        self._emit_state_message()
+            self._emit_state_message()
 
     def ensure_at_least_one_state_emitted(self) -> None:
         """
@@ -192,7 +192,8 @@ class ConcurrentPerPartitionCursor(Cursor):
                 self._global_cursor,
                 self._lookback_window if self._global_cursor else 0,
             )
-            self._cursor_per_partition[self._to_partition_key(partition.partition)] = cursor
+            with self._lock:
+                self._cursor_per_partition[self._to_partition_key(partition.partition)] = cursor
             self._semaphore_per_partition[self._to_partition_key(partition.partition)] = (
                 threading.Semaphore(0)
             )
@@ -210,16 +211,38 @@ class ConcurrentPerPartitionCursor(Cursor):
 
     def _ensure_partition_limit(self) -> None:
         """
-        Ensure the maximum number of partitions is not exceeded. If so, the oldest added partition will be dropped.
+        Ensure the maximum number of partitions does not exceed the predefined limit.
+
+        Steps:
+        1. Attempt to remove partitions that are marked as finished in `_finished_partitions`.
+           These partitions are considered processed and safe to delete.
+        2. If the limit is still exceeded and no finished partitions are available for removal,
+           remove the oldest partition unconditionally. We expect failed partitions to be removed.
+
+        Logging:
+        - Logs a warning each time a partition is removed, indicating whether it was finished
+          or removed due to being the oldest.
         """
-        while len(self._cursor_per_partition) > self.DEFAULT_MAX_PARTITIONS_NUMBER - 1:
-            self._over_limit += 1
-            oldest_partition = self._cursor_per_partition.popitem(last=False)[
-                0
-            ]  # Remove the oldest partition
-            logger.warning(
-                f"The maximum number of partitions has been reached. Dropping the oldest partition: {oldest_partition}. Over limit: {self._over_limit}."
-            )
+        with self._lock:
+            while len(self._cursor_per_partition) > self.DEFAULT_MAX_PARTITIONS_NUMBER - 1:
+                # Try removing finished partitions first
+                for partition_key in list(self._cursor_per_partition.keys()):
+                    if partition_key in self._finished_partitions:
+                        oldest_partition = self._cursor_per_partition.pop(
+                            partition_key
+                        )  # Remove the oldest partition
+                        logger.warning(
+                            f"The maximum number of partitions has been reached. Dropping the oldest partition: {oldest_partition}. Over limit: {self._over_limit}."
+                        )
+                        break
+                else:
+                    # If no finished partitions can be removed, fall back to removing the oldest partition
+                    oldest_partition = self._cursor_per_partition.popitem(last=False)[
+                        1
+                    ]  # Remove the oldest partition
+                    logger.warning(
+                        f"The maximum number of partitions has been reached. Dropping the oldest partition: {oldest_partition}. Over limit: {self._over_limit}."
+                    )
 
     def _set_initial_state(self, stream_state: StreamState) -> None:
         """
@@ -264,7 +287,10 @@ class ConcurrentPerPartitionCursor(Cursor):
         if not stream_state:
             return
 
-        if self._PERPARTITION_STATE_KEY not in stream_state:
+        if (
+            self._PERPARTITION_STATE_KEY not in stream_state
+            and self._GLOBAL_STATE_KEY not in stream_state
+        ):
             # We assume that `stream_state` is in a global format that can be applied to all partitions.
             # Example: {"global_state_format_key": "global_state_format_value"}
             self._global_cursor = deepcopy(stream_state)
@@ -273,7 +299,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         else:
             self._lookback_window = int(stream_state.get("lookback_window", 0))
 
-            for state in stream_state[self._PERPARTITION_STATE_KEY]:
+            for state in stream_state.get(self._PERPARTITION_STATE_KEY, []):
                 self._cursor_per_partition[self._to_partition_key(state["partition"])] = (
                     self._create_cursor(state["cursor"])
                 )
