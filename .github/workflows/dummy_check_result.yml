@@ -15,16 +15,16 @@ jobs:
       checks: write
       contents: read
     steps:
-      - name: Create Check Run
+      - name: Create Independent Check Run
         uses: LouisBrunner/checks-action@v1.6.1
         with:
           token: ${{ github.token }}
-          name: "Test Results (Custom Check)"
+          name: "External Test Report Link"
           status: completed
           conclusion: failure
           details_url: "https://www.google.com/search?q=test-failure"
           output: |
             {
-              "title": "Test Results",
-              "summary": "This is a test check using the GitHub Checks action."
+              "title": "External Test Report",
+              "summary": "Click 'Details' to view the external test report."
             }
