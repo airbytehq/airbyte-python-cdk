@@ -163,7 +163,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                 parsed_config = self._get_parsed_config(config)
                 availability_method = (
                     stream.availability_strategy.check_availability
-                    if self._use_file_transfer(parsed_config)
+                    if self._use_file_transfer(parsed_config) or self._sync_metadata(parsed_config)
                     else stream.availability_strategy.check_availability_and_parsability
                 )
                 (
