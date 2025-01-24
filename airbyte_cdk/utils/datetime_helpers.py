@@ -360,7 +360,6 @@ def format(dt: Union[datetime, AirbyteDateTime]) -> str:
     return ab_datetime_format(dt)
 
 
-
 def ab_datetime_parse(dt_str: Union[str, int]) -> AirbyteDateTime:
     """Parses a datetime string or timestamp into an AirbyteDateTime with timezone awareness.
 
@@ -394,7 +393,10 @@ def ab_datetime_parse(dt_str: Union[str, int]) -> AirbyteDateTime:
     """
     try:
         # Handle numeric values as Unix timestamps (UTC)
-        if isinstance(dt_str, int) or (isinstance(dt_str, str) and (dt_str.isdigit() or (dt_str.startswith('-') and dt_str[1:].isdigit()))):
+        if isinstance(dt_str, int) or (
+            isinstance(dt_str, str)
+            and (dt_str.isdigit() or (dt_str.startswith("-") and dt_str[1:].isdigit()))
+        ):
             # Always treat numeric values as Unix timestamps (UTC)
             timestamp = int(dt_str)
             if timestamp < 0:
@@ -522,7 +524,7 @@ def ab_datetime_try_parse(dt_str: str) -> AirbyteDateTime | None:
     - 'T' delimiter between date and time components
     - Valid timezone (Z for UTC or ±HH:MM offset)
     - Complete datetime representation (date and time)
-    
+
     Returns None for any non-compliant formats including:
     - Space-delimited datetimes
     - Date-only strings
@@ -539,20 +541,20 @@ def ab_datetime_try_parse(dt_str: str) -> AirbyteDateTime | None:
         # Quick format validation before attempting to parse
         if not isinstance(dt_str, str):
             return None
-        
+
         # Must have T delimiter
         if "T" not in dt_str:
             return None
-            
+
         # Must have timezone (Z or +/-HH:MM)
         if not (dt_str.endswith("Z") or ("+" in dt_str[-6:]) or ("-" in dt_str[-6:])):
             return None
-            
+
         # Must use hyphens for date separators
         date_part = dt_str.split("T")[0]
         if "/" in date_part:
             return None
-            
+
         return ab_datetime_parse(dt_str)
     except:
         return None
