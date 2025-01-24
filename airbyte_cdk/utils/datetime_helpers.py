@@ -63,7 +63,6 @@ def parse(dt_str: Union[str, int]) -> AirbyteDateTime:
     - Unix timestamps (as integers or strings)
     - Falls back to dateutil.parser for other string formats
     Always returns a timezone-aware datetime (defaults to UTC if no timezone specified).
-    Preserves 'Z' timezone format if present in input.
     """
     try:
         if isinstance(dt_str, int) or (isinstance(dt_str, str) and dt_str.isdigit()):
@@ -73,8 +72,15 @@ def parse(dt_str: Union[str, int]) -> AirbyteDateTime:
             dt_obj = datetime.fromtimestamp(timestamp, timezone.utc)
             return AirbyteDateTime.from_datetime(dt_obj)
 
+        if not isinstance(dt_str, str):
+            raise ValueError(f"Expected string or integer, got {type(dt_str)}")
+
+        # For string inputs, first check if it's a valid datetime format
+        if not any(x in dt_str for x in ("T", ":", "-")):
+            raise ValueError(f"Invalid datetime format: {dt_str}")
+
         # For string inputs, check if it uses 'Z' timezone format
-        if isinstance(dt_str, str) and dt_str.endswith("Z"):
+        if dt_str.endswith("Z"):
             # Remove Z, parse as UTC, then ensure we output Z format
             dt_obj = parser.parse(dt_str[:-1])
             if dt_obj.tzinfo is None:
@@ -82,7 +88,7 @@ def parse(dt_str: Union[str, int]) -> AirbyteDateTime:
             return AirbyteDateTime.from_datetime(dt_obj)
 
         # Normal parsing for other formats
-        dt_obj = parser.parse(str(dt_str))
+        dt_obj = parser.parse(dt_str)
         # For strings without timezone, assume UTC as documented
         if dt_obj.tzinfo is None:
             dt_obj = dt_obj.replace(tzinfo=timezone.utc)
