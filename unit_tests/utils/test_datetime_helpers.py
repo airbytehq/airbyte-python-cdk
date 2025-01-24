@@ -173,20 +173,22 @@ def test_operator_overloading():
 
 def test_ab_datetime_try_parse():
     """Test datetime string format validation."""
-    # Valid formats
+    # Valid formats - must have T delimiter and timezone
     assert ab_datetime_try_parse("2023-03-14T15:09:26Z")  # Basic UTC format
     assert ab_datetime_try_parse("2023-03-14T15:09:26.123Z")  # With milliseconds
     assert ab_datetime_try_parse("2023-03-14T15:09:26.123456Z")  # With microseconds
     assert ab_datetime_try_parse("2023-03-14T15:09:26-04:00")  # With timezone offset
     assert ab_datetime_try_parse("2023-03-14T15:09:26+00:00")  # With explicit UTC offset
+    assert ab_datetime_try_parse("2023-03-14T00:00:00Z")  # Full datetime with zero time
 
-    # Invalid formats
+    # Invalid formats - reject anything without proper ISO8601/RFC3339 format
     assert not ab_datetime_try_parse("invalid datetime")  # Completely invalid
     assert not ab_datetime_try_parse("2023-03-14 15:09:26")  # Missing T delimiter
-    assert not ab_datetime_try_parse("2023-03-14")  # Missing time component
+    assert not ab_datetime_try_parse("2023-03-14")  # Date only, missing time and timezone
     assert not ab_datetime_try_parse("15:09:26Z")  # Missing date component
     assert not ab_datetime_try_parse("2023-03-14T15:09:26")  # Missing timezone
     assert not ab_datetime_try_parse("2023-03-14T15:09:26GMT")  # Invalid timezone format
+    assert not ab_datetime_try_parse("2023/03/14T15:09:26Z")  # Wrong date separator
 
 
 def test_epoch_millis():

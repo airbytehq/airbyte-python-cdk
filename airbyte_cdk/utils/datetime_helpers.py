@@ -480,15 +480,41 @@ def ab_datetime_format(dt: Union[datetime, AirbyteDateTime]) -> str:
 def ab_datetime_try_parse(dt_str: str) -> AirbyteDateTime | None:
     """Try to parse the input string as an ISO8601/RFC3339 datetime, failing gracefully instead of raising an exception.
 
-    Requires strict ISO8601/RFC3339 format with 'T' delimiter between date and time components.
-    Returns None for any non-compliant formats including space-delimited datetimes.
-    If parseable, returns the `AirbyteDateTime` object.
+    Requires strict ISO8601/RFC3339 format with:
+    - 'T' delimiter between date and time components
+    - Valid timezone (Z for UTC or ±HH:MM offset)
+    - Complete datetime representation (date and time)
+    
+    Returns None for any non-compliant formats including:
+    - Space-delimited datetimes
+    - Date-only strings
+    - Missing timezone
+    - Invalid timezone format
+    - Wrong date/time separators
 
     Example:
         >>> ab_datetime_try_parse("2023-03-14T15:09:26Z")  # Returns AirbyteDateTime
         >>> ab_datetime_try_parse("2023-03-14 15:09:26Z")  # Returns None (invalid format)
+        >>> ab_datetime_try_parse("2023-03-14")  # Returns None (missing time and timezone)
     """
     try:
+        # Quick format validation before attempting to parse
+        if not isinstance(dt_str, str):
+            return None
+        
+        # Must have T delimiter
+        if "T" not in dt_str:
+            return None
+            
+        # Must have timezone (Z or +/-HH:MM)
+        if not (dt_str.endswith("Z") or ("+" in dt_str[-6:]) or ("-" in dt_str[-6:])):
+            return None
+            
+        # Must use hyphens for date separators
+        date_part = dt_str.split("T")[0]
+        if "/" in date_part:
+            return None
+            
         return ab_datetime_parse(dt_str)
     except:
         return None
