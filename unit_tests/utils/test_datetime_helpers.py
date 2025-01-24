@@ -77,6 +77,10 @@ def test_parse():
     dt = parse("1678806000")  # 2023-03-14T15:00:00Z
     assert str(dt) == "2023-03-14T15:00:00Z"
 
+    # Test date-only format
+    dt = parse("2023-12-14")
+    assert str(dt) == "2023-12-14T00:00:00Z"
+
     # Test invalid formats
     with pytest.raises(ValueError):
         parse("invalid datetime")
@@ -85,7 +89,13 @@ def test_parse():
         parse("not_a_number")  # Invalid when trying to parse as timestamp
 
     with pytest.raises(ValueError):
-        parse("2023-03-14")  # Missing time component
+        parse("2023-13-14")  # Invalid month
+
+    with pytest.raises(ValueError):
+        parse("2023-12-32")  # Invalid day
+
+    with pytest.raises(ValueError):
+        parse("2023/12/14")  # Wrong separator
 
 
 def test_format():

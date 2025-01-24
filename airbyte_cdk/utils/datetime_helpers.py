@@ -86,15 +86,22 @@ def parse(dt_str: Union[str, int]) -> AirbyteDateTime:
                 except (ValueError, TypeError, OSError):
                     raise ValueError(f"Invalid timestamp: {dt_str}")
             # For date-only strings (YYYY-MM-DD), add time component
-            if len(dt_str.split("-")) == 3 and "T" not in dt_str and ":" not in dt_str:
+            if "T" not in dt_str and ":" not in dt_str:
+                # Check for wrong separators
+                if "/" in dt_str:
+                    raise ValueError(f"Invalid date format (expected YYYY-MM-DD): {dt_str}")
+                parts = dt_str.split("-")
+                if len(parts) != 3:
+                    raise ValueError(f"Invalid date format (expected YYYY-MM-DD): {dt_str}")
                 try:
                     # Validate date components before adding time
-                    year, month, day = map(int, dt_str.split("-"))
-                    if 1 <= month <= 12 and 1 <= day <= 31:
-                        # Create datetime directly instead of string manipulation
-                        return AirbyteDateTime(year, month, day, tzinfo=timezone.utc)
-                except ValueError:
-                    pass  # If date parsing fails, continue to other formats
+                    year, month, day = map(int, parts)
+                    if not (1 <= month <= 12 and 1 <= day <= 31):
+                        raise ValueError(f"Invalid date components in: {dt_str}")
+                    # Create datetime directly instead of string manipulation
+                    return AirbyteDateTime(year, month, day, tzinfo=timezone.utc)
+                except ValueError as e:
+                    raise ValueError(f"Invalid date format: {dt_str}") from e
             # For string inputs, check if it uses 'Z' timezone format
         if isinstance(dt_str, str) and dt_str.endswith("Z"):
             # Remove Z, parse as UTC, then ensure we output Z format
