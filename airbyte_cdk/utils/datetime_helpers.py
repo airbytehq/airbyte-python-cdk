@@ -10,13 +10,77 @@ Key Features:
     - Timezone-aware datetime objects (defaults to UTC)
     - ISO8601/RFC3339 compliant string formatting
     - Consistent parsing of various datetime formats
-    - Support for Unix timestamps
-    - Operator overloading for datetime arithmetic
+    - Support for Unix timestamps and milliseconds
+    - Type-safe datetime arithmetic with timedelta
 
-Example:
-    >>> dt = ab_datetime_parse("2023-03-14T15:09:26Z")
-    >>> dt + timedelta(hours=1)
-    2023-03-14T16:09:26Z
+# Basic Usage
+
+```python
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
+from datetime import timedelta, timezone
+
+# Current time in UTC
+now = ab_datetime_now()
+print(now)  # 2023-03-14T15:09:26.535897Z
+
+# Parse various datetime formats
+dt = ab_datetime_parse("2023-03-14T15:09:26Z")  # ISO8601/RFC3339
+dt = ab_datetime_parse("2023-03-14")  # Date only (assumes midnight UTC)
+dt = ab_datetime_parse(1678806566)  # Unix timestamp
+
+# Create with explicit timezone
+dt = AirbyteDateTime(2023, 3, 14, 15, 9, 26, tzinfo=timezone.utc)
+print(dt)  # 2023-03-14T15:09:26Z
+
+# Datetime arithmetic with timedelta
+tomorrow = dt + timedelta(days=1)
+yesterday = dt - timedelta(days=1)
+time_diff = tomorrow - yesterday  # timedelta object
+```
+
+# Millisecond Timestamp Handling
+
+```python
+# Convert to millisecond timestamp
+dt = ab_datetime_parse("2023-03-14T15:09:26Z")
+ms = dt.to_epoch_millis()  # 1678806566000
+
+# Create from millisecond timestamp
+dt = AirbyteDateTime.from_epoch_millis(1678806566000)
+print(dt)  # 2023-03-14T15:09:26Z
+```
+
+# Timezone Handling
+
+```python
+# Create with non-UTC timezone
+tz = timezone(timedelta(hours=-4))  # EDT
+dt = AirbyteDateTime(2023, 3, 14, 15, 9, 26, tzinfo=tz)
+print(dt)  # 2023-03-14T15:09:26-04:00
+
+# Parse with timezone
+dt = ab_datetime_parse("2023-03-14T15:09:26-04:00")
+print(dt)  # 2023-03-14T15:09:26-04:00
+
+# Naive datetimes are automatically converted to UTC
+dt = ab_datetime_parse("2023-03-14T15:09:26")
+print(dt)  # 2023-03-14T15:09:26Z
+```
+
+# Format Validation
+
+```python
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_is_valid_format
+
+# Validate ISO8601/RFC3339 format
+assert ab_datetime_is_valid_format("2023-03-14T15:09:26Z")  # True
+assert ab_datetime_is_valid_format("2023-03-14T15:09:26-04:00")  # True
+assert ab_datetime_is_valid_format("2023-03-14 15:09:26")  # False (missing T and timezone)
+```
+
+Note: All datetime strings are formatted with 'T' delimiter and explicit timezone ('Z' for UTC,
+or offset like '+00:00'). This ensures consistency across the codebase and compliance with
+ISO8601/RFC3339 standards.
 """
 
 from datetime import datetime, timedelta, timezone
