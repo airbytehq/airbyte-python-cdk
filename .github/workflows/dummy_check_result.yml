@@ -16,31 +16,15 @@ jobs:
       contents: read
     steps:
       - name: Create Check Run
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
-          
-          # Create check run with custom details URL
-          response=$(gh api \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            repos/${{ github.repository }}/check-runs \
-            -f name="Test Results (Direct API)" \
-            -f head_sha="$HEAD_SHA" \
-            -f status="completed" \
-            -f conclusion="failure" \
-            -f details_url="https://www.google.com/search?q=test-failure" \
-            -f output='{"title":"Test Results","summary":"This is a test check using direct API calls."}')
-          
-          # Get the check run ID
-          check_id=$(echo "$response" | jq -r '.id')
-          echo "Created check run ID: $check_id"
-          
-          # Verify the check run details
-          echo "Verifying check run details..."
-          gh api \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            repos/${{ github.repository }}/check-runs/$check_id | jq '{name, details_url, html_url, status, conclusion}'
+        uses: LouisBrunner/checks-action@v1.6.1
+        with:
+          token: ${{ github.token }}
+          name: "Test Results (Custom Check)"
+          status: completed
+          conclusion: failure
+          details_url: "https://www.google.com/search?q=test-failure"
+          output: |
+            {
+              "title": "Test Results",
+              "summary": "This is a test check using the GitHub Checks action."
+            }
