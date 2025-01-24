@@ -933,7 +933,11 @@ class ModelToComponentFactory:
         runtime_lookback_window: Optional[datetime.timedelta] = None,
         **kwargs: Any,
     ) -> ConcurrentCursor:
-        stream_state = self._connector_state_manager.get_stream_state(stream_name, stream_namespace) if "stream_state" not in kwargs else kwargs["stream_state"]
+        stream_state = (
+            self._connector_state_manager.get_stream_state(stream_name, stream_namespace)
+            if "stream_state" not in kwargs
+            else kwargs["stream_state"]
+        )
 
         component_type = component_definition.get("type")
         if component_definition.get("type") != model_type.__name__:
