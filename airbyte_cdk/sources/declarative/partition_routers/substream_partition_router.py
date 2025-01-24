@@ -296,8 +296,12 @@ class SubstreamPartitionRouter(PartitionRouter):
 
         if not parent_state and incremental_dependency:
             # Attempt to retrieve child state
-            substream_state = list(stream_state.values())
-            substream_state = substream_state[0] if substream_state else {}  # type: ignore [assignment]  # Incorrect type for assignment
+            substream_state_values = list(stream_state.values())
+            substream_state = substream_state_values[0] if substream_state_values else {}
+            # Filter out per partition state. Because we pass the state to the parent stream in the format {cursor_field: substream_state}
+            if isinstance(substream_state, (list, dict)):
+                substream_state = {}
+
             parent_state = {}
 
             # Copy child state to parent streams with incremental dependencies
