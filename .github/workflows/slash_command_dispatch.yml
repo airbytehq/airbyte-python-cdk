@@ -12,10 +12,11 @@ jobs:
     outputs:
       error-message: ${{ steps.dispatch.outputs.error-message }}
       command: ${{ steps.dispatch.outputs.command }}
+      dispatched: ${{ steps.dispatch.outputs.dispatched }}
     steps:
       - name: Slash Command Dispatch
         id: dispatch
-        uses: peter-evans/slash-command-dispatch@v4
+        uses: aaronsteers/slash-command-dispatch@aj/fix/add-dispatched-bool-output
         with:
           repository: ${{ github.repository }}
           token: ${{ secrets.GH_PAT_MAINTENANCE_OCTAVIA }}
@@ -45,8 +46,7 @@ jobs:
     if: >
       github.event.issue.pull_request &&
       startsWith(github.event.comment.body, '/') &&
-      !needs.slashCommandDispatch.outputs.command &&
-      !needs.slashCommandDispatch.outputs.error-message
+      !needs.slashCommandDispatch.outputs.dispatched
     runs-on: ubuntu-24.04
     steps:
       - name: Generate help text
