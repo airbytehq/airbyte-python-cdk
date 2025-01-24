@@ -76,11 +76,12 @@ def parse(dt_str: Union[str, int]) -> AirbyteDateTime:
             raise ValueError(f"Expected string or integer, got {type(dt_str)}")
 
         # For string inputs, first check if it's a valid datetime format
-        if isinstance(dt_str, str) and not any(x in dt_str for x in ("T", ":", "-")):
-            raise ValueError(f"Invalid datetime format: {dt_str}")
+        if isinstance(dt_str, str):
+            if not any(x in dt_str for x in ("T", ":", "-")) and not dt_str.isdigit():
+                raise ValueError(f"Invalid datetime format: {dt_str}")
 
         # For string inputs, check if it uses 'Z' timezone format
-        if dt_str.endswith("Z"):
+        if isinstance(dt_str, str) and dt_str.endswith("Z"):
             # Remove Z, parse as UTC, then ensure we output Z format
             dt_obj = parser.parse(dt_str[:-1])
             if dt_obj.tzinfo is None:
