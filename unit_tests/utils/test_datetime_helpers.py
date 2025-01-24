@@ -79,21 +79,72 @@ def test_parse():
     dt = ab_datetime_parse("2023-12-14")
     assert str(dt) == "2023-12-14T00:00:00Z"
 
-    # Test invalid formats
+    # Test invalid formats with detailed error handling
     with pytest.raises(ValueError):
-        ab_datetime_parse("invalid datetime")
+        ab_datetime_parse("invalid datetime")  # Completely invalid format
 
     with pytest.raises(ValueError):
         ab_datetime_parse("not_a_number")  # Invalid when trying to parse as timestamp
 
+    # Test invalid timestamps
+    with pytest.raises(ValueError, match="Timestamp cannot be negative"):
+        ab_datetime_parse(-1)  # Negative timestamp
+
+    with pytest.raises(ValueError, match="Timestamp value too large"):
+        ab_datetime_parse(32503683600)  # Year 3000 (too far in future)
+
+    with pytest.raises(ValueError, match="Timestamp cannot be negative"):
+        ab_datetime_parse("-1")  # Negative timestamp as string
+
+    with pytest.raises(ValueError, match="Timestamp value too large"):
+        ab_datetime_parse("32503683600")  # Year 3000 as string
+
+    # Test invalid date components
     with pytest.raises(ValueError):
-        ab_datetime_parse("2023-13-14")  # Invalid month
+        ab_datetime_parse("2023-13-14")  # Invalid month (13)
 
     with pytest.raises(ValueError):
-        ab_datetime_parse("2023-12-32")  # Invalid day
+        ab_datetime_parse("2023-12-32")  # Invalid day (32)
 
     with pytest.raises(ValueError):
-        ab_datetime_parse("2023/12/14")  # Wrong separator
+        ab_datetime_parse("2023-00-14")  # Invalid month (0)
+
+    with pytest.raises(ValueError):
+        ab_datetime_parse("2023-12-00")  # Invalid day (0)
+
+    # Test invalid separators and formats
+    with pytest.raises(ValueError):
+        ab_datetime_parse("2023/12/14")  # Wrong date separator (/)
+
+    with pytest.raises(ValueError):
+        ab_datetime_parse("2023-03-14 15:09:26Z")  # Missing T delimiter
+
+    with pytest.raises(ValueError):
+        ab_datetime_parse("2023-03-14T15:09:26GMT")  # Invalid timezone format
+
+    # Test invalid time components
+    with pytest.raises(ValueError):
+        ab_datetime_parse("2023-03-14T25:09:26Z")  # Invalid hour (25)
+
+    with pytest.raises(ValueError):
+        ab_datetime_parse("2023-03-14T15:99:26Z")  # Invalid minute (99)
+
+    with pytest.raises(ValueError):
+        ab_datetime_parse("2023-03-14T15:09:99Z")  # Invalid second (99)
+
+    # Test invalid timezone offsets
+    with pytest.raises(ValueError):
+        ab_datetime_parse("2023-03-14T15:09:26+24:00")  # Invalid timezone offset (+24)
+
+    with pytest.raises(ValueError):
+        ab_datetime_parse("2023-03-14T15:09:26+00:60")  # Invalid timezone minutes (60)
+
+    # Test invalid timestamps
+    with pytest.raises(ValueError):
+        ab_datetime_parse(-1)  # Negative timestamp
+
+    with pytest.raises(ValueError):
+        ab_datetime_parse("9" * 20)  # Timestamp too large for system
 
 
 def test_format():
