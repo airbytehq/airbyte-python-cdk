@@ -356,7 +356,10 @@ class TestOauth2Authenticator:
         expires_datetime = oauth._parse_token_expiration_date(expire_in)
 
         assert isinstance(expires_datetime, AirbyteDateTime)
-        assert ("access_token", ab_datetime_parse(expected_token_expiry_date)) == (token, expires_datetime)
+        assert ("access_token", ab_datetime_parse(expected_token_expiry_date)) == (
+            token,
+            expires_datetime,
+        )
 
     @pytest.mark.usefixtures("mock_sleep")
     @pytest.mark.parametrize("error_code", (429, 500, 502, 504))
