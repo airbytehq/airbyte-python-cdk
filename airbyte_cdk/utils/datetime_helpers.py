@@ -150,10 +150,12 @@ def is_valid_format(dt_str: str) -> bool:
         # Check for +HH:MM or -HH:MM format
         if len(dt_str) >= 6:  # Need at least 6 chars for timezone offset
             tz_part = dt_str[-6:]  # Get last 6 chars (e.g., +00:00 or -04:00)
-            if (tz_part[0] in ("+", "-") and 
-                tz_part[1:3].isdigit() and 
-                tz_part[3] == ":" and 
-                tz_part[4:].isdigit()):
+            if (
+                tz_part[0] in ("+", "-")
+                and tz_part[1:3].isdigit()
+                and tz_part[3] == ":"
+                and tz_part[4:].isdigit()
+            ):
                 return True
         return False
     except (ValueError, TypeError):
