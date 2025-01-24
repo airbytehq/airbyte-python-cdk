@@ -71,15 +71,15 @@ def parse(dt_str: Union[str, int]) -> AirbyteDateTime:
             timestamp = int(dt_str)
             dt_obj = datetime.fromtimestamp(timestamp, tz=timezone.utc)
             return AirbyteDateTime.from_datetime(dt_obj)
-        
+
         # For string inputs, check if it uses 'Z' timezone format
-        if isinstance(dt_str, str) and dt_str.endswith('Z'):
+        if isinstance(dt_str, str) and dt_str.endswith("Z"):
             # Remove Z, parse as UTC, then ensure we output Z format
             dt_obj = parser.parse(dt_str[:-1])
             if dt_obj.tzinfo is None:
                 dt_obj = dt_obj.replace(tzinfo=timezone.utc)
             return AirbyteDateTime.from_datetime(dt_obj)
-        
+
         # Normal parsing for other formats
         dt_obj = parser.parse(str(dt_str))
         if dt_obj.tzinfo is None:
@@ -137,9 +137,9 @@ def is_valid_format(dt_str: str) -> bool:
         # First try parsing with dateutil to validate basic datetime structure
         dt = parse(dt_str)
         # Then verify the string contains required ISO8601/RFC3339 elements
-        if 'T' not in dt_str:  # Must have T delimiter
+        if "T" not in dt_str:  # Must have T delimiter
             return False
-        if not any(x in dt_str for x in ('+', '-', 'Z')):  # Must have timezone
+        if not any(x in dt_str for x in ("+", "-", "Z")):  # Must have timezone
             return False
         return True
     except ValueError:
