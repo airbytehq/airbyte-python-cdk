@@ -134,6 +134,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     CheckStream as CheckStreamModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ComplexFieldType as ComplexFieldTypeModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ComponentMappingDefinition as ComponentMappingDefinitionModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -429,6 +432,7 @@ from airbyte_cdk.sources.declarative.retrievers import (
     SimpleRetrieverTestReadDecorator,
 )
 from airbyte_cdk.sources.declarative.schema import (
+    ComplexFieldType,
     DefaultSchemaLoader,
     DynamicSchemaLoader,
     InlineSchemaLoader,
@@ -572,6 +576,7 @@ class ModelToComponentFactory:
             DynamicSchemaLoaderModel: self.create_dynamic_schema_loader,
             SchemaTypeIdentifierModel: self.create_schema_type_identifier,
             TypesMapModel: self.create_types_map,
+            ComplexFieldTypeModel: self.create_complex_field_type,
             JwtAuthenticatorModel: self.create_jwt_authenticator,
             LegacyToPerPartitionStateMigrationModel: self.create_legacy_to_per_partition_state_migration,
             ListPartitionRouterModel: self.create_list_partition_router,
@@ -1894,10 +1899,26 @@ class ModelToComponentFactory:
     ) -> InlineSchemaLoader:
         return InlineSchemaLoader(schema=model.schema_ or {}, parameters={})
 
-    @staticmethod
-    def create_types_map(model: TypesMapModel, **kwargs: Any) -> TypesMap:
+    def create_complex_field_type(
+        self, model: ComplexFieldTypeModel, config: Config, **kwargs: Any
+    ) -> ComplexFieldType:
+        items = (
+            self._create_component_from_model(model=model.items, config=config)
+            if isinstance(model.items, ComplexFieldTypeModel)
+            else model.items
+        )
+
+        return ComplexFieldType(field_type=model.field_type, items=items)
+
+    def create_types_map(self, model: TypesMapModel, config: Config, **kwargs: Any) -> TypesMap:
+        target_type = (
+            self._create_component_from_model(model=model.target_type, config=config)
+            if isinstance(model.target_type, ComplexFieldTypeModel)
+            else model.target_type
+        )
+
         return TypesMap(
-            target_type=model.target_type,
+            target_type=target_type,
             current_type=model.current_type,
             condition=model.condition if model.condition is not None else "True",
         )

@@ -9,13 +9,12 @@ jobs:
     # Only allow slash commands on pull request (not on issues)
     if: ${{ github.event.issue.pull_request }}
     runs-on: ubuntu-24.04
-    outputs:
-      error-message: ${{ steps.dispatch.outputs.error-message }}
-      command: ${{ steps.dispatch.outputs.command }}
     steps:
       - name: Slash Command Dispatch
         id: dispatch
-        uses: peter-evans/slash-command-dispatch@v4
+        # TODO: Revert to `peter-evans/slash-command-dispatch@v4` after PR merges:
+        # - https://github.com/peter-evans/slash-command-dispatch/pull/372/files
+        uses: aaronsteers/slash-command-dispatch@aj/fix/add-dispatched-bool-output
         with:
           repository: ${{ github.repository }}
           token: ${{ secrets.GH_PAT_MAINTENANCE_OCTAVIA }}
@@ -40,17 +39,11 @@ jobs:
           body: |
             > Error: ${{ steps.dispatch.outputs.error-message }}
 
-  unrecognizedSlashCommand:
-    needs: slashCommandDispatch
-    if: >
-      github.event.issue.pull_request &&
-      startsWith(github.event.comment.body, '/') &&
-      !needs.slashCommandDispatch.outputs.command &&
-      !needs.slashCommandDispatch.outputs.error-message
-    runs-on: ubuntu-24.04
-    steps:
       - name: Generate help text
         id: help
+        if: >
+          startsWith(github.event.comment.body, '/') &&
+          !steps.dispatch.outputs.dispatched
         run: |
           HELP_TEXT="The following slash commands are available:
 
@@ -68,6 +61,9 @@ jobs:
           fi
 
       - name: Post help message
+        if: >
+          startsWith(github.event.comment.body, '/') &&
+          !steps.dispatch.outputs.dispatched
         uses: peter-evans/create-or-update-comment@v4
         with:
           comment-id: ${{ github.event.comment.id }}
