@@ -79,7 +79,7 @@ class AirbyteDateTime(datetime):
         """Returns the datetime in ISO8601/RFC3339 format with 'T' delimiter.
 
         Ensures consistent string representation with timezone, using 'Z' for UTC.
-        Preserves full microsecond precision and proper timezone format.
+        Preserves full microsecond precision when present, omits when zero.
 
         Returns:
             str: ISO8601/RFC3339 formatted string.

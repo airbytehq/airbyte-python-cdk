@@ -168,7 +168,18 @@ class IsoMillisConcurrentStreamStateConverter(DateTimeStreamStateConverter):
         return timestamp + self._cursor_granularity
 
     def output_format(self, timestamp: datetime) -> str:
-        return str(AirbyteDateTime.from_datetime(timestamp))
+        """Format datetime with milliseconds always included.
+        
+        Args:
+            timestamp: The datetime to format.
+            
+        Returns:
+            str: ISO8601/RFC3339 formatted string with milliseconds.
+        """
+        dt = AirbyteDateTime.from_datetime(timestamp)
+        # Always include milliseconds, even if zero
+        millis = dt.microsecond // 1000 if dt.microsecond else 0
+        return f"{dt.year:04d}-{dt.month:02d}-{dt.day:02d}T{dt.hour:02d}:{dt.minute:02d}:{dt.second:02d}.{millis:03d}Z"
 
     def parse_timestamp(self, timestamp: str) -> datetime:
         dt_object = ab_datetime_parse(timestamp)
