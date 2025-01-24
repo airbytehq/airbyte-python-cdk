@@ -261,12 +261,16 @@ def format(dt: Union[datetime, AirbyteDateTime]) -> str:
     return ab_datetime_format(dt)
 
 
-def add_seconds(dt: Union[datetime, AirbyteDateTime], seconds: Union[int, float]) -> AirbyteDateTime:
+def add_seconds(
+    dt: Union[datetime, AirbyteDateTime], seconds: Union[int, float]
+) -> AirbyteDateTime:
     """Alias for ab_datetime_add_seconds() for backward compatibility."""
     return ab_datetime_add_seconds(dt, seconds)
 
 
-def subtract_seconds(dt: Union[datetime, AirbyteDateTime], seconds: Union[int, float]) -> AirbyteDateTime:
+def subtract_seconds(
+    dt: Union[datetime, AirbyteDateTime], seconds: Union[int, float]
+) -> AirbyteDateTime:
     """Alias for ab_datetime_subtract_seconds() for backward compatibility."""
     return ab_datetime_subtract_seconds(dt, seconds)
 
