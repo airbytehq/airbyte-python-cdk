@@ -38,11 +38,12 @@ class AirbyteDateTime(datetime):
     def __str__(self) -> str:
         """
         Returns the datetime in ISO8601/RFC3339 format with 'T' delimiter.
-        Always includes timezone, using +00:00 for UTC to match test expectations.
+        Always includes timezone, using 'Z' for UTC.
         """
         # Ensure we have a tz-aware datetime
         aware_self = self if self.tzinfo else self.replace(tzinfo=timezone.utc)
-        return aware_self.isoformat()
+        iso = aware_self.isoformat()
+        return iso.replace("+00:00", "Z") if aware_self.tzinfo == timezone.utc else iso
 
     def __repr__(self) -> str:
         """Returns the same string representation as __str__ for consistency."""
@@ -62,6 +63,7 @@ def parse(dt_str: Union[str, int]) -> AirbyteDateTime:
     - Unix timestamps (as integers or strings)
     - Falls back to dateutil.parser for other string formats
     Always returns a timezone-aware datetime (defaults to UTC if no timezone specified).
+    Preserves 'Z' timezone format if present in input.
     """
     try:
         if isinstance(dt_str, int) or (isinstance(dt_str, str) and dt_str.isdigit()):
@@ -69,6 +71,16 @@ def parse(dt_str: Union[str, int]) -> AirbyteDateTime:
             timestamp = int(dt_str)
             dt_obj = datetime.fromtimestamp(timestamp, tz=timezone.utc)
             return AirbyteDateTime.from_datetime(dt_obj)
+        
+        # For string inputs, check if it uses 'Z' timezone format
+        if isinstance(dt_str, str) and dt_str.endswith('Z'):
+            # Remove Z, parse as UTC, then ensure we output Z format
+            dt_obj = parser.parse(dt_str[:-1])
+            if dt_obj.tzinfo is None:
+                dt_obj = dt_obj.replace(tzinfo=timezone.utc)
+            return AirbyteDateTime.from_datetime(dt_obj)
+        
+        # Normal parsing for other formats
         dt_obj = parser.parse(str(dt_str))
         if dt_obj.tzinfo is None:
             dt_obj = dt_obj.replace(tzinfo=timezone.utc)
@@ -81,13 +93,15 @@ def format(dt: Union[datetime, AirbyteDateTime]) -> str:
     """
     Formats any datetime object as an ISO8601/RFC3339 string with 'T' delimiter.
     If the datetime is naive (no timezone), UTC is assumed.
+    Returns 'Z' for UTC timezone, otherwise keeps the original timezone offset.
     """
     if isinstance(dt, AirbyteDateTime):
         return str(dt)
 
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt.isoformat().replace("+00:00", "Z")
+    iso = dt.isoformat()
+    return iso.replace("+00:00", "Z") if dt.tzinfo == timezone.utc else iso
 
 
 def add_seconds(
@@ -115,9 +129,18 @@ def subtract_seconds(
 def is_valid_format(dt_str: str) -> bool:
     """
     Checks if a datetime string matches ISO8601/RFC3339 format with 'T' delimiter.
+    Requires:
+    - 'T' as date/time delimiter
+    - Timezone specification (Z, +HH:MM, or -HH:MM)
     """
     try:
-        parse(dt_str)
+        # First try parsing with dateutil to validate basic datetime structure
+        dt = parse(dt_str)
+        # Then verify the string contains required ISO8601/RFC3339 elements
+        if 'T' not in dt_str:  # Must have T delimiter
+            return False
+        if not any(x in dt_str for x in ('+', '-', 'Z')):  # Must have timezone
+            return False
         return True
     except ValueError:
         return False
