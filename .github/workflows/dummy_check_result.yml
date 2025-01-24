@@ -8,38 +8,23 @@ on:
       - '.github/workflows/dummy_check_result.yml'
 
 jobs:
-  main_job:
-    name: "Main Job"
-    runs-on: ubuntu-22.04
-    outputs:
-      run_id: ${{ steps.get_run.outputs.run_id }}
-    steps:
-      - name: Get Run ID
-        id: get_run
-        run: echo "run_id=${{ github.run_id }}" >> $GITHUB_OUTPUT
-      - name: Simulate Work
-        run: |
-          echo "Doing some work..."
-          sleep 5
-
-  post_check:
-    needs: main_job
-    name: "Post Check"
+  failure_check:
+    name: "Dummy Check (fail)"
     runs-on: ubuntu-22.04
     permissions:
       checks: write
       contents: read
     steps:
-      - name: Create Post-Job Check Run
+      - name: Create Failure Check Run
         uses: LouisBrunner/checks-action@v1.6.1
         with:
           token: ${{ github.token }}
-          name: "Test Report Link (Post-Job)"
+          name: "Dummy Check (fail custom)"
           status: completed
-          conclusion: neutral
-          details_url: "https://www.google.com/search?q=test-neutral"
+          conclusion: failure
+          details_url: "https://www.google.com/search?q=failed"
           output: |
             {
               "title": "Test Report",
-              "summary": "Testing with neutral conclusion status.\nClick 'Details' to view the test report.\nExpected URL: https://www.google.com/search?q=test-neutral"
+              "summary": "This is a dummy failure check.\nHTML Report URL: https://www.google.com/search?q=failed\n\nNote: The Details link above will go to the GitHub Actions run due to platform limitations."
             }
