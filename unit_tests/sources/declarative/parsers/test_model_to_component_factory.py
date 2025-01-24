@@ -2825,11 +2825,12 @@ def test_create_jwt_authenticator(config, manifest, expected):
         assert authenticator._header_prefix.eval(config) == expected["header_prefix"]
     assert authenticator._get_jwt_headers() == expected["jwt_headers"]
     jwt_payload = expected["jwt_payload"]
+    now_timestamp = int(ab_datetime_now().timestamp())
     jwt_payload.update(
         {
-            "iat": int(now().timestamp()),
-            "nbf": int(now().timestamp()),
-            "exp": int(now().timestamp()) + expected["token_duration"],
+            "iat": now_timestamp,
+            "nbf": now_timestamp,
+            "exp": now_timestamp + expected["token_duration"],
         }
     )
     assert authenticator._get_jwt_payload() == jwt_payload
@@ -3062,7 +3063,7 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
     expected_datetime_format = "%Y-%m-%dT%H:%M:%S.%fZ"
     expected_cursor_granularity = timedelta(microseconds=1)
 
-    expected_start = parse(expected_start)
+    expected_start = ab_datetime_parse(expected_start)
     expected_end = AirbyteDateTime(
         year=2024, month=10, day=15, second=0, microsecond=0, tzinfo=timezone.utc
     )
@@ -3072,9 +3073,9 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
         expected_concurrent_state = {
             "slices": [
                 {
-                    "start": parse(config["start_time"]),
-                    "end": parse(stream_state["updated_at"]),
-                    "most_recent_cursor_value": parse(stream_state["updated_at"]),
+                    "start": ab_datetime_parse(config["start_time"]),
+                    "end": ab_datetime_parse(stream_state["updated_at"]),
+                    "most_recent_cursor_value": ab_datetime_parse(stream_state["updated_at"]),
                 },
             ],
             "state_type": "date-range",
@@ -3084,9 +3085,9 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
         expected_concurrent_state = {
             "slices": [
                 {
-                    "start": parse(config["start_time"]),
-                    "end": parse(config["start_time"]),
-                    "most_recent_cursor_value": parse(config["start_time"]),
+                    "start": ab_datetime_parse(config["start_time"]),
+                    "end": ab_datetime_parse(config["start_time"]),
+                    "most_recent_cursor_value": ab_datetime_parse(config["start_time"]),
                 },
             ],
             "state_type": "date-range",
