@@ -85,10 +85,17 @@ def parse(dt_str: Union[str, int]) -> AirbyteDateTime:
                     return AirbyteDateTime.from_datetime(dt_obj.replace(tzinfo=timezone.utc))
                 except (ValueError, TypeError, OSError):
                     raise ValueError(f"Invalid timestamp: {dt_str}")
-            elif not ("T" in dt_str and ":" in dt_str):
-                raise ValueError(f"Invalid datetime format: {dt_str}")
-
-        # For string inputs, check if it uses 'Z' timezone format
+            # For date-only strings (YYYY-MM-DD), add time component
+            if len(dt_str.split("-")) == 3 and "T" not in dt_str and ":" not in dt_str:
+                try:
+                    # Validate date components before adding time
+                    year, month, day = map(int, dt_str.split("-"))
+                    if 1 <= month <= 12 and 1 <= day <= 31:
+                        # Create datetime directly instead of string manipulation
+                        return AirbyteDateTime(year, month, day, tzinfo=timezone.utc)
+                except ValueError:
+                    pass  # If date parsing fails, continue to other formats
+            # For string inputs, check if it uses 'Z' timezone format
         if isinstance(dt_str, str) and dt_str.endswith("Z"):
             # Remove Z, parse as UTC, then ensure we output Z format
             dt_obj = parser.parse(dt_str[:-1])
@@ -152,12 +159,13 @@ def is_valid_format(dt_str: str) -> bool:
     """
     try:
         # First try parsing with dateutil to validate basic datetime structure
-        dt = parse(dt_str)
+        dt = parser.parse(dt_str)
         # Then verify the string contains required ISO8601/RFC3339 elements
-        if "T" not in dt_str:  # Must have T delimiter
+        # For date-only strings, we'll consider them valid
+        if ":" in dt_str and "T" not in dt_str:  # If it has time but no T delimiter
             return False
-        # Must have valid timezone format (Z, +HH:MM, or -HH:MM)
-        if not any(x in dt_str for x in ("+", "-", "Z")):  # Must have timezone
+        # Must have valid timezone format (Z, +HH:MM, or -HH:MM) if time is present
+        if ":" in dt_str and not any(x in dt_str for x in ("+", "-", "Z")):
             return False
         # Additional check for timezone format - only allow Z, +HH:MM, -HH:MM
         if dt_str.endswith("Z"):
