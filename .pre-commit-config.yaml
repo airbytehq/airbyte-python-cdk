@@ -31,12 +31,10 @@ repos:
         args: [--all]
 
 -   repo: https://github.com/tamasfe/taplo
-    rev: release/taplo-cli/0.8.1
+    rev: 0.8.1
     hooks:
-    -   id: taplo
-        args: ['fmt']  # TOML formatting
-    -   id: taplo
-        args: ['check']  # TOML linting
+    -   id: taplo-fmt
+    -   id: taplo-check
 
 -   repo: https://github.com/charliermarsh/ruff-pre-commit
     rev: v0.1.11
