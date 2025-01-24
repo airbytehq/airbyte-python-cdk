@@ -36,10 +36,10 @@ jobs:
           token: ${{ github.token }}
           name: "Test Report Link (Post-Job)"
           status: completed
-          conclusion: failure
-          details_url: "https://www.google.com/search?q=test-failure"
+          conclusion: neutral
+          details_url: "https://www.google.com/search?q=test-neutral"
           output: |
             {
               "title": "Test Report",
-              "summary": "This check was created after the main job completed.\nClick 'Details' to view the test report."
+              "summary": "Testing with neutral conclusion status.\nClick 'Details' to view the test report.\nExpected URL: https://www.google.com/search?q=test-neutral"
             }
