@@ -30,11 +30,13 @@ repos:
     -   id: toml-sort
         args: [--all]
 
--   repo: https://github.com/taplo-tools/taplo-pre-commit
-    rev: v0.8.1
+-   repo: https://github.com/tamasfe/taplo
+    rev: release/taplo-cli/0.8.1
     hooks:
-    -   id: taplo-fmt  # TOML formatting
-    -   id: taplo-check  # TOML linting
+    -   id: taplo
+        args: ['fmt']  # TOML formatting
+    -   id: taplo
+        args: ['check']  # TOML linting
 
 -   repo: https://github.com/charliermarsh/ruff-pre-commit
     rev: v0.1.11
