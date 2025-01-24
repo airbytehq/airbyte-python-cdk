@@ -319,7 +319,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         if token_expiry_date_format:
             return ab_datetime_parse(access_token_expires_in)
         else:
-            return ab_datetime_add_seconds(ab_datetime_now(), int(access_token_expires_in))
+            return ab_datetime_now() + timedelta(seconds=int(access_token_expires_in))
 
     def get_access_token(self) -> str:
         """Retrieve new access and refresh token if the access token has expired.

@@ -4,6 +4,7 @@
 
 import logging
 from abc import abstractmethod
+from datetime import timedelta
 from json import JSONDecodeError
 from typing import Any, List, Mapping, MutableMapping, Optional, Tuple, Union
 
@@ -16,12 +17,7 @@ from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.airbyte_secrets_utils import add_to_secrets
-from airbyte_cdk.utils.datetime_helpers import (
-    AirbyteDateTime,
-    ab_datetime_add_seconds,
-    ab_datetime_now,
-    ab_datetime_parse,
-)
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 
 from ..exceptions import DefaultBackoffException
 
@@ -204,7 +200,7 @@ class AbstractOauth2Authenticator(AuthBase):
             try:
                 # Only accept numeric values (as int/float/string) when no format specified
                 seconds = int(float(str(value)))
-                return ab_datetime_add_seconds(ab_datetime_now(), seconds)
+                return ab_datetime_now() + timedelta(seconds=seconds)
             except (ValueError, TypeError):
                 raise ValueError(
                     f"Invalid expires_in value: {value}. Expected number of seconds when no format specified."
