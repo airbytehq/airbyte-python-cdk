@@ -79,13 +79,20 @@ class AirbyteDateTime(datetime):
         """Returns the datetime in ISO8601/RFC3339 format with 'T' delimiter.
 
         Ensures consistent string representation with timezone, using 'Z' for UTC.
+        Preserves full microsecond precision and proper timezone format.
 
         Returns:
             str: ISO8601/RFC3339 formatted string.
         """
         aware_self = self if self.tzinfo else self.replace(tzinfo=timezone.utc)
-        iso = aware_self.isoformat()
-        return iso.replace("+00:00", "Z") if aware_self.tzinfo == timezone.utc else iso
+        base = self.strftime('%Y-%m-%dT%H:%M:%S')
+        if self.microsecond:
+            base = f"{base}.{self.microsecond:06d}"
+        if aware_self.tzinfo == timezone.utc:
+            return f"{base}Z"
+        # Format timezone as ±HH:MM
+        offset = aware_self.strftime('%z')
+        return f"{base}{offset[:3]}:{offset[3:]}"
 
     def __repr__(self) -> str:
         """Returns the same string representation as __str__ for consistency.
