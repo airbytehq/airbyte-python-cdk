@@ -19,7 +19,7 @@ from airbyte_cdk.utils.datetime_helpers import (
 def test_airbyte_datetime_str_representation():
     """Test that AirbyteDateTime provides consistent string representation."""
     dt = AirbyteDateTime(2023, 3, 14, 15, 9, 26, 535897, tzinfo=timezone.utc)
-    assert str(dt) == "2023-03-14T15:09:26.535897Z"
+    assert str(dt) == "2023-03-14T15:09:26.535897+00:00"
 
     # Test non-UTC timezone
     tz = timezone(timedelta(hours=-4))
@@ -32,12 +32,12 @@ def test_airbyte_datetime_from_datetime():
     standard_dt = datetime(2023, 3, 14, 15, 9, 26, 535897, tzinfo=timezone.utc)
     airbyte_dt = AirbyteDateTime.from_datetime(standard_dt)
     assert isinstance(airbyte_dt, AirbyteDateTime)
-    assert str(airbyte_dt) == "2023-03-14T15:09:26.535897Z"
+    assert str(airbyte_dt) == "2023-03-14T15:09:26.535897+00:00"
 
     # Test naive datetime conversion (should assume UTC)
     naive_dt = datetime(2023, 3, 14, 15, 9, 26, 535897)
     airbyte_dt = AirbyteDateTime.from_datetime(naive_dt)
-    assert str(airbyte_dt) == "2023-03-14T15:09:26.535897Z"
+    assert str(airbyte_dt) == "2023-03-14T15:09:26.535897+00:00"
 
 
 @freezegun.freeze_time("2023-03-14T15:09:26.535897Z")
@@ -45,7 +45,7 @@ def test_now():
     """Test ab_datetime_now() returns current time in UTC."""
     dt = ab_datetime_now()
     assert isinstance(dt, AirbyteDateTime)
-    assert str(dt) == "2023-03-14T15:09:26.535897Z"
+    assert str(dt) == "2023-03-14T15:09:26.535897+00:00"
 
 
 def test_parse():
@@ -53,7 +53,7 @@ def test_parse():
     # Test ISO8601/RFC3339
     dt = ab_datetime_parse("2023-03-14T15:09:26Z")
     assert isinstance(dt, AirbyteDateTime)
-    assert str(dt) == "2023-03-14T15:09:26Z"
+    assert str(dt) == "2023-03-14T15:09:26+00:00"
 
     # Test with timezone offset
     dt = ab_datetime_parse("2023-03-14T15:09:26-04:00")
@@ -61,23 +61,23 @@ def test_parse():
 
     # Test without timezone (should assume UTC)
     dt = ab_datetime_parse("2023-03-14T15:09:26")
-    assert str(dt) == "2023-03-14T15:09:26Z"
+    assert str(dt) == "2023-03-14T15:09:26+00:00"
 
     # Test with microseconds
     dt = ab_datetime_parse("2023-03-14T15:09:26.123456Z")
-    assert str(dt) == "2023-03-14T15:09:26.123456Z"
+    assert str(dt) == "2023-03-14T15:09:26.123456+00:00"
 
     # Test Unix timestamp as integer
     dt = ab_datetime_parse(1678806000)  # 2023-03-14T15:00:00Z
-    assert str(dt) == "2023-03-14T15:00:00Z"
+    assert str(dt) == "2023-03-14T15:00:00+00:00"
 
     # Test Unix timestamp as string
     dt = ab_datetime_parse("1678806000")  # 2023-03-14T15:00:00Z
-    assert str(dt) == "2023-03-14T15:00:00Z"
+    assert str(dt) == "2023-03-14T15:00:00+00:00"
 
     # Test date-only format
     dt = ab_datetime_parse("2023-12-14")
-    assert str(dt) == "2023-12-14T00:00:00Z"
+    assert str(dt) == "2023-12-14T00:00:00+00:00"
 
     # Test invalid formats with detailed error handling
     with pytest.raises(ValueError):
@@ -151,19 +151,19 @@ def test_format():
     """Test formatting various datetime objects."""
     # Test formatting standard datetime with UTC timezone
     standard_dt = datetime(2023, 3, 14, 15, 9, 26, tzinfo=timezone.utc)
-    assert ab_datetime_format(standard_dt) == "2023-03-14T15:09:26Z"
+    assert ab_datetime_format(standard_dt) == "2023-03-14T15:09:26+00:00"
 
     # Test formatting naive datetime (should assume UTC)
     naive_dt = datetime(2023, 3, 14, 15, 9, 26)
-    assert ab_datetime_format(naive_dt) == "2023-03-14T15:09:26Z"
+    assert ab_datetime_format(naive_dt) == "2023-03-14T15:09:26+00:00"
 
     # Test formatting AirbyteDateTime with UTC timezone
     airbyte_dt = AirbyteDateTime(2023, 3, 14, 15, 9, 26, tzinfo=timezone.utc)
-    assert ab_datetime_format(airbyte_dt) == "2023-03-14T15:09:26Z"
+    assert ab_datetime_format(airbyte_dt) == "2023-03-14T15:09:26+00:00"
 
     # Test formatting with microseconds
     dt_with_micros = datetime(2023, 3, 14, 15, 9, 26, 123456, tzinfo=timezone.utc)
-    assert ab_datetime_format(dt_with_micros) == "2023-03-14T15:09:26.123456Z"
+    assert ab_datetime_format(dt_with_micros) == "2023-03-14T15:09:26.123456+00:00"
 
     # Test formatting with non-UTC timezone
     tz = timezone(timedelta(hours=-4))
@@ -179,17 +179,17 @@ def test_operator_overloading():
     delta = timedelta(hours=1)
     result = dt + delta
     assert isinstance(result, AirbyteDateTime)
-    assert str(result) == "2023-03-14T16:09:26Z"
+    assert str(result) == "2023-03-14T16:09:26+00:00"
 
     # Test reverse add (timedelta + datetime)
     result = delta + dt
     assert isinstance(result, AirbyteDateTime)
-    assert str(result) == "2023-03-14T16:09:26Z"
+    assert str(result) == "2023-03-14T16:09:26+00:00"
 
     # Test subtracting timedelta
     result = dt - delta
     assert isinstance(result, AirbyteDateTime)
-    assert str(result) == "2023-03-14T14:09:26Z"
+    assert str(result) == "2023-03-14T14:09:26+00:00"
 
     # Test datetime subtraction (returns timedelta)
     other_dt = AirbyteDateTime(2023, 3, 14, 14, 9, 26, tzinfo=timezone.utc)
@@ -205,11 +205,11 @@ def test_operator_overloading():
     # Test add() and subtract() methods
     result = dt.add(delta)
     assert isinstance(result, AirbyteDateTime)
-    assert str(result) == "2023-03-14T16:09:26Z"
+    assert str(result) == "2023-03-14T16:09:26+00:00"
 
     result = dt.subtract(delta)
     assert isinstance(result, AirbyteDateTime)
-    assert str(result) == "2023-03-14T14:09:26Z"
+    assert str(result) == "2023-03-14T14:09:26+00:00"
 
     # Test invalid operations
     with pytest.raises(TypeError):
@@ -225,12 +225,12 @@ def test_operator_overloading():
 def test_ab_datetime_try_parse():
     """Test datetime string format validation."""
     # Valid formats - must have T delimiter and timezone
-    assert ab_datetime_try_parse("2023-03-14T15:09:26Z")  # Basic UTC format
-    assert ab_datetime_try_parse("2023-03-14T15:09:26.123Z")  # With milliseconds
-    assert ab_datetime_try_parse("2023-03-14T15:09:26.123456Z")  # With microseconds
+    assert ab_datetime_try_parse("2023-03-14T15:09:26+00:00")  # Basic UTC format
+    assert ab_datetime_try_parse("2023-03-14T15:09:26.123+00:00")  # With milliseconds
+    assert ab_datetime_try_parse("2023-03-14T15:09:26.123456+00:00")  # With microseconds
     assert ab_datetime_try_parse("2023-03-14T15:09:26-04:00")  # With timezone offset
     assert ab_datetime_try_parse("2023-03-14T15:09:26+00:00")  # With explicit UTC offset
-    assert ab_datetime_try_parse("2023-03-14T00:00:00Z")  # Full datetime with zero time
+    assert ab_datetime_try_parse("2023-03-14T00:00:00+00:00")  # Full datetime with zero time
 
     # Invalid formats - reject anything without proper ISO8601/RFC3339 format
     assert not ab_datetime_try_parse("invalid datetime")  # Completely invalid
@@ -250,7 +250,7 @@ def test_epoch_millis():
 
     # Test from_epoch_millis()
     dt2 = AirbyteDateTime.from_epoch_millis(1678806566000)
-    assert str(dt2) == "2023-03-14T15:09:26Z"
+    assert str(dt2) == "2023-03-14T15:09:26+00:00"
 
     # Test roundtrip conversion
     dt3 = AirbyteDateTime.from_epoch_millis(dt.to_epoch_millis())

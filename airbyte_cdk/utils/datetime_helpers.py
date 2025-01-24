@@ -4,7 +4,7 @@ Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 
 This module provides a custom datetime class (AirbyteDateTime) and helper functions that ensure
 consistent datetime handling across Airbyte. All datetime strings are formatted according to
-ISO8601/RFC3339 standards with 'T' delimiter and 'Z' for UTC timezone.
+ISO8601/RFC3339 standards with 'T' delimiter and '+00:00' for UTC timezone.
 
 Key Features:
     - Timezone-aware datetime objects (defaults to UTC)
@@ -30,7 +30,7 @@ dt = ab_datetime_parse(1678806566)  # Unix timestamp
 
 ## Create with explicit timezone
 dt = AirbyteDateTime(2023, 3, 14, 15, 9, 26, tzinfo=timezone.utc)
-print(dt)  # 2023-03-14T15:09:26Z
+print(dt)  # 2023-03-14T15:09:26+00:00
 
 # Datetime arithmetic with timedelta
 tomorrow = dt + timedelta(days=1)
@@ -98,9 +98,9 @@ class AirbyteDateTime(datetime):
     Example:
         >>> dt = AirbyteDateTime(2023, 3, 14, 15, 9, 26, tzinfo=timezone.utc)
         >>> str(dt)
-        '2023-03-14T15:09:26Z'
+        '2023-03-14T15:09:26+00:00'
         >>> dt + timedelta(hours=1)
-        '2023-03-14T16:09:26Z'
+        '2023-03-14T16:09:26+00:00'
     """
 
     def __new__(cls, *args: Any, **kwargs: Any) -> "AirbyteDateTime":
@@ -140,7 +140,7 @@ class AirbyteDateTime(datetime):
     def __str__(self) -> str:
         """Returns the datetime in ISO8601/RFC3339 format with 'T' delimiter.
 
-        Ensures consistent string representation with timezone, using 'Z' for UTC.
+        Ensures consistent string representation with timezone, using '+00:00' for UTC.
         Preserves full microsecond precision when present, omits when zero.
 
         Returns:
@@ -151,7 +151,7 @@ class AirbyteDateTime(datetime):
         if self.microsecond:
             base = f"{base}.{self.microsecond:06d}"
         if aware_self.tzinfo == timezone.utc:
-            return f"{base}Z"
+            return f"{base}+00:00"
         # Format timezone as ±HH:MM
         offset = aware_self.strftime("%z")
         return f"{base}{offset[:3]}:{offset[3:]}"
@@ -323,7 +323,7 @@ class AirbyteDateTime(datetime):
         Example:
             >>> dt = AirbyteDateTime.from_epoch_millis(1678806566000)
             >>> str(dt)
-            '2023-03-14T15:09:26Z'
+            '2023-03-14T15:09:26+00:00'
         """
         return cls.fromtimestamp(milliseconds / 1000.0, timezone.utc)
 
@@ -479,7 +479,7 @@ def ab_datetime_format(dt: Union[datetime, AirbyteDateTime]) -> str:
 
     Converts any datetime object to a string with 'T' delimiter and proper timezone.
     If the datetime is naive (no timezone), UTC is assumed.
-    Uses 'Z' for UTC timezone, otherwise keeps the original timezone offset.
+    Uses '+00:00' for UTC timezone, otherwise keeps the original timezone offset.
 
     Args:
         dt: Any datetime object to format.
@@ -490,15 +490,14 @@ def ab_datetime_format(dt: Union[datetime, AirbyteDateTime]) -> str:
     Example:
         >>> dt = datetime(2023, 3, 14, 15, 9, 26, tzinfo=timezone.utc)
         >>> ab_datetime_format(dt)
-        '2023-03-14T15:09:26Z'
+        '2023-03-14T15:09:26+00:00'
     """
     if isinstance(dt, AirbyteDateTime):
         return str(dt)
 
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    iso = dt.isoformat()
-    return iso.replace("+00:00", "Z") if dt.tzinfo == timezone.utc else iso
+    return dt.isoformat()
 
 
 def ab_datetime_try_parse(dt_str: str) -> AirbyteDateTime | None:
