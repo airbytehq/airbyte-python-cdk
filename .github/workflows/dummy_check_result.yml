@@ -8,23 +8,38 @@ on:
       - '.github/workflows/dummy_check_result.yml'
 
 jobs:
-  test_check:
-    name: "Test Check"
+  main_job:
+    name: "Main Job"
+    runs-on: ubuntu-22.04
+    outputs:
+      run_id: ${{ steps.get_run.outputs.run_id }}
+    steps:
+      - name: Get Run ID
+        id: get_run
+        run: echo "run_id=${{ github.run_id }}" >> $GITHUB_OUTPUT
+      - name: Simulate Work
+        run: |
+          echo "Doing some work..."
+          sleep 5
+
+  post_check:
+    needs: main_job
+    name: "Post Check"
     runs-on: ubuntu-22.04
     permissions:
       checks: write
       contents: read
     steps:
-      - name: Create Independent Check Run
+      - name: Create Post-Job Check Run
         uses: LouisBrunner/checks-action@v1.6.1
         with:
           token: ${{ github.token }}
-          name: "External Test Report Link"
+          name: "Test Report Link (Post-Job)"
           status: completed
           conclusion: failure
           details_url: "https://www.google.com/search?q=test-failure"
           output: |
             {
-              "title": "External Test Report",
-              "summary": "Click 'Details' to view the external test report."
+              "title": "Test Report",
+              "summary": "This check was created after the main job completed.\nClick 'Details' to view the test report."
             }
