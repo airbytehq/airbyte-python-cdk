@@ -70,8 +70,7 @@ def parse(dt_str: Union[str, int]) -> AirbyteDateTime:
             # Always treat numeric values as Unix timestamps (UTC)
             timestamp = int(dt_str)
             # Use utcfromtimestamp to ensure consistent UTC handling without local timezone influence
-            # Subtract 3600 seconds (1 hour) to correct for the timestamp offset
-            dt_obj = datetime.fromtimestamp(timestamp - 3600, timezone.utc)
+            dt_obj = datetime.fromtimestamp(timestamp, timezone.utc)
             return AirbyteDateTime.from_datetime(dt_obj)
 
         # For string inputs, check if it uses 'Z' timezone format
