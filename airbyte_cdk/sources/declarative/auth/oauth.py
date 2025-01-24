@@ -17,7 +17,7 @@ from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_oauth import
 from airbyte_cdk.sources.streams.http.requests_native_auth.oauth import (
     SingleUseRefreshTokenOauth2Authenticator,
 )
-from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, now, parse
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 
 
 @dataclass
@@ -127,16 +127,16 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
                 isinstance(self.token_expiry_date, (int, str))
                 and str(self.token_expiry_date).isdigit()
             ):
-                self._token_expiry_date = parse(self.token_expiry_date)
+                self._token_expiry_date = ab_datetime_parse(self.token_expiry_date)
             else:
                 self._token_expiry_date = (
-                    parse(
+                    ab_datetime_parse(
                         InterpolatedString.create(
                             self.token_expiry_date, parameters=parameters
                         ).eval(self.config)
                     )
                     if self.token_expiry_date
-                    else now() - timedelta(days=1)
+                    else ab_datetime_now() - timedelta(days=1)
                 )
         except ValueError as e:
             raise ValueError(f"Invalid token expiry date format: {e}")

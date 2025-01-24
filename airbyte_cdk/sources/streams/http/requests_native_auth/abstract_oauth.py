@@ -16,7 +16,12 @@ from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.airbyte_secrets_utils import add_to_secrets
-from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, add_seconds, now, parse
+from airbyte_cdk.utils.datetime_helpers import (
+    AirbyteDateTime,
+    ab_datetime_add_seconds,
+    ab_datetime_now,
+    ab_datetime_parse,
+)
 
 from ..exceptions import DefaultBackoffException
 
@@ -72,7 +77,7 @@ class AbstractOauth2Authenticator(AuthBase):
 
     def token_has_expired(self) -> bool:
         """Returns True if the token is expired"""
-        return now() > self.get_token_expiry_date()
+        return ab_datetime_now() > self.get_token_expiry_date()
 
     def build_refresh_request_body(self) -> Mapping[str, Any]:
         """
@@ -192,14 +197,14 @@ class AbstractOauth2Authenticator(AuthBase):
                     f"Invalid token expiry date format {self.token_expiry_date_format}; a string representing the format is required."
                 )
             try:
-                return parse(str(value))
+                return ab_datetime_parse(str(value))
             except ValueError as e:
                 raise ValueError(f"Invalid token expiry date format: {e}")
         else:
             try:
                 # Only accept numeric values (as int/float/string) when no format specified
                 seconds = int(float(str(value)))
-                return add_seconds(now(), seconds)
+                return ab_datetime_add_seconds(ab_datetime_now(), seconds)
             except (ValueError, TypeError):
                 raise ValueError(
                     f"Invalid expires_in value: {value}. Expected number of seconds when no format specified."

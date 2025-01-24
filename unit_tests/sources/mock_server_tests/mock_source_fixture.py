@@ -16,7 +16,7 @@ from airbyte_cdk.sources.streams import CheckpointMixin, IncrementalMixin, Strea
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.streams.http import HttpStream
 from airbyte_cdk.sources.streams.http.availability_strategy import HttpAvailabilityStrategy
-from airbyte_cdk.utils.datetime_helpers import parse
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_parse
 
 
 class FixtureAvailabilityStrategy(HttpAvailabilityStrategy):

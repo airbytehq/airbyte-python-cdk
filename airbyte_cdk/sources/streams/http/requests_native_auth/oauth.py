@@ -15,7 +15,12 @@ from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_oauth import (
     AbstractOauth2Authenticator,
 )
-from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, add_seconds, now, parse
+from airbyte_cdk.utils.datetime_helpers import (
+    AirbyteDateTime,
+    ab_datetime_add_seconds,
+    ab_datetime_now,
+    ab_datetime_parse,
+)
 
 
 class Oauth2Authenticator(AbstractOauth2Authenticator):
@@ -63,7 +68,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         self._grant_type_name = grant_type_name
         self._grant_type = grant_type
 
-        self._token_expiry_date = token_expiry_date or (now() - timedelta(days=1))
+        self._token_expiry_date = token_expiry_date or (ab_datetime_now() - timedelta(days=1))
         self._token_expiry_date_format = token_expiry_date_format
         self._token_expiry_is_time_of_expiration = token_expiry_is_time_of_expiration
         self._access_token = None
@@ -283,7 +288,14 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             self._token_expiry_date_config_path,
             default="",
         )
-        return now() - timedelta(days=1) if expiry_date == "" else parse(str(expiry_date))
+        result = (
+            ab_datetime_now() - timedelta(days=1)
+            if expiry_date == ""
+            else ab_datetime_parse(str(expiry_date))
+        )
+        if isinstance(result, AirbyteDateTime):
+            return result
+        raise TypeError("Invalid datetime conversion")
 
     def set_token_expiry_date(  # type: ignore[override]
         self,
@@ -297,7 +309,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
 
     def token_has_expired(self) -> bool:
         """Returns True if the token is expired"""
-        return now() > self.get_token_expiry_date()
+        return ab_datetime_now() > self.get_token_expiry_date()
 
     @staticmethod
     def get_new_token_expiry_date(
@@ -305,9 +317,9 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         token_expiry_date_format: str | None = None,
     ) -> AirbyteDateTime:
         if token_expiry_date_format:
-            return parse(access_token_expires_in)
+            return ab_datetime_parse(access_token_expires_in)
         else:
-            return add_seconds(now(), int(access_token_expires_in))
+            return ab_datetime_add_seconds(ab_datetime_now(), int(access_token_expires_in))
 
     def get_access_token(self) -> str:
         """Retrieve new access and refresh token if the access token has expired.

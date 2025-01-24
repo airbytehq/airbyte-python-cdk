@@ -13,7 +13,7 @@ from airbyte_cdk.sources.declarative.auth.token_provider import (
     SessionTokenProvider,
 )
 from airbyte_cdk.sources.declarative.exceptions import ReadException
-from airbyte_cdk.utils.datetime_helpers import now
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 
 
 def create_session_token_provider():

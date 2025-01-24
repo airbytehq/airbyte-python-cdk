@@ -17,7 +17,7 @@ from airbyte_cdk.sources.declarative.auth import DeclarativeOauth2Authenticator
 from airbyte_cdk.sources.declarative.auth.jwt import JwtAuthenticator
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
-from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, now, parse
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 
 LOGGER = logging.getLogger(__name__)
 

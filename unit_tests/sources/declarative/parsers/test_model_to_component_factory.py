@@ -151,7 +151,7 @@ from airbyte_cdk.sources.streams.http.requests_native_auth.oauth import (
     SingleUseRefreshTokenOauth2Authenticator,
 )
 from airbyte_cdk.sources.types import StreamSlice
-from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, now, parse
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 from unit_tests.sources.declarative.parsers.testing_components import (
     TestingCustomSubstreamPartitionRouter,
     TestingSomeComponent,

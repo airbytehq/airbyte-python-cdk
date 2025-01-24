@@ -23,7 +23,7 @@ from airbyte_cdk.sources.streams.http.requests_native_auth import (
     TokenAuthenticator,
 )
 from airbyte_cdk.utils import AirbyteTracedException
-from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, now, parse
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 
 LOGGER = logging.getLogger(__name__)
 

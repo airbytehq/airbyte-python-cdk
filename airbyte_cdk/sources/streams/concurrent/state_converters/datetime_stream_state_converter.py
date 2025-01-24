@@ -14,7 +14,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_sta
     AbstractStreamStateConverter,
     ConcurrencyCompatibleStateType,
 )
-from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, now, parse
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 
 
 class DateTimeStreamStateConverter(AbstractStreamStateConverter):
@@ -34,7 +34,7 @@ class DateTimeStreamStateConverter(AbstractStreamStateConverter):
 
     @classmethod
     def get_end_provider(cls) -> Callable[[], datetime]:
-        return lambda: datetime.now(timezone.utc)
+        return ab_datetime_now
 
     @abstractmethod
     def increment(self, timestamp: datetime) -> datetime: ...
@@ -167,11 +167,11 @@ class IsoMillisConcurrentStreamStateConverter(DateTimeStreamStateConverter):
     def increment(self, timestamp: datetime) -> datetime:
         return timestamp + self._cursor_granularity
 
-    def output_format(self, timestamp: datetime) -> Any:
-        return timestamp.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    def output_format(self, timestamp: datetime) -> str:
+        return str(AirbyteDateTime.from_datetime(timestamp))
 
     def parse_timestamp(self, timestamp: str) -> datetime:
-        dt_object = parse(timestamp)
+        dt_object = ab_datetime_parse(timestamp)
         if not isinstance(dt_object, AirbyteDateTime):
             raise ValueError(
                 f"AirbyteDateTime object was expected but got {type(dt_object)} from parse({timestamp})"
