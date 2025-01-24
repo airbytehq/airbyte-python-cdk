@@ -30,7 +30,7 @@ repos:
     -   id: toml-sort
         args: [--all]
 
--   repo: https://github.com/taplo-tools/taplo
+-   repo: https://github.com/tamasfe/taplo
     rev: 0.8.1
     hooks:
     -   id: taplo-fmt  # TOML formatting
