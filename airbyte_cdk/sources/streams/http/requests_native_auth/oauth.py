@@ -17,7 +17,6 @@ from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_oauth import
 )
 from airbyte_cdk.utils.datetime_helpers import (
     AirbyteDateTime,
-    ab_datetime_add_seconds,
     ab_datetime_now,
     ab_datetime_parse,
 )

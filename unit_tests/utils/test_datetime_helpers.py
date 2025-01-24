@@ -9,12 +9,10 @@ import pytest
 
 from airbyte_cdk.utils.datetime_helpers import (
     AirbyteDateTime,
-    ab_datetime_add_seconds,
     ab_datetime_format,
-    ab_datetime_is_valid_format,
     ab_datetime_now,
     ab_datetime_parse,
-    ab_datetime_subtract_seconds,
+    ab_datetime_try_parse,
 )
 
 
@@ -173,37 +171,22 @@ def test_operator_overloading():
         _ = "invalid" - dt
 
 
-def test_add_subtract_seconds():
-    """Test adding and subtracting seconds from datetime objects."""
-    dt = AirbyteDateTime(2023, 3, 14, 15, 9, 26, tzinfo=timezone.utc)
-
-    # Test adding seconds
-    result = ab_datetime_add_seconds(dt, 3600)  # Add 1 hour
-    assert isinstance(result, AirbyteDateTime)
-    assert str(result) == "2023-03-14T16:09:26Z"
-
-    # Test subtracting seconds
-    result = ab_datetime_subtract_seconds(dt, 3600)  # Subtract 1 hour
-    assert isinstance(result, AirbyteDateTime)
-    assert str(result) == "2023-03-14T14:09:26Z"
-
-
-def test_is_valid_format():
+def test_ab_datetime_try_parse():
     """Test datetime string format validation."""
     # Valid formats
-    assert ab_datetime_is_valid_format("2023-03-14T15:09:26Z")  # Basic UTC format
-    assert ab_datetime_is_valid_format("2023-03-14T15:09:26.123Z")  # With milliseconds
-    assert ab_datetime_is_valid_format("2023-03-14T15:09:26.123456Z")  # With microseconds
-    assert ab_datetime_is_valid_format("2023-03-14T15:09:26-04:00")  # With timezone offset
-    assert ab_datetime_is_valid_format("2023-03-14T15:09:26+00:00")  # With explicit UTC offset
+    assert ab_datetime_try_parse("2023-03-14T15:09:26Z")  # Basic UTC format
+    assert ab_datetime_try_parse("2023-03-14T15:09:26.123Z")  # With milliseconds
+    assert ab_datetime_try_parse("2023-03-14T15:09:26.123456Z")  # With microseconds
+    assert ab_datetime_try_parse("2023-03-14T15:09:26-04:00")  # With timezone offset
+    assert ab_datetime_try_parse("2023-03-14T15:09:26+00:00")  # With explicit UTC offset
 
     # Invalid formats
-    assert not ab_datetime_is_valid_format("invalid datetime")  # Completely invalid
-    assert not ab_datetime_is_valid_format("2023-03-14 15:09:26")  # Missing T delimiter
-    assert not ab_datetime_is_valid_format("2023-03-14")  # Missing time component
-    assert not ab_datetime_is_valid_format("15:09:26Z")  # Missing date component
-    assert not ab_datetime_is_valid_format("2023-03-14T15:09:26")  # Missing timezone
-    assert not ab_datetime_is_valid_format("2023-03-14T15:09:26GMT")  # Invalid timezone format
+    assert not ab_datetime_try_parse("invalid datetime")  # Completely invalid
+    assert not ab_datetime_try_parse("2023-03-14 15:09:26")  # Missing T delimiter
+    assert not ab_datetime_try_parse("2023-03-14")  # Missing time component
+    assert not ab_datetime_try_parse("15:09:26Z")  # Missing date component
+    assert not ab_datetime_try_parse("2023-03-14T15:09:26")  # Missing timezone
+    assert not ab_datetime_try_parse("2023-03-14T15:09:26GMT")  # Invalid timezone format
 
 
 def test_epoch_millis():

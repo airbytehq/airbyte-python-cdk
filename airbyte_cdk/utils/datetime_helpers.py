@@ -70,17 +70,14 @@ print(dt)  # 2023-03-14T15:09:26Z
 # Format Validation
 
 ```python
-from airbyte_cdk.utils.datetime_helpers import ab_datetime_is_valid_format
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_try_parse
 
 # Validate ISO8601/RFC3339 format
-assert ab_datetime_is_valid_format("2023-03-14T15:09:26Z")  # True
-assert ab_datetime_is_valid_format("2023-03-14T15:09:26-04:00")  # True
-assert ab_datetime_is_valid_format("2023-03-14 15:09:26")  # False (missing T and timezone)
+assert ab_datetime_try_parse("2023-03-14T15:09:26Z")       # The parsed datetime is truthy
+assert ab_datetime_try_parse("2023-03-14T15:09:26-04:00")  # The parsed datetime is truthy
+assert ab_datetime_try_parse("2023-03-14 15:09:26Z")       # The parsed datetime is truthy
+assert !ab_datetime_try_parse("foo")                # 'foo' can't be parsed, returns `None`
 ```
-
-Note: All datetime strings are formatted with 'T' delimiter and explicit timezone ('Z' for UTC,
-or offset like '+00:00'). This ensures consistency across the codebase and compliance with
-ISO8601/RFC3339 standards.
 """
 
 from datetime import datetime, timedelta, timezone
@@ -362,24 +359,6 @@ def format(dt: Union[datetime, AirbyteDateTime]) -> str:
     return ab_datetime_format(dt)
 
 
-def add_seconds(
-    dt: Union[datetime, AirbyteDateTime], seconds: Union[int, float]
-) -> AirbyteDateTime:
-    """Alias for ab_datetime_add_seconds() for backward compatibility."""
-    return ab_datetime_add_seconds(dt, seconds)
-
-
-def subtract_seconds(
-    dt: Union[datetime, AirbyteDateTime], seconds: Union[int, float]
-) -> AirbyteDateTime:
-    """Alias for ab_datetime_subtract_seconds() for backward compatibility."""
-    return ab_datetime_subtract_seconds(dt, seconds)
-
-
-def is_valid_format(dt_str: str) -> bool:
-    """Alias for ab_datetime_is_valid_format() for backward compatibility."""
-    return ab_datetime_is_valid_format(dt_str)
-
 
 def ab_datetime_parse(dt_str: Union[str, int]) -> AirbyteDateTime:
     """Parses a datetime string or timestamp into an AirbyteDateTime with timezone awareness.
@@ -497,118 +476,12 @@ def ab_datetime_format(dt: Union[datetime, AirbyteDateTime]) -> str:
     return iso.replace("+00:00", "Z") if dt.tzinfo == timezone.utc else iso
 
 
-def ab_datetime_add_seconds(
-    dt: Union[datetime, AirbyteDateTime], seconds: Union[int, float]
-) -> AirbyteDateTime:
-    """Adds seconds to a datetime object. DEPRECATED: Use AirbyteDateTime + timedelta(seconds=N) instead.
+def ab_datetime_try_parse(dt_str: str) -> AirbyteDateTime | None:
+    """Try to parse the input string, failing gracefully instead of raising an exception.
 
-    Previously named: add_seconds()
-
-    This function is deprecated in favor of using the + operator with timedelta:
-        dt + timedelta(seconds=N)
-
-    Args:
-        dt: The datetime to add seconds to.
-        seconds: Number of seconds to add.
-
-    Returns:
-        AirbyteDateTime: A new datetime with seconds added.
-
-    Example:
-        >>> # Instead of using this function:
-        >>> ab_datetime_add_seconds(dt, 3600)  # Add 1 hour
-        >>> # Use this:
-        >>> dt + timedelta(seconds=3600)
-    """
-    import warnings
-
-    warnings.warn(
-        "ab_datetime_add_seconds is deprecated; use AirbyteDateTime + timedelta(seconds=N) instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    if not isinstance(dt, AirbyteDateTime):
-        dt = AirbyteDateTime.from_datetime(dt)
-    return AirbyteDateTime.from_datetime(dt + timedelta(seconds=seconds))
-
-
-def ab_datetime_subtract_seconds(
-    dt: Union[datetime, AirbyteDateTime], seconds: Union[int, float]
-) -> AirbyteDateTime:
-    """Subtracts seconds from a datetime object. DEPRECATED: Use AirbyteDateTime - timedelta(seconds=N) instead.
-
-    Previously named: subtract_seconds()
-
-    This function is deprecated in favor of using the - operator with timedelta:
-        dt - timedelta(seconds=N)
-
-    Args:
-        dt: The datetime to subtract seconds from.
-        seconds: Number of seconds to subtract.
-
-    Returns:
-        AirbyteDateTime: A new datetime with seconds subtracted.
-
-    Example:
-        >>> # Instead of using this function:
-        >>> ab_datetime_subtract_seconds(dt, 3600)  # Subtract 1 hour
-        >>> # Use this:
-        >>> dt - timedelta(seconds=3600)
-    """
-    import warnings
-
-    warnings.warn(
-        "ab_datetime_subtract_seconds is deprecated; use AirbyteDateTime - timedelta(seconds=N) instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return ab_datetime_add_seconds(dt, -seconds)
-
-
-def ab_datetime_is_valid_format(dt_str: str) -> bool:
-    """Validates if a string matches ISO8601/RFC3339 datetime format with 'T' delimiter and timezone.
-
-    Previously named: is_valid_format()
-
-    Checks if the string follows strict ISO8601/RFC3339 format requirements:
-        - Uses 'T' as date/time delimiter
-        - Includes timezone specification (Z, +HH:MM, or -HH:MM)
-
-    Args:
-        dt_str: The datetime string to validate.
-
-    Returns:
-        bool: True if the string matches ISO8601/RFC3339 format, False otherwise.
-
-    Example:
-        >>> ab_datetime_is_valid_format("2023-03-14T15:09:26Z")
-        True
-        >>> ab_datetime_is_valid_format("2023-03-14 15:09:26")  # Missing T and timezone
-        False
+    If not parseable, return `None`. Otherwise, return the `AirbyteDataTime` object.
     """
     try:
-        # First try parsing with dateutil to validate basic datetime structure
-        dt = parser.parse(dt_str)
-        # Then verify the string contains required ISO8601/RFC3339 elements
-        # For date-only strings, we'll consider them valid
-        if ":" in dt_str and "T" not in dt_str:  # If it has time but no T delimiter
-            return False
-        # Must have valid timezone format (Z, +HH:MM, or -HH:MM) if time is present
-        if ":" in dt_str and not any(x in dt_str for x in ("+", "-", "Z")):
-            return False
-        # Additional check for timezone format - only allow Z, +HH:MM, -HH:MM
-        if dt_str.endswith("Z"):
-            return True
-        # Check for +HH:MM or -HH:MM format
-        if len(dt_str) >= 6:  # Need at least 6 chars for timezone offset
-            tz_part = dt_str[-6:]  # Get last 6 chars (e.g., +00:00 or -04:00)
-            if (
-                tz_part[0] in ("+", "-")
-                and tz_part[1:3].isdigit()
-                and tz_part[3] == ":"
-                and tz_part[4:].isdigit()
-            ):
-                return True
-        return False
-    except (ValueError, TypeError):
-        return False
+        return ab_datetime_parse(dt_str)
+    except:
+        return None
