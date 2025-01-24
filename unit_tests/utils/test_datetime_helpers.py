@@ -204,3 +204,18 @@ def test_is_valid_format():
     assert not ab_datetime_is_valid_format("15:09:26Z")  # Missing date component
     assert not ab_datetime_is_valid_format("2023-03-14T15:09:26")  # Missing timezone
     assert not ab_datetime_is_valid_format("2023-03-14T15:09:26GMT")  # Invalid timezone format
+
+
+def test_epoch_millis():
+    """Test Unix epoch millisecond timestamp conversion methods."""
+    # Test to_epoch_millis()
+    dt = AirbyteDateTime(2023, 3, 14, 15, 9, 26, tzinfo=timezone.utc)
+    assert dt.to_epoch_millis() == 1678806566000
+
+    # Test from_epoch_millis()
+    dt2 = AirbyteDateTime.from_epoch_millis(1678806566000)
+    assert str(dt2) == "2023-03-14T15:09:26Z"
+
+    # Test roundtrip conversion
+    dt3 = AirbyteDateTime.from_epoch_millis(dt.to_epoch_millis())
+    assert dt3 == dt

@@ -27,7 +27,7 @@ config = {
     "refresh_endpoint": "https://refresh_endpoint.com",
     "client_id": "some_client_id",
     "client_secret": "some_client_secret",
-    "token_expiry_date": (now() - timedelta(days=2)).isoformat(),
+    "token_expiry_date": (ab_datetime_now() - timedelta(days=2)).isoformat(),
     "custom_field": "in_outbound_request",
     "another_field": "exists_in_body",
     "grant_type": "some_grant_type",
@@ -311,7 +311,7 @@ class TestOauth2Authenticator:
             grant_type="client_credentials",
         )
         assert isinstance(oauth._token_expiry_date, AirbyteDateTime)
-        assert oauth.get_token_expiry_date() == parse(expected_date)
+        assert oauth.get_token_expiry_date() == ab_datetime_parse(expected_date)
 
     @pytest.mark.parametrize(
         "expires_in_response, token_expiry_date_format",
@@ -327,7 +327,9 @@ class TestOauth2Authenticator:
         self, mocker, expires_in_response, token_expiry_date_format
     ):
         next_day = "2020-01-02T00:00:00Z"
-        config.update({"token_expiry_date": (parse(next_day) - timedelta(days=2)).isoformat()})
+        config.update(
+            {"token_expiry_date": (ab_datetime_parse(next_day) - timedelta(days=2)).isoformat()}
+        )
         message_repository = Mock()
         oauth = DeclarativeOauth2Authenticator(
             token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
@@ -357,7 +359,7 @@ class TestOauth2Authenticator:
         mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
         token = oauth.get_access_token()
         assert "access_token" == token
-        assert oauth.get_token_expiry_date() == parse(next_day)
+        assert oauth.get_token_expiry_date() == ab_datetime_parse(next_day)
         assert message_repository.log_message.call_count == 1
 
     @pytest.mark.parametrize(
@@ -379,7 +381,9 @@ class TestOauth2Authenticator:
     )
     @freezegun.freeze_time("2020-01-01")
     def test_set_token_expiry_date_no_format(self, mocker, expires_in_response, next_day, raises):
-        config.update({"token_expiry_date": (parse(next_day) - timedelta(days=2)).isoformat()})
+        config.update(
+            {"token_expiry_date": (ab_datetime_parse(next_day) - timedelta(days=2)).isoformat()}
+        )
         oauth = DeclarativeOauth2Authenticator(
             token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
             client_id="{{ config['client_id'] }}",
@@ -408,7 +412,7 @@ class TestOauth2Authenticator:
         else:
             token = oauth.get_access_token()
             assert "access_token" == token
-            assert oauth.get_token_expiry_date() == parse(next_day)
+            assert oauth.get_token_expiry_date() == ab_datetime_parse(next_day)
 
     def test_profile_assertion(self, mocker):
         with HttpMocker() as http_mocker:

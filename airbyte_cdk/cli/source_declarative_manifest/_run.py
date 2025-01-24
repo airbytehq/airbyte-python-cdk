@@ -101,7 +101,7 @@ def _get_local_yaml_source(args: list[str]) -> SourceLocalYaml:
                         type=Type.TRACE,
                         trace=AirbyteTraceMessage(
                             type=TraceType.ERROR,
-                            emitted_at=int(ab_datetime_now().timestamp() * 1000),
+                            emitted_at=ab_datetime_now().to_epoch_millis(),
                             error=AirbyteErrorTraceMessage(
                                 message=f"Error starting the sync. This could be due to an invalid configuration or catalog. Please contact Support for assistance. Error: {error}",
                                 stack_trace=traceback.format_exc(),
@@ -191,7 +191,7 @@ def create_declarative_source(
                         type=Type.TRACE,
                         trace=AirbyteTraceMessage(
                             type=TraceType.ERROR,
-                            emitted_at=int(ab_datetime_now().timestamp() * 1000),
+                            emitted_at=ab_datetime_now().to_epoch_millis(),
                             error=AirbyteErrorTraceMessage(
                                 message=f"Error starting the sync. This could be due to an invalid configuration or catalog. Please contact Support for assistance. Error: {error}",
                                 stack_trace=traceback.format_exc(),

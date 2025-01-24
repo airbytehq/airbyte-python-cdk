@@ -146,7 +146,7 @@ class TestOauth2Authenticator:
             client_secret="some_client_secret",
             refresh_token="some_refresh_token",
             scopes=["scope1", "scope2"],
-            token_expiry_date=now() + timedelta(days=3),
+            token_expiry_date=ab_datetime_now() + timedelta(days=3),
             grant_type="some_grant_type",
             refresh_request_body={
                 "custom_field": "in_outbound_request",
@@ -175,7 +175,7 @@ class TestOauth2Authenticator:
             client_id="some_client_id",
             client_secret="some_client_secret",
             refresh_token="some_refresh_token",
-            token_expiry_date=now() + timedelta(days=3),
+            token_expiry_date=ab_datetime_now() + timedelta(days=3),
             refresh_request_headers={
                 "Authorization": "Bearer some_refresh_token",
                 "Content-Type": "application/x-www-form-urlencoded",
@@ -193,7 +193,7 @@ class TestOauth2Authenticator:
             client_id="some_client_id",
             client_secret="some_client_secret",
             refresh_token="some_refresh_token",
-            token_expiry_date=now() + timedelta(days=3),
+            token_expiry_date=ab_datetime_now() + timedelta(days=3),
         )
         headers = oauth.build_refresh_request_headers()
         assert headers is None
@@ -212,7 +212,7 @@ class TestOauth2Authenticator:
             refresh_token_name="custom_refresh_token_key",
             refresh_token="some_refresh_token",
             scopes=["scope1", "scope2"],
-            token_expiry_date=now() + timedelta(days=3),
+            token_expiry_date=ab_datetime_now() + timedelta(days=3),
             grant_type_name="custom_grant_type",
             grant_type="some_grant_type",
             refresh_request_body={
@@ -240,7 +240,7 @@ class TestOauth2Authenticator:
             client_secret="some_client_secret",
             refresh_token="some_refresh_token",
             scopes=["scope1", "scope2"],
-            token_expiry_date=now() + timedelta(days=3),
+            token_expiry_date=ab_datetime_now() + timedelta(days=3),
             refresh_request_body={
                 "custom_field": "in_outbound_request",
                 "another_field": "exists_in_body",
@@ -289,7 +289,7 @@ class TestOauth2Authenticator:
             client_secret="some_client_secret",
             refresh_token="some_refresh_token",
             scopes=["scope1", "scope2"],
-            token_expiry_date=now() + timedelta(days=3),
+            token_expiry_date=ab_datetime_now() + timedelta(days=3),
             refresh_request_headers=expected_headers,
         )
 
@@ -335,7 +335,7 @@ class TestOauth2Authenticator:
             client_secret="some_client_secret",
             refresh_token="some_refresh_token",
             scopes=["scope1", "scope2"],
-            token_expiry_date=now() - timedelta(days=3),
+            token_expiry_date=ab_datetime_now() - timedelta(days=3),
             token_expiry_date_format=token_expiry_date_format,
             token_expiry_is_time_of_expiration=bool(token_expiry_date_format),
             refresh_request_body={
@@ -356,7 +356,7 @@ class TestOauth2Authenticator:
         expires_datetime = oauth._parse_token_expiration_date(expire_in)
 
         assert isinstance(expires_datetime, AirbyteDateTime)
-        assert ("access_token", parse(expected_token_expiry_date)) == (token, expires_datetime)
+        assert ("access_token", ab_datetime_parse(expected_token_expiry_date)) == (token, expires_datetime)
 
     @pytest.mark.usefixtures("mock_sleep")
     @pytest.mark.parametrize("error_code", (429, 500, 502, 504))
@@ -479,7 +479,7 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
         )
         assert authenticator.access_token == connector_config["credentials"]["access_token"]
         assert authenticator.get_refresh_token() == connector_config["credentials"]["refresh_token"]
-        assert authenticator.get_token_expiry_date() == parse(
+        assert authenticator.get_token_expiry_date() == ab_datetime_parse(
             connector_config["credentials"]["token_expiry_date"]
         )
 
@@ -523,7 +523,7 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
         assert airbyte_message["control"]["connectorConfig"]["config"] == expected_new_config
         assert authenticator.access_token == access_token == "new_access_token"
         assert authenticator.get_refresh_token() == "new_refresh_token"
-        assert authenticator.get_token_expiry_date() > now()
+        assert authenticator.get_token_expiry_date() > ab_datetime_now()
         authenticator.token_has_expired = mocker.Mock(return_value=False)
         access_token = authenticator.get_access_token()
         captured = capsys.readouterr()

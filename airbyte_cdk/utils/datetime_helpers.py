@@ -228,6 +228,36 @@ class AirbyteDateTime(datetime):
             return result
         raise TypeError("Invalid operation")
 
+    def to_epoch_millis(self) -> int:
+        """Return the Unix timestamp in milliseconds for this datetime.
+
+        Returns:
+            int: Number of milliseconds since Unix epoch (January 1, 1970).
+
+        Example:
+            >>> dt = AirbyteDateTime(2023, 3, 14, 15, 9, 26, tzinfo=timezone.utc)
+            >>> dt.to_epoch_millis()
+            1678806566000
+        """
+        return int(self.timestamp() * 1000)
+
+    @classmethod
+    def from_epoch_millis(cls, milliseconds: int) -> "AirbyteDateTime":
+        """Create an AirbyteDateTime from Unix timestamp in milliseconds.
+
+        Args:
+            milliseconds: Number of milliseconds since Unix epoch (January 1, 1970).
+
+        Returns:
+            AirbyteDateTime: A new timezone-aware datetime instance (UTC).
+
+        Example:
+            >>> dt = AirbyteDateTime.from_epoch_millis(1678806566000)
+            >>> str(dt)
+            '2023-03-14T15:09:26Z'
+        """
+        return cls.fromtimestamp(milliseconds / 1000.0, timezone.utc)
+
 
 def ab_datetime_now() -> AirbyteDateTime:
     """Returns the current time as an AirbyteDateTime in UTC timezone.

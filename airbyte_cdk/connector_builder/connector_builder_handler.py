@@ -114,4 +114,4 @@ def resolve_manifest(source: ManifestDeclarativeSource) -> AirbyteMessage:
 
 
 def _emitted_at() -> int:
-    return int(ab_datetime_now().timestamp()) * 1000
+    return ab_datetime_now().to_epoch_millis()
