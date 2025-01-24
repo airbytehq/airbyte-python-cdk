@@ -77,7 +77,15 @@ def parse(dt_str: Union[str, int]) -> AirbyteDateTime:
 
         # For string inputs, first check if it's a valid datetime format
         if isinstance(dt_str, str):
-            if not any(x in dt_str for x in ("T", ":", "-")) and not dt_str.isdigit():
+            if dt_str.isdigit():
+                # Handle Unix timestamp as string
+                try:
+                    timestamp = int(dt_str)
+                    dt_obj = datetime.utcfromtimestamp(timestamp)
+                    return AirbyteDateTime.from_datetime(dt_obj.replace(tzinfo=timezone.utc))
+                except (ValueError, TypeError, OSError):
+                    raise ValueError(f"Invalid timestamp: {dt_str}")
+            elif not any(x in dt_str for x in ("T", ":", "-")):
                 raise ValueError(f"Invalid datetime format: {dt_str}")
 
         # For string inputs, check if it uses 'Z' timezone format
