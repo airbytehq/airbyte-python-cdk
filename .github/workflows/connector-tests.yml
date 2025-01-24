@@ -221,7 +221,7 @@ jobs:
             -f state="${{ steps.evaluate_output.outputs.success == 'true' && 'success' || 'failure' }}" \
             -f target_url="${{ steps.evaluate_output.outputs.html_report_url }}" \
             -f description="Click Details to view the test report" \
-            -f context="Test Report: ${{ matrix.connector }}"
+            -f context="${{ matrix.connector }} Test Report"
 
       # Create failure status if report generation failed
       - name: Create Report Generation Failed Status
@@ -237,7 +237,7 @@ jobs:
             repos/${{ github.repository }}/statuses/$HEAD_SHA \
             -f state="failure" \
             -f description="Test execution failed to generate a report" \
-            -f context="Test Report: ${{ matrix.connector }}"
+            -f context="${{ matrix.connector }} Test Report"
 
       # Upload the job output to the artifacts
       - name: Upload Job Output

@@ -27,4 +27,4 @@ jobs:
             -f state="failure" \
             -f target_url="https://www.google.com/search?q=failed" \
             -f description="Click Details to view the test report" \
-            -f context="Test Report: Dummy Connector"
+            -f context="Dummy Connector Test Report"
