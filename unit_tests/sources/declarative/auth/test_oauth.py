@@ -6,6 +6,8 @@ import base64
 import json
 import logging
 from datetime import timedelta, timezone
+
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, now, parse
 from unittest.mock import Mock
 
 import freezegun
