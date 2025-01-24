@@ -393,9 +393,14 @@ def ab_datetime_parse(dt_str: Union[str, int]) -> AirbyteDateTime:
         '2023-03-14T00:00:00Z'
     """
     try:
-        if isinstance(dt_str, int) or (isinstance(dt_str, str) and dt_str.isdigit()):
+        # Handle numeric values as Unix timestamps (UTC)
+        if isinstance(dt_str, int) or (isinstance(dt_str, str) and (dt_str.isdigit() or (dt_str.startswith('-') and dt_str[1:].isdigit()))):
             # Always treat numeric values as Unix timestamps (UTC)
             timestamp = int(dt_str)
+            if timestamp < 0:
+                raise ValueError("Timestamp cannot be negative")
+            if len(str(abs(timestamp))) > 10:  # More than 10 digits means beyond year 2286
+                raise ValueError("Timestamp value too large")
             # Use utcfromtimestamp to ensure consistent UTC handling without local timezone influence
             dt_obj = datetime.fromtimestamp(timestamp, timezone.utc)
             return AirbyteDateTime.from_datetime(dt_obj)
@@ -407,44 +412,77 @@ def ab_datetime_parse(dt_str: Union[str, int]) -> AirbyteDateTime:
         if isinstance(dt_str, str):
             if dt_str.isdigit():
                 # Handle Unix timestamp as string
-                try:
-                    timestamp = int(dt_str)
-                    dt_obj = datetime.utcfromtimestamp(timestamp)
-                    return AirbyteDateTime.from_datetime(dt_obj.replace(tzinfo=timezone.utc))
-                except (ValueError, TypeError, OSError):
-                    raise ValueError(f"Invalid timestamp: {dt_str}")
+                timestamp = int(dt_str)
+                if timestamp < 0:
+                    raise ValueError("Timestamp cannot be negative")
+                if len(str(timestamp)) > 10:  # More than 10 digits means beyond year 2286
+                    raise ValueError("Timestamp value too large")
+                dt_obj = datetime.utcfromtimestamp(timestamp)
+                return AirbyteDateTime.from_datetime(dt_obj.replace(tzinfo=timezone.utc))
             # For date-only strings (YYYY-MM-DD), add time component
-            if "T" not in dt_str and ":" not in dt_str:
-                # Check for wrong separators
-                if "/" in dt_str:
-                    raise ValueError(f"Invalid date format (expected YYYY-MM-DD): {dt_str}")
-                parts = dt_str.split("-")
-                if len(parts) != 3:
-                    raise ValueError(f"Invalid date format (expected YYYY-MM-DD): {dt_str}")
+            if "T" not in dt_str:
+                # For date-only format, validate and convert
+                if ":" not in dt_str:
+                    # Check for wrong separators
+                    if "/" in dt_str:
+                        raise ValueError(f"Invalid date format (expected YYYY-MM-DD): {dt_str}")
+                    parts = dt_str.split("-")
+                    if len(parts) != 3:
+                        raise ValueError(f"Invalid date format (expected YYYY-MM-DD): {dt_str}")
+                    try:
+                        # Validate date components before adding time
+                        year, month, day = map(int, parts)
+                        if not (1 <= month <= 12 and 1 <= day <= 31):
+                            raise ValueError(f"Invalid date components in: {dt_str}")
+                        # Create datetime directly instead of string manipulation
+                        return AirbyteDateTime(year, month, day, tzinfo=timezone.utc)
+                    except ValueError as e:
+                        raise ValueError(f"Invalid date format: {dt_str}") from e
+                else:
+                    # If it has time component but no T delimiter, it's invalid
+                    raise ValueError(f"Missing T delimiter in datetime string: {dt_str}")
+            # For string inputs, validate timezone format
+        if isinstance(dt_str, str):
+            # First check for timezone format
+            if dt_str.endswith("Z"):
+                # Remove Z, parse as UTC, then ensure we output Z format
                 try:
-                    # Validate date components before adding time
-                    year, month, day = map(int, parts)
-                    if not (1 <= month <= 12 and 1 <= day <= 31):
-                        raise ValueError(f"Invalid date components in: {dt_str}")
-                    # Create datetime directly instead of string manipulation
-                    return AirbyteDateTime(year, month, day, tzinfo=timezone.utc)
+                    dt_obj = parser.parse(dt_str[:-1])
+                    if dt_obj.tzinfo is not None:
+                        raise ValueError(f"Invalid timezone format (Z with offset): {dt_str}")
+                    dt_obj = dt_obj.replace(tzinfo=timezone.utc)
+                    return AirbyteDateTime.from_datetime(dt_obj)
                 except ValueError as e:
-                    raise ValueError(f"Invalid date format: {dt_str}") from e
-            # For string inputs, check if it uses 'Z' timezone format
-        if isinstance(dt_str, str) and dt_str.endswith("Z"):
-            # Remove Z, parse as UTC, then ensure we output Z format
-            dt_obj = parser.parse(dt_str[:-1])
-            if dt_obj.tzinfo is None:
-                dt_obj = dt_obj.replace(tzinfo=timezone.utc)
-            return AirbyteDateTime.from_datetime(dt_obj)
+                    raise ValueError(f"Invalid datetime format: {dt_str}") from e
+            elif dt_str.endswith("GMT"):
+                raise ValueError(f"Invalid timezone format (use Z or ±HH:MM): {dt_str}")
+            elif len(dt_str) >= 6 and dt_str[-3] == ":" and dt_str[-6] in ("+", "-"):
+                # Check for valid timezone offset format (±HH:MM)
+                try:
+                    hours = int(dt_str[-5:-3])
+                    minutes = int(dt_str[-2:])
+                    if hours >= 24 or minutes >= 60:
+                        raise ValueError(f"Invalid timezone offset values: {dt_str}")
+                    # Let dateutil.parser handle the actual parsing
+                    dt_obj = parser.parse(dt_str)
+                    return AirbyteDateTime.from_datetime(dt_obj)
+                except ValueError as e:
+                    raise ValueError(f"Invalid timezone offset format: {dt_str}") from e
 
-        # Normal parsing for other formats
-        dt_obj = parser.parse(dt_str)
-        # For strings without timezone, assume UTC as documented
-        if dt_obj.tzinfo is None:
-            dt_obj = dt_obj.replace(tzinfo=timezone.utc)
-        return AirbyteDateTime.from_datetime(dt_obj)
-    except (ValueError, TypeError) as e:
+            # For all other formats, try parsing and validate timezone
+            try:
+                dt_obj = parser.parse(dt_str)
+                # For strings without timezone, assume UTC as documented
+                if dt_obj.tzinfo is None:
+                    dt_obj = dt_obj.replace(tzinfo=timezone.utc)
+                return AirbyteDateTime.from_datetime(dt_obj)
+            except ValueError as e:
+                raise ValueError(f"Could not parse datetime string: {dt_str}") from e
+    except ValueError as e:
+        if "Timestamp cannot be negative" in str(e) or "Timestamp value too large" in str(e):
+            raise
+        raise ValueError(f"Could not parse datetime string: {dt_str}") from e
+    except TypeError as e:
         raise ValueError(f"Could not parse datetime string: {dt_str}") from e
 
 
