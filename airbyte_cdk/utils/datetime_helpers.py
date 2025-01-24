@@ -245,6 +245,37 @@ def ab_datetime_now() -> AirbyteDateTime:
     return AirbyteDateTime.from_datetime(datetime.now(timezone.utc))
 
 
+# Backward compatibility aliases
+def now() -> AirbyteDateTime:
+    """Alias for ab_datetime_now() for backward compatibility."""
+    return ab_datetime_now()
+
+
+def parse(dt_str: Union[str, int]) -> AirbyteDateTime:
+    """Alias for ab_datetime_parse() for backward compatibility."""
+    return ab_datetime_parse(dt_str)
+
+
+def format(dt: Union[datetime, AirbyteDateTime]) -> str:
+    """Alias for ab_datetime_format() for backward compatibility."""
+    return ab_datetime_format(dt)
+
+
+def add_seconds(dt: Union[datetime, AirbyteDateTime], seconds: Union[int, float]) -> AirbyteDateTime:
+    """Alias for ab_datetime_add_seconds() for backward compatibility."""
+    return ab_datetime_add_seconds(dt, seconds)
+
+
+def subtract_seconds(dt: Union[datetime, AirbyteDateTime], seconds: Union[int, float]) -> AirbyteDateTime:
+    """Alias for ab_datetime_subtract_seconds() for backward compatibility."""
+    return ab_datetime_subtract_seconds(dt, seconds)
+
+
+def is_valid_format(dt_str: str) -> bool:
+    """Alias for ab_datetime_is_valid_format() for backward compatibility."""
+    return ab_datetime_is_valid_format(dt_str)
+
+
 def ab_datetime_parse(dt_str: Union[str, int]) -> AirbyteDateTime:
     """Parses a datetime string or timestamp into an AirbyteDateTime with timezone awareness.
 
