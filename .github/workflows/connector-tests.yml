@@ -96,7 +96,7 @@ jobs:
     name: "${{matrix.connector}} Connector Job (skip=${{needs.cdk_changes.outputs['src'] == 'false' || needs.cdk_changes.outputs[matrix.cdk_extra] == 'false'}})"
     permissions:
       checks: write
-      contents: read
+      contents: write  # Required for creating commit statuses
       pull-requests: read
     steps:
       - name: Abort if extra not changed (${{matrix.cdk_extra}})
@@ -130,19 +130,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
-      - name: Create Test Report Check Run
-        id: create_test_report
-        if: steps.no_changes.outputs.status != 'cancelled'
-        uses: LouisBrunner/checks-action@v1.6.1
-        with:
-          token: ${{ github.token }}
-          name: "${{ matrix.connector }} Test Report (custom)"
-          status: "in_progress"
-          output: |
-            {
-              "title": "Test Report",
-              "summary": "Test execution in progress..."
-            }
+      # Initial status will be created by the job itself
       - name: Test Connector
         if: steps.no_changes.outputs.status != 'cancelled'
         timeout-minutes: 90
@@ -219,35 +207,37 @@ jobs:
           cat $GITHUB_OUTPUT
 
       # Update the test report check run with results
-      - name: Update Test Report Check Run
+      - name: Create Test Report Status
         if: always() && steps.no_changes.outputs.status != 'cancelled' && steps.evaluate_output.outcome == 'success'
-        uses: LouisBrunner/checks-action@v1.6.1
-        with:
-          token: ${{ github.token }}
-          name: "${{ matrix.connector }} Test Report (custom)"
-          status: "completed"
-          conclusion: "${{ steps.evaluate_output.outputs.success == 'true' && 'success' || 'failure' }}"
-          details_url: "${{ steps.evaluate_output.outputs.html_report_url }}"
-          output: |
-            {
-              "title": "Test Results",
-              "summary": "Click 'Details' to view the full test report."
-            }
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_MAINTENANCE_OCTAVIA }}
+        run: |
+          HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            repos/${{ github.repository }}/statuses/$HEAD_SHA \
+            -f state="${{ steps.evaluate_output.outputs.success == 'true' && 'success' || 'failure' }}" \
+            -f target_url="${{ steps.evaluate_output.outputs.html_report_url }}" \
+            -f description="Click Details to view the test report" \
+            -f context="Test Report: ${{ matrix.connector }}"
 
-      # Create failure check if report generation failed
-      - name: Create Report Generation Failed Check
+      # Create failure status if report generation failed
+      - name: Create Report Generation Failed Status
         if: always() && steps.no_changes.outputs.status != 'cancelled' && steps.evaluate_output.outcome != 'success'
-        uses: LouisBrunner/checks-action@v1.6.1
-        with:
-          token: ${{ github.token }}
-          name: "${{ matrix.connector }} Test Report (custom)"
-          status: "completed"
-          conclusion: "failure"
-          output: |
-            {
-              "title": "Test Report Generation Failed",
-              "summary": "The test execution failed to generate a report. Please check the job logs for details."
-            }
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_MAINTENANCE_OCTAVIA }}
+        run: |
+          HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            repos/${{ github.repository }}/statuses/$HEAD_SHA \
+            -f state="failure" \
+            -f description="Test execution failed to generate a report" \
+            -f context="Test Report: ${{ matrix.connector }}"
 
       # Upload the job output to the artifacts
       - name: Upload Job Output
