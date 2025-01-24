@@ -12,6 +12,8 @@ jobs:
     steps:
       - name: Slash Command Dispatch
         id: dispatch
+        # TODO: Revert to `peter-evans/slash-command-dispatch@v4` after PR merges:
+        # - https://github.com/peter-evans/slash-command-dispatch/pull/372/files
         uses: aaronsteers/slash-command-dispatch@aj/fix/add-dispatched-bool-output
         with:
           repository: ${{ github.repository }}
