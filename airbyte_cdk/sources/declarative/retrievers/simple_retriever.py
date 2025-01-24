@@ -160,7 +160,7 @@ class SimpleRetriever(Retriever):
             stream_slice,
             next_page_token,
             self._paginator.get_request_headers,
-            self.stream_slicer.get_request_headers,
+            self.request_option_provider.get_request_headers,
         )
         if isinstance(headers, str):
             raise ValueError("Request headers cannot be a string")

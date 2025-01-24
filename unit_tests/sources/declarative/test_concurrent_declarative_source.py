@@ -651,8 +651,8 @@ def test_group_streams():
     concurrent_streams, synchronous_streams = source._group_streams(config=_CONFIG)
 
     # 1 full refresh stream, 2 incremental streams, 1 substream w/o incremental, 1 list based substream w/o incremental
-    # 1 async job stream
-    assert len(concurrent_streams) == 6
+    # 1 async job stream, 1 substream w/ incremental
+    assert len(concurrent_streams) == 7
     (
         concurrent_stream_0,
         concurrent_stream_1,
@@ -660,6 +660,7 @@ def test_group_streams():
         concurrent_stream_3,
         concurrent_stream_4,
         concurrent_stream_5,
+        concurrent_stream_6,
     ) = concurrent_streams
     assert isinstance(concurrent_stream_0, DefaultStream)
     assert concurrent_stream_0.name == "party_members"
@@ -672,12 +673,9 @@ def test_group_streams():
     assert isinstance(concurrent_stream_4, DefaultStream)
     assert concurrent_stream_4.name == "arcana_personas"
     assert isinstance(concurrent_stream_5, DefaultStream)
-    assert concurrent_stream_5.name == "async_job_stream"
-
-    # 1 substream w/ incremental, 1 stream with async retriever
-    assert len(synchronous_streams) == 1
-    assert isinstance(synchronous_streams[0], DeclarativeStream)
-    assert synchronous_streams[0].name == "palace_enemies"
+    assert concurrent_stream_5.name == "palace_enemies"
+    assert isinstance(concurrent_stream_6, DefaultStream)
+    assert concurrent_stream_6.name == "async_job_stream"
 
 
 @freezegun.freeze_time(time_to_freeze=datetime(2024, 9, 1, 0, 0, 0, 0, tzinfo=timezone.utc))
@@ -740,7 +738,7 @@ def test_create_concurrent_cursor():
     assert locations_cursor._slice_range == isodate.Duration(months=1)
     assert locations_cursor._lookback_window == timedelta(days=5)
     assert locations_cursor._cursor_granularity == timedelta(days=1)
-    assert locations_cursor.state == {
+    assert locations_cursor._concurrent_state == {
         "slices": [
             {
                 "start": datetime(2024, 7, 1, 0, 0, 0, 0, tzinfo=timezone.utc),
@@ -1458,13 +1456,13 @@ def test_streams_with_stream_state_interpolation_should_be_synchronous():
     )
     concurrent_streams, synchronous_streams = source._group_streams(config=_CONFIG)
 
-    # 1 full refresh stream, 2 with parent stream without incremental dependency, 1 stream with async retriever
-    assert len(concurrent_streams) == 4
-    # 2 incremental stream with interpolation on state (locations and party_members), 1 incremental with parent stream (palace_enemies)
-    assert len(synchronous_streams) == 3
+    # 1 full refresh stream, 2 with parent stream without incremental dependency, 1 stream with async retriever, 1 incremental with parent stream (palace_enemies)
+    assert len(concurrent_streams) == 5
+    # 2 incremental stream with interpolation on state (locations and party_members)
+    assert len(synchronous_streams) == 2
 
 
-def test_given_partition_routing_and_incremental_sync_then_stream_is_not_concurrent():
+def test_given_partition_routing_and_incremental_sync_then_stream_is_concurrent():
     manifest = {
         "version": "5.0.0",
         "definitions": {
@@ -1599,8 +1597,8 @@ def test_given_partition_routing_and_incremental_sync_then_stream_is_not_concurr
     )
     concurrent_streams, synchronous_streams = source._group_streams(config=_CONFIG)
 
-    assert len(concurrent_streams) == 0
-    assert len(synchronous_streams) == 1
+    assert len(concurrent_streams) == 1
+    assert len(synchronous_streams) == 0
 
 
 def create_wrapped_stream(stream: DeclarativeStream) -> Stream:

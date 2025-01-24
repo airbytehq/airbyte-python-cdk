@@ -7,6 +7,7 @@ import logging
 import pkgutil
 from copy import deepcopy
 from importlib import metadata
+from types import ModuleType
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Set
 
 import yaml
@@ -32,6 +33,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     DeclarativeStream as DeclarativeStreamModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import Spec as SpecModel
+from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
+    get_registered_components_module,
+)
 from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer import (
     ManifestComponentTransformer,
 )
@@ -59,21 +63,28 @@ class ManifestDeclarativeSource(DeclarativeSource):
     def __init__(
         self,
         source_config: ConnectionDefinition,
+        *,
+        config: Mapping[str, Any] | None = None,
         debug: bool = False,
         emit_connector_builder_messages: bool = False,
         component_factory: Optional[ModelToComponentFactory] = None,
     ):
         """
-        :param source_config(Mapping[str, Any]): The manifest of low-code components that describe the source connector
-        :param debug(bool): True if debug mode is enabled
-        :param component_factory(ModelToComponentFactory): optional factory if ModelToComponentFactory's default behaviour needs to be tweaked
+        Args:
+            config: The provided config dict.
+            source_config: The manifest of low-code components that describe the source connector.
+            debug: True if debug mode is enabled.
+            emit_connector_builder_messages: True if messages should be emitted to the connector builder.
+            component_factory: optional factory if ModelToComponentFactory's default behavior needs to be tweaked.
         """
         self.logger = logging.getLogger(f"airbyte.{self.name}")
-
         # For ease of use we don't require the type to be specified at the top level manifest, but it should be included during processing
         manifest = dict(source_config)
         if "type" not in manifest:
             manifest["type"] = "DeclarativeSource"
+
+        # If custom components are needed, locate and/or register them.
+        self.components_module: ModuleType | None = get_registered_components_module(config=config)
 
         resolved_source_config = ManifestReferenceResolver().preprocess_manifest(manifest)
         propagated_source_config = ManifestComponentTransformer().propagate_types_and_parameters(

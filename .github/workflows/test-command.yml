@@ -15,7 +15,7 @@ on:
 jobs:
   start-workflow:
     name: Append 'Starting' Comment
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Get PR JSON
         id: pr-info
@@ -127,7 +127,7 @@ jobs:
   log-success-comment:
     name: Append 'Success' Comment
     needs: [pytest-on-demand]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Append success comment
         uses: peter-evans/create-or-update-comment@v4
@@ -143,7 +143,7 @@ jobs:
     # This job will only run if the workflow fails
     needs: [pytest-on-demand, start-workflow]
     if: always() && needs.pytest-on-demand.result == 'failure'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Append failure comment
         uses: peter-evans/create-or-update-comment@v4

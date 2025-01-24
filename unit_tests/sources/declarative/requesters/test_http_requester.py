@@ -13,6 +13,7 @@ from requests import PreparedRequest
 
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
+from airbyte_cdk.sources.declarative.requesters.error_handlers import HttpResponseFilter
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies import (
     ConstantBackoffStrategy,
     ExponentialBackoffStrategy,
@@ -26,6 +27,7 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
     InterpolatedRequestOptionsProvider,
 )
 from airbyte_cdk.sources.message import MessageRepository
+from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
 from airbyte_cdk.sources.streams.http.exceptions import (
     RequestBodyException,
     UserDefinedBackoffException,
@@ -890,6 +892,37 @@ def test_request_attempt_count_with_exponential_backoff_strategy(http_requester_
     )
     http_requester = http_requester_factory(error_handler=error_handler)
     http_requester._http_client._session.send = MagicMock()
+    response = requests.Response()
+    response.status_code = 500
+    http_requester._http_client._session.send.return_value = response
+
+    with pytest.raises(UserDefinedBackoffException):
+        http_requester._http_client._send_with_retry(request=request_mock, request_kwargs={})
+
+    assert (
+        http_requester._http_client._request_attempt_count.get(request_mock)
+        == http_requester._http_client._max_retries + 1
+    )
+
+
+@pytest.mark.usefixtures("mock_sleep")
+def test_backoff_strategy_from_manifest_is_respected(http_requester_factory: Any) -> None:
+    backoff_strategy = ConstantBackoffStrategy(
+        parameters={}, config={}, backoff_time_in_seconds=0.1
+    )
+    error_handler = DefaultErrorHandler(
+        parameters={}, config={}, max_retries=1, backoff_strategies=[backoff_strategy]
+    )
+
+    request_mock = MagicMock(spec=requests.PreparedRequest)
+    request_mock.headers = {}
+    request_mock.url = "https://orksy.com/orks_rule_humies_drule"
+    request_mock.method = "GET"
+    request_mock.body = {}
+
+    http_requester = http_requester_factory(error_handler=error_handler)
+    http_requester._http_client._session.send = MagicMock()
+
     response = requests.Response()
     response.status_code = 500
     http_requester._http_client._session.send.return_value = response

@@ -9,7 +9,7 @@ on:
 jobs:
   ruff-lint-check:
     name: Ruff Lint Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # Common steps:
       - name: Checkout code
@@ -32,7 +32,7 @@ jobs:
 
   ruff-format-check:
     name: Ruff Format Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # Common steps:
       - name: Checkout code
@@ -55,7 +55,7 @@ jobs:
 
   mypy-check:
     name: MyPy Check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # Common steps:
       - name: Checkout code

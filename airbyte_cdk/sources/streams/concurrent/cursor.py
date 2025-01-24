@@ -13,7 +13,6 @@ from typing import (
     Mapping,
     MutableMapping,
     Optional,
-    Protocol,
     Tuple,
     Union,
 )
@@ -21,6 +20,8 @@ from typing import (
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams import NO_CURSOR_STATE_KEY
+from airbyte_cdk.sources.streams.concurrent.clamping import ClampingStrategy, NoClamping
+from airbyte_cdk.sources.streams.concurrent.cursor_types import CursorValueType, GapType
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.stream_slicer import StreamSlicer
 from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
@@ -33,36 +34,6 @@ LOGGER = logging.getLogger("airbyte")
 
 def _extract_value(mapping: Mapping[str, Any], path: List[str]) -> Any:
     return functools.reduce(lambda a, b: a[b], path, mapping)
-
-
-class GapType(Protocol):
-    """
-    This is the representation of gaps between two cursor values. Examples:
-    * if cursor values are datetimes, GapType is timedelta
-    * if cursor values are integer, GapType will also be integer
-    """
-
-    pass
-
-
-class CursorValueType(Protocol):
-    """Protocol for annotating comparable types."""
-
-    @abstractmethod
-    def __lt__(self: "CursorValueType", other: "CursorValueType") -> bool:
-        pass
-
-    @abstractmethod
-    def __ge__(self: "CursorValueType", other: "CursorValueType") -> bool:
-        pass
-
-    @abstractmethod
-    def __add__(self: "CursorValueType", other: GapType) -> "CursorValueType":
-        pass
-
-    @abstractmethod
-    def __sub__(self: "CursorValueType", other: GapType) -> "CursorValueType":
-        pass
 
 
 class CursorField:
@@ -172,6 +143,7 @@ class ConcurrentCursor(Cursor):
         lookback_window: Optional[GapType] = None,
         slice_range: Optional[GapType] = None,
         cursor_granularity: Optional[GapType] = None,
+        clamping_strategy: ClampingStrategy = NoClamping(),
     ) -> None:
         self._stream_name = stream_name
         self._stream_namespace = stream_namespace
@@ -193,10 +165,13 @@ class ConcurrentCursor(Cursor):
         self._cursor_granularity = cursor_granularity
         # Flag to track if the logger has been triggered (per stream)
         self._should_be_synced_logger_triggered = False
+        self._clamping_strategy = clamping_strategy
 
     @property
     def state(self) -> MutableMapping[str, Any]:
-        return self._concurrent_state
+        return self._connector_state_converter.convert_to_state_message(
+            self.cursor_field, self._concurrent_state
+        )
 
     @property
     def cursor_field(self) -> CursorField:
@@ -241,10 +216,10 @@ class ConcurrentCursor(Cursor):
         return self._connector_state_converter.parse_value(self._cursor_field.extract_value(record))
 
     def close_partition(self, partition: Partition) -> None:
-        slice_count_before = len(self.state.get("slices", []))
+        slice_count_before = len(self._concurrent_state.get("slices", []))
         self._add_slice_to_state(partition)
         if slice_count_before < len(
-            self.state["slices"]
+            self._concurrent_state["slices"]
         ):  # only emit if at least one slice has been processed
             self._merge_partitions()
             self._emit_state_message()
@@ -256,11 +231,11 @@ class ConcurrentCursor(Cursor):
         )
 
         if self._slice_boundary_fields:
-            if "slices" not in self.state:
+            if "slices" not in self._concurrent_state:
                 raise RuntimeError(
                     f"The state for stream {self._stream_name} should have at least one slice to delineate the sync start time, but no slices are present. This is unexpected. Please contact Support."
                 )
-            self.state["slices"].append(
+            self._concurrent_state["slices"].append(
                 {
                     self._connector_state_converter.START_KEY: self._extract_from_slice(
                         partition, self._slice_boundary_fields[self._START_BOUNDARY]
@@ -288,7 +263,7 @@ class ConcurrentCursor(Cursor):
                     "expected. Please contact the Airbyte team."
                 )
 
-            self.state["slices"].append(
+            self._concurrent_state["slices"].append(
                 {
                     self._connector_state_converter.START_KEY: self.start,
                     self._connector_state_converter.END_KEY: most_recent_cursor_value,
@@ -300,9 +275,7 @@ class ConcurrentCursor(Cursor):
         self._connector_state_manager.update_state_for_stream(
             self._stream_name,
             self._stream_namespace,
-            self._connector_state_converter.convert_to_state_message(
-                self._cursor_field, self.state
-            ),
+            self.state,
         )
         state_message = self._connector_state_manager.create_state_message(
             self._stream_name, self._stream_namespace
@@ -310,7 +283,9 @@ class ConcurrentCursor(Cursor):
         self._message_repository.emit_message(state_message)
 
     def _merge_partitions(self) -> None:
-        self.state["slices"] = self._connector_state_converter.merge_intervals(self.state["slices"])
+        self._concurrent_state["slices"] = self._connector_state_converter.merge_intervals(
+            self._concurrent_state["slices"]
+        )
 
     def _extract_from_slice(self, partition: Partition, key: str) -> CursorValueType:
         try:
@@ -347,36 +322,42 @@ class ConcurrentCursor(Cursor):
         if self._start is not None and self._is_start_before_first_slice():
             yield from self._split_per_slice_range(
                 self._start,
-                self.state["slices"][0][self._connector_state_converter.START_KEY],
+                self._concurrent_state["slices"][0][self._connector_state_converter.START_KEY],
                 False,
             )
 
-        if len(self.state["slices"]) == 1:
+        if len(self._concurrent_state["slices"]) == 1:
             yield from self._split_per_slice_range(
                 self._calculate_lower_boundary_of_last_slice(
-                    self.state["slices"][0][self._connector_state_converter.END_KEY]
+                    self._concurrent_state["slices"][0][self._connector_state_converter.END_KEY]
                 ),
                 self._end_provider(),
                 True,
             )
-        elif len(self.state["slices"]) > 1:
-            for i in range(len(self.state["slices"]) - 1):
+        elif len(self._concurrent_state["slices"]) > 1:
+            for i in range(len(self._concurrent_state["slices"]) - 1):
                 if self._cursor_granularity:
                     yield from self._split_per_slice_range(
-                        self.state["slices"][i][self._connector_state_converter.END_KEY]
+                        self._concurrent_state["slices"][i][self._connector_state_converter.END_KEY]
                         + self._cursor_granularity,
-                        self.state["slices"][i + 1][self._connector_state_converter.START_KEY],
+                        self._concurrent_state["slices"][i + 1][
+                            self._connector_state_converter.START_KEY
+                        ],
                         False,
                     )
                 else:
                     yield from self._split_per_slice_range(
-                        self.state["slices"][i][self._connector_state_converter.END_KEY],
-                        self.state["slices"][i + 1][self._connector_state_converter.START_KEY],
+                        self._concurrent_state["slices"][i][
+                            self._connector_state_converter.END_KEY
+                        ],
+                        self._concurrent_state["slices"][i + 1][
+                            self._connector_state_converter.START_KEY
+                        ],
                         False,
                     )
             yield from self._split_per_slice_range(
                 self._calculate_lower_boundary_of_last_slice(
-                    self.state["slices"][-1][self._connector_state_converter.END_KEY]
+                    self._concurrent_state["slices"][-1][self._connector_state_converter.END_KEY]
                 ),
                 self._end_provider(),
                 True,
@@ -387,7 +368,8 @@ class ConcurrentCursor(Cursor):
     def _is_start_before_first_slice(self) -> bool:
         return (
             self._start is not None
-            and self._start < self.state["slices"][0][self._connector_state_converter.START_KEY]
+            and self._start
+            < self._concurrent_state["slices"][0][self._connector_state_converter.START_KEY]
         )
 
     def _calculate_lower_boundary_of_last_slice(
@@ -408,10 +390,12 @@ class ConcurrentCursor(Cursor):
 
         lower = max(lower, self._start) if self._start else lower
         if not self._slice_range or self._evaluate_upper_safely(lower, self._slice_range) >= upper:
+            clamped_lower = self._clamping_strategy.clamp(lower)
+            clamped_upper = self._clamping_strategy.clamp(upper)
             start_value, end_value = (
-                (lower, upper - self._cursor_granularity)
+                (clamped_lower, clamped_upper - self._cursor_granularity)
                 if self._cursor_granularity and not upper_is_end
-                else (lower, upper)
+                else (clamped_lower, clamped_upper)
             )
             yield StreamSlice(
                 partition={},
@@ -433,11 +417,21 @@ class ConcurrentCursor(Cursor):
                 )
                 has_reached_upper_boundary = current_upper_boundary >= upper
 
+                clamped_upper = (
+                    self._clamping_strategy.clamp(current_upper_boundary)
+                    if current_upper_boundary != upper
+                    else current_upper_boundary
+                )
+                clamped_lower = self._clamping_strategy.clamp(current_lower_boundary)
+                if clamped_lower >= clamped_upper:
+                    # clamping collapsed both values which means that it is time to stop processing
+                    # FIXME should this be replace by proper end_provider
+                    break
                 start_value, end_value = (
-                    (current_lower_boundary, current_upper_boundary - self._cursor_granularity)
+                    (clamped_lower, clamped_upper - self._cursor_granularity)
                     if self._cursor_granularity
                     and (not upper_is_end or not has_reached_upper_boundary)
-                    else (current_lower_boundary, current_upper_boundary)
+                    else (clamped_lower, clamped_upper)
                 )
                 yield StreamSlice(
                     partition={},
@@ -450,7 +444,7 @@ class ConcurrentCursor(Cursor):
                         ]: self._connector_state_converter.output_format(end_value),
                     },
                 )
-                current_lower_boundary = current_upper_boundary
+                current_lower_boundary = clamped_upper
                 if current_upper_boundary >= upper:
                     stop_processing = True
 
