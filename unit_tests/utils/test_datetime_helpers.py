@@ -65,24 +65,51 @@ def test_parse():
     dt = parse("2023-03-14T15:09:26")
     assert str(dt) == "2023-03-14T15:09:26Z"
 
-    # Test invalid format
+    # Test with microseconds
+    dt = parse("2023-03-14T15:09:26.123456Z")
+    assert str(dt) == "2023-03-14T15:09:26.123456Z"
+
+    # Test Unix timestamp as integer
+    dt = parse(1678809600)  # 2023-03-14T15:00:00Z
+    assert str(dt) == "2023-03-14T15:00:00Z"
+
+    # Test Unix timestamp as string
+    dt = parse("1678809600")  # 2023-03-14T15:00:00Z
+    assert str(dt) == "2023-03-14T15:00:00Z"
+
+    # Test invalid formats
     with pytest.raises(ValueError):
         parse("invalid datetime")
+    
+    with pytest.raises(ValueError):
+        parse("not_a_number")  # Invalid when trying to parse as timestamp
+    
+    with pytest.raises(ValueError):
+        parse("2023-03-14")  # Missing time component
 
 
 def test_format():
     """Test formatting various datetime objects."""
-    # Test formatting standard datetime
+    # Test formatting standard datetime with UTC timezone
     standard_dt = datetime(2023, 3, 14, 15, 9, 26, tzinfo=timezone.utc)
     assert format(standard_dt) == "2023-03-14T15:09:26Z"
 
-    # Test formatting naive datetime
+    # Test formatting naive datetime (should assume UTC)
     naive_dt = datetime(2023, 3, 14, 15, 9, 26)
     assert format(naive_dt) == "2023-03-14T15:09:26Z"
 
-    # Test formatting AirbyteDateTime
+    # Test formatting AirbyteDateTime with UTC timezone
     airbyte_dt = AirbyteDateTime(2023, 3, 14, 15, 9, 26, tzinfo=timezone.utc)
     assert format(airbyte_dt) == "2023-03-14T15:09:26Z"
+
+    # Test formatting with microseconds
+    dt_with_micros = datetime(2023, 3, 14, 15, 9, 26, 123456, tzinfo=timezone.utc)
+    assert format(dt_with_micros) == "2023-03-14T15:09:26.123456Z"
+
+    # Test formatting with non-UTC timezone
+    tz = timezone(timedelta(hours=-4))
+    dt_with_offset = datetime(2023, 3, 14, 15, 9, 26, tzinfo=tz)
+    assert format(dt_with_offset) == "2023-03-14T15:09:26-04:00"
 
 
 def test_add_subtract_seconds():
@@ -102,8 +129,17 @@ def test_add_subtract_seconds():
 
 def test_is_valid_format():
     """Test datetime string format validation."""
-    assert is_valid_format("2023-03-14T15:09:26Z")
-    assert is_valid_format("2023-03-14T15:09:26.123Z")
-    assert is_valid_format("2023-03-14T15:09:26-04:00")
-    assert not is_valid_format("invalid datetime")
+    # Valid formats
+    assert is_valid_format("2023-03-14T15:09:26Z")  # Basic UTC format
+    assert is_valid_format("2023-03-14T15:09:26.123Z")  # With milliseconds
+    assert is_valid_format("2023-03-14T15:09:26.123456Z")  # With microseconds
+    assert is_valid_format("2023-03-14T15:09:26-04:00")  # With timezone offset
+    assert is_valid_format("2023-03-14T15:09:26+00:00")  # With explicit UTC offset
+    
+    # Invalid formats
+    assert not is_valid_format("invalid datetime")  # Completely invalid
     assert not is_valid_format("2023-03-14 15:09:26")  # Missing T delimiter
+    assert not is_valid_format("2023-03-14")  # Missing time component
+    assert not is_valid_format("15:09:26Z")  # Missing date component
+    assert not is_valid_format("2023-03-14T15:09:26")  # Missing timezone
+    assert not is_valid_format("2023-03-14T15:09:26GMT")  # Invalid timezone format
