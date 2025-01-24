@@ -73,10 +73,11 @@ print(dt)  # 2023-03-14T15:09:26Z
 from airbyte_cdk.utils.datetime_helpers import ab_datetime_try_parse
 
 # Validate ISO8601/RFC3339 format
-assert ab_datetime_try_parse("2023-03-14T15:09:26Z")       # The parsed datetime is truthy
-assert ab_datetime_try_parse("2023-03-14T15:09:26-04:00")  # The parsed datetime is truthy
-assert ab_datetime_try_parse("2023-03-14 15:09:26Z")       # The parsed datetime is truthy
-assert !ab_datetime_try_parse("foo")                # 'foo' can't be parsed, returns `None`
+assert ab_datetime_try_parse("2023-03-14T15:09:26Z")       # Basic UTC format
+assert ab_datetime_try_parse("2023-03-14T15:09:26-04:00")  # With timezone offset
+assert ab_datetime_try_parse("2023-03-14T15:09:26+00:00")  # With explicit UTC offset
+assert not ab_datetime_try_parse("2023-03-14 15:09:26Z")   # Invalid: missing T delimiter
+assert not ab_datetime_try_parse("foo")                     # Invalid: not a datetime
 ```
 """
 
@@ -366,10 +367,10 @@ def ab_datetime_parse(dt_str: Union[str, int]) -> AirbyteDateTime:
     Previously named: parse()
 
     Handles:
-        - ISO8601/RFC3339 format strings
+        - ISO8601/RFC3339 format strings (with 'T' delimiter)
         - Unix timestamps (as integers or strings)
         - Date-only strings (YYYY-MM-DD)
-        - Falls back to dateutil.parser for other string formats
+        - Timezone-aware formats (Z for UTC, or ±HH:MM offset)
 
     Always returns a timezone-aware datetime (defaults to UTC if no timezone specified).
 
@@ -477,9 +478,15 @@ def ab_datetime_format(dt: Union[datetime, AirbyteDateTime]) -> str:
 
 
 def ab_datetime_try_parse(dt_str: str) -> AirbyteDateTime | None:
-    """Try to parse the input string, failing gracefully instead of raising an exception.
+    """Try to parse the input string as an ISO8601/RFC3339 datetime, failing gracefully instead of raising an exception.
 
-    If not parseable, return `None`. Otherwise, return the `AirbyteDataTime` object.
+    Requires strict ISO8601/RFC3339 format with 'T' delimiter between date and time components.
+    Returns None for any non-compliant formats including space-delimited datetimes.
+    If parseable, returns the `AirbyteDateTime` object.
+
+    Example:
+        >>> ab_datetime_try_parse("2023-03-14T15:09:26Z")  # Returns AirbyteDateTime
+        >>> ab_datetime_try_parse("2023-03-14 15:09:26Z")  # Returns None (invalid format)
     """
     try:
         return ab_datetime_parse(dt_str)
