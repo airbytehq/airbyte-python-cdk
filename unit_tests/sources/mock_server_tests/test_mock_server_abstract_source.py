@@ -226,7 +226,9 @@ def _create_record(resource: str) -> RecordBuilder:
 class FullRefreshStreamTest(TestCase):
     @HttpMocker()
     def test_full_refresh_sync(self, http_mocker):
-        start_datetime = datetime(2025, 1, 10, 20, 34, 1, tzinfo=timezone.utc)  # Explicit start date
+        start_datetime = datetime(
+            2025, 1, 10, 20, 34, 1, tzinfo=timezone.utc
+        )  # Explicit start date
         config = {"start_date": start_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")}
 
         http_mocker.get(
@@ -256,7 +258,9 @@ class FullRefreshStreamTest(TestCase):
 
     @HttpMocker()
     def test_substream_resumable_full_refresh_with_parent_slices(self, http_mocker):
-        start_datetime = datetime(2025, 1, 10, 20, 34, 1, tzinfo=timezone.utc)  # Explicit start date
+        start_datetime = datetime(
+            2025, 1, 10, 20, 34, 1, tzinfo=timezone.utc
+        )  # Explicit start date
         config = {"start_date": start_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")}
 
         expected_first_substream_per_stream_state = [
@@ -321,14 +325,20 @@ class FullRefreshStreamTest(TestCase):
 class IncrementalStreamTest(TestCase):
     @HttpMocker()
     def test_incremental_sync(self, http_mocker):
-        start_datetime = datetime(2025, 1, 10, 20, 34, 1, tzinfo=timezone.utc)  # Explicit start date
+        start_datetime = datetime(
+            2025, 1, 10, 20, 34, 1, tzinfo=timezone.utc
+        )  # Explicit start date
         config = {"start_date": start_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")}
 
-        last_record_date_0 = datetime(2025, 1, 14, 20, 34, 1, tzinfo=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")  # Explicit record date
+        last_record_date_0 = datetime(2025, 1, 14, 20, 34, 1, tzinfo=timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )  # Explicit record date
         http_mocker.get(
             _create_planets_request()
             .with_start_date(start_datetime)
-            .with_end_date(datetime(2025, 1, 17, 20, 34, 1, tzinfo=timezone.utc))  # Explicit end date
+            .with_end_date(
+                datetime(2025, 1, 17, 20, 34, 1, tzinfo=timezone.utc)
+            )  # Explicit end date
             .build(),
             _create_response()
             .with_record(record=_create_record("planets").with_cursor(last_record_date_0))
@@ -337,11 +347,17 @@ class IncrementalStreamTest(TestCase):
             .build(),
         )
 
-        last_record_date_1 = datetime(2025, 1, 23, 20, 34, 1, tzinfo=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")  # Explicit record date
+        last_record_date_1 = datetime(2025, 1, 23, 20, 34, 1, tzinfo=timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )  # Explicit record date
         http_mocker.get(
             _create_planets_request()
-            .with_start_date(datetime(2025, 1, 17, 20, 34, 1, tzinfo=timezone.utc))  # Explicit start date
-            .with_end_date(datetime(2025, 1, 24, 20, 34, 1, tzinfo=timezone.utc))  # Explicit end date
+            .with_start_date(
+                datetime(2025, 1, 17, 20, 34, 1, tzinfo=timezone.utc)
+            )  # Explicit start date
+            .with_end_date(
+                datetime(2025, 1, 24, 20, 34, 1, tzinfo=timezone.utc)
+            )  # Explicit end date
             .build(),
             _create_response()
             .with_record(record=_create_record("planets").with_cursor(last_record_date_1))
@@ -382,14 +398,20 @@ class IncrementalStreamTest(TestCase):
 
     @HttpMocker()
     def test_incremental_running_as_full_refresh(self, http_mocker):
-        start_datetime = datetime(2025, 1, 10, 20, 34, 1, tzinfo=timezone.utc)  # Explicit start date
+        start_datetime = datetime(
+            2025, 1, 10, 20, 34, 1, tzinfo=timezone.utc
+        )  # Explicit start date
         config = {"start_date": start_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")}
 
-        last_record_date_0 = datetime(2025, 1, 14, 20, 34, 1, tzinfo=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")  # Explicit record date
+        last_record_date_0 = datetime(2025, 1, 14, 20, 34, 1, tzinfo=timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )  # Explicit record date
         http_mocker.get(
             _create_planets_request()
             .with_start_date(start_datetime)
-            .with_end_date(datetime(2025, 1, 17, 20, 34, 1, tzinfo=timezone.utc))  # Explicit end date
+            .with_end_date(
+                datetime(2025, 1, 17, 20, 34, 1, tzinfo=timezone.utc)
+            )  # Explicit end date
             .build(),
             _create_response()
             .with_record(record=_create_record("planets").with_cursor(last_record_date_0))
@@ -398,11 +420,17 @@ class IncrementalStreamTest(TestCase):
             .build(),
         )
 
-        last_record_date_1 = datetime(2025, 1, 23, 20, 34, 1, tzinfo=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")  # Explicit record date
+        last_record_date_1 = datetime(2025, 1, 23, 20, 34, 1, tzinfo=timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )  # Explicit record date
         http_mocker.get(
             _create_planets_request()
-            .with_start_date(datetime(2025, 1, 17, 20, 34, 1, tzinfo=timezone.utc))  # Explicit start date
-            .with_end_date(datetime(2025, 1, 24, 20, 34, 1, tzinfo=timezone.utc))  # Explicit end date
+            .with_start_date(
+                datetime(2025, 1, 17, 20, 34, 1, tzinfo=timezone.utc)
+            )  # Explicit start date
+            .with_end_date(
+                datetime(2025, 1, 24, 20, 34, 1, tzinfo=timezone.utc)
+            )  # Explicit end date
             .build(),
             _create_response()
             .with_record(record=_create_record("planets").with_cursor(last_record_date_1))
@@ -444,14 +472,20 @@ class IncrementalStreamTest(TestCase):
 
     @HttpMocker()
     def test_legacy_incremental_sync(self, http_mocker):
-        start_datetime = datetime(2025, 1, 10, 20, 34, 1, tzinfo=timezone.utc)  # Explicit start date
+        start_datetime = datetime(
+            2025, 1, 10, 20, 34, 1, tzinfo=timezone.utc
+        )  # Explicit start date
         config = {"start_date": start_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")}
 
-        last_record_date_0 = datetime(2025, 1, 14, 20, 34, 1, tzinfo=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")  # Explicit record date
+        last_record_date_0 = datetime(2025, 1, 14, 20, 34, 1, tzinfo=timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )  # Explicit record date
         http_mocker.get(
             _create_legacies_request()
             .with_start_date(start_datetime)
-            .with_end_date(datetime(2025, 1, 17, 20, 34, 1, tzinfo=timezone.utc))  # Explicit end date
+            .with_end_date(
+                datetime(2025, 1, 17, 20, 34, 1, tzinfo=timezone.utc)
+            )  # Explicit end date
             .build(),
             _create_response()
             .with_record(record=_create_record("legacies").with_cursor(last_record_date_0))
@@ -460,11 +494,17 @@ class IncrementalStreamTest(TestCase):
             .build(),
         )
 
-        last_record_date_1 = datetime(2025, 1, 23, 20, 34, 1, tzinfo=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")  # Explicit record date
+        last_record_date_1 = datetime(2025, 1, 23, 20, 34, 1, tzinfo=timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )  # Explicit record date
         http_mocker.get(
             _create_legacies_request()
-            .with_start_date(datetime(2025, 1, 17, 20, 34, 1, tzinfo=timezone.utc))  # Explicit start date
-            .with_end_date(datetime(2025, 1, 24, 20, 34, 1, tzinfo=timezone.utc))  # Explicit end date
+            .with_start_date(
+                datetime(2025, 1, 17, 20, 34, 1, tzinfo=timezone.utc)
+            )  # Explicit start date
+            .with_end_date(
+                datetime(2025, 1, 24, 20, 34, 1, tzinfo=timezone.utc)
+            )  # Explicit end date
             .build(),
             _create_response()
             .with_record(record=_create_record("legacies").with_cursor(last_record_date_1))
@@ -507,14 +547,22 @@ class IncrementalStreamTest(TestCase):
 
     @HttpMocker()
     def test_legacy_no_records_retains_incoming_state(self, http_mocker):
-        start_datetime = datetime(2025, 1, 10, 20, 34, 1, tzinfo=timezone.utc)  # Explicit start date
+        start_datetime = datetime(
+            2025, 1, 10, 20, 34, 1, tzinfo=timezone.utc
+        )  # Explicit start date
         config = {"start_date": start_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")}
 
-        last_record_date_1 = datetime(2025, 1, 23, 20, 34, 1, tzinfo=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")  # Explicit record date
+        last_record_date_1 = datetime(2025, 1, 23, 20, 34, 1, tzinfo=timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )  # Explicit record date
         http_mocker.get(
             _create_legacies_request()
-            .with_start_date(datetime(2025, 1, 23, 20, 34, 1, tzinfo=timezone.utc))  # Explicit start date
-            .with_end_date(datetime(2025, 1, 24, 20, 34, 1, tzinfo=timezone.utc))  # Explicit end date
+            .with_start_date(
+                datetime(2025, 1, 23, 20, 34, 1, tzinfo=timezone.utc)
+            )  # Explicit start date
+            .with_end_date(
+                datetime(2025, 1, 24, 20, 34, 1, tzinfo=timezone.utc)
+            )  # Explicit end date
             .build(),
             _create_response().build(),
         )
@@ -536,10 +584,14 @@ class IncrementalStreamTest(TestCase):
 
     @HttpMocker()
     def test_legacy_no_slices_retains_incoming_state(self, http_mocker):
-        start_datetime = datetime(2025, 1, 10, 20, 34, 1, tzinfo=timezone.utc)  # Explicit start date
+        start_datetime = datetime(
+            2025, 1, 10, 20, 34, 1, tzinfo=timezone.utc
+        )  # Explicit start date
         config = {"start_date": start_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")}
 
-        last_record_date_1 = datetime(2025, 1, 24, 20, 34, 1, tzinfo=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")  # Explicit record date
+        last_record_date_1 = datetime(2025, 1, 24, 20, 34, 1, tzinfo=timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )  # Explicit record date
 
         incoming_state = AirbyteStateBlob(created_at=last_record_date_1)
         state = StateBuilder().with_stream_state("legacies", incoming_state).build()
@@ -561,7 +613,9 @@ class IncrementalStreamTest(TestCase):
 class MultipleStreamTest(TestCase):
     @HttpMocker()
     def test_incremental_and_full_refresh_streams(self, http_mocker):
-        start_datetime = datetime(2025, 1, 10, 20, 34, 1, tzinfo=timezone.utc)  # Explicit start date
+        start_datetime = datetime(
+            2025, 1, 10, 20, 34, 1, tzinfo=timezone.utc
+        )  # Explicit start date
         config = {"start_date": start_datetime.strftime("%Y-%m-%dT%H:%M:%SZ")}
 
         expected_first_substream_per_stream_state = [
@@ -592,11 +646,15 @@ class MultipleStreamTest(TestCase):
         )
 
         # Mocks for planets incremental stream
-        last_record_date_0 = datetime(2025, 1, 14, 20, 34, 1, tzinfo=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")  # Explicit record date
+        last_record_date_0 = datetime(2025, 1, 14, 20, 34, 1, tzinfo=timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )  # Explicit record date
         http_mocker.get(
             _create_planets_request()
             .with_start_date(start_datetime)
-            .with_end_date(datetime(2025, 1, 17, 20, 34, 1, tzinfo=timezone.utc))  # Explicit end date
+            .with_end_date(
+                datetime(2025, 1, 17, 20, 34, 1, tzinfo=timezone.utc)
+            )  # Explicit end date
             .build(),
             _create_response()
             .with_record(record=_create_record("planets").with_cursor(last_record_date_0))
@@ -605,11 +663,17 @@ class MultipleStreamTest(TestCase):
             .build(),
         )
 
-        last_record_date_1 = datetime(2025, 1, 23, 20, 34, 1, tzinfo=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")  # Explicit record date
+        last_record_date_1 = datetime(2025, 1, 23, 20, 34, 1, tzinfo=timezone.utc).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )  # Explicit record date
         http_mocker.get(
             _create_planets_request()
-            .with_start_date(datetime(2025, 1, 17, 20, 34, 1, tzinfo=timezone.utc))  # Explicit start date
-            .with_end_date(datetime(2025, 1, 24, 20, 34, 1, tzinfo=timezone.utc))  # Explicit end date
+            .with_start_date(
+                datetime(2025, 1, 17, 20, 34, 1, tzinfo=timezone.utc)
+            )  # Explicit start date
+            .with_end_date(
+                datetime(2025, 1, 24, 20, 34, 1, tzinfo=timezone.utc)
+            )  # Explicit end date
             .build(),
             _create_response()
             .with_record(record=_create_record("planets").with_cursor(last_record_date_1))
