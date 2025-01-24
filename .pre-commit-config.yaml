@@ -1,5 +1,19 @@
 # See https://pre-commit.com for more information
 # See https://pre-commit.com/hooks.html for more hooks
+exclude: |
+  (?x)(
+    # Python/system files
+    ^.*/__init__\.py$|
+    ^.*?/\.venv/.*$|
+    ^.*?/node_modules/.*$|
+    
+    # Generated/test files
+    ^.*?/\.pytest_cache/.*$|
+    ^.*?/__pycache__/.*$|
+    ^.*?/\.mypy_cache/.*$|
+    ^.*?/\.ruff_cache/.*$
+  )
+
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
@@ -28,3 +42,11 @@ repos:
     -   id: ruff
         args: [--fix]
     -   id: ruff-format
+
+-   repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.0.3
+    hooks:
+    -   id: prettier
+        types_or: [json, yaml]
+        additional_dependencies:
+          - prettier@3.0.3

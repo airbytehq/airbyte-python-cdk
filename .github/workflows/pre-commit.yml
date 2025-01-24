@@ -1,0 +1,36 @@
+name: Pre-commit
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v3
+        with:
+          # fetch-depth=0 ensures we can push changes
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+
+      - name: Install pre-commit
+        run: pip install pre-commit
+
+      - name: Run pre-commit
+        run: pre-commit run --all-files
+
+      - name: Commit changes if needed
+        uses: EndBug/add-and-commit@v9
+        with:
+          author_name: GitHub Actions
+          author_email: github-actions@github.com
+          message: "chore: apply pre-commit fixes"
+          push: true
+          pull_strategy: rebase
