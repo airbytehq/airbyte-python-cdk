@@ -80,10 +80,10 @@ def test_parse():
     # Test invalid formats
     with pytest.raises(ValueError):
         parse("invalid datetime")
-    
+
     with pytest.raises(ValueError):
         parse("not_a_number")  # Invalid when trying to parse as timestamp
-    
+
     with pytest.raises(ValueError):
         parse("2023-03-14")  # Missing time component
 
@@ -135,7 +135,7 @@ def test_is_valid_format():
     assert is_valid_format("2023-03-14T15:09:26.123456Z")  # With microseconds
     assert is_valid_format("2023-03-14T15:09:26-04:00")  # With timezone offset
     assert is_valid_format("2023-03-14T15:09:26+00:00")  # With explicit UTC offset
-    
+
     # Invalid formats
     assert not is_valid_format("invalid datetime")  # Completely invalid
     assert not is_valid_format("2023-03-14 15:09:26")  # Missing T delimiter
