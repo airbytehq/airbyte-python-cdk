@@ -1171,7 +1171,7 @@ def test_incremental_parent_state(
 
 
 @pytest.mark.parametrize(
-    "test_name, manifest, mock_requests, expected_records, initial_state, expected_state",
+    "test_name, manifest, mock_requests, expected_records, expected_state",
     [
         (
             "test_incremental_parent_state",
@@ -1326,8 +1326,6 @@ def test_incremental_parent_state(
                     "id": 300,
                 },
             ],
-            # Initial state
-            {"created_at": PARTITION_SYNC_START_TIME},
             # Expected state
             {
                 "state": {"created_at": VOTE_100_CREATED_AT},
@@ -1383,6 +1381,25 @@ def test_incremental_parent_state(
             },
         ),
     ],
+)
+@pytest.mark.parametrize(
+    "initial_state",
+    [
+        {"created_at": PARTITION_SYNC_START_TIME},
+        {
+            "state": {"created_at": PARTITION_SYNC_START_TIME},
+            "lookback_window": 0,
+            "use_global_cursor": True,
+            "parent_state": {
+                "post_comments": {
+                    "state": {"updated_at": PARTITION_SYNC_START_TIME},
+                    "parent_state": {"posts": {"updated_at": PARTITION_SYNC_START_TIME}},
+                    "lookback_window": 0,
+                }
+            },
+        },
+    ],
+    ids=["legacy_python_format", "low_code_global_format"],
 )
 def test_incremental_parent_state_migration(
     test_name, manifest, mock_requests, expected_records, initial_state, expected_state

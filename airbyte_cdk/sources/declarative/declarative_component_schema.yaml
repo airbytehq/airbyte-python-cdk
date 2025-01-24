@@ -1800,6 +1800,19 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  ComplexFieldType:
+    title: Schema Field Type
+    description: (This component is experimental. Use at your own risk.) Represents a complex field type.
+    type: object
+    required:
+      - field_type
+    properties:
+      field_type:
+        type: string
+      items:
+        anyOf:
+          - type: string
+          - "$ref": "#/definitions/ComplexFieldType"
   TypesMap:
     title: Types Map
     description: (This component is experimental. Use at your own risk.) Represents a mapping between a current type and its corresponding target type.
@@ -1814,6 +1827,7 @@ definitions:
           - type: array
             items:
               type: string
+          - "$ref": "#/definitions/ComplexFieldType"
       current_type:
         anyOf:
           - type: string
