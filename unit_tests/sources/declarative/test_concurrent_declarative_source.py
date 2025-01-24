@@ -40,7 +40,7 @@ from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.utils import AirbyteTracedException
-from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_parse
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, parse
 
 _CONFIG = {"start_date": "2024-07-01T00:00:00.000Z"}
 
