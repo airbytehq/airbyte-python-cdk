@@ -17,8 +17,10 @@ jobs:
     steps:
       - name: Create Failure Check Run
         uses: LouisBrunner/checks-action@v1.6.1
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_MAINTENANCE_OCTAVIA }}
         with:
-          token: ${{ github.token }}
+          token: ${{ secrets.GH_PAT_MAINTENANCE_OCTAVIA }}
           name: "Dummy Check (fail custom)"
           status: completed
           conclusion: failure
@@ -26,5 +28,5 @@ jobs:
           output: |
             {
               "title": "Test Report",
-              "summary": "This is a dummy failure check.\nHTML Report URL: https://www.google.com/search?q=failed\n\nNote: The Details link above will go to the GitHub Actions run due to platform limitations."
+              "summary": "This is a dummy failure check.\nHTML Report URL: https://www.google.com/search?q=failed"
             }
