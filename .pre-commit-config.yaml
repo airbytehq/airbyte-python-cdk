@@ -30,8 +30,8 @@ repos:
     -   id: toml-sort
         args: [--all]
 
--   repo: https://github.com/tamasfe/taplo
-    rev: 0.8.1
+-   repo: https://github.com/taplo-tools/taplo-pre-commit
+    rev: v0.1.2
     hooks:
     -   id: taplo-fmt
     -   id: taplo-check
