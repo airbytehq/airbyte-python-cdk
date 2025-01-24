@@ -221,7 +221,7 @@ jobs:
             -H "X-GitHub-Api-Version: 2022-11-28" \
             repos/${{ github.repository }}/statuses/$HEAD_SHA \
             -f state="failure" \
-            -f description="Test execution failed to generate a report" \
+            -f description="Failed to run connector tests." \
             -f context="${{ matrix.connector }} Test Report"
 
       # Upload the job output to the artifacts
