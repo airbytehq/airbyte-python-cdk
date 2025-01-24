@@ -144,10 +144,10 @@ class Planets(IncrementalIntegrationStream):
         cursor_field: Optional[List[str]] = None,
         stream_state: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[Optional[Mapping[str, Any]]]:
-        start_date = parse(self.start_date)
+        start_date = ab_datetime_parse(self.start_date)
 
         if stream_state:
-            start_date = parse(stream_state.get(self.cursor_field))
+            start_date = ab_datetime_parse(stream_state.get(self.cursor_field))
 
         date_slices = []
 
@@ -226,10 +226,10 @@ class Legacies(IntegrationStream):
         cursor_field: Optional[List[str]] = None,
         stream_state: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[Optional[Mapping[str, Any]]]:
-        start_date = parse(self.start_date)
+        start_date = ab_datetime_parse(self.start_date)
 
         if stream_state:
-            start_date = parse(stream_state.get(self.cursor_field))
+            start_date = ab_datetime_parse(stream_state.get(self.cursor_field))
 
         date_slices = []
 
