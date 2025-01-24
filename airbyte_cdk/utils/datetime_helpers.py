@@ -85,13 +85,13 @@ class AirbyteDateTime(datetime):
             str: ISO8601/RFC3339 formatted string.
         """
         aware_self = self if self.tzinfo else self.replace(tzinfo=timezone.utc)
-        base = self.strftime('%Y-%m-%dT%H:%M:%S')
+        base = self.strftime("%Y-%m-%dT%H:%M:%S")
         if self.microsecond:
             base = f"{base}.{self.microsecond:06d}"
         if aware_self.tzinfo == timezone.utc:
             return f"{base}Z"
         # Format timezone as ±HH:MM
-        offset = aware_self.strftime('%z')
+        offset = aware_self.strftime("%z")
         return f"{base}{offset[:3]}:{offset[3:]}"
 
     def __repr__(self) -> str:

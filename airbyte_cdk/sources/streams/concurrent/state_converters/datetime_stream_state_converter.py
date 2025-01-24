@@ -169,10 +169,10 @@ class IsoMillisConcurrentStreamStateConverter(DateTimeStreamStateConverter):
 
     def output_format(self, timestamp: datetime) -> str:
         """Format datetime with milliseconds always included.
-        
+
         Args:
             timestamp: The datetime to format.
-            
+
         Returns:
             str: ISO8601/RFC3339 formatted string with milliseconds.
         """
