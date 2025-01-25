@@ -404,13 +404,20 @@ def ab_datetime_parse(dt_str: Union[str, int]) -> AirbyteDateTime:
             raise ValueError(f"Invalid timezone format: {dt_str}")
 
         # Check for invalid timezone offsets
-        if "+" in dt_str or "-" in dt_str:
-            # Find timezone offset part (after + or -)
-            offset_part = dt_str.split("+")[-1] if "+" in dt_str else dt_str.split("-")[-1]
-            if ":" in offset_part:
-                hours, minutes = map(int, offset_part.split(":"))
+        if "+" in dt_str:
+            parts = dt_str.split("+")
+            if len(parts) == 2 and ":" in parts[1]:
+                hours, minutes = map(int, parts[1].split(":"))
                 if hours >= 24 or minutes >= 60:
-                    raise ValueError(f"Invalid timezone offset: {offset_part}")
+                    raise ValueError(f"Invalid timezone offset: +{parts[1]}")
+        elif dt_str.endswith("Z"):
+            pass  # Valid UTC timezone marker
+        elif "-" in dt_str[13:]:  # Skip date part and time part
+            parts = dt_str[13:].split("-")
+            if len(parts) == 2 and ":" in parts[1]:
+                hours, minutes = map(int, parts[1].split(":"))
+                if hours >= 24 or minutes >= 60:
+                    raise ValueError(f"Invalid timezone offset: -{parts[1]}")
 
         # Try parsing with whenever's RFC3339 parser first
         try:
