@@ -565,7 +565,7 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
         )
         assert (
             emitted_message.control.connectorConfig.config["credentials"]["token_expiry_date"]
-            == "2023-04-04T00:00:00Z"
+            == "2023-04-04T00:00:00+00:00"
         )
         assert (
             emitted_message.control.connectorConfig.config["credentials"]["client_id"]
