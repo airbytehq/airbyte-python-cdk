@@ -16,6 +16,7 @@ import requests
 import yaml
 from jsonschema.exceptions import ValidationError
 
+import unit_tests.sources.declarative.external_component  # Needed for dynamic imports to work
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
@@ -264,6 +265,11 @@ class TestManifestDeclarativeSource:
             ],
             "check": {"type": "CheckStream", "stream_names": ["lists"]},
         }
+        assert "unit_tests" in sys.modules
+        assert "unit_tests.sources" in sys.modules
+        assert "unit_tests.sources.declarative" in sys.modules
+        assert "unit_tests.sources.declarative.external_component" in sys.modules
+
         source = ManifestDeclarativeSource(source_config=manifest)
 
         check_stream = source.connection_checker

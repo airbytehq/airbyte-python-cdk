@@ -328,6 +328,16 @@ class LegacyToPerPartitionStateMigration(BaseModel):
     type: Optional[Literal["LegacyToPerPartitionStateMigration"]] = None
 
 
+class Clamping(BaseModel):
+    target: str = Field(
+        ...,
+        description="The period of time that datetime windows will be clamped by",
+        examples=["DAY", "WEEK", "MONTH", "{{ config['target'] }}"],
+        title="Target",
+    )
+    target_details: Optional[Dict[str, Any]] = None
+
+
 class Algorithm(Enum):
     HS256 = "HS256"
     HS384 = "HS384"
@@ -496,8 +506,8 @@ class OAuthAuthenticator(BaseModel):
         examples=["custom_app_id"],
         title="Client ID Property Name",
     )
-    client_id: str = Field(
-        ...,
+    client_id: Optional[str] = Field(
+        None,
         description="The OAuth client ID. Fill it in the user inputs.",
         examples=["{{ config['client_id }}", "{{ config['credentials']['client_id }}"],
         title="Client ID",
@@ -508,8 +518,8 @@ class OAuthAuthenticator(BaseModel):
         examples=["custom_app_secret"],
         title="Client Secret Property Name",
     )
-    client_secret: str = Field(
-        ...,
+    client_secret: Optional[str] = Field(
+        None,
         description="The OAuth client secret. Fill it in the user inputs.",
         examples=[
             "{{ config['client_secret }}",
@@ -614,6 +624,16 @@ class OAuthAuthenticator(BaseModel):
         description="When the token updater is defined, new refresh tokens, access tokens and the access token expiry date are written back from the authentication response to the config object. This is important if the refresh token can only used once.",
         title="Token Updater",
     )
+    profile_assertion: Optional[JwtAuthenticator] = Field(
+        None,
+        description="The authenticator being used to authenticate the client authenticator.",
+        title="Profile Assertion",
+    )
+    use_profile_assertion: Optional[bool] = Field(
+        False,
+        description="Enable using profile assertion as a flow for OAuth authorization.",
+        title="Use Profile Assertion",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -716,10 +736,15 @@ class HttpResponseFilter(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class ComplexFieldType(BaseModel):
+    field_type: str
+    items: Optional[Union[str, ComplexFieldType]] = None
+
+
 class TypesMap(BaseModel):
-    target_type: Union[str, List[str]]
+    target_type: Union[str, List[str], ComplexFieldType]
     current_type: Union[str, List[str]]
-    condition: Optional[str]
+    condition: Optional[str] = None
 
 
 class SchemaTypeIdentifier(BaseModel):
@@ -788,6 +813,22 @@ class FlattenFields(BaseModel):
         True,
         description="Whether to flatten lists or leave it as is. Default is True.",
         title="Flatten Lists",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class DpathFlattenFields(BaseModel):
+    type: Literal["DpathFlattenFields"]
+    field_path: List[str] = Field(
+        ...,
+        description="A path to field that needs to be flattened.",
+        examples=[["data"], ["data", "*", "field"]],
+        title="Field Path",
+    )
+    delete_origin_value: Optional[bool] = Field(
+        None,
+        description="Whether to delete the origin value or keep it. Default is False.",
+        title="Delete Origin Value",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -1435,6 +1476,11 @@ class AuthFlow(BaseModel):
 
 class DatetimeBasedCursor(BaseModel):
     type: Literal["DatetimeBasedCursor"]
+    clamping: Optional[Clamping] = Field(
+        None,
+        description="This option is used to adjust the upper and lower boundaries of each datetime window to beginning and end of the provided target period (day, week, month)",
+        title="Date Range Clamping",
+    )
     cursor_field: str = Field(
         ...,
         description="The location of the value on a record that will be used as a bookmark during sync. To ensure no data loss, the API must return records in ascending order based on the cursor field. Nested fields are not supported, so the field must be at the top level of the record. You can use a combination of Add Field and Remove Field transformations to move the nested field to the top.",
@@ -1819,6 +1865,7 @@ class DeclarativeStream(BaseModel):
                 KeysToLower,
                 KeysToSnakeCase,
                 FlattenFields,
+                DpathFlattenFields,
                 KeysReplace,
             ]
         ]
@@ -1994,6 +2041,7 @@ class DynamicSchemaLoader(BaseModel):
                 KeysToLower,
                 KeysToSnakeCase,
                 FlattenFields,
+                DpathFlattenFields,
                 KeysReplace,
             ]
         ]
@@ -2217,6 +2265,7 @@ class DynamicDeclarativeStream(BaseModel):
     )
 
 
+ComplexFieldType.update_forward_refs()
 CompositeErrorHandler.update_forward_refs()
 DeclarativeSource1.update_forward_refs()
 DeclarativeSource2.update_forward_refs()

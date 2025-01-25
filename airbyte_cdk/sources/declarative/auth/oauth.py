@@ -3,11 +3,12 @@
 #
 
 from dataclasses import InitVar, dataclass, field
-from typing import Any, List, Mapping, Optional, Union
+from typing import Any, List, Mapping, MutableMapping, Optional, Union
 
 import pendulum
 
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
+from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
@@ -44,10 +45,10 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         message_repository (MessageRepository): the message repository used to emit logs on HTTP requests
     """
 
-    client_id: Union[InterpolatedString, str]
-    client_secret: Union[InterpolatedString, str]
     config: Mapping[str, Any]
     parameters: InitVar[Mapping[str, Any]]
+    client_id: Optional[Union[InterpolatedString, str]] = None
+    client_secret: Optional[Union[InterpolatedString, str]] = None
     token_refresh_endpoint: Optional[Union[InterpolatedString, str]] = None
     refresh_token: Optional[Union[InterpolatedString, str]] = None
     scopes: Optional[List[str]] = None
@@ -66,6 +67,8 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     grant_type_name: Union[InterpolatedString, str] = "grant_type"
     grant_type: Union[InterpolatedString, str] = "refresh_token"
     message_repository: MessageRepository = NoopMessageRepository()
+    profile_assertion: Optional[DeclarativeAuthenticator] = None
+    use_profile_assertion: Optional[Union[InterpolatedBoolean, str, bool]] = False
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         super().__init__()
@@ -76,11 +79,19 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         else:
             self._token_refresh_endpoint = None
         self._client_id_name = InterpolatedString.create(self.client_id_name, parameters=parameters)
-        self._client_id = InterpolatedString.create(self.client_id, parameters=parameters)
+        self._client_id = (
+            InterpolatedString.create(self.client_id, parameters=parameters)
+            if self.client_id
+            else self.client_id
+        )
         self._client_secret_name = InterpolatedString.create(
             self.client_secret_name, parameters=parameters
         )
-        self._client_secret = InterpolatedString.create(self.client_secret, parameters=parameters)
+        self._client_secret = (
+            InterpolatedString.create(self.client_secret, parameters=parameters)
+            if self.client_secret
+            else self.client_secret
+        )
         self._refresh_token_name = InterpolatedString.create(
             self.refresh_token_name, parameters=parameters
         )
@@ -99,7 +110,12 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         self.grant_type_name = InterpolatedString.create(
             self.grant_type_name, parameters=parameters
         )
-        self.grant_type = InterpolatedString.create(self.grant_type, parameters=parameters)
+        self.grant_type = InterpolatedString.create(
+            "urn:ietf:params:oauth:grant-type:jwt-bearer"
+            if self.use_profile_assertion
+            else self.grant_type,
+            parameters=parameters,
+        )
         self._refresh_request_body = InterpolatedMapping(
             self.refresh_request_body or {}, parameters=parameters
         )
@@ -115,6 +131,13 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
             if self.token_expiry_date
             else pendulum.now().subtract(days=1)  # type: ignore # substract does not have type hints
         )
+        self.use_profile_assertion = (
+            InterpolatedBoolean(self.use_profile_assertion, parameters=parameters)
+            if isinstance(self.use_profile_assertion, str)
+            else self.use_profile_assertion
+        )
+        self.assertion_name = "assertion"
+
         if self.access_token_value is not None:
             self._access_token_value = InterpolatedString.create(
                 self.access_token_value, parameters=parameters
@@ -126,9 +149,20 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
             self._access_token_value if self.access_token_value else None
         )
 
+        if not self.use_profile_assertion and any(
+            client_creds is None for client_creds in [self.client_id, self.client_secret]
+        ):
+            raise ValueError(
+                "OAuthAuthenticator configuration error: Both 'client_id' and 'client_secret' are required for the "
+                "basic OAuth flow."
+            )
+        if self.profile_assertion is None and self.use_profile_assertion:
+            raise ValueError(
+                "OAuthAuthenticator configuration error: 'profile_assertion' is required when using the profile assertion flow."
+            )
         if self.get_grant_type() == "refresh_token" and self._refresh_token is None:
             raise ValueError(
-                "OAuthAuthenticator needs a refresh_token parameter if grant_type is set to `refresh_token`"
+                "OAuthAuthenticator configuration error: A 'refresh_token' is required when the 'grant_type' is set to 'refresh_token'."
             )
 
     def get_token_refresh_endpoint(self) -> Optional[str]:
@@ -145,19 +179,21 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         return self._client_id_name.eval(self.config)  # type: ignore # eval returns a string in this context
 
     def get_client_id(self) -> str:
-        client_id: str = self._client_id.eval(self.config)
+        client_id = self._client_id.eval(self.config) if self._client_id else self._client_id
         if not client_id:
             raise ValueError("OAuthAuthenticator was unable to evaluate client_id parameter")
-        return client_id
+        return client_id  # type: ignore # value will be returned as a string, or an error will be raised
 
     def get_client_secret_name(self) -> str:
         return self._client_secret_name.eval(self.config)  # type: ignore # eval returns a string in this context
 
     def get_client_secret(self) -> str:
-        client_secret: str = self._client_secret.eval(self.config)
+        client_secret = (
+            self._client_secret.eval(self.config) if self._client_secret else self._client_secret
+        )
         if not client_secret:
             raise ValueError("OAuthAuthenticator was unable to evaluate client_secret parameter")
-        return client_secret
+        return client_secret  # type: ignore # value will be returned as a string, or an error will be raised
 
     def get_refresh_token_name(self) -> str:
         return self._refresh_token_name.eval(self.config)  # type: ignore # eval returns a string in this context
@@ -191,6 +227,27 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
 
     def set_token_expiry_date(self, value: Union[str, int]) -> None:
         self._token_expiry_date = self._parse_token_expiration_date(value)
+
+    def get_assertion_name(self) -> str:
+        return self.assertion_name
+
+    def get_assertion(self) -> str:
+        if self.profile_assertion is None:
+            raise ValueError("profile_assertion is not set")
+        return self.profile_assertion.token
+
+    def build_refresh_request_body(self) -> Mapping[str, Any]:
+        """
+        Returns the request body to set on the refresh request
+
+        Override to define additional parameters
+        """
+        if self.use_profile_assertion:
+            return {
+                self.get_grant_type_name(): self.get_grant_type(),
+                self.get_assertion_name(): self.get_assertion(),
+            }
+        return super().build_refresh_request_body()
 
     @property
     def access_token(self) -> str:

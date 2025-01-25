@@ -45,7 +45,7 @@ def format_http_message(
         log_message["http"]["is_auxiliary"] = is_auxiliary  # type: ignore [index]
     if stream_name:
         log_message["airbyte_cdk"] = {"stream": {"name": stream_name}}
-    return log_message  # type: ignore [return-value]  # got "dict[str, object]", expected "dict[str, JsonType]"
+    return log_message  # type: ignore[return-value]  # got "dict[str, object]", expected "dict[str, JsonType]"
 
 
 def _normalize_body_string(body_str: Optional[Union[str, bytes]]) -> Optional[str]:
