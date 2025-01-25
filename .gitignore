@@ -15,4 +15,3 @@ dist
 .idea
 .vscode
 **/__pycache__
-test_response.txt  # test artifact, don't commit
