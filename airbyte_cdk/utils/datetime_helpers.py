@@ -456,7 +456,7 @@ def ab_datetime_format(dt: Union[datetime, AirbyteDateTime]) -> str:
 
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    
+
     # Format with consistent timezone representation
     base = dt.strftime("%Y-%m-%dT%H:%M:%S")
     if dt.microsecond:
