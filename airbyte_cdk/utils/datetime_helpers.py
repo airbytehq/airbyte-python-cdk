@@ -326,6 +326,19 @@ class AirbyteDateTime(datetime):
         """
         return cls.fromtimestamp(milliseconds / 1000.0, timezone.utc)
 
+    @classmethod
+    def from_str(cls, dt_str: str) -> "AirbyteDateTime":
+        """Thin convenience wrapper around `ab_datetime_parse()`.
+
+        This method attempts to create a new `AirbyteDateTime` using all available parsing
+        strategies.
+
+        Raises:
+            ValueError: If the value cannot be parsed into a valid datetime object.
+        """
+        return ab_datetime_parse(dt_str)
+
+
 
 def ab_datetime_now() -> AirbyteDateTime:
     """Returns the current time as an AirbyteDateTime in UTC timezone.
@@ -343,7 +356,7 @@ def ab_datetime_now() -> AirbyteDateTime:
     return AirbyteDateTime.from_datetime(datetime.now(timezone.utc))
 
 
-def ab_datetime_parse(dt_str: Union[str, int]) -> AirbyteDateTime:
+def ab_datetime_parse(dt_str: str | int) -> AirbyteDateTime:
     """Parses a datetime string or timestamp into an AirbyteDateTime with timezone awareness.
 
     Previously named: parse()
@@ -390,34 +403,6 @@ def ab_datetime_parse(dt_str: Union[str, int]) -> AirbyteDateTime:
 
         if not isinstance(dt_str, str):
             raise ValueError(f"Expected string or integer, got {type(dt_str)}")
-
-        # For string inputs with time component but no T delimiter, it's invalid
-        if ":" in dt_str and "T" not in dt_str:
-            raise ValueError(f"Missing T delimiter in datetime string: {dt_str}")
-
-        # Check for wrong separators in date format
-        if "/" in dt_str:
-            raise ValueError(f"Invalid date format (expected YYYY-MM-DD): {dt_str}")
-
-        # Check for invalid timezone formats (GMT, UTC, etc.)
-        if any(x in dt_str for x in ["GMT", "UTC"]):
-            raise ValueError(f"Invalid timezone format: {dt_str}")
-
-        # Check for invalid timezone offsets
-        if "+" in dt_str:
-            parts = dt_str.split("+")
-            if len(parts) == 2 and ":" in parts[1]:
-                hours, minutes = map(int, parts[1].split(":"))
-                if hours >= 24 or minutes >= 60:
-                    raise ValueError(f"Invalid timezone offset: +{parts[1]}")
-        elif dt_str.endswith("Z"):
-            pass  # Valid UTC timezone marker
-        elif "-" in dt_str[13:]:  # Skip date part and time part
-            parts = dt_str[13:].split("-")
-            if len(parts) == 2 and ":" in parts[1]:
-                hours, minutes = map(int, parts[1].split(":"))
-                if hours >= 24 or minutes >= 60:
-                    raise ValueError(f"Invalid timezone offset: -{parts[1]}")
 
         # Try parsing with whenever's RFC3339 parser first
         try:
@@ -504,23 +489,6 @@ def ab_datetime_try_parse(dt_str: str) -> AirbyteDateTime | None:
         >>> ab_datetime_try_parse("2023-03-14")  # Returns None (missing time and timezone)
     """
     try:
-        # Quick format validation before attempting to parse
-        if not isinstance(dt_str, str):
-            return None
-
-        # Must have T delimiter
-        if "T" not in dt_str:
-            return None
-
-        # Must have timezone (Z or +/-HH:MM)
-        if not (dt_str.endswith("Z") or ("+" in dt_str[-6:]) or ("-" in dt_str[-6:])):
-            return None
-
-        # Must use hyphens for date separators
-        date_part = dt_str.split("T")[0]
-        if "/" in date_part:
-            return None
-
         return ab_datetime_parse(dt_str)
     except:
         return None
