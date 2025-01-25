@@ -310,13 +310,13 @@ class TestOauth2Authenticator:
     @pytest.mark.parametrize(
         "expires_in_response, token_expiry_date_format, expected_token_expiry_date",
         [
-            (3600, None, "2022-01-01T01:00:00Z"),
-            ("90012", None, "2022-01-02T01:00:12Z"),
-            ("2024-02-28", "YYYY-MM-DD", "2024-02-28T00:00:00Z"),
+            (3600, None, AirbyteDateTime(year=2022, month=1, day=1, hour=1)),
+            ("90012", None, AirbyteDateTime(year=2022, month=1, day=2, hour=1, second=12)),
+            ("2024-02-28", "YYYY-MM-DD", pendulum.datetime(year=2024, month=2, day=28)),
             (
                 "2022-02-12T00:00:00.000000+00:00",
                 "YYYY-MM-DDTHH:mm:ss.SSSSSSZ",
-                "2022-02-12T00:00:00Z",
+                AirbyteDateTime(year=2022, month=2, day=12),
             ),
         ],
         ids=["seconds", "string_of_seconds", "simple_date", "simple_datetime"],
