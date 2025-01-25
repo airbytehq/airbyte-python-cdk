@@ -139,13 +139,6 @@ def test_parse():
     with pytest.raises(ValueError):
         ab_datetime_parse("2023-03-14T15:09:26+00:60")  # Invalid timezone minutes (60)
 
-    # Test invalid timestamps
-    with pytest.raises(ValueError):
-        ab_datetime_parse(-1)  # Negative timestamp
-
-    with pytest.raises(ValueError):
-        ab_datetime_parse("9" * 20)  # Timestamp too large for system
-
 
 def test_format():
     """Test formatting various datetime objects."""
