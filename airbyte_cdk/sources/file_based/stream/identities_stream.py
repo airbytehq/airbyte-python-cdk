@@ -48,7 +48,7 @@ class IdentitiesStream(Stream):
         self.stream_reader = stream_reader
         self._discovery_policy = discovery_policy
         self.errors_collector = errors_collector
-        self._cursor = {}
+        self._cursor: MutableMapping[str, Any] = {}
 
     @property
     def state(self) -> MutableMapping[str, Any]:

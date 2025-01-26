@@ -301,9 +301,10 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
 
                 streams.append(stream)
 
-            if self._add_identities_stream(parsed_config):
+            identities_stream_config = self._get_identities_stream_config(parsed_config)
+            if identities_stream_config:
                 identities_stream = self._make_identities_stream(
-                    stream_config=parsed_config.delivery_method.identities
+                    stream_config=identities_stream_config
                 )
                 streams.append(identities_stream)
             return streams
@@ -458,9 +459,16 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         return False
 
     @staticmethod
-    def _add_identities_stream(parsed_config: AbstractFileBasedSpec) -> bool:
-        return (
+    def _get_identities_stream_config(
+        parsed_config: AbstractFileBasedSpec,
+    ) -> Optional[IdentitiesStreamConfig]:
+        identities_stream_config = None
+        if (
             FileBasedSource._sync_acl_permissions(parsed_config)
+            and hasattr(parsed_config.delivery_method, "identities")
             and parsed_config.delivery_method.identities is not None
+            and isinstance(parsed_config.delivery_method.identities, IdentitiesStreamConfig)
             and parsed_config.delivery_method.identities.domain
-        )
+        ):
+            identities_stream_config = parsed_config.delivery_method.identities
+        return identities_stream_config
