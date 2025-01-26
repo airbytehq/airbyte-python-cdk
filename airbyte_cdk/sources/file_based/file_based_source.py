@@ -33,6 +33,9 @@ from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
     FileBasedStreamConfig,
     ValidationPolicy,
 )
+from airbyte_cdk.sources.file_based.config.identities_based_stream_config import (
+    IdentitiesStreamConfig,
+)
 from airbyte_cdk.sources.file_based.discovery_policy import (
     AbstractDiscoveryPolicy,
     DefaultDiscoveryPolicy,
@@ -49,7 +52,11 @@ from airbyte_cdk.sources.file_based.schema_validation_policies import (
     DEFAULT_SCHEMA_VALIDATION_POLICIES,
     AbstractSchemaValidationPolicy,
 )
-from airbyte_cdk.sources.file_based.stream import AbstractFileBasedStream, DefaultFileBasedStream
+from airbyte_cdk.sources.file_based.stream import (
+    AbstractFileBasedStream,
+    DefaultFileBasedStream,
+    IdentitiesStream,
+)
 from airbyte_cdk.sources.file_based.stream.concurrent.adapters import FileBasedStreamFacade
 from airbyte_cdk.sources.file_based.stream.concurrent.cursor import (
     AbstractConcurrentFileBasedCursor,
@@ -157,13 +164,17 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         errors = []
         tracebacks = []
         for stream in streams:
+            if isinstance(stream, IdentitiesStream):
+                # Probably need to check identities endpoint/api access but will skip for now.
+                continue
             if not isinstance(stream, AbstractFileBasedStream):
                 raise ValueError(f"Stream {stream} is not a file-based stream.")
             try:
                 parsed_config = self._get_parsed_config(config)
                 availability_method = (
                     stream.availability_strategy.check_availability
-                    if self._use_file_transfer(parsed_config) or self._sync_metadata(parsed_config)
+                    if self._use_file_transfer(parsed_config)
+                    or self._sync_acl_permissions(parsed_config)
                     else stream.availability_strategy.check_availability_and_parsability
                 )
                 (
@@ -289,6 +300,12 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                     )
 
                 streams.append(stream)
+
+            if self._add_identities_stream(parsed_config):
+                identities_stream = self._make_identities_stream(
+                    stream_config=parsed_config.delivery_method.identities
+                )
+                streams.append(identities_stream)
             return streams
 
         except ValidationError as exc:
@@ -312,7 +329,19 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
             cursor=cursor,
             use_file_transfer=self._use_file_transfer(parsed_config),
             preserve_directory_structure=self._preserve_directory_structure(parsed_config),
-            sync_metadata=self._sync_metadata(parsed_config),
+            sync_acl_permissions=self._sync_acl_permissions(parsed_config),
+        )
+
+    def _make_identities_stream(
+        self,
+        stream_config: IdentitiesStreamConfig,
+    ) -> Stream:
+        return IdentitiesStream(
+            config=stream_config,
+            catalog_schema=self.stream_schemas.get(stream_config.name),
+            stream_reader=self.stream_reader,
+            discovery_policy=self.discovery_policy,
+            errors_collector=self.errors_collector,
         )
 
     def _get_stream_from_catalog(
@@ -419,11 +448,19 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         return True
 
     @staticmethod
-    def _sync_metadata(parsed_config: AbstractFileBasedSpec) -> bool:
+    def _sync_acl_permissions(parsed_config: AbstractFileBasedSpec) -> bool:
         if (
             FileBasedSource._use_records_transfer(parsed_config)
-            and hasattr(parsed_config.delivery_method, "sync_metadata")
-            and parsed_config.delivery_method.sync_metadata is not None
+            and hasattr(parsed_config.delivery_method, "sync_acl_permissions")
+            and parsed_config.delivery_method.sync_acl_permissions is not None
         ):
-            return parsed_config.delivery_method.sync_metadata
+            return parsed_config.delivery_method.sync_acl_permissions
         return False
+
+    @staticmethod
+    def _add_identities_stream(parsed_config: AbstractFileBasedSpec) -> bool:
+        return (
+            FileBasedSource._sync_acl_permissions(parsed_config)
+            and parsed_config.delivery_method.identities is not None
+            and parsed_config.delivery_method.identities.domain
+        )

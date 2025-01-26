@@ -11,6 +11,9 @@ from pydantic.v1 import AnyUrl, BaseModel, Field
 
 from airbyte_cdk import OneOfOptionConfig
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
+from airbyte_cdk.sources.file_based.config.identities_based_stream_config import (
+    IdentitiesStreamConfig,
+)
 from airbyte_cdk.sources.utils import schema_helpers
 
 
@@ -22,10 +25,15 @@ class DeliverRecords(BaseModel):
 
     delivery_type: Literal["use_records_transfer"] = Field("use_records_transfer", const=True)
 
-    sync_metadata: bool = Field(
-        title="Make stream sync files metadata",
-        description="If enabled, streams will sync files metadata instead of files data.",
+    sync_acl_permissions: bool = Field(
+        title="Include ACL Permissions",
+        description="Joins Document allowlists to each stream.",
         default=False,
+        airbyte_hidden=True,
+    )
+    identities: Optional[IdentitiesStreamConfig] = Field(
+        title="Identities configuration",
+        description="Configuration for identities",
         airbyte_hidden=True,
     )
 

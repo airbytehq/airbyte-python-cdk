@@ -155,14 +155,14 @@ class AbstractFileBasedStreamReader(ABC):
             return self.config.delivery_method.preserve_directory_structure
         return True
 
-    def sync_metadata(self) -> bool:
+    def sync_acl_permissions(self) -> bool:
         if (
             self.config
             and self.use_records_transfer()
-            and hasattr(self.config.delivery_method, "sync_metadata")
-            and self.config.delivery_method.sync_metadata is not None
+            and hasattr(self.config.delivery_method, "sync_acl_permissions")
+            and self.config.delivery_method.sync_acl_permissions is not None
         ):
-            return self.config.delivery_method.sync_metadata
+            return self.config.delivery_method.sync_acl_permissions
         return False
 
     @abstractmethod
@@ -203,25 +203,16 @@ class AbstractFileBasedStreamReader(ABC):
         absolute_file_path = path.abspath(local_file_path)
         return [file_relative_path, local_file_path, absolute_file_path]
 
-    def get_file_metadata(self, file: RemoteFile, logger: logging.Logger) -> Dict[str, Any]:
+    def get_file_acl_permissions(self, file: RemoteFile, logger: logging.Logger) -> Dict[str, Any]:
         """
         This is required for connectors that will support syncing
-        metadata from files.
+        ACL Permissions from files.
         """
         return {}
 
-    def get_metadata_schema(self) -> Dict[str, Any]:
-        """ "
-        Base schema to emit metadata records for a file,
-        override in stream reader implementation if the requirements
-        are different.
+    def load_identity_groups(self) -> Iterable[Dict[str, Any]]:
         """
-        return {
-            "type": "object",
-            "properties": {
-                "id": {"type": "string"},
-                "file_path": {"type": "string"},
-                "allowed_identity_remote_ids": {"type": "array", "items": "string"},
-                "is_public": {"type": "boolean"},
-            },
-        }
+        This is required for connectors that will support syncing
+        identities.
+        """
+        yield {}

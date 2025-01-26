@@ -30,6 +30,7 @@ from airbyte_cdk.sources.file_based.schema_helpers import (
     file_transfer_schema,
     merge_schemas,
     schemaless_schema,
+    remote_file_permissions_schema,
 )
 from airbyte_cdk.sources.file_based.stream import AbstractFileBasedStream
 from airbyte_cdk.sources.file_based.stream.cursor import AbstractFileBasedCursor
@@ -47,7 +48,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
 
     FILE_TRANSFER_KW = "use_file_transfer"
     PRESERVE_DIRECTORY_STRUCTURE_KW = "preserve_directory_structure"
-    SYNC_METADATA_KW = "sync_metadata"
+    SYNC_ACL_PERMISSIONS_KW = "sync_acl_permissions"
     FILES_KEY = "files"
     DATE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
     ab_last_mod_col = "_ab_source_file_last_modified"
@@ -57,7 +58,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
     airbyte_columns = [ab_last_mod_col, ab_file_name_col]
     use_file_transfer = False
     preserve_directory_structure = True
-    sync_metadata = False
+    sync_acl_permissions = False
 
     def __init__(self, **kwargs: Any):
         if self.FILE_TRANSFER_KW in kwargs:
@@ -66,8 +67,8 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
             self.preserve_directory_structure = kwargs.pop(
                 self.PRESERVE_DIRECTORY_STRUCTURE_KW, True
             )
-        if self.SYNC_METADATA_KW in kwargs:
-            self.sync_metadata = kwargs.pop(self.SYNC_METADATA_KW, False)
+        if self.SYNC_ACL_PERMISSIONS_KW in kwargs:
+            self.sync_acl_permissions = kwargs.pop(self.SYNC_ACL_PERMISSIONS_KW, False)
         super().__init__(**kwargs)
 
     @property
@@ -109,8 +110,8 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
                     self.ab_file_name_col: {"type": "string"},
                 },
             }
-        elif self.sync_metadata:
-            return self.stream_reader.get_metadata_schema()
+        elif self.sync_acl_permissions:
+            return remote_file_permissions_schema
         else:
             return super()._filter_schema_invalid_properties(configured_catalog_json_schema)
 
@@ -193,9 +194,9 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
                         yield stream_data_to_airbyte_message(
                             self.name, record, is_file_transfer_message=True
                         )
-                elif self.sync_metadata:
+                elif self.sync_acl_permissions:
                     try:
-                        metadata_record = self.stream_reader.get_file_metadata(
+                        metadata_record = self.stream_reader.get_file_acl_permissions(
                             file, logger=self.logger
                         )
                         yield stream_data_to_airbyte_message(
@@ -310,8 +311,8 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
     def _get_raw_json_schema(self) -> JsonSchema:
         if self.use_file_transfer:
             return file_transfer_schema
-        elif self.sync_metadata:
-            return self.stream_reader.get_metadata_schema()
+        elif self.sync_acl_permissions:
+            return remote_file_permissions_schema
         elif self.config.input_schema:
             return self.config.get_input_schema()  # type: ignore
         elif self.config.schemaless:

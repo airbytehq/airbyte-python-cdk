@@ -509,12 +509,39 @@ single_csv_scenario: TestScenario[InMemoryFilesSource] = (
                                         "enum": ["use_records_transfer"],
                                         "type": "string",
                                     },
-                                    "sync_metadata": {
+                                    "sync_acl_permissions": {
                                         "airbyte_hidden": True,
                                         "default": False,
-                                        "description": "If enabled, streams will sync files metadata instead of files data.",
-                                        "title": "Make stream sync files metadata",
+                                        "description": "Joins Document allowlists to each stream.",
+                                        "title": "Include ACL Permissions",
                                         "type": "boolean",
+                                    },
+                                    "identities": {
+                                        "airbyte_hidden": True,
+                                        "allOf": [
+                                            {
+                                                "properties": {
+                                                    "domain": {
+                                                        "description": "The domain of the identities.",
+                                                        "title": "Domain",
+                                                        "type": "string",
+                                                    },
+                                                    "name": {
+                                                        "airbyte_hidden": True,
+                                                        "const": "identities",
+                                                        "default": "identities",
+                                                        "enum": ["identities"],
+                                                        "title": "Name",
+                                                        "type": "string",
+                                                    },
+                                                },
+                                                "required": ["domain"],
+                                                "title": "IdentitiesStreamConfig",
+                                                "type": "object",
+                                            }
+                                        ],
+                                        "title": "Identities configuration",
+                                        "description": "Configuration for identities",
                                     },
                                 },
                                 "description": "Recommended - Extract and load structured records into your destination of choice. This is the classic method of moving data in Airbyte. It allows for blocking and hashing individual fields or files from a structured schema. Data can be flattened, typed and deduped depending on the destination.",
