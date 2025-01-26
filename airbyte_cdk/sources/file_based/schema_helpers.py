@@ -28,7 +28,7 @@ remote_file_permissions_schema = {
     "properties": {
         "id": {"type": "string"},
         "file_path": {"type": "string"},
-        "allowed_identity_remote_ids": {"type": "array", "items": "string"},
+        "allowed_identity_remote_ids": {"type": "array", "items": {"type": "string"}},
         "publicly_accessible": {"type": "boolean"},
     },
 }
