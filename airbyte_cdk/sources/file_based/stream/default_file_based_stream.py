@@ -29,8 +29,8 @@ from airbyte_cdk.sources.file_based.schema_helpers import (
     SchemaType,
     file_transfer_schema,
     merge_schemas,
-    schemaless_schema,
     remote_file_permissions_schema,
+    schemaless_schema,
 )
 from airbyte_cdk.sources.file_based.stream import AbstractFileBasedStream
 from airbyte_cdk.sources.file_based.stream.cursor import AbstractFileBasedCursor

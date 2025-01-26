@@ -14,16 +14,16 @@ from airbyte_cdk.sources.file_based.config.file_based_stream_config import Prima
 from airbyte_cdk.sources.file_based.config.identities_based_stream_config import (
     IdentitiesStreamConfig,
 )
+from airbyte_cdk.sources.file_based.discovery_policy import AbstractDiscoveryPolicy
+from airbyte_cdk.sources.file_based.exceptions import FileBasedErrorsCollector, FileBasedSourceError
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
+from airbyte_cdk.sources.file_based.schema_helpers import remote_file_identity_schema
 from airbyte_cdk.sources.file_based.types import StreamSlice
 from airbyte_cdk.sources.streams import Stream
+from airbyte_cdk.sources.streams.checkpoint import Cursor
 from airbyte_cdk.sources.streams.core import JsonSchema
 from airbyte_cdk.sources.utils.record_helper import stream_data_to_airbyte_message
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from airbyte_cdk.sources.file_based.discovery_policy import AbstractDiscoveryPolicy
-from airbyte_cdk.sources.file_based.exceptions import FileBasedErrorsCollector, FileBasedSourceError
-from airbyte_cdk.sources.file_based.schema_helpers import remote_file_identity_schema
-from airbyte_cdk.sources.streams.checkpoint import Cursor
 
 
 class IdentitiesStream(Stream):

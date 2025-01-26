@@ -1,5 +1,6 @@
-from pydantic.v1 import BaseModel, Field
 from typing import Literal
+
+from pydantic.v1 import BaseModel, Field
 
 
 class IdentitiesStreamConfig(BaseModel):
