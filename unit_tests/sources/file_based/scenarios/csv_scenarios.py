@@ -516,32 +516,11 @@ single_csv_scenario: TestScenario[InMemoryFilesSource] = (
                                         "title": "Include ACL Permissions",
                                         "type": "boolean",
                                     },
-                                    "identities": {
+                                    "domain": {
                                         "airbyte_hidden": True,
-                                        "allOf": [
-                                            {
-                                                "properties": {
-                                                    "domain": {
-                                                        "description": "The domain of the identities.",
-                                                        "title": "Domain",
-                                                        "type": "string",
-                                                    },
-                                                    "name": {
-                                                        "airbyte_hidden": True,
-                                                        "const": "identities",
-                                                        "default": "identities",
-                                                        "enum": ["identities"],
-                                                        "title": "Name",
-                                                        "type": "string",
-                                                    },
-                                                },
-                                                "required": ["domain"],
-                                                "title": "IdentitiesStreamConfig",
-                                                "type": "object",
-                                            }
-                                        ],
-                                        "title": "Identities configuration",
-                                        "description": "Configuration for identities",
+                                        "description": "The domain of the identities.",
+                                        "title": "Domain",
+                                        "type": "string",
                                     },
                                 },
                                 "description": "Recommended - Extract and load structured records into your destination of choice. This is the classic method of moving data in Airbyte. It allows for blocking and hashing individual fields or files from a structured schema. Data can be flattened, typed and deduped depending on the destination.",
