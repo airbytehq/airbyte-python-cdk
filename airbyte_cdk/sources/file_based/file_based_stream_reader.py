@@ -210,7 +210,7 @@ class AbstractFileBasedStreamReader(ABC):
         """
         return {}
 
-    def load_identity_groups(self) -> Iterable[Dict[str, Any]]:
+    def load_identity_groups(self, logger: logging.Logger) -> Iterable[Dict[str, Any]]:
         """
         This is required for connectors that will support syncing
         identities.

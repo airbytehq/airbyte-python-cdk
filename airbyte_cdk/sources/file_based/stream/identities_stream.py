@@ -71,7 +71,7 @@ class IdentitiesStream(Stream):
         stream_state: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[Mapping[str, Any] | AirbyteMessage]:
         try:
-            identity_groups = self.stream_reader.load_identity_groups()
+            identity_groups = self.stream_reader.load_identity_groups(logger=self.logger)
             for record in identity_groups:
                 yield stream_data_to_airbyte_message(self.name, record)
         except AirbyteTracedException as exc:
