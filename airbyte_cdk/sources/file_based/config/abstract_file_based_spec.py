@@ -31,10 +31,8 @@ class DeliverRecords(BaseModel):
         default=False,
         airbyte_hidden=True,
     )
-    identities: Optional[IdentitiesStreamConfig] = Field(
-        title="Identities configuration",
-        description="Configuration for identities",
-        airbyte_hidden=True,
+    domain: Optional[str] = Field(
+        title="Domain", description="The domain of the identities.", airbyte_hidden=True
     )
 
 

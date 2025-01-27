@@ -25,6 +25,8 @@ from airbyte_cdk.sources.streams.core import JsonSchema
 from airbyte_cdk.sources.utils.record_helper import stream_data_to_airbyte_message
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
+IDENTITIES_STREAM_NAME = "identities"
+
 
 class IdentitiesStream(Stream):
     """
@@ -36,14 +38,12 @@ class IdentitiesStream(Stream):
 
     def __init__(
         self,
-        config: IdentitiesStreamConfig,
         catalog_schema: Optional[Mapping[str, Any]],
         stream_reader: AbstractFileBasedStreamReader,
         discovery_policy: AbstractDiscoveryPolicy,
         errors_collector: FileBasedErrorsCollector,
     ):
         super().__init__()
-        self.config = config
         self.catalog_schema = catalog_schema
         self.stream_reader = stream_reader
         self._discovery_policy = discovery_policy
@@ -93,7 +93,7 @@ class IdentitiesStream(Stream):
 
     @property
     def name(self) -> str:
-        return self.config.name
+        return IDENTITIES_STREAM_NAME
 
     def get_cursor(self) -> Optional[Cursor]:
         return None

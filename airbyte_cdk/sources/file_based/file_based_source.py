@@ -33,9 +33,6 @@ from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
     FileBasedStreamConfig,
     ValidationPolicy,
 )
-from airbyte_cdk.sources.file_based.config.identities_based_stream_config import (
-    IdentitiesStreamConfig,
-)
 from airbyte_cdk.sources.file_based.discovery_policy import (
     AbstractDiscoveryPolicy,
     DefaultDiscoveryPolicy,
@@ -64,6 +61,7 @@ from airbyte_cdk.sources.file_based.stream.concurrent.cursor import (
     FileBasedFinalStateCursor,
 )
 from airbyte_cdk.sources.file_based.stream.cursor import AbstractFileBasedCursor
+from airbyte_cdk.sources.file_based.stream.identities_stream import IDENTITIES_STREAM_NAME
 from airbyte_cdk.sources.message.repository import InMemoryMessageRepository, MessageRepository
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
@@ -73,6 +71,7 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 DEFAULT_CONCURRENCY = 100
 MAX_CONCURRENCY = 100
 INITIAL_N_PARTITIONS = MAX_CONCURRENCY // 2
+IDENTITIES_STREAM = "identities"
 
 
 class FileBasedSource(ConcurrentSourceAdapter, ABC):
@@ -301,11 +300,8 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
 
                 streams.append(stream)
 
-            identities_stream_config = self._get_identities_stream_config(parsed_config)
-            if identities_stream_config:
-                identities_stream = self._make_identities_stream(
-                    stream_config=identities_stream_config
-                )
+            if self._sync_acl_permissions(parsed_config):
+                identities_stream = self._make_identities_stream()
                 streams.append(identities_stream)
             return streams
 
@@ -335,11 +331,9 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
 
     def _make_identities_stream(
         self,
-        stream_config: IdentitiesStreamConfig,
     ) -> Stream:
         return IdentitiesStream(
-            config=stream_config,
-            catalog_schema=self.stream_schemas.get(stream_config.name),
+            catalog_schema=self.stream_schemas.get(IDENTITIES_STREAM_NAME),
             stream_reader=self.stream_reader,
             discovery_policy=self.discovery_policy,
             errors_collector=self.errors_collector,
@@ -457,18 +451,3 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         ):
             return parsed_config.delivery_method.sync_acl_permissions
         return False
-
-    @staticmethod
-    def _get_identities_stream_config(
-        parsed_config: AbstractFileBasedSpec,
-    ) -> Optional[IdentitiesStreamConfig]:
-        identities_stream_config = None
-        if (
-            FileBasedSource._sync_acl_permissions(parsed_config)
-            and hasattr(parsed_config.delivery_method, "identities")
-            and parsed_config.delivery_method.identities is not None
-            and isinstance(parsed_config.delivery_method.identities, IdentitiesStreamConfig)
-            and parsed_config.delivery_method.identities.domain
-        ):
-            identities_stream_config = parsed_config.delivery_method.identities
-        return identities_stream_config
