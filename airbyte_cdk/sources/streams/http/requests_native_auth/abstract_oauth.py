@@ -24,6 +24,13 @@ logger = logging.getLogger("airbyte")
 _NOOP_MESSAGE_REPOSITORY = NoopMessageRepository()
 
 
+class ResponseKeysMaxRecurtionReached(AirbyteTracedException):
+    """
+    Raised when the max level of recursion is reached, when trying to
+    find-and-get the target key, during the `_get_refresh_access_token_response`
+    """
+
+
 class AbstractOauth2Authenticator(AuthBase):
     """
     Abstract class for an OAuth authenticators that implements the OAuth token refresh flow. The authenticator
@@ -157,6 +164,8 @@ class AbstractOauth2Authenticator(AuthBase):
                 # log the response even if the request failed for troubleshooting purposes
                 self._log_response(response)
                 response.raise_for_status()
+        except ResponseKeysMaxRecurtionReached as e:
+            raise e
         except requests.exceptions.RequestException as e:
             if e.response is not None:
                 if e.response.status_code == 429 or e.response.status_code >= 500:
@@ -167,8 +176,6 @@ class AbstractOauth2Authenticator(AuthBase):
                     internal_message=message, message=message, failure_type=FailureType.config_error
                 )
             raise
-        except AirbyteTracedException as e:
-            raise e
         except Exception as e:
             raise Exception(f"Error while refreshing access token: {e}") from e
 
@@ -323,7 +330,7 @@ class AbstractOauth2Authenticator(AuthBase):
         if current_depth > max_depth:
             # this is needed to avoid an inf loop, possible with a very deep nesting observed.
             message = f"The maximum level of recursion is reached. Couldn't find the speficied `{key_name}` in the response."
-            raise AirbyteTracedException(
+            raise ResponseKeysMaxRecurtionReached(
                 internal_message=message, message=message, failure_type=FailureType.config_error
             )
 

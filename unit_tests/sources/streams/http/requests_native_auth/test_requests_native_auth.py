@@ -22,6 +22,9 @@ from airbyte_cdk.sources.streams.http.requests_native_auth import (
     SingleUseRefreshTokenOauth2Authenticator,
     TokenAuthenticator,
 )
+from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_oauth import (
+    ResponseKeysMaxRecurtionReached,
+)
 from airbyte_cdk.utils import AirbyteTracedException
 
 LOGGER = logging.getLogger(__name__)
@@ -342,7 +345,7 @@ class TestOauth2Authenticator:
                 }
             },
         )
-        with pytest.raises(AirbyteTracedException) as exc_info:
+        with pytest.raises(ResponseKeysMaxRecurtionReached) as exc_info:
             oauth.refresh_access_token()
         error_message = "The maximum level of recursion is reached. Couldn't find the speficied `access_token` in the response."
         assert exc_info.value.internal_message == error_message
