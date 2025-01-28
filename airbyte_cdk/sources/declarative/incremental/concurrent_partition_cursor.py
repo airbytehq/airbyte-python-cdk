@@ -11,6 +11,7 @@ from datetime import timedelta
 from typing import Any, Callable, Iterable, Mapping, MutableMapping, Optional
 
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
+from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncPartition
 from airbyte_cdk.sources.declarative.incremental.global_substream_cursor import (
     Timer,
     iterate_with_last_flag_and_state,
@@ -325,7 +326,11 @@ class ConcurrentPerPartitionCursor(Cursor):
                 "Invalid state as stream slices that are emitted should refer to an existing cursor"
             )
         self._cursor_per_partition[
-            self._to_partition_key(record.associated_slice.partition)
+            self._to_partition_key(
+                record.associated_slice.stream_slice.partition
+                if isinstance(record.associated_slice, AsyncPartition)
+                else record.associated_slice.partition
+            )
         ].observe(record)
 
     def _to_partition_key(self, partition: Mapping[str, Any]) -> str:

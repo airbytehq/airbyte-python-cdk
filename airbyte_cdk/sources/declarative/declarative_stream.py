@@ -6,6 +6,7 @@ from dataclasses import InitVar, dataclass, field
 from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Union
 
 from airbyte_cdk.models import SyncMode
+from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncPartition
 from airbyte_cdk.sources.declarative.incremental import (
     GlobalSubstreamCursor,
     PerPartitionCursor,
@@ -145,7 +146,7 @@ class DeclarativeStream(Stream):
             # As part of the declarative model with custom components, a user that would return a `None` slice would now have the default
             # empty slice which seems to make sense.
             stream_slice = StreamSlice(partition={}, cursor_slice={})
-        if not isinstance(stream_slice, StreamSlice):
+        if not isinstance(stream_slice, StreamSlice | AsyncPartition):
             raise ValueError(
                 f"DeclarativeStream does not support stream_slices that are not StreamSlice. Got {stream_slice}"
             )

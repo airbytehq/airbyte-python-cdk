@@ -19,6 +19,7 @@ from airbyte_cdk.sources.declarative.extractors import RecordSelector
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
+from airbyte_cdk.sources.declarative.incremental import ConcurrentPerPartitionCursor
 from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
 from airbyte_cdk.sources.declarative.incremental.per_partition_with_global import (
     PerPartitionWithGlobalCursor,
@@ -231,7 +232,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     ):
                         cursor = declarative_stream.retriever.stream_slicer.stream_slicer
 
-                        if not isinstance(cursor, ConcurrentCursor):
+                        if not isinstance(cursor, ConcurrentCursor | ConcurrentPerPartitionCursor):
                             # This should never happen since we instantiate ConcurrentCursor in
                             # model_to_component_factory.py
                             raise ValueError(

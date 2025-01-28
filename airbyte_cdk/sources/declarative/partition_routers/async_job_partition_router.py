@@ -41,11 +41,12 @@ class AsyncJobPartitionRouter(StreamSlicer):
         self._job_orchestrator = self._job_orchestrator_factory(slices)
 
         for completed_partition in self._job_orchestrator.create_and_get_completed_partitions():
-            yield StreamSlice(
-                partition=dict(completed_partition.stream_slice.partition)
-                | {"partition": completed_partition},
-                cursor_slice=completed_partition.stream_slice.cursor_slice,
-            )
+            yield completed_partition
+            # yield StreamSlice(
+            #     partition=dict(completed_partition.stream_slice.partition)
+            #     cursor_slice=completed_partition.stream_slice.cursor_slice,
+            # extra_fields={"jobs": completed_partition.jobs},
+            # )
 
     def fetch_records(self, partition: AsyncPartition) -> Iterable[Mapping[str, Any]]:
         """

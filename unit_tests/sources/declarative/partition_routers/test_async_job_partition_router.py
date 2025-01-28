@@ -35,7 +35,7 @@ def test_stream_slices_with_single_partition_router():
 
     slices = list(partition_router.stream_slices())
     assert len(slices) == 1
-    partition = slices[0].partition.get("partition")
+    partition = slices[0]
     assert isinstance(partition, AsyncPartition)
     assert partition.stream_slice == StreamSlice(partition={}, cursor_slice={})
     assert partition.status == AsyncJobStatus.COMPLETED
@@ -68,7 +68,6 @@ def test_stream_slices_with_parent_slicer():
     slices = list(partition_router.stream_slices())
     assert len(slices) == 3
     for i, partition in enumerate(slices):
-        partition = partition.partition.get("partition")
         assert isinstance(partition, AsyncPartition)
         assert partition.stream_slice == StreamSlice(
             partition={"parent_id": str(i)}, cursor_slice={}
