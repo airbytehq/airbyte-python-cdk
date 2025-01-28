@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Generate documentation using MkDocs."""
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -36,6 +37,7 @@ It handles the complexity of implementing the Airbyte protocol, allowing you to 
 - [GitHub Repository](https://github.com/airbytehq/airbyte-python-cdk)
 - [API Reference](api/index.md)
 - [Contributing Guide](CONTRIBUTING.md)
+- [User Guide](https://docs.airbyte.com/connector-development/cdk-python/)
 """)
 
     # Create API documentation index
@@ -50,14 +52,28 @@ This section contains the API reference for the Airbyte Python CDK.
 - [Models](models.md) - Data models and protocol types
 - [Sources](sources.md) - Base classes and utilities for source connectors
 - [Destinations](destinations.md) - Base classes and utilities for destination connectors
+
+## Integration with Airbyte Docs
+
+This API reference complements the [CDK User Guide](https://docs.airbyte.com/connector-development/cdk-python/)
+on docs.airbyte.com, which provides tutorials and conceptual documentation.
 """)
 
     # Run mkdocs build
     try:
         subprocess.run(["mkdocs", "build"], check=True)
+        
+        # Copy the built site to the main Airbyte docs if we're in the right environment
+        airbyte_docs_dir = project_root.parent / "airbyte" / "docs" / "connector-development" / "cdk-python" / "api-reference"
+        if airbyte_docs_dir.parent.exists():
+            airbyte_docs_dir.mkdir(exist_ok=True)
+            shutil.copytree(project_root / "site", airbyte_docs_dir / "site", dirs_exist_ok=True)
+            print(f"Copied API reference to {airbyte_docs_dir}")
     except subprocess.CalledProcessError as e:
         print(f"Error generating documentation: {e}", file=sys.stderr)
         sys.exit(1)
+    except Exception as e:
+        print(f"Warning: Could not copy docs to Airbyte repo: {e}", file=sys.stderr)
 
 
 if __name__ == "__main__":

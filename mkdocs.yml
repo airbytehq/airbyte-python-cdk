@@ -11,6 +11,8 @@ nav:
     - Models: api/models.md
     - Sources: api/sources.md
     - Destinations: api/destinations.md
+  - Contributing: CONTRIBUTING.md
+  - Release Management: RELEASES.md
 
 theme:
   name: material

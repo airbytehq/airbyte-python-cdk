@@ -90,6 +90,7 @@ ruff = "^0.7.2"
 mkdocs = "^1.5.3"
 mkdocs-material = "^9.5.3"
 mkdocstrings = {version = "^0.24.0", extras = ["python"]}
+griffe = "^0.38.1"
 poethepoet = "^0.24.2"
 pyproject-flake8 = "^6.1.0"
 pytest = "^7"
@@ -176,8 +177,10 @@ check-ci = {sequence = ["check-lockfile", "build", "lint", "unit-test-with-cov"]
 # Build and check
 pre-push = {sequence = ["build", "check-local"], help = "Run all build and check tasks."}
 
-# Documentation tasks will be replaced with MkDocs
-# Removed previous pdoc-based tasks during migration to MkDocs
+# Documentation with MkDocs
+docs-build = {cmd = "mkdocs build", help = "Build documentation with MkDocs"}
+docs-serve = {cmd = "mkdocs serve", help = "Start development server for documentation preview"}
+docs-preview = {shell = "poe docs-serve", help = "Build and preview documentation in the default web browser"}
 
 [tool.check-wheel-contents]
 # Quality control for Python wheel generation. Docs here:

@@ -1429,15 +1429,15 @@ test = ["objgraph", "psutil"]
 
 [[package]]
 name = "griffe"
-version = "1.5.5"
+version = "0.38.1"
 description = "Signatures for entire Python programs. Extract the structure, the frame, the skeleton of your project, to generate API documentation or find breaking changes in your API."
 optional = false
-python-versions = ">=3.9"
+python-versions = ">=3.8"
 groups = ["dev"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
-    {file = "griffe-1.5.5-py3-none-any.whl", hash = "sha256:2761b1e8876c6f1f9ab1af274df93ea6bbadd65090de5f38f4cb5cc84897c7dd"},
-    {file = "griffe-1.5.5.tar.gz", hash = "sha256:35ee5b38b93d6a839098aad0f92207e6ad6b70c3e8866c08ca669275b8cba585"},
+    {file = "griffe-0.38.1-py3-none-any.whl", hash = "sha256:334c79d3b5964ade65c05dfcaf53518c576dedd387aaba5c9fd71212f34f1483"},
+    {file = "griffe-0.38.1.tar.gz", hash = "sha256:bd68d7da7f3d87bc57eb9962b250db123efd9bbcc06c11c1a91b6e583b2a9361"},
 ]
 
 [package.dependencies]
@@ -2557,19 +2557,19 @@ python-legacy = ["mkdocstrings-python-legacy (>=0.2.1)"]
 
 [[package]]
 name = "mkdocstrings-python"
-version = "1.10.0"
+version = "1.9.2"
 description = "A Python handler for mkdocstrings."
 optional = false
 python-versions = ">=3.8"
 groups = ["dev"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
-    {file = "mkdocstrings_python-1.10.0-py3-none-any.whl", hash = "sha256:ba833fbd9d178a4b9d5cb2553a4df06e51dc1f51e41559a4d2398c16a6f69ecc"},
-    {file = "mkdocstrings_python-1.10.0.tar.gz", hash = "sha256:71678fac657d4d2bb301eed4e4d2d91499c095fd1f8a90fa76422a87a5693828"},
+    {file = "mkdocstrings_python-1.9.2-py3-none-any.whl", hash = "sha256:96d82f6424e08db6245e4a15ca95619f4ecd0ddd254c0aa590d4181814e16ee5"},
+    {file = "mkdocstrings_python-1.9.2.tar.gz", hash = "sha256:8546a103c9b22e1778c72c887696acc39a6635fedde3c912ce00f967518a8847"},
 ]
 
 [package.dependencies]
-griffe = ">=0.44"
+griffe = ">=0.37"
 mkdocstrings = ">=0.24.2"
 
 [[package]]
@@ -5681,4 +5681,4 @@ vector-db-based = ["cohere", "langchain", "openai", "tiktoken"]
 [metadata]
 lock-version = "2.1"
 python-versions = "^3.10,<3.13"
-content-hash = "82cac2bbd5a112e8ef309427313390c84f02ea95943ec579e6cab976a81937d3"
+content-hash = "f26859c6bf6d0ca5d5658dc9fe41f695dd3858f3d37e524ff98a5f446400eaf2"
