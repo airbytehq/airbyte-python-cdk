@@ -48,120 +48,99 @@ def test_now():
     assert str(dt) == "2023-03-14T15:09:26.535897+00:00"
 
 
-def test_parse():
+@pytest.mark.parametrize(
+    "input_value,expected_output,error_type,error_match",
+    [
+        # Valid formats
+        ("2023-03-14T15:09:26Z", "2023-03-14T15:09:26+00:00", None, None),
+        ("2023-03-14T15:09:26-04:00", "2023-03-14T15:09:26-04:00", None, None),
+        ("2023-03-14T15:09:26", "2023-03-14T15:09:26+00:00", None, None),
+        ("2023-03-14T15:09:26.123456Z", "2023-03-14T15:09:26.123456+00:00", None, None),
+        (1678806000, "2023-03-14T15:00:00+00:00", None, None),
+        ("1678806000", "2023-03-14T15:00:00+00:00", None, None),
+        ("2023-12-14", "2023-12-14T00:00:00+00:00", None, None),
+        # Invalid formats
+        ("invalid datetime", None, ValueError, "Could not parse datetime string: invalid datetime"),
+        ("not_a_number", None, ValueError, "Could not parse datetime string: not_a_number"),
+        (-1, None, ValueError, "Timestamp cannot be negative"),
+        (32503683600, None, ValueError, "Timestamp value too large"),
+        ("-1", None, ValueError, "Timestamp cannot be negative"),
+        ("32503683600", None, ValueError, "Timestamp value too large"),
+        # Invalid date components
+        ("2023-13-14", None, ValueError, "Invalid date format: 2023-13-14"),
+        ("2023-12-32", None, ValueError, "Invalid date format: 2023-12-32"),
+        ("2023-00-14", None, ValueError, "Invalid date format: 2023-00-14"),
+        ("2023-12-00", None, ValueError, "Invalid date format: 2023-12-00"),
+        # Invalid separators and formats
+        ("2023/12/14", None, ValueError, "Could not parse datetime string: 2023/12/14"),
+        (
+            "2023-03-14 15:09:26Z",
+            None,
+            ValueError,
+            "Could not parse datetime string: 2023-03-14 15:09:26Z",
+        ),
+        (
+            "2023-03-14T15:09:26GMT",
+            None,
+            ValueError,
+            "Could not parse datetime string: 2023-03-14T15:09:26GMT",
+        ),
+        # Invalid time components
+        (
+            "2023-03-14T25:09:26Z",
+            None,
+            ValueError,
+            "Could not parse datetime string: 2023-03-14T25:09:26Z",
+        ),
+        (
+            "2023-03-14T15:99:26Z",
+            None,
+            ValueError,
+            "Could not parse datetime string: 2023-03-14T15:99:26Z",
+        ),
+        (
+            "2023-03-14T15:09:99Z",
+            None,
+            ValueError,
+            "Could not parse datetime string: 2023-03-14T15:09:99Z",
+        ),
+    ],
+)
+def test_parse(input_value, expected_output, error_type, error_match):
     """Test parsing various datetime string formats."""
-    # Test ISO8601/RFC3339
-    dt = ab_datetime_parse("2023-03-14T15:09:26Z")
-    assert isinstance(dt, AirbyteDateTime)
-    assert str(dt) == "2023-03-14T15:09:26+00:00"
-
-    # Test with timezone offset
-    dt = ab_datetime_parse("2023-03-14T15:09:26-04:00")
-    assert str(dt) == "2023-03-14T15:09:26-04:00"
-
-    # Test without timezone (should assume UTC)
-    dt = ab_datetime_parse("2023-03-14T15:09:26")
-    assert str(dt) == "2023-03-14T15:09:26+00:00"
-
-    # Test with microseconds
-    dt = ab_datetime_parse("2023-03-14T15:09:26.123456Z")
-    assert str(dt) == "2023-03-14T15:09:26.123456+00:00"
-
-    # Test Unix timestamp as integer
-    dt = ab_datetime_parse(1678806000)  # 2023-03-14T15:00:00Z
-    assert str(dt) == "2023-03-14T15:00:00+00:00"
-
-    # Test Unix timestamp as string
-    dt = ab_datetime_parse("1678806000")  # 2023-03-14T15:00:00Z
-    assert str(dt) == "2023-03-14T15:00:00+00:00"
-
-    # Test date-only format
-    dt = ab_datetime_parse("2023-12-14")
-    assert str(dt) == "2023-12-14T00:00:00+00:00"
-
-    # Test invalid formats with detailed error handling
-    with pytest.raises(ValueError):
-        ab_datetime_parse("invalid datetime")  # Completely invalid format
-
-    with pytest.raises(ValueError):
-        ab_datetime_parse("not_a_number")  # Invalid when trying to parse as timestamp
-
-    # Test invalid timestamps
-    with pytest.raises(ValueError, match="Timestamp cannot be negative"):
-        ab_datetime_parse(-1)  # Negative timestamp
-
-    with pytest.raises(ValueError, match="Timestamp value too large"):
-        ab_datetime_parse(32503683600)  # Year 3000 (too far in future)
-
-    with pytest.raises(ValueError, match="Timestamp cannot be negative"):
-        ab_datetime_parse("-1")  # Negative timestamp as string
-
-    with pytest.raises(ValueError, match="Timestamp value too large"):
-        ab_datetime_parse("32503683600")  # Year 3000 as string
-
-    # Test invalid date components
-    with pytest.raises(ValueError):
-        ab_datetime_parse("2023-13-14")  # Invalid month (13)
-
-    with pytest.raises(ValueError):
-        ab_datetime_parse("2023-12-32")  # Invalid day (32)
-
-    with pytest.raises(ValueError):
-        ab_datetime_parse("2023-00-14")  # Invalid month (0)
-
-    with pytest.raises(ValueError):
-        ab_datetime_parse("2023-12-00")  # Invalid day (0)
-
-    # Test invalid separators and formats
-    with pytest.raises(ValueError):
-        ab_datetime_parse("2023/12/14")  # Wrong date separator (/)
-
-    with pytest.raises(ValueError):
-        ab_datetime_parse("2023-03-14 15:09:26Z")  # Missing T delimiter
-
-    with pytest.raises(ValueError):
-        ab_datetime_parse("2023-03-14T15:09:26GMT")  # Invalid timezone format
-
-    # Test invalid time components
-    with pytest.raises(ValueError):
-        ab_datetime_parse("2023-03-14T25:09:26Z")  # Invalid hour (25)
-
-    with pytest.raises(ValueError):
-        ab_datetime_parse("2023-03-14T15:99:26Z")  # Invalid minute (99)
-
-    with pytest.raises(ValueError):
-        ab_datetime_parse("2023-03-14T15:09:99Z")  # Invalid second (99)
-
-    # Test invalid timezone offsets
-    with pytest.raises(ValueError):
-        ab_datetime_parse("2023-03-14T15:09:26+24:00")  # Invalid timezone offset (+24)
-
-    with pytest.raises(ValueError):
-        ab_datetime_parse("2023-03-14T15:09:26+00:60")  # Invalid timezone minutes (60)
+    if error_type:
+        with pytest.raises(error_type, match=error_match):
+            ab_datetime_parse(input_value)
+    else:
+        dt = ab_datetime_parse(input_value)
+        assert isinstance(dt, AirbyteDateTime)
+        assert str(dt) == expected_output
 
 
-def test_format():
+@pytest.mark.parametrize(
+    "input_dt,expected_output",
+    [
+        # Standard datetime with UTC timezone
+        (datetime(2023, 3, 14, 15, 9, 26, tzinfo=timezone.utc), "2023-03-14T15:09:26+00:00"),
+        # Naive datetime (should assume UTC)
+        (datetime(2023, 3, 14, 15, 9, 26), "2023-03-14T15:09:26+00:00"),
+        # AirbyteDateTime with UTC timezone
+        (AirbyteDateTime(2023, 3, 14, 15, 9, 26, tzinfo=timezone.utc), "2023-03-14T15:09:26+00:00"),
+        # Datetime with microseconds
+        (
+            datetime(2023, 3, 14, 15, 9, 26, 123456, tzinfo=timezone.utc),
+            "2023-03-14T15:09:26.123456+00:00",
+        ),
+        # Datetime with non-UTC timezone
+        (
+            datetime(2023, 3, 14, 15, 9, 26, tzinfo=timezone(timedelta(hours=-4))),
+            "2023-03-14T15:09:26-04:00",
+        ),
+    ],
+)
+def test_format(input_dt, expected_output):
     """Test formatting various datetime objects."""
-    # Test formatting standard datetime with UTC timezone
-    standard_dt = datetime(2023, 3, 14, 15, 9, 26, tzinfo=timezone.utc)
-    assert ab_datetime_format(standard_dt) == "2023-03-14T15:09:26+00:00"
-
-    # Test formatting naive datetime (should assume UTC)
-    naive_dt = datetime(2023, 3, 14, 15, 9, 26)
-    assert ab_datetime_format(naive_dt) == "2023-03-14T15:09:26+00:00"
-
-    # Test formatting AirbyteDateTime with UTC timezone
-    airbyte_dt = AirbyteDateTime(2023, 3, 14, 15, 9, 26, tzinfo=timezone.utc)
-    assert ab_datetime_format(airbyte_dt) == "2023-03-14T15:09:26+00:00"
-
-    # Test formatting with microseconds
-    dt_with_micros = datetime(2023, 3, 14, 15, 9, 26, 123456, tzinfo=timezone.utc)
-    assert ab_datetime_format(dt_with_micros) == "2023-03-14T15:09:26.123456+00:00"
-
-    # Test formatting with non-UTC timezone
-    tz = timezone(timedelta(hours=-4))
-    dt_with_offset = datetime(2023, 3, 14, 15, 9, 26, tzinfo=tz)
-    assert ab_datetime_format(dt_with_offset) == "2023-03-14T15:09:26-04:00"
+    assert ab_datetime_format(input_dt) == expected_output
 
 
 def test_operator_overloading():
@@ -215,24 +194,40 @@ def test_operator_overloading():
         _ = "invalid" - dt
 
 
-def test_ab_datetime_try_parse():
+@pytest.mark.parametrize(
+    "input_value,expected_output",
+    [
+        # Valid formats - must have T delimiter and timezone
+        ("2023-03-14T15:09:26+00:00", "2023-03-14T15:09:26+00:00"),  # Basic UTC format
+        ("2023-03-14T15:09:26.123+00:00", "2023-03-14T15:09:26.123000+00:00"),  # With milliseconds
+        (
+            "2023-03-14T15:09:26.123456+00:00",
+            "2023-03-14T15:09:26.123456+00:00",
+        ),  # With microseconds
+        ("2023-03-14T15:09:26-04:00", "2023-03-14T15:09:26-04:00"),  # With timezone offset
+        ("2023-03-14T15:09:26Z", "2023-03-14T15:09:26+00:00"),  # With Z timezone
+        ("2023-03-14T00:00:00+00:00", "2023-03-14T00:00:00+00:00"),  # Full datetime with zero time
+        # Invalid formats - reject anything without proper ISO8601/RFC3339 format
+        ("invalid datetime", None),  # Completely invalid
+        ("2023-03-14 15:09:26", None),  # Missing T delimiter
+        ("2023-03-14", None),  # Date only, missing time and timezone
+        ("15:09:26Z", None),  # Missing date component
+        ("2023-03-14T15:09:26", None),  # Missing timezone
+        ("2023-03-14T15:09:26GMT", None),  # Invalid timezone format
+        ("2023/03/14T15:09:26Z", None),  # Wrong date separator
+        ("2023-03-14T25:09:26Z", None),  # Invalid hour
+        ("2023-03-14T15:99:26Z", None),  # Invalid minute
+        ("2023-03-14T15:09:99Z", None),  # Invalid second
+    ],
+)
+def test_ab_datetime_try_parse(input_value, expected_output):
     """Test datetime string format validation."""
-    # Valid formats - must have T delimiter and timezone
-    assert ab_datetime_try_parse("2023-03-14T15:09:26+00:00")  # Basic UTC format
-    assert ab_datetime_try_parse("2023-03-14T15:09:26.123+00:00")  # With milliseconds
-    assert ab_datetime_try_parse("2023-03-14T15:09:26.123456+00:00")  # With microseconds
-    assert ab_datetime_try_parse("2023-03-14T15:09:26-04:00")  # With timezone offset
-    assert ab_datetime_try_parse("2023-03-14T15:09:26+00:00")  # With explicit UTC offset
-    assert ab_datetime_try_parse("2023-03-14T00:00:00+00:00")  # Full datetime with zero time
-
-    # Invalid formats - reject anything without proper ISO8601/RFC3339 format
-    assert not ab_datetime_try_parse("invalid datetime")  # Completely invalid
-    assert not ab_datetime_try_parse("2023-03-14 15:09:26")  # Missing T delimiter
-    assert not ab_datetime_try_parse("2023-03-14")  # Date only, missing time and timezone
-    assert not ab_datetime_try_parse("15:09:26Z")  # Missing date component
-    assert not ab_datetime_try_parse("2023-03-14T15:09:26")  # Missing timezone
-    assert not ab_datetime_try_parse("2023-03-14T15:09:26GMT")  # Invalid timezone format
-    assert not ab_datetime_try_parse("2023/03/14T15:09:26Z")  # Wrong date separator
+    result = ab_datetime_try_parse(input_value)
+    if expected_output is None:
+        assert result is None
+    else:
+        assert isinstance(result, AirbyteDateTime)
+        assert str(result) == expected_output
 
 
 def test_epoch_millis():

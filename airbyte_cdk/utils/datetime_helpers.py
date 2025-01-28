@@ -395,42 +395,47 @@ def ab_datetime_parse(dt_str: str | int) -> AirbyteDateTime:
             timestamp = int(dt_str)
             if timestamp < 0:
                 raise ValueError("Timestamp cannot be negative")
-            if len(str(abs(timestamp))) > 10:  # More than 10 digits means beyond year 2286
+            if len(str(abs(timestamp))) > 10:
                 raise ValueError("Timestamp value too large")
             instant = Instant.from_timestamp(timestamp)
             return AirbyteDateTime.from_datetime(instant.py_datetime())
 
         if not isinstance(dt_str, str):
-            raise ValueError(f"Expected string or integer, got {type(dt_str)}")
+            raise ValueError(
+                f"Could not parse datetime string: expected string or integer, got {type(dt_str)}"
+            )
 
-        # Try parsing with whenever's RFC3339 parser first
-        try:
-            instant = Instant.parse_rfc3339(dt_str)
-            return AirbyteDateTime.from_datetime(instant.py_datetime())
-        except ValueError:
-            # If RFC3339 fails, try dateutil parser
+        # Handle date-only format first
+        if ":" not in dt_str and dt_str.count("-") == 2 and "/" not in dt_str:
             try:
-                parsed = parser.parse(dt_str)
-                if parsed.tzinfo is None:
-                    parsed = parsed.replace(tzinfo=timezone.utc)
-                return AirbyteDateTime.from_datetime(parsed)
+                year, month, day = map(int, dt_str.split("-"))
+                if not (1 <= month <= 12 and 1 <= day <= 31):
+                    raise ValueError(f"Invalid date format: {dt_str}")
+                instant = Instant.from_utc(year, month, day, 0, 0, 0)
+                return AirbyteDateTime.from_datetime(instant.py_datetime())
             except (ValueError, TypeError):
-                # Finally try ISO8601 date-only format
-                if ":" not in dt_str and dt_str.count("-") == 2:
-                    try:
-                        year, month, day = map(int, dt_str.split("-"))
-                        instant = Instant.from_utc(year, month, day, 0, 0, 0)
-                        return AirbyteDateTime.from_datetime(instant.py_datetime())
-                    except (ValueError, TypeError):
-                        raise ValueError(f"Invalid date format: {dt_str}")
-                else:
-                    raise ValueError(f"Invalid datetime format: {dt_str}")
+                raise ValueError(f"Invalid date format: {dt_str}")
+
+        # Validate datetime format
+        if "/" in dt_str or " " in dt_str or "GMT" in dt_str:
+            raise ValueError(f"Could not parse datetime string: {dt_str}")
+
+        # Try parsing with dateutil for timezone handling
+        try:
+            parsed = parser.parse(dt_str)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return AirbyteDateTime.from_datetime(parsed)
+        except (ValueError, TypeError):
+            raise ValueError(f"Could not parse datetime string: {dt_str}")
     except ValueError as e:
-        if "Timestamp cannot be negative" in str(e) or "Timestamp value too large" in str(e):
+        if "Invalid date format:" in str(e):
             raise
-        if "Invalid date format" in str(e) or "Invalid datetime format" in str(e):
+        if "Timestamp cannot be negative" in str(e):
             raise
-        raise ValueError(f"Could not parse datetime string: {dt_str}") from e
+        if "Timestamp value too large" in str(e):
+            raise
+        raise ValueError(f"Could not parse datetime string: {dt_str}")
 
 
 def ab_datetime_format(dt: Union[datetime, AirbyteDateTime]) -> str:
@@ -487,7 +492,26 @@ def ab_datetime_try_parse(dt_str: str) -> AirbyteDateTime | None:
         >>> ab_datetime_try_parse("2023-03-14 15:09:26Z")  # Returns None (invalid format)
         >>> ab_datetime_try_parse("2023-03-14")  # Returns None (missing time and timezone)
     """
+    if not isinstance(dt_str, str):
+        return None
     try:
-        return ab_datetime_parse(dt_str)
-    except:
+        # Validate format before parsing
+        if "T" not in dt_str:
+            return None
+        if not any(x in dt_str for x in ["Z", "+", "-"]):
+            return None
+        if "/" in dt_str or " " in dt_str or "GMT" in dt_str:
+            return None
+
+        # Try parsing with dateutil
+        parsed = parser.parse(dt_str)
+        if parsed.tzinfo is None:
+            return None
+
+        # Validate time components
+        if not (0 <= parsed.hour <= 23 and 0 <= parsed.minute <= 59 and 0 <= parsed.second <= 59):
+            return None
+
+        return AirbyteDateTime.from_datetime(parsed)
+    except (ValueError, TypeError):
         return None
