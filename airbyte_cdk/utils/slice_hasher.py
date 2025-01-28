@@ -16,7 +16,14 @@ class SliceHasher:
     _ENCODING: Final = "utf-8"
 
     @classmethod
-    def hash(cls, stream_name: str, stream_slice: Optional[Mapping[str, Any]] = None) -> int:
+    def hash(
+        cls,
+        stream_name: str = "<stream name not provided>",
+        stream_slice: Optional[Mapping[str, Any]] = None,
+    ) -> int:
+        """
+        Note that streams partition with the same slicing value but with different names might collapse if stream name is not provided
+        """
         if stream_slice:
             try:
                 s = json.dumps(stream_slice, sort_keys=True, cls=SliceEncoder)

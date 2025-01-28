@@ -16,6 +16,13 @@ from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
 from airbyte_cdk.sources.message import MessageRepository
+from airbyte_cdk.sources.streams.concurrent.clamping import (
+    ClampingEndProvider,
+    ClampingStrategy,
+    MonthClampingStrategy,
+    WeekClampingStrategy,
+    Weekday,
+)
 from airbyte_cdk.sources.streams.concurrent.cursor import (
     ConcurrentCursor,
     CursorField,
@@ -26,6 +33,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_sta
     ConcurrencyCompatibleStateType,
 )
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
+    CustomFormatConcurrentStreamStateConverter,
     EpochValueConcurrentStreamStateConverter,
     IsoMillisConcurrentStreamStateConverter,
 )
@@ -38,6 +46,7 @@ _NO_STATE = {}
 _NO_PARTITION_IDENTIFIER = None
 _NO_SLICE = None
 _NO_SLICE_BOUNDARIES = None
+_NOT_SEQUENTIAL = False
 _LOWER_SLICE_BOUNDARY_FIELD = "lower_boundary"
 _UPPER_SLICE_BOUNDARY_FIELD = "upper_boundary"
 _SLICE_BOUNDARY_FIELDS = (_LOWER_SLICE_BOUNDARY_FIELD, _UPPER_SLICE_BOUNDARY_FIELD)
@@ -940,6 +949,125 @@ class ConcurrentCursorStateTest(TestCase):
                 _A_CURSOR_FIELD_KEY: 10
             },  # State message is updated to the legacy format before being emitted
         )
+
+
+class ClampingIntegrationTest(TestCase):
+    def setUp(self) -> None:
+        self._message_repository = Mock(spec=MessageRepository)
+        self._state_manager = Mock(spec=ConnectorStateManager)
+
+    def _cursor(
+        self,
+        start: datetime,
+        end_provider,
+        slice_range: timedelta,
+        granularity: Optional[timedelta],
+        clamping_strategy: ClampingStrategy,
+    ) -> ConcurrentCursor:
+        return ConcurrentCursor(
+            _A_STREAM_NAME,
+            _A_STREAM_NAMESPACE,
+            {},
+            self._message_repository,
+            self._state_manager,
+            CustomFormatConcurrentStreamStateConverter(
+                "%Y-%m-%dT%H:%M:%SZ", is_sequential_state=_NOT_SEQUENTIAL
+            ),
+            CursorField(_A_CURSOR_FIELD_KEY),
+            _SLICE_BOUNDARY_FIELDS,
+            start,
+            end_provider,
+            slice_range=slice_range,
+            cursor_granularity=granularity,
+            clamping_strategy=clamping_strategy,
+        )
+
+    @freezegun.freeze_time(time_to_freeze=datetime(2025, 1, 3, tzinfo=timezone.utc))
+    def test_given_monthly_clamp_without_granularity_when_stream_slices_then_upper_boundaries_equals_next_lower_boundary(
+        self,
+    ) -> None:
+        cursor = self._cursor(
+            start=datetime(2023, 12, 31, tzinfo=timezone.utc),
+            end_provider=ClampingEndProvider(
+                MonthClampingStrategy(is_ceiling=False),
+                CustomFormatConcurrentStreamStateConverter.get_end_provider(),
+                granularity=timedelta(days=1),
+            ),
+            slice_range=timedelta(days=27),
+            granularity=None,
+            clamping_strategy=MonthClampingStrategy(),
+        )
+        stream_slices = list(cursor.stream_slices())
+        assert stream_slices == [
+            {"lower_boundary": "2024-01-01T00:00:00Z", "upper_boundary": "2024-02-01T00:00:00Z"},
+            {"lower_boundary": "2024-02-01T00:00:00Z", "upper_boundary": "2024-03-01T00:00:00Z"},
+            {"lower_boundary": "2024-03-01T00:00:00Z", "upper_boundary": "2024-04-01T00:00:00Z"},
+            {"lower_boundary": "2024-04-01T00:00:00Z", "upper_boundary": "2024-05-01T00:00:00Z"},
+            {"lower_boundary": "2024-05-01T00:00:00Z", "upper_boundary": "2024-06-01T00:00:00Z"},
+            {"lower_boundary": "2024-06-01T00:00:00Z", "upper_boundary": "2024-07-01T00:00:00Z"},
+            {"lower_boundary": "2024-07-01T00:00:00Z", "upper_boundary": "2024-08-01T00:00:00Z"},
+            {"lower_boundary": "2024-08-01T00:00:00Z", "upper_boundary": "2024-09-01T00:00:00Z"},
+            {"lower_boundary": "2024-09-01T00:00:00Z", "upper_boundary": "2024-10-01T00:00:00Z"},
+            {"lower_boundary": "2024-10-01T00:00:00Z", "upper_boundary": "2024-11-01T00:00:00Z"},
+            {"lower_boundary": "2024-11-01T00:00:00Z", "upper_boundary": "2024-12-01T00:00:00Z"},
+            {"lower_boundary": "2024-12-01T00:00:00Z", "upper_boundary": "2025-01-01T00:00:00Z"},
+        ]
+
+    @freezegun.freeze_time(time_to_freeze=datetime(2025, 1, 3, tzinfo=timezone.utc))
+    def test_given_monthly_clamp_and_granularity_when_stream_slices_then_consider_number_of_days_per_month(
+        self,
+    ) -> None:
+        cursor = self._cursor(
+            start=datetime(2023, 12, 31, tzinfo=timezone.utc),
+            end_provider=ClampingEndProvider(
+                MonthClampingStrategy(is_ceiling=False),
+                CustomFormatConcurrentStreamStateConverter.get_end_provider(),
+                granularity=timedelta(days=1),
+            ),
+            slice_range=timedelta(days=27),
+            granularity=timedelta(days=1),
+            clamping_strategy=MonthClampingStrategy(),
+        )
+        stream_slices = list(cursor.stream_slices())
+        assert stream_slices == [
+            {"lower_boundary": "2024-01-01T00:00:00Z", "upper_boundary": "2024-01-31T00:00:00Z"},
+            {"lower_boundary": "2024-02-01T00:00:00Z", "upper_boundary": "2024-02-29T00:00:00Z"},
+            {"lower_boundary": "2024-03-01T00:00:00Z", "upper_boundary": "2024-03-31T00:00:00Z"},
+            {"lower_boundary": "2024-04-01T00:00:00Z", "upper_boundary": "2024-04-30T00:00:00Z"},
+            {"lower_boundary": "2024-05-01T00:00:00Z", "upper_boundary": "2024-05-31T00:00:00Z"},
+            {"lower_boundary": "2024-06-01T00:00:00Z", "upper_boundary": "2024-06-30T00:00:00Z"},
+            {"lower_boundary": "2024-07-01T00:00:00Z", "upper_boundary": "2024-07-31T00:00:00Z"},
+            {"lower_boundary": "2024-08-01T00:00:00Z", "upper_boundary": "2024-08-31T00:00:00Z"},
+            {"lower_boundary": "2024-09-01T00:00:00Z", "upper_boundary": "2024-09-30T00:00:00Z"},
+            {"lower_boundary": "2024-10-01T00:00:00Z", "upper_boundary": "2024-10-31T00:00:00Z"},
+            {"lower_boundary": "2024-11-01T00:00:00Z", "upper_boundary": "2024-11-30T00:00:00Z"},
+            {"lower_boundary": "2024-12-01T00:00:00Z", "upper_boundary": "2024-12-31T00:00:00Z"},
+        ]
+
+    @freezegun.freeze_time(time_to_freeze=datetime(2024, 1, 31, tzinfo=timezone.utc))
+    def test_given_weekly_clamp_and_granularity_when_stream_slices_then_slice_per_week(
+        self,
+    ) -> None:
+        cursor = self._cursor(
+            start=datetime(
+                2023, 12, 31, tzinfo=timezone.utc
+            ),  # this is Sunday so we expect start to be 2 days after
+            end_provider=ClampingEndProvider(
+                WeekClampingStrategy(Weekday.TUESDAY, is_ceiling=False),
+                CustomFormatConcurrentStreamStateConverter.get_end_provider(),
+                granularity=timedelta(days=1),
+            ),
+            slice_range=timedelta(days=7),
+            granularity=timedelta(days=1),
+            clamping_strategy=WeekClampingStrategy(Weekday.TUESDAY),
+        )
+        stream_slices = list(cursor.stream_slices())
+        assert stream_slices == [
+            {"lower_boundary": "2024-01-02T00:00:00Z", "upper_boundary": "2024-01-08T00:00:00Z"},
+            {"lower_boundary": "2024-01-09T00:00:00Z", "upper_boundary": "2024-01-15T00:00:00Z"},
+            {"lower_boundary": "2024-01-16T00:00:00Z", "upper_boundary": "2024-01-22T00:00:00Z"},
+            {"lower_boundary": "2024-01-23T00:00:00Z", "upper_boundary": "2024-01-29T00:00:00Z"},
+        ]
 
 
 @freezegun.freeze_time(time_to_freeze=datetime(2024, 4, 1, 0, 0, 0, 0, tzinfo=timezone.utc))
