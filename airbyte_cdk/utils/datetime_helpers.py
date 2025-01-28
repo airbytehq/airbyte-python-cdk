@@ -339,7 +339,6 @@ class AirbyteDateTime(datetime):
         return ab_datetime_parse(dt_str)
 
 
-
 def ab_datetime_now() -> AirbyteDateTime:
     """Returns the current time as an AirbyteDateTime in UTC timezone.
 
