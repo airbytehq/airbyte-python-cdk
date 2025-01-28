@@ -36,7 +36,16 @@ class Destination(Connector, ABC):
         configured_catalog: ConfiguredAirbyteCatalog,
         input_messages: Iterable[AirbyteMessage],
     ) -> Iterable[AirbyteMessage]:
-        """Implement to define how the connector writes data to the destination"""
+        """Write data from the source to the destination.
+
+        Args:
+            config: The user-provided configuration.
+            configured_catalog: The configured catalog of streams.
+            input_messages: Messages containing data to write.
+
+        Returns:
+            Messages indicating the result of the write operation.
+        """
 
     def _run_check(self, config: Mapping[str, Any]) -> AirbyteMessage:
         check_result = self.check(logger, config)

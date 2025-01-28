@@ -59,23 +59,29 @@ class AbstractSource(Source, ABC):
     def check_connection(
         self, logger: logging.Logger, config: Mapping[str, Any]
     ) -> Tuple[bool, Optional[Any]]:
-        """
-        :param logger: source logger
-        :param config: The user-provided configuration as specified by the source's spec.
-          This usually contains information required to check connection e.g. tokens, secrets and keys etc.
-        :return: A tuple of (boolean, error). If boolean is true, then the connection check is successful
-          and we can connect to the underlying data source using the provided configuration.
-          Otherwise, the input config cannot be used to connect to the underlying data source,
-          and the "error" object should describe what went wrong.
-          The error object will be cast to string to display the problem to the user.
+        """Check if the input configuration can be used to connect to the underlying data source.
+
+        Args:
+            logger: Logger instance for the source.
+            config: The user-provided configuration as specified by the source's spec.
+                Contains information required to check connection e.g. tokens, secrets and keys.
+
+        Returns:
+            A tuple of (success, error). If success is true, then the connection check is successful.
+            Otherwise, error describes what went wrong. The error object will be cast to string.
         """
 
     @abstractmethod
     def streams(self, config: Mapping[str, Any]) -> List[Stream]:
-        """
-        :param config: The user-provided configuration as specified by the source's spec.
-        Any stream construction related operation should happen here.
-        :return: A list of the streams in this source connector.
+        """Get the list of available streams for this source.
+
+        Stream construction and configuration should happen here.
+
+        Args:
+            config: The user-provided configuration as specified by the source's spec.
+
+        Returns:
+            A list of Stream instances available for this source.
         """
 
     # Stream name to instance map for applying output object transformation

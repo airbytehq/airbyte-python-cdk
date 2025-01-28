@@ -31,6 +31,7 @@ theme:
 
 plugins:
   - search
+  - autorefs
   - mkdocstrings:
       default_handler: python
       handlers:
@@ -43,9 +44,21 @@ plugins:
             docstring_style: google
             merge_init_into_class: true
             show_if_no_docstring: true
+            show_signature: true
+            show_bases: true
+            heading_level: 2
             filters:
               - "!^_"  # exclude private members
               - "!^__"  # exclude special methods
+            docstring_section_style: spacy
+            members_order: source
+            show_submodules: true
+            show_root_full_path: false
+            show_root_members_full_path: false
+            show_object_full_path: false
+            show_root_toc_entry: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
           import:
             - https://docs.python.org/3/objects.inv
 
