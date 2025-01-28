@@ -120,7 +120,7 @@ skip = ["__init__.py"]  # TODO: Remove after this is fixed: https://github.com/a
 [tool.poe.tasks]
 # Installation
 install = { shell = "poetry install --all-extras" }
-lock = { shell = "poetry lock --no-update" }
+lock = { shell = "poetry lock" }
 
 # Build tasks
 assemble = {cmd = "bin/generate-component-manifest-dagger.sh", help = "Generate component manifest files."}
