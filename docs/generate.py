@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Generate documentation using MkDocs."""
+
 import os
 import shutil
 import subprocess
@@ -65,7 +66,12 @@ on docs.airbyte.com, which provides tutorials and conceptual documentation.
 
         # Copy the built site to the main Airbyte docs if we're in the right environment
         airbyte_docs_dir = (
-            project_root.parent / "airbyte" / "docs" / "connector-development" / "cdk-python" / "api-reference"
+            project_root.parent
+            / "airbyte"
+            / "docs"
+            / "connector-development"
+            / "cdk-python"
+            / "api-reference"
         )
         if airbyte_docs_dir.parent.exists():
             airbyte_docs_dir.mkdir(exist_ok=True)
