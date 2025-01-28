@@ -340,9 +340,9 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
     ) -> Tuple[str, str, str]:
         response_json = self._get_refresh_access_token_response()
         return (
-            response_json[self.get_access_token_name()],
-            response_json[self.get_expires_in_name()],
-            response_json[self.get_refresh_token_name()],
+            self._find_and_get_value_from_response(response_json, self.get_access_token_name()),
+            self._find_and_get_value_from_response(response_json, self.get_expires_in_name()),
+            self._find_and_get_value_from_response(response_json, self.get_refresh_token_name()),
         )
 
     @property

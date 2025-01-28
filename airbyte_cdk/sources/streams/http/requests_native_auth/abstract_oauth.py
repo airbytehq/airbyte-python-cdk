@@ -142,7 +142,10 @@ class AbstractOauth2Authenticator(AuthBase):
                 response_json = response.json()
                 # Add the access token to the list of secrets so it is replaced before logging the response
                 # An argument could be made to remove the prevous access key from the list of secrets, but unmasking values seems like a security incident waiting to happen...
-                access_key = response_json.get(self.get_access_token_name())
+                access_key = self._find_and_get_value_from_response(
+                    response_json,
+                    self.get_access_token_name(),
+                )
                 if not access_key:
                     raise Exception(
                         "Token refresh API response was missing access token {self.get_access_token_name()}"
@@ -164,6 +167,8 @@ class AbstractOauth2Authenticator(AuthBase):
                     internal_message=message, message=message, failure_type=FailureType.config_error
                 )
             raise
+        except AirbyteTracedException as e:
+            raise e
         except Exception as e:
             raise Exception(f"Error while refreshing access token: {e}") from e
 
@@ -175,9 +180,10 @@ class AbstractOauth2Authenticator(AuthBase):
         """
         response_json = self._get_refresh_access_token_response()
 
-        return response_json[self.get_access_token_name()], response_json[
-            self.get_expires_in_name()
-        ]
+        return (
+            self._find_and_get_value_from_response(response_json, self.get_access_token_name()),
+            self._find_and_get_value_from_response(response_json, self.get_expires_in_name()),
+        )
 
     def _parse_token_expiration_date(self, value: Union[str, int]) -> pendulum.DateTime:
         """
@@ -291,6 +297,59 @@ class AbstractOauth2Authenticator(AuthBase):
         The implementation can define a message_repository if it wants debugging logs for HTTP requests
         """
         return _NOOP_MESSAGE_REPOSITORY
+
+    def _find_and_get_value_from_response(
+        self,
+        response_data: Mapping[str, Any],
+        key_name: str,
+        max_depth: int = 5,
+        current_depth: int = 0,
+    ) -> Any:
+        """
+        Recursively searches for a specified key in a nested dictionary or list and returns its value if found.
+
+        Args:
+            response_data (Mapping[str, Any]): The response data to search through, which can be a dictionary or a list.
+            key_name (str): The key to search for in the response data.
+            max_depth (int, optional): The maximum depth to search for the key to avoid infinite recursion. Defaults to 5.
+            current_depth (int, optional): The current depth of the recursion. Defaults to 0.
+
+        Returns:
+            Any: The value associated with the specified key if found, otherwise None.
+
+        Raises:
+            AirbyteTracedException: If the maximum recursion depth is reached without finding the key.
+        """
+        if current_depth > max_depth:
+            # this is needed to avoid an inf loop, possible with a very deep nesting observed.
+            message = f"The maximum level of recursion is reached. Couldn't find the speficied `{key_name}` in the response."
+            raise AirbyteTracedException(
+                internal_message=message, message=message, failure_type=FailureType.config_error
+            )
+
+        if isinstance(response_data, dict):
+            # get from the root level
+            if key_name in response_data:
+                return response_data[key_name]
+
+            # get from the nested object
+            for _, value in response_data.items():
+                result = self._find_and_get_value_from_response(
+                    value, key_name, max_depth, current_depth + 1
+                )
+                if result is not None:
+                    return result
+
+        # get from the nested array object
+        elif isinstance(response_data, list):
+            for item in response_data:
+                result = self._find_and_get_value_from_response(
+                    item, key_name, max_depth, current_depth + 1
+                )
+                if result is not None:
+                    return result
+
+        return None
 
     def _log_response(self, response: requests.Response) -> None:
         if self._message_repository:
