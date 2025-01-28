@@ -312,7 +312,7 @@ class TestOauth2Authenticator:
         [
             (3600, None, AirbyteDateTime(year=2022, month=1, day=1, hour=1)),
             ("90012", None, AirbyteDateTime(year=2022, month=1, day=2, hour=1, second=12)),
-            ("2024-02-28", "YYYY-MM-DD", pendulum.datetime(year=2024, month=2, day=28)),
+            ("2024-02-28", "YYYY-MM-DD", AirbyteDateTime(year=2024, month=2, day=28)),
             (
                 "2022-02-12T00:00:00.000000+00:00",
                 "YYYY-MM-DDTHH:mm:ss.SSSSSSZ",
