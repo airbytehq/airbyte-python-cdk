@@ -73,12 +73,37 @@ def test_now():
         ("2023-12-00", None, ValueError, "Invalid date format: 2023-12-00"),
         # Invalid separators and formats
         ("2023/12/14", None, ValueError, "Could not parse datetime string: 2023/12/14"),
-        ("2023-03-14 15:09:26Z", None, ValueError, "Could not parse datetime string: 2023-03-14 15:09:26Z"),
-        ("2023-03-14T15:09:26GMT", None, ValueError, "Could not parse datetime string: 2023-03-14T15:09:26GMT"),
+        (
+            "2023-03-14 15:09:26Z",
+            None,
+            ValueError,
+            "Could not parse datetime string: 2023-03-14 15:09:26Z",
+        ),
+        (
+            "2023-03-14T15:09:26GMT",
+            None,
+            ValueError,
+            "Could not parse datetime string: 2023-03-14T15:09:26GMT",
+        ),
         # Invalid time components
-        ("2023-03-14T25:09:26Z", None, ValueError, "Could not parse datetime string: 2023-03-14T25:09:26Z"),
-        ("2023-03-14T15:99:26Z", None, ValueError, "Could not parse datetime string: 2023-03-14T15:99:26Z"),
-        ("2023-03-14T15:09:99Z", None, ValueError, "Could not parse datetime string: 2023-03-14T15:09:99Z"),
+        (
+            "2023-03-14T25:09:26Z",
+            None,
+            ValueError,
+            "Could not parse datetime string: 2023-03-14T25:09:26Z",
+        ),
+        (
+            "2023-03-14T15:99:26Z",
+            None,
+            ValueError,
+            "Could not parse datetime string: 2023-03-14T15:99:26Z",
+        ),
+        (
+            "2023-03-14T15:09:99Z",
+            None,
+            ValueError,
+            "Could not parse datetime string: 2023-03-14T15:09:99Z",
+        ),
     ],
 )
 def test_parse(input_value, expected_output, error_type, error_match):
@@ -96,20 +121,21 @@ def test_parse(input_value, expected_output, error_type, error_match):
     "input_dt,expected_output",
     [
         # Standard datetime with UTC timezone
-        (datetime(2023, 3, 14, 15, 9, 26, tzinfo=timezone.utc),
-         "2023-03-14T15:09:26+00:00"),
+        (datetime(2023, 3, 14, 15, 9, 26, tzinfo=timezone.utc), "2023-03-14T15:09:26+00:00"),
         # Naive datetime (should assume UTC)
-        (datetime(2023, 3, 14, 15, 9, 26),
-         "2023-03-14T15:09:26+00:00"),
+        (datetime(2023, 3, 14, 15, 9, 26), "2023-03-14T15:09:26+00:00"),
         # AirbyteDateTime with UTC timezone
-        (AirbyteDateTime(2023, 3, 14, 15, 9, 26, tzinfo=timezone.utc),
-         "2023-03-14T15:09:26+00:00"),
+        (AirbyteDateTime(2023, 3, 14, 15, 9, 26, tzinfo=timezone.utc), "2023-03-14T15:09:26+00:00"),
         # Datetime with microseconds
-        (datetime(2023, 3, 14, 15, 9, 26, 123456, tzinfo=timezone.utc),
-         "2023-03-14T15:09:26.123456+00:00"),
+        (
+            datetime(2023, 3, 14, 15, 9, 26, 123456, tzinfo=timezone.utc),
+            "2023-03-14T15:09:26.123456+00:00",
+        ),
         # Datetime with non-UTC timezone
-        (datetime(2023, 3, 14, 15, 9, 26, tzinfo=timezone(timedelta(hours=-4))),
-         "2023-03-14T15:09:26-04:00"),
+        (
+            datetime(2023, 3, 14, 15, 9, 26, tzinfo=timezone(timedelta(hours=-4))),
+            "2023-03-14T15:09:26-04:00",
+        ),
     ],
 )
 def test_format(input_dt, expected_output):
@@ -174,7 +200,10 @@ def test_operator_overloading():
         # Valid formats - must have T delimiter and timezone
         ("2023-03-14T15:09:26+00:00", "2023-03-14T15:09:26+00:00"),  # Basic UTC format
         ("2023-03-14T15:09:26.123+00:00", "2023-03-14T15:09:26.123000+00:00"),  # With milliseconds
-        ("2023-03-14T15:09:26.123456+00:00", "2023-03-14T15:09:26.123456+00:00"),  # With microseconds
+        (
+            "2023-03-14T15:09:26.123456+00:00",
+            "2023-03-14T15:09:26.123456+00:00",
+        ),  # With microseconds
         ("2023-03-14T15:09:26-04:00", "2023-03-14T15:09:26-04:00"),  # With timezone offset
         ("2023-03-14T15:09:26Z", "2023-03-14T15:09:26+00:00"),  # With Z timezone
         ("2023-03-14T00:00:00+00:00", "2023-03-14T00:00:00+00:00"),  # Full datetime with zero time

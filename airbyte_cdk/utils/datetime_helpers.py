@@ -401,7 +401,9 @@ def ab_datetime_parse(dt_str: str | int) -> AirbyteDateTime:
             return AirbyteDateTime.from_datetime(instant.py_datetime())
 
         if not isinstance(dt_str, str):
-            raise ValueError(f"Could not parse datetime string: expected string or integer, got {type(dt_str)}")
+            raise ValueError(
+                f"Could not parse datetime string: expected string or integer, got {type(dt_str)}"
+            )
 
         # Handle date-only format first
         if ":" not in dt_str and dt_str.count("-") == 2 and "/" not in dt_str:
