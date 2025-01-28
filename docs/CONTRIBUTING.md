@@ -56,11 +56,11 @@ This will generate the code generator docker image and the component manifest fi
 
 ## Generating API Reference Docs
 
-Documentation auto-gen code lives in the `/docs` folder. Based on the doc strings of public methods, we generate API documentation using [pdoc](https://pdoc.dev).
+Documentation auto-gen code lives in the `/docs` folder. Based on the doc strings of public methods, we generate API documentation using MkDocs with mkdocstrings.
 
-To generate the documentation, run `poe docs-generate` or to build and open the docs preview in one step, run `poe docs-preview`.
+To generate the documentation, run `poe docs-build` or to preview the docs locally, run `poe docs-serve`.
 
-The `docs-generate` Poe task is mapped to the `run()` function of `docs/generate.py`. Documentation pages will be generated in the `docs/generated` folder (ignored by git). You can also download auto-generated API docs for any GitHub push by navigating to the "Summary" tab of the docs generation check in GitHub Actions.
+Documentation pages will be generated using MkDocs in the `site` directory (ignored by git). You can also download auto-generated API docs for any GitHub push by navigating to the "Summary" tab of the docs generation check in GitHub Actions.
 
 ## Release Management
 
