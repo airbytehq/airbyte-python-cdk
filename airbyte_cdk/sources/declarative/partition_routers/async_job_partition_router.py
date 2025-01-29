@@ -4,9 +4,9 @@ from dataclasses import InitVar, dataclass, field
 from typing import Any, Callable, Iterable, Mapping, Optional
 
 from airbyte_cdk.models import FailureType
+from airbyte_cdk.sources.declarative.async_job.job import AsyncJob
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import (
     AsyncJobOrchestrator,
-    AsyncPartition,
 )
 from airbyte_cdk.sources.declarative.partition_routers.single_partition_router import (
     SinglePartitionRouter,
@@ -41,14 +41,13 @@ class AsyncJobPartitionRouter(StreamSlicer):
         self._job_orchestrator = self._job_orchestrator_factory(slices)
 
         for completed_partition in self._job_orchestrator.create_and_get_completed_partitions():
-            yield completed_partition
-            # yield StreamSlice(
-            #     partition=dict(completed_partition.stream_slice.partition)
-            #     cursor_slice=completed_partition.stream_slice.cursor_slice,
-            # extra_fields={"jobs": completed_partition.jobs},
-            # )
+            yield StreamSlice(
+                partition=dict(completed_partition.stream_slice.partition),
+                cursor_slice=completed_partition.stream_slice.cursor_slice,
+                extra_fields={"jobs": list(completed_partition.jobs)},
+            )
 
-    def fetch_records(self, partition: AsyncPartition) -> Iterable[Mapping[str, Any]]:
+    def fetch_records(self, partition: Iterable[AsyncJob]) -> Iterable[Mapping[str, Any]]:
         """
         This method of fetching records extends beyond what a PartitionRouter/StreamSlicer should
         be responsible for. However, this was added in because the JobOrchestrator is required to

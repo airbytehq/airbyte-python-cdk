@@ -36,6 +36,11 @@ _EXTRACTOR_NOT_USED: RecordExtractor = None  # type: ignore  # the extractor sho
 _NO_LIMIT = 10000
 
 
+class MockAsyncJobPartitionRouter(AsyncJobPartitionRouter):
+    def fetch_records(self, job: AsyncJob) -> Iterable[Mapping[str, Any]]:
+        yield from [{"record_field": 10}]
+
+
 class MockAsyncJobRepository(AsyncJobRepository):
     def start(self, stream_slice: StreamSlice) -> AsyncJob:
         return AsyncJob("a_job_id", stream_slice)
@@ -82,7 +87,7 @@ class MockSource(AbstractSource):
                     config={},
                     parameters={},
                     record_selector=noop_record_selector,
-                    stream_slicer=AsyncJobPartitionRouter(
+                    stream_slicer=MockAsyncJobPartitionRouter(
                         stream_slicer=self._stream_slicer,
                         job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
                             MockAsyncJobRepository(),
