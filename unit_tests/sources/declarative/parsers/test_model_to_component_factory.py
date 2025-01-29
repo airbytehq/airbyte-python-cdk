@@ -3,11 +3,10 @@
 #
 
 # mypy: ignore-errors
-import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Mapping
 
 import freezegun
-import pendulum
 import pytest
 import requests
 
@@ -160,6 +159,7 @@ from airbyte_cdk.sources.streams.http.requests_native_auth.oauth import (
     SingleUseRefreshTokenOauth2Authenticator,
 )
 from airbyte_cdk.sources.types import StreamSlice
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 from unit_tests.sources.declarative.parsers.testing_components import (
     TestingCustomSubstreamPartitionRouter,
     TestingSomeComponent,
@@ -747,7 +747,7 @@ def test_datetime_based_cursor():
     )
 
     assert isinstance(stream_slicer, DatetimeBasedCursor)
-    assert stream_slicer._step == datetime.timedelta(days=10)
+    assert stream_slicer._step == timedelta(days=10)
     assert stream_slicer.cursor_field.string == "created"
     assert stream_slicer.cursor_granularity == "PT0.000001S"
     assert stream_slicer._lookback_window.string == "P5D"
@@ -2833,11 +2833,12 @@ def test_create_jwt_authenticator(config, manifest, expected):
         assert authenticator._header_prefix.eval(config) == expected["header_prefix"]
     assert authenticator._get_jwt_headers() == expected["jwt_headers"]
     jwt_payload = expected["jwt_payload"]
+    now_timestamp = int(ab_datetime_now().timestamp())
     jwt_payload.update(
         {
-            "iat": int(datetime.datetime.now().timestamp()),
-            "nbf": int(datetime.datetime.now().timestamp()),
-            "exp": int(datetime.datetime.now().timestamp()) + expected["token_duration"],
+            "iat": now_timestamp,
+            "nbf": now_timestamp,
+            "exp": now_timestamp + expected["token_duration"],
         }
     )
     assert authenticator._get_jwt_payload() == jwt_payload
@@ -3065,14 +3066,14 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
     expected_cursor_field = "updated_at"
     expected_start_boundary = "custom_start"
     expected_end_boundary = "custom_end"
-    expected_step = datetime.timedelta(days=10)
-    expected_lookback_window = datetime.timedelta(days=3)
+    expected_step = timedelta(days=10)
+    expected_lookback_window = timedelta(days=3)
     expected_datetime_format = "%Y-%m-%dT%H:%M:%S.%fZ"
-    expected_cursor_granularity = datetime.timedelta(microseconds=1)
+    expected_cursor_granularity = timedelta(microseconds=1)
 
-    expected_start = pendulum.parse(expected_start)
-    expected_end = datetime.datetime(
-        year=2024, month=10, day=15, second=0, microsecond=0, tzinfo=datetime.timezone.utc
+    expected_start = ab_datetime_parse(expected_start)
+    expected_end = AirbyteDateTime(
+        year=2024, month=10, day=15, second=0, microsecond=0, tzinfo=timezone.utc
     )
     if stream_state:
         # Using incoming state, the resulting already completed partition is the start_time up to the last successful
@@ -3080,9 +3081,9 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
         expected_concurrent_state = {
             "slices": [
                 {
-                    "start": pendulum.parse(config["start_time"]),
-                    "end": pendulum.parse(stream_state["updated_at"]),
-                    "most_recent_cursor_value": pendulum.parse(stream_state["updated_at"]),
+                    "start": ab_datetime_parse(config["start_time"]),
+                    "end": ab_datetime_parse(stream_state["updated_at"]),
+                    "most_recent_cursor_value": ab_datetime_parse(stream_state["updated_at"]),
                 },
             ],
             "state_type": "date-range",
@@ -3092,9 +3093,9 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
         expected_concurrent_state = {
             "slices": [
                 {
-                    "start": pendulum.parse(config["start_time"]),
-                    "end": pendulum.parse(config["start_time"]),
-                    "most_recent_cursor_value": pendulum.parse(config["start_time"]),
+                    "start": ab_datetime_parse(config["start_time"]),
+                    "end": ab_datetime_parse(config["start_time"]),
+                    "most_recent_cursor_value": ab_datetime_parse(config["start_time"]),
                 },
             ],
             "state_type": "date-range",
@@ -3211,7 +3212,7 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
                 "step": None,
             },
             "_slice_range",
-            datetime.timedelta.max,
+            timedelta.max,
             None,
             id="test_uses_a_single_time_interval_when_no_specified_step_and_granularity",
         ),
@@ -3284,11 +3285,11 @@ def test_create_concurrent_cursor_uses_min_max_datetime_format_if_defined():
     string parser should not inherit from the parent DatetimeBasedCursor.datetime_format. The parent which uses an incorrect
     precision would fail if it were used by the dependent children.
     """
-    expected_start = datetime.datetime(
-        year=2024, month=8, day=1, second=0, microsecond=0, tzinfo=datetime.timezone.utc
+    expected_start = AirbyteDateTime(
+        year=2024, month=8, day=1, second=0, microsecond=0, tzinfo=timezone.utc
     )
-    expected_end = datetime.datetime(
-        year=2024, month=9, day=1, second=0, microsecond=0, tzinfo=datetime.timezone.utc
+    expected_end = AirbyteDateTime(
+        year=2024, month=9, day=1, second=0, microsecond=0, tzinfo=timezone.utc
     )
 
     connector_state_manager = ConnectorStateManager()
@@ -3449,7 +3450,7 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_with_clamping(
         assert isinstance(
             concurrent_cursor._end_provider._clamping_strategy, expected_clamping_strategy
         )
-        assert concurrent_cursor._end_provider._granularity == datetime.timedelta(seconds=1)
+        assert concurrent_cursor._end_provider._granularity == timedelta(seconds=1)
 
 
 class CustomRecordExtractor(RecordExtractor):

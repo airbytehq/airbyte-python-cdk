@@ -21,13 +21,15 @@ from airbyte_cdk.test.mock_http.response_builder import (
     create_response_builder,
 )
 from airbyte_cdk.test.state_builder import StateBuilder
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now
 from unit_tests.sources.mock_server_tests.mock_source_fixture import SourceFixture
 from unit_tests.sources.mock_server_tests.test_helpers import (
     emits_successful_sync_status_messages,
     validate_message_order,
 )
 
-_NOW = datetime.now(timezone.utc)
+# Use explicit timestamp to avoid test flakiness
+_NOW = AirbyteDateTime(2025, 1, 1, 1, 12, 0, tzinfo=timezone.utc)
 
 
 class RequestBuilder:
