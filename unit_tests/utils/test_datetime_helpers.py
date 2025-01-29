@@ -53,20 +53,61 @@ def test_now():
     [
         # Valid formats - must have T delimiter and timezone
         ("2023-03-14T15:09:26+00:00", "2023-03-14T15:09:26+00:00", None, None),  # Basic UTC format
-        ("2023-03-14T15:09:26.123+00:00", "2023-03-14T15:09:26.123000+00:00", None, None),  # With milliseconds
+        (
+            "2023-03-14T15:09:26.123+00:00",
+            "2023-03-14T15:09:26.123000+00:00",
+            None,
+            None,
+        ),  # With milliseconds
         (
             "2023-03-14T15:09:26.123456+00:00",
-            "2023-03-14T15:09:26.123456+00:00", None, None,
+            "2023-03-14T15:09:26.123456+00:00",
+            None,
+            None,
         ),  # With microseconds
-        ("2023-03-14T15:09:26-04:00", "2023-03-14T15:09:26-04:00", None, None),  # With timezone offset
+        (
+            "2023-03-14T15:09:26-04:00",
+            "2023-03-14T15:09:26-04:00",
+            None,
+            None,
+        ),  # With timezone offset
         ("2023-03-14T15:09:26Z", "2023-03-14T15:09:26+00:00", None, None),  # With Z timezone
-        ("2023-03-14T00:00:00+00:00", "2023-03-14T00:00:00+00:00", None, None),  # Full datetime with zero time
-        ("2023-03-14T15:09:26GMT", "2023-03-14T15:09:26+00:00", None, None),  # Non-standard timezone name ok
-        ("2023-03-14T15:09:26", "2023-03-14T15:09:26+00:00", None, None),  # Missing timezone, assume UTC
-        ("2023-03-14 15:09:26", "2023-03-14T15:09:26+00:00", None, None),  # Missing T delimiter ok, assume UTC
-        ("2023-03-14", "2023-03-14T00:00:00+00:00", None, None),  # Date only, missing time and timezone
-        ("2023/03/14T15:09:26Z", "2023-03-14T15:09:26+00:00", None, None),  # Wrong date separator, ok
-
+        (
+            "2023-03-14T00:00:00+00:00",
+            "2023-03-14T00:00:00+00:00",
+            None,
+            None,
+        ),  # Full datetime with zero time
+        (
+            "2023-03-14T15:09:26GMT",
+            "2023-03-14T15:09:26+00:00",
+            None,
+            None,
+        ),  # Non-standard timezone name ok
+        (
+            "2023-03-14T15:09:26",
+            "2023-03-14T15:09:26+00:00",
+            None,
+            None,
+        ),  # Missing timezone, assume UTC
+        (
+            "2023-03-14 15:09:26",
+            "2023-03-14T15:09:26+00:00",
+            None,
+            None,
+        ),  # Missing T delimiter ok, assume UTC
+        (
+            "2023-03-14",
+            "2023-03-14T00:00:00+00:00",
+            None,
+            None,
+        ),  # Date only, missing time and timezone
+        (
+            "2023/03/14T15:09:26Z",
+            "2023-03-14T15:09:26+00:00",
+            None,
+            None,
+        ),  # Wrong date separator, ok
         # Valid formats
         ("2023-03-14T15:09:26Z", "2023-03-14T15:09:26+00:00", None, None),
         ("2023-03-14T15:09:26-04:00", "2023-03-14T15:09:26-04:00", None, None),
@@ -89,8 +130,8 @@ def test_now():
         ("2023-12-00", None, ValueError, "Invalid date format: 2023-12-00"),
         # Non-standard separators and formats, ok
         ("2023/12/14", "2023-12-14T00:00:00+00:00", None, None),
-        ("2023-03-14 15:09:26Z","2023-03-14T15:09:26+00:00", None, None),
-        ("2023-03-14T15:09:26GMT","2023-03-14T15:09:26+00:00",None,None),
+        ("2023-03-14 15:09:26Z", "2023-03-14T15:09:26+00:00", None, None),
+        ("2023-03-14T15:09:26GMT", "2023-03-14T15:09:26+00:00", None, None),
         # Invalid time components
         (
             "2023-03-14T25:09:26Z",
@@ -117,8 +158,6 @@ def test_now():
     # ("2023-03-14T15:99:26Z", None),  # Invalid minute
     # ("2023-03-14T15:09:99Z", None),  # Invalid second
     # ("2023-02-30T00:00:00Z", None),  # Impossible date
-
-
 )
 def test_parse(input_value, expected_output, error_type, error_match):
     """Test parsing various datetime string formats."""
