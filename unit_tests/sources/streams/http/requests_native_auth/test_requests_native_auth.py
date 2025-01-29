@@ -356,7 +356,7 @@ class TestOauth2Authenticator:
         expires_datetime = oauth._parse_token_expiration_date(expire_in)
 
         assert isinstance(expires_datetime, AirbyteDateTime)
-        assert ("access_token", ab_datetime_parse(expected_token_expiry_date)) == (
+        assert ("access_token", expected_token_expiry_date) == (
             token,
             expires_datetime,
         )

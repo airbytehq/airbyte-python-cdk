@@ -193,7 +193,7 @@ class IsoMillisConcurrentStreamStateConverter(DateTimeStreamStateConverter):
 class CustomFormatConcurrentStreamStateConverter(IsoMillisConcurrentStreamStateConverter):
     """
     Datetime State converter that emits state according to the supplied datetime format. The converter supports reading
-    incoming state in any valid datetime format via Pendulum.
+    incoming state in any valid datetime format using AirbyteDateTime parsing utilities.
     """
 
     def __init__(
