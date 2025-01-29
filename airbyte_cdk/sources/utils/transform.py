@@ -21,6 +21,9 @@ python_to_json = {v: k for k, v in json_to_python.items()}
 
 logger = logging.getLogger("airbyte")
 
+_TRUTHY_STRINGS = ("y", "yes", "t", "true", "on", "1")
+_FALSEY_STRINGS = ("n", "no", "f", "false", "off", "0")
+
 
 def _strtobool(value: str, /) -> int:
     """Mimic the behavior of distutils.util.strtobool.
@@ -32,10 +35,10 @@ def _strtobool(value: str, /) -> int:
     > `ValueError` if val is anything else.
     """
     normalized_str = value.lower().strip()
-    if normalized_str in ("y", "yes", "t", "true", "on", "1"):
+    if normalized_str in _TRUTHY_STRINGS:
         return 1
 
-    if normalized_str in ("n", "no", "f", "false", "off", "0"):
+    if normalized_str in _FALSEY_STRINGS:
         return 0
 
     raise ValueError(f"Invalid boolean value: {normalized_str}")
