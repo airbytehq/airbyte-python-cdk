@@ -33,6 +33,10 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
+from airbyte_cdk.sources.declarative.partition_routers import AsyncJobPartitionRouter
+from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
+    StreamSlicerPartitionGenerator,
+)
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.checkpoint import Cursor
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
@@ -322,6 +326,7 @@ _MANIFEST = {
                     "http_method": "GET",
                 },
             },
+            "incremental_sync": {"$ref": "#/definitions/incremental_cursor"},
             "schema_loader": {
                 "type": "InlineSchemaLoader",
                 "schema": {
@@ -1599,6 +1604,47 @@ def test_given_partition_routing_and_incremental_sync_then_stream_is_concurrent(
 
     assert len(concurrent_streams) == 1
     assert len(synchronous_streams) == 0
+
+
+def test_async_incremental_stream_uses_concurrent_cursor_with_state():
+    state = [
+        AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(name="async_job_stream", namespace=None),
+                stream_state=AirbyteStateBlob(updated_at="2024-08-06"),
+            ),
+        )
+    ]
+
+    source = ConcurrentDeclarativeSource(
+        source_config=_MANIFEST, config=_CONFIG, catalog=_CATALOG, state=state
+    )
+
+    expected_state = {
+        "legacy": {"updated_at": "2024-08-06"},
+        "slices": [
+            {
+                "end": datetime(2024, 8, 6, 0, 0, tzinfo=timezone.utc),
+                "most_recent_cursor_value": datetime(2024, 8, 6, 0, 0, tzinfo=timezone.utc),
+                "start": datetime(2024, 7, 1, 0, 0, tzinfo=timezone.utc),
+            }
+        ],
+        "state_type": "date-range",
+    }
+
+    concurrent_streams, _ = source._group_streams(config=_CONFIG)
+    async_job_stream = concurrent_streams[6]
+    assert isinstance(async_job_stream, DefaultStream)
+    cursor = async_job_stream._cursor
+    assert isinstance(cursor, ConcurrentCursor)
+    assert cursor._concurrent_state == expected_state
+    stream_partition_generator = async_job_stream._stream_partition_generator
+    assert isinstance(stream_partition_generator, StreamSlicerPartitionGenerator)
+    async_job_partition_router = stream_partition_generator._stream_slicer
+    assert isinstance(async_job_partition_router, AsyncJobPartitionRouter)
+    assert isinstance(async_job_partition_router.stream_slicer, ConcurrentCursor)
+    assert async_job_partition_router.stream_slicer._concurrent_state == expected_state
 
 
 def create_wrapped_stream(stream: DeclarativeStream) -> Stream:

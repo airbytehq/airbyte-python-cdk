@@ -17,7 +17,7 @@ jobs:
       - name: Set up Poetry
         uses: Gr1N/setup-poetry@v9
         with:
-          poetry-version: "1.8.4"
+          poetry-version: "2.0.1"
 
       - name: Check Poetry lock file is current
         run: poetry check
@@ -44,7 +44,7 @@ jobs:
       - name: Set up Poetry
         uses: Gr1N/setup-poetry@v9
         with:
-          poetry-version: "1.8.4"
+          poetry-version: "2.0.1"
       - name: Set up Python
         uses: actions/setup-python@v5
         with:

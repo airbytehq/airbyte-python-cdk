@@ -75,7 +75,7 @@ class AsyncRetriever(Retriever):
         """
         if not isinstance(stream_slice, StreamSlice) or "partition" not in stream_slice.partition:
             raise AirbyteTracedException(
-                message="Invalid arguments to AsyncJobRetriever.read_records: stream_slice is no optional. Please contact Airbyte Support",
+                message="Invalid arguments to AsyncRetriever.read_records: stream_slice is not optional. Please contact Airbyte Support",
                 failure_type=FailureType.system_error,
             )
         return stream_slice["partition"]  # type: ignore  # stream_slice["partition"] has been added as an AsyncPartition as part of stream_slices

@@ -12,7 +12,15 @@ import pytest
 import requests
 
 from airbyte_cdk import AirbyteTracedException
-from airbyte_cdk.models import FailureType, Level
+from airbyte_cdk.models import (
+    AirbyteStateBlob,
+    AirbyteStateMessage,
+    AirbyteStateType,
+    AirbyteStreamState,
+    FailureType,
+    Level,
+    StreamDescriptor,
+)
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator
 from airbyte_cdk.sources.declarative.auth import DeclarativeOauth2Authenticator, JwtAuthenticator
@@ -3093,11 +3101,23 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
             "legacy": {},
         }
 
-    connector_state_manager = ConnectorStateManager()
-
-    connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
-
     stream_name = "test"
+
+    connector_state_manager = ConnectorStateManager(
+        state=[
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name=stream_name),
+                    stream_state=AirbyteStateBlob(stream_state),
+                ),
+            )
+        ]
+    )
+
+    connector_builder_factory = ModelToComponentFactory(
+        emit_connector_builder_messages=True, connector_state_manager=connector_state_manager
+    )
 
     cursor_component_definition = {
         "type": "DatetimeBasedCursor",
@@ -3114,13 +3134,11 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
 
     concurrent_cursor = (
         connector_builder_factory.create_concurrent_cursor_from_datetime_based_cursor(
-            state_manager=connector_state_manager,
             model_type=DatetimeBasedCursorModel,
             component_definition=cursor_component_definition,
             stream_name=stream_name,
             stream_namespace=None,
             config=config,
-            stream_state=stream_state,
         )
     )
 

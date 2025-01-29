@@ -84,7 +84,17 @@ _MANIFEST = {
                     "schema_pointer": ["fields"],
                     "key_pointer": ["name"],
                     "type_pointer": ["type"],
-                    "types_mapping": [{"target_type": "string", "current_type": "singleLineText"}],
+                    "types_mapping": [
+                        {"target_type": "string", "current_type": "singleLineText"},
+                        {
+                            "target_type": {
+                                "field_type": "array",
+                                "items": {"field_type": "array", "items": "integer"},
+                            },
+                            "current_type": "formula",
+                            "condition": "{{ raw_schema['result']['type'] == 'customInteger' }}",
+                        },
+                    ],
                 },
             },
         },
@@ -150,7 +160,8 @@ def dynamic_schema_loader(mock_retriever, mock_schema_type_identifier):
                 ]
             ),
             {
-                "$schema": "http://json-schema.org/draft-07/schema#",
+                "$schema": "https://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
                 "type": "object",
                 "properties": {
                     "name": {"type": ["null", "string"]},
@@ -171,7 +182,8 @@ def dynamic_schema_loader(mock_retriever, mock_schema_type_identifier):
                 ]
             ),
             {
-                "$schema": "http://json-schema.org/draft-07/schema#",
+                "$schema": "https://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
                 "type": "object",
                 "properties": {
                     "name": {"type": ["null", "string"]},
@@ -191,7 +203,8 @@ def dynamic_schema_loader(mock_retriever, mock_schema_type_identifier):
                 ]
             ),
             {
-                "$schema": "http://json-schema.org/draft-07/schema#",
+                "$schema": "https://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
                 "type": "object",
                 "properties": {
                     "address": {
@@ -204,7 +217,8 @@ def dynamic_schema_loader(mock_retriever, mock_schema_type_identifier):
             # Test case: Empty record set
             iter([]),
             {
-                "$schema": "http://json-schema.org/draft-07/schema#",
+                "$schema": "https://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
                 "type": "object",
                 "properties": {},
             },
@@ -242,7 +256,8 @@ def test_dynamic_schema_loader_invalid_type(dynamic_schema_loader):
 
 def test_dynamic_schema_loader_manifest_flow():
     expected_schema = {
-        "$schema": "http://json-schema.org/draft-07/schema#",
+        "$schema": "https://json-schema.org/draft-07/schema#",
+        "additionalProperties": True,
         "type": "object",
         "properties": {
             "id": {"type": ["null", "integer"]},
@@ -314,7 +329,8 @@ def test_dynamic_schema_loader_with_type_conditions():
     ]["types_mapping"].append({"target_type": "array", "current_type": "formula"})
 
     expected_schema = {
-        "$schema": "http://json-schema.org/draft-07/schema#",
+        "$schema": "https://json-schema.org/draft-07/schema#",
+        "additionalProperties": True,
         "type": "object",
         "properties": {
             "id": {"type": ["null", "integer"]},
@@ -324,6 +340,10 @@ def test_dynamic_schema_loader_with_type_conditions():
             "currency": {"type": ["null", "number"]},
             "salary": {"type": ["null", "number"]},
             "working_days": {"type": ["null", "array"]},
+            "avg_salary": {
+                "type": ["null", "array"],
+                "items": {"type": ["null", "array"], "items": {"type": ["null", "integer"]}},
+            },
         },
     }
     source = ConcurrentDeclarativeSource(
@@ -365,6 +385,12 @@ def test_dynamic_schema_loader_with_type_conditions():
                             {"name": "FirstName", "type": "string"},
                             {"name": "Description", "type": "singleLineText"},
                             {"name": "Salary", "type": "formula", "result": {"type": "number"}},
+                            {
+                                "name": "AvgSalary",
+                                "type": "formula",
+                                "result": {"type": "customInteger"},
+                            },
+                            {"name": "Currency", "type": "formula", "result": {"type": "currency"}},
                             {"name": "Currency", "type": "formula", "result": {"type": "currency"}},
                             {"name": "WorkingDays", "type": "formula"},
                         ]

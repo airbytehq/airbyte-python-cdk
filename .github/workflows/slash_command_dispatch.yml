@@ -12,7 +12,9 @@ jobs:
     steps:
       - name: Slash Command Dispatch
         id: dispatch
-        uses: peter-evans/slash-command-dispatch@v4
+        # TODO: Revert to `peter-evans/slash-command-dispatch@v4` after PR merges:
+        # - https://github.com/peter-evans/slash-command-dispatch/pull/372/files
+        uses: aaronsteers/slash-command-dispatch@aj/fix/add-dispatched-bool-output
         with:
           repository: ${{ github.repository }}
           token: ${{ secrets.GH_PAT_MAINTENANCE_OCTAVIA }}
@@ -36,3 +38,33 @@ jobs:
           comment-id: ${{ github.event.comment.id }}
           body: |
             > Error: ${{ steps.dispatch.outputs.error-message }}
+
+      - name: Generate help text
+        id: help
+        if: >
+          startsWith(github.event.comment.body, '/') &&
+          !steps.dispatch.outputs.dispatched
+        run: |
+          HELP_TEXT="The following slash commands are available:
+
+          - \`/autofix\` - Corrects any linting or formatting issues
+          - \`/test\` - Runs the test suite
+          - \`/poetry-lock\` - Re-locks dependencies and updates the poetry.lock file
+          - \`/help\` - Shows this help message"
+          
+          if [[ "${{ github.event.comment.body }}" == "/help" ]]; then
+            echo "body=$HELP_TEXT" >> $GITHUB_OUTPUT
+          else
+            echo "body=It looks like you are trying to enter a slash command. Either the slash command is unrecognized or you don't have access to call it.
+
+          $HELP_TEXT" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Post help message
+        if: >
+          startsWith(github.event.comment.body, '/') &&
+          !steps.dispatch.outputs.dispatched
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          comment-id: ${{ github.event.comment.id }}
+          body: ${{ steps.help.outputs.body }}

@@ -12,6 +12,17 @@ exclude: |
     ^.*?/__pycache__/.*$|
     ^.*?/\.mypy_cache/.*$|
     ^.*?/\.ruff_cache/.*$
+
+    # Package management
+    ^.*?/poetry\.lock$|
+    ^.*?/package-lock\.json$|
+    ^.*?/pnpm-lock\.yaml$|
+
+    # Build and test artifacts
+    ^.*?/build/.*$|
+    ^.*?/dist/.*$|
+    ^.*?/\.coverage$|
+    ^.*?/coverage\.xml$|
   )
 
 repos:
@@ -24,17 +35,14 @@ repos:
       - id: check-added-large-files
       - id: check-toml
 
-  - repo: https://github.com/pappasam/toml-sort
-    rev: v0.23.1
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.3
     hooks:
-      - id: toml-sort
-        args: [--all, --in-place]
-
-  - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.1.11
-    hooks:
+      # Run the linter with repo-defined settings
       - id: ruff
         args: [--fix]
+
+      # Run the formatter with repo-defined settings
       - id: ruff-format
 
   - repo: https://github.com/pre-commit/mirrors-prettier
@@ -44,3 +52,12 @@ repos:
         types_or: [json, yaml]
         additional_dependencies:
           - prettier@3.0.3
+
+  - repo: local
+    hooks:
+      - id: addlicense
+        name: Add license headers
+        entry: addlicense -c "Airbyte, Inc." -l apache -v -f LICENSE_SHORT
+        language: golang
+        additional_dependencies: [github.com/google/addlicense@v1.1.1]
+        files: \.py$

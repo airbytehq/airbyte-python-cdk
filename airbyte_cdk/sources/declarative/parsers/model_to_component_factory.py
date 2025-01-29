@@ -134,6 +134,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     CheckStream as CheckStreamModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ComplexFieldType as ComplexFieldTypeModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ComponentMappingDefinition as ComponentMappingDefinitionModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -429,6 +432,7 @@ from airbyte_cdk.sources.declarative.retrievers import (
     SimpleRetrieverTestReadDecorator,
 )
 from airbyte_cdk.sources.declarative.schema import (
+    ComplexFieldType,
     DefaultSchemaLoader,
     DynamicSchemaLoader,
     InlineSchemaLoader,
@@ -503,6 +507,7 @@ class ModelToComponentFactory:
         disable_cache: bool = False,
         disable_resumable_full_refresh: bool = False,
         message_repository: Optional[MessageRepository] = None,
+        connector_state_manager: Optional[ConnectorStateManager] = None,
     ):
         self._init_mappings()
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
@@ -514,6 +519,7 @@ class ModelToComponentFactory:
         self._message_repository = message_repository or InMemoryMessageRepository(
             self._evaluate_log_level(emit_connector_builder_messages)
         )
+        self._connector_state_manager = connector_state_manager or ConnectorStateManager()
 
     def _init_mappings(self) -> None:
         self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Mapping[Type[BaseModel], Callable[..., Any]] = {
@@ -572,6 +578,7 @@ class ModelToComponentFactory:
             DynamicSchemaLoaderModel: self.create_dynamic_schema_loader,
             SchemaTypeIdentifierModel: self.create_schema_type_identifier,
             TypesMapModel: self.create_types_map,
+            ComplexFieldTypeModel: self.create_complex_field_type,
             JwtAuthenticatorModel: self.create_jwt_authenticator,
             LegacyToPerPartitionStateMigrationModel: self.create_legacy_to_per_partition_state_migration,
             ListPartitionRouterModel: self.create_list_partition_router,
@@ -922,17 +929,24 @@ class ModelToComponentFactory:
 
     def create_concurrent_cursor_from_datetime_based_cursor(
         self,
-        state_manager: ConnectorStateManager,
         model_type: Type[BaseModel],
         component_definition: ComponentDefinition,
         stream_name: str,
         stream_namespace: Optional[str],
         config: Config,
-        stream_state: MutableMapping[str, Any],
         message_repository: Optional[MessageRepository] = None,
         runtime_lookback_window: Optional[datetime.timedelta] = None,
         **kwargs: Any,
     ) -> ConcurrentCursor:
+        # Per-partition incremental streams can dynamically create child cursors which will pass their current
+        # state via the stream_state keyword argument. Incremental syncs without parent streams use the
+        # incoming state and connector_state_manager that is initialized when the component factory is created
+        stream_state = (
+            self._connector_state_manager.get_stream_state(stream_name, stream_namespace)
+            if "stream_state" not in kwargs
+            else kwargs["stream_state"]
+        )
+
         component_type = component_definition.get("type")
         if component_definition.get("type") != model_type.__name__:
             raise ValueError(
@@ -1126,7 +1140,7 @@ class ModelToComponentFactory:
             stream_namespace=stream_namespace,
             stream_state=stream_state,
             message_repository=message_repository or self._message_repository,
-            connector_state_manager=state_manager,
+            connector_state_manager=self._connector_state_manager,
             connector_state_converter=connector_state_converter,
             cursor_field=cursor_field,
             slice_boundary_fields=slice_boundary_fields,
@@ -1676,6 +1690,22 @@ class ModelToComponentFactory:
                     stream_cursor=cursor_component,
                 )
         elif model.incremental_sync:
+            if model.retriever.type == "AsyncRetriever":
+                if model.incremental_sync.type != "DatetimeBasedCursor":
+                    # We are currently in a transition to the Concurrent CDK and AsyncRetriever can only work with the support or unordered slices (for example, when we trigger reports for January and February, the report in February can be completed first). Once we have support for custom concurrent cursor or have a new implementation available in the CDK, we can enable more cursors here.
+                    raise ValueError(
+                        "AsyncRetriever with cursor other than DatetimeBasedCursor is not supported yet"
+                    )
+                if model.retriever.partition_router:
+                    # Note that this development is also done in parallel to the per partition development which once merged we could support here by calling `create_concurrent_cursor_from_perpartition_cursor`
+                    raise ValueError("Per partition state is not supported yet for AsyncRetriever")
+                return self.create_concurrent_cursor_from_datetime_based_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
+                    model_type=DatetimeBasedCursorModel,
+                    component_definition=model.incremental_sync.__dict__,
+                    stream_name=model.name or "",
+                    stream_namespace=None,
+                    config=config or {},
+                )
             return (
                 self._create_component_from_model(model=model.incremental_sync, config=config)
                 if model.incremental_sync
@@ -1894,10 +1924,26 @@ class ModelToComponentFactory:
     ) -> InlineSchemaLoader:
         return InlineSchemaLoader(schema=model.schema_ or {}, parameters={})
 
-    @staticmethod
-    def create_types_map(model: TypesMapModel, **kwargs: Any) -> TypesMap:
+    def create_complex_field_type(
+        self, model: ComplexFieldTypeModel, config: Config, **kwargs: Any
+    ) -> ComplexFieldType:
+        items = (
+            self._create_component_from_model(model=model.items, config=config)
+            if isinstance(model.items, ComplexFieldTypeModel)
+            else model.items
+        )
+
+        return ComplexFieldType(field_type=model.field_type, items=items)
+
+    def create_types_map(self, model: TypesMapModel, config: Config, **kwargs: Any) -> TypesMap:
+        target_type = (
+            self._create_component_from_model(model=model.target_type, config=config)
+            if isinstance(model.target_type, ComplexFieldTypeModel)
+            else model.target_type
+        )
+
         return TypesMap(
-            target_type=model.target_type,
+            target_type=target_type,
             current_type=model.current_type,
             condition=model.condition if model.condition is not None else "True",
         )
