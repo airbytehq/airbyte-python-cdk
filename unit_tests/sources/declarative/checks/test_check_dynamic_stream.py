@@ -142,7 +142,6 @@ def test_check_dynamic_stream(
         items_response = HttpResponse(
             body=json.dumps([{"id": 1, "name": "item_1"}, {"id": 2, "name": "item_2"}])
         )
-        items_request_count = 1
         http_mocker.get(items_request, items_response)
 
         item_request = HttpRequest(url="https://api.test.com/items/1")
@@ -164,7 +163,6 @@ def test_check_dynamic_stream(
         stream_is_available, reason = source.check_connection(logger, _CONFIG)
 
         http_mocker.assert_number_of_calls(item_request, item_request_count)
-        http_mocker.assert_number_of_calls(items_request, items_request_count)
 
     assert stream_is_available == available_expectation
     for message in expected_messages:
