@@ -196,21 +196,24 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
                         )
                 elif self.sync_acl_permissions:
                     try:
-                        metadata_record = self.stream_reader.get_file_acl_permissions(
+                        permissions_record = self.stream_reader.get_file_acl_permissions(
                             file, logger=self.logger
                         )
+                        permissions_record = self.transform_record(
+                            permissions_record, file, file_datetime_string
+                        )
                         yield stream_data_to_airbyte_message(
-                            self.name, metadata_record, is_file_transfer_message=False
+                            self.name, permissions_record, is_file_transfer_message=False
                         )
                     except Exception as e:
                         self.logger.error(
-                            f"Failed to retrieve metadata for file {file.uri}: {str(e)}"
+                            f"Failed to retrieve permissions for file {file.uri}: {str(e)}"
                         )
                         yield AirbyteMessage(
                             type=MessageType.LOG,
                             log=AirbyteLogMessage(
                                 level=Level.ERROR,
-                                message=f"Error retrieving metadata: stream={self.name} file={file.uri}",
+                                message=f"Error retrieving files permissions: stream={self.name} file={file.uri}",
                                 stack_trace=traceback.format_exc(),
                             ),
                         )
