@@ -396,10 +396,5 @@ class ConcurrentPerPartitionCursor(Cursor):
         cursor = self._cursor_per_partition[partition_key]
         return cursor
 
-    def _extract_cursor_value_from_state(self, state: StreamState) -> Any:
-        return self._connector_state_converter.parse_value(
-            state[self.cursor_field.cursor_field_key]
-        )
-
     def limit_reached(self) -> bool:
         return self._over_limit > self.DEFAULT_MAX_PARTITIONS_NUMBER
