@@ -6,7 +6,7 @@ from typing import Any, Iterable, Mapping, Optional
 
 from typing_extensions import deprecated
 
-from airbyte_cdk.models import FailureType
+from airbyte_cdk.sources.declarative.async_job.job import AsyncJob
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncPartition
 from airbyte_cdk.sources.declarative.extractors.record_selector import RecordSelector
 from airbyte_cdk.sources.declarative.partition_routers.async_job_partition_router import (
@@ -16,7 +16,6 @@ from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
-from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
 @deprecated(
@@ -57,9 +56,9 @@ class AsyncRetriever(Retriever):
 
         return self.state
 
-    def _validate_and_get_stream_slice_partition(
+    def _validate_and_get_stream_slice_jobs(
         self, stream_slice: Optional[StreamSlice] = None
-    ) -> AsyncPartition:
+    ) -> Iterable[AsyncJob]:
         """
         Validates the stream_slice argument and returns the partition from it.
 
@@ -73,12 +72,7 @@ class AsyncRetriever(Retriever):
             AirbyteTracedException: If the stream_slice is not an instance of StreamSlice or if the partition is not present in the stream_slice.
 
         """
-        if not isinstance(stream_slice, StreamSlice) or "partition" not in stream_slice.partition:
-            raise AirbyteTracedException(
-                message="Invalid arguments to AsyncRetriever.read_records: stream_slice is not optional. Please contact Airbyte Support",
-                failure_type=FailureType.system_error,
-            )
-        return stream_slice["partition"]  # type: ignore  # stream_slice["partition"] has been added as an AsyncPartition as part of stream_slices
+        return stream_slice.extra_fields.get("jobs", []) if stream_slice else []
 
     def stream_slices(self) -> Iterable[Optional[StreamSlice]]:
         return self.stream_slicer.stream_slices()
@@ -89,8 +83,8 @@ class AsyncRetriever(Retriever):
         stream_slice: Optional[StreamSlice] = None,
     ) -> Iterable[StreamData]:
         stream_state: StreamState = self._get_stream_state()
-        partition: AsyncPartition = self._validate_and_get_stream_slice_partition(stream_slice)
-        records: Iterable[Mapping[str, Any]] = self.stream_slicer.fetch_records(partition)
+        jobs: Iterable[AsyncJob] = self._validate_and_get_stream_slice_jobs(stream_slice)
+        records: Iterable[Mapping[str, Any]] = self.stream_slicer.fetch_records(jobs)
 
         yield from self.record_selector.filter_and_transform(
             all_data=records,

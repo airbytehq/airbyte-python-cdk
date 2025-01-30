@@ -1210,6 +1210,22 @@ class ModelToComponentFactory:
         )
         cursor_field = CursorField(interpolated_cursor_field.eval(config=config))
 
+        datetime_format = datetime_based_cursor_model.datetime_format
+
+        cursor_granularity = (
+            parse_duration(datetime_based_cursor_model.cursor_granularity)
+            if datetime_based_cursor_model.cursor_granularity
+            else None
+        )
+
+        connector_state_converter: DateTimeStreamStateConverter
+        connector_state_converter = CustomFormatConcurrentStreamStateConverter(
+            datetime_format=datetime_format,
+            input_datetime_formats=datetime_based_cursor_model.cursor_datetime_formats,
+            is_sequential_state=True,  # ConcurrentPerPartitionCursor only works with sequential state
+            cursor_granularity=cursor_granularity,
+        )
+
         # Create the cursor factory
         cursor_factory = ConcurrentCursorFactory(
             partial(
@@ -1233,6 +1249,7 @@ class ModelToComponentFactory:
             stream_state=stream_state,
             message_repository=self._message_repository,  # type: ignore
             connector_state_manager=state_manager,
+            connector_state_converter=connector_state_converter,
             cursor_field=cursor_field,
         )
 
@@ -1639,7 +1656,7 @@ class ModelToComponentFactory:
     ) -> Optional[PartitionRouter]:
         if (
             hasattr(model, "partition_router")
-            and isinstance(model, SimpleRetrieverModel)
+            and isinstance(model, SimpleRetrieverModel | AsyncRetrieverModel)
             and model.partition_router
         ):
             stream_slicer_model = model.partition_router
@@ -1673,6 +1690,31 @@ class ModelToComponentFactory:
         stream_slicer = self._build_stream_slicer_from_partition_router(model.retriever, config)
 
         if model.incremental_sync and stream_slicer:
+            if model.retriever.type == "AsyncRetriever":
+                if model.incremental_sync.type != "DatetimeBasedCursor":
+                    # We are currently in a transition to the Concurrent CDK and AsyncRetriever can only work with the support or unordered slices (for example, when we trigger reports for January and February, the report in February can be completed first). Once we have support for custom concurrent cursor or have a new implementation available in the CDK, we can enable more cursors here.
+                    raise ValueError(
+                        "AsyncRetriever with cursor other than DatetimeBasedCursor is not supported yet"
+                    )
+                if stream_slicer:
+                    return self.create_concurrent_cursor_from_perpartition_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
+                        state_manager=self._connector_state_manager,
+                        model_type=DatetimeBasedCursorModel,
+                        component_definition=model.incremental_sync.__dict__,
+                        stream_name=model.name or "",
+                        stream_namespace=None,
+                        config=config or {},
+                        stream_state={},
+                        partition_router=stream_slicer,
+                    )
+                return self.create_concurrent_cursor_from_datetime_based_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
+                    model_type=DatetimeBasedCursorModel,
+                    component_definition=model.incremental_sync.__dict__,
+                    stream_name=model.name or "",
+                    stream_namespace=None,
+                    config=config or {},
+                )
+
             incremental_sync_model = model.incremental_sync
             if (
                 hasattr(incremental_sync_model, "global_substream_cursor")
