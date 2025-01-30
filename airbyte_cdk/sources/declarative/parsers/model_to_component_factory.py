@@ -1672,7 +1672,7 @@ class ModelToComponentFactory:
                         "AsyncRetriever with cursor other than DatetimeBasedCursor is not supported yet"
                     )
                 if stream_slicer:
-                    return self.create_concurrent_cursor_from_perpartition_cursor(
+                    return self.create_concurrent_cursor_from_perpartition_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
                         state_manager=self._connector_state_manager,
                         model_type=DatetimeBasedCursorModel,
                         component_definition=model.incremental_sync.__dict__,
