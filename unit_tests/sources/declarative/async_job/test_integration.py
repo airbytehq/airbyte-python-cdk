@@ -37,7 +37,7 @@ _NO_LIMIT = 10000
 
 
 class MockAsyncJobPartitionRouter(AsyncJobPartitionRouter):
-    def fetch_records(self, job: AsyncJob) -> Iterable[Mapping[str, Any]]:
+    def fetch_records(self, async_jobs: Iterable[AsyncJob]) -> Iterable[Mapping[str, Any]]:
         yield from [{"record_field": 10}]
 
 

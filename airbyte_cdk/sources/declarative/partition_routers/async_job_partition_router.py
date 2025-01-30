@@ -47,7 +47,7 @@ class AsyncJobPartitionRouter(StreamSlicer):
                 extra_fields={"jobs": list(completed_partition.jobs)},
             )
 
-    def fetch_records(self, async_job_list: Iterable[AsyncJob]) -> Iterable[Mapping[str, Any]]:
+    def fetch_records(self, async_jobs: Iterable[AsyncJob]) -> Iterable[Mapping[str, Any]]:
         """
         This method of fetching records extends beyond what a PartitionRouter/StreamSlicer should
         be responsible for. However, this was added in because the JobOrchestrator is required to
@@ -62,4 +62,4 @@ class AsyncJobPartitionRouter(StreamSlicer):
                 failure_type=FailureType.system_error,
             )
 
-        return self._job_orchestrator.fetch_records(async_job_list=async_job_list)
+        return self._job_orchestrator.fetch_records(async_jobs=async_jobs)
