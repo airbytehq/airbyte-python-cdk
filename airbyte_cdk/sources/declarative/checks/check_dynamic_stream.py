@@ -20,6 +20,8 @@ class CheckDynamicStream(ConnectionChecker):
     Attributes:
         stream_count (int): numbers of streams to check
     """
+    # TODO: Add field stream_names to check_connection for static streams
+    #  https://github.com/airbytehq/airbyte-python-cdk/pull/293#discussion_r1934933483
 
     stream_count: int
     parameters: InitVar[Mapping[str, Any]]
