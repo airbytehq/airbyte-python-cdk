@@ -248,8 +248,6 @@ class ManifestDeclarativeSource(DeclarativeSource):
             )
 
         try:
-            self.logger.info("Validating manifest against declarative_component_schema.yaml schema")
-            self.logger.info(f"Manifest: ", self._source_config)
             validate(self._source_config, declarative_component_schema)
         except ValidationError as e:
             raise ValidationError(
