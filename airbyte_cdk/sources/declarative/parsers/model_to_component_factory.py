@@ -740,7 +740,7 @@ class ModelToComponentFactory:
                 parameters=model.parameters or {},
             )
         )
-        
+
         return ApiKeyAuthenticator(
             token_provider=(
                 token_provider
@@ -1272,7 +1272,6 @@ class ModelToComponentFactory:
             self._create_component_from_model(model.end_time_option, config)
             if model.end_time_option
             else None
-            
         )
         start_time_option = (
             self._create_component_from_model(model.start_time_option, config)
@@ -1348,20 +1347,12 @@ class ModelToComponentFactory:
             cursor_model = model.incremental_sync
 
             end_time_option = (
-                RequestOption(
-                    inject_into=RequestOptionType(cursor_model.end_time_option.inject_into.value),
-                    field_name=cursor_model.end_time_option.field_name,
-                    parameters=cursor_model.parameters or {},
-                )
+                self._create_component_from_model(cursor_model.end_time_option, config)
                 if cursor_model.end_time_option
                 else None
             )
             start_time_option = (
-                RequestOption(
-                    inject_into=RequestOptionType(cursor_model.start_time_option.inject_into.value),
-                    field_name=cursor_model.start_time_option.field_name,
-                    parameters=cursor_model.parameters or {},
-                )
+                self._create_component_from_model(cursor_model.start_time_option, config)
                 if cursor_model.start_time_option
                 else None
             )
@@ -1870,8 +1861,7 @@ class ModelToComponentFactory:
         )
 
     def create_list_partition_router(
-        self,
-        model: ListPartitionRouterModel, config: Config, **kwargs: Any
+        self, model: ListPartitionRouterModel, config: Config, **kwargs: Any
     ) -> ListPartitionRouter:
         request_option = (
             self._create_component_from_model(model.request_option, config)

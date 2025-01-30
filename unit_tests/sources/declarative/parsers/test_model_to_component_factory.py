@@ -6,11 +6,6 @@
 import datetime
 from typing import Any, Iterable, Mapping
 
-import logging
-
-logging.basicConfig(level=logging.DEBUG)
-logger = logging.getLogger(__name__)
-
 import freezegun
 import pendulum
 import pytest
@@ -612,11 +607,6 @@ def test_list_based_stream_slicer_with_values_defined_in_config():
         component_definition=partition_router_manifest,
         config=input_config,
     )
-    
-    logger.info(f"Raw manifest: {content}")
-    logger.info(f"Parsed manifest: {parsed_manifest}")
-    logger.info(f"Resolved manifest: {resolved_manifest}")
-    logger.info(f"Transformed manifest: {partition_router_manifest}")
 
     assert isinstance(partition_router, ListPartitionRouter)
     assert partition_router.values == ["airbyte", "airbyte-cloud"]
@@ -624,7 +614,6 @@ def test_list_based_stream_slicer_with_values_defined_in_config():
     for field in partition_router.request_option.field_path:
         assert isinstance(field, InterpolatedString)
     assert len(partition_router.request_option.field_path) == 2
-
 
 
 def test_create_substream_partition_router():
