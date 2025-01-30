@@ -903,7 +903,15 @@ class ModelToComponentFactory:
     def create_check_dynamic_stream(
         model: CheckDynamicStreamModel, config: Config, **kwargs: Any
     ) -> CheckDynamicStream:
-        return CheckDynamicStream(stream_count=model.stream_count, parameters={})
+        assert model.use_check_availability is not None  # for mypy
+
+        use_check_availability = model.use_check_availability
+
+        return CheckDynamicStream(
+            stream_count=model.stream_count,
+            use_check_availability=use_check_availability,
+            parameters={},
+        )
 
     def create_composite_error_handler(
         self, model: CompositeErrorHandlerModel, config: Config, **kwargs: Any
@@ -1202,6 +1210,22 @@ class ModelToComponentFactory:
         )
         cursor_field = CursorField(interpolated_cursor_field.eval(config=config))
 
+        datetime_format = datetime_based_cursor_model.datetime_format
+
+        cursor_granularity = (
+            parse_duration(datetime_based_cursor_model.cursor_granularity)
+            if datetime_based_cursor_model.cursor_granularity
+            else None
+        )
+
+        connector_state_converter: DateTimeStreamStateConverter
+        connector_state_converter = CustomFormatConcurrentStreamStateConverter(
+            datetime_format=datetime_format,
+            input_datetime_formats=datetime_based_cursor_model.cursor_datetime_formats,
+            is_sequential_state=True,  # ConcurrentPerPartitionCursor only works with sequential state
+            cursor_granularity=cursor_granularity,
+        )
+
         # Create the cursor factory
         cursor_factory = ConcurrentCursorFactory(
             partial(
@@ -1225,6 +1249,7 @@ class ModelToComponentFactory:
             stream_state=stream_state,
             message_repository=self._message_repository,  # type: ignore
             connector_state_manager=state_manager,
+            connector_state_converter=connector_state_converter,
             cursor_field=cursor_field,
         )
 

@@ -59,6 +59,11 @@ class CheckDynamicStream(BaseModel):
         description="Numbers of the streams to try reading from when running a check operation.",
         title="Stream Count",
     )
+    use_check_availability: Optional[bool] = Field(
+        True,
+        description="Enables stream check availability. This field is automatically set by the CDK.",
+        title="Use Check Availability",
+    )
 
 
 class ConcurrencyLevel(BaseModel):

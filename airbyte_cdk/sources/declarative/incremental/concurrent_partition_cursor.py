@@ -22,6 +22,9 @@ from airbyte_cdk.sources.streams.checkpoint.per_partition_key_serializer import 
 )
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, Cursor, CursorField
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
+from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
+    AbstractStreamStateConverter,
+)
 from airbyte_cdk.sources.types import Record, StreamSlice, StreamState
 
 logger = logging.getLogger("airbyte")
@@ -72,6 +75,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         stream_state: Any,
         message_repository: MessageRepository,
         connector_state_manager: ConnectorStateManager,
+        connector_state_converter: AbstractStreamStateConverter,
         cursor_field: CursorField,
     ) -> None:
         self._global_cursor: Optional[StreamState] = {}
@@ -79,6 +83,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         self._stream_namespace = stream_namespace
         self._message_repository = message_repository
         self._connector_state_manager = connector_state_manager
+        self._connector_state_converter = connector_state_converter
         self._cursor_field = cursor_field
 
         self._cursor_factory = cursor_factory
@@ -301,8 +306,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         ):
             # We assume that `stream_state` is in a global format that can be applied to all partitions.
             # Example: {"global_state_format_key": "global_state_format_value"}
-            self._global_cursor = deepcopy(stream_state)
-            self._new_global_cursor = deepcopy(stream_state)
+            self._set_global_state(stream_state)
 
         else:
             self._use_global_cursor = stream_state.get("use_global_cursor", False)
@@ -319,8 +323,7 @@ class ConcurrentPerPartitionCursor(Cursor):
 
             # set default state for missing partitions if it is per partition with fallback to global
             if self._GLOBAL_STATE_KEY in stream_state:
-                self._global_cursor = deepcopy(stream_state[self._GLOBAL_STATE_KEY])
-                self._new_global_cursor = deepcopy(stream_state[self._GLOBAL_STATE_KEY])
+                self._set_global_state(stream_state[self._GLOBAL_STATE_KEY])
 
         # Set initial parent state
         if stream_state.get("parent_state"):
@@ -328,6 +331,27 @@ class ConcurrentPerPartitionCursor(Cursor):
 
         # Set parent state for partition routers based on parent streams
         self._partition_router.set_initial_state(stream_state)
+
+    def _set_global_state(self, stream_state: Mapping[str, Any]) -> None:
+        """
+        Initializes the global cursor state from the provided stream state.
+
+        If the cursor field key is present in the stream state, its value is parsed,
+        formatted, and stored as the global cursor. This ensures consistency in state
+        representation across partitions.
+        """
+        if self.cursor_field.cursor_field_key in stream_state:
+            global_state_value = stream_state[self.cursor_field.cursor_field_key]
+            final_format_global_state_value = self._connector_state_converter.output_format(
+                self._connector_state_converter.parse_value(global_state_value)
+            )
+
+            fixed_global_state = {
+                self.cursor_field.cursor_field_key: final_format_global_state_value
+            }
+
+            self._global_cursor = deepcopy(fixed_global_state)
+            self._new_global_cursor = deepcopy(fixed_global_state)
 
     def observe(self, record: Record) -> None:
         if not self._use_global_cursor and self.limit_reached():

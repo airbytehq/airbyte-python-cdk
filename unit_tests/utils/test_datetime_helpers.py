@@ -51,6 +51,63 @@ def test_now():
 @pytest.mark.parametrize(
     "input_value,expected_output,error_type,error_match",
     [
+        # Valid formats - must have T delimiter and timezone
+        ("2023-03-14T15:09:26+00:00", "2023-03-14T15:09:26+00:00", None, None),  # Basic UTC format
+        (
+            "2023-03-14T15:09:26.123+00:00",
+            "2023-03-14T15:09:26.123000+00:00",
+            None,
+            None,
+        ),  # With milliseconds
+        (
+            "2023-03-14T15:09:26.123456+00:00",
+            "2023-03-14T15:09:26.123456+00:00",
+            None,
+            None,
+        ),  # With microseconds
+        (
+            "2023-03-14T15:09:26-04:00",
+            "2023-03-14T15:09:26-04:00",
+            None,
+            None,
+        ),  # With timezone offset
+        ("2023-03-14T15:09:26Z", "2023-03-14T15:09:26+00:00", None, None),  # With Z timezone
+        (
+            "2023-03-14T00:00:00+00:00",
+            "2023-03-14T00:00:00+00:00",
+            None,
+            None,
+        ),  # Full datetime with zero time
+        (
+            "2023-03-14T15:09:26GMT",
+            "2023-03-14T15:09:26+00:00",
+            None,
+            None,
+        ),  # Non-standard timezone name ok
+        (
+            "2023-03-14T15:09:26",
+            "2023-03-14T15:09:26+00:00",
+            None,
+            None,
+        ),  # Missing timezone, assume UTC
+        (
+            "2023-03-14 15:09:26",
+            "2023-03-14T15:09:26+00:00",
+            None,
+            None,
+        ),  # Missing T delimiter ok, assume UTC
+        (
+            "2023-03-14",
+            "2023-03-14T00:00:00+00:00",
+            None,
+            None,
+        ),  # Date only, missing time and timezone
+        (
+            "2023/03/14T15:09:26Z",
+            "2023-03-14T15:09:26+00:00",
+            None,
+            None,
+        ),  # Wrong date separator, ok
         # Valid formats
         ("2023-03-14T15:09:26Z", "2023-03-14T15:09:26+00:00", None, None),
         ("2023-03-14T15:09:26-04:00", "2023-03-14T15:09:26-04:00", None, None),
@@ -71,20 +128,10 @@ def test_now():
         ("2023-12-32", None, ValueError, "Invalid date format: 2023-12-32"),
         ("2023-00-14", None, ValueError, "Invalid date format: 2023-00-14"),
         ("2023-12-00", None, ValueError, "Invalid date format: 2023-12-00"),
-        # Invalid separators and formats
-        ("2023/12/14", None, ValueError, "Could not parse datetime string: 2023/12/14"),
-        (
-            "2023-03-14 15:09:26Z",
-            None,
-            ValueError,
-            "Could not parse datetime string: 2023-03-14 15:09:26Z",
-        ),
-        (
-            "2023-03-14T15:09:26GMT",
-            None,
-            ValueError,
-            "Could not parse datetime string: 2023-03-14T15:09:26GMT",
-        ),
+        # Non-standard separators and formats, ok
+        ("2023/12/14", "2023-12-14T00:00:00+00:00", None, None),
+        ("2023-03-14 15:09:26Z", "2023-03-14T15:09:26+00:00", None, None),
+        ("2023-03-14T15:09:26GMT", "2023-03-14T15:09:26+00:00", None, None),
         # Invalid time components
         (
             "2023-03-14T25:09:26Z",
@@ -105,16 +152,24 @@ def test_now():
             "Could not parse datetime string: 2023-03-14T15:09:99Z",
         ),
     ],
+    # ("invalid datetime", None),  # Completely invalid
+    # ("15:09:26Z", None),  # Missing date component
+    # ("2023-03-14T25:09:26Z", None),  # Invalid hour
+    # ("2023-03-14T15:99:26Z", None),  # Invalid minute
+    # ("2023-03-14T15:09:99Z", None),  # Invalid second
+    # ("2023-02-30T00:00:00Z", None),  # Impossible date
 )
 def test_parse(input_value, expected_output, error_type, error_match):
     """Test parsing various datetime string formats."""
     if error_type:
         with pytest.raises(error_type, match=error_match):
             ab_datetime_parse(input_value)
+        assert not ab_datetime_try_parse(input_value)
     else:
         dt = ab_datetime_parse(input_value)
         assert isinstance(dt, AirbyteDateTime)
         assert str(dt) == expected_output
+        assert ab_datetime_try_parse(input_value) and ab_datetime_try_parse(input_value) == dt
 
 
 @pytest.mark.parametrize(
@@ -192,42 +247,6 @@ def test_operator_overloading():
         _ = dt - "invalid"
     with pytest.raises(TypeError):
         _ = "invalid" - dt
-
-
-@pytest.mark.parametrize(
-    "input_value,expected_output",
-    [
-        # Valid formats - must have T delimiter and timezone
-        ("2023-03-14T15:09:26+00:00", "2023-03-14T15:09:26+00:00"),  # Basic UTC format
-        ("2023-03-14T15:09:26.123+00:00", "2023-03-14T15:09:26.123000+00:00"),  # With milliseconds
-        (
-            "2023-03-14T15:09:26.123456+00:00",
-            "2023-03-14T15:09:26.123456+00:00",
-        ),  # With microseconds
-        ("2023-03-14T15:09:26-04:00", "2023-03-14T15:09:26-04:00"),  # With timezone offset
-        ("2023-03-14T15:09:26Z", "2023-03-14T15:09:26+00:00"),  # With Z timezone
-        ("2023-03-14T00:00:00+00:00", "2023-03-14T00:00:00+00:00"),  # Full datetime with zero time
-        # Invalid formats - reject anything without proper ISO8601/RFC3339 format
-        ("invalid datetime", None),  # Completely invalid
-        ("2023-03-14 15:09:26", None),  # Missing T delimiter
-        ("2023-03-14", None),  # Date only, missing time and timezone
-        ("15:09:26Z", None),  # Missing date component
-        ("2023-03-14T15:09:26", None),  # Missing timezone
-        ("2023-03-14T15:09:26GMT", None),  # Invalid timezone format
-        ("2023/03/14T15:09:26Z", None),  # Wrong date separator
-        ("2023-03-14T25:09:26Z", None),  # Invalid hour
-        ("2023-03-14T15:99:26Z", None),  # Invalid minute
-        ("2023-03-14T15:09:99Z", None),  # Invalid second
-    ],
-)
-def test_ab_datetime_try_parse(input_value, expected_output):
-    """Test datetime string format validation."""
-    result = ab_datetime_try_parse(input_value)
-    if expected_output is None:
-        assert result is None
-    else:
-        assert isinstance(result, AirbyteDateTime)
-        assert str(result) == expected_output
 
 
 def test_epoch_millis():
