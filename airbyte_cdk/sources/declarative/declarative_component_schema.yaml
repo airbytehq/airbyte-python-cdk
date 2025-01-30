@@ -320,6 +320,11 @@ definitions:
         title: Stream Count
         description: Numbers of the streams to try reading from when running a check operation.
         type: integer
+      use_check_availability:
+        title: Use Check Availability
+        description: Enables stream check availability. This field is automatically set by the CDK.
+        type: boolean
+        default: true
   CompositeErrorHandler:
     title: Composite Error Handler
     description: Error handler that sequentially iterates over a list of error handlers.

@@ -903,7 +903,15 @@ class ModelToComponentFactory:
     def create_check_dynamic_stream(
         model: CheckDynamicStreamModel, config: Config, **kwargs: Any
     ) -> CheckDynamicStream:
-        return CheckDynamicStream(stream_count=model.stream_count, parameters={})
+        assert model.use_check_availability is not None  # for mypy
+
+        use_check_availability = model.use_check_availability
+
+        return CheckDynamicStream(
+            stream_count=model.stream_count,
+            use_check_availability=use_check_availability,
+            parameters={},
+        )
 
     def create_composite_error_handler(
         self, model: CompositeErrorHandlerModel, config: Config, **kwargs: Any
