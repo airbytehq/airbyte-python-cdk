@@ -688,7 +688,7 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
             client_secret=connector_config["credentials"]["client_secret"],
         )
 
-        authenticator._get_refresh_access_token_response = mocker.Mock(
+        authenticator._make_handled_request = mocker.Mock(
             return_value={
                 authenticator.get_access_token_name(): "new_access_token",
                 authenticator.get_expires_in_name(): "42",
