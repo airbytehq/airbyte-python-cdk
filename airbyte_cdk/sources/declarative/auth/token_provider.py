@@ -9,9 +9,7 @@ from dataclasses import InitVar, dataclass, field
 from typing import Any, List, Mapping, Optional, Union
 
 import dpath
-import pendulum
 from isodate import Duration
-from pendulum import DateTime
 
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder
@@ -21,6 +19,7 @@ from airbyte_cdk.sources.declarative.requesters.requester import Requester
 from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.sources.types import Config
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now
 
 
 class TokenProvider:
@@ -38,7 +37,7 @@ class SessionTokenProvider(TokenProvider):
     message_repository: MessageRepository = NoopMessageRepository()
     decoder: Decoder = field(default_factory=lambda: JsonDecoder(parameters={}))
 
-    _next_expiration_time: Optional[DateTime] = None
+    _next_expiration_time: Optional[AirbyteDateTime] = None
     _token: Optional[str] = None
 
     def get_token(self) -> str:
@@ -48,7 +47,7 @@ class SessionTokenProvider(TokenProvider):
         return self._token
 
     def _refresh_if_necessary(self) -> None:
-        if self._next_expiration_time is None or self._next_expiration_time < pendulum.now():
+        if self._next_expiration_time is None or self._next_expiration_time < ab_datetime_now():
             self._refresh()
 
     def _refresh(self) -> None:
@@ -65,7 +64,7 @@ class SessionTokenProvider(TokenProvider):
             raise ReadException("Failed to get session token, response got ignored by requester")
         session_token = dpath.get(next(self.decoder.decode(response)), self.session_token_path)
         if self.expiration_duration is not None:
-            self._next_expiration_time = pendulum.now() + self.expiration_duration
+            self._next_expiration_time = ab_datetime_now() + self.expiration_duration
         self._token = session_token  # type: ignore # Returned decoded response will be Mapping and therefore session_token will be str or None
 
 

@@ -4,7 +4,7 @@
 
 from unittest.mock import MagicMock
 
-import pendulum
+import freezegun
 import pytest
 from isodate import parse_duration
 
@@ -13,6 +13,7 @@ from airbyte_cdk.sources.declarative.auth.token_provider import (
     SessionTokenProvider,
 )
 from airbyte_cdk.sources.declarative.exceptions import ReadException
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 
 
 def create_session_token_provider():
@@ -51,7 +52,7 @@ def test_session_token_provider_cache():
 
 
 def test_session_token_provider_cache_expiration():
-    with pendulum.test(pendulum.datetime(2001, 5, 21, 12)):
+    with freezegun.freeze_time("2001-05-21T12:00:00Z"):
         provider = create_session_token_provider()
         provider.get_token()
 
@@ -59,7 +60,7 @@ def test_session_token_provider_cache_expiration():
         "nested": {"token": "updated_token"}
     }
 
-    with pendulum.test(pendulum.datetime(2001, 5, 21, 14)):
+    with freezegun.freeze_time("2001-05-21T14:00:00Z"):
         assert provider.get_token() == "updated_token"
 
     assert provider.login_requester.send_request.call_count == 2

@@ -95,6 +95,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         self._lookback_window: int = 0
         self._parent_state: Optional[StreamState] = None
         self._over_limit: int = 0
+        self._use_global_cursor: bool = False
         self._partition_serializer = PerPartitionKeySerializer()
 
         self._set_initial_state(stream_state)
@@ -105,16 +106,18 @@ class ConcurrentPerPartitionCursor(Cursor):
 
     @property
     def state(self) -> MutableMapping[str, Any]:
-        states = []
-        for partition_tuple, cursor in self._cursor_per_partition.items():
-            if cursor.state:
-                states.append(
-                    {
-                        "partition": self._to_dict(partition_tuple),
-                        "cursor": copy.deepcopy(cursor.state),
-                    }
-                )
-        state: dict[str, Any] = {self._PERPARTITION_STATE_KEY: states}
+        state: dict[str, Any] = {"use_global_cursor": self._use_global_cursor}
+        if not self._use_global_cursor:
+            states = []
+            for partition_tuple, cursor in self._cursor_per_partition.items():
+                if cursor.state:
+                    states.append(
+                        {
+                            "partition": self._to_dict(partition_tuple),
+                            "cursor": copy.deepcopy(cursor.state),
+                        }
+                    )
+            state[self._PERPARTITION_STATE_KEY] = states
 
         if self._global_cursor:
             state[self._GLOBAL_STATE_KEY] = self._global_cursor
@@ -147,7 +150,8 @@ class ConcurrentPerPartitionCursor(Cursor):
                     < cursor.state[self.cursor_field.cursor_field_key]
                 ):
                     self._new_global_cursor = copy.deepcopy(cursor.state)
-            self._emit_state_message()
+            if not self._use_global_cursor:
+                self._emit_state_message()
 
     def ensure_at_least_one_state_emitted(self) -> None:
         """
@@ -225,14 +229,18 @@ class ConcurrentPerPartitionCursor(Cursor):
         """
         with self._lock:
             while len(self._cursor_per_partition) > self.DEFAULT_MAX_PARTITIONS_NUMBER - 1:
+                self._over_limit += 1
                 # Try removing finished partitions first
                 for partition_key in list(self._cursor_per_partition.keys()):
-                    if partition_key in self._finished_partitions:
+                    if (
+                        partition_key in self._finished_partitions
+                        and self._semaphore_per_partition[partition_key]._value == 0
+                    ):
                         oldest_partition = self._cursor_per_partition.pop(
                             partition_key
                         )  # Remove the oldest partition
                         logger.warning(
-                            f"The maximum number of partitions has been reached. Dropping the oldest partition: {oldest_partition}. Over limit: {self._over_limit}."
+                            f"The maximum number of partitions has been reached. Dropping the oldest finished partition: {oldest_partition}. Over limit: {self._over_limit}."
                         )
                         break
                 else:
@@ -297,6 +305,8 @@ class ConcurrentPerPartitionCursor(Cursor):
             self._new_global_cursor = deepcopy(stream_state)
 
         else:
+            self._use_global_cursor = stream_state.get("use_global_cursor", False)
+
             self._lookback_window = int(stream_state.get("lookback_window", 0))
 
             for state in stream_state.get(self._PERPARTITION_STATE_KEY, []):
@@ -320,6 +330,9 @@ class ConcurrentPerPartitionCursor(Cursor):
         self._partition_router.set_initial_state(stream_state)
 
     def observe(self, record: Record) -> None:
+        if not self._use_global_cursor and self.limit_reached():
+            self._use_global_cursor = True
+
         if not record.associated_slice:
             raise ValueError(
                 "Invalid state as stream slices that are emitted should refer to an existing cursor"
@@ -358,3 +371,6 @@ class ConcurrentPerPartitionCursor(Cursor):
             )
         cursor = self._cursor_per_partition[partition_key]
         return cursor
+
+    def limit_reached(self) -> bool:
+        return self._over_limit > self.DEFAULT_MAX_PARTITIONS_NUMBER

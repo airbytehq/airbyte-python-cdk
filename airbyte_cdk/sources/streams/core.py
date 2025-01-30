@@ -223,17 +223,17 @@ class Stream(ABC):
                     record_counter += 1
 
                     checkpoint_interval = self.state_checkpoint_interval
-                    checkpoint = checkpoint_reader.get_checkpoint()
                     if (
                         should_checkpoint
                         and checkpoint_interval
                         and record_counter % checkpoint_interval == 0
-                        and checkpoint is not None
                     ):
-                        airbyte_state_message = self._checkpoint_state(
-                            checkpoint, state_manager=state_manager
-                        )
-                        yield airbyte_state_message
+                        checkpoint = checkpoint_reader.get_checkpoint()
+                        if checkpoint:
+                            airbyte_state_message = self._checkpoint_state(
+                                checkpoint, state_manager=state_manager
+                            )
+                            yield airbyte_state_message
 
                     if internal_config.is_limit_reached(record_counter):
                         break
