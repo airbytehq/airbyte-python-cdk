@@ -482,16 +482,16 @@ class AsyncJobOrchestrator:
             and exception.failure_type == FailureType.config_error
         )
 
-    def fetch_records(self, partition: Iterable[AsyncJob]) -> Iterable[Mapping[str, Any]]:
+    def fetch_records(self, async_job_list: Iterable[AsyncJob]) -> Iterable[Mapping[str, Any]]:
         """
-        Fetches records from the given partition's jobs.
+        Fetches records from the given jobs.
 
         Args:
-            partition (AsyncPartition): The partition containing the jobs.
+            async_job_list Iterable[AsyncJob]: The list of AsyncJobs.
 
         Yields:
             Iterable[Mapping[str, Any]]: The fetched records from the jobs.
         """
-        for job in partition:
+        for job in async_job_list:
             yield from self._job_repository.fetch_records(job)
             self._job_repository.delete(job)
