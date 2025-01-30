@@ -37,7 +37,7 @@ class RequestOption:
     parameters: InitVar[Mapping[str, Any]]
     field_name: Optional[Union[InterpolatedString, str]] = None
     field_path: Optional[List[Union[InterpolatedString, str]]] = None
-
+        
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         # Validate inputs. We should expect either field_name or field_path, but not both
         if self.field_name is None and self.field_path is None:

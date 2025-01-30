@@ -709,8 +709,8 @@ class ModelToComponentFactory:
         }
         return names_to_types[value_type]
 
-    @staticmethod
     def create_api_key_authenticator(
+        self,
         model: ApiKeyAuthenticatorModel,
         config: Config,
         token_provider: Optional[TokenProvider] = None,
@@ -732,11 +732,7 @@ class ModelToComponentFactory:
             )
 
         request_option = (
-            RequestOption(
-                inject_into=RequestOptionType(model.inject_into.inject_into.value),
-                field_name=model.inject_into.field_name,
-                parameters=model.parameters or {},
-            )
+            self._create_component_from_model(model.inject_into, config=config)
             if model.inject_into
             else RequestOption(
                 inject_into=RequestOptionType.header,
@@ -744,6 +740,7 @@ class ModelToComponentFactory:
                 parameters=model.parameters or {},
             )
         )
+        
         return ApiKeyAuthenticator(
             token_provider=(
                 token_provider
@@ -1272,20 +1269,13 @@ class ModelToComponentFactory:
             )
 
         end_time_option = (
-            RequestOption(
-                inject_into=RequestOptionType(model.end_time_option.inject_into.value),
-                field_name=model.end_time_option.field_name,
-                parameters=model.parameters or {},
-            )
+            self._create_component_from_model(model.end_time_option, config)
             if model.end_time_option
             else None
+            
         )
         start_time_option = (
-            RequestOption(
-                inject_into=RequestOptionType(model.start_time_option.inject_into.value),
-                field_name=model.start_time_option.field_name,
-                parameters=model.parameters or {},
-            )
+            self._create_component_from_model(model.start_time_option, config)
             if model.start_time_option
             else None
         )
@@ -1879,16 +1869,12 @@ class ModelToComponentFactory:
             additional_jwt_payload=model.additional_jwt_payload,
         )
 
-    @staticmethod
     def create_list_partition_router(
+        self,
         model: ListPartitionRouterModel, config: Config, **kwargs: Any
     ) -> ListPartitionRouter:
         request_option = (
-            RequestOption(
-                inject_into=RequestOptionType(model.request_option.inject_into.value),
-                field_name=model.request_option.field_name,
-                parameters=model.parameters or {},
-            )
+            self._create_component_from_model(model.request_option, config)
             if model.request_option
             else None
         )

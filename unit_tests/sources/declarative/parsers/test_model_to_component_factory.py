@@ -6,6 +6,11 @@
 import datetime
 from typing import Any, Iterable, Mapping
 
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 import freezegun
 import pendulum
 import pytest
@@ -593,8 +598,8 @@ def test_list_based_stream_slicer_with_values_defined_in_config():
       cursor_field: repository
       request_option:
         type: RequestOption
-        inject_into: header
-        field_name: repository
+        inject_into: body_json
+        field_path: ["repository", "id"]
     """
     parsed_manifest = YamlDeclarativeSource._parse(content)
     resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
@@ -607,11 +612,19 @@ def test_list_based_stream_slicer_with_values_defined_in_config():
         component_definition=partition_router_manifest,
         config=input_config,
     )
+    
+    logger.info(f"Raw manifest: {content}")
+    logger.info(f"Parsed manifest: {parsed_manifest}")
+    logger.info(f"Resolved manifest: {resolved_manifest}")
+    logger.info(f"Transformed manifest: {partition_router_manifest}")
 
     assert isinstance(partition_router, ListPartitionRouter)
     assert partition_router.values == ["airbyte", "airbyte-cloud"]
-    assert partition_router.request_option.inject_into == RequestOptionType.header
-    assert partition_router.request_option.field_name.eval(config=input_config) == "repository"
+    assert partition_router.request_option.inject_into == RequestOptionType.body_json
+    for field in partition_router.request_option.field_path:
+        assert isinstance(field, InterpolatedString)
+    assert len(partition_router.request_option.field_path) == 2
+
 
 
 def test_create_substream_partition_router():
