@@ -4,10 +4,9 @@
 
 import logging
 from abc import ABC
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Tuple
 
-import pendulum
 import requests
 from requests import HTTPError
 
@@ -17,6 +16,7 @@ from airbyte_cdk.sources.streams import CheckpointMixin, IncrementalMixin, Strea
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.streams.http import HttpStream
 from airbyte_cdk.sources.streams.http.availability_strategy import HttpAvailabilityStrategy
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_parse
 
 
 class FixtureAvailabilityStrategy(HttpAvailabilityStrategy):
@@ -144,16 +144,16 @@ class Planets(IncrementalIntegrationStream):
         cursor_field: Optional[List[str]] = None,
         stream_state: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[Optional[Mapping[str, Any]]]:
-        start_date = pendulum.parse(self.start_date)
+        start_date = ab_datetime_parse(self.start_date)
 
         if stream_state:
-            start_date = pendulum.parse(stream_state.get(self.cursor_field))
+            start_date = ab_datetime_parse(stream_state.get(self.cursor_field))
 
         date_slices = []
 
         end_date = datetime.now(timezone.utc).replace(microsecond=0)
         while start_date < end_date:
-            end_date_slice = min(start_date.add(days=7), end_date)
+            end_date_slice = min(start_date + timedelta(days=7), end_date)
 
             date_slice = {
                 "start_date": start_date.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -226,16 +226,16 @@ class Legacies(IntegrationStream):
         cursor_field: Optional[List[str]] = None,
         stream_state: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[Optional[Mapping[str, Any]]]:
-        start_date = pendulum.parse(self.start_date)
+        start_date = ab_datetime_parse(self.start_date)
 
         if stream_state:
-            start_date = pendulum.parse(stream_state.get(self.cursor_field))
+            start_date = ab_datetime_parse(stream_state.get(self.cursor_field))
 
         date_slices = []
 
         end_date = datetime.now(timezone.utc).replace(microsecond=0)
         while start_date < end_date:
-            end_date_slice = min(start_date.add(days=7), end_date)
+            end_date_slice = min(start_date + timedelta(days=7), end_date)
 
             date_slice = {
                 "start_date": start_date.strftime("%Y-%m-%dT%H:%M:%SZ"),

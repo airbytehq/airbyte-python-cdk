@@ -6,9 +6,6 @@ from abc import abstractmethod
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, List, MutableMapping, Optional, Tuple
 
-import pendulum
-from pendulum.datetime import DateTime
-
 # FIXME We would eventually like the Concurrent package do be agnostic of the declarative package. However, this is a breaking change and
 #  the goal in the short term is only to fix the issue we are seeing for source-declarative-manifest.
 from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser
@@ -17,6 +14,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_sta
     AbstractStreamStateConverter,
     ConcurrencyCompatibleStateType,
 )
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 
 
 class DateTimeStreamStateConverter(AbstractStreamStateConverter):
@@ -36,7 +34,7 @@ class DateTimeStreamStateConverter(AbstractStreamStateConverter):
 
     @classmethod
     def get_end_provider(cls) -> Callable[[], datetime]:
-        return lambda: datetime.now(timezone.utc)
+        return ab_datetime_now
 
     @abstractmethod
     def increment(self, timestamp: datetime) -> datetime: ...
@@ -136,10 +134,10 @@ class EpochValueConcurrentStreamStateConverter(DateTimeStreamStateConverter):
         return int(timestamp.timestamp())
 
     def parse_timestamp(self, timestamp: int) -> datetime:
-        dt_object = pendulum.from_timestamp(timestamp)
-        if not isinstance(dt_object, DateTime):
+        dt_object = AirbyteDateTime.fromtimestamp(timestamp, timezone.utc)
+        if not isinstance(dt_object, AirbyteDateTime):
             raise ValueError(
-                f"DateTime object was expected but got {type(dt_object)} from pendulum.parse({timestamp})"
+                f"AirbyteDateTime object was expected but got {type(dt_object)} from AirbyteDateTime.fromtimestamp({timestamp})"
             )
         return dt_object
 
@@ -169,14 +167,25 @@ class IsoMillisConcurrentStreamStateConverter(DateTimeStreamStateConverter):
     def increment(self, timestamp: datetime) -> datetime:
         return timestamp + self._cursor_granularity
 
-    def output_format(self, timestamp: datetime) -> Any:
-        return timestamp.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+    def output_format(self, timestamp: datetime) -> str:
+        """Format datetime with milliseconds always included.
+
+        Args:
+            timestamp: The datetime to format.
+
+        Returns:
+            str: ISO8601/RFC3339 formatted string with milliseconds.
+        """
+        dt = AirbyteDateTime.from_datetime(timestamp)
+        # Always include milliseconds, even if zero
+        millis = dt.microsecond // 1000 if dt.microsecond else 0
+        return f"{dt.year:04d}-{dt.month:02d}-{dt.day:02d}T{dt.hour:02d}:{dt.minute:02d}:{dt.second:02d}.{millis:03d}Z"
 
     def parse_timestamp(self, timestamp: str) -> datetime:
-        dt_object = pendulum.parse(timestamp)
-        if not isinstance(dt_object, DateTime):
+        dt_object = ab_datetime_parse(timestamp)
+        if not isinstance(dt_object, AirbyteDateTime):
             raise ValueError(
-                f"DateTime object was expected but got {type(dt_object)} from pendulum.parse({timestamp})"
+                f"AirbyteDateTime object was expected but got {type(dt_object)} from parse({timestamp})"
             )
         return dt_object
 
@@ -184,7 +193,7 @@ class IsoMillisConcurrentStreamStateConverter(DateTimeStreamStateConverter):
 class CustomFormatConcurrentStreamStateConverter(IsoMillisConcurrentStreamStateConverter):
     """
     Datetime State converter that emits state according to the supplied datetime format. The converter supports reading
-    incoming state in any valid datetime format via Pendulum.
+    incoming state in any valid datetime format using AirbyteDateTime parsing utilities.
     """
 
     def __init__(
