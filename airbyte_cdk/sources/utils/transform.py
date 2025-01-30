@@ -3,7 +3,6 @@
 #
 
 import logging
-from distutils.util import strtobool
 from enum import Flag, auto
 from typing import Any, Callable, Dict, Generator, Mapping, Optional, cast
 
@@ -21,6 +20,28 @@ json_to_python = {**json_to_python_simple, **{"object": dict, "array": list}}
 python_to_json = {v: k for k, v in json_to_python.items()}
 
 logger = logging.getLogger("airbyte")
+
+_TRUTHY_STRINGS = ("y", "yes", "t", "true", "on", "1")
+_FALSEY_STRINGS = ("n", "no", "f", "false", "off", "0")
+
+
+def _strtobool(value: str, /) -> int:
+    """Mimic the behavior of distutils.util.strtobool.
+
+    From: https://docs.python.org/2/distutils/apiref.html#distutils.util.strtobool
+
+    > Convert a string representation of truth to true (1) or false (0).
+    > True values are y, yes, t, true, on and 1; false values are n, no, f, false, off and 0. Raises
+    > `ValueError` if val is anything else.
+    """
+    normalized_str = value.lower().strip()
+    if normalized_str in _TRUTHY_STRINGS:
+        return 1
+
+    if normalized_str in _FALSEY_STRINGS:
+        return 0
+
+    raise ValueError(f"Invalid boolean value: {normalized_str}")
 
 
 class TransformConfig(Flag):
@@ -129,7 +150,7 @@ class TypeTransformer:
                 return int(original_item)
             elif target_type == "boolean":
                 if isinstance(original_item, str):
-                    return strtobool(original_item) == 1
+                    return _strtobool(original_item) == 1
                 return bool(original_item)
             elif target_type == "array":
                 item_types = set(subschema.get("items", {}).get("type", set()))

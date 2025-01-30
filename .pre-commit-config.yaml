@@ -1,0 +1,63 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+exclude: |
+  (?x)(
+    # Python/system files
+    ^.*/__init__\.py$|
+    ^.*?/\.venv/.*$|
+    ^.*?/node_modules/.*$|
+    
+    # Generated/test files
+    ^.*?/\.pytest_cache/.*$|
+    ^.*?/__pycache__/.*$|
+    ^.*?/\.mypy_cache/.*$|
+    ^.*?/\.ruff_cache/.*$
+
+    # Package management
+    ^.*?/poetry\.lock$|
+    ^.*?/package-lock\.json$|
+    ^.*?/pnpm-lock\.yaml$|
+
+    # Build and test artifacts
+    ^.*?/build/.*$|
+    ^.*?/dist/.*$|
+    ^.*?/\.coverage$|
+    ^.*?/coverage\.xml$|
+  )
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: check-toml
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.3
+    hooks:
+      # Run the linter with repo-defined settings
+      - id: ruff
+        args: [--fix]
+
+      # Run the formatter with repo-defined settings
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.0.3
+    hooks:
+      - id: prettier
+        types_or: [json, yaml]
+        additional_dependencies:
+          - prettier@3.0.3
+
+  - repo: local
+    hooks:
+      - id: addlicense
+        name: Add license headers
+        entry: addlicense -c "Airbyte, Inc." -l apache -v -f LICENSE_SHORT
+        language: golang
+        additional_dependencies: [github.com/google/addlicense@v1.1.1]
+        files: \.py$

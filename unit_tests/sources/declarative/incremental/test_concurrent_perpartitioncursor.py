@@ -1,5 +1,5 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
-
+import copy
 from copy import deepcopy
 from datetime import datetime, timedelta
 from typing import Any, List, Mapping, MutableMapping, Optional, Union
@@ -721,6 +721,7 @@ PARTITION_SYNC_START_TIME = "2024-01-02T00:00:00Z"
                         "cursor": {"created_at": VOTE_300_CREATED_AT},
                     },
                 ],
+                "use_global_cursor": False,
                 "lookback_window": 1,
                 "parent_state": {},
                 "state": {"created_at": VOTE_100_CREATED_AT},
@@ -1121,6 +1122,7 @@ def run_incremental_parent_state_test(
                     }
                 },
                 "lookback_window": 1,
+                "use_global_cursor": False,
                 "states": [
                     {
                         "partition": {"id": 10, "parent_slice": {"id": 1, "parent_slice": {}}},
@@ -1170,8 +1172,66 @@ def test_incremental_parent_state(
     )
 
 
+STATE_MIGRATION_EXPECTED_STATE = {
+    "state": {"created_at": VOTE_100_CREATED_AT},
+    "parent_state": {
+        "post_comments": {
+            "use_global_cursor": False,
+            "state": {"updated_at": COMMENT_10_UPDATED_AT},
+            "parent_state": {"posts": {"updated_at": POST_1_UPDATED_AT}},
+            "lookback_window": 1,
+            "states": [
+                {
+                    "partition": {"id": 1, "parent_slice": {}},
+                    "cursor": {"updated_at": COMMENT_10_UPDATED_AT},
+                },
+                {
+                    "partition": {"id": 2, "parent_slice": {}},
+                    "cursor": {"updated_at": COMMENT_20_UPDATED_AT},
+                },
+                {
+                    "partition": {"id": 3, "parent_slice": {}},
+                    "cursor": {"updated_at": COMMENT_30_UPDATED_AT},
+                },
+            ],
+        }
+    },
+    "lookback_window": 1,
+    "use_global_cursor": False,
+    "states": [
+        {
+            "partition": {"id": 10, "parent_slice": {"id": 1, "parent_slice": {}}},
+            "cursor": {"created_at": VOTE_100_CREATED_AT},
+        },
+        {
+            "partition": {"id": 11, "parent_slice": {"id": 1, "parent_slice": {}}},
+            "cursor": {"created_at": VOTE_111_CREATED_AT},
+        },
+        {
+            "partition": {"id": 12, "parent_slice": {"id": 1, "parent_slice": {}}},
+            "cursor": {"created_at": PARTITION_SYNC_START_TIME},
+        },
+        {
+            "partition": {"id": 20, "parent_slice": {"id": 2, "parent_slice": {}}},
+            "cursor": {"created_at": VOTE_200_CREATED_AT},
+        },
+        {
+            "partition": {"id": 21, "parent_slice": {"id": 2, "parent_slice": {}}},
+            "cursor": {"created_at": VOTE_210_CREATED_AT},
+        },
+        {
+            "partition": {"id": 30, "parent_slice": {"id": 3, "parent_slice": {}}},
+            "cursor": {"created_at": VOTE_300_CREATED_AT},
+        },
+    ],
+}
+STATE_MIGRATION_GLOBAL_EXPECTED_STATE = copy.deepcopy(STATE_MIGRATION_EXPECTED_STATE)
+del STATE_MIGRATION_GLOBAL_EXPECTED_STATE["states"]
+STATE_MIGRATION_GLOBAL_EXPECTED_STATE["use_global_cursor"] = True
+
+
 @pytest.mark.parametrize(
-    "test_name, manifest, mock_requests, expected_records, expected_state",
+    "test_name, manifest, mock_requests, expected_records",
     [
         (
             "test_incremental_parent_state",
@@ -1326,80 +1386,45 @@ def test_incremental_parent_state(
                     "id": 300,
                 },
             ],
-            # Expected state
-            {
-                "state": {"created_at": VOTE_100_CREATED_AT},
-                "parent_state": {
-                    "post_comments": {
-                        "use_global_cursor": False,
-                        "state": {"updated_at": COMMENT_10_UPDATED_AT},
-                        "parent_state": {"posts": {"updated_at": POST_1_UPDATED_AT}},
-                        "lookback_window": 1,
-                        "states": [
-                            {
-                                "partition": {"id": 1, "parent_slice": {}},
-                                "cursor": {"updated_at": COMMENT_10_UPDATED_AT},
-                            },
-                            {
-                                "partition": {"id": 2, "parent_slice": {}},
-                                "cursor": {"updated_at": COMMENT_20_UPDATED_AT},
-                            },
-                            {
-                                "partition": {"id": 3, "parent_slice": {}},
-                                "cursor": {"updated_at": COMMENT_30_UPDATED_AT},
-                            },
-                        ],
-                    }
-                },
-                "lookback_window": 1,
-                "states": [
-                    {
-                        "partition": {"id": 10, "parent_slice": {"id": 1, "parent_slice": {}}},
-                        "cursor": {"created_at": VOTE_100_CREATED_AT},
-                    },
-                    {
-                        "partition": {"id": 11, "parent_slice": {"id": 1, "parent_slice": {}}},
-                        "cursor": {"created_at": VOTE_111_CREATED_AT},
-                    },
-                    {
-                        "partition": {"id": 12, "parent_slice": {"id": 1, "parent_slice": {}}},
-                        "cursor": {"created_at": PARTITION_SYNC_START_TIME},
-                    },
-                    {
-                        "partition": {"id": 20, "parent_slice": {"id": 2, "parent_slice": {}}},
-                        "cursor": {"created_at": VOTE_200_CREATED_AT},
-                    },
-                    {
-                        "partition": {"id": 21, "parent_slice": {"id": 2, "parent_slice": {}}},
-                        "cursor": {"created_at": VOTE_210_CREATED_AT},
-                    },
-                    {
-                        "partition": {"id": 30, "parent_slice": {"id": 3, "parent_slice": {}}},
-                        "cursor": {"created_at": VOTE_300_CREATED_AT},
-                    },
-                ],
-            },
         ),
     ],
 )
 @pytest.mark.parametrize(
-    "initial_state",
+    "initial_state, expected_state",
     [
-        {"created_at": PARTITION_SYNC_START_TIME},
-        {
-            "state": {"created_at": PARTITION_SYNC_START_TIME},
-            "lookback_window": 0,
-            "use_global_cursor": True,
-            "parent_state": {
-                "post_comments": {
-                    "state": {"updated_at": PARTITION_SYNC_START_TIME},
-                    "parent_state": {"posts": {"updated_at": PARTITION_SYNC_START_TIME}},
-                    "lookback_window": 0,
-                }
+        ({"created_at": PARTITION_SYNC_START_TIME}, STATE_MIGRATION_EXPECTED_STATE),
+        (
+            {
+                "state": {"created_at": PARTITION_SYNC_START_TIME},
+                "lookback_window": 0,
+                "use_global_cursor": False,
+                "parent_state": {
+                    "post_comments": {
+                        "state": {"updated_at": PARTITION_SYNC_START_TIME},
+                        "parent_state": {"posts": {"updated_at": PARTITION_SYNC_START_TIME}},
+                        "lookback_window": 0,
+                    }
+                },
             },
-        },
+            STATE_MIGRATION_EXPECTED_STATE,
+        ),
+        (
+            {
+                "state": {"created_at": PARTITION_SYNC_START_TIME},
+                "lookback_window": 0,
+                "use_global_cursor": True,
+                "parent_state": {
+                    "post_comments": {
+                        "state": {"updated_at": PARTITION_SYNC_START_TIME},
+                        "parent_state": {"posts": {"updated_at": PARTITION_SYNC_START_TIME}},
+                        "lookback_window": 0,
+                    }
+                },
+            },
+            STATE_MIGRATION_GLOBAL_EXPECTED_STATE,
+        ),
     ],
-    ids=["legacy_python_format", "low_code_global_format"],
+    ids=["legacy_python_format", "low_code_per_partition_state", "low_code_global_format"],
 )
 def test_incremental_parent_state_migration(
     test_name, manifest, mock_requests, expected_records, initial_state, expected_state
@@ -1510,6 +1535,7 @@ def test_incremental_parent_state_migration(
                 ],
                 "state": {"created_at": INITIAL_GLOBAL_CURSOR},
                 "lookback_window": 1,
+                "use_global_cursor": False,
             },
         ),
     ],
@@ -1677,13 +1703,14 @@ def test_incremental_parent_state_no_slices(
                         "cursor": {"created_at": INITIAL_STATE_PARTITION_11_CURSOR},
                     },
                 ],
-                "use_global_cursor": True,
+                "use_global_cursor": False,
                 "state": {"created_at": INITIAL_STATE_PARTITION_11_CURSOR},
                 "lookback_window": 0,
             },
             # Expected state
             {
                 "lookback_window": 1,
+                "use_global_cursor": False,
                 "state": {"created_at": INITIAL_STATE_PARTITION_11_CURSOR},
                 "states": [
                     {
@@ -1953,6 +1980,7 @@ def test_incremental_parent_state_no_records(
                 },
                 "state": {"created_at": INITIAL_STATE_PARTITION_11_CURSOR},
                 "lookback_window": 86400,
+                "use_global_cursor": False,
                 "states": [
                     {
                         "partition": {"id": 10, "parent_slice": {"id": 1, "parent_slice": {}}},
@@ -2220,6 +2248,7 @@ LISTPARTITION_MANIFEST: MutableMapping[str, Any] = {
             },
             # Expected state
             {
+                "use_global_cursor": False,
                 "lookback_window": 1,
                 "state": {"updated_at": "2024-01-25T00:00:00Z"},
                 "states": [
@@ -2318,6 +2347,7 @@ def test_incremental_list_partition_router(
             # Expected state
             {
                 "lookback_window": 0,
+                "use_global_cursor": False,
                 "state": {"updated_at": "2024-01-08T00:00:00Z"},
                 "states": [
                     {"cursor": {"updated_at": "2024-01-20T00:00:00Z"}, "partition": {"id": "1"}},
@@ -2845,6 +2875,7 @@ SUBSTREAM_REQUEST_OPTIONS_MANIFEST: MutableMapping[str, Any] = {
                     }
                 },
                 "lookback_window": 1,
+                "use_global_cursor": False,
                 "states": [
                     {
                         "partition": {"id": 10, "parent_slice": {"id": 1, "parent_slice": {}}},

@@ -10,7 +10,6 @@ from unittest.mock import patch
 
 import freezegun
 import isodate
-import pendulum
 from typing_extensions import deprecated
 
 from airbyte_cdk.models import (
@@ -45,6 +44,7 @@ from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.utils import AirbyteTracedException
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_parse
 
 _CONFIG = {"start_date": "2024-07-01T00:00:00.000Z"}
 
@@ -719,8 +719,8 @@ def test_create_concurrent_cursor():
     assert isinstance(party_members_cursor, ConcurrentCursor)
     assert party_members_cursor._stream_name == "party_members"
     assert party_members_cursor._cursor_field.cursor_field_key == "updated_at"
-    assert party_members_cursor._start == pendulum.parse(_CONFIG.get("start_date"))
-    assert party_members_cursor._end_provider() == datetime(
+    assert party_members_cursor._start == ab_datetime_parse(_CONFIG.get("start_date"))
+    assert party_members_cursor._end_provider() == AirbyteDateTime(
         year=2024, month=9, day=1, tzinfo=timezone.utc
     )
     assert party_members_cursor._slice_boundary_fields == ("start_time", "end_time")
@@ -735,8 +735,8 @@ def test_create_concurrent_cursor():
     assert isinstance(locations_cursor, ConcurrentCursor)
     assert locations_cursor._stream_name == "locations"
     assert locations_cursor._cursor_field.cursor_field_key == "updated_at"
-    assert locations_cursor._start == pendulum.parse(_CONFIG.get("start_date"))
-    assert locations_cursor._end_provider() == datetime(
+    assert locations_cursor._start == ab_datetime_parse(_CONFIG.get("start_date"))
+    assert locations_cursor._end_provider() == AirbyteDateTime(
         year=2024, month=9, day=1, tzinfo=timezone.utc
     )
     assert locations_cursor._slice_boundary_fields == ("start_time", "end_time")
@@ -746,8 +746,8 @@ def test_create_concurrent_cursor():
     assert locations_cursor._concurrent_state == {
         "slices": [
             {
-                "start": datetime(2024, 7, 1, 0, 0, 0, 0, tzinfo=timezone.utc),
-                "end": datetime(2024, 7, 31, 0, 0, 0, 0, tzinfo=timezone.utc),
+                "start": AirbyteDateTime(2024, 7, 1, tzinfo=timezone.utc),
+                "end": AirbyteDateTime(2024, 7, 31, tzinfo=timezone.utc),
             }
         ],
         "state_type": "date-range",

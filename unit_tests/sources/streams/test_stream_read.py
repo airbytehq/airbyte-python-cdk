@@ -472,6 +472,82 @@ def test_incremental_read_two_slices():
     assert len(actual_records) == len(expected_records)
 
 
+@pytest.mark.parametrize(
+    "timestamp, records",
+    [
+        pytest.param(
+            "1708899428",
+            [
+                {"id": 2, "created_at": "1708899000"},
+                {"id": 3, "created_at": "1708899001"},
+                {"id": 4, "created_at": "1708899428"},
+            ],
+            id="emits correct state when records are sorted by cursor",
+        ),
+        pytest.param(
+            "1708899428",
+            [
+                {"id": 1, "created_at": "1708899428"},
+                {"id": 2, "created_at": "1708899000"},
+                {"id": 3, "created_at": "1708899001"},
+                {"id": 4, "created_at": "1708899002"},
+            ],
+            id="emits correct state when records are not sorted by cursor",
+        ),
+        pytest.param(
+            "1708899428",
+            [
+                {"id": 1, "created_at": "1708899428"},
+                {"id": 2, "created_at": "1708899000"},
+                {"id": 3, "created_at": "1708899428"},
+                {"id": 4, "created_at": "1708899002"},
+            ],
+            id="not emit duplicated state",
+        ),
+    ],
+)
+def test_incremental_read_emit_state(timestamp, records):
+    # This test verifies that a stream running in incremental mode emits state messages correctly
+    configured_stream = ConfiguredAirbyteStream(
+        stream=AirbyteStream(
+            name="mock_stream",
+            supported_sync_modes=[SyncMode.full_refresh, SyncMode.incremental],
+            json_schema={},
+        ),
+        sync_mode=SyncMode.incremental,
+        cursor_field=["created_at"],
+        destination_sync_mode=DestinationSyncMode.overwrite,
+    )
+    internal_config = InternalConfig()
+    logger = _mock_logger()
+    slice_logger = DebugSliceLogger()
+    message_repository = InMemoryMessageRepository(Level.INFO)
+    state_manager = ConnectorStateManager()
+    slice_to_partition = {1: records}
+    stream = _incremental_stream(
+        slice_to_partition, slice_logger, logger, message_repository, timestamp
+    )
+
+    expected_records = [
+        *records,
+        _create_state_message("__mock_incremental_stream", {"created_at": timestamp}),
+    ]
+
+    actual_records = _read(
+        stream,
+        configured_stream,
+        logger,
+        slice_logger,
+        message_repository,
+        state_manager,
+        internal_config,
+    )
+
+    for record in expected_records:
+        assert record in actual_records
+    assert len(actual_records) == len(expected_records)
+
+
 def test_concurrent_incremental_read_two_slices():
     # This test verifies that an incremental concurrent stream manages state correctly for multiple slices syncing concurrently
     configured_stream = ConfiguredAirbyteStream(
