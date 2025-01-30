@@ -716,7 +716,7 @@ def test_datetime_based_cursor():
         end_time_option:
           type: RequestOption
           inject_into: body_json
-          field_name: "before_{{ parameters['cursor_field'] }}"
+          field_path: ["before_{{ parameters['cursor_field'] }}"]
         partition_field_start: star
         partition_field_end: en
     """
@@ -745,7 +745,7 @@ def test_datetime_based_cursor():
         == "since_updated_at"
     )
     assert stream_slicer.end_time_option.inject_into == RequestOptionType.body_json
-    assert stream_slicer.end_time_option.field_name.eval({}) == "before_created_at"
+    assert stream_slicer.end_time_option.field_path[0].eval({}) == "before_created_at"
     assert stream_slicer._partition_field_start.eval({}) == "star"
     assert stream_slicer._partition_field_end.eval({}) == "en"
 
@@ -906,8 +906,8 @@ metadata_paginator:
     type: DefaultPaginator
     page_size_option:
       type: RequestOption
-      inject_into: request_parameter
-      field_name: page_size
+      inject_into: body_json
+      field_path: ["variables", "page_size"]
     page_token_option:
       type: RequestPath
     pagination_strategy:
@@ -1005,11 +1005,10 @@ spec:
 
     assert isinstance(stream.retriever.paginator, DefaultPaginator)
     assert isinstance(stream.retriever.paginator.decoder, PaginationDecoderDecorator)
-    assert stream.retriever.paginator.page_size_option.field_name.eval(input_config) == "page_size"
-    assert (
-        stream.retriever.paginator.page_size_option.inject_into
-        == RequestOptionType.request_parameter
-    )
+    for string in stream.retriever.paginator.page_size_option.field_path:
+        assert isinstance(string, InterpolatedString)
+    assert len(stream.retriever.paginator.page_size_option.field_path) == 2
+    assert stream.retriever.paginator.page_size_option.inject_into == RequestOptionType.body_json
     assert isinstance(stream.retriever.paginator.page_token_option, RequestPath)
     assert stream.retriever.paginator.url_base.string == "https://api.sendgrid.com/v3/"
     assert stream.retriever.paginator.url_base.default == "https://api.sendgrid.com/v3/"
@@ -2511,7 +2510,6 @@ def test_merge_incremental_and_partition_router(incremental, partition_router, e
 
     assert isinstance(stream, DeclarativeStream)
     assert isinstance(stream.retriever, SimpleRetriever)
-    print(stream.retriever.stream_slicer)
     assert isinstance(stream.retriever.stream_slicer, expected_type)
 
     if incremental and partition_router:

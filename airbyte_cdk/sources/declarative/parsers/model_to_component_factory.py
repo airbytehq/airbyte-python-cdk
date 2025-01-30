@@ -732,7 +732,9 @@ class ModelToComponentFactory:
             )
 
         request_option = (
-            self._create_component_from_model(model.inject_into, config=config)
+            self._create_component_from_model(
+                model.inject_into, config, parameters=model.parameters or {}
+            )
             if model.inject_into
             else RequestOption(
                 inject_into=RequestOptionType.header,
@@ -822,7 +824,7 @@ class ModelToComponentFactory:
                 token_provider=token_provider,
             )
         else:
-            return ModelToComponentFactory.create_api_key_authenticator(
+            return self.create_api_key_authenticator(
                 ApiKeyAuthenticatorModel(
                     type="ApiKeyAuthenticator",
                     api_token="",
@@ -1269,12 +1271,16 @@ class ModelToComponentFactory:
             )
 
         end_time_option = (
-            self._create_component_from_model(model.end_time_option, config)
+            self._create_component_from_model(
+                model.end_time_option, config, parameters=model.parameters or {}
+            )
             if model.end_time_option
             else None
         )
         start_time_option = (
-            self._create_component_from_model(model.start_time_option, config)
+            self._create_component_from_model(
+                model.start_time_option, config, parameters=model.parameters or {}
+            )
             if model.start_time_option
             else None
         )
@@ -1347,12 +1353,16 @@ class ModelToComponentFactory:
             cursor_model = model.incremental_sync
 
             end_time_option = (
-                self._create_component_from_model(cursor_model.end_time_option, config)
+                self._create_component_from_model(
+                    cursor_model.end_time_option, config, parameters=cursor_model.parameters or {}
+                )
                 if cursor_model.end_time_option
                 else None
             )
             start_time_option = (
-                self._create_component_from_model(cursor_model.start_time_option, config)
+                self._create_component_from_model(
+                    cursor_model.start_time_option, config, parameters=cursor_model.parameters or {}
+                )
                 if cursor_model.start_time_option
                 else None
             )
@@ -2048,10 +2058,24 @@ class ModelToComponentFactory:
         model: RequestOptionModel, config: Config, **kwargs: Any
     ) -> RequestOption:
         inject_into = RequestOptionType(model.inject_into.value)
-        field_path: Optional[List[Union[InterpolatedString, str]]] = model.field_path  # type: ignore
-        field_name = model.field_name if model.field_name else None
+        field_path: Optional[List[Union[InterpolatedString, str]]] = (
+            [
+                InterpolatedString.create(segment, parameters=kwargs.get("parameters", {}))
+                for segment in model.field_path
+            ]
+            if model.field_path
+            else None
+        )
+        field_name = (
+            InterpolatedString.create(model.field_name, parameters=kwargs.get("parameters", {}))
+            if model.field_name
+            else None
+        )
         return RequestOption(
-            field_name=field_name, field_path=field_path, inject_into=inject_into, parameters={}
+            field_name=field_name,
+            field_path=field_path,
+            inject_into=inject_into,
+            parameters=kwargs.get("parameters", {}),
         )
 
     def create_record_selector(
