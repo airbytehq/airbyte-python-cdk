@@ -4,6 +4,7 @@
 
 import json
 import logging
+from copy import deepcopy
 
 import pytest
 
@@ -104,55 +105,64 @@ _MANIFEST = {
 
 
 @pytest.mark.parametrize(
-    "response_code, available_expectation, expected_messages",
+    "response_code, available_expectation, use_check_availability, expected_messages",
     [
         pytest.param(
             404,
             False,
+            True,
             ["Not found. The requested resource was not found on the server."],
             id="test_stream_unavailable_unhandled_error",
         ),
         pytest.param(
             403,
             False,
+            True,
             ["Forbidden. You don't have permission to access this resource."],
             id="test_stream_unavailable_handled_error",
         ),
-        pytest.param(200, True, [], id="test_stream_available"),
+        pytest.param(200, True, True, [], id="test_stream_available"),
+        pytest.param(200, True, False, [], id="test_stream_available"),
         pytest.param(
             401,
             False,
+            True,
             ["Unauthorized. Please ensure you are authenticated correctly."],
             id="test_stream_unauthorized_error",
         ),
     ],
 )
-def test_check_dynamic_stream(response_code, available_expectation, expected_messages):
+def test_check_dynamic_stream(
+    response_code, available_expectation, use_check_availability, expected_messages
+):
+    manifest = deepcopy(_MANIFEST)
+
     with HttpMocker() as http_mocker:
-        http_mocker.get(
-            HttpRequest(url="https://api.test.com/items"),
-            HttpResponse(
-                body=json.dumps(
-                    [
-                        {"id": 1, "name": "item_1"},
-                        {"id": 2, "name": "item_2"},
-                    ]
-                )
-            ),
+        items_request = HttpRequest(url="https://api.test.com/items")
+        items_response = HttpResponse(
+            body=json.dumps([{"id": 1, "name": "item_1"}, {"id": 2, "name": "item_2"}])
         )
-        http_mocker.get(
-            HttpRequest(url="https://api.test.com/items/1"),
-            HttpResponse(body=json.dumps(expected_messages), status_code=response_code),
-        )
+        http_mocker.get(items_request, items_response)
+
+        item_request = HttpRequest(url="https://api.test.com/items/1")
+        item_response = HttpResponse(body=json.dumps(expected_messages), status_code=response_code)
+        item_request_count = 1
+        http_mocker.get(item_request, item_response)
+
+        if not use_check_availability:
+            manifest["check"]["use_check_availability"] = False
+            item_request_count = 0  # stream only created and data request not called
 
         source = ConcurrentDeclarativeSource(
-            source_config=_MANIFEST,
+            source_config=manifest,
             config=_CONFIG,
             catalog=None,
             state=None,
         )
 
         stream_is_available, reason = source.check_connection(logger, _CONFIG)
+
+        http_mocker.assert_number_of_calls(item_request, item_request_count)
 
     assert stream_is_available == available_expectation
     for message in expected_messages:

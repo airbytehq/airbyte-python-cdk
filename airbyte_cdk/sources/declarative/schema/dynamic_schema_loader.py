@@ -225,6 +225,7 @@ class DynamicSchemaLoader(SchemaLoader):
             return self._get_airbyte_type(complex_type.field_type)
 
         field_type = self._get_airbyte_type(complex_type.field_type)
+
         field_type["items"] = (
             self._get_airbyte_type(complex_type.items)
             if isinstance(complex_type.items, str)
