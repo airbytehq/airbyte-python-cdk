@@ -537,6 +537,7 @@ def test_dynamic_streams_with_http_components_resolver_retriever_with_parent_str
 
 def test_wrong_stream_name_type():
     with HttpMocker() as http_mocker:
+        http_mocker.clear_all_matchers()
         http_mocker.get(
             HttpRequest(url="https://api.test.com/items"),
             HttpResponse(
