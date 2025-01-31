@@ -438,7 +438,7 @@ class AsyncJobOrchestrator:
                 self._wait_on_status_update()
             except Exception as exception:
                 LOGGER.warning(
-                    f"Caught exception that stops the processing of the jobs: {exception}"
+                    f"Caught exception that stops the processing of the jobs: {exception}. Traceback: {traceback.format_exc()}"
                 )
                 if self._is_breaking_exception(exception):
                     self._abort_all_running_jobs()
