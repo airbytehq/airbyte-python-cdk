@@ -366,7 +366,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
                 name = dynamic_stream.get("name")
 
                 if not isinstance(name, str):
-                    raise ValueError(f"Expected stream name {name} to be a string, got {type(name)}.")
+                    raise ValueError(
+                        f"Expected stream name {name} to be a string, got {type(name)}."
+                    )
 
                 if name in seen_dynamic_streams:
                     error_message = f"Dynamic streams list contains a duplicate name: {name}. Please contact Airbyte Support."

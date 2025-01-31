@@ -563,7 +563,4 @@ def test_wrong_stream_name_type():
         with pytest.raises(ValueError) as exc_info:
             source.discover(logger=source.logger, config=_CONFIG)
 
-        assert (
-                str(exc_info.value)
-                == "Expected stream name 1 to be a string, got <class 'int'>."
-        )
+        assert str(exc_info.value) == "Expected stream name 1 to be a string, got <class 'int'>."
