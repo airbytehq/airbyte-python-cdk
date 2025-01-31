@@ -437,10 +437,10 @@ class AsyncJobOrchestrator:
                 yield from self._process_running_partitions_and_yield_completed_ones()
                 self._wait_on_status_update()
             except Exception as exception:
+                LOGGER.warning(
+                    f"Caught exception that stops the processing of the jobs: {exception}"
+                )
                 if self._is_breaking_exception(exception):
-                    LOGGER.warning(
-                        f"Caught exception that stops the processing of the jobs: {exception}"
-                    )
                     self._abort_all_running_jobs()
                     raise exception
 
