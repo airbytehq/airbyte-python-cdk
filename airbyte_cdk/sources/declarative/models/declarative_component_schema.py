@@ -1200,11 +1200,17 @@ class InjectInto(Enum):
 
 class RequestOption(BaseModel):
     type: Literal["RequestOption"]
-    field_name: str = Field(
-        ...,
-        description="Configures which key should be used in the location that the descriptor is being injected into",
+    field_name: Optional[str] = Field(
+        None,
+        description="Configures which key should be used in the location that the descriptor is being injected into. We hope to eventually deprecate this field in favor of `field_path` for all request_options, but must currently maintain it for backwards compatibility in the Builder.",
         examples=["segment_id"],
-        title="Request Option",
+        title="Field Name",
+    )
+    field_path: Optional[List[str]] = Field(
+        None,
+        description="Configures a path to be used for nested structures in JSON body requests (e.g. GraphQL queries)",
+        examples=[["data", "viewer", "id"]],
+        title="Field Path",
     )
     inject_into: InjectInto = Field(
         ...,

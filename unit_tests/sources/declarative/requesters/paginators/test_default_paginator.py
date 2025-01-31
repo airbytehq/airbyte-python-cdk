@@ -437,7 +437,9 @@ def test_paginator_with_page_option_no_page_size():
             DefaultPaginator(
                 page_size_option=MagicMock(),
                 page_token_option=RequestOption(
-                    "limit", RequestOptionType.request_parameter, parameters={}
+                    field_name="limit",
+                    inject_into=RequestOptionType.request_parameter,
+                    parameters={},
                 ),
                 pagination_strategy=pagination_strategy,
                 config=MagicMock(),

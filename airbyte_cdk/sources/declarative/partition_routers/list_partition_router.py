@@ -3,7 +3,7 @@
 #
 
 from dataclasses import InitVar, dataclass
-from typing import Any, Iterable, List, Mapping, Optional, Union
+from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Union
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
@@ -100,7 +100,9 @@ class ListPartitionRouter(PartitionRouter):
         ):
             slice_value = stream_slice.get(self._cursor_field.eval(self.config))
             if slice_value:
-                return {self.request_option.field_name.eval(self.config): slice_value}  # type: ignore # field_name is always casted to InterpolatedString
+                options: MutableMapping[str, Any] = {}
+                self.request_option.inject_into_request(options, slice_value, self.config)
+                return options
             else:
                 return {}
         else:

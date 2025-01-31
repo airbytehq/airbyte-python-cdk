@@ -782,13 +782,14 @@ def test_given_different_format_and_slice_is_highest_when_close_slice_then_state
 
 
 @pytest.mark.parametrize(
-    "test_name, inject_into, field_name, expected_req_params, expected_headers, expected_body_json, expected_body_data",
+    "test_name, inject_into, field_name, field_path, expected_req_params, expected_headers, expected_body_json, expected_body_data",
     [
-        ("test_start_time_inject_into_none", None, None, {}, {}, {}, {}),
+        ("test_start_time_inject_into_none", None, None, None, {}, {}, {}, {}),
         (
             "test_start_time_passed_by_req_param",
             RequestOptionType.request_parameter,
             "start_time",
+            None,
             {
                 "start_time": "2021-01-01T00:00:00.000000+0000",
                 "endtime": "2021-01-04T00:00:00.000000+0000",
@@ -801,6 +802,7 @@ def test_given_different_format_and_slice_is_highest_when_close_slice_then_state
             "test_start_time_inject_into_header",
             RequestOptionType.header,
             "start_time",
+            None,
             {},
             {
                 "start_time": "2021-01-01T00:00:00.000000+0000",
@@ -810,14 +812,34 @@ def test_given_different_format_and_slice_is_highest_when_close_slice_then_state
             {},
         ),
         (
-            "test_start_time_inject_intoy_body_json",
+            "test_start_time_inject_into_body_json",
             RequestOptionType.body_json,
             "start_time",
+            None,
             {},
             {},
             {
                 "start_time": "2021-01-01T00:00:00.000000+0000",
                 "endtime": "2021-01-04T00:00:00.000000+0000",
+            },
+            {},
+        ),
+        (
+            "test_nested_field_injection_into_body_json",
+            RequestOptionType.body_json,
+            None,
+            ["data", "queries", "time_range", "start"],
+            {},
+            {},
+            {
+                "data": {
+                    "queries": {
+                        "time_range": {
+                            "start": "2021-01-01T00:00:00.000000+0000",
+                            "end": "2021-01-04T00:00:00.000000+0000",
+                        }
+                    }
+                }
             },
             {},
         ),
@@ -825,6 +847,7 @@ def test_given_different_format_and_slice_is_highest_when_close_slice_then_state
             "test_start_time_inject_into_body_data",
             RequestOptionType.body_data,
             "start_time",
+            None,
             {},
             {},
             {},
@@ -839,18 +862,26 @@ def test_request_option(
     test_name,
     inject_into,
     field_name,
+    field_path,
     expected_req_params,
     expected_headers,
     expected_body_json,
     expected_body_data,
 ):
     start_request_option = (
-        RequestOption(inject_into=inject_into, parameters={}, field_name=field_name)
+        RequestOption(
+            inject_into=inject_into, parameters={}, field_name=field_name, field_path=field_path
+        )
         if inject_into
         else None
     )
     end_request_option = (
-        RequestOption(inject_into=inject_into, parameters={}, field_name="endtime")
+        RequestOption(
+            inject_into=inject_into,
+            parameters={},
+            field_name="endtime" if field_name else None,
+            field_path=["data", "queries", "time_range", "end"] if field_path else None,
+        )
         if inject_into
         else None
     )

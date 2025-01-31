@@ -2355,7 +2355,11 @@ class ModelToComponentFactory:
         model: RequestOptionModel, config: Config, **kwargs: Any
     ) -> RequestOption:
         inject_into = RequestOptionType(model.inject_into.value)
-        return RequestOption(field_name=model.field_name, inject_into=inject_into, parameters={})
+        field_path: Optional[List[Union[InterpolatedString, str]]] = model.field_path  # type: ignore
+        field_name = model.field_name if model.field_name else None
+        return RequestOption(
+            field_name=field_name, field_path=field_path, inject_into=inject_into, parameters={}
+        )
 
     def create_record_selector(
         self,
