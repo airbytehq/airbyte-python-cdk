@@ -3,10 +3,11 @@
 #
 
 import json
+from copy import deepcopy
 from unittest.mock import MagicMock
 
 import pytest
-from copy import deepcopy
+
 from airbyte_cdk.models import Type
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
@@ -377,7 +378,9 @@ def test_wrong_stream_name_type():
         )
 
         manifest = deepcopy(_MANIFEST)
-        manifest["dynamic_streams"][0]["components_resolver"]["retriever"]["requester"]["path"] = "int_items"
+        manifest["dynamic_streams"][0]["components_resolver"]["retriever"]["requester"]["path"] = (
+            "int_items"
+        )
 
         source = ConcurrentDeclarativeSource(
             source_config=manifest, config=_CONFIG, catalog=None, state=None
