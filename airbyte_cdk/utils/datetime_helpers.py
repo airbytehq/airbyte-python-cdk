@@ -76,8 +76,8 @@ from airbyte_cdk.utils.datetime_helpers import ab_datetime_try_parse
 assert ab_datetime_try_parse("2023-03-14T15:09:26Z")       # Basic UTC format
 assert ab_datetime_try_parse("2023-03-14T15:09:26-04:00")  # With timezone offset
 assert ab_datetime_try_parse("2023-03-14T15:09:26+00:00")  # With explicit UTC offset
-assert not ab_datetime_try_parse("2023-03-14 15:09:26Z")   # Invalid: missing T delimiter
-assert not ab_datetime_try_parse("foo")                     # Invalid: not a datetime
+assert ab_datetime_try_parse("2023-03-14 15:09:26Z")       # Missing T delimiter but still parsable
+assert not ab_datetime_try_parse("foo")                    # Invalid: not parsable, returns `None`
 ```
 """
 
@@ -138,6 +138,14 @@ class AirbyteDateTime(datetime):
             dt.tzinfo or timezone.utc,
         )
 
+    def to_datetime(self) -> datetime:
+        """Converts this AirbyteDateTime to a standard datetime object.
+
+        Today, this just returns `self` because AirbyteDateTime is a subclass of `datetime`.
+        In the future, we may modify our internal representation to use a different base class.
+        """
+        return self
+
     def __str__(self) -> str:
         """Returns the datetime in ISO8601/RFC3339 format with 'T' delimiter.
 
@@ -148,12 +156,7 @@ class AirbyteDateTime(datetime):
             str: ISO8601/RFC3339 formatted string.
         """
         aware_self = self if self.tzinfo else self.replace(tzinfo=timezone.utc)
-        base = self.strftime("%Y-%m-%dT%H:%M:%S")
-        if self.microsecond:
-            base = f"{base}.{self.microsecond:06d}"
-        # Format timezone as ±HH:MM
-        offset = aware_self.strftime("%z")
-        return f"{base}{offset[:3]}:{offset[3:]}"
+        return aware_self.isoformat(sep="T", timespec="auto")
 
     def __repr__(self) -> str:
         """Returns the same string representation as __str__ for consistency.
@@ -358,15 +361,15 @@ def ab_datetime_now() -> AirbyteDateTime:
 def ab_datetime_parse(dt_str: str | int) -> AirbyteDateTime:
     """Parses a datetime string or timestamp into an AirbyteDateTime with timezone awareness.
 
-    Previously named: parse()
+    This implementation is as flexible as possible to handle various datetime formats.
+    Always returns a timezone-aware datetime (defaults to UTC if no timezone specified).
 
     Handles:
-        - ISO8601/RFC3339 format strings (with 'T' delimiter)
+        - ISO8601/RFC3339 format strings (with ' ' or 'T' delimiter)
         - Unix timestamps (as integers or strings)
         - Date-only strings (YYYY-MM-DD)
         - Timezone-aware formats (+00:00 for UTC, or ±HH:MM offset)
-
-    Always returns a timezone-aware datetime (defaults to UTC if no timezone specified).
+        - Anything that can be parsed by `dateutil.parser.parse()`
 
     Args:
         dt_str: A datetime string in ISO8601/RFC3339 format, Unix timestamp (int/str),
@@ -416,15 +419,16 @@ def ab_datetime_parse(dt_str: str | int) -> AirbyteDateTime:
             except (ValueError, TypeError):
                 raise ValueError(f"Invalid date format: {dt_str}")
 
-        # Validate datetime format
-        if "/" in dt_str or " " in dt_str or "GMT" in dt_str:
-            raise ValueError(f"Could not parse datetime string: {dt_str}")
+        # Reject time-only strings without date
+        if ":" in dt_str and dt_str.count("-") < 2 and dt_str.count("/") < 2:
+            raise ValueError(f"Missing date part in datetime string: {dt_str}")
 
         # Try parsing with dateutil for timezone handling
         try:
             parsed = parser.parse(dt_str)
             if parsed.tzinfo is None:
                 parsed = parsed.replace(tzinfo=timezone.utc)
+
             return AirbyteDateTime.from_datetime(parsed)
         except (ValueError, TypeError):
             raise ValueError(f"Could not parse datetime string: {dt_str}")
@@ -438,7 +442,29 @@ def ab_datetime_parse(dt_str: str | int) -> AirbyteDateTime:
         raise ValueError(f"Could not parse datetime string: {dt_str}")
 
 
-def ab_datetime_format(dt: Union[datetime, AirbyteDateTime]) -> str:
+def ab_datetime_try_parse(dt_str: str) -> AirbyteDateTime | None:
+    """Try to parse the input as a datetime, failing gracefully instead of raising an exception.
+
+    This is a thin wrapper around `ab_datetime_parse()` that catches parsing errors and
+    returns `None` instead of raising an exception.
+    The implementation is as flexible as possible to handle various datetime formats.
+    Always returns a timezone-aware datetime (defaults to `UTC` if no timezone specified).
+
+    Example:
+        >>> ab_datetime_try_parse("2023-03-14T15:09:26Z")  # Returns AirbyteDateTime
+        >>> ab_datetime_try_parse("2023-03-14 15:09:26Z")  # Missing 'T' delimiter still parsable
+        >>> ab_datetime_try_parse("2023-03-14")            # Returns midnight UTC time
+    """
+    try:
+        return ab_datetime_parse(dt_str)
+    except (ValueError, TypeError):
+        return None
+
+
+def ab_datetime_format(
+    dt: Union[datetime, AirbyteDateTime],
+    format: str | None = None,
+) -> str:
     """Formats a datetime object as an ISO8601/RFC3339 string with 'T' delimiter and timezone.
 
     Previously named: format()
@@ -449,6 +475,8 @@ def ab_datetime_format(dt: Union[datetime, AirbyteDateTime]) -> str:
 
     Args:
         dt: Any datetime object to format.
+        format: Optional format string. If provided, calls `strftime()` with this format.
+            Otherwise, uses the default ISO8601/RFC3339 format, adapted for available precision.
 
     Returns:
         str: ISO8601/RFC3339 formatted datetime string.
@@ -464,54 +492,8 @@ def ab_datetime_format(dt: Union[datetime, AirbyteDateTime]) -> str:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
 
-    # Format with consistent timezone representation
-    base = dt.strftime("%Y-%m-%dT%H:%M:%S")
-    if dt.microsecond:
-        base = f"{base}.{dt.microsecond:06d}"
-    offset = dt.strftime("%z")
-    return f"{base}{offset[:3]}:{offset[3:]}"
+    if format:
+        return dt.strftime(format)
 
-
-def ab_datetime_try_parse(dt_str: str) -> AirbyteDateTime | None:
-    """Try to parse the input string as an ISO8601/RFC3339 datetime, failing gracefully instead of raising an exception.
-
-    Requires strict ISO8601/RFC3339 format with:
-    - 'T' delimiter between date and time components
-    - Valid timezone (Z for UTC or ±HH:MM offset)
-    - Complete datetime representation (date and time)
-
-    Returns None for any non-compliant formats including:
-    - Space-delimited datetimes
-    - Date-only strings
-    - Missing timezone
-    - Invalid timezone format
-    - Wrong date/time separators
-
-    Example:
-        >>> ab_datetime_try_parse("2023-03-14T15:09:26Z")  # Returns AirbyteDateTime
-        >>> ab_datetime_try_parse("2023-03-14 15:09:26Z")  # Returns None (invalid format)
-        >>> ab_datetime_try_parse("2023-03-14")  # Returns None (missing time and timezone)
-    """
-    if not isinstance(dt_str, str):
-        return None
-    try:
-        # Validate format before parsing
-        if "T" not in dt_str:
-            return None
-        if not any(x in dt_str for x in ["Z", "+", "-"]):
-            return None
-        if "/" in dt_str or " " in dt_str or "GMT" in dt_str:
-            return None
-
-        # Try parsing with dateutil
-        parsed = parser.parse(dt_str)
-        if parsed.tzinfo is None:
-            return None
-
-        # Validate time components
-        if not (0 <= parsed.hour <= 23 and 0 <= parsed.minute <= 59 and 0 <= parsed.second <= 59):
-            return None
-
-        return AirbyteDateTime.from_datetime(parsed)
-    except (ValueError, TypeError):
-        return None
+    # Format with consistent timezone representation and "T" delimiter
+    return dt.isoformat(sep="T", timespec="auto")

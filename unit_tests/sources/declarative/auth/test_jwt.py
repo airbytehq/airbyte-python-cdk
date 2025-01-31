@@ -126,9 +126,11 @@ class TestJwtAuthenticator:
         )
         assert authenticator._get_secret_key() == expected
 
-    def test_get_secret_key_from_config(self,):
+    def test_get_secret_key_from_config(
+        self,
+    ):
         authenticator = JwtAuthenticator(
-            config={'secrets': '{"secret_key": "test"}'},
+            config={"secrets": '{"secret_key": "test"}'},
             parameters={},
             secret_key="{{ json_loads(config['secrets'])['secret_key']  }}",
             algorithm="test_algo",

@@ -22,6 +22,9 @@ from airbyte_cdk.sources.streams.http.requests_native_auth import (
     SingleUseRefreshTokenOauth2Authenticator,
     TokenAuthenticator,
 )
+from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_oauth import (
+    ResponseKeysMaxRecurtionReached,
+)
 from airbyte_cdk.utils import AirbyteTracedException
 from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 
@@ -258,7 +261,7 @@ class TestOauth2Authenticator:
         assert isinstance(expires_in, int)
         assert ("access_token", 1000) == (token, expires_in)
 
-        # Test with expires_in as str
+        # Test with expires_in as str(int)
         mocker.patch.object(
             resp, "json", return_value={"access_token": "access_token", "expires_in": "2000"}
         )
@@ -267,7 +270,7 @@ class TestOauth2Authenticator:
         assert isinstance(expires_in, str)
         assert ("access_token", "2000") == (token, expires_in)
 
-        # Test with expires_in as str
+        # Test with expires_in as datetime(str)
         mocker.patch.object(
             resp,
             "json",
@@ -277,6 +280,78 @@ class TestOauth2Authenticator:
 
         assert isinstance(expires_in, str)
         assert ("access_token", "2022-04-24T00:00:00Z") == (token, expires_in)
+
+        # Test with nested access_token and expires_in as str(int)
+        mocker.patch.object(
+            resp,
+            "json",
+            return_value={"data": {"access_token": "access_token_nested", "expires_in": "2001"}},
+        )
+        token, expires_in = oauth.refresh_access_token()
+
+        assert isinstance(expires_in, str)
+        assert ("access_token_nested", "2001") == (token, expires_in)
+
+        # Test with multiple nested levels access_token and expires_in as str(int)
+        mocker.patch.object(
+            resp,
+            "json",
+            return_value={
+                "data": {
+                    "scopes": ["one", "two", "three"],
+                    "data2": {
+                        "not_access_token": "test_non_access_token_value",
+                        "data3": {
+                            "some_field": "test_value",
+                            "expires_at": "2800",
+                            "data4": {
+                                "data5": {
+                                    "access_token": "access_token_deeply_nested",
+                                    "expires_in": "2002",
+                                }
+                            },
+                        },
+                    },
+                }
+            },
+        )
+        token, expires_in = oauth.refresh_access_token()
+
+        assert isinstance(expires_in, str)
+        assert ("access_token_deeply_nested", "2002") == (token, expires_in)
+
+        # Test with max nested levels access_token and expires_in as str(int)
+        mocker.patch.object(
+            resp,
+            "json",
+            return_value={
+                "data": {
+                    "scopes": ["one", "two", "three"],
+                    "data2": {
+                        "not_access_token": "test_non_access_token_value",
+                        "data3": {
+                            "some_field": "test_value",
+                            "expires_at": "2800",
+                            "data4": {
+                                "data5": {
+                                    # this is the edge case, but worth testing.
+                                    "data6": {
+                                        "access_token": "access_token_super_deeply_nested",
+                                        "expires_in": "2003",
+                                    }
+                                }
+                            },
+                        },
+                    },
+                }
+            },
+        )
+        with pytest.raises(ResponseKeysMaxRecurtionReached) as exc_info:
+            oauth.refresh_access_token()
+        error_message = "The maximum level of recursion is reached. Couldn't find the speficied `access_token` in the response."
+        assert exc_info.value.internal_message == error_message
+        assert exc_info.value.message == error_message
+        assert exc_info.value.failure_type == FailureType.config_error
 
     def test_refresh_access_token_when_headers_provided(self, mocker):
         expected_headers = {
@@ -594,6 +669,11 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
             "airbyte_cdk.sources.streams.http.requests_native_auth.abstract_oauth.format_http_message",
             return_value="formatted json",
         )
+        # patching the `expires_in`
+        mocker.patch(
+            "airbyte_cdk.sources.streams.http.requests_native_auth.abstract_oauth.AbstractOauth2Authenticator._find_and_get_value_from_response",
+            return_value="7200",
+        )
         authenticator.token_has_expired = mocker.Mock(return_value=True)
 
         authenticator.get_access_token()
@@ -608,7 +688,7 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
             client_secret=connector_config["credentials"]["client_secret"],
         )
 
-        authenticator._get_refresh_access_token_response = mocker.Mock(
+        authenticator._make_handled_request = mocker.Mock(
             return_value={
                 authenticator.get_access_token_name(): "new_access_token",
                 authenticator.get_expires_in_name(): "42",

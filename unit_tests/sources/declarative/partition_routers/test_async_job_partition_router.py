@@ -35,12 +35,12 @@ def test_stream_slices_with_single_partition_router():
 
     slices = list(partition_router.stream_slices())
     assert len(slices) == 1
-    partition = slices[0].partition.get("partition")
-    assert isinstance(partition, AsyncPartition)
-    assert partition.stream_slice == StreamSlice(partition={}, cursor_slice={})
-    assert partition.status == AsyncJobStatus.COMPLETED
+    partition = slices[0]
+    assert isinstance(partition, StreamSlice)
+    assert partition == StreamSlice(partition={}, cursor_slice={})
+    assert partition.extra_fields["jobs"][0].status() == AsyncJobStatus.COMPLETED
 
-    attempts_per_job = list(partition.jobs)
+    attempts_per_job = list(partition.extra_fields["jobs"])
     assert len(attempts_per_job) == 1
     assert attempts_per_job[0].api_job_id() == "a_job_id"
     assert attempts_per_job[0].job_parameters() == StreamSlice(partition={}, cursor_slice={})
@@ -68,14 +68,10 @@ def test_stream_slices_with_parent_slicer():
     slices = list(partition_router.stream_slices())
     assert len(slices) == 3
     for i, partition in enumerate(slices):
-        partition = partition.partition.get("partition")
-        assert isinstance(partition, AsyncPartition)
-        assert partition.stream_slice == StreamSlice(
-            partition={"parent_id": str(i)}, cursor_slice={}
-        )
-        assert partition.status == AsyncJobStatus.COMPLETED
+        assert isinstance(partition, StreamSlice)
+        assert partition == StreamSlice(partition={"parent_id": str(i)}, cursor_slice={})
 
-        attempts_per_job = list(partition.jobs)
+        attempts_per_job = list(partition.extra_fields["jobs"])
         assert len(attempts_per_job) == 1
         assert attempts_per_job[0].api_job_id() == "a_job_id"
         assert attempts_per_job[0].job_parameters() == StreamSlice(

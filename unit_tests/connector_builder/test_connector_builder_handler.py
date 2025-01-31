@@ -600,7 +600,7 @@ def test_config_update() -> None:
         "expires_in": 3600,
     }
     with patch(
-        "airbyte_cdk.sources.streams.http.requests_native_auth.SingleUseRefreshTokenOauth2Authenticator._get_refresh_access_token_response",
+        "airbyte_cdk.sources.streams.http.requests_native_auth.SingleUseRefreshTokenOauth2Authenticator._make_handled_request",
         return_value=refresh_request_response,
     ):
         output = handle_connector_builder_request(

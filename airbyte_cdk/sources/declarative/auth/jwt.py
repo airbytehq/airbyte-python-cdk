@@ -4,6 +4,7 @@
 
 import json
 import base64
+import json
 from dataclasses import InitVar, dataclass
 from datetime import datetime
 from typing import Any, Mapping, Optional, Union
@@ -178,7 +179,11 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         """
         Returns the header prefix to be used when attaching the token to the request.
         """
-        return self._header_prefix.eval(self.config, json_loads=json.loads) if self._header_prefix else None
+        return (
+            self._header_prefix.eval(self.config, json_loads=json.loads)
+            if self._header_prefix
+            else None
+        )
 
     @property
     def auth_header(self) -> str:

@@ -51,7 +51,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         refresh_token_error_status_codes: Tuple[int, ...] = (),
         refresh_token_error_key: str = "",
         refresh_token_error_values: Tuple[str, ...] = (),
-    ):
+    ) -> None:
         self._token_refresh_endpoint = token_refresh_endpoint
         self._client_secret_name = client_secret_name
         self._client_secret = client_secret
@@ -175,7 +175,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         refresh_token_error_status_codes: Tuple[int, ...] = (),
         refresh_token_error_key: str = "",
         refresh_token_error_values: Tuple[str, ...] = (),
-    ):
+    ) -> None:
         """
         Args:
             connector_config (Mapping[str, Any]): The full connector configuration
@@ -196,18 +196,12 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             token_expiry_is_time_of_expiration bool: set True it if expires_in is returned as time of expiration instead of the number seconds until expiration
             message_repository (MessageRepository): the message repository used to emit logs on HTTP requests and control message on config update
         """
-        self._client_id = (
-            client_id  # type: ignore[assignment]  # Incorrect type for assignment
-            if client_id is not None
-            else dpath.get(connector_config, ("credentials", "client_id"))  # type: ignore[arg-type]
+        self._connector_config = connector_config
+        self._client_id: str = self._get_config_value_by_path(
+            ("credentials", "client_id"), client_id
         )
-        self._client_secret = (
-            client_secret  # type: ignore[assignment]  # Incorrect type for assignment
-            if client_secret is not None
-            else dpath.get(
-                connector_config,  # type: ignore[arg-type]
-                ("credentials", "client_secret"),
-            )
+        self._client_secret: str = self._get_config_value_by_path(
+            ("credentials", "client_secret"), client_secret
         )
         self._client_id_name = client_id_name
         self._client_secret_name = client_secret_name
@@ -222,9 +216,9 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         super().__init__(
             token_refresh_endpoint=token_refresh_endpoint,
             client_id_name=self._client_id_name,
-            client_id=self.get_client_id(),
+            client_id=self._client_id,
             client_secret_name=self._client_secret_name,
-            client_secret=self.get_client_secret(),
+            client_secret=self._client_secret,
             refresh_token=self.get_refresh_token(),
             refresh_token_name=self._refresh_token_name,
             scopes=scopes,
@@ -242,51 +236,62 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             refresh_token_error_values=refresh_token_error_values,
         )
 
-    def get_refresh_token_name(self) -> str:
-        return self._refresh_token_name
-
-    def get_client_id(self) -> str:
-        return self._client_id
-
-    def get_client_secret(self) -> str:
-        return self._client_secret
-
     @property
     def access_token(self) -> str:
-        return dpath.get(  # type: ignore[return-value]
-            self._connector_config,  # type: ignore[arg-type]
-            self._access_token_config_path,
-            default="",
-        )
+        """
+        Retrieve the access token from the configuration.
+
+        Returns:
+            str: The access token.
+        """
+        return self._get_config_value_by_path(self._access_token_config_path)  # type: ignore[return-value]
 
     @access_token.setter
     def access_token(self, new_access_token: str) -> None:
-        dpath.new(
-            self._connector_config,  # type: ignore[arg-type]
-            self._access_token_config_path,
-            new_access_token,
-        )
+        """
+        Sets a new access token.
+
+        Args:
+            new_access_token (str): The new access token to be set.
+        """
+        self._set_config_value_by_path(self._access_token_config_path, new_access_token)
 
     def get_refresh_token(self) -> str:
-        return dpath.get(  # type: ignore[return-value]
-            self._connector_config,  # type: ignore[arg-type]
-            self._refresh_token_config_path,
-            default="",
-        )
+        """
+        Retrieve the refresh token from the configuration.
+
+        This method fetches the refresh token using the configuration path specified
+        by `_refresh_token_config_path`.
+
+        Returns:
+            str: The refresh token as a string.
+        """
+        return self._get_config_value_by_path(self._refresh_token_config_path)  # type: ignore[return-value]
 
     def set_refresh_token(self, new_refresh_token: str) -> None:
-        dpath.new(
-            self._connector_config,  # type: ignore[arg-type]
-            self._refresh_token_config_path,
-            new_refresh_token,
-        )
+        """
+        Updates the refresh token in the configuration.
+
+        Args:
+            new_refresh_token (str): The new refresh token to be set.
+        """
+        self._set_config_value_by_path(self._refresh_token_config_path, new_refresh_token)
 
     def get_token_expiry_date(self) -> AirbyteDateTime:
-        expiry_date = dpath.get(
-            self._connector_config,  # type: ignore[arg-type]
-            self._token_expiry_date_config_path,
-            default="",
-        )
+        """
+        Retrieves the token expiry date from the configuration.
+
+        This method fetches the token expiry date from the configuration using the specified path.
+        If the expiry date is an empty string, it returns the current date and time minus one day.
+        Otherwise, it parses the expiry date string into an AirbyteDateTime object.
+
+        Returns:
+            AirbyteDateTime: The parsed or calculated token expiry date.
+
+        Raises:
+            TypeError: If the result is not an instance of AirbyteDateTime.
+        """
+        expiry_date = self._get_config_value_by_path(self._token_expiry_date_config_path)
         result = (
             ab_datetime_now() - timedelta(days=1)
             if expiry_date == ""
@@ -296,14 +301,15 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             return result
         raise TypeError("Invalid datetime conversion")
 
-    def set_token_expiry_date(  # type: ignore[override]
-        self,
-        new_token_expiry_date: AirbyteDateTime,
-    ) -> None:
-        dpath.new(
-            self._connector_config,  # type: ignore[arg-type]
-            self._token_expiry_date_config_path,
-            str(new_token_expiry_date),
+    def set_token_expiry_date(self, new_token_expiry_date: AirbyteDateTime) -> None:  # type: ignore[override]
+        """
+        Sets the token expiry date in the configuration.
+
+        Args:
+            new_token_expiry_date (AirbyteDateTime): The new expiry date for the token.
+        """
+        self._set_config_value_by_path(
+            self._token_expiry_date_config_path, str(new_token_expiry_date)
         )
 
     def token_has_expired(self) -> bool:
@@ -315,6 +321,16 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         access_token_expires_in: str,
         token_expiry_date_format: str | None = None,
     ) -> AirbyteDateTime:
+        """
+        Calculate the new token expiry date based on the provided expiration duration or format.
+
+        Args:
+            access_token_expires_in (str): The duration (in seconds) until the access token expires, or the expiry date in a specific format.
+            token_expiry_date_format (str | None, optional): The format of the expiry date if provided. Defaults to None.
+
+        Returns:
+            AirbyteDateTime: The calculated expiry date of the access token.
+        """
         if token_expiry_date_format:
             return ab_datetime_parse(access_token_expires_in)
         else:
@@ -336,26 +352,81 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             self.access_token = new_access_token
             self.set_refresh_token(new_refresh_token)
             self.set_token_expiry_date(new_token_expiry_date)
-            # FIXME emit_configuration_as_airbyte_control_message as been deprecated in favor of package airbyte_cdk.sources.message
-            #  Usually, a class shouldn't care about the implementation details but to keep backward compatibility where we print the
-            #  message directly in the console, this is needed
-            if not isinstance(self._message_repository, NoopMessageRepository):
-                self._message_repository.emit_message(
-                    create_connector_config_control_message(self._connector_config)  # type: ignore[arg-type]
-                )
-            else:
-                emit_configuration_as_airbyte_control_message(self._connector_config)  # type: ignore[arg-type]
+            self._emit_control_message()
         return self.access_token
 
-    def refresh_access_token(  # type: ignore[override]  # Signature doesn't match base class
-        self,
-    ) -> Tuple[str, str, str]:
-        response_json = self._get_refresh_access_token_response()
+    def refresh_access_token(self) -> Tuple[str, str, str]:  # type: ignore[override]
+        """
+        Refreshes the access token by making a handled request and extracting the necessary token information.
+
+        Returns:
+            Tuple[str, str, str]: A tuple containing the new access token, token expiry date, and refresh token.
+        """
+        response_json = self._make_handled_request()
         return (
-            response_json[self.get_access_token_name()],
-            response_json[self.get_expires_in_name()],
-            response_json[self.get_refresh_token_name()],
+            self._extract_access_token(response_json),
+            self._extract_token_expiry_date(response_json),
+            self._extract_refresh_token(response_json),
         )
+
+    def _set_config_value_by_path(self, config_path: Union[str, Sequence[str]], value: Any) -> None:
+        """
+        Set a value in the connector configuration at the specified path.
+
+        Args:
+            config_path (Union[str, Sequence[str]]): The path within the configuration where the value should be set.
+                This can be a string representing a single key or a sequence of strings representing a nested path.
+            value (Any): The value to set at the specified path in the configuration.
+
+        Returns:
+            None
+        """
+        dpath.new(self._connector_config, config_path, value)  # type: ignore[arg-type]
+
+    def _get_config_value_by_path(
+        self, config_path: Union[str, Sequence[str]], default: Optional[str] = None
+    ) -> str | Any:
+        """
+        Retrieve a value from the connector configuration using a specified path.
+
+        Args:
+            config_path (Union[str, Sequence[str]]): The path to the desired configuration value. This can be a string or a sequence of strings.
+            default (Optional[str], optional): The default value to return if the specified path does not exist in the configuration. Defaults to None.
+
+        Returns:
+            Any: The value from the configuration at the specified path, or the default value if the path does not exist.
+        """
+        return dpath.get(
+            self._connector_config,  # type: ignore[arg-type]
+            config_path,
+            default=default if default is not None else "",
+        )
+
+    def _emit_control_message(self) -> None:
+        """
+        Emits a control message based on the connector configuration.
+
+        This method checks if the message repository is not a NoopMessageRepository.
+        If it is not, it emits a message using the message repository. Otherwise,
+        it falls back to emitting the configuration as an Airbyte control message
+        directly to the console for backward compatibility.
+
+        Note:
+            The function `emit_configuration_as_airbyte_control_message` has been deprecated
+            in favor of the package `airbyte_cdk.sources.message`.
+
+        Raises:
+            TypeError: If the argument types are incorrect.
+        """
+        # FIXME emit_configuration_as_airbyte_control_message as been deprecated in favor of package airbyte_cdk.sources.message
+        # Usually, a class shouldn't care about the implementation details but to keep backward compatibility where we print the
+        # message directly in the console, this is needed
+        if not isinstance(self._message_repository, NoopMessageRepository):
+            self._message_repository.emit_message(
+                create_connector_config_control_message(self._connector_config)  # type: ignore[arg-type]
+            )
+        else:
+            emit_configuration_as_airbyte_control_message(self._connector_config)  # type: ignore[arg-type]
 
     @property
     def _message_repository(self) -> MessageRepository:
