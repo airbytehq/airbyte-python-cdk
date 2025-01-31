@@ -362,6 +362,37 @@ def test_http_components_resolver(
     assert result == expected_result
 
 
+def test_wrong_stream_name_type():
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/items"),
+            HttpResponse(
+                body=json.dumps(
+                    [
+                        {"id": 1, "name": 1},
+                        {"id": 2, "name": 2},
+                    ]
+                )
+            ),
+        )
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/items/1"),
+            HttpResponse(body=json.dumps({"id": "1", "name": "item_1"})),
+        )
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/items/2"),
+            HttpResponse(body=json.dumps({"id": "2", "name": "item_2"})),
+        )
+
+        source = ConcurrentDeclarativeSource(
+            source_config=_MANIFEST, config=_CONFIG, catalog=None, state=None
+        )
+        with pytest.raises(ValueError) as exc_info:
+            source.discover(logger=source.logger, config=_CONFIG)
+
+        assert str(exc_info.value) == "Expected stream name 1 to be a string, got <class 'int'>."
+
+
 @pytest.mark.parametrize(
     "components_mapping, retriever_data, stream_template_config, expected_result",
     [
@@ -533,35 +564,3 @@ def test_dynamic_streams_with_http_components_resolver_retriever_with_parent_str
     actual_record_stream_names.sort()
 
     assert actual_record_stream_names == expected_stream_names
-
-
-def test_wrong_stream_name_type():
-    with HttpMocker() as http_mocker:
-        http_mocker.clear_all_matchers()
-        http_mocker.get(
-            HttpRequest(url="https://api.test.com/items"),
-            HttpResponse(
-                body=json.dumps(
-                    [
-                        {"id": 1, "name": 1},
-                        {"id": 2, "name": 2},
-                    ]
-                )
-            ),
-        )
-        http_mocker.get(
-            HttpRequest(url="https://api.test.com/items/1"),
-            HttpResponse(body=json.dumps({"id": "1", "name": "item_1"})),
-        )
-        http_mocker.get(
-            HttpRequest(url="https://api.test.com/items/2"),
-            HttpResponse(body=json.dumps({"id": "2", "name": "item_2"})),
-        )
-
-        source = ConcurrentDeclarativeSource(
-            source_config=_MANIFEST, config=_CONFIG, catalog=None, state=None
-        )
-        with pytest.raises(ValueError) as exc_info:
-            source.discover(logger=source.logger, config=_CONFIG)
-
-        assert str(exc_info.value) == "Expected stream name 1 to be a string, got <class 'int'>."
