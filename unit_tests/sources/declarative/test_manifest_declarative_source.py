@@ -1024,8 +1024,8 @@ class TestManifestDeclarativeSource:
                         "page_size": 10,
                         "page_size_option": {
                             "type": "RequestOption",
-                            "inject_into": "request_parameter",
-                            "field_name": "page_size",
+                            "inject_into": "request_body",
+                            "field_path": ["variables", "page_size"],
                         },
                         "page_token_option": {"type": "RequestPath"},
                         "pagination_strategy": {
