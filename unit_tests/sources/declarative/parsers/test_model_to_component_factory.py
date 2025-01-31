@@ -745,7 +745,9 @@ def test_datetime_based_cursor():
         == "since_updated_at"
     )
     assert stream_slicer.end_time_option.inject_into == RequestOptionType.body_json
-    assert stream_slicer.end_time_option.field_path[0].eval({}) == "before_created_at"
+    assert [field.eval({}) for field in stream_slicer.end_time_option.field_path] == [
+        "before_created_at"
+    ]
     assert stream_slicer._partition_field_start.eval({}) == "star"
     assert stream_slicer._partition_field_end.eval({}) == "en"
 
