@@ -6,7 +6,7 @@ import json
 from unittest.mock import MagicMock
 
 import pytest
-
+from copy import deepcopy
 from airbyte_cdk.models import Type
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
@@ -365,7 +365,7 @@ def test_http_components_resolver(
 def test_wrong_stream_name_type():
     with HttpMocker() as http_mocker:
         http_mocker.get(
-            HttpRequest(url="https://api.test.com/items"),
+            HttpRequest(url="https://api.test.com/int_items"),
             HttpResponse(
                 body=json.dumps(
                     [
@@ -375,17 +375,12 @@ def test_wrong_stream_name_type():
                 )
             ),
         )
-        http_mocker.get(
-            HttpRequest(url="https://api.test.com/items/1"),
-            HttpResponse(body=json.dumps({"id": "1", "name": "item_1"})),
-        )
-        http_mocker.get(
-            HttpRequest(url="https://api.test.com/items/2"),
-            HttpResponse(body=json.dumps({"id": "2", "name": "item_2"})),
-        )
+
+        manifest = deepcopy(_MANIFEST)
+        manifest["dynamic_streams"][0]["components_resolver"]["retriever"]["requester"]["path"] = "int_items"
 
         source = ConcurrentDeclarativeSource(
-            source_config=_MANIFEST, config=_CONFIG, catalog=None, state=None
+            source_config=manifest, config=_CONFIG, catalog=None, state=None
         )
         with pytest.raises(ValueError) as exc_info:
             source.discover(logger=source.logger, config=_CONFIG)
