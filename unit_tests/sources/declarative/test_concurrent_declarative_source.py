@@ -32,6 +32,9 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
+from airbyte_cdk.sources.declarative.extractors.record_filter import (
+    ClientSideIncrementalRecordFilterDecorator,
+)
 from airbyte_cdk.sources.declarative.partition_routers import AsyncJobPartitionRouter
 from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
     StreamSlicerPartitionGenerator,
@@ -1645,6 +1648,44 @@ def test_async_incremental_stream_uses_concurrent_cursor_with_state():
     assert isinstance(async_job_partition_router, AsyncJobPartitionRouter)
     assert isinstance(async_job_partition_router.stream_slicer, ConcurrentCursor)
     assert async_job_partition_router.stream_slicer._concurrent_state == expected_state
+
+
+def test_stream_using_is_client_side_incremental_has_cursor_state():
+    expected_cursor_value = "2024-07-01"
+    state = [
+        AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(name="locations", namespace=None),
+                stream_state=AirbyteStateBlob(updated_at=expected_cursor_value),
+            ),
+        )
+    ]
+
+    manifest_with_stream_state_interpolation = copy.deepcopy(_MANIFEST)
+
+    # Enable semi-incremental on the locations stream
+    manifest_with_stream_state_interpolation["definitions"]["locations_stream"]["incremental_sync"][
+        "is_client_side_incremental"
+    ] = True
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest_with_stream_state_interpolation,
+        config=_CONFIG,
+        catalog=_CATALOG,
+        state=state,
+    )
+    concurrent_streams, synchronous_streams = source._group_streams(config=_CONFIG)
+
+    locations_stream = concurrent_streams[2]
+    assert isinstance(locations_stream, DefaultStream)
+
+    simple_retriever = locations_stream._stream_partition_generator._partition_factory._retriever
+    record_filter = simple_retriever.record_selector.record_filter
+    assert isinstance(record_filter, ClientSideIncrementalRecordFilterDecorator)
+    client_side_incremental_cursor_state = record_filter._cursor._cursor
+
+    assert client_side_incremental_cursor_state == expected_cursor_value
 
 
 def create_wrapped_stream(stream: DeclarativeStream) -> Stream:
