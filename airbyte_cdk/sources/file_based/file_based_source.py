@@ -33,6 +33,12 @@ from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
     FileBasedStreamConfig,
     ValidationPolicy,
 )
+from airbyte_cdk.sources.file_based.config.validate_config_transfer_modes import (
+    use_file_transfer,
+    preserve_directory_structure,
+    use_permissions_transfer,
+    include_identities_stream,
+)
 from airbyte_cdk.sources.file_based.discovery_policy import (
     AbstractDiscoveryPolicy,
     DefaultDiscoveryPolicy,
@@ -172,8 +178,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                 parsed_config = self._get_parsed_config(config)
                 availability_method = (
                     stream.availability_strategy.check_availability
-                    if self._use_file_transfer(parsed_config)
-                    or self._sync_acl_permissions(parsed_config)
+                    if use_file_transfer(parsed_config) or use_permissions_transfer(parsed_config)
                     else stream.availability_strategy.check_availability_and_parsability
                 )
                 (
@@ -300,7 +305,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
 
                 streams.append(stream)
 
-            if self._sync_acl_permissions(parsed_config):
+            if include_identities_stream(parsed_config):
                 identities_stream = self._make_identities_stream()
                 streams.append(identities_stream)
             return streams
@@ -324,9 +329,9 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
             validation_policy=self._validate_and_get_validation_policy(stream_config),
             errors_collector=self.errors_collector,
             cursor=cursor,
-            use_file_transfer=self._use_file_transfer(parsed_config),
-            preserve_directory_structure=self._preserve_directory_structure(parsed_config),
-            sync_acl_permissions=self._sync_acl_permissions(parsed_config),
+            use_file_transfer=use_file_transfer(parsed_config),
+            preserve_directory_structure=preserve_directory_structure(parsed_config),
+            use_permissions_transfer=use_permissions_transfer(parsed_config),
         )
 
     def _make_identities_stream(
@@ -403,51 +408,3 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                 "`input_schema` and `schemaless` options cannot both be set",
                 model=FileBasedStreamConfig,
             )
-
-    @staticmethod
-    def _use_file_transfer(parsed_config: AbstractFileBasedSpec) -> bool:
-        use_file_transfer = (
-            hasattr(parsed_config.delivery_method, "delivery_type")
-            and parsed_config.delivery_method.delivery_type == "use_file_transfer"
-        )
-        return use_file_transfer
-
-    @staticmethod
-    def _use_records_transfer(parsed_config: AbstractFileBasedSpec) -> bool:
-        use_records_transfer = (
-            hasattr(parsed_config.delivery_method, "delivery_type")
-            and parsed_config.delivery_method.delivery_type == "use_records_transfer"
-        )
-        return use_records_transfer
-
-    @staticmethod
-    def _preserve_directory_structure(parsed_config: AbstractFileBasedSpec) -> bool:
-        """
-        Determines whether to preserve directory structure during file transfer.
-
-        When enabled, files maintain their subdirectory paths in the destination.
-        When disabled, files are flattened to the root of the destination.
-
-        Args:
-            parsed_config: The parsed configuration containing delivery method settings
-
-        Returns:
-            True if directory structure should be preserved (default), False otherwise
-        """
-        if (
-            FileBasedSource._use_file_transfer(parsed_config)
-            and hasattr(parsed_config.delivery_method, "preserve_directory_structure")
-            and parsed_config.delivery_method.preserve_directory_structure is not None
-        ):
-            return parsed_config.delivery_method.preserve_directory_structure
-        return True
-
-    @staticmethod
-    def _sync_acl_permissions(parsed_config: AbstractFileBasedSpec) -> bool:
-        if (
-            FileBasedSource._use_records_transfer(parsed_config)
-            and hasattr(parsed_config.delivery_method, "sync_acl_permissions")
-            and parsed_config.delivery_method.sync_acl_permissions is not None
-        ):
-            return parsed_config.delivery_method.sync_acl_permissions
-        return False

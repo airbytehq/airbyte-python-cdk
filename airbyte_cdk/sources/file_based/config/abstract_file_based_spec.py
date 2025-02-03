@@ -14,6 +14,23 @@ from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileB
 from airbyte_cdk.sources.utils import schema_helpers
 
 
+class DeliverPermissions(BaseModel):
+    class Config(OneOfOptionConfig):
+        title = "Replicate Permissions ACL"
+        description = "Sends one identity stream and one for more permissions (ACL) streams to the destination. This data can be used in downstream systems to recreate permission restrictions mirroring the original source."
+        discriminator = "delivery_type"
+
+    delivery_type: Literal["use_permissions_transfer"] = Field(
+        "use_permissions_transfer", const=True
+    )
+
+    include_identities_stream: bool = Field(
+        title="Include Identity Stream",
+        description="This data can be used in downstream systems to recreate permission restrictions mirroring the original source",
+        default=True,
+    )
+
+
 class DeliverRecords(BaseModel):
     class Config(OneOfOptionConfig):
         title = "Replicate Records"
@@ -21,16 +38,6 @@ class DeliverRecords(BaseModel):
         discriminator = "delivery_type"
 
     delivery_type: Literal["use_records_transfer"] = Field("use_records_transfer", const=True)
-
-    sync_acl_permissions: bool = Field(
-        title="Include ACL Permissions",
-        description="Joins Document allowlists to each stream.",
-        default=False,
-        airbyte_hidden=True,
-    )
-    domain: Optional[str] = Field(
-        title="Domain", description="The domain of the identities.", airbyte_hidden=True
-    )
 
 
 class DeliverRawFiles(BaseModel):
@@ -75,7 +82,7 @@ class AbstractFileBasedSpec(BaseModel):
         order=10,
     )
 
-    delivery_method: Union[DeliverRecords, DeliverRawFiles] = Field(
+    delivery_method: Union[DeliverRecords, DeliverRawFiles, DeliverPermissions] = Field(
         title="Delivery Method",
         discriminator="delivery_type",
         type="object",

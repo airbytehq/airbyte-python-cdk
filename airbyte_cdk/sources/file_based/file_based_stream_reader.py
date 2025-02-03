@@ -13,6 +13,11 @@ from typing import Any, Dict, Iterable, List, Optional, Set
 from wcmatch.glob import GLOBSTAR, globmatch
 
 from airbyte_cdk.sources.file_based.config.abstract_file_based_spec import AbstractFileBasedSpec
+from airbyte_cdk.sources.file_based.config.validate_config_transfer_modes import (
+    use_file_transfer,
+    preserve_directory_structure,
+    include_identities_stream,
+)
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 
 
@@ -128,41 +133,18 @@ class AbstractFileBasedStreamReader(ABC):
 
     def use_file_transfer(self) -> bool:
         if self.config:
-            use_file_transfer = (
-                hasattr(self.config.delivery_method, "delivery_type")
-                and self.config.delivery_method.delivery_type == "use_file_transfer"
-            )
-            return use_file_transfer
-        return False
-
-    def use_records_transfer(self) -> bool:
-        if self.config:
-            use_records_transfer = (
-                hasattr(self.config.delivery_method, "delivery_type")
-                and self.config.delivery_method.delivery_type == "use_records_transfer"
-            )
-            return use_records_transfer
+            return use_file_transfer(self.config)
         return False
 
     def preserve_directory_structure(self) -> bool:
         # fall back to preserve subdirectories if config is not present or incomplete
-        if (
-            self.use_file_transfer()
-            and self.config
-            and hasattr(self.config.delivery_method, "preserve_directory_structure")
-            and self.config.delivery_method.preserve_directory_structure is not None
-        ):
-            return self.config.delivery_method.preserve_directory_structure
+        if self.config:
+            return preserve_directory_structure(self.config)
         return True
 
-    def sync_acl_permissions(self) -> bool:
-        if (
-            self.config
-            and self.use_records_transfer()
-            and hasattr(self.config.delivery_method, "sync_acl_permissions")
-            and self.config.delivery_method.sync_acl_permissions is not None
-        ):
-            return self.config.delivery_method.sync_acl_permissions
+    def include_identities_stream(self) -> bool:
+        if self.config:
+            return include_identities_stream(self.config)
         return False
 
     @abstractmethod
