@@ -545,7 +545,6 @@ single_csv_scenario: TestScenario[InMemoryFilesSource] = (
                                         "type": "string",
                                     },
                                     "include_identities_stream": {
-                                        "airbyte_hidden": True,
                                         "default": True,
                                         "description": "This data can be used in downstream systems to recreate permission restrictions mirroring the original source",
                                         "title": "Include Identity Stream",
