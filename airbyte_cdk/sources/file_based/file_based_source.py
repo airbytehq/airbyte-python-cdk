@@ -34,10 +34,10 @@ from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
     ValidationPolicy,
 )
 from airbyte_cdk.sources.file_based.config.validate_config_transfer_modes import (
-    use_file_transfer,
-    preserve_directory_structure,
-    use_permissions_transfer,
     include_identities_stream,
+    preserve_directory_structure,
+    use_file_transfer,
+    use_permissions_transfer,
 )
 from airbyte_cdk.sources.file_based.discovery_policy import (
     AbstractDiscoveryPolicy,

@@ -14,9 +14,9 @@ from wcmatch.glob import GLOBSTAR, globmatch
 
 from airbyte_cdk.sources.file_based.config.abstract_file_based_spec import AbstractFileBasedSpec
 from airbyte_cdk.sources.file_based.config.validate_config_transfer_modes import (
-    use_file_transfer,
-    preserve_directory_structure,
     include_identities_stream,
+    preserve_directory_structure,
+    use_file_transfer,
 )
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 
