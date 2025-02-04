@@ -78,6 +78,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         # For ease of use we don't require the type to be specified at the top level manifest, but it should be included during processing
         manifest = dict(source_config)
         if "type" not in manifest:
+            print("I AM NOT A REAL CHANGE. PLEASE DELETE ME BEFORE MERGING :)")
             manifest["type"] = "DeclarativeSource"
 
         # If custom components are needed, locate and/or register them.
