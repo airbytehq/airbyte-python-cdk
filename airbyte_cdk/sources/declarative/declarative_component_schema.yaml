@@ -320,6 +320,11 @@ definitions:
         title: Stream Count
         description: Numbers of the streams to try reading from when running a check operation.
         type: integer
+      use_check_availability:
+        title: Use Check Availability
+        description: Enables stream check availability. This field is automatically set by the CDK.
+        type: boolean
+        default: true
   CompositeErrorHandler:
     title: Composite Error Handler
     description: Error handler that sequentially iterates over a list of error handlers.
@@ -784,6 +789,29 @@ definitions:
       type:
         type: string
         enum: [DatetimeBasedCursor]
+      clamping:
+        title: Date Range Clamping
+        description: This option is used to adjust the upper and lower boundaries of each datetime window to beginning and end of the provided target period (day, week, month)
+        type: object
+        required:
+        - target
+        properties:
+          target:
+            title: Target
+            description: The period of time that datetime windows will be clamped by
+            # This should ideally be an enum. However, we don't use an enum because we want to allow for connectors
+            # to support interpolation on the connector config to get the target which is an arbitrary string
+            type: string
+            interpolation_context:
+              - config
+            examples:
+              - "DAY"
+              - "WEEK"
+              - "MONTH"
+              - "{{ config['target'] }}"
+          target_details:
+            type: object
+            additionalProperties: true
       cursor_field:
         title: Cursor Field
         description: The location of the value on a record that will be used as a bookmark during sync. To ensure no data loss, the API must return records in ascending order based on the cursor field. Nested fields are not supported, so the field must be at the top level of the record. You can use a combination of Add Field and Remove Field transformations to move the nested field to the top.
@@ -1058,8 +1086,6 @@ definitions:
     type: object
     required:
       - type
-      - client_id
-      - client_secret
     properties:
       type:
         type: string
@@ -1254,6 +1280,15 @@ definitions:
             default: []
             examples:
               - ["invalid_grant", "invalid_permissions"]
+      profile_assertion:
+        title: Profile Assertion
+        description: The authenticator being used to authenticate the client authenticator.
+        "$ref": "#/definitions/JwtAuthenticator"
+      use_profile_assertion:
+        title: Use Profile Assertion
+        description: Enable using profile assertion as a flow for OAuth authorization.
+        type: boolean
+        default: false
       $parameters:
         type: object
         additionalProperties: true
@@ -1770,6 +1805,19 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  ComplexFieldType:
+    title: Schema Field Type
+    description: (This component is experimental. Use at your own risk.) Represents a complex field type.
+    type: object
+    required:
+      - field_type
+    properties:
+      field_type:
+        type: string
+      items:
+        anyOf:
+          - type: string
+          - "$ref": "#/definitions/ComplexFieldType"
   TypesMap:
     title: Types Map
     description: (This component is experimental. Use at your own risk.) Represents a mapping between a current type and its corresponding target type.
@@ -1784,6 +1832,7 @@ definitions:
           - type: array
             items:
               type: string
+          - "$ref": "#/definitions/ComplexFieldType"
       current_type:
         anyOf:
           - type: string

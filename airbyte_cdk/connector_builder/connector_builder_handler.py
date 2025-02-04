@@ -3,7 +3,6 @@
 #
 
 import dataclasses
-from datetime import datetime
 from typing import Any, List, Mapping
 
 from airbyte_cdk.connector_builder.message_grouper import MessageGrouper
@@ -21,6 +20,7 @@ from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE = 5
@@ -52,6 +52,7 @@ def get_limits(config: Mapping[str, Any]) -> TestReadLimits:
 def create_source(config: Mapping[str, Any], limits: TestReadLimits) -> ManifestDeclarativeSource:
     manifest = config["__injected_declarative_manifest"]
     return ManifestDeclarativeSource(
+        config=config,
         emit_connector_builder_messages=True,
         source_config=manifest,
         component_factory=ModelToComponentFactory(
@@ -113,4 +114,4 @@ def resolve_manifest(source: ManifestDeclarativeSource) -> AirbyteMessage:
 
 
 def _emitted_at() -> int:
-    return int(datetime.now().timestamp()) * 1000
+    return ab_datetime_now().to_epoch_millis()

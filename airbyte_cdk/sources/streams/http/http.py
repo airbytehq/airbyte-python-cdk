@@ -423,8 +423,6 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         stream_slice: Optional[Mapping[str, Any]] = None,
         stream_state: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[StreamData]:
-        partition, _, _ = self._extract_slice_fields(stream_slice=stream_slice)
-
         stream_state = stream_state or {}
         pagination_complete = False
         next_page_token = None
@@ -438,6 +436,7 @@ class HttpStream(Stream, CheckpointMixin, ABC):
 
         cursor = self.get_cursor()
         if cursor and isinstance(cursor, SubstreamResumableFullRefreshCursor):
+            partition, _, _ = self._extract_slice_fields(stream_slice=stream_slice)
             # Substreams checkpoint state by marking an entire parent partition as completed so that on the subsequent attempt
             # after a failure, completed parents are skipped and the sync can make progress
             cursor.close_slice(StreamSlice(cursor_slice={}, partition=partition))

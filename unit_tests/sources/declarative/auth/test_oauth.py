@@ -1,28 +1,33 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+
 import base64
+import json
 import logging
+from datetime import timedelta, timezone
 from unittest.mock import Mock
 
 import freezegun
-import pendulum
 import pytest
 import requests
 from requests import Response
 
 from airbyte_cdk.sources.declarative.auth import DeclarativeOauth2Authenticator
+from airbyte_cdk.sources.declarative.auth.jwt import JwtAuthenticator
+from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 
 LOGGER = logging.getLogger(__name__)
 
 resp = Response()
 
 config = {
-    "refresh_endpoint": "refresh_end",
+    "refresh_endpoint": "https://refresh_endpoint.com",
     "client_id": "some_client_id",
     "client_secret": "some_client_secret",
-    "token_expiry_date": pendulum.now().subtract(days=2).to_rfc3339_string(),
+    "token_expiry_date": (ab_datetime_now() - timedelta(days=2)).isoformat(),
     "custom_field": "in_outbound_request",
     "another_field": "exists_in_body",
     "grant_type": "some_grant_type",
@@ -291,25 +296,22 @@ class TestOauth2Authenticator:
     def test_initialize_declarative_oauth_with_token_expiry_date_as_timestamp(
         self, timestamp, expected_date
     ):
-        # TODO: should be fixed inside DeclarativeOauth2Authenticator, remove next line after fixing
-        with pytest.raises(TypeError):
-            oauth = DeclarativeOauth2Authenticator(
-                token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
-                client_id="{{ config['client_id'] }}",
-                client_secret="{{ config['client_secret'] }}",
-                refresh_token="{{ parameters['refresh_token'] }}",
-                config=config | {"token_expiry_date": timestamp},
-                scopes=["scope1", "scope2"],
-                token_expiry_date="{{ config['token_expiry_date'] }}",
-                refresh_request_body={
-                    "custom_field": "{{ config['custom_field'] }}",
-                    "another_field": "{{ config['another_field'] }}",
-                    "scopes": ["no_override"],
-                },
-                parameters={},
-            )
-
-            assert oauth.get_token_expiry_date() == pendulum.parse(expected_date)
+        oauth = DeclarativeOauth2Authenticator(
+            token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
+            client_id="{{ config['client_id'] }}",
+            client_secret="{{ config['client_secret'] }}",
+            token_expiry_date=timestamp,
+            refresh_token="some_refresh_token",
+            config={
+                "refresh_endpoint": "refresh_end",
+                "client_id": "some_client_id",
+                "client_secret": "some_client_secret",
+            },
+            parameters={},
+            grant_type="client_credentials",
+        )
+        assert isinstance(oauth._token_expiry_date, AirbyteDateTime)
+        assert oauth.get_token_expiry_date() == ab_datetime_parse(expected_date)
 
     @pytest.mark.parametrize(
         "expires_in_response, token_expiry_date_format",
@@ -326,7 +328,7 @@ class TestOauth2Authenticator:
     ):
         next_day = "2020-01-02T00:00:00Z"
         config.update(
-            {"token_expiry_date": pendulum.parse(next_day).subtract(days=2).to_rfc3339_string()}
+            {"token_expiry_date": (ab_datetime_parse(next_day) - timedelta(days=2)).isoformat()}
         )
         message_repository = Mock()
         oauth = DeclarativeOauth2Authenticator(
@@ -357,7 +359,7 @@ class TestOauth2Authenticator:
         mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
         token = oauth.get_access_token()
         assert "access_token" == token
-        assert oauth.get_token_expiry_date() == pendulum.parse(next_day)
+        assert oauth.get_token_expiry_date() == ab_datetime_parse(next_day)
         assert message_repository.log_message.call_count == 1
 
     @pytest.mark.parametrize(
@@ -380,7 +382,7 @@ class TestOauth2Authenticator:
     @freezegun.freeze_time("2020-01-01")
     def test_set_token_expiry_date_no_format(self, mocker, expires_in_response, next_day, raises):
         config.update(
-            {"token_expiry_date": pendulum.parse(next_day).subtract(days=2).to_rfc3339_string()}
+            {"token_expiry_date": (ab_datetime_parse(next_day) - timedelta(days=2)).isoformat()}
         )
         oauth = DeclarativeOauth2Authenticator(
             token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
@@ -410,7 +412,46 @@ class TestOauth2Authenticator:
         else:
             token = oauth.get_access_token()
             assert "access_token" == token
-            assert oauth.get_token_expiry_date() == pendulum.parse(next_day)
+            assert oauth.get_token_expiry_date() == ab_datetime_parse(next_day)
+
+    def test_profile_assertion(self, mocker):
+        with HttpMocker() as http_mocker:
+            jwt = JwtAuthenticator(
+                config={},
+                parameters={},
+                secret_key="test",
+                algorithm="HS256",
+                token_duration=1000,
+                typ="JWT",
+                iss="iss",
+            )
+
+            mocker.patch(
+                "airbyte_cdk.sources.declarative.auth.jwt.JwtAuthenticator.token",
+                new_callable=lambda: "token",
+            )
+
+            oauth = DeclarativeOauth2Authenticator(
+                token_refresh_endpoint="https://refresh_endpoint.com/",
+                config=config,
+                parameters={},
+                profile_assertion=jwt,
+                use_profile_assertion=True,
+            )
+            http_mocker.post(
+                HttpRequest(
+                    url="https://refresh_endpoint.com/",
+                    body="grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=token",
+                ),
+                HttpResponse(body=json.dumps({"access_token": "access_token", "expires_in": 1000})),
+            )
+
+            token = oauth.refresh_access_token()
+
+        assert ("access_token", 1000) == token
+
+        filtered = filter_secrets("access_token")
+        assert filtered == "****"
 
     def test_error_handling(self, mocker):
         oauth = DeclarativeOauth2Authenticator(
@@ -438,7 +479,7 @@ class TestOauth2Authenticator:
 
 
 def mock_request(method, url, data, headers):
-    if url == "refresh_end":
+    if url == "https://refresh_endpoint.com":
         return resp
     raise Exception(
         f"Error while refreshing access token with request: {method}, {url}, {data}, {headers}"

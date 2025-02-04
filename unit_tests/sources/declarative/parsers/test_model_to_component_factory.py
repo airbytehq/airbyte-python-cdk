@@ -3,16 +3,23 @@
 #
 
 # mypy: ignore-errors
-import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Mapping
 
 import freezegun
-import pendulum
 import pytest
 import requests
 
 from airbyte_cdk import AirbyteTracedException
-from airbyte_cdk.models import FailureType, Level
+from airbyte_cdk.models import (
+    AirbyteStateBlob,
+    AirbyteStateMessage,
+    AirbyteStateType,
+    AirbyteStreamState,
+    FailureType,
+    Level,
+    StreamDescriptor,
+)
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator
 from airbyte_cdk.sources.declarative.auth import DeclarativeOauth2Authenticator, JwtAuthenticator
@@ -135,6 +142,14 @@ from airbyte_cdk.sources.declarative.spec import Spec
 from airbyte_cdk.sources.declarative.transformations import AddFields, RemoveFields
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
+from airbyte_cdk.sources.streams.concurrent.clamping import (
+    ClampingEndProvider,
+    DayClampingStrategy,
+    MonthClampingStrategy,
+    NoClamping,
+    WeekClampingStrategy,
+    Weekday,
+)
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
@@ -144,6 +159,7 @@ from airbyte_cdk.sources.streams.http.requests_native_auth.oauth import (
     SingleUseRefreshTokenOauth2Authenticator,
 )
 from airbyte_cdk.sources.types import StreamSlice
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 from unit_tests.sources.declarative.parsers.testing_components import (
     TestingCustomSubstreamPartitionRouter,
     TestingSomeComponent,
@@ -733,7 +749,7 @@ def test_datetime_based_cursor():
     )
 
     assert isinstance(stream_slicer, DatetimeBasedCursor)
-    assert stream_slicer._step == datetime.timedelta(days=10)
+    assert stream_slicer._step == timedelta(days=10)
     assert stream_slicer.cursor_field.string == "created"
     assert stream_slicer.cursor_granularity == "PT0.000001S"
     assert stream_slicer._lookback_window.string == "P5D"
@@ -1258,7 +1274,7 @@ list_stream:
         stream.retriever.record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
     )
     assert isinstance(
-        stream.retriever.record_selector.record_filter._substream_cursor,
+        stream.retriever.record_selector.record_filter._cursor,
         PerPartitionWithGlobalCursor,
     )
 
@@ -2819,11 +2835,12 @@ def test_create_jwt_authenticator(config, manifest, expected):
         assert authenticator._header_prefix.eval(config) == expected["header_prefix"]
     assert authenticator._get_jwt_headers() == expected["jwt_headers"]
     jwt_payload = expected["jwt_payload"]
+    now_timestamp = int(ab_datetime_now().timestamp())
     jwt_payload.update(
         {
-            "iat": int(datetime.datetime.now().timestamp()),
-            "nbf": int(datetime.datetime.now().timestamp()),
-            "exp": int(datetime.datetime.now().timestamp()) + expected["token_duration"],
+            "iat": now_timestamp,
+            "nbf": now_timestamp,
+            "exp": now_timestamp + expected["token_duration"],
         }
     )
     assert authenticator._get_jwt_payload() == jwt_payload
@@ -3051,14 +3068,14 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
     expected_cursor_field = "updated_at"
     expected_start_boundary = "custom_start"
     expected_end_boundary = "custom_end"
-    expected_step = datetime.timedelta(days=10)
-    expected_lookback_window = datetime.timedelta(days=3)
+    expected_step = timedelta(days=10)
+    expected_lookback_window = timedelta(days=3)
     expected_datetime_format = "%Y-%m-%dT%H:%M:%S.%fZ"
-    expected_cursor_granularity = datetime.timedelta(microseconds=1)
+    expected_cursor_granularity = timedelta(microseconds=1)
 
-    expected_start = pendulum.parse(expected_start)
-    expected_end = datetime.datetime(
-        year=2024, month=10, day=15, second=0, microsecond=0, tzinfo=datetime.timezone.utc
+    expected_start = ab_datetime_parse(expected_start)
+    expected_end = AirbyteDateTime(
+        year=2024, month=10, day=15, second=0, microsecond=0, tzinfo=timezone.utc
     )
     if stream_state:
         # Using incoming state, the resulting already completed partition is the start_time up to the last successful
@@ -3066,9 +3083,9 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
         expected_concurrent_state = {
             "slices": [
                 {
-                    "start": pendulum.parse(config["start_time"]),
-                    "end": pendulum.parse(stream_state["updated_at"]),
-                    "most_recent_cursor_value": pendulum.parse(stream_state["updated_at"]),
+                    "start": ab_datetime_parse(config["start_time"]),
+                    "end": ab_datetime_parse(stream_state["updated_at"]),
+                    "most_recent_cursor_value": ab_datetime_parse(stream_state["updated_at"]),
                 },
             ],
             "state_type": "date-range",
@@ -3078,20 +3095,32 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
         expected_concurrent_state = {
             "slices": [
                 {
-                    "start": pendulum.parse(config["start_time"]),
-                    "end": pendulum.parse(config["start_time"]),
-                    "most_recent_cursor_value": pendulum.parse(config["start_time"]),
+                    "start": ab_datetime_parse(config["start_time"]),
+                    "end": ab_datetime_parse(config["start_time"]),
+                    "most_recent_cursor_value": ab_datetime_parse(config["start_time"]),
                 },
             ],
             "state_type": "date-range",
             "legacy": {},
         }
 
-    connector_state_manager = ConnectorStateManager()
-
-    connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
-
     stream_name = "test"
+
+    connector_state_manager = ConnectorStateManager(
+        state=[
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name=stream_name),
+                    stream_state=AirbyteStateBlob(stream_state),
+                ),
+            )
+        ]
+    )
+
+    connector_builder_factory = ModelToComponentFactory(
+        emit_connector_builder_messages=True, connector_state_manager=connector_state_manager
+    )
 
     cursor_component_definition = {
         "type": "DatetimeBasedCursor",
@@ -3108,13 +3137,11 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
 
     concurrent_cursor = (
         connector_builder_factory.create_concurrent_cursor_from_datetime_based_cursor(
-            state_manager=connector_state_manager,
             model_type=DatetimeBasedCursorModel,
             component_definition=cursor_component_definition,
             stream_name=stream_name,
             stream_namespace=None,
             config=config,
-            stream_state=stream_state,
         )
     )
 
@@ -3187,7 +3214,7 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
                 "step": None,
             },
             "_slice_range",
-            datetime.timedelta.max,
+            timedelta.max,
             None,
             id="test_uses_a_single_time_interval_when_no_specified_step_and_granularity",
         ),
@@ -3260,11 +3287,11 @@ def test_create_concurrent_cursor_uses_min_max_datetime_format_if_defined():
     string parser should not inherit from the parent DatetimeBasedCursor.datetime_format. The parent which uses an incorrect
     precision would fail if it were used by the dependent children.
     """
-    expected_start = datetime.datetime(
-        year=2024, month=8, day=1, second=0, microsecond=0, tzinfo=datetime.timezone.utc
+    expected_start = AirbyteDateTime(
+        year=2024, month=8, day=1, second=0, microsecond=0, tzinfo=timezone.utc
     )
-    expected_end = datetime.datetime(
-        year=2024, month=9, day=1, second=0, microsecond=0, tzinfo=datetime.timezone.utc
+    expected_end = AirbyteDateTime(
+        year=2024, month=9, day=1, second=0, microsecond=0, tzinfo=timezone.utc
     )
 
     connector_state_manager = ConnectorStateManager()
@@ -3321,6 +3348,111 @@ def test_create_concurrent_cursor_uses_min_max_datetime_format_if_defined():
         "state_type": "date-range",
         "legacy": {},
     }
+
+
+@pytest.mark.parametrize(
+    "clamping,expected_clamping_strategy,expected_error",
+    [
+        pytest.param(
+            {"target": "DAY", "target_details": {}},
+            DayClampingStrategy,
+            None,
+            id="test_day_clamping_strategy",
+        ),
+        pytest.param(
+            {"target": "WEEK", "target_details": {"weekday": "SUNDAY"}},
+            WeekClampingStrategy,
+            None,
+            id="test_week_clamping_strategy",
+        ),
+        pytest.param(
+            {"target": "MONTH", "target_details": {}},
+            MonthClampingStrategy,
+            None,
+            id="test_month_clamping_strategy",
+        ),
+        pytest.param(
+            {"target": "WEEK", "target_details": {}},
+            None,
+            ValueError,
+            id="test_week_clamping_strategy_no_target_details",
+        ),
+        pytest.param(
+            {"target": "FAKE", "target_details": {}},
+            None,
+            ValueError,
+            id="test_invalid_clamping_target",
+        ),
+        pytest.param(
+            {"target": "{{ config['clamping_target'] }}"},
+            MonthClampingStrategy,
+            None,
+            id="test_clamping_with_interpolation",
+        ),
+    ],
+)
+def test_create_concurrent_cursor_from_datetime_based_cursor_with_clamping(
+    clamping,
+    expected_clamping_strategy,
+    expected_error,
+):
+    config = {
+        "start_time": "2024-08-01T00:00:00.000000Z",
+        "end_time": "2024-10-15T00:00:00.000000Z",
+        "clamping_target": "MONTH",
+    }
+
+    cursor_component_definition = {
+        "type": "DatetimeBasedCursor",
+        "cursor_field": "updated_at",
+        "datetime_format": "%Y-%m-%dT%H:%M:%S.%fZ",
+        "start_datetime": "{{ config['start_time'] }}",
+        "end_datetime": "{{ config['end_time'] }}",
+        "partition_field_start": "custom_start",
+        "partition_field_end": "custom_end",
+        "step": "P10D",
+        "cursor_granularity": "PT1S",
+        "lookback_window": "P3D",
+        "clamping": clamping,
+    }
+
+    connector_state_manager = ConnectorStateManager()
+
+    connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
+
+    stream_name = "test"
+
+    if expected_error:
+        with pytest.raises(ValueError):
+            connector_builder_factory.create_concurrent_cursor_from_datetime_based_cursor(
+                state_manager=connector_state_manager,
+                model_type=DatetimeBasedCursorModel,
+                component_definition=cursor_component_definition,
+                stream_name=stream_name,
+                stream_namespace=None,
+                config=config,
+                stream_state={},
+            )
+
+    else:
+        concurrent_cursor = (
+            connector_builder_factory.create_concurrent_cursor_from_datetime_based_cursor(
+                state_manager=connector_state_manager,
+                model_type=DatetimeBasedCursorModel,
+                component_definition=cursor_component_definition,
+                stream_name=stream_name,
+                stream_namespace=None,
+                config=config,
+                stream_state={},
+            )
+        )
+
+        assert concurrent_cursor._clamping_strategy.__class__ == expected_clamping_strategy
+        assert isinstance(concurrent_cursor._end_provider, ClampingEndProvider)
+        assert isinstance(
+            concurrent_cursor._end_provider._clamping_strategy, expected_clamping_strategy
+        )
+        assert concurrent_cursor._end_provider._granularity == timedelta(seconds=1)
 
 
 class CustomRecordExtractor(RecordExtractor):
