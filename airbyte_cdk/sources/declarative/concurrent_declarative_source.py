@@ -224,6 +224,9 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     stream_state = self._connector_state_manager.get_stream_state(
                         stream_name=declarative_stream.name, namespace=declarative_stream.namespace
                     )
+                    for state_migration in declarative_stream.state_migrations:
+                        if state_migration.should_migrate(stream_state):
+                            stream_state = state_migration.migrate(stream_state)
 
                     retriever = self._get_retriever(declarative_stream, stream_state)
 
@@ -331,6 +334,10 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     stream_state = self._connector_state_manager.get_stream_state(
                         stream_name=declarative_stream.name, namespace=declarative_stream.namespace
                     )
+                    for state_migration in declarative_stream.state_migrations:
+                        if state_migration.should_migrate(stream_state):
+                            stream_state = state_migration.migrate(stream_state)
+
                     partition_router = declarative_stream.retriever.stream_slicer._partition_router
 
                     perpartition_cursor = (
