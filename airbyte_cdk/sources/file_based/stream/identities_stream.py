@@ -68,7 +68,7 @@ class IdentitiesStream(Stream):
         stream_state: Optional[Mapping[str, Any]] = None,
     ) -> Iterable[Mapping[str, Any] | AirbyteMessage]:
         try:
-            identity_groups = self.stream_reader.load_identity_groups(logger=self.logger)
+            identity_groups = self.load_identity_groups()
             for record in identity_groups:
                 yield stream_data_to_airbyte_message(self.name, record)
         except AirbyteTracedException as exc:
@@ -83,6 +83,9 @@ class IdentitiesStream(Stream):
                     stack_trace=traceback.format_exc(),
                 ),
             )
+
+    def load_identity_groups(self):
+        return self.stream_reader.load_identity_groups(logger=self.logger)
 
     @cache
     def get_json_schema(self) -> JsonSchema:

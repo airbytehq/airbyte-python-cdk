@@ -170,7 +170,9 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         tracebacks = []
         for stream in streams:
             if isinstance(stream, IdentitiesStream):
-                # Probably need to check identities endpoint/api access but will skip for now.
+                identity = next(iter(stream.load_identity_groups()))
+                if not identity:
+                    errors.append("Unable to get identities for current configuration, please check your credentials")
                 continue
             if not isinstance(stream, AbstractFileBasedStream):
                 raise ValueError(f"Stream {stream} is not a file-based stream.")
