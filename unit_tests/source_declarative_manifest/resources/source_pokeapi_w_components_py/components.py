@@ -1,29 +1,19 @@
 """A sample implementation of custom components that does nothing but will cause syncs to fail if missing."""
 
-from dataclasses import dataclass
+from typing import Any, Mapping
 
-from airbyte_cdk.sources.declarative.requesters.paginators import PaginationStrategy
-from airbyte_cdk.sources.declarative.retrievers import (
-    AsyncRetriever,
-    SimpleRetriever,
-    SimpleRetrieverTestReadDecorator,
-)
-from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader
+import requests
+
+from airbyte_cdk.sources.declarative.extractors import DpathExtractor
 
 
 class IntentionalException(Exception):
     """This exception is raised intentionally in order to test error handling."""
 
 
-@dataclass
-class CustomPageIncrement(PaginationStrategy):
-    """No op."""
+class MyCustomExtractor(DpathExtractor):
+    """Dummy class, directly implements DPatchExtractor.
 
-
-class CustomPaginationStrategy(SimpleRetriever):
+    Used to prove that SDM can find the custom class by name.
+    """
     pass
-
-
-class MyCustomInlineSchemaLoader(InlineSchemaLoader):
-    def __init__(self, *args, **kwargs):
-        raise IntentionalException

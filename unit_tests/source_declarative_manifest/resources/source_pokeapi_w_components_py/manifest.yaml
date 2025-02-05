@@ -21,7 +21,8 @@ definitions:
         record_selector:
           type: RecordSelector
           extractor:
-            type: DpathExtractor
+            type: CustomRecordExtractor
+            class_name: components.MyCustomExtractor
             field_path: []
       primary_key:
         - id

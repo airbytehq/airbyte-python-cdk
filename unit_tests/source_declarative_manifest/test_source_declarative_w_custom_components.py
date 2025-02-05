@@ -273,17 +273,19 @@ def test_sync_with_injected_py_components(
             ]
         )
 
-        msg_iterator = source.read(
-            logger=logging.getLogger(),
-            config=py_components_config_dict,
-            catalog=configured_catalog,
-            state=None,
-        )
-        if failing_components:
-            with pytest.raises(Exception):
-                for msg in msg_iterator:
-                    assert msg
+        def _read_fn(*args, **kwargs):
+            msg_iterator = source.read(
+                logger=logging.getLogger(),
+                config=py_components_config_dict,
+                catalog=configured_catalog,
+                state=None,
+            )
+            for msg in msg_iterator:
+                assert msg
             return
 
-        for msg in msg_iterator:
-            assert msg
+        if failing_components:
+            with pytest.raises(Exception):
+                _read_fn()
+        else:
+            _read_fn()
