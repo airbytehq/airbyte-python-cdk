@@ -80,7 +80,6 @@ definitions:
           - stream_interval
           - stream_partition
           - stream_slice
-          - stream_state
         examples:
           - "{{ record['updates'] }}"
           - "{{ record['MetaData']['LastUpdatedTime'] }}"
@@ -1611,7 +1610,6 @@ definitions:
           - stream_interval
           - stream_partition
           - stream_slice
-          - stream_state
         examples:
           - "/products"
           - "/quotes/{{ stream_partition['id'] }}/quote_line_groups"
@@ -1661,7 +1659,6 @@ definitions:
           - stream_interval
           - stream_partition
           - stream_slice
-          - stream_state
         examples:
           - |
             [{"clause": {"type": "timestamp", "operator": 10, "parameters":
@@ -1679,7 +1676,6 @@ definitions:
           - stream_interval
           - stream_partition
           - stream_slice
-          - stream_state
         examples:
           - sort_order: "ASC"
             sort_field: "CREATED_AT"
@@ -1700,7 +1696,6 @@ definitions:
           - stream_interval
           - stream_partition
           - stream_slice
-          - stream_state
         examples:
           - Output-Format: JSON
           - Version: "{{ config['version'] }}"
@@ -1717,7 +1712,6 @@ definitions:
           - stream_interval
           - stream_partition
           - stream_slice
-          - stream_state
         examples:
           - unit: "day"
           - query: 'last_event_time BETWEEN TIMESTAMP "{{ stream_interval.start_time }}" AND TIMESTAMP "{{ stream_interval.end_time }}"'
@@ -2072,7 +2066,6 @@ definitions:
         interpolation_context:
           - config
           - record
-          - stream_state
           - stream_slice
       new:
         type: string
@@ -2086,7 +2079,6 @@ definitions:
         interpolation_context:
           - config
           - record
-          - stream_state
           - stream_slice
       $parameters:
         type: object
@@ -2753,7 +2745,6 @@ definitions:
           - stream_interval
           - stream_partition
           - stream_slice
-          - stream_state
         examples:
           - "{{ record['created_at'] >= stream_interval['start_time'] }}"
           - "{{ record.status in ['active', 'expired'] }}"

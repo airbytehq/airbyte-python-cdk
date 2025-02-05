@@ -10,6 +10,7 @@ from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteStateMessage,
     ConfiguredAirbyteCatalog,
+    FailureType
 )
 from airbyte_cdk.sources.concurrent_source.concurrent_source import ConcurrentSource
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
@@ -53,6 +54,7 @@ from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, FinalStateCursor
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.helpers import get_primary_key_from_stream
+from airbyte_cdk.utils import AirbyteTracedException
 
 
 class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
@@ -416,17 +418,15 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         ):
             http_requester = declarative_stream.retriever.requester
             if "stream_state" in http_requester._path.string:
-                self.logger.warning(
-                    f"Low-code stream '{declarative_stream.name}' uses interpolation of stream_state in the HttpRequester which is not thread-safe. Defaulting to synchronous processing"
-                )
-                return False
+                error_message = f"Low-code stream '{declarative_stream.name}' uses interpolation of `stream_state` in the `HttpRequester` component which is no longer supported. Please remove this interpolation. Similar functionality may be achieved by interpolating the `stream_interval` variable instead."
+                self.logger.error(error_message)
+                raise AirbyteTracedException(internal_message=error_message, message=error_message, failure_type=FailureType.config_error)
 
             request_options_provider = http_requester._request_options_provider
             if request_options_provider.request_options_contain_stream_state():
-                self.logger.warning(
-                    f"Low-code stream '{declarative_stream.name}' uses interpolation of stream_state in the HttpRequester which is not thread-safe. Defaulting to synchronous processing"
-                )
-                return False
+                error_message = f"Low-code stream '{declarative_stream.name}' uses interpolation of `stream_state` in the `HttpRequester` component which is no longer supported. Please remove this interpolation. Similar functionality may be achieved by interpolating the `stream_interval` variable instead."
+                self.logger.error(error_message)
+                raise AirbyteTracedException(internal_message=error_message, message=error_message, failure_type=FailureType.config_error)
 
             record_selector = declarative_stream.retriever.record_selector
             if isinstance(record_selector, RecordSelector):
@@ -437,10 +437,9 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     )
                     and "stream_state" in record_selector.record_filter.condition
                 ):
-                    self.logger.warning(
-                        f"Low-code stream '{declarative_stream.name}' uses interpolation of stream_state in the RecordFilter which is not thread-safe. Defaulting to synchronous processing"
-                    )
-                    return False
+                    error_message = f"Low-code stream '{declarative_stream.name}' uses interpolation of `stream_state` in the `RecordFilter` component which is no longer supported. Please remove this interpolation. Similar functionality may be achieved by interpolating the `stream_interval` variable instead."
+                    self.logger.error(error_message)
+                    raise AirbyteTracedException(internal_message=error_message, message=error_message, failure_type=FailureType.config_error)
 
                 for add_fields in [
                     transformation
@@ -449,18 +448,16 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                 ]:
                     for field in add_fields.fields:
                         if isinstance(field.value, str) and "stream_state" in field.value:
-                            self.logger.warning(
-                                f"Low-code stream '{declarative_stream.name}' uses interpolation of stream_state in the AddFields which is not thread-safe. Defaulting to synchronous processing"
-                            )
-                            return False
+                            error_message = f"Low-code stream '{declarative_stream.name}' uses interpolation of `stream_state` in the `AddFields` component which is no longer supported. Please remove this interpolation. Similar functionality may be achieved by interpolating the `stream_interval` variable instead."
+                            self.logger.error(error_message)
+                            raise AirbyteTracedException(internal_message=error_message, message=error_message, failure_type=FailureType.config_error)
                         if (
                             isinstance(field.value, InterpolatedString)
                             and "stream_state" in field.value.string
                         ):
-                            self.logger.warning(
-                                f"Low-code stream '{declarative_stream.name}' uses interpolation of stream_state in the AddFields which is not thread-safe. Defaulting to synchronous processing"
-                            )
-                            return False
+                            error_message = f"Low-code stream '{declarative_stream.name}' uses interpolation of `stream_state` in the `AddFields` component which is no longer supported. Please remove this interpolation. Similar functionality may be achieved by interpolating the `stream_interval` variable instead."
+                            self.logger.error(error_message)
+                            raise AirbyteTracedException(internal_message=error_message, message=error_message, failure_type=FailureType.config_error)
         return True
 
     @staticmethod
