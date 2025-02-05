@@ -21,6 +21,7 @@ definitions:
         record_selector:
           type: RecordSelector
           extractor:
+            # Simple wrapper around `DpathExtractor`
             type: CustomRecordExtractor
             class_name: components.MyCustomExtractor
             field_path: []
