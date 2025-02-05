@@ -1231,8 +1231,7 @@ def test_read_with_concurrent_and_synchronous_streams_with_sequential_state():
     assert len(party_members_skills_records) == 9
 
 
-@freezegun.freeze_time(_NOW)
-def test_read_with_state_when_state_migration_was_provided():
+def test_concurrent_declarative_source_runs_state_migrations_provided_in_manifest():
     manifest = {
         "version": "5.0.0",
         "definitions": {
@@ -1360,104 +1359,29 @@ def test_read_with_state_when_state_migration_was_provided():
             "max_concurrency": 25,
         },
     }
+    state_blob = AirbyteStateBlob(updated_at="2024-08-21")
     state = [
         AirbyteStateMessage(
             type=AirbyteStateType.STREAM,
             stream=AirbyteStreamState(
                 stream_descriptor=StreamDescriptor(name="party_members", namespace=None),
-                stream_state=AirbyteStateBlob(updated_at="2024-08-21"),
+                stream_state=state_blob,
             ),
         ),
     ]
-    catalog = ConfiguredAirbyteCatalog(
-        streams=[
-            ConfiguredAirbyteStream(
-                stream=AirbyteStream(
-                    name="party_members",
-                    json_schema={},
-                    supported_sync_modes=[SyncMode.incremental],
-                ),
-                sync_mode=SyncMode.incremental,
-                destination_sync_mode=DestinationSyncMode.append,
-            )
-        ]
-    )
     source = ConcurrentDeclarativeSource(
         source_config=manifest, config=_CONFIG, catalog=_CATALOG, state=state
     )
-    party_members_slices_and_responses = [
-        (
-            {"start": "2024-08-16", "end": "2024-08-30", "filter": "type_1"},
-            HttpResponse(
-                json.dumps(
-                    [
-                        {
-                            "id": "nijima",
-                            "first_name": "makoto",
-                            "last_name": "nijima",
-                            "updated_at": "2024-08-10",
-                            "type": 1,
-                        }
-                    ]
-                )
-            ),
-        ),
-        (
-            {"start": "2024-08-16", "end": "2024-08-30", "filter": "type_2"},
-            HttpResponse(
-                json.dumps(
-                    [
-                        {
-                            "id": "nijima",
-                            "first_name": "makoto",
-                            "last_name": "nijima",
-                            "updated_at": "2024-08-10",
-                            "type": 2,
-                        }
-                    ]
-                )
-            ),
-        ),
-        (
-            {"start": "2024-08-31", "end": "2024-09-10", "filter": "type_1"},
-            HttpResponse(
-                json.dumps(
-                    [
-                        {
-                            "id": "yoshizawa",
-                            "first_name": "sumire",
-                            "last_name": "yoshizawa",
-                            "updated_at": "2024-09-10",
-                            "type": 1,
-                        }
-                    ]
-                )
-            ),
-        ),
-        (
-            {"start": "2024-08-31", "end": "2024-09-10", "filter": "type_2"},
-            HttpResponse(
-                json.dumps(
-                    [
-                        {
-                            "id": "yoshizawa",
-                            "first_name": "sumire",
-                            "last_name": "yoshizawa",
-                            "updated_at": "2024-09-10",
-                            "type": 2,
-                        }
-                    ]
-                )
-            ),
-        ),
-    ]
-    with HttpMocker() as http_mocker:
-        _mock_party_members_requests(http_mocker, party_members_slices_and_responses)
-        messages = list(
-            source.read(logger=source.logger, config=_CONFIG, catalog=catalog, state=state)
-        )
-    final_state = get_states_for_stream(stream_name="party_members", messages=messages)
-    assert state not in final_state
+    concurrent_streams, synchronous_streams = source._group_streams(_CONFIG)
+    assert concurrent_streams[0].cursor.state != state_blob.__dict__
+    assert concurrent_streams[0].cursor.state == {
+        "lookback_window": 0,
+        "states": [
+            {"cursor": {"updated_at": "2024-08-21"}, "partition": {"type": "type_1"}},
+            {"cursor": {"updated_at": "2024-08-21"}, "partition": {"type": "type_2"}},
+        ],
+        "use_global_cursor": False,
+    }
 
 
 @freezegun.freeze_time(_NOW)
