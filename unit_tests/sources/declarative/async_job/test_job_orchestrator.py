@@ -174,9 +174,8 @@ class AsyncJobOrchestratorTest(TestCase):
         orchestrator = self._orchestrator([_A_STREAM_SLICE])
         first_job = _create_job()
         second_job = _create_job()
-        partition = AsyncPartition([first_job, second_job], _A_STREAM_SLICE)
 
-        records = list(orchestrator.fetch_records(partition))
+        records = list(orchestrator.fetch_records([first_job, second_job]))
 
         assert len(records) == 2
         assert self._job_repository.fetch_records.mock_calls == [call(first_job), call(second_job)]

@@ -1,5 +1,12 @@
 # CDK Migration Guide
 
+## Upgrading to 6.28.0
+
+Starting from version 6.28.0, the CDK no longer includes Pendulum as a transitive dependency. If your connector relies on Pendulum without explicitly declaring it as a dependency, you will need to add it to your connector's dependencies going forward.
+
+More info:
+- https://deptry.com/rules-violations/#transitive-dependencies-dep003
+
 ## Upgrading to 6.0.0
 
 Version 6.x.x of the CDK introduces concurrent processing of low-code incremental streams. This is breaking because non-manifest only connectors must update their self-managed `run.py` and `source.py` files. This section is intended to clarify how to upgrade a low-code connector to use the Concurrent CDK to sync incremental streams.

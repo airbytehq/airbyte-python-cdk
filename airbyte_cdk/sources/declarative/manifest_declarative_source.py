@@ -27,9 +27,6 @@ from airbyte_cdk.sources.declarative.checks import COMPONENTS_CHECKER_TYPE_MAPPI
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    CheckStream as CheckStreamModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DeclarativeStream as DeclarativeStreamModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import Spec as SpecModel
@@ -367,6 +364,11 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
                 # Ensure that each stream is created with a unique name
                 name = dynamic_stream.get("name")
+
+                if not isinstance(name, str):
+                    raise ValueError(
+                        f"Expected stream name {name} to be a string, got {type(name)}."
+                    )
 
                 if name in seen_dynamic_streams:
                     error_message = f"Dynamic streams list contains a duplicate name: {name}. Please contact Airbyte Support."

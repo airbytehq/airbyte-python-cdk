@@ -279,8 +279,8 @@ def test_basic_send_request():
             None,
             '{"field": "value", "field2": "value", "authfield": "val"}',
         ),
-        (None, {"field": "value"}, None, {"field": "value"}, None, None, ValueError, None),
-        (None, {"field": "value"}, None, None, None, {"field": "value"}, ValueError, None),
+        (None, {"field": "value"}, None, {"field": "value"}, None, None, None, "field=value"),
+        (None, {"field": "value"}, None, None, None, {"field": "value"}, None, "field=value"),
         # raise on mixed data and json params
         (
             {"field": "value"},

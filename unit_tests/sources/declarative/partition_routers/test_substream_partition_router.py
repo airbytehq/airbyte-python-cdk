@@ -464,6 +464,15 @@ def test_substream_partition_router_invalid_parent_record_type():
             },
             {"parent_stream_cursor": "2023-05-27T00:00:00Z"},
         ),
+        # Case 6: Declarative global cursor state, no migration expected
+        (
+            {
+                "looback_window": 1,
+                "use_global_cursor": True,
+                "state": {"updated": "2023-05-27T00:00:00Z"},
+            },
+            {},
+        ),
     ],
     ids=[
         "empty_initial_state",
@@ -471,6 +480,7 @@ def test_substream_partition_router_invalid_parent_record_type():
         "initial_state_no_parent_global_state",
         "initial_state_no_parent_per_partition_state",
         "initial_state_with_parent_state",
+        "initial_state_no_parent_global_state_declarative",
     ],
 )
 def test_set_initial_state(initial_state, expected_parent_state):

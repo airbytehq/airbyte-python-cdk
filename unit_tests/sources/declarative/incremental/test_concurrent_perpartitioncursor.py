@@ -1,5 +1,5 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
-
+import copy
 from copy import deepcopy
 from datetime import datetime, timedelta
 from typing import Any, List, Mapping, MutableMapping, Optional, Union
@@ -65,7 +65,7 @@ SUBSTREAM_MANIFEST: MutableMapping[str, Any] = {
         },
         "cursor_incremental_sync": {
             "type": "DatetimeBasedCursor",
-            "cursor_datetime_formats": ["%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S%z"],
+            "cursor_datetime_formats": ["%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S%z", "%ms"],
             "datetime_format": "%Y-%m-%dT%H:%M:%SZ",
             "cursor_field": "{{ parameters.get('cursor_field',  'updated_at') }}",
             "start_datetime": {"datetime": "{{ config.get('start_date')}}"},
@@ -399,13 +399,16 @@ VOTE_111_CREATED_AT = "2024-01-13T00:00:00Z"  # Latest vote in partition 11
 VOTE_200_CREATED_AT = "2024-01-12T00:00:00Z"  # Latest vote in partition 20
 VOTE_210_CREATED_AT = "2024-01-12T00:00:15Z"  # Latest vote in partition 21
 VOTE_300_CREATED_AT = "2024-01-10T00:00:00Z"  # Latest vote in partition 30
+VOTE_300_CREATED_AT_TIMESTAMP = 1704844800000  # Latest vote in partition 30
 
 # Initial State Constants
 PARENT_COMMENT_CURSOR_PARTITION_1 = "2023-01-04T00:00:00Z"  # Parent comment cursor (partition)
 PARENT_POSTS_CURSOR = "2024-01-05T00:00:00Z"  # Parent posts cursor (expected in state)
 
 INITIAL_STATE_PARTITION_10_CURSOR = "2024-01-02T00:00:01Z"
+INITIAL_STATE_PARTITION_10_CURSOR_TIMESTAMP = 1704153601000
 INITIAL_STATE_PARTITION_11_CURSOR = "2024-01-03T00:00:02Z"
+INITIAL_STATE_PARTITION_11_CURSOR_TIMESTAMP = 1704240002000
 INITIAL_GLOBAL_CURSOR = INITIAL_STATE_PARTITION_11_CURSOR
 INITIAL_GLOBAL_CURSOR_DATE = datetime.fromisoformat(
     INITIAL_STATE_PARTITION_11_CURSOR.replace("Z", "")
@@ -596,7 +599,7 @@ PARTITION_SYNC_START_TIME = "2024-01-02T00:00:00Z"
                             {
                                 "id": 300,
                                 "comment_id": 30,
-                                "created_at": VOTE_300_CREATED_AT,
+                                "created_at": VOTE_300_CREATED_AT_TIMESTAMP,
                             }
                         ]
                     },
@@ -637,7 +640,7 @@ PARTITION_SYNC_START_TIME = "2024-01-02T00:00:00Z"
                 {
                     "comment_id": 30,
                     "comment_updated_at": COMMENT_30_UPDATED_AT,
-                    "created_at": VOTE_300_CREATED_AT,
+                    "created_at": str(VOTE_300_CREATED_AT_TIMESTAMP),
                     "id": 300,
                 },
             ],
@@ -662,7 +665,7 @@ PARTITION_SYNC_START_TIME = "2024-01-02T00:00:00Z"
                             "id": 10,
                             "parent_slice": {"id": 1, "parent_slice": {}},
                         },
-                        "cursor": {"created_at": INITIAL_STATE_PARTITION_10_CURSOR},
+                        "cursor": {"created_at": INITIAL_STATE_PARTITION_10_CURSOR_TIMESTAMP},
                     },
                     {
                         "partition": {
@@ -672,7 +675,7 @@ PARTITION_SYNC_START_TIME = "2024-01-02T00:00:00Z"
                         "cursor": {"created_at": INITIAL_STATE_PARTITION_11_CURSOR},
                     },
                 ],
-                "state": {"created_at": INITIAL_STATE_PARTITION_11_CURSOR},
+                "state": {"created_at": INITIAL_STATE_PARTITION_11_CURSOR_TIMESTAMP},
                 "lookback_window": 86400,
             },
             # Expected state
@@ -721,6 +724,7 @@ PARTITION_SYNC_START_TIME = "2024-01-02T00:00:00Z"
                         "cursor": {"created_at": VOTE_300_CREATED_AT},
                     },
                 ],
+                "use_global_cursor": False,
                 "lookback_window": 1,
                 "parent_state": {},
                 "state": {"created_at": VOTE_100_CREATED_AT},
@@ -980,7 +984,15 @@ def run_incremental_parent_state_test(
                 # Fetch the first page of votes for comment 30 of post 3
                 (
                     f"https://api.example.com/community/posts/3/comments/30/votes?per_page=100&start_time={LOOKBACK_DATE}",
-                    {"votes": [{"id": 300, "comment_id": 30, "created_at": VOTE_300_CREATED_AT}]},
+                    {
+                        "votes": [
+                            {
+                                "id": 300,
+                                "comment_id": 30,
+                                "created_at": VOTE_300_CREATED_AT_TIMESTAMP,
+                            }
+                        ]
+                    },
                 ),
                 # Requests with intermediate states
                 # Fetch votes for comment 10 of post 1
@@ -1017,7 +1029,15 @@ def run_incremental_parent_state_test(
                 # Fetch votes for comment 30 of post 3
                 (
                     f"https://api.example.com/community/posts/3/comments/30/votes?per_page=100&start_time={VOTE_300_CREATED_AT}",
-                    {"votes": [{"id": 300, "comment_id": 30, "created_at": VOTE_300_CREATED_AT}]},
+                    {
+                        "votes": [
+                            {
+                                "id": 300,
+                                "comment_id": 30,
+                                "created_at": VOTE_300_CREATED_AT_TIMESTAMP,
+                            }
+                        ]
+                    },
                 ),
             ],
             # Expected records
@@ -1055,7 +1075,7 @@ def run_incremental_parent_state_test(
                 {
                     "comment_id": 30,
                     "comment_updated_at": COMMENT_30_UPDATED_AT,
-                    "created_at": VOTE_300_CREATED_AT,
+                    "created_at": str(VOTE_300_CREATED_AT_TIMESTAMP),
                     "id": 300,
                 },
             ],
@@ -1121,6 +1141,7 @@ def run_incremental_parent_state_test(
                     }
                 },
                 "lookback_window": 1,
+                "use_global_cursor": False,
                 "states": [
                     {
                         "partition": {"id": 10, "parent_slice": {"id": 1, "parent_slice": {}}},
@@ -1170,8 +1191,66 @@ def test_incremental_parent_state(
     )
 
 
+STATE_MIGRATION_EXPECTED_STATE = {
+    "state": {"created_at": VOTE_100_CREATED_AT},
+    "parent_state": {
+        "post_comments": {
+            "use_global_cursor": False,
+            "state": {"updated_at": COMMENT_10_UPDATED_AT},
+            "parent_state": {"posts": {"updated_at": POST_1_UPDATED_AT}},
+            "lookback_window": 1,
+            "states": [
+                {
+                    "partition": {"id": 1, "parent_slice": {}},
+                    "cursor": {"updated_at": COMMENT_10_UPDATED_AT},
+                },
+                {
+                    "partition": {"id": 2, "parent_slice": {}},
+                    "cursor": {"updated_at": COMMENT_20_UPDATED_AT},
+                },
+                {
+                    "partition": {"id": 3, "parent_slice": {}},
+                    "cursor": {"updated_at": COMMENT_30_UPDATED_AT},
+                },
+            ],
+        }
+    },
+    "lookback_window": 1,
+    "use_global_cursor": False,
+    "states": [
+        {
+            "partition": {"id": 10, "parent_slice": {"id": 1, "parent_slice": {}}},
+            "cursor": {"created_at": VOTE_100_CREATED_AT},
+        },
+        {
+            "partition": {"id": 11, "parent_slice": {"id": 1, "parent_slice": {}}},
+            "cursor": {"created_at": VOTE_111_CREATED_AT},
+        },
+        {
+            "partition": {"id": 12, "parent_slice": {"id": 1, "parent_slice": {}}},
+            "cursor": {"created_at": PARTITION_SYNC_START_TIME},
+        },
+        {
+            "partition": {"id": 20, "parent_slice": {"id": 2, "parent_slice": {}}},
+            "cursor": {"created_at": VOTE_200_CREATED_AT},
+        },
+        {
+            "partition": {"id": 21, "parent_slice": {"id": 2, "parent_slice": {}}},
+            "cursor": {"created_at": VOTE_210_CREATED_AT},
+        },
+        {
+            "partition": {"id": 30, "parent_slice": {"id": 3, "parent_slice": {}}},
+            "cursor": {"created_at": VOTE_300_CREATED_AT},
+        },
+    ],
+}
+STATE_MIGRATION_GLOBAL_EXPECTED_STATE = copy.deepcopy(STATE_MIGRATION_EXPECTED_STATE)
+del STATE_MIGRATION_GLOBAL_EXPECTED_STATE["states"]
+STATE_MIGRATION_GLOBAL_EXPECTED_STATE["use_global_cursor"] = True
+
+
 @pytest.mark.parametrize(
-    "test_name, manifest, mock_requests, expected_records, initial_state, expected_state",
+    "test_name, manifest, mock_requests, expected_records",
     [
         (
             "test_incremental_parent_state",
@@ -1284,7 +1363,15 @@ def test_incremental_parent_state(
                 (
                     f"https://api.example.com/community/posts/3/comments/30/votes"
                     f"?per_page=100&start_time={PARTITION_SYNC_START_TIME}",
-                    {"votes": [{"id": 300, "comment_id": 30, "created_at": VOTE_300_CREATED_AT}]},
+                    {
+                        "votes": [
+                            {
+                                "id": 300,
+                                "comment_id": 30,
+                                "created_at": VOTE_300_CREATED_AT_TIMESTAMP,
+                            }
+                        ]
+                    },
                 ),
             ],
             # Expected records
@@ -1322,67 +1409,49 @@ def test_incremental_parent_state(
                 {
                     "comment_id": 30,
                     "comment_updated_at": COMMENT_30_UPDATED_AT,
-                    "created_at": VOTE_300_CREATED_AT,
+                    "created_at": str(VOTE_300_CREATED_AT_TIMESTAMP),
                     "id": 300,
                 },
             ],
-            # Initial state
-            {"created_at": PARTITION_SYNC_START_TIME},
-            # Expected state
-            {
-                "state": {"created_at": VOTE_100_CREATED_AT},
-                "parent_state": {
-                    "post_comments": {
-                        "use_global_cursor": False,
-                        "state": {"updated_at": COMMENT_10_UPDATED_AT},
-                        "parent_state": {"posts": {"updated_at": POST_1_UPDATED_AT}},
-                        "lookback_window": 1,
-                        "states": [
-                            {
-                                "partition": {"id": 1, "parent_slice": {}},
-                                "cursor": {"updated_at": COMMENT_10_UPDATED_AT},
-                            },
-                            {
-                                "partition": {"id": 2, "parent_slice": {}},
-                                "cursor": {"updated_at": COMMENT_20_UPDATED_AT},
-                            },
-                            {
-                                "partition": {"id": 3, "parent_slice": {}},
-                                "cursor": {"updated_at": COMMENT_30_UPDATED_AT},
-                            },
-                        ],
-                    }
-                },
-                "lookback_window": 1,
-                "states": [
-                    {
-                        "partition": {"id": 10, "parent_slice": {"id": 1, "parent_slice": {}}},
-                        "cursor": {"created_at": VOTE_100_CREATED_AT},
-                    },
-                    {
-                        "partition": {"id": 11, "parent_slice": {"id": 1, "parent_slice": {}}},
-                        "cursor": {"created_at": VOTE_111_CREATED_AT},
-                    },
-                    {
-                        "partition": {"id": 12, "parent_slice": {"id": 1, "parent_slice": {}}},
-                        "cursor": {"created_at": PARTITION_SYNC_START_TIME},
-                    },
-                    {
-                        "partition": {"id": 20, "parent_slice": {"id": 2, "parent_slice": {}}},
-                        "cursor": {"created_at": VOTE_200_CREATED_AT},
-                    },
-                    {
-                        "partition": {"id": 21, "parent_slice": {"id": 2, "parent_slice": {}}},
-                        "cursor": {"created_at": VOTE_210_CREATED_AT},
-                    },
-                    {
-                        "partition": {"id": 30, "parent_slice": {"id": 3, "parent_slice": {}}},
-                        "cursor": {"created_at": VOTE_300_CREATED_AT},
-                    },
-                ],
-            },
         ),
     ],
+)
+@pytest.mark.parametrize(
+    "initial_state, expected_state",
+    [
+        ({"created_at": PARTITION_SYNC_START_TIME}, STATE_MIGRATION_EXPECTED_STATE),
+        (
+            {
+                "state": {"created_at": PARTITION_SYNC_START_TIME},
+                "lookback_window": 0,
+                "use_global_cursor": False,
+                "parent_state": {
+                    "post_comments": {
+                        "state": {"updated_at": PARTITION_SYNC_START_TIME},
+                        "parent_state": {"posts": {"updated_at": PARTITION_SYNC_START_TIME}},
+                        "lookback_window": 0,
+                    }
+                },
+            },
+            STATE_MIGRATION_EXPECTED_STATE,
+        ),
+        (
+            {
+                "state": {"created_at": PARTITION_SYNC_START_TIME},
+                "lookback_window": 0,
+                "use_global_cursor": True,
+                "parent_state": {
+                    "post_comments": {
+                        "state": {"updated_at": PARTITION_SYNC_START_TIME},
+                        "parent_state": {"posts": {"updated_at": PARTITION_SYNC_START_TIME}},
+                        "lookback_window": 0,
+                    }
+                },
+            },
+            STATE_MIGRATION_GLOBAL_EXPECTED_STATE,
+        ),
+    ],
+    ids=["legacy_python_format", "low_code_per_partition_state", "low_code_global_format"],
 )
 def test_incremental_parent_state_migration(
     test_name, manifest, mock_requests, expected_records, initial_state, expected_state
@@ -1493,6 +1562,7 @@ def test_incremental_parent_state_migration(
                 ],
                 "state": {"created_at": INITIAL_GLOBAL_CURSOR},
                 "lookback_window": 1,
+                "use_global_cursor": False,
             },
         ),
     ],
@@ -1660,13 +1730,14 @@ def test_incremental_parent_state_no_slices(
                         "cursor": {"created_at": INITIAL_STATE_PARTITION_11_CURSOR},
                     },
                 ],
-                "use_global_cursor": True,
+                "use_global_cursor": False,
                 "state": {"created_at": INITIAL_STATE_PARTITION_11_CURSOR},
                 "lookback_window": 0,
             },
             # Expected state
             {
                 "lookback_window": 1,
+                "use_global_cursor": False,
                 "state": {"created_at": INITIAL_STATE_PARTITION_11_CURSOR},
                 "states": [
                     {
@@ -1852,7 +1923,15 @@ def test_incremental_parent_state_no_records(
                 (
                     f"https://api.example.com/community/posts/3/comments/30/votes"
                     f"?per_page=100&start_time={LOOKBACK_DATE}",
-                    {"votes": [{"id": 300, "comment_id": 30, "created_at": VOTE_300_CREATED_AT}]},
+                    {
+                        "votes": [
+                            {
+                                "id": 300,
+                                "comment_id": 30,
+                                "created_at": VOTE_300_CREATED_AT_TIMESTAMP,
+                            }
+                        ]
+                    },
                 ),
             ],
             # Expected records
@@ -1884,7 +1963,7 @@ def test_incremental_parent_state_no_records(
                 {
                     "comment_id": 30,
                     "comment_updated_at": COMMENT_30_UPDATED_AT,
-                    "created_at": VOTE_300_CREATED_AT,
+                    "created_at": str(VOTE_300_CREATED_AT_TIMESTAMP),
                     "id": 300,
                 },
             ],
@@ -1936,6 +2015,7 @@ def test_incremental_parent_state_no_records(
                 },
                 "state": {"created_at": INITIAL_STATE_PARTITION_11_CURSOR},
                 "lookback_window": 86400,
+                "use_global_cursor": False,
                 "states": [
                     {
                         "partition": {"id": 10, "parent_slice": {"id": 1, "parent_slice": {}}},
@@ -2203,6 +2283,7 @@ LISTPARTITION_MANIFEST: MutableMapping[str, Any] = {
             },
             # Expected state
             {
+                "use_global_cursor": False,
                 "lookback_window": 1,
                 "state": {"updated_at": "2024-01-25T00:00:00Z"},
                 "states": [
@@ -2301,6 +2382,7 @@ def test_incremental_list_partition_router(
             # Expected state
             {
                 "lookback_window": 0,
+                "use_global_cursor": False,
                 "state": {"updated_at": "2024-01-08T00:00:00Z"},
                 "states": [
                     {"cursor": {"updated_at": "2024-01-20T00:00:00Z"}, "partition": {"id": "1"}},
@@ -2828,6 +2910,7 @@ SUBSTREAM_REQUEST_OPTIONS_MANIFEST: MutableMapping[str, Any] = {
                     }
                 },
                 "lookback_window": 1,
+                "use_global_cursor": False,
                 "states": [
                     {
                         "partition": {"id": 10, "parent_slice": {"id": 1, "parent_slice": {}}},

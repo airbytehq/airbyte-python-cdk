@@ -59,6 +59,11 @@ class CheckDynamicStream(BaseModel):
         description="Numbers of the streams to try reading from when running a check operation.",
         title="Stream Count",
     )
+    use_check_availability: Optional[bool] = Field(
+        True,
+        description="Enables stream check availability. This field is automatically set by the CDK.",
+        title="Use Check Availability",
+    )
 
 
 class ConcurrencyLevel(BaseModel):
@@ -736,8 +741,13 @@ class HttpResponseFilter(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class ComplexFieldType(BaseModel):
+    field_type: str
+    items: Optional[Union[str, ComplexFieldType]] = None
+
+
 class TypesMap(BaseModel):
-    target_type: Union[str, List[str]]
+    target_type: Union[str, List[str], ComplexFieldType]
     current_type: Union[str, List[str]]
     condition: Optional[str] = None
 
@@ -1190,11 +1200,17 @@ class InjectInto(Enum):
 
 class RequestOption(BaseModel):
     type: Literal["RequestOption"]
-    field_name: str = Field(
-        ...,
-        description="Configures which key should be used in the location that the descriptor is being injected into",
+    field_name: Optional[str] = Field(
+        None,
+        description="Configures which key should be used in the location that the descriptor is being injected into. We hope to eventually deprecate this field in favor of `field_path` for all request_options, but must currently maintain it for backwards compatibility in the Builder.",
         examples=["segment_id"],
-        title="Request Option",
+        title="Field Name",
+    )
+    field_path: Optional[List[str]] = Field(
+        None,
+        description="Configures a path to be used for nested structures in JSON body requests (e.g. GraphQL queries)",
+        examples=[["data", "viewer", "id"]],
+        title="Field Path",
     )
     inject_into: InjectInto = Field(
         ...,
@@ -2260,6 +2276,7 @@ class DynamicDeclarativeStream(BaseModel):
     )
 
 
+ComplexFieldType.update_forward_refs()
 CompositeErrorHandler.update_forward_refs()
 DeclarativeSource1.update_forward_refs()
 DeclarativeSource2.update_forward_refs()

@@ -134,6 +134,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     CheckStream as CheckStreamModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ComplexFieldType as ComplexFieldTypeModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ComponentMappingDefinition as ComponentMappingDefinitionModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -429,6 +432,7 @@ from airbyte_cdk.sources.declarative.retrievers import (
     SimpleRetrieverTestReadDecorator,
 )
 from airbyte_cdk.sources.declarative.schema import (
+    ComplexFieldType,
     DefaultSchemaLoader,
     DynamicSchemaLoader,
     InlineSchemaLoader,
@@ -503,6 +507,7 @@ class ModelToComponentFactory:
         disable_cache: bool = False,
         disable_resumable_full_refresh: bool = False,
         message_repository: Optional[MessageRepository] = None,
+        connector_state_manager: Optional[ConnectorStateManager] = None,
     ):
         self._init_mappings()
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
@@ -514,6 +519,7 @@ class ModelToComponentFactory:
         self._message_repository = message_repository or InMemoryMessageRepository(
             self._evaluate_log_level(emit_connector_builder_messages)
         )
+        self._connector_state_manager = connector_state_manager or ConnectorStateManager()
 
     def _init_mappings(self) -> None:
         self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Mapping[Type[BaseModel], Callable[..., Any]] = {
@@ -572,6 +578,7 @@ class ModelToComponentFactory:
             DynamicSchemaLoaderModel: self.create_dynamic_schema_loader,
             SchemaTypeIdentifierModel: self.create_schema_type_identifier,
             TypesMapModel: self.create_types_map,
+            ComplexFieldTypeModel: self.create_complex_field_type,
             JwtAuthenticatorModel: self.create_jwt_authenticator,
             LegacyToPerPartitionStateMigrationModel: self.create_legacy_to_per_partition_state_migration,
             ListPartitionRouterModel: self.create_list_partition_router,
@@ -726,8 +733,8 @@ class ModelToComponentFactory:
         }
         return names_to_types[value_type]
 
-    @staticmethod
     def create_api_key_authenticator(
+        self,
         model: ApiKeyAuthenticatorModel,
         config: Config,
         token_provider: Optional[TokenProvider] = None,
@@ -749,10 +756,8 @@ class ModelToComponentFactory:
             )
 
         request_option = (
-            RequestOption(
-                inject_into=RequestOptionType(model.inject_into.inject_into.value),
-                field_name=model.inject_into.field_name,
-                parameters=model.parameters or {},
+            self._create_component_from_model(
+                model.inject_into, config, parameters=model.parameters or {}
             )
             if model.inject_into
             else RequestOption(
@@ -761,6 +766,7 @@ class ModelToComponentFactory:
                 parameters=model.parameters or {},
             )
         )
+
         return ApiKeyAuthenticator(
             token_provider=(
                 token_provider
@@ -842,7 +848,7 @@ class ModelToComponentFactory:
                 token_provider=token_provider,
             )
         else:
-            return ModelToComponentFactory.create_api_key_authenticator(
+            return self.create_api_key_authenticator(
                 ApiKeyAuthenticatorModel(
                     type="ApiKeyAuthenticator",
                     api_token="",
@@ -896,7 +902,15 @@ class ModelToComponentFactory:
     def create_check_dynamic_stream(
         model: CheckDynamicStreamModel, config: Config, **kwargs: Any
     ) -> CheckDynamicStream:
-        return CheckDynamicStream(stream_count=model.stream_count, parameters={})
+        assert model.use_check_availability is not None  # for mypy
+
+        use_check_availability = model.use_check_availability
+
+        return CheckDynamicStream(
+            stream_count=model.stream_count,
+            use_check_availability=use_check_availability,
+            parameters={},
+        )
 
     def create_composite_error_handler(
         self, model: CompositeErrorHandlerModel, config: Config, **kwargs: Any
@@ -922,17 +936,24 @@ class ModelToComponentFactory:
 
     def create_concurrent_cursor_from_datetime_based_cursor(
         self,
-        state_manager: ConnectorStateManager,
         model_type: Type[BaseModel],
         component_definition: ComponentDefinition,
         stream_name: str,
         stream_namespace: Optional[str],
         config: Config,
-        stream_state: MutableMapping[str, Any],
         message_repository: Optional[MessageRepository] = None,
         runtime_lookback_window: Optional[datetime.timedelta] = None,
         **kwargs: Any,
     ) -> ConcurrentCursor:
+        # Per-partition incremental streams can dynamically create child cursors which will pass their current
+        # state via the stream_state keyword argument. Incremental syncs without parent streams use the
+        # incoming state and connector_state_manager that is initialized when the component factory is created
+        stream_state = (
+            self._connector_state_manager.get_stream_state(stream_name, stream_namespace)
+            if "stream_state" not in kwargs
+            else kwargs["stream_state"]
+        )
+
         component_type = component_definition.get("type")
         if component_definition.get("type") != model_type.__name__:
             raise ValueError(
@@ -1126,7 +1147,7 @@ class ModelToComponentFactory:
             stream_namespace=stream_namespace,
             stream_state=stream_state,
             message_repository=message_repository or self._message_repository,
-            connector_state_manager=state_manager,
+            connector_state_manager=self._connector_state_manager,
             connector_state_converter=connector_state_converter,
             cursor_field=cursor_field,
             slice_boundary_fields=slice_boundary_fields,
@@ -1188,6 +1209,22 @@ class ModelToComponentFactory:
         )
         cursor_field = CursorField(interpolated_cursor_field.eval(config=config))
 
+        datetime_format = datetime_based_cursor_model.datetime_format
+
+        cursor_granularity = (
+            parse_duration(datetime_based_cursor_model.cursor_granularity)
+            if datetime_based_cursor_model.cursor_granularity
+            else None
+        )
+
+        connector_state_converter: DateTimeStreamStateConverter
+        connector_state_converter = CustomFormatConcurrentStreamStateConverter(
+            datetime_format=datetime_format,
+            input_datetime_formats=datetime_based_cursor_model.cursor_datetime_formats,
+            is_sequential_state=True,  # ConcurrentPerPartitionCursor only works with sequential state
+            cursor_granularity=cursor_granularity,
+        )
+
         # Create the cursor factory
         cursor_factory = ConcurrentCursorFactory(
             partial(
@@ -1211,6 +1248,7 @@ class ModelToComponentFactory:
             stream_state=stream_state,
             message_repository=self._message_repository,  # type: ignore
             connector_state_manager=state_manager,
+            connector_state_converter=connector_state_converter,
             cursor_field=cursor_field,
         )
 
@@ -1450,19 +1488,15 @@ class ModelToComponentFactory:
             )
 
         end_time_option = (
-            RequestOption(
-                inject_into=RequestOptionType(model.end_time_option.inject_into.value),
-                field_name=model.end_time_option.field_name,
-                parameters=model.parameters or {},
+            self._create_component_from_model(
+                model.end_time_option, config, parameters=model.parameters or {}
             )
             if model.end_time_option
             else None
         )
         start_time_option = (
-            RequestOption(
-                inject_into=RequestOptionType(model.start_time_option.inject_into.value),
-                field_name=model.start_time_option.field_name,
-                parameters=model.parameters or {},
+            self._create_component_from_model(
+                model.start_time_option, config, parameters=model.parameters or {}
             )
             if model.start_time_option
             else None
@@ -1533,19 +1567,15 @@ class ModelToComponentFactory:
             cursor_model = model.incremental_sync
 
             end_time_option = (
-                RequestOption(
-                    inject_into=RequestOptionType(cursor_model.end_time_option.inject_into.value),
-                    field_name=cursor_model.end_time_option.field_name,
-                    parameters=cursor_model.parameters or {},
+                self._create_component_from_model(
+                    cursor_model.end_time_option, config, parameters=cursor_model.parameters or {}
                 )
                 if cursor_model.end_time_option
                 else None
             )
             start_time_option = (
-                RequestOption(
-                    inject_into=RequestOptionType(cursor_model.start_time_option.inject_into.value),
-                    field_name=cursor_model.start_time_option.field_name,
-                    parameters=cursor_model.parameters or {},
+                self._create_component_from_model(
+                    cursor_model.start_time_option, config, parameters=cursor_model.parameters or {}
                 )
                 if cursor_model.start_time_option
                 else None
@@ -1617,7 +1647,7 @@ class ModelToComponentFactory:
     ) -> Optional[PartitionRouter]:
         if (
             hasattr(model, "partition_router")
-            and isinstance(model, SimpleRetrieverModel)
+            and isinstance(model, SimpleRetrieverModel | AsyncRetrieverModel)
             and model.partition_router
         ):
             stream_slicer_model = model.partition_router
@@ -1651,6 +1681,31 @@ class ModelToComponentFactory:
         stream_slicer = self._build_stream_slicer_from_partition_router(model.retriever, config)
 
         if model.incremental_sync and stream_slicer:
+            if model.retriever.type == "AsyncRetriever":
+                if model.incremental_sync.type != "DatetimeBasedCursor":
+                    # We are currently in a transition to the Concurrent CDK and AsyncRetriever can only work with the support or unordered slices (for example, when we trigger reports for January and February, the report in February can be completed first). Once we have support for custom concurrent cursor or have a new implementation available in the CDK, we can enable more cursors here.
+                    raise ValueError(
+                        "AsyncRetriever with cursor other than DatetimeBasedCursor is not supported yet"
+                    )
+                if stream_slicer:
+                    return self.create_concurrent_cursor_from_perpartition_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
+                        state_manager=self._connector_state_manager,
+                        model_type=DatetimeBasedCursorModel,
+                        component_definition=model.incremental_sync.__dict__,
+                        stream_name=model.name or "",
+                        stream_namespace=None,
+                        config=config or {},
+                        stream_state={},
+                        partition_router=stream_slicer,
+                    )
+                return self.create_concurrent_cursor_from_datetime_based_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
+                    model_type=DatetimeBasedCursorModel,
+                    component_definition=model.incremental_sync.__dict__,
+                    stream_name=model.name or "",
+                    stream_namespace=None,
+                    config=config or {},
+                )
+
             incremental_sync_model = model.incremental_sync
             if (
                 hasattr(incremental_sync_model, "global_substream_cursor")
@@ -1676,6 +1731,22 @@ class ModelToComponentFactory:
                     stream_cursor=cursor_component,
                 )
         elif model.incremental_sync:
+            if model.retriever.type == "AsyncRetriever":
+                if model.incremental_sync.type != "DatetimeBasedCursor":
+                    # We are currently in a transition to the Concurrent CDK and AsyncRetriever can only work with the support or unordered slices (for example, when we trigger reports for January and February, the report in February can be completed first). Once we have support for custom concurrent cursor or have a new implementation available in the CDK, we can enable more cursors here.
+                    raise ValueError(
+                        "AsyncRetriever with cursor other than DatetimeBasedCursor is not supported yet"
+                    )
+                if model.retriever.partition_router:
+                    # Note that this development is also done in parallel to the per partition development which once merged we could support here by calling `create_concurrent_cursor_from_perpartition_cursor`
+                    raise ValueError("Per partition state is not supported yet for AsyncRetriever")
+                return self.create_concurrent_cursor_from_datetime_based_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
+                    model_type=DatetimeBasedCursorModel,
+                    component_definition=model.incremental_sync.__dict__,
+                    stream_name=model.name or "",
+                    stream_namespace=None,
+                    config=config or {},
+                )
             return (
                 self._create_component_from_model(model=model.incremental_sync, config=config)
                 if model.incremental_sync
@@ -1894,10 +1965,26 @@ class ModelToComponentFactory:
     ) -> InlineSchemaLoader:
         return InlineSchemaLoader(schema=model.schema_ or {}, parameters={})
 
-    @staticmethod
-    def create_types_map(model: TypesMapModel, **kwargs: Any) -> TypesMap:
+    def create_complex_field_type(
+        self, model: ComplexFieldTypeModel, config: Config, **kwargs: Any
+    ) -> ComplexFieldType:
+        items = (
+            self._create_component_from_model(model=model.items, config=config)
+            if isinstance(model.items, ComplexFieldTypeModel)
+            else model.items
+        )
+
+        return ComplexFieldType(field_type=model.field_type, items=items)
+
+    def create_types_map(self, model: TypesMapModel, config: Config, **kwargs: Any) -> TypesMap:
+        target_type = (
+            self._create_component_from_model(model=model.target_type, config=config)
+            if isinstance(model.target_type, ComplexFieldTypeModel)
+            else model.target_type
+        )
+
         return TypesMap(
-            target_type=model.target_type,
+            target_type=target_type,
             current_type=model.current_type,
             condition=model.condition if model.condition is not None else "True",
         )
@@ -2054,16 +2141,11 @@ class ModelToComponentFactory:
             additional_jwt_payload=model.additional_jwt_payload,
         )
 
-    @staticmethod
     def create_list_partition_router(
-        model: ListPartitionRouterModel, config: Config, **kwargs: Any
+        self, model: ListPartitionRouterModel, config: Config, **kwargs: Any
     ) -> ListPartitionRouter:
         request_option = (
-            RequestOption(
-                inject_into=RequestOptionType(model.request_option.inject_into.value),
-                field_name=model.request_option.field_name,
-                parameters=model.parameters or {},
-            )
+            self._create_component_from_model(model.request_option, config)
             if model.request_option
             else None
         )
@@ -2259,7 +2341,25 @@ class ModelToComponentFactory:
         model: RequestOptionModel, config: Config, **kwargs: Any
     ) -> RequestOption:
         inject_into = RequestOptionType(model.inject_into.value)
-        return RequestOption(field_name=model.field_name, inject_into=inject_into, parameters={})
+        field_path: Optional[List[Union[InterpolatedString, str]]] = (
+            [
+                InterpolatedString.create(segment, parameters=kwargs.get("parameters", {}))
+                for segment in model.field_path
+            ]
+            if model.field_path
+            else None
+        )
+        field_name = (
+            InterpolatedString.create(model.field_name, parameters=kwargs.get("parameters", {}))
+            if model.field_name
+            else None
+        )
+        return RequestOption(
+            field_name=field_name,
+            field_path=field_path,
+            inject_into=inject_into,
+            parameters=kwargs.get("parameters", {}),
+        )
 
     def create_record_selector(
         self,

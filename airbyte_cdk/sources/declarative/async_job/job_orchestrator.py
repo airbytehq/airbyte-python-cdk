@@ -437,10 +437,10 @@ class AsyncJobOrchestrator:
                 yield from self._process_running_partitions_and_yield_completed_ones()
                 self._wait_on_status_update()
             except Exception as exception:
+                LOGGER.warning(
+                    f"Caught exception that stops the processing of the jobs: {exception}. Traceback: {traceback.format_exc()}"
+                )
                 if self._is_breaking_exception(exception):
-                    LOGGER.warning(
-                        f"Caught exception that stops the processing of the jobs: {exception}"
-                    )
                     self._abort_all_running_jobs()
                     raise exception
 
@@ -482,16 +482,16 @@ class AsyncJobOrchestrator:
             and exception.failure_type == FailureType.config_error
         )
 
-    def fetch_records(self, partition: AsyncPartition) -> Iterable[Mapping[str, Any]]:
+    def fetch_records(self, async_jobs: Iterable[AsyncJob]) -> Iterable[Mapping[str, Any]]:
         """
-        Fetches records from the given partition's jobs.
+        Fetches records from the given jobs.
 
         Args:
-            partition (AsyncPartition): The partition containing the jobs.
+            async_jobs Iterable[AsyncJob]: The list of AsyncJobs.
 
         Yields:
             Iterable[Mapping[str, Any]]: The fetched records from the jobs.
         """
-        for job in partition.jobs:
+        for job in async_jobs:
             yield from self._job_repository.fetch_records(job)
             self._job_repository.delete(job)

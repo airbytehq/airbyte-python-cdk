@@ -21,7 +21,6 @@ import pkgutil
 import sys
 import traceback
 from collections.abc import Mapping
-from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -44,6 +43,7 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
 )
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.sources.source import TState
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 
 
 class SourceLocalYaml(YamlDeclarativeSource):
@@ -101,7 +101,7 @@ def _get_local_yaml_source(args: list[str]) -> SourceLocalYaml:
                         type=Type.TRACE,
                         trace=AirbyteTraceMessage(
                             type=TraceType.ERROR,
-                            emitted_at=int(datetime.now().timestamp() * 1000),
+                            emitted_at=ab_datetime_now().to_epoch_millis(),
                             error=AirbyteErrorTraceMessage(
                                 message=f"Error starting the sync. This could be due to an invalid configuration or catalog. Please contact Support for assistance. Error: {error}",
                                 stack_trace=traceback.format_exc(),
@@ -191,7 +191,7 @@ def create_declarative_source(
                         type=Type.TRACE,
                         trace=AirbyteTraceMessage(
                             type=TraceType.ERROR,
-                            emitted_at=int(datetime.now().timestamp() * 1000),
+                            emitted_at=ab_datetime_now().to_epoch_millis(),
                             error=AirbyteErrorTraceMessage(
                                 message=f"Error starting the sync. This could be due to an invalid configuration or catalog. Please contact Support for assistance. Error: {error}",
                                 stack_trace=traceback.format_exc(),

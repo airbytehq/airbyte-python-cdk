@@ -10,7 +10,6 @@ from unittest.mock import patch
 
 import freezegun
 import isodate
-import pendulum
 from typing_extensions import deprecated
 
 from airbyte_cdk.models import (
@@ -33,6 +32,13 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
+from airbyte_cdk.sources.declarative.extractors.record_filter import (
+    ClientSideIncrementalRecordFilterDecorator,
+)
+from airbyte_cdk.sources.declarative.partition_routers import AsyncJobPartitionRouter
+from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
+    StreamSlicerPartitionGenerator,
+)
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.checkpoint import Cursor
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
@@ -41,6 +47,7 @@ from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.utils import AirbyteTracedException
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_parse
 
 _CONFIG = {"start_date": "2024-07-01T00:00:00.000Z"}
 
@@ -322,6 +329,7 @@ _MANIFEST = {
                     "http_method": "GET",
                 },
             },
+            "incremental_sync": {"$ref": "#/definitions/incremental_cursor"},
             "schema_loader": {
                 "type": "InlineSchemaLoader",
                 "schema": {
@@ -714,8 +722,8 @@ def test_create_concurrent_cursor():
     assert isinstance(party_members_cursor, ConcurrentCursor)
     assert party_members_cursor._stream_name == "party_members"
     assert party_members_cursor._cursor_field.cursor_field_key == "updated_at"
-    assert party_members_cursor._start == pendulum.parse(_CONFIG.get("start_date"))
-    assert party_members_cursor._end_provider() == datetime(
+    assert party_members_cursor._start == ab_datetime_parse(_CONFIG.get("start_date"))
+    assert party_members_cursor._end_provider() == AirbyteDateTime(
         year=2024, month=9, day=1, tzinfo=timezone.utc
     )
     assert party_members_cursor._slice_boundary_fields == ("start_time", "end_time")
@@ -730,8 +738,8 @@ def test_create_concurrent_cursor():
     assert isinstance(locations_cursor, ConcurrentCursor)
     assert locations_cursor._stream_name == "locations"
     assert locations_cursor._cursor_field.cursor_field_key == "updated_at"
-    assert locations_cursor._start == pendulum.parse(_CONFIG.get("start_date"))
-    assert locations_cursor._end_provider() == datetime(
+    assert locations_cursor._start == ab_datetime_parse(_CONFIG.get("start_date"))
+    assert locations_cursor._end_provider() == AirbyteDateTime(
         year=2024, month=9, day=1, tzinfo=timezone.utc
     )
     assert locations_cursor._slice_boundary_fields == ("start_time", "end_time")
@@ -741,8 +749,8 @@ def test_create_concurrent_cursor():
     assert locations_cursor._concurrent_state == {
         "slices": [
             {
-                "start": datetime(2024, 7, 1, 0, 0, 0, 0, tzinfo=timezone.utc),
-                "end": datetime(2024, 7, 31, 0, 0, 0, 0, tzinfo=timezone.utc),
+                "start": AirbyteDateTime(2024, 7, 1, tzinfo=timezone.utc),
+                "end": AirbyteDateTime(2024, 7, 31, tzinfo=timezone.utc),
             }
         ],
         "state_type": "date-range",
@@ -1599,6 +1607,85 @@ def test_given_partition_routing_and_incremental_sync_then_stream_is_concurrent(
 
     assert len(concurrent_streams) == 1
     assert len(synchronous_streams) == 0
+
+
+def test_async_incremental_stream_uses_concurrent_cursor_with_state():
+    state = [
+        AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(name="async_job_stream", namespace=None),
+                stream_state=AirbyteStateBlob(updated_at="2024-08-06"),
+            ),
+        )
+    ]
+
+    source = ConcurrentDeclarativeSource(
+        source_config=_MANIFEST, config=_CONFIG, catalog=_CATALOG, state=state
+    )
+
+    expected_state = {
+        "legacy": {"updated_at": "2024-08-06"},
+        "slices": [
+            {
+                "end": datetime(2024, 8, 6, 0, 0, tzinfo=timezone.utc),
+                "most_recent_cursor_value": datetime(2024, 8, 6, 0, 0, tzinfo=timezone.utc),
+                "start": datetime(2024, 7, 1, 0, 0, tzinfo=timezone.utc),
+            }
+        ],
+        "state_type": "date-range",
+    }
+
+    concurrent_streams, _ = source._group_streams(config=_CONFIG)
+    async_job_stream = concurrent_streams[6]
+    assert isinstance(async_job_stream, DefaultStream)
+    cursor = async_job_stream._cursor
+    assert isinstance(cursor, ConcurrentCursor)
+    assert cursor._concurrent_state == expected_state
+    stream_partition_generator = async_job_stream._stream_partition_generator
+    assert isinstance(stream_partition_generator, StreamSlicerPartitionGenerator)
+    async_job_partition_router = stream_partition_generator._stream_slicer
+    assert isinstance(async_job_partition_router, AsyncJobPartitionRouter)
+    assert isinstance(async_job_partition_router.stream_slicer, ConcurrentCursor)
+    assert async_job_partition_router.stream_slicer._concurrent_state == expected_state
+
+
+def test_stream_using_is_client_side_incremental_has_cursor_state():
+    expected_cursor_value = "2024-07-01"
+    state = [
+        AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(name="locations", namespace=None),
+                stream_state=AirbyteStateBlob(updated_at=expected_cursor_value),
+            ),
+        )
+    ]
+
+    manifest_with_stream_state_interpolation = copy.deepcopy(_MANIFEST)
+
+    # Enable semi-incremental on the locations stream
+    manifest_with_stream_state_interpolation["definitions"]["locations_stream"]["incremental_sync"][
+        "is_client_side_incremental"
+    ] = True
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest_with_stream_state_interpolation,
+        config=_CONFIG,
+        catalog=_CATALOG,
+        state=state,
+    )
+    concurrent_streams, synchronous_streams = source._group_streams(config=_CONFIG)
+
+    locations_stream = concurrent_streams[2]
+    assert isinstance(locations_stream, DefaultStream)
+
+    simple_retriever = locations_stream._stream_partition_generator._partition_factory._retriever
+    record_filter = simple_retriever.record_selector.record_filter
+    assert isinstance(record_filter, ClientSideIncrementalRecordFilterDecorator)
+    client_side_incremental_cursor_state = record_filter._cursor._cursor
+
+    assert client_side_incremental_cursor_state == expected_cursor_value
 
 
 def create_wrapped_stream(stream: DeclarativeStream) -> Stream:
