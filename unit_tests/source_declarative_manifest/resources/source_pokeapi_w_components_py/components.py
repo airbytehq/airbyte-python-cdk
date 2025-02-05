@@ -16,4 +16,5 @@ class MyCustomExtractor(DpathExtractor):
 
     Used to prove that SDM can find the custom class by name.
     """
+
     pass
