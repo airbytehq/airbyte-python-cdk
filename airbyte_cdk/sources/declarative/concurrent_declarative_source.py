@@ -226,7 +226,8 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     )
                     for state_migration in declarative_stream.state_migrations:
                         if state_migration.should_migrate(stream_state):
-                            stream_state = state_migration.migrate(stream_state)
+                            # The state variable is expected to be mutable but the migrate method returns an immutable mapping.
+                            stream_state = dict(state_migration.migrate(stream_state))
 
                     retriever = self._get_retriever(declarative_stream, stream_state)
 
@@ -336,7 +337,8 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     )
                     for state_migration in declarative_stream.state_migrations:
                         if state_migration.should_migrate(stream_state):
-                            stream_state = state_migration.migrate(stream_state)
+                            # The state variable is expected to be mutable but the migrate method returns an immutable mapping.
+                            stream_state = dict(state_migration.migrate(stream_state))
 
                     partition_router = declarative_stream.retriever.stream_slicer._partition_router
 
