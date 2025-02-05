@@ -4,7 +4,7 @@
 
 import traceback
 from functools import cache
-from typing import Any, Iterable, List, Mapping, MutableMapping, Optional
+from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Dict
 
 from airbyte_protocol_dataclasses.models import SyncMode
 
@@ -84,7 +84,7 @@ class IdentitiesStream(Stream):
                 ),
             )
 
-    def load_identity_groups(self):
+    def load_identity_groups(self) -> Iterable[Dict[str, Any]]:
         return self.stream_reader.load_identity_groups(logger=self.logger)
 
     @cache

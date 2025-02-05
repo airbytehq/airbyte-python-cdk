@@ -172,7 +172,9 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
             if isinstance(stream, IdentitiesStream):
                 identity = next(iter(stream.load_identity_groups()))
                 if not identity:
-                    errors.append("Unable to get identities for current configuration, please check your credentials")
+                    errors.append(
+                        "Unable to get identities for current configuration, please check your credentials"
+                    )
                 continue
             if not isinstance(stream, AbstractFileBasedStream):
                 raise ValueError(f"Stream {stream} is not a file-based stream.")
