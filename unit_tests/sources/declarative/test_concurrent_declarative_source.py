@@ -1232,6 +1232,235 @@ def test_read_with_concurrent_and_synchronous_streams_with_sequential_state():
 
 
 @freezegun.freeze_time(_NOW)
+def test_read_with_state_when_state_migration_was_provided():
+    manifest = {
+        "version": "5.0.0",
+        "definitions": {
+            "selector": {
+                "type": "RecordSelector",
+                "extractor": {"type": "DpathExtractor", "field_path": []},
+            },
+            "requester": {
+                "type": "HttpRequester",
+                "url_base": "https://persona.metaverse.com",
+                "http_method": "GET",
+                "authenticator": {
+                    "type": "BasicHttpAuthenticator",
+                    "username": "{{ config['api_key'] }}",
+                    "password": "{{ config['secret_key'] }}",
+                },
+                "error_handler": {
+                    "type": "DefaultErrorHandler",
+                    "response_filters": [
+                        {
+                            "http_codes": [403],
+                            "action": "FAIL",
+                            "failure_type": "config_error",
+                            "error_message": "Access denied due to lack of permission or invalid API/Secret key or wrong data region.",
+                        },
+                        {
+                            "http_codes": [404],
+                            "action": "IGNORE",
+                            "error_message": "No data available for the time range requested.",
+                        },
+                    ],
+                },
+            },
+            "retriever": {
+                "type": "SimpleRetriever",
+                "record_selector": {"$ref": "#/definitions/selector"},
+                "paginator": {"type": "NoPagination"},
+                "requester": {"$ref": "#/definitions/requester"},
+            },
+            "incremental_cursor": {
+                "type": "DatetimeBasedCursor",
+                "start_datetime": {
+                    "datetime": "{{ format_datetime(config['start_date'], '%Y-%m-%d') }}"
+                },
+                "end_datetime": {"datetime": "{{ now_utc().strftime('%Y-%m-%d') }}"},
+                "datetime_format": "%Y-%m-%d",
+                "cursor_datetime_formats": ["%Y-%m-%d", "%Y-%m-%dT%H:%M:%S"],
+                "cursor_granularity": "P1D",
+                "step": "P15D",
+                "cursor_field": "updated_at",
+                "lookback_window": "P5D",
+                "start_time_option": {
+                    "type": "RequestOption",
+                    "field_name": "start",
+                    "inject_into": "request_parameter",
+                },
+                "end_time_option": {
+                    "type": "RequestOption",
+                    "field_name": "end",
+                    "inject_into": "request_parameter",
+                },
+            },
+            "base_stream": {"retriever": {"$ref": "#/definitions/retriever"}},
+            "base_incremental_stream": {
+                "retriever": {
+                    "$ref": "#/definitions/retriever",
+                    "requester": {"$ref": "#/definitions/requester"},
+                },
+                "incremental_sync": {"$ref": "#/definitions/incremental_cursor"},
+            },
+            "party_members_stream": {
+                "$ref": "#/definitions/base_incremental_stream",
+                "retriever": {
+                    "$ref": "#/definitions/base_incremental_stream/retriever",
+                    "requester": {
+                        "$ref": "#/definitions/requester",
+                        "request_parameters": {"filter": "{{stream_partition['type']}}"},
+                    },
+                    "record_selector": {"$ref": "#/definitions/selector"},
+                    "partition_router": [
+                        {
+                            "type": "ListPartitionRouter",
+                            "values": ["type_1", "type_2"],
+                            "cursor_field": "type",
+                        }
+                    ],
+                },
+                "$parameters": {
+                    "name": "party_members",
+                    "primary_key": "id",
+                    "path": "/party_members",
+                },
+                "state_migrations": [
+                    {
+                        "type": "CustomStateMigration",
+                        "class_name": "unit_tests.sources.declarative.custom_state_migration.CustomStateMigration",
+                    }
+                ],
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "https://json-schema.org/draft-07/schema#",
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "description": "The identifier",
+                                "type": ["null", "string"],
+                            },
+                            "name": {
+                                "description": "The name of the party member",
+                                "type": ["null", "string"],
+                            },
+                        },
+                    },
+                },
+            },
+        },
+        "streams": [
+            "#/definitions/party_members_stream",
+        ],
+        "check": {"stream_names": ["party_members", "locations"]},
+        "concurrency_level": {
+            "type": "ConcurrencyLevel",
+            "default_concurrency": "{{ config['num_workers'] or 10 }}",
+            "max_concurrency": 25,
+        },
+    }
+    state = [
+        AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(name="party_members", namespace=None),
+                stream_state=AirbyteStateBlob(updated_at="2024-08-21"),
+            ),
+        ),
+    ]
+    catalog = ConfiguredAirbyteCatalog(
+        streams=[
+            ConfiguredAirbyteStream(
+                stream=AirbyteStream(
+                    name="party_members",
+                    json_schema={},
+                    supported_sync_modes=[SyncMode.incremental],
+                ),
+                sync_mode=SyncMode.incremental,
+                destination_sync_mode=DestinationSyncMode.append,
+            )
+        ]
+    )
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest, config=_CONFIG, catalog=_CATALOG, state=state
+    )
+    party_members_slices_and_responses = [
+        (
+            {"start": "2024-08-16", "end": "2024-08-30", "filter": "type_1"},
+            HttpResponse(
+                json.dumps(
+                    [
+                        {
+                            "id": "nijima",
+                            "first_name": "makoto",
+                            "last_name": "nijima",
+                            "updated_at": "2024-08-10",
+                            "type": 1,
+                        }
+                    ]
+                )
+            ),
+        ),
+        (
+            {"start": "2024-08-16", "end": "2024-08-30", "filter": "type_2"},
+            HttpResponse(
+                json.dumps(
+                    [
+                        {
+                            "id": "nijima",
+                            "first_name": "makoto",
+                            "last_name": "nijima",
+                            "updated_at": "2024-08-10",
+                            "type": 2,
+                        }
+                    ]
+                )
+            ),
+        ),
+        (
+            {"start": "2024-08-31", "end": "2024-09-10", "filter": "type_1"},
+            HttpResponse(
+                json.dumps(
+                    [
+                        {
+                            "id": "yoshizawa",
+                            "first_name": "sumire",
+                            "last_name": "yoshizawa",
+                            "updated_at": "2024-09-10",
+                            "type": 1,
+                        }
+                    ]
+                )
+            ),
+        ),
+        (
+            {"start": "2024-08-31", "end": "2024-09-10", "filter": "type_2"},
+            HttpResponse(
+                json.dumps(
+                    [
+                        {
+                            "id": "yoshizawa",
+                            "first_name": "sumire",
+                            "last_name": "yoshizawa",
+                            "updated_at": "2024-09-10",
+                            "type": 2,
+                        }
+                    ]
+                )
+            ),
+        ),
+    ]
+    with HttpMocker() as http_mocker:
+        _mock_party_members_requests(http_mocker, party_members_slices_and_responses)
+        messages = list(
+            source.read(logger=source.logger, config=_CONFIG, catalog=catalog, state=state)
+        )
+    final_state = get_states_for_stream(stream_name="party_members", messages=messages)
+    assert state not in final_state
+
+
+@freezegun.freeze_time(_NOW)
 @patch(
     "airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter.AbstractStreamStateConverter.__init__",
     mocked_init,
