@@ -191,7 +191,9 @@ class AbstractFileBasedStreamReader(ABC):
         This is required for connectors that will support syncing
         ACL Permissions from files.
         """
-        ...
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement get_file_acl_permissions()"
+        )
 
     @abstractmethod
     def load_identity_groups(self, logger: logging.Logger) -> Iterable[Dict[str, Any]]:
@@ -199,4 +201,6 @@ class AbstractFileBasedStreamReader(ABC):
         This is required for connectors that will support syncing
         identities.
         """
-        ...
+        raise NotImplementedError(
+            f"{self.__class__.__name__} must implement load_identity_groups()"
+        )
