@@ -4,7 +4,7 @@
 
 import traceback
 from functools import cache
-from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Dict
+from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional
 
 from airbyte_protocol_dataclasses.models import SyncMode
 
