@@ -3339,6 +3339,68 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_runs_state_migratio
     ]
 
 
+def test_create_concurrent_cursor_from_perpartition_cursor_runs_state_migrations():
+    class DummyStateMigration:
+        def should_migrate(self, stream_state: Mapping[str, Any]) -> bool:
+            return True
+
+        def migrate(self, stream_state: Mapping[str, Any]) -> Mapping[str, Any]:
+            stream_state["lookback_window"] = 10 * 2
+            return stream_state
+
+    state = {
+        "states": [
+            {
+                "partition": {"type": "typ_1"},
+                "cursor": {"updated_at": "2024-08-01T00:00:00.000000Z"},
+            }
+        ],
+        "state": {"updated_at": "2024-08-01T00:00:00.000000Z"},
+        "lookback_window": 10,
+        "parent_state": {"parent_test": {"last_updated": "2024-08-01T00:00:00.000000Z"}},
+    }
+    config = {
+        "start_time": "2024-08-01T00:00:00.000000Z",
+        "end_time": "2024-09-01T00:00:00.000000Z",
+    }
+    list_partition_router = ListPartitionRouter(
+        cursor_field="id",
+        values=["type_1", "type_2", "type_3"],
+        config=config,
+        parameters={},
+    )
+    connector_state_manager = ConnectorStateManager()
+    stream_name = "test"
+    cursor_component_definition = {
+        "type": "DatetimeBasedCursor",
+        "cursor_field": "updated_at",
+        "datetime_format": "%Y-%m-%dT%H:%M:%S.%fZ",
+        "start_datetime": "{{ config['start_time'] }}",
+        "end_datetime": "{{ config['end_time'] }}",
+        "partition_field_start": "custom_start",
+        "partition_field_end": "custom_end",
+        "step": "P10D",
+        "cursor_granularity": "PT0.000001S",
+        "lookback_window": "P3D",
+    }
+    connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
+    cursor = connector_builder_factory.create_concurrent_cursor_from_perpartition_cursor(
+        state_manager=connector_state_manager,
+        model_type=DatetimeBasedCursorModel,
+        component_definition=cursor_component_definition,
+        stream_name=stream_name,
+        stream_namespace=None,
+        config=config,
+        stream_state=state,
+        partition_router=list_partition_router,
+        stream_state_migrations=[DummyStateMigration()],
+    )
+    assert cursor.state["lookback_window"] != 10, "State migration wasn't called"
+    assert (
+        cursor.state["lookback_window"] == 20
+    ), "State migration was called, but actual state don't match expected"
+
+
 def test_create_concurrent_cursor_uses_min_max_datetime_format_if_defined():
     """
     Validates a special case for when the start_time.datetime_format and end_time.datetime_format are defined, the date to

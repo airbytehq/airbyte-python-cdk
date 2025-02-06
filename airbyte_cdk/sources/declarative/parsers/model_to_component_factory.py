@@ -1247,6 +1247,12 @@ class ModelToComponentFactory:
             )
         )
 
+        if stream_state_migrations:
+            for state_migration in stream_state_migrations:
+                if state_migration.should_migrate(stream_state):
+                    # The state variable is expected to be mutable but the migrate method returns an immutable mapping.
+                    stream_state = dict(state_migration.migrate(stream_state))
+
         # Return the concurrent cursor and state converter
         return ConcurrentPerPartitionCursor(
             cursor_factory=cursor_factory,
