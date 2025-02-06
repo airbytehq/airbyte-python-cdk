@@ -793,7 +793,7 @@ definitions:
         description: This option is used to adjust the upper and lower boundaries of each datetime window to beginning and end of the provided target period (day, week, month)
         type: object
         required:
-        - target
+          - target
         properties:
           target:
             title: Target

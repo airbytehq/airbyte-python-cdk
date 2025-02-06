@@ -45,7 +45,7 @@ def test_initialize_interpolated_mapping_request_input_provider(
     provider = InterpolatedRequestInputProvider(
         request_inputs=input_request_data, config=config, parameters=parameters
     )
-    actual_request_data = provider.eval_request_inputs(stream_state={}, stream_slice=stream_slice)
+    actual_request_data = provider.eval_request_inputs(stream_slice=stream_slice)
 
     assert isinstance(provider._interpolator, InterpolatedMapping)
     assert actual_request_data == expected_request_data

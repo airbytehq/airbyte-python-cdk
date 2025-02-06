@@ -120,7 +120,6 @@ class HttpRequester(Requester):
         next_page_token: Optional[Mapping[str, Any]],
     ) -> str:
         kwargs = {
-            "stream_state": stream_state,
             "stream_slice": stream_slice,
             "next_page_token": next_page_token,
         }
