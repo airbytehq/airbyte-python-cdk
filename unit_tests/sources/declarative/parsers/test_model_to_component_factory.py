@@ -3281,6 +3281,64 @@ def test_create_concurrent_cursor_from_datetime_based_cursor(
         assert getattr(concurrent_cursor, assertion_field) == expected_value
 
 
+def test_create_concurrent_cursor_from_datetime_based_cursor_runs_state_migrations():
+    class DummyStateMigration:
+        def should_migrate(self, stream_state: Mapping[str, Any]) -> bool:
+            return True
+
+        def migrate(self, stream_state: Mapping[str, Any]) -> Mapping[str, Any]:
+            updated_at = stream_state["updated_at"]
+            return {
+                "states": [
+                    {
+                        "partition": {"type": "type_1"},
+                        "cursor": {"updated_at": updated_at},
+                    },
+                    {
+                        "partition": {"type": "type_2"},
+                        "cursor": {"updated_at": updated_at},
+                    },
+                ]
+            }
+
+    stream_name = "test"
+    config = {
+        "start_time": "2024-08-01T00:00:00.000000Z",
+        "end_time": "2024-09-01T00:00:00.000000Z",
+    }
+    stream_state = {"updated_at": "2025-01-01T00:00:00.000000Z"}
+    connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
+    connector_state_manager = ConnectorStateManager()
+    cursor_component_definition = {
+        "type": "DatetimeBasedCursor",
+        "cursor_field": "updated_at",
+        "datetime_format": "%Y-%m-%dT%H:%M:%S.%fZ",
+        "start_datetime": "{{ config['start_time'] }}",
+        "end_datetime": "{{ config['end_time'] }}",
+        "partition_field_start": "custom_start",
+        "partition_field_end": "custom_end",
+        "step": "P10D",
+        "cursor_granularity": "PT0.000001S",
+        "lookback_window": "P3D",
+    }
+    concurrent_cursor = (
+        connector_builder_factory.create_concurrent_cursor_from_datetime_based_cursor(
+            state_manager=connector_state_manager,
+            model_type=DatetimeBasedCursorModel,
+            component_definition=cursor_component_definition,
+            stream_name=stream_name,
+            stream_namespace=None,
+            config=config,
+            stream_state=stream_state,
+            stream_state_migrations=[DummyStateMigration()],
+        )
+    )
+    assert concurrent_cursor.state["states"] == [
+        {"cursor": {"updated_at": stream_state["updated_at"]}, "partition": {"type": "type_1"}},
+        {"cursor": {"updated_at": stream_state["updated_at"]}, "partition": {"type": "type_2"}},
+    ]
+
+
 def test_create_concurrent_cursor_uses_min_max_datetime_format_if_defined():
     """
     Validates a special case for when the start_time.datetime_format and end_time.datetime_format are defined, the date to
