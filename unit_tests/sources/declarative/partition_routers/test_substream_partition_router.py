@@ -415,7 +415,7 @@ def test_substream_partition_router_invalid_parent_record_type():
         # Case 3: Initial state with global `state`, no migration expected
         (
             {"state": {"updated": "2023-05-27T00:00:00Z"}},
-            {},
+            {"parent_stream_cursor": "2023-05-27T00:00:00Z"},
         ),
         # Case 4: Initial state with per-partition `states`, no migration expected
         (
@@ -471,7 +471,7 @@ def test_substream_partition_router_invalid_parent_record_type():
                 "use_global_cursor": True,
                 "state": {"updated": "2023-05-27T00:00:00Z"},
             },
-            {},
+            {"parent_stream_cursor": "2023-05-27T00:00:00Z"},
         ),
     ],
     ids=[
