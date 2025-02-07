@@ -314,7 +314,9 @@ class TestOauth2Authenticator:
         assert isinstance(oauth._token_expiry_date, AirbyteDateTime)
         assert oauth.get_token_expiry_date() == ab_datetime_parse(expected_date)
 
-    def test_given_no_access_token_but_expiry_in_the_future_when_refresh_token_then_fetch_access_token(self) -> None:
+    def test_given_no_access_token_but_expiry_in_the_future_when_refresh_token_then_fetch_access_token(
+        self,
+    ) -> None:
         expiry_date = ab_datetime_now().add(timedelta(days=1))
         oauth = DeclarativeOauth2Authenticator(
             token_refresh_endpoint="https://refresh_endpoint.com/",
@@ -326,7 +328,6 @@ class TestOauth2Authenticator:
             parameters={},
             grant_type="client",
         )
-
 
         with HttpMocker() as http_mocker:
             http_mocker.post(
