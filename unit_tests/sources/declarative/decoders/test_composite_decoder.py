@@ -30,7 +30,9 @@ def compress_with_gzip(data: str, encoding: str = "utf-8"):
     return buf.getvalue()
 
 
-def generate_csv(encoding: str = "utf-8", delimiter: str = ",", should_compress: bool = False) -> bytes:
+def generate_csv(
+    encoding: str = "utf-8", delimiter: str = ",", should_compress: bool = False
+) -> bytes:
     data = [
         {"id": "1", "name": "John", "age": "28"},
         {"id": "2", "name": "Alice", "age": "34"},
@@ -45,7 +47,7 @@ def generate_csv(encoding: str = "utf-8", delimiter: str = ",", should_compress:
 
     output.seek(0)
     csv_data = output.read()
-    
+
     if should_compress:
         return compress_with_gzip(csv_data, encoding=encoding)
     return csv_data.encode(encoding)
@@ -54,7 +56,9 @@ def generate_csv(encoding: str = "utf-8", delimiter: str = ",", should_compress:
 @pytest.mark.parametrize("encoding", ["utf-8", "utf", "iso-8859-1"])
 def test_composite_raw_decoder_gzip_csv_parser(requests_mock, encoding: str):
     requests_mock.register_uri(
-        "GET", "https://airbyte.io/", content=generate_csv(encoding=encoding, delimiter="\t", should_compress=True)
+        "GET",
+        "https://airbyte.io/",
+        content=generate_csv(encoding=encoding, delimiter="\t", should_compress=True),
     )
     response = requests.get("https://airbyte.io/", stream=True)
 
@@ -185,12 +189,12 @@ def test_composite_raw_decoder_csv_parser_values(requests_mock, encoding: str, d
 
     parser = CsvParser(encoding=encoding, delimiter=delimiter)
     composite_raw_decoder = CompositeRawDecoder(parser=parser)
-    
+
     expected_data = [
         {"id": "1", "name": "John", "age": "28"},
         {"id": "2", "name": "Alice", "age": "34"},
         {"id": "3", "name": "Bob", "age": "25"},
     ]
-    
+
     parsed_records = list(composite_raw_decoder.decode(response))
     assert parsed_records == expected_data
