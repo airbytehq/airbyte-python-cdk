@@ -55,9 +55,9 @@ def test_session_token_provider_cache_expiration():
         provider = create_session_token_provider()
         provider.get_token()
 
-    provider.login_requester.send_request.return_value.content = json.dumps({
-        "nested": {"token": "updated_token"}
-    }).encode()
+    provider.login_requester.send_request.return_value.content = json.dumps(
+        {"nested": {"token": "updated_token"}}
+    ).encode()
 
     with freezegun.freeze_time("2001-05-21T14:00:00Z"):
         assert provider.get_token() == "updated_token"

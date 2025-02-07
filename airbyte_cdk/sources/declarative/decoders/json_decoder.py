@@ -44,6 +44,7 @@ class JsonDecoder(Decoder):
         if not has_yielded:
             yield {}
 
+
 @dataclass
 class IterableDecoder(Decoder):
     """

@@ -2037,13 +2037,15 @@ class ModelToComponentFactory:
 
     @staticmethod
     def create_csv_decoder(model: CsvDecoderModel, config: Config, **kwargs: Any) -> Decoder:
-        return CompositeRawDecoder(parser=ModelToComponentFactory._get_parser(model, config), stream_response=False)
+        return CompositeRawDecoder(
+            parser=ModelToComponentFactory._get_parser(model, config), stream_response=False
+        )
 
     @staticmethod
-    def create_jsonl_decoder(
-        model: JsonlDecoderModel, config: Config, **kwargs: Any
-    ) -> Decoder:
-        return CompositeRawDecoder(parser=ModelToComponentFactory._get_parser(model, config), stream_response=True)
+    def create_jsonl_decoder(model: JsonlDecoderModel, config: Config, **kwargs: Any) -> Decoder:
+        return CompositeRawDecoder(
+            parser=ModelToComponentFactory._get_parser(model, config), stream_response=True
+        )
 
     @staticmethod
     def create_iterable_decoder(
@@ -2070,8 +2072,12 @@ class ModelToComponentFactory:
         elif isinstance(model, CsvDecoderModel):
             return CsvParser(encoding=model.encoding, delimiter=model.delimiter)
         elif isinstance(model, GzipDecoderModel):
-            return GzipParser(inner_parser=ModelToComponentFactory._get_parser(model.inner_decoder, config))
-        elif isinstance(model, (CustomDecoderModel, IterableDecoderModel, XmlDecoderModel, ZipfileDecoderModel)):
+            return GzipParser(
+                inner_parser=ModelToComponentFactory._get_parser(model.inner_decoder, config)
+            )
+        elif isinstance(
+            model, (CustomDecoderModel, IterableDecoderModel, XmlDecoderModel, ZipfileDecoderModel)
+        ):
             raise ValueError(f"Decoder type {model} does not have parser associated to it")
 
         raise ValueError(f"Unknown decoder type {model}")

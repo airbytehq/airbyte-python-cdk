@@ -42,7 +42,10 @@ def test_json_decoder(requests_mock, response_body, first_element):
 def test_jsonl_decoder(requests_mock, response_body, expected_json):
     requests_mock.register_uri("GET", "https://airbyte.io/", text=response_body)
     response = requests.get("https://airbyte.io/", stream=True)
-    assert list(CompositeRawDecoder(parser=JsonLineParser(), stream_response=True).decode(response)) == expected_json
+    assert (
+        list(CompositeRawDecoder(parser=JsonLineParser(), stream_response=True).decode(response))
+        == expected_json
+    )
 
 
 @pytest.fixture(name="large_events_response")
