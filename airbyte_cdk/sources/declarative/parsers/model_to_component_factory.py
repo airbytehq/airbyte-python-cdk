@@ -62,7 +62,6 @@ from airbyte_cdk.sources.declarative.decoders import (
     Decoder,
     IterableDecoder,
     JsonDecoder,
-    JsonlDecoder,
     PaginationDecoderDecorator,
     XmlDecoder,
     ZipfileDecoder,
@@ -2057,8 +2056,8 @@ class ModelToComponentFactory:
     @staticmethod
     def create_jsonl_decoder(
         model: JsonlDecoderModel, config: Config, **kwargs: Any
-    ) -> JsonlDecoder:
-        return JsonlDecoder(parameters={})
+    ) -> Decoder:
+        return CompositeRawDecoder(parser=JsonLineParser(), stream_response=True)
 
     @staticmethod
     def create_json_line_parser(

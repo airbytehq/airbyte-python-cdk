@@ -12,7 +12,6 @@ from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
 from airbyte_cdk.sources.declarative.decoders.json_decoder import (
     IterableDecoder,
     JsonDecoder,
-    JsonlDecoder,
 )
 from airbyte_cdk.sources.declarative.decoders.noop_decoder import NoopDecoder
 from airbyte_cdk.sources.declarative.decoders.pagination_decoder_decorator import (
@@ -26,7 +25,6 @@ __all__ = [
     "CompositeRawDecoder",
     "JsonDecoder",
     "JsonParser",
-    "JsonlDecoder",
     "IterableDecoder",
     "NoopDecoder",
     "PaginationDecoderDecorator",

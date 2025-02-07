@@ -8,7 +8,9 @@ import os
 import pytest
 import requests
 
-from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder, JsonlDecoder
+from airbyte_cdk.sources.declarative.decoders import CompositeRawDecoder
+from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import JsonLineParser
+from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder
 
 
 @pytest.mark.parametrize(
@@ -39,8 +41,8 @@ def test_json_decoder(requests_mock, response_body, first_element):
 )
 def test_jsonl_decoder(requests_mock, response_body, expected_json):
     requests_mock.register_uri("GET", "https://airbyte.io/", text=response_body)
-    response = requests.get("https://airbyte.io/")
-    assert list(JsonlDecoder(parameters={}).decode(response)) == expected_json
+    response = requests.get("https://airbyte.io/", stream=True)
+    assert list(CompositeRawDecoder(parser=JsonLineParser(), stream_response=True).decode(response)) == expected_json
 
 
 @pytest.fixture(name="large_events_response")

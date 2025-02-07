@@ -63,26 +63,6 @@ class IterableDecoder(Decoder):
 
 
 @dataclass
-class JsonlDecoder(Decoder):
-    """
-    Decoder strategy that returns the json-encoded content of the response, if any.
-    """
-
-    parameters: InitVar[Mapping[str, Any]]
-
-    def is_stream_response(self) -> bool:
-        return True
-
-    def decode(
-        self, response: requests.Response
-    ) -> Generator[MutableMapping[str, Any], None, None]:
-        # TODO???: set delimiter? usually it is `\n` but maybe it would be useful to set optional?
-        #  https://github.com/airbytehq/airbyte-internal-issues/issues/8436
-        for record in response.iter_lines():
-            yield orjson.loads(record)
-
-
-@dataclass
 class GzipJsonDecoder(JsonDecoder):
     encoding: Optional[str]
 
