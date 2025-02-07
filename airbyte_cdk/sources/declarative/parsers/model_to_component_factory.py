@@ -60,7 +60,6 @@ from airbyte_cdk.sources.declarative.datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.decoders import (
     Decoder,
-    GzipJsonDecoder,
     IterableDecoder,
     JsonDecoder,
     JsonlDecoder,
@@ -228,9 +227,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     FlattenFields as FlattenFieldsModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    GzipJsonDecoder as GzipJsonDecoderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     GzipParser as GzipParserModel,
@@ -565,7 +561,6 @@ class ModelToComponentFactory:
             JsonlDecoderModel: self.create_jsonl_decoder,
             JsonLineParserModel: self.create_json_line_parser,
             JsonParserModel: self.create_json_parser,
-            GzipJsonDecoderModel: self.create_gzipjson_decoder,
             GzipParserModel: self.create_gzip_parser,
             KeysToLowerModel: self.create_keys_to_lower_transformation,
             KeysToSnakeCaseModel: self.create_keys_to_snake_transformation,
@@ -2080,12 +2075,6 @@ class ModelToComponentFactory:
     @staticmethod
     def create_xml_decoder(model: XmlDecoderModel, config: Config, **kwargs: Any) -> XmlDecoder:
         return XmlDecoder(parameters={})
-
-    @staticmethod
-    def create_gzipjson_decoder(
-        model: GzipJsonDecoderModel, config: Config, **kwargs: Any
-    ) -> GzipJsonDecoder:
-        return GzipJsonDecoder(parameters={}, encoding=model.encoding)
 
     def create_zipfile_decoder(
         self, model: ZipfileDecoderModel, config: Config, **kwargs: Any

@@ -10,7 +10,6 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
 )
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
 from airbyte_cdk.sources.declarative.decoders.json_decoder import (
-    GzipJsonDecoder,
     IterableDecoder,
     JsonDecoder,
     JsonlDecoder,
@@ -29,7 +28,6 @@ __all__ = [
     "JsonParser",
     "JsonlDecoder",
     "IterableDecoder",
-    "GzipJsonDecoder",
     "NoopDecoder",
     "PaginationDecoderDecorator",
     "XmlDecoder",
