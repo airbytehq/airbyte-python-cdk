@@ -1549,7 +1549,6 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/JsonDecoder"
           - "$ref": "#/definitions/XmlDecoder"
-          - "$ref": "#/definitions/CompositeRawDecoder"
       $parameters:
         type: object
         additionalProperties: true
@@ -2140,19 +2139,19 @@ definitions:
     additionalProperties: true
     required:
       - type
-      - parser
+      - decoder
     properties:
       type:
         type: string
         enum: [ZipfileDecoder]
-      parser:
+      decoder:
         title: Parser
         description: Parser to parse the decompressed data from the zipfile(s).
         anyOf:
-          - "$ref": "#/definitions/GzipParser"
-          - "$ref": "#/definitions/JsonParser"
-          - "$ref": "#/definitions/JsonLineParser"
-          - "$ref": "#/definitions/CsvParser"
+          - "$ref": "#/definitions/CsvDecoder"
+          - "$ref": "#/definitions/GzipDecoder"
+          - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonlDecoder"
   ListPartitionRouter:
     title: List Partition Router
     description: A Partition router that specifies a list of attributes where each attribute describes a portion of the complete data set for a stream. During a sync, each value is iterated over and can be used as input to outbound API requests.
@@ -2989,74 +2988,33 @@ definitions:
           - "$ref": "#/definitions/JsonlDecoder"
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
-          - "$ref": "#/definitions/CompositeRawDecoder"
           - "$ref": "#/definitions/ZipfileDecoder"
       $parameters:
         type: object
         additionalProperties: true
-  CompositeRawDecoder:
-    description: "(This is experimental, use at your own risk)"
+  GzipDecoder:
     type: object
     required:
       - type
-      - parser
+      - inner_decoder
     properties:
       type:
         type: string
-        enum: [CompositeRawDecoder]
-      parser:
+        enum: [GzipDecoder]
+      inner_decoder:
         anyOf:
-          - "$ref": "#/definitions/GzipParser"
-          - "$ref": "#/definitions/JsonParser"
-          - "$ref": "#/definitions/JsonLineParser"
-          - "$ref": "#/definitions/CsvParser"
-  #    PARSERS
-  GzipParser:
-    type: object
-    required:
-      - type
-      - inner_parser
-    properties:
-      type:
-        type: string
-        enum: [GzipParser]
-      inner_parser:
-        anyOf:
-          - "$ref": "#/definitions/JsonLineParser"
-          - "$ref": "#/definitions/CsvParser"
-          - "$ref": "#/definitions/JsonParser"
-  JsonParser:
-    title: JsonParser
-    description: Parser used for parsing str, bytes, or bytearray data and returning data in a dictionary format.
+          - "$ref": "#/definitions/CsvDecoder"
+          - "$ref": "#/definitions/GzipDecoder"
+          - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonlDecoder"
+  CsvDecoder:
     type: object
     required:
       - type
     properties:
       type:
         type: string
-        enum: [JsonParser]
-      encoding:
-        type: string
-        default: utf-8
-  JsonLineParser:
-    type: object
-    required:
-      - type
-    properties:
-      type:
-        type: string
-        enum: [JsonLineParser]
-      encoding:
-        type: string
-        default: utf-8
-  CsvParser:
-    type: object
-    required:
-      - type
-    properties:
-      type:
-        type: string
-        enum: [CsvParser]
+        enum: [CsvDecoder]
       encoding:
         type: string
         default: utf-8
@@ -3188,7 +3146,6 @@ definitions:
           - "$ref": "#/definitions/JsonlDecoder"
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
-          - "$ref": "#/definitions/CompositeRawDecoder"
           - "$ref": "#/definitions/ZipfileDecoder"
       download_decoder:
         title: Download Decoder
@@ -3199,7 +3156,6 @@ definitions:
           - "$ref": "#/definitions/JsonlDecoder"
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
-          - "$ref": "#/definitions/CompositeRawDecoder"
           - "$ref": "#/definitions/ZipfileDecoder"
       $parameters:
         type: object
