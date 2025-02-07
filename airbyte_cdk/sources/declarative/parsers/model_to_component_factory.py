@@ -936,7 +936,7 @@ class ModelToComponentFactory:
 
     @staticmethod
     def apply_stream_state_migrations(
-        stream_state_migrations: List[Any], stream_state: MutableMapping[str, Any]
+        stream_state_migrations: List[Any] | None, stream_state: MutableMapping[str, Any]
     ) -> MutableMapping[str, Any]:
         if stream_state_migrations:
             for state_migration in stream_state_migrations:
