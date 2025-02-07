@@ -934,6 +934,17 @@ class ModelToComponentFactory:
             parameters={},
         )
 
+    @staticmethod
+    def apply_stream_state_migrations(
+        stream_state_migrations: List[Any], stream_state: MutableMapping[str, Any]
+    ) -> MutableMapping[str, Any]:
+        if stream_state_migrations:
+            for state_migration in stream_state_migrations:
+                if state_migration.should_migrate(stream_state):
+                    # The state variable is expected to be mutable but the migrate method returns an immutable mapping.
+                    stream_state = dict(state_migration.migrate(stream_state))
+        return stream_state
+
     def create_concurrent_cursor_from_datetime_based_cursor(
         self,
         model_type: Type[BaseModel],
@@ -954,11 +965,7 @@ class ModelToComponentFactory:
             if "stream_state" not in kwargs
             else kwargs["stream_state"]
         )
-        if stream_state_migrations:
-            for state_migration in stream_state_migrations:
-                if state_migration.should_migrate(stream_state):
-                    # The state variable is expected to be mutable but the migrate method returns an immutable mapping.
-                    stream_state = dict(state_migration.migrate(stream_state))
+        stream_state = self.apply_stream_state_migrations(stream_state_migrations, stream_state)
 
         component_type = component_definition.get("type")
         if component_definition.get("type") != model_type.__name__:
@@ -1246,12 +1253,7 @@ class ModelToComponentFactory:
                 stream_state_migrations=stream_state_migrations,
             )
         )
-
-        if stream_state_migrations:
-            for state_migration in stream_state_migrations:
-                if state_migration.should_migrate(stream_state):
-                    # The state variable is expected to be mutable but the migrate method returns an immutable mapping.
-                    stream_state = dict(state_migration.migrate(stream_state))
+        stream_state = self.apply_stream_state_migrations(stream_state_migrations, stream_state)
 
         # Return the concurrent cursor and state converter
         return ConcurrentPerPartitionCursor(
@@ -1711,7 +1713,6 @@ class ModelToComponentFactory:
                         config=config or {},
                         stream_state={},
                         partition_router=stream_slicer,
-                        stream_state_migrations=model.state_migrations,
                     )
                 return self.create_concurrent_cursor_from_datetime_based_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
                     model_type=DatetimeBasedCursorModel,
@@ -1719,7 +1720,6 @@ class ModelToComponentFactory:
                     stream_name=model.name or "",
                     stream_namespace=None,
                     config=config or {},
-                    stream_state_migrations=model.state_migrations,
                 )
 
             incremental_sync_model = model.incremental_sync
