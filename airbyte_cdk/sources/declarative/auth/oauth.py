@@ -3,7 +3,7 @@
 #
 
 from dataclasses import InitVar, dataclass, field
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any, List, Mapping, MutableMapping, Optional, Union
 
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
@@ -232,7 +232,12 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         return self._refresh_request_headers.eval(self.config)
 
     def get_token_expiry_date(self) -> AirbyteDateTime:
+        if not self._has_access_token_been_initialized():
+            return AirbyteDateTime.from_datetime(datetime.min)
         return self._token_expiry_date  # type: ignore # _token_expiry_date is an AirbyteDateTime. It is never None despite what mypy thinks
+
+    def _has_access_token_been_initialized(self) -> bool:
+        return self._access_token is not None
 
     def set_token_expiry_date(self, value: Union[str, int]) -> None:
         self._token_expiry_date = self._parse_token_expiration_date(value)
