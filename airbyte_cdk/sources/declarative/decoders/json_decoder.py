@@ -60,23 +60,3 @@ class IterableDecoder(Decoder):
     ) -> Generator[MutableMapping[str, Any], None, None]:
         for line in response.iter_lines():
             yield {"record": line.decode()}
-
-
-@dataclass
-class GzipJsonDecoder(JsonDecoder):
-    encoding: Optional[str]
-
-    def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        if self.encoding:
-            try:
-                codecs.lookup(self.encoding)
-            except LookupError:
-                raise ValueError(
-                    f"Invalid encoding '{self.encoding}'. Please check provided encoding"
-                )
-
-    def decode(
-        self, response: requests.Response
-    ) -> Generator[MutableMapping[str, Any], None, None]:
-        raw_string = decompress(response.content).decode(encoding=self.encoding or "utf-8")
-        yield from self.parse_body_json(orjson.loads(raw_string))

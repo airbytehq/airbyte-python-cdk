@@ -887,15 +887,6 @@ class CustomDecoder(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class GzipJsonDecoder(BaseModel):
-    class Config:
-        extra = Extra.allow
-
-    type: Literal["GzipJsonDecoder"]
-    encoding: Optional[str] = "utf-8"
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
-
-
 class MinMaxDatetime(BaseModel):
     type: Literal["MinMaxDatetime"]
     datetime: str = Field(
@@ -2137,7 +2128,6 @@ class SimpleRetriever(BaseModel):
             JsonlDecoder,
             IterableDecoder,
             XmlDecoder,
-            GzipJsonDecoder,
             CompositeRawDecoder,
             ZipfileDecoder,
         ]
@@ -2215,7 +2205,6 @@ class AsyncRetriever(BaseModel):
             JsonlDecoder,
             IterableDecoder,
             XmlDecoder,
-            GzipJsonDecoder,
             CompositeRawDecoder,
             ZipfileDecoder,
         ]
@@ -2231,7 +2220,6 @@ class AsyncRetriever(BaseModel):
             JsonlDecoder,
             IterableDecoder,
             XmlDecoder,
-            GzipJsonDecoder,
             CompositeRawDecoder,
             ZipfileDecoder,
         ]

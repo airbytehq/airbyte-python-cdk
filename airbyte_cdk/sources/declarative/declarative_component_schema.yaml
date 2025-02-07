@@ -2133,23 +2133,6 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
-  GzipJsonDecoder:
-    title: GzipJson Decoder
-    description: Use this if the response is Gzip compressed Json.
-    type: object
-    additionalProperties: true
-    required:
-      - type
-    properties:
-      type:
-        type: string
-        enum: [GzipJsonDecoder]
-      encoding:
-        type: string
-        default: utf-8
-      $parameters:
-        type: object
-        additionalProperties: true
   ZipfileDecoder:
     title: Zipfile Decoder
     description: Decoder for response data that is returned as zipfile(s).
@@ -3006,7 +2989,6 @@ definitions:
           - "$ref": "#/definitions/JsonlDecoder"
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
-          - "$ref": "#/definitions/GzipJsonDecoder"
           - "$ref": "#/definitions/CompositeRawDecoder"
           - "$ref": "#/definitions/ZipfileDecoder"
       $parameters:
@@ -3206,7 +3188,6 @@ definitions:
           - "$ref": "#/definitions/JsonlDecoder"
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
-          - "$ref": "#/definitions/GzipJsonDecoder"
           - "$ref": "#/definitions/CompositeRawDecoder"
           - "$ref": "#/definitions/ZipfileDecoder"
       download_decoder:
@@ -3218,7 +3199,6 @@ definitions:
           - "$ref": "#/definitions/JsonlDecoder"
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
-          - "$ref": "#/definitions/GzipJsonDecoder"
           - "$ref": "#/definitions/CompositeRawDecoder"
           - "$ref": "#/definitions/ZipfileDecoder"
       $parameters:
