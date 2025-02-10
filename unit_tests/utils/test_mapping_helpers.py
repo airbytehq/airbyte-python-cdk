@@ -1,10 +1,10 @@
 import pytest
 
 from airbyte_cdk.utils.mapping_helpers import (
-    combine_mappings,
-    _validate_component_request_option_paths,
     RequestOption,
     RequestOptionType,
+    _validate_component_request_option_paths,
+    combine_mappings,
 )
 
 
