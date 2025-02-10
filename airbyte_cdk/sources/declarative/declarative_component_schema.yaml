@@ -2997,12 +2997,12 @@ definitions:
     type: object
     required:
       - type
-      - inner_decoder
+      - decoder
     properties:
       type:
         type: string
         enum: [GzipDecoder]
-      inner_decoder:
+      decoder:
         anyOf:
           - "$ref": "#/definitions/CsvDecoder"
           - "$ref": "#/definitions/GzipDecoder"

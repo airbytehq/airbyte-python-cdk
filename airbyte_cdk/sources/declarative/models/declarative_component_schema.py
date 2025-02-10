@@ -1663,7 +1663,7 @@ class RecordSelector(BaseModel):
 
 class GzipDecoder(BaseModel):
     type: Literal["GzipDecoder"]
-    inner_decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonlDecoder]
+    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonlDecoder]
 
 
 class Spec(BaseModel):

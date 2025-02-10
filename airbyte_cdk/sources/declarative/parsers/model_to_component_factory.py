@@ -2073,7 +2073,7 @@ class ModelToComponentFactory:
             return CsvParser(encoding=model.encoding, delimiter=model.delimiter)
         elif isinstance(model, GzipDecoderModel):
             return GzipParser(
-                inner_parser=ModelToComponentFactory._get_parser(model.inner_decoder, config)
+                inner_parser=ModelToComponentFactory._get_parser(model.decoder, config)
             )
         elif isinstance(
             model, (CustomDecoderModel, IterableDecoderModel, XmlDecoderModel, ZipfileDecoderModel)

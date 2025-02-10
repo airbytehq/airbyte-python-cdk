@@ -19,6 +19,8 @@ logger = logging.getLogger("airbyte")
 class JsonDecoder(Decoder):
     """
     Decoder strategy that returns the json-encoded content of a response, if any.
+
+    Usually, we would try to instantiate the equivalent `CompositeRawDecoder(parser=JsonParser(), stream_response=False)` but there were specific historical behaviors related to the JsonDecoder that we didn't know if we could remove like the fallback on {} in case of errors.
     """
 
     def __init__(self, parameters: Mapping[str, Any]):
