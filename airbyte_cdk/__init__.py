@@ -92,7 +92,7 @@ from .sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from .sources.declarative.declarative_stream import DeclarativeStream
 from .sources.declarative.decoders import Decoder, JsonDecoder
 from .sources.declarative.exceptions import ReadException
-from .sources.declarative.extractors import DpathExtractor, RecordSelector
+from .sources.declarative.extractors import DpathEnhancingExtractor, DpathExtractor, RecordSelector
 from .sources.declarative.extractors.record_extractor import RecordExtractor
 from .sources.declarative.extractors.record_filter import RecordFilter
 from .sources.declarative.incremental import DatetimeBasedCursor
@@ -234,6 +234,7 @@ __all__ = [
     "DefaultPaginator",
     "DefaultRequestOptionsProvider",
     "DpathExtractor",
+    "DpathEnhancingExtractor",
     "FieldPointer",
     "HttpMethod",
     "HttpRequester",

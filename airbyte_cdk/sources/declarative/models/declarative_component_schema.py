@@ -658,6 +658,22 @@ class DpathExtractor(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class DpathEnhancingExtractor(BaseModel):
+    type: Literal["DpathEnhancingExtractor"]
+    field_path: List[str] = Field(
+        ...,
+        description='List of potentially nested fields describing the full path of the field to extract. Use "*" to extract all values from an array. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/record-selector).',
+        examples=[
+            ["data"],
+            ["data", "records"],
+            ["data", "{{ parameters.name }}"],
+            ["data", "*", "record"],
+        ],
+        title="Field Path",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class ResponseToFileExtractor(BaseModel):
     type: Literal["ResponseToFileExtractor"]
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
@@ -1666,7 +1682,7 @@ class ListPartitionRouter(BaseModel):
 
 class RecordSelector(BaseModel):
     type: Literal["RecordSelector"]
-    extractor: Union[CustomRecordExtractor, DpathExtractor]
+    extractor: Union[CustomRecordExtractor, DpathExtractor, DpathEnhancingExtractor]
     record_filter: Optional[Union[CustomRecordFilter, RecordFilter]] = Field(
         None,
         description="Responsible for filtering records to be emitted by the Source.",

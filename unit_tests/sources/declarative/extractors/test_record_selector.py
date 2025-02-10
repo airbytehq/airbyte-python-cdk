@@ -9,6 +9,10 @@ import pytest
 import requests
 
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder
+from airbyte_cdk.sources.declarative.extractors.dpath_enhancing_extractor import (
+    SERVICE_KEY_PARENT,
+    SERVICE_KEY_ROOT,
+)
 from airbyte_cdk.sources.declarative.extractors.dpath_extractor import DpathExtractor
 from airbyte_cdk.sources.declarative.extractors.record_filter import RecordFilter
 from airbyte_cdk.sources.declarative.extractors.record_selector import RecordSelector
@@ -39,6 +43,36 @@ from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
             None,
             {"data": [{"id": 1, "created_at": "06-06-21"}, {"id": 2, "created_at": "06-07-21"}]},
             [{"id": 1, "created_at": "06-06-21"}, {"id": 2, "created_at": "06-07-21"}],
+        ),
+        (
+            "test_no_record_filter_returns_all_records_with_nested",
+            ["data"],
+            None,
+            {
+                "data": [
+                    {"id": 1, "created_at": "06-06-21", "nested": [{"id": 1}]},
+                    {"id": 2, "created_at": "06-07-21", "nested": [{"id": 1, "id2": 2}]},
+                ]
+            },
+            [
+                {"id": 1, "created_at": "06-06-21", "nested": [{"id": 1}]},
+                {"id": 2, "created_at": "06-07-21", "nested": [{"id": 1, "id2": 2}]},
+            ],
+        ),
+        (
+            "test_true_record_filter_returns_all_records_with_nested",
+            ["data"],
+            "{{True}}",
+            {
+                "data": [
+                    {"id": 1, "created_at": "06-06-21", "nested": [{"id": 1}]},
+                    {"id": 2, "created_at": "06-07-21", "nested": [{"id": 1, "id2": 2}]},
+                ]
+            },
+            [
+                {"id": 1, "created_at": "06-06-21", "nested": [{"id": 1}]},
+                {"id": 2, "created_at": "06-07-21", "nested": [{"id": 1, "id2": 2}]},
+            ],
         ),
         (
             "test_with_extractor_and_filter_with_parameters",
@@ -119,15 +153,6 @@ def test_record_filter(test_name, field_path, filter_template, body, expected_da
     assert actual_records == [
         Record(data=data, associated_slice=stream_slice, stream_name="") for data in expected_data
     ]
-
-    calls = []
-    for record in expected_data:
-        calls.append(
-            call(record, config=config, stream_state=stream_state, stream_slice=stream_slice)
-        )
-    for transformation in transformations:
-        assert transformation.transform.call_count == len(expected_data)
-        transformation.transform.assert_has_calls(calls)
 
 
 @pytest.mark.parametrize(

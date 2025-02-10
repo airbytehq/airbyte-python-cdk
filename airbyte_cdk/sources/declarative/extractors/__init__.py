@@ -2,6 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from airbyte_cdk.sources.declarative.extractors.dpath_enhancing_extractor import (
+    DpathEnhancingExtractor,
+)
 from airbyte_cdk.sources.declarative.extractors.dpath_extractor import DpathExtractor
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
 from airbyte_cdk.sources.declarative.extractors.record_filter import RecordFilter
@@ -15,6 +18,7 @@ __all__ = [
     "TypeTransformer",
     "HttpSelector",
     "DpathExtractor",
+    "DpathEnhancingExtractor",
     "RecordFilter",
     "RecordSelector",
     "ResponseToFileExtractor",

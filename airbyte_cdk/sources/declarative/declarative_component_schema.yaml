@@ -1459,6 +1459,39 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+
+  DpathEnhancingExtractor:
+    title: Dpath Enhancing Extractor
+    description: |
+      Extract records from a response, navigating a path as an array of fields. Include $parent and $root service fields where:
+      $root holds the original response;
+      $parent holds the attributes container object, including its $parent field.
+      These service fields are local for the filter and transform phases.
+    type: object
+    required:
+      - type
+      - field_path
+    properties:
+      type:
+        type: string
+        enum: [DpathEnhancingExtractor]
+      field_path:
+        title: Field Path
+        description: List of potentially nested fields describing the full path of the field to extract. Use "*" to extract all values from an array. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/record-selector).
+        type: array
+        items:
+          - type: string
+        interpolation_context:
+          - config
+        examples:
+          - ["data"]
+          - ["data", "records"]
+          - ["data", "{{ parameters.name }}"]
+          - ["data", "*", "record"]
+      $parameters:
+        type: object
+        additionalProperties: true
+
   ResponseToFileExtractor:
     title: CSV To File Extractor
     description: A record extractor designed for handling large responses that may exceed memory limits (to prevent OOM issues). It downloads a CSV file to disk, reads the data from disk, and deletes the file once it has been fully processed.
@@ -2775,6 +2808,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/CustomRecordExtractor"
           - "$ref": "#/definitions/DpathExtractor"
+          - "$ref": "#/definitions/DpathEnhancingExtractor"
       record_filter:
         title: Record Filter
         description: Responsible for filtering records to be emitted by the Source.
