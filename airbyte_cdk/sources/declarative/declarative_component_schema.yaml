@@ -2985,6 +2985,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/CustomDecoder"
           - "$ref": "#/definitions/CsvDecoder"
+          - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
           - "$ref": "#/definitions/IterableDecoder"
@@ -3144,6 +3145,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/CustomDecoder"
           - "$ref": "#/definitions/CsvDecoder"
+          - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
           - "$ref": "#/definitions/IterableDecoder"
@@ -3155,6 +3157,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/CustomDecoder"
           - "$ref": "#/definitions/CsvDecoder"
+          - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
           - "$ref": "#/definitions/IterableDecoder"

@@ -2110,6 +2110,7 @@ class SimpleRetriever(BaseModel):
         Union[
             CustomDecoder,
             CsvDecoder,
+            GzipDecoder,
             JsonDecoder,
             JsonlDecoder,
             IterableDecoder,
@@ -2187,6 +2188,7 @@ class AsyncRetriever(BaseModel):
         Union[
             CustomDecoder,
             CsvDecoder,
+            GzipDecoder,
             JsonDecoder,
             JsonlDecoder,
             IterableDecoder,
@@ -2202,6 +2204,7 @@ class AsyncRetriever(BaseModel):
         Union[
             CustomDecoder,
             CsvDecoder,
+            GzipDecoder,
             JsonDecoder,
             JsonlDecoder,
             IterableDecoder,
