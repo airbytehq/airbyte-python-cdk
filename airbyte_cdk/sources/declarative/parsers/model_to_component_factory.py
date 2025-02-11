@@ -2040,7 +2040,7 @@ class ModelToComponentFactory:
     @staticmethod
     def create_csv_decoder(model: CsvDecoderModel, config: Config, **kwargs: Any) -> Decoder:
         return CompositeRawDecoder(
-            parser=ModelToComponentFactory._get_parser(model, config), stream_response=False
+            parser=ModelToComponentFactory._get_parser(model, config), stream_response=True
         )
 
     @staticmethod
@@ -2052,7 +2052,7 @@ class ModelToComponentFactory:
     @staticmethod
     def create_gzip_decoder(model: GzipDecoderModel, config: Config, **kwargs: Any) -> Decoder:
         return CompositeRawDecoder(
-            parser=ModelToComponentFactory._get_parser(model, config), stream_response=False
+            parser=ModelToComponentFactory._get_parser(model, config), stream_response=True
         )
 
     @staticmethod
