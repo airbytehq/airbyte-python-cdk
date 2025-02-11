@@ -58,7 +58,7 @@ from airbyte_cdk.sources.file_based.schema_validation_policies import (
 from airbyte_cdk.sources.file_based.stream import (
     AbstractFileBasedStream,
     DefaultFileBasedStream,
-    IdentitiesStream,
+    FileIdentities,
 )
 from airbyte_cdk.sources.file_based.stream.concurrent.adapters import FileBasedStreamFacade
 from airbyte_cdk.sources.file_based.stream.concurrent.cursor import (
@@ -67,7 +67,6 @@ from airbyte_cdk.sources.file_based.stream.concurrent.cursor import (
     FileBasedFinalStateCursor,
 )
 from airbyte_cdk.sources.file_based.stream.cursor import AbstractFileBasedCursor
-from airbyte_cdk.sources.file_based.stream.identities_stream import IDENTITIES_STREAM_NAME
 from airbyte_cdk.sources.message.repository import InMemoryMessageRepository, MessageRepository
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
@@ -169,7 +168,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         errors = []
         tracebacks = []
         for stream in streams:
-            if isinstance(stream, IdentitiesStream):
+            if isinstance(stream, FileIdentities):
                 identity = next(iter(stream.load_identity_groups()))
                 if not identity:
                     errors.append(
@@ -341,8 +340,8 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
     def _make_identities_stream(
         self,
     ) -> Stream:
-        return IdentitiesStream(
-            catalog_schema=self.stream_schemas.get(IDENTITIES_STREAM_NAME),
+        return FileIdentities(
+            catalog_schema=self.stream_schemas.get(FileIdentities.IDENTITIES_STREAM_NAME),
             stream_reader=self.stream_reader,
             discovery_policy=self.discovery_policy,
             errors_collector=self.errors_collector,
