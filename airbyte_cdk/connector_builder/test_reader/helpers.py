@@ -549,9 +549,7 @@ def _close_current_page(
         current_page_records,
     )
 
-    current_page_request, current_page_response = None, None
-
-    return current_page_request, current_page_response
+    return None, None
 
 
 def _handle_record_message(

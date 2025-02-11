@@ -90,6 +90,19 @@ def get_message_groups(
     current_page_response: Optional[HttpResponse] = None
     latest_state_message: Optional[Dict[str, Any]] = None
 
+    def _processed_slice() -> StreamReadSlices:
+        """
+        The closure, to create a `StreamReadSlices` object with the current slice pages, slice descriptor, and state.
+
+        Returns:
+            StreamReadSlices: An object containing the current slice pages, slice descriptor, and state.
+        """
+        return StreamReadSlices(
+            pages=current_slice_pages,
+            slice_descriptor=current_slice_descriptor,
+            state=[latest_state_message] if latest_state_message else [],
+        )
+
     while records_count < limit and (message := next(messages, None)):
         json_message = _airbyte_message_to_json(message)
 
@@ -102,15 +115,12 @@ def get_message_groups(
             )
 
         if _need_to_close_page_in_slice(at_least_one_page_in_group, message):
-            yield StreamReadSlices(
-                pages=current_slice_pages,
-                slice_descriptor=current_slice_descriptor,
-                state=[latest_state_message] if latest_state_message else [],
-            )
+            yield _processed_slice()
             current_slice_descriptor = _parse_slice_description(message.log.message)  # type: ignore
             current_slice_pages = []
             at_least_one_page_in_group = False
         elif _need_to_process_slice_descriptor(message):
+            # parsing the first slice
             current_slice_descriptor = _parse_slice_description(message.log.message)  # type: ignore
         elif _is_log_message(message):
             (
@@ -152,8 +162,4 @@ def get_message_groups(
                 current_slice_pages,
                 current_page_records,
             )
-            yield StreamReadSlices(
-                pages=current_slice_pages,
-                slice_descriptor=current_slice_descriptor,
-                state=[latest_state_message] if latest_state_message else [],
-            )
+            yield _processed_slice()
