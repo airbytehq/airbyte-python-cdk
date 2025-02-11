@@ -1838,11 +1838,6 @@ class HTTPAPIBudget(BaseModel):
         description="List of HTTP status codes that indicate a rate limit has been hit.",
         title="Status Codes for Rate Limit Hit",
     )
-    maximum_attempts_to_acquire: Optional[int] = Field(
-        100000,
-        description="The maximum number of attempts to acquire a call before giving up.",
-        title="Maximum Attempts to Acquire",
-    )
 
 
 class ZipfileDecoder(BaseModel):

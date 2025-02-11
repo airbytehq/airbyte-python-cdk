@@ -1409,11 +1409,6 @@ definitions:
         items:
           type: integer
         default: [429]
-      maximum_attempts_to_acquire:
-        title: Maximum Attempts to Acquire
-        description: The maximum number of attempts to acquire a call before giving up.
-        type: integer
-        default: 100000
     additionalProperties: true
   FixedWindowCallRatePolicy:
     title: Fixed Window Call Rate Policy
