@@ -155,6 +155,10 @@ class InMemoryFilesStreamReader(AbstractFileBasedStreamReader):
     def file_permissions_schema(self) -> Dict[str, Any]:
         return {"type": "object", "properties": {}}
 
+    @property
+    def identities_schema(self) -> Dict[str, Any]:
+        return {"type": "object", "properties": {}}
+
     def open_file(
         self, file: RemoteFile, mode: FileReadMode, encoding: Optional[str], logger: logging.Logger
     ) -> IOBase:

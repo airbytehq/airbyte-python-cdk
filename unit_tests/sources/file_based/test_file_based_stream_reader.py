@@ -94,6 +94,10 @@ class TestStreamReader(AbstractFileBasedStreamReader):
     def file_permissions_schema(self) -> Dict[str, Any]:
         return {"type": "object", "properties": {}}
 
+    @property
+    def identities_schema(self) -> Dict[str, Any]:
+        return {"type": "object", "properties": {}}
+
 
 class TestSpec(AbstractFileBasedSpec):
     @classmethod
