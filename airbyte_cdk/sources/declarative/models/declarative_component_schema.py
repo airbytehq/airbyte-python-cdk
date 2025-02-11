@@ -1873,11 +1873,7 @@ class DeclarativeSource1(BaseModel):
     definitions: Optional[Dict[str, Any]] = None
     spec: Optional[Spec] = None
     concurrency_level: Optional[ConcurrencyLevel] = None
-    api_budget: Optional[HTTPAPIBudget] = Field(
-        None,
-        description="Defines how many requests can be made to the API in a given time frame. This field accepts either a generic APIBudget or an HTTP-specific configuration (HTTPAPIBudget) to be applied across all streams.",
-        title="API Budget",
-    )
+    api_budget: Optional[HTTPAPIBudget] = None
     metadata: Optional[Dict[str, Any]] = Field(
         None,
         description="For internal Airbyte use only - DO NOT modify manually. Used by consumers of declarative manifests for storing related metadata.",
@@ -1904,11 +1900,7 @@ class DeclarativeSource2(BaseModel):
     definitions: Optional[Dict[str, Any]] = None
     spec: Optional[Spec] = None
     concurrency_level: Optional[ConcurrencyLevel] = None
-    api_budget: Optional[HTTPAPIBudget] = Field(
-        None,
-        description="Defines how many requests can be made to the API in a given time frame. This field accepts either a generic APIBudget or an HTTP-specific configuration (HTTPAPIBudget) to be applied across all streams.",
-        title="API Budget",
-    )
+    api_budget: Optional[HTTPAPIBudget] = None
     metadata: Optional[Dict[str, Any]] = Field(
         None,
         description="For internal Airbyte use only - DO NOT modify manually. Used by consumers of declarative manifests for storing related metadata.",

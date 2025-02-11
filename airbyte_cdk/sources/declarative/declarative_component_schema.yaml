@@ -41,10 +41,7 @@ properties:
   concurrency_level:
     "$ref": "#/definitions/ConcurrencyLevel"
   api_budget:
-    title: API Budget
-    description: Defines how many requests can be made to the API in a given time frame. This field accepts either a generic APIBudget or an HTTP-specific configuration (HTTPAPIBudget) to be applied across all streams.
-    anyOf:
-      - "$ref": "#/definitions/HTTPAPIBudget"
+    "$ref": "#/definitions/HTTPAPIBudget"
   metadata:
     type: object
     description: For internal Airbyte use only - DO NOT modify manually. Used by consumers of declarative manifests for storing related metadata.
@@ -1373,8 +1370,10 @@ definitions:
   HTTPAPIBudget:
     title: HTTP API Budget
     description: >
-      An HTTP-specific API budget that extends APIBudget by updating rate limiting information based
-      on HTTP response headers. It extracts available calls and the next reset timestamp from the HTTP responses.
+      Defines how many requests can be made to the API in a given time frame. `HTTPAPIBudget` extracts the remaining
+      call count and the reset time from HTTP response headers using the header names provided by
+      `ratelimit_remaining_header` and `ratelimit_reset_header`. Only requests using `HttpRequester`
+      are rate-limited; custom components that bypass `HttpRequester` are not covered by this budget.
     type: object
     required:
       - type
