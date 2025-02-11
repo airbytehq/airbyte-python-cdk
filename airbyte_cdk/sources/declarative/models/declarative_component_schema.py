@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
@@ -652,8 +652,11 @@ class Rate(BaseModel):
         description="The maximum number of calls allowed within the interval.",
         title="Limit",
     )
-    interval: timedelta = Field(
-        ..., description="The time interval for the rate limit.", title="Interval"
+    interval: str = Field(
+        ...,
+        description="The time interval for the rate limit.",
+        examples=["PT1H", "P1D"],
+        title="Interval",
     )
 
 
@@ -1629,11 +1632,6 @@ class FixedWindowCallRatePolicy(BaseModel):
         extra = Extra.allow
 
     type: Literal["FixedWindowCallRatePolicy"]
-    next_reset_ts: datetime = Field(
-        ...,
-        description="The timestamp when the rate limit will reset.",
-        title="Next Reset Timestamp",
-    )
     period: timedelta = Field(
         ..., description="The time interval for the rate limit window.", title="Period"
     )
@@ -1809,29 +1807,6 @@ class CompositeErrorHandler(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class APIBudget(BaseModel):
-    class Config:
-        extra = Extra.allow
-
-    type: Literal["APIBudget"]
-    policies: List[
-        Union[
-            FixedWindowCallRatePolicy,
-            MovingWindowCallRatePolicy,
-            UnlimitedCallRatePolicy,
-        ]
-    ] = Field(
-        ...,
-        description="List of call rate policies that define how many calls are allowed.",
-        title="Policies",
-    )
-    maximum_attempts_to_acquire: Optional[int] = Field(
-        100000,
-        description="The maximum number of attempts to acquire a call before giving up.",
-        title="Maximum Attempts to Acquire",
-    )
-
-
 class HTTPAPIBudget(BaseModel):
     class Config:
         extra = Extra.allow
@@ -1903,7 +1878,7 @@ class DeclarativeSource1(BaseModel):
     definitions: Optional[Dict[str, Any]] = None
     spec: Optional[Spec] = None
     concurrency_level: Optional[ConcurrencyLevel] = None
-    api_budget: Optional[Union[APIBudget, HTTPAPIBudget]] = Field(
+    api_budget: Optional[HTTPAPIBudget] = Field(
         None,
         description="Defines how many requests can be made to the API in a given time frame. This field accepts either a generic APIBudget or an HTTP-specific configuration (HTTPAPIBudget) to be applied across all streams.",
         title="API Budget",
@@ -1934,7 +1909,7 @@ class DeclarativeSource2(BaseModel):
     definitions: Optional[Dict[str, Any]] = None
     spec: Optional[Spec] = None
     concurrency_level: Optional[ConcurrencyLevel] = None
-    api_budget: Optional[Union[APIBudget, HTTPAPIBudget]] = Field(
+    api_budget: Optional[HTTPAPIBudget] = Field(
         None,
         description="Defines how many requests can be made to the API in a given time frame. This field accepts either a generic APIBudget or an HTTP-specific configuration (HTTPAPIBudget) to be applied across all streams.",
         title="API Budget",

@@ -44,7 +44,6 @@ properties:
     title: API Budget
     description: Defines how many requests can be made to the API in a given time frame. This field accepts either a generic APIBudget or an HTTP-specific configuration (HTTPAPIBudget) to be applied across all streams.
     anyOf:
-      - "$ref": "#/definitions/APIBudget"
       - "$ref": "#/definitions/HTTPAPIBudget"
   metadata:
     type: object
@@ -1371,35 +1370,6 @@ definitions:
       $parameters:
         type: object
         additional_properties: true
-  APIBudget:
-    title: API Budget
-    description: >
-      A generic API budget configuration that defines the policies (rate limiting rules)
-      and the maximum number of attempts to acquire a call credit. This budget does not automatically
-      update itself based on HTTP response headers.
-    type: object
-    required:
-      - type
-      - policies
-    properties:
-      type:
-        type: string
-        enum: [APIBudget]
-      policies:
-        title: Policies
-        description: List of call rate policies that define how many calls are allowed.
-        type: array
-        items:
-          anyOf:
-            - "$ref": "#/definitions/FixedWindowCallRatePolicy"
-            - "$ref": "#/definitions/MovingWindowCallRatePolicy"
-            - "$ref": "#/definitions/UnlimitedCallRatePolicy"
-      maximum_attempts_to_acquire:
-        title: Maximum Attempts to Acquire
-        description: The maximum number of attempts to acquire a call before giving up.
-        type: integer
-        default: 100000
-    additionalProperties: true
   HTTPAPIBudget:
     title: HTTP API Budget
     description: >
@@ -1451,7 +1421,6 @@ definitions:
     type: object
     required:
       - type
-      - next_reset_ts
       - period
       - call_limit
       - matchers
@@ -1459,11 +1428,6 @@ definitions:
       type:
         type: string
         enum: [FixedWindowCallRatePolicy]
-      next_reset_ts:
-        title: Next Reset Timestamp
-        description: The timestamp when the rate limit will reset.
-        type: string
-        format: date-time
       period:
         title: Period
         description: The time interval for the rate limit window.
@@ -1539,7 +1503,9 @@ definitions:
         title: Interval
         description: The time interval for the rate limit.
         type: string
-        format: duration
+        examples:
+          - "PT1H"
+          - "P1D"
     additionalProperties: true
   HttpRequestRegexMatcher:
     title: HTTP Request Matcher

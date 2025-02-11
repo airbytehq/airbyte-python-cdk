@@ -113,9 +113,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     AddFields as AddFieldsModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    APIBudget as APIBudgetModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ApiKeyAuthenticator as ApiKeyAuthenticatorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -638,7 +635,6 @@ class ModelToComponentFactory:
             StreamConfigModel: self.create_stream_config,
             ComponentMappingDefinitionModel: self.create_components_mapping_definition,
             ZipfileDecoderModel: self.create_zipfile_decoder,
-            APIBudgetModel: self.create_api_budget,
             HTTPAPIBudgetModel: self.create_http_api_budget,
             FixedWindowCallRatePolicyModel: self.create_fixed_window_call_rate_policy,
             MovingWindowCallRatePolicyModel: self.create_moving_window_call_rate_policy,
@@ -2965,17 +2961,6 @@ class ModelToComponentFactory:
         else:
             return False
 
-    def create_api_budget(self, model: APIBudgetModel, config: Config, **kwargs: Any) -> APIBudget:
-        policies = [
-            self._create_component_from_model(model=policy, config=config)
-            for policy in model.policies
-        ]
-
-        return APIBudget(
-            policies=policies,
-            maximum_attempts_to_acquire=model.maximum_attempts_to_acquire or 100000,
-        )
-
     def create_http_api_budget(
         self, model: HTTPAPIBudgetModel, config: Config, **kwargs: Any
     ) -> HttpAPIBudget:
@@ -2986,7 +2971,6 @@ class ModelToComponentFactory:
 
         return HttpAPIBudget(
             policies=policies,
-            maximum_attempts_to_acquire=model.maximum_attempts_to_acquire or 100000,
             ratelimit_reset_header=model.ratelimit_reset_header or "ratelimit-reset",
             ratelimit_remaining_header=model.ratelimit_remaining_header or "ratelimit-remaining",
             status_codes_for_ratelimit_hit=model.status_codes_for_ratelimit_hit or (429,),
@@ -2999,8 +2983,11 @@ class ModelToComponentFactory:
             self._create_component_from_model(model=matcher, config=config)
             for matcher in model.matchers
         ]
+
+        # Set the initial reset timestamp to 10 days from now.
+        # This value will be updated by the first request.
         return FixedWindowCallRatePolicy(
-            next_reset_ts=model.next_reset_ts,
+            next_reset_ts=datetime.datetime.now() + datetime.timedelta(days=10),
             period=model.period,
             call_limit=model.call_limit,
             matchers=matchers,
@@ -3036,7 +3023,7 @@ class ModelToComponentFactory:
     def create_rate(self, model: RateModel, config: Config, **kwargs: Any) -> Rate:
         return Rate(
             limit=model.limit,
-            interval=model.interval,
+            interval=parse_duration(model.interval),
         )
 
     def create_http_request_matcher(
@@ -3051,16 +3038,6 @@ class ModelToComponentFactory:
         )
 
     def set_api_budget(self, component_definition: ComponentDefinition, config: Config) -> None:
-        model_str = component_definition.get("type")
-        if model_str == "APIBudget":
-            # Annotate model_type as a type that is a subclass of BaseModel
-            model_type: Union[Type[APIBudgetModel], Type[HTTPAPIBudgetModel]] = APIBudgetModel
-        elif model_str == "HTTPAPIBudget":
-            model_type = HTTPAPIBudgetModel
-        else:
-            raise ValueError(f"Unknown API Budget type: {model_str}")
-
-        # create_component expects a type[BaseModel] and returns an instance of that model.
         self._api_budget = self.create_component(
-            model_type=model_type, component_definition=component_definition, config=config
+            model_type=HTTPAPIBudgetModel, component_definition=component_definition, config=config
         )
