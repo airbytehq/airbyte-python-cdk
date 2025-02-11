@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Union
 
@@ -1632,7 +1631,7 @@ class FixedWindowCallRatePolicy(BaseModel):
         extra = Extra.allow
 
     type: Literal["FixedWindowCallRatePolicy"]
-    period: timedelta = Field(
+    period: str = Field(
         ..., description="The time interval for the rate limit window.", title="Period"
     )
     call_limit: int = Field(

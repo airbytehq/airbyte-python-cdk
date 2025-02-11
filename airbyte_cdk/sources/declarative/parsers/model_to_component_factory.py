@@ -2973,7 +2973,7 @@ class ModelToComponentFactory:
             policies=policies,
             ratelimit_reset_header=model.ratelimit_reset_header or "ratelimit-reset",
             ratelimit_remaining_header=model.ratelimit_remaining_header or "ratelimit-remaining",
-            status_codes_for_ratelimit_hit=model.status_codes_for_ratelimit_hit or (429,),
+            status_codes_for_ratelimit_hit=model.status_codes_for_ratelimit_hit or [429],
         )
 
     def create_fixed_window_call_rate_policy(
@@ -2988,7 +2988,7 @@ class ModelToComponentFactory:
         # This value will be updated by the first request.
         return FixedWindowCallRatePolicy(
             next_reset_ts=datetime.datetime.now() + datetime.timedelta(days=10),
-            period=model.period,
+            period=parse_duration(model.period),
             call_limit=model.call_limit,
             matchers=matchers,
         )

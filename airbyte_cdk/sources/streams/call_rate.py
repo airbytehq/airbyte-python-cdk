@@ -8,10 +8,9 @@ import datetime
 import logging
 import re
 import time
-from dataclasses import InitVar, dataclass, field
 from datetime import timedelta
 from threading import RLock
-from typing import TYPE_CHECKING, Any, Mapping, Optional, Union
+from typing import TYPE_CHECKING, Any, Mapping, Optional
 from urllib import parse
 
 import requests
@@ -653,7 +652,7 @@ class HttpAPIBudget(APIBudget):
         self,
         ratelimit_reset_header: str = "ratelimit-reset",
         ratelimit_remaining_header: str = "ratelimit-remaining",
-        status_codes_for_ratelimit_hit: Union[tuple[int], list[int]] = (429,),
+        status_codes_for_ratelimit_hit: list[int] = [429],
         **kwargs: Any,
     ):
         """Constructor

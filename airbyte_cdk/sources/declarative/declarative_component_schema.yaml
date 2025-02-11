@@ -1426,7 +1426,6 @@ definitions:
         title: Period
         description: The time interval for the rate limit window.
         type: string
-        format: duration
       call_limit:
         title: Call Limit
         description: The maximum number of calls allowed within the period.
