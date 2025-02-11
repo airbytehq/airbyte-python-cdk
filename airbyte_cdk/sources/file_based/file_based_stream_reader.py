@@ -192,7 +192,7 @@ class AbstractFileBasedStreamReader(ABC):
         ACL Permissions from files.
         """
         raise NotImplementedError(
-            f"{self.__class__.__name__} required to support get_file_acl_permissions(), please update file_permissions_schema accordingly to obtain the required schema for each stream on the source implementation"
+            f"{self.__class__.__name__} required to support ACL permissions, please update file_permissions_schema accordingly to obtain the required schema for each stream on the source implementation"
         )
 
     @abstractmethod
@@ -202,9 +202,16 @@ class AbstractFileBasedStreamReader(ABC):
         identities.
         """
         raise NotImplementedError(
-            f"{self.__class__.__name__} required to support load_identity_groups(), please add schema for your identities stream in schemas folder"
+            f"{self.__class__.__name__} required to support identities, please add schema for your identities stream in schemas folder"
         )
 
     @property
     @abstractmethod
-    def file_permissions_schema(self) -> Dict[str, Any]: ...
+    def file_permissions_schema(self) -> Dict[str, Any]:
+        """
+        This is required for connectors that will support syncing
+        ACL Permissions from files.
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} required to support ACL Permissions, please return required json schema for your permissions streams"
+        )
