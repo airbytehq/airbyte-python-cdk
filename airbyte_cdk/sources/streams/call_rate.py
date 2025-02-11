@@ -495,17 +495,24 @@ class AbstractAPIBudget(abc.ABC):
         """
 
 
-@dataclass
 class APIBudget(AbstractAPIBudget):
-    """
-    Default APIBudget implementation.
-    """
+    """Default APIBudget implementation"""
 
-    policies: list[AbstractCallRatePolicy]
-    maximum_attempts_to_acquire: int = 100000
+    def __init__(
+        self, policies: list[AbstractCallRatePolicy], maximum_attempts_to_acquire: int = 100000
+    ) -> None:
+        """Constructor
+
+        :param policies: list of policies in this budget
+        :param maximum_attempts_to_acquire: number of attempts before throwing hit ratelimit exception, we put some big number here
+         to avoid situations when many threads compete with each other for a few lots over a significant amount of time
+        """
+
+        self._policies = policies
+        self._maximum_attempts_to_acquire = maximum_attempts_to_acquire
 
     def get_matching_policy(self, request: Any) -> Optional[AbstractCallRatePolicy]:
-        for policy in self.policies:
+        for policy in self._policies:
             if policy.matches(request):
                 return policy
         return None
@@ -526,7 +533,7 @@ class APIBudget(AbstractAPIBudget):
         policy = self.get_matching_policy(request)
         if policy:
             self._do_acquire(request=request, policy=policy, block=block, timeout=timeout)
-        elif self.policies:
+        elif self._policies:
             logger.info("no policies matched with requests, allow call by default")
 
     def update_from_response(self, request: Any, response: Any) -> None:
@@ -549,7 +556,7 @@ class APIBudget(AbstractAPIBudget):
         """
         last_exception = None
         # sometimes we spend all budget before a second attempt, so we have few more here
-        for attempt in range(1, self.maximum_attempts_to_acquire):
+        for attempt in range(1, self._maximum_attempts_to_acquire):
             try:
                 policy.try_acquire(request, weight=1)
                 return
@@ -573,18 +580,31 @@ class APIBudget(AbstractAPIBudget):
 
         if last_exception:
             logger.info(
-                "we used all %s attempts to acquire and failed", self.maximum_attempts_to_acquire
+                "we used all %s attempts to acquire and failed", self._maximum_attempts_to_acquire
             )
             raise last_exception
 
 
-@dataclass
 class HttpAPIBudget(APIBudget):
     """Implementation of AbstractAPIBudget for HTTP"""
 
-    ratelimit_reset_header: str = "ratelimit-reset"
-    ratelimit_remaining_header: str = "ratelimit-remaining"
-    status_codes_for_ratelimit_hit: Union[tuple[int], list[int]] = (429,)
+    def __init__(
+        self,
+        ratelimit_reset_header: str = "ratelimit-reset",
+        ratelimit_remaining_header: str = "ratelimit-remaining",
+        status_codes_for_ratelimit_hit: Union[tuple[int], list[int]] = (429,),
+        **kwargs: Any,
+    ):
+        """Constructor
+
+        :param ratelimit_reset_header: name of the header that has a timestamp of the next reset of call budget
+        :param ratelimit_remaining_header: name of the header that has the number of calls left
+        :param status_codes_for_ratelimit_hit: list of HTTP status codes that signal about rate limit being hit
+        """
+        self._ratelimit_reset_header = ratelimit_reset_header
+        self._ratelimit_remaining_header = ratelimit_remaining_header
+        self._status_codes_for_ratelimit_hit = status_codes_for_ratelimit_hit
+        super().__init__(**kwargs)
 
     def update_from_response(self, request: Any, response: Any) -> None:
         policy = self.get_matching_policy(request)
@@ -599,17 +619,17 @@ class HttpAPIBudget(APIBudget):
     def get_reset_ts_from_response(
         self, response: requests.Response
     ) -> Optional[datetime.datetime]:
-        if response.headers.get(self.ratelimit_reset_header):
+        if response.headers.get(self._ratelimit_reset_header):
             return datetime.datetime.fromtimestamp(
-                int(response.headers[self.ratelimit_reset_header])
+                int(response.headers[self._ratelimit_reset_header])
             )
         return None
 
     def get_calls_left_from_response(self, response: requests.Response) -> Optional[int]:
-        if response.headers.get(self.ratelimit_remaining_header):
-            return int(response.headers[self.ratelimit_remaining_header])
+        if response.headers.get(self._ratelimit_remaining_header):
+            return int(response.headers[self._ratelimit_remaining_header])
 
-        if response.status_code in self.status_codes_for_ratelimit_hit:
+        if response.status_code in self._status_codes_for_ratelimit_hit:
             return 0
 
         return None
