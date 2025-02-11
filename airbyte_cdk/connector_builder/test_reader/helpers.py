@@ -501,6 +501,8 @@ def _handle_log_message(
         the function updates the current page's request and response objects by generating them from the log message.
     """
     auxiliary_request = None
+    log_message = None
+
     if json_message is not None and _is_http_log(json_message):
         if _is_auxiliary_http_request(json_message):
             auxiliary_request = _handle_auxiliary_request(json_message)
@@ -509,12 +511,13 @@ def _handle_log_message(
             current_page_request = _create_request_from_log_message(json_message)
             current_page_response = _create_response_from_log_message(json_message)
     else:
-        auxiliary_request = message.log
+        log_message = message.log
     return (
         at_least_one_page_in_group,
         current_page_request,
         current_page_response,
         auxiliary_request,
+        log_message,
     )
 
 

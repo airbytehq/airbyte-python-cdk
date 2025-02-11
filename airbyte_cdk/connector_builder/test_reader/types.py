@@ -71,5 +71,6 @@ LOG_MESSAGES_OUTPUT_TYPE = tuple[
     bool,
     HttpRequest | None,
     HttpResponse | None,
-    AuxiliaryRequest | AirbyteLogMessage | None,
+    AuxiliaryRequest | None,
+    AirbyteLogMessage | None,
 ]
