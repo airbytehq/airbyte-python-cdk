@@ -277,10 +277,10 @@ class TestReader:
                     if message_group.type == TraceType.ERROR:
                         log_messages.append(
                             LogMessage(
-                                message=message_group.error.message,
+                                message=message_group.error.message,  # type: ignore
                                 level="ERROR",
-                                internal_message=message_group.error.internal_message,
-                                stacktrace=message_group.error.stack_trace,
+                                internal_message=message_group.error.internal_message,  # type: ignore
+                                stacktrace=message_group.error.stack_trace,  # type: ignore
                             )
                         )
                 case AirbyteControlMessage():
@@ -352,7 +352,7 @@ class TestReader:
         """
 
         return (
-            _clean_config(latest_config_update.connectorConfig.config)
+            _clean_config(latest_config_update.connectorConfig.config)  # type: ignore
             if latest_config_update
             else None
         )

@@ -412,7 +412,7 @@ def _airbyte_message_to_json(message: AirbyteMessage) -> Optional[Dict[str, Json
         ValueError: If the parsed log message is not a dictionary.
     """
     if message.type == MessageType.LOG:
-        json_object = _parse_json(message.log)
+        json_object = _parse_json(message.log)  # type: ignore
 
         if json_object is not None and not isinstance(json_object, dict):
             raise ValueError(
