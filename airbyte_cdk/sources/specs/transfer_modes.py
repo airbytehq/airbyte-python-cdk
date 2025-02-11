@@ -5,6 +5,7 @@
 from typing import Literal
 
 from pydantic.v1 import AnyUrl, BaseModel, Field
+
 from airbyte_cdk import OneOfOptionConfig
 
 

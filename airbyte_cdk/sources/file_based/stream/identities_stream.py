@@ -5,12 +5,12 @@
 from functools import cache
 from typing import Any, Dict, Iterable, Mapping, MutableMapping, Optional
 
-from airbyte_cdk.sources.streams.permissions.identities import Identities
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import PrimaryKeyType
 from airbyte_cdk.sources.file_based.discovery_policy import AbstractDiscoveryPolicy
 from airbyte_cdk.sources.file_based.exceptions import FileBasedErrorsCollector
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
 from airbyte_cdk.sources.streams.core import JsonSchema
+from airbyte_cdk.sources.streams.permissions.identities import Identities
 
 
 class FileIdentities(Identities):
