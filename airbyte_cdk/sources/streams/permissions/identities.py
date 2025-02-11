@@ -28,7 +28,7 @@ class Identities(Stream, ABC):
 
     is_resumable = False
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self._cursor: MutableMapping[str, Any] = {}
 

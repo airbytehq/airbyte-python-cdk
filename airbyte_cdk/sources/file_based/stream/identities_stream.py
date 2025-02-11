@@ -27,7 +27,7 @@ class FileIdentities(Identities):
         stream_reader: AbstractFileBasedStreamReader,
         discovery_policy: AbstractDiscoveryPolicy,
         errors_collector: FileBasedErrorsCollector,
-    ):
+    ) -> None:
         super().__init__()
         self.catalog_schema = catalog_schema
         self.stream_reader = stream_reader
