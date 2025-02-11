@@ -28,12 +28,8 @@ class Identities(Stream, ABC):
 
     is_resumable = False
 
-    def __init__(
-        self,
-        catalog_schema: Optional[Mapping[str, Any]],
-    ):
+    def __init__(self):
         super().__init__()
-        self.catalog_schema = catalog_schema
         self._cursor: MutableMapping[str, Any] = {}
 
     @property
