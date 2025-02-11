@@ -3633,12 +3633,12 @@ def test_api_budget():
     )
 
     assert http_requester.api_budget is not None
-    assert http_requester.api_budget.ratelimit_reset_header == "X-RateLimit-Reset"
-    assert http_requester.api_budget.status_codes_for_ratelimit_hit == [429, 503]
-    assert len(http_requester.api_budget.policies) == 1
+    assert http_requester.api_budget._ratelimit_reset_header == "X-RateLimit-Reset"
+    assert http_requester.api_budget._status_codes_for_ratelimit_hit == [429, 503]
+    assert len(http_requester.api_budget._policies) == 1
 
     # The single policy is a MovingWindowCallRatePolicy
-    policy = http_requester.api_budget.policies[0]
+    policy = http_requester.api_budget._policies[0]
     assert isinstance(policy, MovingWindowCallRatePolicy)
     assert policy._bucket.rates[0].limit == 3
     # The 0.1s from 'PT0.1S' is stored in ms by PyRateLimiter internally
@@ -3651,12 +3651,10 @@ def test_api_budget_fixed_window_policy():
         "type": "DeclarativeSource",
         # Root-level api_budget referencing a FixedWindowCallRatePolicy
         "api_budget": {
-            "type": "APIBudget",
-            "maximum_attempts_to_acquire": 9999,
+            "type": "HTTPAPIBudget",
             "policies": [
                 {
                     "type": "FixedWindowCallRatePolicy",
-                    "next_reset_ts": "2025-01-01T00:00:00Z",
                     "period": "PT1M",  # 1 minute
                     "call_limit": 10,
                     "matchers": [
@@ -3701,19 +3699,15 @@ def test_api_budget_fixed_window_policy():
     )
 
     assert http_requester.api_budget is not None
-    assert http_requester.api_budget.maximum_attempts_to_acquire == 9999
-    assert len(http_requester.api_budget.policies) == 1
+    assert len(http_requester.api_budget._policies) == 1
 
     from airbyte_cdk.sources.streams.call_rate import FixedWindowCallRatePolicy
 
-    policy = http_requester.api_budget.policies[0]
+    policy = http_requester.api_budget._policies[0]
     assert isinstance(policy, FixedWindowCallRatePolicy)
     assert policy._call_limit == 10
     # The period is "PT1M" => 60 seconds
     assert policy._offset.total_seconds() == 60
-
-    expected_reset_dt = datetime(2025, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    assert policy._next_reset_ts == expected_reset_dt
 
     assert len(policy._matchers) == 1
     matcher = policy._matchers[0]
