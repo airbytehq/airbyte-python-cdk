@@ -164,7 +164,7 @@ def _need_to_close_page(
     """
     return (
         at_least_one_page_in_group
-        and message.type == MessageType.LOG
+        and _is_log_message(message)
         and (
             _is_page_http_request(json_message) or message.log.message.startswith("slice:")  # type: ignore[union-attr] # AirbyteMessage with MessageType.LOG has log.message
         )
@@ -258,8 +258,7 @@ def _is_auxiliary_http_request(message: Optional[Dict[str, Any]]) -> bool:
     if not message:
         return False
 
-    is_http = _is_http_log(message)
-    return is_http and message.get("http", {}).get("is_auxiliary", False)
+    return _is_http_log(message) and message.get("http", {}).get("is_auxiliary", False)
 
 
 def _parse_slice_description(log_message: str) -> Dict[str, Any]:
@@ -298,12 +297,12 @@ def _need_to_process_slice_descriptor(message: AirbyteMessage) -> bool:
         bool: True if the message is a log message whose log message starts with the predefined
               slice log prefix, indicating it is a slice descriptor; otherwise, False.
     """
-    return message.type == MessageType.LOG and message.log.message.startswith(  # type: ignore
+    return _is_log_message(message) and message.log.message.startswith(  # type: ignore
         SliceLogger.SLICE_LOG_PREFIX
     )
 
 
-def _need_to_close_slice_page(at_least_one_page_in_group: bool, message: AirbyteMessage) -> bool:
+def _need_to_close_page_in_slice(at_least_one_page_in_group: bool, message: AirbyteMessage) -> bool:
     """
     Determines whether the current slice page should be closed.
 
@@ -411,7 +410,7 @@ def _airbyte_message_to_json(message: AirbyteMessage) -> Optional[Dict[str, Json
     Raises:
         ValueError: If the parsed log message is not a dictionary.
     """
-    if message.type == MessageType.LOG:
+    if _is_log_message(message):
         json_object = _parse_json(message.log)  # type: ignore
 
         if json_object is not None and not isinstance(json_object, dict):
@@ -544,9 +543,14 @@ def _close_current_page(
     """
 
     _close_page(
-        current_page_request, current_page_response, current_slice_pages, current_page_records
+        current_page_request,
+        current_page_response,
+        current_slice_pages,
+        current_page_records,
     )
+
     current_page_request, current_page_response = None, None
+
     return current_page_request, current_page_response
 
 

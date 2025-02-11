@@ -30,7 +30,7 @@ from .helpers import (
     _is_state_message,
     _is_trace_with_error,
     _need_to_close_page,
-    _need_to_close_slice_page,
+    _need_to_close_page_in_slice,
     _need_to_process_slice_descriptor,
     _parse_slice_description,
 )
@@ -101,7 +101,7 @@ def get_message_groups(
                 current_page_records,
             )
 
-        if _need_to_close_slice_page(at_least_one_page_in_group, message):
+        if _need_to_close_page_in_slice(at_least_one_page_in_group, message):
             yield StreamReadSlices(
                 pages=current_slice_pages,
                 slice_descriptor=current_slice_descriptor,
