@@ -511,12 +511,12 @@ def _handle_log_message(
             current_page_response = _create_response_from_log_message(json_message)
     else:
         log_message = message.log
+
     return (
         at_least_one_page_in_group,
         current_page_request,
         current_page_response,
-        auxiliary_request,
-        log_message,
+        auxiliary_request or log_message,
     )
 
 

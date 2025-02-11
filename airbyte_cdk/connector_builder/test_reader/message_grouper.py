@@ -117,8 +117,7 @@ def get_message_groups(
                 at_least_one_page_in_group,
                 current_page_request,
                 current_page_response,
-                auxiliary_request,
-                log_message,
+                log_or_auxiliary_request,
             ) = _handle_log_message(
                 message,
                 json_message,
@@ -126,10 +125,8 @@ def get_message_groups(
                 current_page_request,
                 current_page_response,
             )
-            if auxiliary_request:
-                yield auxiliary_request
-            if log_message:
-                yield log_message
+            if log_or_auxiliary_request:
+                yield log_or_auxiliary_request
         elif _is_trace_with_error(message):
             if message.trace is not None:
                 yield message.trace
