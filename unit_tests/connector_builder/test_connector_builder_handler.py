@@ -550,7 +550,7 @@ def test_read():
     )
     limits = TestReadLimits()
     with patch(
-        "airbyte_cdk.connector_builder.message_grouper.MessageGrouper.get_message_groups",
+        "airbyte_cdk.connector_builder.test_reader.TestReader.run_test_read",
         return_value=stream_read,
     ) as mock:
         output_record = handle_connector_builder_request(
@@ -1169,7 +1169,7 @@ def test_read_stream_exception_with_secrets():
 
     # Patch the handler to raise an exception
     with patch(
-        "airbyte_cdk.connector_builder.message_grouper.MessageGrouper.get_message_groups"
+        "airbyte_cdk.connector_builder.test_reader.TestReader.run_test_read"
     ) as mock_handler:
         mock_handler.side_effect = Exception("Test exception with secret key: super_secret_key")
 
