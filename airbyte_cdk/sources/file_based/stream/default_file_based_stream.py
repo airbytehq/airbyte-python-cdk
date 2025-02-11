@@ -110,7 +110,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
                 },
             }
         elif self.use_permissions_transfer:
-            return self.stream_reader.REMOTE_FILE_PERMISSIONS_SCHEMA
+            return self.stream_reader.file_permissions_schema
         else:
             return super()._filter_schema_invalid_properties(configured_catalog_json_schema)
 
@@ -314,7 +314,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         if self.use_file_transfer:
             return file_transfer_schema
         elif self.use_permissions_transfer:
-            return self.stream_reader.REMOTE_FILE_PERMISSIONS_SCHEMA
+            return self.stream_reader.file_permissions_schema
         elif self.config.input_schema:
             return self.config.get_input_schema()  # type: ignore
         elif self.config.schemaless:

@@ -4,10 +4,15 @@
 
 from airbyte_cdk.sources.file_based.config.abstract_file_based_spec import AbstractFileBasedSpec
 
+DELIVERY_TYPE_KEY = "delivery_type"
+DELIVERY_TYPE_PERMISSION_TRANSFER_MODE_VALUE = "use_permissions_transfer"
+PRESERVE_DIRECTORY_STRUCTURE_KEY = "preserve_directory_structure"
+INCLUDE_IDENTITIES_STREAM_KEY = "include_identities_stream"
+
 
 def use_file_transfer(parsed_config: AbstractFileBasedSpec) -> bool:
     return (
-        hasattr(parsed_config.delivery_method, "delivery_type")
+        hasattr(parsed_config.delivery_method, DELIVERY_TYPE_KEY)
         and parsed_config.delivery_method.delivery_type == "use_file_transfer"
     )
 
@@ -27,7 +32,7 @@ def preserve_directory_structure(parsed_config: AbstractFileBasedSpec) -> bool:
     """
     if (
         use_file_transfer(parsed_config)
-        and hasattr(parsed_config.delivery_method, "preserve_directory_structure")
+        and hasattr(parsed_config.delivery_method, PRESERVE_DIRECTORY_STRUCTURE_KEY)
         and parsed_config.delivery_method.preserve_directory_structure is not None
     ):
         return parsed_config.delivery_method.preserve_directory_structure
@@ -36,15 +41,16 @@ def preserve_directory_structure(parsed_config: AbstractFileBasedSpec) -> bool:
 
 def use_permissions_transfer(parsed_config: AbstractFileBasedSpec) -> bool:
     return (
-        hasattr(parsed_config.delivery_method, "delivery_type")
-        and parsed_config.delivery_method.delivery_type == "use_permissions_transfer"
+        hasattr(parsed_config.delivery_method, DELIVERY_TYPE_KEY)
+        and parsed_config.delivery_method.delivery_type
+        == DELIVERY_TYPE_PERMISSION_TRANSFER_MODE_VALUE
     )
 
 
 def include_identities_stream(parsed_config: AbstractFileBasedSpec) -> bool:
     if (
         use_permissions_transfer(parsed_config)
-        and hasattr(parsed_config.delivery_method, "include_identities_stream")
+        and hasattr(parsed_config.delivery_method, INCLUDE_IDENTITIES_STREAM_KEY)
         and parsed_config.delivery_method.include_identities_stream is not None
     ):
         return parsed_config.delivery_method.include_identities_stream
