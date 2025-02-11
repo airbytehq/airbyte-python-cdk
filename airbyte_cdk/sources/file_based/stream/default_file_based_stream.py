@@ -29,7 +29,6 @@ from airbyte_cdk.sources.file_based.schema_helpers import (
     SchemaType,
     file_transfer_schema,
     merge_schemas,
-    remote_file_permissions_schema,
     schemaless_schema,
 )
 from airbyte_cdk.sources.file_based.stream import AbstractFileBasedStream
@@ -111,7 +110,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
                 },
             }
         elif self.use_permissions_transfer:
-            return remote_file_permissions_schema
+            return self.stream_reader.REMOTE_FILE_PERMISSIONS_SCHEMA
         else:
             return super()._filter_schema_invalid_properties(configured_catalog_json_schema)
 
@@ -315,7 +314,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         if self.use_file_transfer:
             return file_transfer_schema
         elif self.use_permissions_transfer:
-            return remote_file_permissions_schema
+            return self.stream_reader.REMOTE_FILE_PERMISSIONS_SCHEMA
         elif self.config.input_schema:
             return self.config.get_input_schema()  # type: ignore
         elif self.config.schemaless:

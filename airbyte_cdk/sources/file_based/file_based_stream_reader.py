@@ -19,6 +19,7 @@ from airbyte_cdk.sources.file_based.config.validate_config_transfer_modes import
     use_file_transfer,
 )
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
+from airbyte_cdk.sources.file_based.schema_helpers import schemaless_schema
 
 
 class FileReadMode(Enum):
@@ -28,6 +29,8 @@ class FileReadMode(Enum):
 
 class AbstractFileBasedStreamReader(ABC):
     DATE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
+    REMOTE_FILE_PERMISSIONS_SCHEMA = schemaless_schema
+    REMOTE_FILE_IDENTITY_SCHEMA = schemaless_schema
 
     def __init__(self) -> None:
         self._config = None
@@ -192,7 +195,7 @@ class AbstractFileBasedStreamReader(ABC):
         ACL Permissions from files.
         """
         raise NotImplementedError(
-            f"{self.__class__.__name__} required to support get_file_acl_permissions()"
+            f"{self.__class__.__name__} required to support get_file_acl_permissions(), please update REMOTE_FILE_PERMISSIONS_SCHEMA accordingly"
         )
 
     @abstractmethod
@@ -202,5 +205,5 @@ class AbstractFileBasedStreamReader(ABC):
         identities.
         """
         raise NotImplementedError(
-            f"{self.__class__.__name__} required to support load_identity_groups()"
+            f"{self.__class__.__name__} required to support load_identity_groups(), please update REMOTE_FILE_IDENTITY_SCHEMA accordingly"
         )
