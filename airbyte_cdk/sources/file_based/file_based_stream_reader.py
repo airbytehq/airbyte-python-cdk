@@ -192,7 +192,7 @@ class AbstractFileBasedStreamReader(ABC):
         ACL Permissions from files.
         """
         raise NotImplementedError(
-            f"{self.__class__.__name__} required to support ACL permissions, please update file_permissions_schema accordingly."
+            f"{self.__class__.__name__} does not implement get_file_acl_permissions(). To support ACL permissions, implement this method and update file_permissions_schema."
         )
 
     @abstractmethod
@@ -202,7 +202,7 @@ class AbstractFileBasedStreamReader(ABC):
         identities.
         """
         raise NotImplementedError(
-            f"{self.__class__.__name__} required to support identities, please update identities_schema."
+            f"{self.__class__.__name__} does not implement load_identity_groups(). To support identities, implement this method and update identities_schema."
         )
 
     @property
@@ -213,7 +213,7 @@ class AbstractFileBasedStreamReader(ABC):
         ACL Permissions from files.
         """
         raise NotImplementedError(
-            f"{self.__class__.__name__} required to support ACL Permissions, please return required json schema for your permissions streams."
+            f"{self.__class__.__name__} does not implement file_permissions_schema, please return json schema for your permissions streams."
         )
 
     @property
@@ -224,5 +224,5 @@ class AbstractFileBasedStreamReader(ABC):
         identities.
         """
         raise NotImplementedError(
-            f"{self.__class__.__name__} required to support fetch Identities, please return required json schema for your Identities stream."
+            f"{self.__class__.__name__} does not implement identities_schema, please return json schema for your identities stream."
         )
