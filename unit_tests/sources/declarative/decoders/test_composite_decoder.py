@@ -198,3 +198,34 @@ def test_composite_raw_decoder_csv_parser_values(requests_mock, encoding: str, d
 
     parsed_records = list(composite_raw_decoder.decode(response))
     assert parsed_records == expected_data
+
+
+def test_given_response_already_consumed_when_decode_then_no_data_is_returned(requests_mock):
+    requests_mock.register_uri(
+        "GET", "https://airbyte.io/", content=json.dumps({"test": "test"}).encode()
+    )
+    response = requests.get("https://airbyte.io/", stream=True)
+    composite_raw_decoder = CompositeRawDecoder(parser=JsonParser(encoding="utf-8"))
+
+    content = list(composite_raw_decoder.decode(response))
+    assert content
+
+    with pytest.raises(Exception):
+        list(composite_raw_decoder.decode(response))
+
+
+def test_given_response_is_not_streamed_when_decode_then_can_be_called_multiple_times(
+    requests_mock,
+):
+    requests_mock.register_uri(
+        "GET", "https://airbyte.io/", content=json.dumps({"test": "test"}).encode()
+    )
+    response = requests.get("https://airbyte.io/")
+    composite_raw_decoder = CompositeRawDecoder(
+        parser=JsonParser(encoding="utf-8"), stream_response=False
+    )
+
+    content = list(composite_raw_decoder.decode(response))
+    content_second_time = list(composite_raw_decoder.decode(response))
+
+    assert content == content_second_time

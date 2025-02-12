@@ -22,6 +22,7 @@ from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_req
 )
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod, Requester
 from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
+from airbyte_cdk.sources.streams.call_rate import APIBudget
 from airbyte_cdk.sources.streams.http import HttpClient
 from airbyte_cdk.sources.streams.http.error_handlers import ErrorHandler
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
@@ -55,6 +56,7 @@ class HttpRequester(Requester):
     http_method: Union[str, HttpMethod] = HttpMethod.GET
     request_options_provider: Optional[InterpolatedRequestOptionsProvider] = None
     error_handler: Optional[ErrorHandler] = None
+    api_budget: Optional[APIBudget] = None
     disable_retries: bool = False
     message_repository: MessageRepository = NoopMessageRepository()
     use_cache: bool = False
@@ -91,6 +93,7 @@ class HttpRequester(Requester):
             name=self.name,
             logger=self.logger,
             error_handler=self.error_handler,
+            api_budget=self.api_budget,
             authenticator=self._authenticator,
             use_cache=self.use_cache,
             backoff_strategy=backoff_strategies,

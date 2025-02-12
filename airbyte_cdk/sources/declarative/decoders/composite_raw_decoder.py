@@ -1,5 +1,6 @@
 import csv
 import gzip
+import io
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -130,11 +131,15 @@ class CompositeRawDecoder(Decoder):
     """
 
     parser: Parser
+    stream_response: bool = True
 
     def is_stream_response(self) -> bool:
-        return True
+        return self.stream_response
 
     def decode(
         self, response: requests.Response
     ) -> Generator[MutableMapping[str, Any], None, None]:
-        yield from self.parser.parse(data=response.raw)  # type: ignore[arg-type]
+        if self.is_stream_response():
+            yield from self.parser.parse(data=response.raw)  # type: ignore[arg-type]
+        else:
+            yield from self.parser.parse(data=io.BytesIO(response.content))
