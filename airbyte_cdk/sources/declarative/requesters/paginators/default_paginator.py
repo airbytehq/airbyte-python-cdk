@@ -25,7 +25,6 @@ from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from airbyte_cdk.utils.mapping_helpers import (
     _validate_component_request_option_paths,
-    combine_mappings,
 )
 
 
