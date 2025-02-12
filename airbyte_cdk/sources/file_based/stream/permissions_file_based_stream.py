@@ -7,10 +7,10 @@ from typing import Any, Dict, Iterable
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level
 from airbyte_cdk.models import Type as MessageType
+from airbyte_cdk.sources.file_based.stream import DefaultFileBasedStream
 from airbyte_cdk.sources.file_based.types import StreamSlice
 from airbyte_cdk.sources.streams.core import JsonSchema
 from airbyte_cdk.sources.utils.record_helper import stream_data_to_airbyte_message
-from airbyte_cdk.sources.file_based.stream import DefaultFileBasedStream
 
 
 class PermissionsFileBasedStream(DefaultFileBasedStream):
