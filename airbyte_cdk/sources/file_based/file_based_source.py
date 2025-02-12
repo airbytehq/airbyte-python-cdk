@@ -67,6 +67,9 @@ from airbyte_cdk.sources.file_based.stream.concurrent.cursor import (
     FileBasedFinalStateCursor,
 )
 from airbyte_cdk.sources.file_based.stream.cursor import AbstractFileBasedCursor
+from airbyte_cdk.sources.file_based.stream.permissions_file_based_stream import (
+    PermissionsFileBasedStream,
+)
 from airbyte_cdk.sources.message.repository import InMemoryMessageRepository, MessageRepository
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
@@ -257,7 +260,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                         message_repository=self.message_repository,
                     )
                     stream = FileBasedStreamFacade.create_from_stream(
-                        stream=self._make_default_stream(
+                        stream=self._make_file_based_stream(
                             stream_config=stream_config,
                             cursor=cursor,
                             parsed_config=parsed_config,
@@ -288,7 +291,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                         CursorField(DefaultFileBasedStream.ab_last_mod_col),
                     )
                     stream = FileBasedStreamFacade.create_from_stream(
-                        stream=self._make_default_stream(
+                        stream=self._make_file_based_stream(
                             stream_config=stream_config,
                             cursor=cursor,
                             parsed_config=parsed_config,
@@ -300,7 +303,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                     )
                 else:
                     cursor = self.cursor_cls(stream_config)
-                    stream = self._make_default_stream(
+                    stream = self._make_file_based_stream(
                         stream_config=stream_config,
                         cursor=cursor,
                         parsed_config=parsed_config,
@@ -334,8 +337,33 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
             cursor=cursor,
             use_file_transfer=use_file_transfer(parsed_config),
             preserve_directory_structure=preserve_directory_structure(parsed_config),
-            use_permissions_transfer=use_permissions_transfer(parsed_config),
         )
+
+    def _make_permissions_stream(
+        self, stream_config: FileBasedStreamConfig, cursor: Optional[AbstractFileBasedCursor]
+    ) -> AbstractFileBasedStream:
+        return PermissionsFileBasedStream(
+            config=stream_config,
+            catalog_schema=self.stream_schemas.get(stream_config.name),
+            stream_reader=self.stream_reader,
+            availability_strategy=self.availability_strategy,
+            discovery_policy=self.discovery_policy,
+            parsers=self.parsers,
+            validation_policy=self._validate_and_get_validation_policy(stream_config),
+            errors_collector=self.errors_collector,
+            cursor=cursor,
+        )
+
+    def _make_file_based_stream(
+        self,
+        stream_config: FileBasedStreamConfig,
+        cursor: Optional[AbstractFileBasedCursor],
+        parsed_config: AbstractFileBasedSpec,
+    ) -> AbstractFileBasedStream:
+        if use_permissions_transfer(parsed_config):
+            return self._make_permissions_stream(stream_config, cursor)
+        else:
+            return self._make_default_stream(stream_config, cursor, parsed_config)
 
     def _make_identities_stream(
         self,

@@ -47,7 +47,6 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
 
     FILE_TRANSFER_KW = "use_file_transfer"
     PRESERVE_DIRECTORY_STRUCTURE_KW = "preserve_directory_structure"
-    PERMISSIONS_TRANSFER_KW = "use_permissions_transfer"
     FILES_KEY = "files"
     DATE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
     ab_last_mod_col = "_ab_source_file_last_modified"
@@ -57,7 +56,6 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
     airbyte_columns = [ab_last_mod_col, ab_file_name_col]
     use_file_transfer = False
     preserve_directory_structure = True
-    use_permissions_transfer = False
 
     def __init__(self, **kwargs: Any):
         if self.FILE_TRANSFER_KW in kwargs:
@@ -66,8 +64,6 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
             self.preserve_directory_structure = kwargs.pop(
                 self.PRESERVE_DIRECTORY_STRUCTURE_KW, True
             )
-        if self.PERMISSIONS_TRANSFER_KW in kwargs:
-            self.use_permissions_transfer = kwargs.pop(self.PERMISSIONS_TRANSFER_KW, False)
         super().__init__(**kwargs)
 
     @property
@@ -109,8 +105,6 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
                     self.ab_file_name_col: {"type": "string"},
                 },
             }
-        elif self.use_permissions_transfer:
-            return self.stream_reader.file_permissions_schema
         else:
             return super()._filter_schema_invalid_properties(configured_catalog_json_schema)
 
@@ -192,29 +186,6 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
                         record = self.transform_record_for_file_transfer(record, file)
                         yield stream_data_to_airbyte_message(
                             self.name, record, is_file_transfer_message=True
-                        )
-                elif self.use_permissions_transfer:
-                    try:
-                        permissions_record = self.stream_reader.get_file_acl_permissions(
-                            file, logger=self.logger
-                        )
-                        permissions_record = self.transform_record(
-                            permissions_record, file, file_datetime_string
-                        )
-                        yield stream_data_to_airbyte_message(
-                            self.name, permissions_record, is_file_transfer_message=False
-                        )
-                    except Exception as e:
-                        self.logger.error(
-                            f"Failed to retrieve permissions for file {file.uri}: {str(e)}"
-                        )
-                        yield AirbyteMessage(
-                            type=MessageType.LOG,
-                            log=AirbyteLogMessage(
-                                level=Level.ERROR,
-                                message=f"Error retrieving files permissions: stream={self.name} file={file.uri}",
-                                stack_trace=traceback.format_exc(),
-                            ),
                         )
                 else:
                     for record in parser.parse_records(
@@ -313,8 +284,6 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
     def _get_raw_json_schema(self) -> JsonSchema:
         if self.use_file_transfer:
             return file_transfer_schema
-        elif self.use_permissions_transfer:
-            return self.stream_reader.file_permissions_schema
         elif self.config.input_schema:
             return self.config.get_input_schema()  # type: ignore
         elif self.config.schemaless:
