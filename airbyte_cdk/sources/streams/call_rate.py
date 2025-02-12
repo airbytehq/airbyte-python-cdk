@@ -100,7 +100,7 @@ class RequestMatcher(abc.ABC):
 
 
 class HttpRequestMatcher(RequestMatcher):
-    """Simple implementation of RequestMatcher for http requests case"""
+    """Simple implementation of RequestMatcher for HTTP requests using HttpRequestRegexMatcher under the hood."""
 
     def __init__(
         self,
@@ -111,60 +111,41 @@ class HttpRequestMatcher(RequestMatcher):
     ):
         """Constructor
 
-        :param method:
-        :param url:
-        :param params:
-        :param headers:
+        :param method: HTTP method (e.g., "GET", "POST").
+        :param url: Full URL to match.
+        :param params: Dictionary of query parameters to match.
+        :param headers: Dictionary of headers to match.
         """
-        self._method = method
-        self._url = url
-        self._params = {str(k): str(v) for k, v in (params or {}).items()}
-        self._headers = {str(k): str(v) for k, v in (headers or {}).items()}
+        # Parse the URL to extract the base and path
+        if url:
+            parsed_url = parse.urlsplit(url)
+            url_base = f"{parsed_url.scheme}://{parsed_url.netloc}"
+            url_path = parsed_url.path if parsed_url.path != "/" else None
+        else:
+            url_base = None
+            url_path = None
 
-    @staticmethod
-    def _match_dict(obj: Mapping[str, Any], pattern: Mapping[str, Any]) -> bool:
-        """Check that all elements from pattern dict present and have the same values in obj dict
-
-        :param obj:
-        :param pattern:
-        :return:
-        """
-        return pattern.items() <= obj.items()
+        # Use HttpRequestRegexMatcher under the hood
+        self._regex_matcher = HttpRequestRegexMatcher(
+            method=method,
+            url_base=url_base,
+            url_path_pattern=re.escape(url_path) if url_path else None,
+            params=params,
+            headers=headers,
+        )
 
     def __call__(self, request: Any) -> bool:
         """
-
-        :param request:
-        :return: True if matches the provided request object, False - otherwise
+        :param request: A requests.Request or requests.PreparedRequest instance.
+        :return: True if the request matches all provided criteria; False otherwise.
         """
-        if isinstance(request, requests.Request):
-            prepared_request = request.prepare()
-        elif isinstance(request, requests.PreparedRequest):
-            prepared_request = request
-        else:
-            return False
-
-        if self._method is not None:
-            if prepared_request.method != self._method:
-                return False
-        if self._url is not None and prepared_request.url is not None:
-            url_without_params = prepared_request.url.split("?")[0]
-            if url_without_params != self._url:
-                return False
-        if self._params is not None:
-            parsed_url = parse.urlsplit(prepared_request.url)
-            params = dict(parse.parse_qsl(str(parsed_url.query)))
-            if not self._match_dict(params, self._params):
-                return False
-        if self._headers is not None:
-            if not self._match_dict(prepared_request.headers, self._headers):
-                return False
-        return True
+        return self._regex_matcher(request)
 
     def __str__(self) -> str:
         return (
-            f"HttpRequestMatcher(method={self._method}, url={self._url}, "
-            f"params={self._params}, headers={self._headers})"
+            f"HttpRequestMatcher(method={self._regex_matcher._method}, "
+            f"url={self._regex_matcher._url_base}{self._regex_matcher._url_path_pattern.pattern if self._regex_matcher._url_path_pattern else ''}, "
+            f"params={self._regex_matcher._params}, headers={self._regex_matcher._headers})"
         )
 
 
@@ -226,8 +207,8 @@ class HttpRequestRegexMatcher(RequestMatcher):
             return False
 
         # Check HTTP method.
-        if self._method is not None and prepared_request.method is not None:
-            if prepared_request.method.upper() != self._method:
+        if self._method is not None:
+            if prepared_request.method != self._method:
                 return False
 
         # Parse the URL.
