@@ -26,6 +26,7 @@ else:
     MIXIN_BASE = object
 
 logger = logging.getLogger("airbyte")
+logging.getLogger("pyrate_limiter").setLevel(logging.WARNING)
 
 
 @dataclasses.dataclass
