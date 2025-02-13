@@ -360,8 +360,12 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         cursor: Optional[AbstractFileBasedCursor],
         parsed_config: AbstractFileBasedSpec,
     ) -> AbstractFileBasedStream:
+        """
+        Creates different streams depending on the type of the transfer mode selected
+        """
         if use_permissions_transfer(parsed_config):
             return self._make_permissions_stream(stream_config, cursor)
+        # we should have a stream for File transfer mode to decouple from DefaultFileBasedStream
         else:
             return self._make_default_stream(stream_config, cursor, parsed_config)
 
