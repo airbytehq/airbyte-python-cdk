@@ -15,8 +15,6 @@ from airbyte_cdk.sources.streams.checkpoint import Cursor
 from airbyte_cdk.sources.utils.record_helper import stream_data_to_airbyte_message
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
-DEFAULT_IDENTITIES_STREAM_NAME = "identities"
-
 
 class Identities(Stream, ABC):
     """
@@ -24,7 +22,7 @@ class Identities(Stream, ABC):
     The load_identity_groups method manage the logic to get such data.
     """
 
-    IDENTITIES_STREAM_NAME = DEFAULT_IDENTITIES_STREAM_NAME
+    IDENTITIES_STREAM_NAME = "identities"
 
     is_resumable = False
 
