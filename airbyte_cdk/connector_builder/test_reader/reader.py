@@ -30,7 +30,7 @@ from airbyte_cdk.utils.schema_inferrer import (
     SchemaValidationException,
 )
 
-from .helpers import _clean_config
+from .helpers import Parsers
 from .message_grouper import get_message_groups
 from .types import GROUPED_MESSAGES, INFERRED_SCHEMA_OUTPUT_TYPE, MESSAGE_GROUPS
 
@@ -341,7 +341,7 @@ class TestReader:
         """
         Retrieves a cleaned configuration from the latest Airbyte control message.
 
-        This helper function extracts the configuration from the given Airbyte control message, cleans it using the internal _clean_config function,
+        This helper function extracts the configuration from the given Airbyte control message, cleans it using the internal `Parsers.clean_config` function,
         and returns the resulting dictionary. If no control message is provided (i.e., latest_config_update is None), the function returns None.
 
         Parameters:
@@ -352,7 +352,7 @@ class TestReader:
         """
 
         return (
-            _clean_config(latest_config_update.connectorConfig.config)  # type: ignore
+            Parsers.clean_config(latest_config_update.connectorConfig.config)  # type: ignore
             if latest_config_update
             else None
         )
