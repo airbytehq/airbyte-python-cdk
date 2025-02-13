@@ -30,7 +30,7 @@ from airbyte_cdk.utils.schema_inferrer import (
     SchemaValidationException,
 )
 
-from .helpers import Parsers
+from .helpers import clean_config
 from .message_grouper import get_message_groups
 from .types import GROUPED_MESSAGES, INFERRED_SCHEMA_OUTPUT_TYPE, MESSAGE_GROUPS
 
@@ -352,7 +352,7 @@ class TestReader:
         """
 
         return (
-            Parsers.clean_config(latest_config_update.connectorConfig.config)  # type: ignore
+            clean_config(latest_config_update.connectorConfig.config)  # type: ignore
             if latest_config_update
             else None
         )

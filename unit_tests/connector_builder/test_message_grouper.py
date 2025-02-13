@@ -17,7 +17,7 @@ from airbyte_cdk.connector_builder.models import (
     StreamReadPages,
 )
 from airbyte_cdk.connector_builder.test_reader import TestReader
-from airbyte_cdk.connector_builder.test_reader.helpers import Parsers
+from airbyte_cdk.connector_builder.test_reader.helpers import create_response_from_log_message
 from airbyte_cdk.models import (
     AirbyteControlConnectorConfigMessage,
     AirbyteControlMessage,
@@ -586,7 +586,7 @@ def test_create_response_from_log_message(
     else:
         response_message = log_message
 
-    assert Parsers.create_response_from_log_message(response_message) == expected_response
+    assert create_response_from_log_message(response_message) == expected_response
 
 
 @patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")

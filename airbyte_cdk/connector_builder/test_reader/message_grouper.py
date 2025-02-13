@@ -18,7 +18,22 @@ from airbyte_cdk.utils.schema_inferrer import (
     SchemaInferrer,
 )
 
-from .helpers import Conditions, Handlers, Parsers
+from .helpers import (
+    airbyte_message_to_json,
+    handle_current_page,
+    handle_current_slice,
+    handle_log_message,
+    handle_record_message,
+    is_config_update_message,
+    is_log_message,
+    is_record_message,
+    is_state_message,
+    is_trace_with_error,
+    parse_slice_description,
+    should_close_page,
+    should_close_page_for_slice,
+    should_process_slice_descriptor,
+)
 from .types import MESSAGE_GROUPS
 
 
@@ -76,35 +91,35 @@ def get_message_groups(
     latest_state_message: Optional[Dict[str, Any]] = None
 
     while records_count < limit and (message := next(messages, None)):
-        json_message = Parsers.airbyte_message_to_json(message)
+        json_message = airbyte_message_to_json(message)
 
-        if Conditions.should_close_page(at_least_one_page_in_group, message, json_message):
-            current_page_request, current_page_response = Handlers.handle_current_page(
+        if should_close_page(at_least_one_page_in_group, message, json_message):
+            current_page_request, current_page_response = handle_current_page(
                 current_page_request,
                 current_page_response,
                 current_slice_pages,
                 current_page_records,
             )
 
-        if Conditions.should_close_page_for_slice(at_least_one_page_in_group, message):
-            yield Handlers.handle_current_slice(
+        if should_close_page_for_slice(at_least_one_page_in_group, message):
+            yield handle_current_slice(
                 current_slice_pages,
                 current_slice_descriptor,
                 latest_state_message,
             )
-            current_slice_descriptor = Parsers.parse_slice_description(message.log.message)  # type: ignore
+            current_slice_descriptor = parse_slice_description(message.log.message)  # type: ignore
             current_slice_pages = []
             at_least_one_page_in_group = False
-        elif Conditions.should_process_slice_descriptor(message):
+        elif should_process_slice_descriptor(message):
             # parsing the first slice
-            current_slice_descriptor = Parsers.parse_slice_description(message.log.message)  # type: ignore
-        elif Conditions.is_log_message(message):
+            current_slice_descriptor = parse_slice_description(message.log.message)  # type: ignore
+        elif is_log_message(message):
             (
                 at_least_one_page_in_group,
                 current_page_request,
                 current_page_response,
                 log_or_auxiliary_request,
-            ) = Handlers.handle_log_message(
+            ) = handle_log_message(
                 message,
                 json_message,
                 at_least_one_page_in_group,
@@ -113,32 +128,32 @@ def get_message_groups(
             )
             if log_or_auxiliary_request:
                 yield log_or_auxiliary_request
-        elif Conditions.is_trace_with_error(message):
+        elif is_trace_with_error(message):
             if message.trace is not None:
                 yield message.trace
-        elif Conditions.is_record_message(message):
-            records_count = Handlers.handle_record_message(
+        elif is_record_message(message):
+            records_count = handle_record_message(
                 message,
                 schema_inferrer,
                 datetime_format_inferrer,
                 records_count,
                 current_page_records,
             )
-        elif Conditions.is_config_update_message(message):
+        elif is_config_update_message(message):
             if message.control is not None:
                 yield message.control
-        elif Conditions.is_state_message(message):
+        elif is_state_message(message):
             latest_state_message = message.state  # type: ignore
 
     else:
         if current_page_request or current_page_response or current_page_records:
-            Handlers.handle_current_page(
+            handle_current_page(
                 current_page_request,
                 current_page_response,
                 current_slice_pages,
                 current_page_records,
             )
-            yield Handlers.handle_current_slice(
+            yield handle_current_slice(
                 current_slice_pages,
                 current_slice_descriptor,
                 latest_state_message,
