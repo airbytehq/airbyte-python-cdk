@@ -23,9 +23,9 @@ class MockFormat:
 class IdentitiesFileBasedStreamTest(unittest.TestCase):
     _NOW = datetime(2022, 10, 22, tzinfo=timezone.utc)
     _A_RECORD = {
-        "id": "923496ab-3eee-47d2-a824-b237e630082a",
+        "id": "userid1",
         "remote_id": "user1@domain.com",
-        "name": "user ond",
+        "name": "user one",
         "email_address": "user1@domain.com",
         "member_email_addresses": ["user1@domain.com", "user1@domain.com.test-google-a.com"],
         "type": "user",
@@ -33,9 +33,9 @@ class IdentitiesFileBasedStreamTest(unittest.TestCase):
     }
 
     _GROUP_RECORD = {
-        "id": "ebf97e50-a010-4daa-b1ce-b47494e7fb10",
+        "id": "groupid1",
         "remote_id": "team_work@domain.com",
-        "name": "team_work",
+        "name": "team work",
         "email_address": "team_work@domain.com",
         "member_email_addresses": ["user1@domain.com", "user2@domain.com"],
         "type": "group",
