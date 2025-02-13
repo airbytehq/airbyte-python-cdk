@@ -1194,6 +1194,8 @@ list_stream:
         stream.retriever.record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
     )
 
+    assert stream.retriever.record_selector.transform_before_filtering == True
+
 
 def test_client_side_incremental_with_partition_router():
     content = """
@@ -1274,6 +1276,7 @@ list_stream:
     assert isinstance(
         stream.retriever.record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
     )
+    assert stream.retriever.record_selector.transform_before_filtering == True
     assert isinstance(
         stream.retriever.record_selector.record_filter._cursor,
         PerPartitionWithGlobalCursor,
