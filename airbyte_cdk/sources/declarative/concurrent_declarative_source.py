@@ -3,7 +3,7 @@
 #
 
 import logging
-from typing import Any, Generic, Iterator, List, Mapping, Optional, Tuple
+from typing import Any, Generic, Iterator, List, Mapping, MutableMapping, Optional, Tuple
 
 from airbyte_cdk.models import (
     AirbyteCatalog,
@@ -221,6 +221,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     stream_state = self._connector_state_manager.get_stream_state(
                         stream_name=declarative_stream.name, namespace=declarative_stream.namespace
                     )
+                    stream_state = self._migrate_state(declarative_stream, stream_state)
 
                     retriever = self._get_retriever(declarative_stream, stream_state)
 
@@ -325,6 +326,8 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     stream_state = self._connector_state_manager.get_stream_state(
                         stream_name=declarative_stream.name, namespace=declarative_stream.namespace
                     )
+                    stream_state = self._migrate_state(declarative_stream, stream_state)
+
                     partition_router = declarative_stream.retriever.stream_slicer._partition_router
 
                     perpartition_cursor = (
@@ -446,3 +449,14 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                 if stream.stream.name not in concurrent_stream_names
             ]
         )
+
+    @staticmethod
+    def _migrate_state(
+        declarative_stream: DeclarativeStream, stream_state: MutableMapping[str, Any]
+    ) -> MutableMapping[str, Any]:
+        for state_migration in declarative_stream.state_migrations:
+            if state_migration.should_migrate(stream_state):
+                # The state variable is expected to be mutable but the migrate method returns an immutable mapping.
+                stream_state = dict(state_migration.migrate(stream_state))
+
+        return stream_state

@@ -1,7 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-
+import json
 from unittest.mock import MagicMock
 
 import freezegun
@@ -13,13 +13,12 @@ from airbyte_cdk.sources.declarative.auth.token_provider import (
     SessionTokenProvider,
 )
 from airbyte_cdk.sources.declarative.exceptions import ReadException
-from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 
 
 def create_session_token_provider():
     login_requester = MagicMock()
     login_response = MagicMock()
-    login_response.json.return_value = {"nested": {"token": "my_token"}}
+    login_response.content = json.dumps({"nested": {"token": "my_token"}}).encode()
     login_requester.send_request.return_value = login_response
 
     return SessionTokenProvider(
@@ -56,9 +55,9 @@ def test_session_token_provider_cache_expiration():
         provider = create_session_token_provider()
         provider.get_token()
 
-    provider.login_requester.send_request.return_value.json.return_value = {
-        "nested": {"token": "updated_token"}
-    }
+    provider.login_requester.send_request.return_value.content = json.dumps(
+        {"nested": {"token": "updated_token"}}
+    ).encode()
 
     with freezegun.freeze_time("2001-05-21T14:00:00Z"):
         assert provider.get_token() == "updated_token"

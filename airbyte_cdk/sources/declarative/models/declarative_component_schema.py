@@ -642,6 +642,48 @@ class OAuthAuthenticator(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class Rate(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    limit: int = Field(
+        ...,
+        description="The maximum number of calls allowed within the interval.",
+        title="Limit",
+    )
+    interval: str = Field(
+        ...,
+        description="The time interval for the rate limit.",
+        examples=["PT1H", "P1D"],
+        title="Interval",
+    )
+
+
+class HttpRequestRegexMatcher(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    method: Optional[str] = Field(
+        None, description="The HTTP method to match (e.g., GET, POST).", title="Method"
+    )
+    url_base: Optional[str] = Field(
+        None,
+        description='The base URL (scheme and host, e.g. "https://api.example.com") to match.',
+        title="URL Base",
+    )
+    url_path_pattern: Optional[str] = Field(
+        None,
+        description="A regular expression pattern to match the URL path.",
+        title="URL Path Pattern",
+    )
+    params: Optional[Dict[str, Any]] = Field(
+        None, description="The query parameters to match.", title="Parameters"
+    )
+    headers: Optional[Dict[str, Any]] = Field(
+        None, description="The headers to match.", title="Headers"
+    )
+
+
 class DpathExtractor(BaseModel):
     type: Literal["DpathExtractor"]
     field_path: List[str] = Field(
@@ -884,15 +926,6 @@ class CustomDecoder(BaseModel):
         examples=["source_amazon_ads.components.GzipJsonlDecoder"],
         title="Class Name",
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
-
-
-class GzipJsonDecoder(BaseModel):
-    class Config:
-        extra = Extra.allow
-
-    type: Literal["GzipJsonDecoder"]
-    encoding: Optional[str] = "utf-8"
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -1274,18 +1307,8 @@ class LegacySessionTokenAuthenticator(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class JsonParser(BaseModel):
-    type: Literal["JsonParser"]
-    encoding: Optional[str] = "utf-8"
-
-
-class JsonLineParser(BaseModel):
-    type: Literal["JsonLineParser"]
-    encoding: Optional[str] = "utf-8"
-
-
-class CsvParser(BaseModel):
-    type: Literal["CsvParser"]
+class CsvDecoder(BaseModel):
+    type: Literal["CsvDecoder"]
     encoding: Optional[str] = "utf-8"
     delimiter: Optional[str] = ","
 
@@ -1584,6 +1607,55 @@ class DatetimeBasedCursor(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class FixedWindowCallRatePolicy(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    type: Literal["FixedWindowCallRatePolicy"]
+    period: str = Field(
+        ..., description="The time interval for the rate limit window.", title="Period"
+    )
+    call_limit: int = Field(
+        ...,
+        description="The maximum number of calls allowed within the period.",
+        title="Call Limit",
+    )
+    matchers: List[HttpRequestRegexMatcher] = Field(
+        ...,
+        description="List of matchers that define which requests this policy applies to.",
+        title="Matchers",
+    )
+
+
+class MovingWindowCallRatePolicy(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    type: Literal["MovingWindowCallRatePolicy"]
+    rates: List[Rate] = Field(
+        ...,
+        description="List of rates that define the call limits for different time intervals.",
+        title="Rates",
+    )
+    matchers: List[HttpRequestRegexMatcher] = Field(
+        ...,
+        description="List of matchers that define which requests this policy applies to.",
+        title="Matchers",
+    )
+
+
+class UnlimitedCallRatePolicy(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    type: Literal["UnlimitedCallRatePolicy"]
+    matchers: List[HttpRequestRegexMatcher] = Field(
+        ...,
+        description="List of matchers that define which requests this policy applies to.",
+        title="Matchers",
+    )
+
+
 class DefaultErrorHandler(BaseModel):
     type: Literal["DefaultErrorHandler"]
     backoff_strategies: Optional[
@@ -1680,9 +1752,9 @@ class RecordSelector(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class GzipParser(BaseModel):
-    type: Literal["GzipParser"]
-    inner_parser: Union[JsonLineParser, CsvParser, JsonParser]
+class GzipDecoder(BaseModel):
+    type: Literal["GzipDecoder"]
+    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonlDecoder]
 
 
 class Spec(BaseModel):
@@ -1715,21 +1787,49 @@ class CompositeErrorHandler(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class HTTPAPIBudget(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    type: Literal["HTTPAPIBudget"]
+    policies: List[
+        Union[
+            FixedWindowCallRatePolicy,
+            MovingWindowCallRatePolicy,
+            UnlimitedCallRatePolicy,
+        ]
+    ] = Field(
+        ...,
+        description="List of call rate policies that define how many calls are allowed.",
+        title="Policies",
+    )
+    ratelimit_reset_header: Optional[str] = Field(
+        "ratelimit-reset",
+        description="The HTTP response header name that indicates when the rate limit resets.",
+        title="Rate Limit Reset Header",
+    )
+    ratelimit_remaining_header: Optional[str] = Field(
+        "ratelimit-remaining",
+        description="The HTTP response header name that indicates the number of remaining allowed calls.",
+        title="Rate Limit Remaining Header",
+    )
+    status_codes_for_ratelimit_hit: Optional[List[int]] = Field(
+        [429],
+        description="List of HTTP status codes that indicate a rate limit has been hit.",
+        title="Status Codes for Rate Limit Hit",
+    )
+
+
 class ZipfileDecoder(BaseModel):
     class Config:
         extra = Extra.allow
 
     type: Literal["ZipfileDecoder"]
-    parser: Union[GzipParser, JsonParser, JsonLineParser, CsvParser] = Field(
+    decoder: Union[CsvDecoder, GzipDecoder, JsonDecoder, JsonlDecoder] = Field(
         ...,
         description="Parser to parse the decompressed data from the zipfile(s).",
         title="Parser",
     )
-
-
-class CompositeRawDecoder(BaseModel):
-    type: Literal["CompositeRawDecoder"]
-    parser: Union[GzipParser, JsonParser, JsonLineParser, CsvParser]
 
 
 class DeclarativeSource1(BaseModel):
@@ -1748,6 +1848,7 @@ class DeclarativeSource1(BaseModel):
     definitions: Optional[Dict[str, Any]] = None
     spec: Optional[Spec] = None
     concurrency_level: Optional[ConcurrencyLevel] = None
+    api_budget: Optional[HTTPAPIBudget] = None
     metadata: Optional[Dict[str, Any]] = Field(
         None,
         description="For internal Airbyte use only - DO NOT modify manually. Used by consumers of declarative manifests for storing related metadata.",
@@ -1774,6 +1875,7 @@ class DeclarativeSource2(BaseModel):
     definitions: Optional[Dict[str, Any]] = None
     spec: Optional[Spec] = None
     concurrency_level: Optional[ConcurrencyLevel] = None
+    api_budget: Optional[HTTPAPIBudget] = None
     metadata: Optional[Dict[str, Any]] = Field(
         None,
         description="For internal Airbyte use only - DO NOT modify manually. Used by consumers of declarative manifests for storing related metadata.",
@@ -1933,7 +2035,7 @@ class SessionTokenAuthenticator(BaseModel):
         description="Authentication method to use for requests sent to the API, specifying how to inject the session token.",
         title="Data Request Authentication",
     )
-    decoder: Optional[Union[JsonDecoder, XmlDecoder, CompositeRawDecoder]] = Field(
+    decoder: Optional[Union[JsonDecoder, XmlDecoder]] = Field(
         None, description="Component used to decode the response.", title="Decoder"
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
@@ -2133,12 +2235,12 @@ class SimpleRetriever(BaseModel):
     decoder: Optional[
         Union[
             CustomDecoder,
+            CsvDecoder,
+            GzipDecoder,
             JsonDecoder,
             JsonlDecoder,
             IterableDecoder,
             XmlDecoder,
-            GzipJsonDecoder,
-            CompositeRawDecoder,
             ZipfileDecoder,
         ]
     ] = Field(
@@ -2211,12 +2313,12 @@ class AsyncRetriever(BaseModel):
     decoder: Optional[
         Union[
             CustomDecoder,
+            CsvDecoder,
+            GzipDecoder,
             JsonDecoder,
             JsonlDecoder,
             IterableDecoder,
             XmlDecoder,
-            GzipJsonDecoder,
-            CompositeRawDecoder,
             ZipfileDecoder,
         ]
     ] = Field(
@@ -2227,12 +2329,12 @@ class AsyncRetriever(BaseModel):
     download_decoder: Optional[
         Union[
             CustomDecoder,
+            CsvDecoder,
+            GzipDecoder,
             JsonDecoder,
             JsonlDecoder,
             IterableDecoder,
             XmlDecoder,
-            GzipJsonDecoder,
-            CompositeRawDecoder,
             ZipfileDecoder,
         ]
     ] = Field(
@@ -2277,6 +2379,7 @@ class DynamicDeclarativeStream(BaseModel):
 
 
 ComplexFieldType.update_forward_refs()
+GzipDecoder.update_forward_refs()
 CompositeErrorHandler.update_forward_refs()
 DeclarativeSource1.update_forward_refs()
 DeclarativeSource2.update_forward_refs()

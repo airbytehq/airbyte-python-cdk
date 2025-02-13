@@ -261,6 +261,9 @@ class AbstractOauth2Authenticator(AuthBase):
 
         :return: expiration datetime
         """
+        if not value and not self.token_has_expired():
+            # No expiry token was provided but the previous one is not expired so it's fine
+            return self.get_token_expiry_date()
 
         if self.token_expiry_is_time_of_expiration:
             if not self.token_expiry_date_format:

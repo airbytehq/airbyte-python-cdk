@@ -10,8 +10,6 @@ import requests
 
 from airbyte_cdk import YamlDeclarativeSource
 from airbyte_cdk.models import SyncMode
-from airbyte_cdk.sources.declarative.decoders import GzipJsonDecoder
-from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder, JsonlDecoder
 from airbyte_cdk.sources.declarative.models import DeclarativeStream as DeclarativeStreamModel
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
@@ -38,10 +36,6 @@ def large_event_response_fixture():
     "decoder_yaml_definition",
     [
         "type: JsonlDecoder",
-        """type: CompositeRawDecoder
-        parser:
-          type: JsonLineParser
-        """,
     ],
 )
 def test_jsonl_decoder_memory_usage(

@@ -1450,8 +1450,19 @@ STATE_MIGRATION_GLOBAL_EXPECTED_STATE["use_global_cursor"] = True
             },
             STATE_MIGRATION_GLOBAL_EXPECTED_STATE,
         ),
+        (
+            {
+                "state": {"created_at": PARTITION_SYNC_START_TIME},
+            },
+            STATE_MIGRATION_EXPECTED_STATE,
+        ),
     ],
-    ids=["legacy_python_format", "low_code_per_partition_state", "low_code_global_format"],
+    ids=[
+        "legacy_python_format",
+        "low_code_per_partition_state",
+        "low_code_global_format",
+        "global_state_no_parent",
+    ],
 )
 def test_incremental_parent_state_migration(
     test_name, manifest, mock_requests, expected_records, initial_state, expected_state

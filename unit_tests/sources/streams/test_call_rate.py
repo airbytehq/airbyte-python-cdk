@@ -17,6 +17,7 @@ from airbyte_cdk.sources.streams.call_rate import (
     CallRateLimitHit,
     FixedWindowCallRatePolicy,
     HttpRequestMatcher,
+    HttpRequestRegexMatcher,
     MovingWindowCallRatePolicy,
     Rate,
     UnlimitedCallRatePolicy,
@@ -357,3 +358,90 @@ class TestHttpStreamIntegration:
             assert next(records) == {"data": "some_data"}
 
         assert MovingWindowCallRatePolicy.try_acquire.call_count == 1
+
+
+class TestHttpRequestRegexMatcher:
+    """
+    Tests for the new regex-based logic:
+      - Case-insensitive HTTP method matching
+      - Optional url_base (scheme://netloc)
+      - Regex-based path matching
+      - Query params (must be present)
+      - Headers (case-insensitive keys)
+    """
+
+    def test_case_insensitive_method(self):
+        matcher = HttpRequestRegexMatcher(method="GET")
+
+        req_ok = Request("get", "https://example.com/test/path")
+        req_wrong = Request("POST", "https://example.com/test/path")
+
+        assert matcher(req_ok)
+        assert not matcher(req_wrong)
+
+    def test_url_base(self):
+        matcher = HttpRequestRegexMatcher(url_base="https://example.com")
+
+        req_ok = Request("GET", "https://example.com/test/path?foo=bar")
+        req_wrong = Request("GET", "https://another.com/test/path?foo=bar")
+
+        assert matcher(req_ok)
+        assert not matcher(req_wrong)
+
+    def test_url_path_pattern(self):
+        matcher = HttpRequestRegexMatcher(url_path_pattern=r"/test/")
+
+        req_ok = Request("GET", "https://example.com/test/something")
+        req_wrong = Request("GET", "https://example.com/other/something")
+
+        assert matcher(req_ok)
+        assert not matcher(req_wrong)
+
+    def test_query_params(self):
+        matcher = HttpRequestRegexMatcher(params={"foo": "bar"})
+
+        req_ok = Request("GET", "https://example.com/api?foo=bar&extra=123")
+        req_missing = Request("GET", "https://example.com/api?not_foo=bar")
+
+        assert matcher(req_ok)
+        assert not matcher(req_missing)
+
+    def test_headers_case_insensitive(self):
+        matcher = HttpRequestRegexMatcher(headers={"X-Custom-Header": "abc"})
+
+        req_ok = Request(
+            "GET",
+            "https://example.com/api?foo=bar",
+            headers={"x-custom-header": "abc", "other": "123"},
+        )
+        req_wrong = Request("GET", "https://example.com/api", headers={"x-custom-header": "wrong"})
+
+        assert matcher(req_ok)
+        assert not matcher(req_wrong)
+
+    def test_combined_criteria(self):
+        matcher = HttpRequestRegexMatcher(
+            method="GET",
+            url_base="https://example.com",
+            url_path_pattern=r"/test/",
+            params={"foo": "bar"},
+            headers={"X-Test": "123"},
+        )
+
+        req_ok = Request("GET", "https://example.com/test/me?foo=bar", headers={"x-test": "123"})
+        req_bad_base = Request(
+            "GET", "https://other.com/test/me?foo=bar", headers={"x-test": "123"}
+        )
+        req_bad_path = Request("GET", "https://example.com/nope?foo=bar", headers={"x-test": "123"})
+        req_bad_param = Request(
+            "GET", "https://example.com/test/me?extra=xyz", headers={"x-test": "123"}
+        )
+        req_bad_header = Request(
+            "GET", "https://example.com/test/me?foo=bar", headers={"some-other-header": "xyz"}
+        )
+
+        assert matcher(req_ok)
+        assert not matcher(req_bad_base)
+        assert not matcher(req_bad_path)
+        assert not matcher(req_bad_param)
+        assert not matcher(req_bad_header)

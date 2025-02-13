@@ -8,8 +8,9 @@ import os
 import pytest
 import requests
 
-from airbyte_cdk.sources.declarative.decoders import GzipJsonDecoder
-from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder, JsonlDecoder
+from airbyte_cdk.sources.declarative.decoders import CompositeRawDecoder
+from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import JsonLineParser
+from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder
 
 
 @pytest.mark.parametrize(
@@ -40,8 +41,11 @@ def test_json_decoder(requests_mock, response_body, first_element):
 )
 def test_jsonl_decoder(requests_mock, response_body, expected_json):
     requests_mock.register_uri("GET", "https://airbyte.io/", text=response_body)
-    response = requests.get("https://airbyte.io/")
-    assert list(JsonlDecoder(parameters={}).decode(response)) == expected_json
+    response = requests.get("https://airbyte.io/", stream=True)
+    assert (
+        list(CompositeRawDecoder(parser=JsonLineParser(), stream_response=True).decode(response))
+        == expected_json
+    )
 
 
 @pytest.fixture(name="large_events_response")
@@ -56,78 +60,3 @@ def large_event_response_fixture():
             file.write(jsonl_string)
     yield (lines_in_response, file_path)
     os.remove(file_path)
-
-
-@pytest.mark.parametrize(
-    "encoding",
-    [
-        "utf-8",
-        "utf",
-    ],
-    ids=["utf-8", "utf"],
-)
-def test_gzipjson_decoder(requests_mock, encoding):
-    response_to_compress = json.dumps(
-        [
-            {
-                "campaignId": 214078428,
-                "campaignName": "sample-campaign-name-214078428",
-                "adGroupId": "6490134",
-                "adId": "665320125",
-                "targetId": "791320341",
-                "asin": "G000PSH142",
-                "advertisedAsin": "G000PSH142",
-                "keywordBid": "511234974",
-                "keywordId": "965783021",
-            },
-            {
-                "campaignId": 44504582,
-                "campaignName": "sample-campaign-name-44504582",
-                "adGroupId": "6490134",
-                "adId": "665320125",
-                "targetId": "791320341",
-                "asin": "G000PSH142",
-                "advertisedAsin": "G000PSH142",
-                "keywordBid": "511234974",
-                "keywordId": "965783021",
-            },
-            {
-                "campaignId": 509144838,
-                "campaignName": "sample-campaign-name-509144838",
-                "adGroupId": "6490134",
-                "adId": "665320125",
-                "targetId": "791320341",
-                "asin": "G000PSH142",
-                "advertisedAsin": "G000PSH142",
-                "keywordBid": "511234974",
-                "keywordId": "965783021",
-            },
-            {
-                "campaignId": 231712082,
-                "campaignName": "sample-campaign-name-231712082",
-                "adGroupId": "6490134",
-                "adId": "665320125",
-                "targetId": "791320341",
-                "asin": "G000PSH142",
-                "advertisedAsin": "G000PSH142",
-                "keywordBid": "511234974",
-                "keywordId": "965783021",
-            },
-            {
-                "campaignId": 895306040,
-                "campaignName": "sample-campaign-name-895306040",
-                "adGroupId": "6490134",
-                "adId": "665320125",
-                "targetId": "791320341",
-                "asin": "G000PSH142",
-                "advertisedAsin": "G000PSH142",
-                "keywordBid": "511234974",
-                "keywordId": "965783021",
-            },
-        ]
-    )
-    body = gzip.compress(response_to_compress.encode(encoding))
-
-    requests_mock.register_uri("GET", "https://airbyte.io/", content=body)
-    response = requests.get("https://airbyte.io/")
-    assert len(list(GzipJsonDecoder(parameters={}, encoding=encoding).decode(response))) == 5

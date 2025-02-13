@@ -89,9 +89,8 @@ def test_components_module_from_string() -> None:
 def get_py_components_config_dict(
     *,
     failing_components: bool = False,
-    needs_secrets: bool = True,
 ) -> dict[str, Any]:
-    connector_dir = Path(get_fixture_path("resources/source_the_guardian_api"))
+    connector_dir = Path(get_fixture_path("resources/source_pokeapi_w_components_py"))
     manifest_yml_path: Path = connector_dir / "manifest.yaml"
     custom_py_code_path: Path = connector_dir / (
         "components.py" if not failing_components else "components_failing.py"
@@ -115,9 +114,6 @@ def get_py_components_config_dict(
         },
     }
     combined_config_dict.update(yaml.safe_load(config_yaml_path.read_text()))
-    if needs_secrets:
-        combined_config_dict.update(yaml.safe_load(secrets_yaml_path.read_text()))
-
     return combined_config_dict
 
 
@@ -127,9 +123,7 @@ def test_missing_checksum_fails_to_run(
     """Assert that missing checksum in the config will raise an error."""
     monkeypatch.setenv(ENV_VAR_ALLOW_CUSTOM_CODE, "true")
 
-    py_components_config_dict = get_py_components_config_dict(
-        needs_secrets=False,
-    )
+    py_components_config_dict = get_py_components_config_dict()
     # Truncate the start_date to speed up tests
     py_components_config_dict["start_date"] = (
         datetime.datetime.now() - datetime.timedelta(days=2)
@@ -161,9 +155,7 @@ def test_invalid_checksum_fails_to_run(
     """Assert that an invalid checksum in the config will raise an error."""
     monkeypatch.setenv(ENV_VAR_ALLOW_CUSTOM_CODE, "true")
 
-    py_components_config_dict = get_py_components_config_dict(
-        needs_secrets=False,
-    )
+    py_components_config_dict = get_py_components_config_dict()
     # Truncate the start_date to speed up tests
     py_components_config_dict["start_date"] = (
         datetime.datetime.now() - datetime.timedelta(days=2)
@@ -210,9 +202,7 @@ def test_fail_unless_custom_code_enabled_explicitly(
 
     assert custom_code_execution_permitted() == (not should_raise)
 
-    py_components_config_dict = get_py_components_config_dict(
-        needs_secrets=False,
-    )
+    py_components_config_dict = get_py_components_config_dict()
     # Truncate the start_date to speed up tests
     py_components_config_dict["start_date"] = (
         datetime.datetime.now() - datetime.timedelta(days=2)
@@ -234,11 +224,6 @@ def test_fail_unless_custom_code_enabled_explicitly(
         fn()
 
 
-# TODO: Create a new test source that doesn't require credentials to run.
-@pytest.mark.skipif(
-    condition=not Path(get_fixture_path("resources/source_the_guardian_api/secrets.yaml")).exists(),
-    reason="Skipped due to missing 'secrets.yaml'.",
-)
 @pytest.mark.parametrize(
     "failing_components",
     [
@@ -288,17 +273,19 @@ def test_sync_with_injected_py_components(
             ]
         )
 
-        msg_iterator = source.read(
-            logger=logging.getLogger(),
-            config=py_components_config_dict,
-            catalog=configured_catalog,
-            state=None,
-        )
-        if failing_components:
-            with pytest.raises(Exception):
-                for msg in msg_iterator:
-                    assert msg
+        def _read_fn(*args, **kwargs):
+            msg_iterator = source.read(
+                logger=logging.getLogger(),
+                config=py_components_config_dict,
+                catalog=configured_catalog,
+                state=None,
+            )
+            for msg in msg_iterator:
+                assert msg
             return
 
-        for msg in msg_iterator:
-            assert msg
+        if failing_components:
+            with pytest.raises(Exception):
+                _read_fn()
+        else:
+            _read_fn()

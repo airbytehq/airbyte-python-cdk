@@ -3,7 +3,7 @@
 #
 
 import json
-from unittest.mock import Mock, call
+from unittest.mock import MagicMock, Mock, call
 
 import pytest
 import requests
@@ -220,3 +220,91 @@ def create_schema():
             "field_float": {"type": "number"},
         },
     }
+
+
+@pytest.mark.parametrize("transform_before_filtering", [True, False])
+def test_transform_before_filtering(transform_before_filtering):
+    """
+    Verify that when transform_before_filtering=True, records are modified before
+    filtering. When False, the filter sees the original record data first.
+    """
+
+    # 1) Our response body with 'myfield' set differently
+    #    The first record has myfield=0 (needs transformation to pass)
+    #    The second record has myfield=999 (already passes the filter)
+    body = {"data": [{"id": 1, "myfield": 0}, {"id": 2, "myfield": 999}]}
+
+    # 2) A response object
+    response = requests.Response()
+    response._content = json.dumps(body).encode("utf-8")
+
+    # 3) A simple extractor pulling records from 'data'
+    extractor = DpathExtractor(
+        field_path=["data"], decoder=JsonDecoder(parameters={}), config={}, parameters={}
+    )
+
+    # 4) A filter that keeps only records whose 'myfield' == 999
+    #    i.e.: "{{ record['myfield'] == 999 }}"
+    record_filter = RecordFilter(
+        config={},
+        condition="{{ record['myfield'] == 999 }}",
+        parameters={},
+    )
+
+    # 5) A transformation that sets 'myfield' to 999
+    #    We'll attach it to a mock so we can confirm how many times it was called
+    transformation_mock = MagicMock(spec=RecordTransformation)
+
+    def transformation_side_effect(record, config, stream_state, stream_slice):
+        record["myfield"] = 999
+
+    transformation_mock.transform.side_effect = transformation_side_effect
+
+    # 6) Create a RecordSelector with transform_before_filtering set from our param
+    record_selector = RecordSelector(
+        extractor=extractor,
+        config={},
+        name="test_stream",
+        record_filter=record_filter,
+        transformations=[transformation_mock],
+        schema_normalization=TypeTransformer(TransformConfig.NoTransform),
+        transform_before_filtering=transform_before_filtering,
+        parameters={},
+    )
+
+    # 7) Collect records
+    stream_slice = StreamSlice(partition={}, cursor_slice={})
+    actual_records = list(
+        record_selector.select_records(
+            response=response,
+            records_schema={},  # not using schema in this test
+            stream_state={},
+            stream_slice=stream_slice,
+            next_page_token=None,
+        )
+    )
+
+    # 8) Assert how many records survive
+    if transform_before_filtering:
+        # Both records become myfield=999 BEFORE the filter => both pass
+        assert len(actual_records) == 2
+        # The transformation should be called 2x (once per record)
+        assert transformation_mock.transform.call_count == 2
+    else:
+        # The first record is myfield=0 when the filter sees it => filter excludes it
+        # The second record is myfield=999 => filter includes it
+        assert len(actual_records) == 1
+        # The transformation occurs only on that single surviving record
+        #   (the filter is done first, so the first record is already dropped)
+        assert transformation_mock.transform.call_count == 1
+
+    # 9) Check final record data
+    #    If transform_before_filtering=True => we have records [1,2] both with myfield=999
+    #    If transform_before_filtering=False => we have record [2] with myfield=999
+    final_record_data = [r.data for r in actual_records]
+    if transform_before_filtering:
+        assert all(record["myfield"] == 999 for record in final_record_data)
+        assert sorted([r["id"] for r in final_record_data]) == [1, 2]
+    else:
+        assert final_record_data[0]["id"] == 2
+        assert final_record_data[0]["myfield"] == 999

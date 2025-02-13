@@ -6,6 +6,7 @@ import abc
 import dataclasses
 import datetime
 import logging
+import re
 import time
 from datetime import timedelta
 from threading import RLock
@@ -25,6 +26,7 @@ else:
     MIXIN_BASE = object
 
 logger = logging.getLogger("airbyte")
+logging.getLogger("pyrate_limiter").setLevel(logging.WARNING)
 
 
 @dataclasses.dataclass
@@ -98,7 +100,7 @@ class RequestMatcher(abc.ABC):
 
 
 class HttpRequestMatcher(RequestMatcher):
-    """Simple implementation of RequestMatcher for http requests case"""
+    """Simple implementation of RequestMatcher for HTTP requests using HttpRequestRegexMatcher under the hood."""
 
     def __init__(
         self,
@@ -109,32 +111,94 @@ class HttpRequestMatcher(RequestMatcher):
     ):
         """Constructor
 
-        :param method:
-        :param url:
-        :param params:
-        :param headers:
+        :param method: HTTP method (e.g., "GET", "POST").
+        :param url: Full URL to match.
+        :param params: Dictionary of query parameters to match.
+        :param headers: Dictionary of headers to match.
         """
-        self._method = method
-        self._url = url
+        # Parse the URL to extract the base and path
+        if url:
+            parsed_url = parse.urlsplit(url)
+            url_base = f"{parsed_url.scheme}://{parsed_url.netloc}"
+            url_path = parsed_url.path if parsed_url.path != "/" else None
+        else:
+            url_base = None
+            url_path = None
+
+        # Use HttpRequestRegexMatcher under the hood
+        self._regex_matcher = HttpRequestRegexMatcher(
+            method=method,
+            url_base=url_base,
+            url_path_pattern=re.escape(url_path) if url_path else None,
+            params=params,
+            headers=headers,
+        )
+
+    def __call__(self, request: Any) -> bool:
+        """
+        :param request: A requests.Request or requests.PreparedRequest instance.
+        :return: True if the request matches all provided criteria; False otherwise.
+        """
+        return self._regex_matcher(request)
+
+    def __str__(self) -> str:
+        return (
+            f"HttpRequestMatcher(method={self._regex_matcher._method}, "
+            f"url={self._regex_matcher._url_base}{self._regex_matcher._url_path_pattern.pattern if self._regex_matcher._url_path_pattern else ''}, "
+            f"params={self._regex_matcher._params}, headers={self._regex_matcher._headers})"
+        )
+
+
+class HttpRequestRegexMatcher(RequestMatcher):
+    """
+    Extended RequestMatcher for HTTP requests that supports matching on:
+      - HTTP method (case-insensitive)
+      - URL base (scheme + netloc) optionally
+      - URL path pattern (a regex applied to the path portion of the URL)
+      - Query parameters (must be present)
+      - Headers (header names compared case-insensitively)
+    """
+
+    def __init__(
+        self,
+        method: Optional[str] = None,
+        url_base: Optional[str] = None,
+        url_path_pattern: Optional[str] = None,
+        params: Optional[Mapping[str, Any]] = None,
+        headers: Optional[Mapping[str, Any]] = None,
+    ):
+        """
+        :param method: HTTP method (e.g. "GET", "POST"); compared case-insensitively.
+        :param url_base: Base URL (scheme://host) that must match.
+        :param url_path_pattern: A regex pattern that will be applied to the path portion of the URL.
+        :param params: Dictionary of query parameters that must be present in the request.
+        :param headers: Dictionary of headers that must be present (header keys are compared case-insensitively).
+        """
+        self._method = method.upper() if method else None
+
+        # Normalize the url_base if provided: remove trailing slash.
+        self._url_base = url_base.rstrip("/") if url_base else None
+
+        # Compile the URL path pattern if provided.
+        self._url_path_pattern = re.compile(url_path_pattern) if url_path_pattern else None
+
+        # Normalize query parameters to strings.
         self._params = {str(k): str(v) for k, v in (params or {}).items()}
-        self._headers = {str(k): str(v) for k, v in (headers or {}).items()}
+
+        # Normalize header keys to lowercase.
+        self._headers = {str(k).lower(): str(v) for k, v in (headers or {}).items()}
 
     @staticmethod
     def _match_dict(obj: Mapping[str, Any], pattern: Mapping[str, Any]) -> bool:
-        """Check that all elements from pattern dict present and have the same values in obj dict
-
-        :param obj:
-        :param pattern:
-        :return:
-        """
+        """Check that every key/value in the pattern exists in the object."""
         return pattern.items() <= obj.items()
 
     def __call__(self, request: Any) -> bool:
         """
-
-        :param request:
-        :return: True if matches the provided request object, False - otherwise
+        :param request: A requests.Request or requests.PreparedRequest instance.
+        :return: True if the request matches all provided criteria; False otherwise.
         """
+        # Prepare the request (if needed) and extract the URL details.
         if isinstance(request, requests.Request):
             prepared_request = request.prepare()
         elif isinstance(request, requests.PreparedRequest):
@@ -142,22 +206,48 @@ class HttpRequestMatcher(RequestMatcher):
         else:
             return False
 
+        # Check HTTP method.
         if self._method is not None:
             if prepared_request.method != self._method:
                 return False
-        if self._url is not None and prepared_request.url is not None:
-            url_without_params = prepared_request.url.split("?")[0]
-            if url_without_params != self._url:
+
+        # Parse the URL.
+        parsed_url = parse.urlsplit(prepared_request.url)
+        # Reconstruct the base: scheme://netloc
+        request_url_base = f"{str(parsed_url.scheme)}://{str(parsed_url.netloc)}"
+        # The path (without query parameters)
+        request_path = str(parsed_url.path).rstrip("/")
+
+        # If a base URL is provided, check that it matches.
+        if self._url_base is not None:
+            if request_url_base != self._url_base:
                 return False
-        if self._params is not None:
-            parsed_url = parse.urlsplit(prepared_request.url)
-            params = dict(parse.parse_qsl(str(parsed_url.query)))
-            if not self._match_dict(params, self._params):
+
+        # If a URL path pattern is provided, ensure the path matches the regex.
+        if self._url_path_pattern is not None:
+            if not self._url_path_pattern.search(request_path):
                 return False
-        if self._headers is not None:
-            if not self._match_dict(prepared_request.headers, self._headers):
+
+        # Check query parameters.
+        if self._params:
+            query_params = dict(parse.parse_qsl(str(parsed_url.query)))
+            if not self._match_dict(query_params, self._params):
                 return False
+
+        # Check headers (normalize keys to lower-case).
+        if self._headers:
+            req_headers = {k.lower(): v for k, v in prepared_request.headers.items()}
+            if not self._match_dict(req_headers, self._headers):
+                return False
+
         return True
+
+    def __str__(self) -> str:
+        regex = self._url_path_pattern.pattern if self._url_path_pattern else None
+        return (
+            f"HttpRequestRegexMatcher(method={self._method}, url_base={self._url_base}, "
+            f"url_path_pattern={regex}, params={self._params}, headers={self._headers})"
+        )
 
 
 class BaseCallRatePolicy(AbstractCallRatePolicy, abc.ABC):
@@ -256,6 +346,14 @@ class FixedWindowCallRatePolicy(BaseCallRatePolicy):
                 )
 
             self._calls_num += weight
+
+    def __str__(self) -> str:
+        matcher_str = ", ".join(f"{matcher}" for matcher in self._matchers)
+        return (
+            f"FixedWindowCallRatePolicy(call_limit={self._call_limit}, period={self._offset}, "
+            f"calls_used={self._calls_num}, next_reset={self._next_reset_ts}, "
+            f"matchers=[{matcher_str}])"
+        )
 
     def update(
         self, available_calls: Optional[int], call_reset_ts: Optional[datetime.datetime]
@@ -363,6 +461,19 @@ class MovingWindowCallRatePolicy(BaseCallRatePolicy):
         # if available_calls is not None and call_reset_ts is not None:
         #     ts = call_reset_ts.timestamp()
 
+    def __str__(self) -> str:
+        """Return a human-friendly description of the moving window rate policy for logging purposes."""
+        rates_info = ", ".join(
+            f"{rate.limit} per {timedelta(milliseconds=rate.interval)}"
+            for rate in self._bucket.rates
+        )
+        current_bucket_count = self._bucket.count()
+        matcher_str = ", ".join(f"{matcher}" for matcher in self._matchers)
+        return (
+            f"MovingWindowCallRatePolicy(rates=[{rates_info}], current_bucket_count={current_bucket_count}, "
+            f"matchers=[{matcher_str}])"
+        )
+
 
 class AbstractAPIBudget(abc.ABC):
     """Interface to some API where a client allowed to have N calls per T interval.
@@ -415,6 +526,23 @@ class APIBudget(AbstractAPIBudget):
         self._policies = policies
         self._maximum_attempts_to_acquire = maximum_attempts_to_acquire
 
+    def _extract_endpoint(self, request: Any) -> str:
+        """Extract the endpoint URL from the request if available."""
+        endpoint = None
+        try:
+            # If the request is already a PreparedRequest, it should have a URL.
+            if isinstance(request, requests.PreparedRequest):
+                endpoint = request.url
+            # If it's a requests.Request, we call prepare() to extract the URL.
+            elif isinstance(request, requests.Request):
+                prepared = request.prepare()
+                endpoint = prepared.url
+        except Exception as e:
+            logger.debug(f"Error extracting endpoint: {e}")
+        if endpoint:
+            return endpoint
+        return "unknown endpoint"
+
     def get_matching_policy(self, request: Any) -> Optional[AbstractCallRatePolicy]:
         for policy in self._policies:
             if policy.matches(request):
@@ -428,20 +556,24 @@ class APIBudget(AbstractAPIBudget):
         Matchers will be called sequentially in the same order they were added.
         The first matcher that returns True will
 
-        :param request:
-        :param block: when true (default) will block the current thread until call credit is available
-        :param timeout: if provided will limit maximum time in block, otherwise will wait until credit is available
-        :raises: CallRateLimitHit - when no calls left and if timeout was set the waiting time exceed the timeout
+        :param request: the API request
+        :param block: when True (default) will block until a call credit is available
+        :param timeout: if provided, limits maximum waiting time; otherwise, waits indefinitely
+        :raises: CallRateLimitHit if the call credit cannot be acquired within the timeout
         """
 
         policy = self.get_matching_policy(request)
+        endpoint = self._extract_endpoint(request)
         if policy:
+            logger.debug(f"Acquiring call for endpoint {endpoint} using policy: {policy}")
             self._do_acquire(request=request, policy=policy, block=block, timeout=timeout)
         elif self._policies:
-            logger.info("no policies matched with requests, allow call by default")
+            logger.debug(
+                f"No policies matched for endpoint {endpoint} (request: {request}). Allowing call by default."
+            )
 
     def update_from_response(self, request: Any, response: Any) -> None:
-        """Update budget information based on response from API
+        """Update budget information based on the API response.
 
         :param request: the initial request that triggered this response
         :param response: response from the API
@@ -451,15 +583,17 @@ class APIBudget(AbstractAPIBudget):
     def _do_acquire(
         self, request: Any, policy: AbstractCallRatePolicy, block: bool, timeout: Optional[float]
     ) -> None:
-        """Internal method to try to acquire a call credit
+        """Internal method to try to acquire a call credit.
 
-        :param request:
-        :param policy:
-        :param block:
-        :param timeout:
+        :param request: the API request
+        :param policy: the matching rate-limiting policy
+        :param block: indicates whether to block until a call credit is available
+        :param timeout: maximum time to wait if blocking
+        :raises: CallRateLimitHit if unable to acquire a call credit
         """
         last_exception = None
-        # sometimes we spend all budget before a second attempt, so we have few more here
+        endpoint = self._extract_endpoint(request)
+        # sometimes we spend all budget before a second attempt, so we have a few more attempts
         for attempt in range(1, self._maximum_attempts_to_acquire):
             try:
                 policy.try_acquire(request, weight=1)
@@ -471,20 +605,24 @@ class APIBudget(AbstractAPIBudget):
                         time_to_wait = min(timedelta(seconds=timeout), exc.time_to_wait)
                     else:
                         time_to_wait = exc.time_to_wait
-
-                    time_to_wait = max(
-                        timedelta(0), time_to_wait
-                    )  # sometimes we get negative duration
-                    logger.info(
-                        "reached call limit %s. going to sleep for %s", exc.rate, time_to_wait
+                    # Ensure we never sleep for a negative duration.
+                    time_to_wait = max(timedelta(0), time_to_wait)
+                    logger.debug(
+                        f"Policy {policy} reached call limit for endpoint {endpoint} ({exc.rate}). "
+                        f"Sleeping for {time_to_wait} on attempt {attempt}."
                     )
                     time.sleep(time_to_wait.total_seconds())
                 else:
+                    logger.debug(
+                        f"Policy {policy} reached call limit for endpoint {endpoint} ({exc.rate}) "
+                        f"and blocking is disabled."
+                    )
                     raise
 
         if last_exception:
-            logger.info(
-                "we used all %s attempts to acquire and failed", self._maximum_attempts_to_acquire
+            logger.debug(
+                f"Exhausted all {self._maximum_attempts_to_acquire} attempts to acquire a call for endpoint {endpoint} "
+                f"using policy: {policy}"
             )
             raise last_exception
 
@@ -496,7 +634,7 @@ class HttpAPIBudget(APIBudget):
         self,
         ratelimit_reset_header: str = "ratelimit-reset",
         ratelimit_remaining_header: str = "ratelimit-remaining",
-        status_codes_for_ratelimit_hit: tuple[int] = (429,),
+        status_codes_for_ratelimit_hit: list[int] = [429],
         **kwargs: Any,
     ):
         """Constructor
