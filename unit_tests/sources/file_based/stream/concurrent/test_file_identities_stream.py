@@ -6,13 +6,14 @@ import unittest
 from datetime import datetime, timezone
 from unittest.mock import Mock
 
+from airbyte_protocol_dataclasses.models import SyncMode
+
 from airbyte_cdk.sources.file_based.discovery_policy import AbstractDiscoveryPolicy
 from airbyte_cdk.sources.file_based.exceptions import (
     FileBasedErrorsCollector,
 )
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
 from airbyte_cdk.sources.file_based.stream import FileIdentities
-from airbyte_protocol_dataclasses.models import SyncMode
 
 
 class MockFormat:
