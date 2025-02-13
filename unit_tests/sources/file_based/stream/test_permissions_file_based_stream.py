@@ -41,14 +41,8 @@ class PermissionsFileBasedStreamTest(unittest.TestCase):
         "type": "object",
         "properties": {
             "id": {"type": "string"},
-            "remote_id": {"type": "string"},
-            "parent_id": {"type": ["null", "string"]},
-            "name": {"type": ["null", "string"]},
-            "description": {"type": ["null", "string"]},
-            "email_address": {"type": ["null", "string"]},
-            "member_email_addresses": {"type": ["null", "array"]},
-            "type": {"type": "string"},
-            "modified_at": {"type": "string"},
+            "file_path": {"type": "string"},
+            "allowed_identity_remote_ids": {"type": "array", "items": {"type": "string"}},
             "publicly_accessible": {"type": "boolean"},
         },
     }
