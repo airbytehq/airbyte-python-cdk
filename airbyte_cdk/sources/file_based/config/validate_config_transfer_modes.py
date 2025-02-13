@@ -45,6 +45,15 @@ def preserve_directory_structure(parsed_config: AbstractFileBasedSpec) -> bool:
 
 
 def use_permissions_transfer(parsed_config: AbstractFileBasedSpec) -> bool:
+    """
+    Determines whether to use permissions transfer to sync ACLs and Identities
+
+    Args:
+        parsed_config: The parsed configuration containing delivery method settings
+
+    Returns:
+        True if permissions transfer should be enabled, False otherwise
+    """
     return (
         hasattr(parsed_config.delivery_method, DELIVERY_TYPE_KEY)
         and parsed_config.delivery_method.delivery_type
@@ -53,6 +62,15 @@ def use_permissions_transfer(parsed_config: AbstractFileBasedSpec) -> bool:
 
 
 def include_identities_stream(parsed_config: AbstractFileBasedSpec) -> bool:
+    """
+    There are scenarios where user may not have access to identities but still is valuable to get ACLs
+
+    Args:
+        parsed_config: The parsed configuration containing delivery method settings
+
+    Returns:
+        True if we should include Identities stream.
+    """
     if (
         use_permissions_transfer(parsed_config)
         and hasattr(parsed_config.delivery_method, INCLUDE_IDENTITIES_STREAM_KEY)

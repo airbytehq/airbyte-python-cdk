@@ -15,7 +15,15 @@ from airbyte_cdk.sources.utils.record_helper import stream_data_to_airbyte_messa
 
 class PermissionsFileBasedStream(DefaultFileBasedStream):
     """
-    The permissions stream, stream_reader on source handles logic for schemas and ACLs permissions.
+    A specialized stream for handling file-based ACL permissions.
+
+    This stream works with the stream_reader to:
+    1. Fetch ACL permissions for each file in the source
+    2. Transform permissions into a standardized format
+    3. Generate records containing permission information
+
+    The stream_reader is responsible for the actual implementation of permission retrieval
+    and schema definition, while this class handles the streaming interface.
     """
 
     def _filter_schema_invalid_properties(
@@ -37,6 +45,9 @@ class PermissionsFileBasedStream(DefaultFileBasedStream):
                 )
                 if not permissions_record:
                     no_permissions = True
+                    self.logger.warning(
+                        f"Unable to fetch permissions. stream={self.name} file={file.uri}"
+                    )
                     continue
                 permissions_record = self.transform_record(
                     permissions_record, file, file_datetime_string
@@ -65,4 +76,10 @@ class PermissionsFileBasedStream(DefaultFileBasedStream):
                     )
 
     def _get_raw_json_schema(self) -> JsonSchema:
+        """
+        Retrieve the raw JSON schema for file permissions from the stream reader.
+
+        Returns:
+           The file permissions schema that defines the structure of permission records
+        """
         return self.stream_reader.file_permissions_schema
