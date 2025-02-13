@@ -49,6 +49,7 @@ class PermissionsFileBasedStreamTest(unittest.TestCase):
             "member_email_addresses": {"type": ["null", "array"]},
             "type": {"type": "string"},
             "modified_at": {"type": "string"},
+            "publicly_accessible": {"type": "boolean"},
         },
     }
 
@@ -80,7 +81,6 @@ class PermissionsFileBasedStreamTest(unittest.TestCase):
         )
 
     def test_when_read_records_from_slice_then_return_records(self) -> None:
-        # self._parser.parse_records.return_value = [self._A_RECORD]
         self._stream_reader.get_file_acl_permissions.return_value = self._A_RECORD
         messages = list(
             self._stream.read_records_from_slice(
@@ -106,3 +106,29 @@ class PermissionsFileBasedStreamTest(unittest.TestCase):
             "type": "string"
         }
         assert returned_schema == expected_schema
+
+    def test_when_read_records_from_slice_and_raise_exception(self) -> None:
+        self._stream_reader.get_file_acl_permissions.side_effect = Exception(
+            "ACL permissions retrieval failed"
+        )
+
+        messages = list(
+            self._stream.read_records_from_slice(
+                {"files": [RemoteFile(uri="uri", last_modified=self._NOW)]}
+            )
+        )
+        assert (
+            messages[0].log.message
+            == "Error retrieving files permissions: stream=a stream name file=uri"
+        )
+
+    def test_when_read_records_from_slice_with_empty_permissions_then_return_empty(self) -> None:
+        self._stream_reader.get_file_acl_permissions.return_value = {}
+        messages = list(
+            self._stream.read_records_from_slice(
+                {"files": [RemoteFile(uri="uri", last_modified=self._NOW)]}
+            )
+        )
+        assert (
+            messages[0].log.message == "Unable to fetch permissions. stream=a stream name file=uri"
+        )

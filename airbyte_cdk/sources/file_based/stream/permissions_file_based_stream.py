@@ -27,12 +27,17 @@ class PermissionsFileBasedStream(DefaultFileBasedStream):
         """
         Yield permissions records from all remote files
         """
+
         for file in stream_slice["files"]:
+            no_permissions = False
             file_datetime_string = file.last_modified.strftime(self.DATE_TIME_FORMAT)
             try:
                 permissions_record = self.stream_reader.get_file_acl_permissions(
                     file, logger=self.logger
                 )
+                if not permissions_record:
+                    no_permissions = True
+                    continue
                 permissions_record = self.transform_record(
                     permissions_record, file, file_datetime_string
                 )
@@ -49,6 +54,15 @@ class PermissionsFileBasedStream(DefaultFileBasedStream):
                         stack_trace=traceback.format_exc(),
                     ),
                 )
+            finally:
+                if no_permissions:
+                    yield AirbyteMessage(
+                        type=MessageType.LOG,
+                        log=AirbyteLogMessage(
+                            level=Level.WARN,
+                            message=f"Unable to fetch permissions. stream={self.name} file={file.uri}",
+                        ),
+                    )
 
     def _get_raw_json_schema(self) -> JsonSchema:
         return self.stream_reader.file_permissions_schema
