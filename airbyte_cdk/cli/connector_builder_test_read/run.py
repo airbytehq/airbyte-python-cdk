@@ -96,12 +96,17 @@ def handle_request(args: List[str]) -> str:
     ).decode()  # type: ignore[no-any-return] # Serializer.dump() always returns AirbyteMessage
 
 
-if __name__ == "__main__":
+def run(args: List[str] | None) -> None:
+    args = args or sys.argv[1:]
     try:
-        print(handle_request(sys.argv[1:]))
+        print(handle_request(args))
     except Exception as exc:
         error = AirbyteTracedException.from_exception(
             exc, message=f"Error handling request: {str(exc)}"
         )
         m = error.as_airbyte_message()
         print(orjson.dumps(AirbyteMessageSerializer.dump(m)).decode())
+
+
+if __name__ == "__main__":
+    run()

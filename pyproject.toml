@@ -109,8 +109,8 @@ vector-db-based = ["langchain", "openai", "cohere", "tiktoken"]
 sql = ["sqlalchemy"]
 
 [tool.poetry.scripts]
-
 source-declarative-manifest = "airbyte_cdk.cli.source_declarative_manifest:run"
+connector-builder-test-read = "airbyte_cdk.cli.connector_builder_test_read:run"
 
 [tool.isort]
 skip = ["__init__.py"]  # TODO: Remove after this is fixed: https://github.com/airbytehq/airbyte-python-cdk/issues/12

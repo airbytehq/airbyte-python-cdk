@@ -55,7 +55,11 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
 class ManifestDeclarativeSource(DeclarativeSource):
-    """Declarative source defined by a manifest of low-code components that define source connector behavior"""
+    """Declarative source defined by a manifest of low-code components that define source connector behavior.
+
+    This class can also handle custom components if they are provided in the config using the
+    `__injected_components_py` config key.
+    """
 
     def __init__(
         self,

@@ -16,6 +16,9 @@ from airbyte_cdk.models import (
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
+from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
+    INJECTED_MANIFEST,
+)
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
@@ -50,7 +53,7 @@ def get_limits(config: Mapping[str, Any]) -> TestReadLimits:
 
 
 def create_source(config: Mapping[str, Any], limits: TestReadLimits) -> ManifestDeclarativeSource:
-    manifest = config["__injected_declarative_manifest"]
+    manifest = config[INJECTED_MANIFEST]
     return ManifestDeclarativeSource(
         config=config,
         emit_connector_builder_messages=True,
