@@ -129,7 +129,7 @@ def test_simple_retriever_full(mock_http_stream):
         retriever._next_page_token(response, last_page_size, last_record, last_page_token_value)
         == next_page_token
     )
-    assert retriever._request_params(None, None, None) == {}
+    assert retriever._request_params(None, None) == {}
     assert retriever.stream_slices() == stream_slices
 
 

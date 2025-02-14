@@ -64,9 +64,9 @@ class AddFields(RecordTransformation):
         - path: ["shop_id"]
           value: "{{ config.shop_id }}"
 
-        # from state
-        - path: ["current_state"]
-          value: "{{ stream_state.cursor_field }}" # Or {{ stream_state['cursor_field'] }}
+        # from stream_interval
+        - path: ["date"]
+          value: "{{ stream_interval.start_date }}"
 
         # from record
         - path: ["unnested_value"]
