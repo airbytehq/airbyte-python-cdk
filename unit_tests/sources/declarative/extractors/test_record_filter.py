@@ -56,7 +56,7 @@ RECORDS_TO_FILTER_DATE_TIME_WITHOUT_TZ_FORMAT = [
     "filter_template, records, expected_records",
     [
         (
-            "{{ record['created_at'] > stream_state['created_at'] }}",
+            "{{ record['created_at'] >= stream_interval.extra_fields['created_at'] }}",
             [
                 {"id": 1, "created_at": "06-06-21"},
                 {"id": 2, "created_at": "06-07-21"},
