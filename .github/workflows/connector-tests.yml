@@ -88,7 +88,7 @@ jobs:
           #   cdk_extra: n/a
           # TODO: These are manifest connectors and won't work as expected until we
           #       add `--use-local-cdk` support for manifest connectors.
-          - connector: source-the-guardian-api
+          - connector: source-amplitude
             cdk_extra: n/a
           - connector: source-pokeapi
             cdk_extra: n/a
