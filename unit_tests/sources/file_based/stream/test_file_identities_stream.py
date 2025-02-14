@@ -13,7 +13,7 @@ from airbyte_cdk.sources.file_based.exceptions import (
     FileBasedErrorsCollector,
 )
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
-from airbyte_cdk.sources.file_based.stream import FileIdentities
+from airbyte_cdk.sources.file_based.stream import FileIdentitiesStream
 
 
 class MockFormat:
@@ -64,7 +64,7 @@ class IdentitiesFileBasedStreamTest(unittest.TestCase):
 
         self._stream_reader.identities_schema = self._IDENTITIES_SCHEMA
 
-        self._stream = FileIdentities(
+        self._stream = FileIdentitiesStream(
             catalog_schema=self._catalog_schema,
             stream_reader=self._stream_reader,
             discovery_policy=self._discovery_policy,

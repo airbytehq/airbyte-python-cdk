@@ -16,6 +16,7 @@ INCLUDE_IDENTITIES_STREAM_KEY = "include_identities_stream"
 
 
 def use_file_transfer(parsed_config: AbstractFileBasedSpec) -> bool:
+    """Returns `True` if the configuration uses file transfer mode."""
     return (
         hasattr(parsed_config.delivery_method, DELIVERY_TYPE_KEY)
         and parsed_config.delivery_method.delivery_type == DELIVERY_TYPE_FILES_TRANSFER_MODE_VALUE

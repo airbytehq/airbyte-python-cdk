@@ -10,10 +10,10 @@ from airbyte_cdk.sources.file_based.discovery_policy import AbstractDiscoveryPol
 from airbyte_cdk.sources.file_based.exceptions import FileBasedErrorsCollector
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
 from airbyte_cdk.sources.streams.core import JsonSchema
-from airbyte_cdk.sources.streams.permissions.identities import Identities
+from airbyte_cdk.sources.streams.permissions.identitiesstream import IdentitiesStream
 
 
-class FileIdentities(Identities):
+class FileIdentitiesStream(IdentitiesStream):
     """
     The identities stream. A full refresh stream to sync identities from a certain domain.
     The stream reader manage the logic to get such data, which is implemented on connector side.

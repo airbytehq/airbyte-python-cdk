@@ -16,7 +16,7 @@ from airbyte_cdk.sources.utils.record_helper import stream_data_to_airbyte_messa
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
-class Identities(Stream, ABC):
+class IdentitiesStream(Stream, ABC):
     """
     The identities stream. A full refresh stream to sync identities from a certain domain.
     The load_identity_groups method manage the logic to get such data.
