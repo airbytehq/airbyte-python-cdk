@@ -447,3 +447,29 @@ def test_paginator_with_page_option_no_page_size():
                 parameters={},
             ),
         )
+
+
+def test_request_option_mapping_validator():
+    pagination_strategy = PageIncrement(
+        config={}, page_size=1, start_from_page=0, parameters={}, inject_on_first_request=True
+    )
+
+    with pytest.raises(ValueError):
+        (
+            DefaultPaginator(
+                page_size_option=RequestOption(
+                    field_path=["variables", "limit"],
+                    inject_into=RequestOptionType.body_json,
+                    parameters={},
+                ),
+                page_token_option=RequestOption(
+                    field_path=["variables", "limit"],
+                    inject_into=RequestOptionType.body_json,
+                    parameters={},
+                ),
+                pagination_strategy=pagination_strategy,
+                config=MagicMock(),
+                url_base=MagicMock(),
+                parameters={},
+            ),
+        )
