@@ -1,10 +1,41 @@
 # CDK Migration Guide
 
+## Upgrading to 6.X.X
+
+Version 6.X.X of the CDK removes support for `stream_state` in the Jinja interpolation context. This change is breaking for any low-code connectors that use `stream_state` in the interpolation context.
+
+The following components are impacted by this change:
+
+- `HttpRequester`
+  - `request_parameters`
+  - `request_body_json`
+  - `request_body_data`
+  - `request_headers`
+- `RecordFilter`
+- `AddField`
+
+Where applicable, we recommend updating to use `stream_interval` instead.
+
+### Example
+
+```yaml
+# Before
+record_filter:
+  type: RecordFilter
+  condition: "{{ stream_state['updated_at'] }}"
+
+# After
+record_filter:
+  type: RecordFilter
+  condition: "{{ stream_interval['start_date'] }}"
+```
+
 ## Upgrading to 6.28.0
 
 Starting from version 6.28.0, the CDK no longer includes Pendulum as a transitive dependency. If your connector relies on Pendulum without explicitly declaring it as a dependency, you will need to add it to your connector's dependencies going forward.
 
 More info:
+
 - https://deptry.com/rules-violations/#transitive-dependencies-dep003
 
 ## Upgrading to 6.0.0
