@@ -211,7 +211,7 @@ def test_invalid_jinja_statements(template_string):
 
 def test_given_unsupported_jinja_expression_then_raises_airbyte_traced_exception():
     with pytest.raises(AirbyteTracedException):
-        interpolation.eval("{{ stream_state.get('some_field) }}", config={})
+        interpolation.eval("{{ stream_state.get('some_field') }}", config={})
 
 
 @pytest.mark.parametrize(
