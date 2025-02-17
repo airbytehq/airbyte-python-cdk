@@ -17,6 +17,7 @@ class SupportedHttpMethods(str, Enum):
     GET = "get"
     PATCH = "patch"
     POST = "post"
+    PUT = "put"
     DELETE = "delete"
 
 
@@ -77,7 +78,7 @@ class HttpMocker(contextlib.ContextDecorator):
             additional_matcher=self._matches_wrapper(matcher),
             response_list=[
                 {
-                    "text": response.body,
+                    "text" if isinstance(response.body, str) else "content": response.body,
                     "status_code": response.status_code,
                     "headers": response.headers,
                 }
@@ -97,6 +98,11 @@ class HttpMocker(contextlib.ContextDecorator):
         self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]
     ) -> None:
         self._mock_request_method(SupportedHttpMethods.POST, request, responses)
+
+    def put(
+        self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]
+    ) -> None:
+        self._mock_request_method(SupportedHttpMethods.PUT, request, responses)
 
     def delete(
         self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]
