@@ -6,7 +6,10 @@ from typing import Mapping, Union
 
 class HttpResponse:
     def __init__(
-        self, body: Union[str, bytes], status_code: int = 200, headers: Mapping[str, str] = MappingProxyType({})
+        self,
+        body: Union[str, bytes],
+        status_code: int = 200,
+        headers: Mapping[str, str] = MappingProxyType({}),
     ):
         self._body = body
         self._status_code = status_code

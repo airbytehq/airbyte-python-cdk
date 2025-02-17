@@ -99,9 +99,7 @@ class HttpMocker(contextlib.ContextDecorator):
     ) -> None:
         self._mock_request_method(SupportedHttpMethods.POST, request, responses)
 
-    def put(
-        self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]
-    ) -> None:
+    def put(self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]) -> None:
         self._mock_request_method(SupportedHttpMethods.PUT, request, responses)
 
     def delete(
