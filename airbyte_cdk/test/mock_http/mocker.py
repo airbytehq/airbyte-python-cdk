@@ -78,13 +78,17 @@ class HttpMocker(contextlib.ContextDecorator):
             additional_matcher=self._matches_wrapper(matcher),
             response_list=[
                 {
-                    "text" if isinstance(response.body, str) else "content": response.body,
+                    self._get_body_field(response): response.body,
                     "status_code": response.status_code,
                     "headers": response.headers,
                 }
                 for response in responses
             ],
         )
+
+    @staticmethod
+    def _get_body_field(response: HttpResponse) -> str:
+        return "text" if isinstance(response.body, str) else "content"
 
     def get(self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]) -> None:
         self._mock_request_method(SupportedHttpMethods.GET, request, responses)
