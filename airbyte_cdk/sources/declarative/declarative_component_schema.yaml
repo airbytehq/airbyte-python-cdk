@@ -3744,6 +3744,13 @@ interpolation:
         - "{{ format_datetime(config['start_time'], '%Y-%m-%d') }}"
         - "{{ format_datetime(config['start_date'], '%Y-%m-%dT%H:%M:%S.%fZ') }}"
         - "{{ format_datetime(config['start_date'], '%Y-%m-%dT%H:%M:%S.%fZ', '%a, %d %b %Y %H:%M:%S %z') }}"
+    - title: str_to_datetime
+      description: Converts a string to a datetime object with UTC timezone.
+      arguments:
+        s: The string to convert.
+      return_type: datetime.datetime
+      examples:
+        - "{{ str_to_datetime('2022-01-14') }}"
   filters:
     - title: hash
       description: Convert the specified value to a hashed string.

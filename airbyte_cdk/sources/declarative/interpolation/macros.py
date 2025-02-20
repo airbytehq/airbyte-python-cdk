@@ -67,6 +67,20 @@ def timestamp(dt: Union[float, str]) -> Union[int, float]:
 
 
 def str_to_datetime(s: str) -> datetime.datetime:
+    """
+    Converts a string to a datetime object with UTC timezone
+
+    If the input string does not contain timezone information, UTC is assumed.
+    Supports both basic date strings like "2022-01-14" and datetime strings with optional timezone
+    like "2022-01-01T13:45:30+00:00".
+
+    Usage:
+    `"{{ str_to_datetime('2022-01-14') }}"`
+
+    :param s: string to parse as datetime
+    :return: datetime object in UTC timezone
+    """
+
     parsed_date = parser.isoparse(s)
     if not parsed_date.tzinfo:
         # Assume UTC if the input does not contain a timezone
