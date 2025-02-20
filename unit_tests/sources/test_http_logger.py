@@ -65,6 +65,7 @@ EMPTY_RESPONSE = {"body": {"content": ""}, "headers": {}, "status_code": 100}
                 "airbyte_cdk": {"stream": {"name": A_STREAM_NAME}},
                 "http": {
                     "title": A_TITLE,
+                    "type": "HTTP",
                     "description": A_DESCRIPTION,
                     "request": {"method": "GET", "body": {"content": None}, "headers": {}},
                     "response": EMPTY_RESPONSE,
@@ -85,6 +86,7 @@ EMPTY_RESPONSE = {"body": {"content": ""}, "headers": {}, "status_code": 100}
                 "airbyte_cdk": {"stream": {"name": A_STREAM_NAME}},
                 "http": {
                     "title": A_TITLE,
+                    "type": "HTTP",
                     "description": A_DESCRIPTION,
                     "request": {
                         "method": "GET",
@@ -109,6 +111,7 @@ EMPTY_RESPONSE = {"body": {"content": ""}, "headers": {}, "status_code": 100}
                 "airbyte_cdk": {"stream": {"name": A_STREAM_NAME}},
                 "http": {
                     "title": A_TITLE,
+                    "type": "HTTP",
                     "description": A_DESCRIPTION,
                     "request": {"method": "GET", "body": {"content": None}, "headers": {}},
                     "response": EMPTY_RESPONSE,
@@ -129,6 +132,7 @@ EMPTY_RESPONSE = {"body": {"content": ""}, "headers": {}, "status_code": 100}
                 "airbyte_cdk": {"stream": {"name": A_STREAM_NAME}},
                 "http": {
                     "title": A_TITLE,
+                    "type": "HTTP",
                     "description": A_DESCRIPTION,
                     "request": {
                         "method": "GET",
@@ -153,6 +157,7 @@ EMPTY_RESPONSE = {"body": {"content": ""}, "headers": {}, "status_code": 100}
                 "airbyte_cdk": {"stream": {"name": A_STREAM_NAME}},
                 "http": {
                     "title": A_TITLE,
+                    "type": "HTTP",
                     "description": A_DESCRIPTION,
                     "request": {
                         "method": "GET",
@@ -181,6 +186,7 @@ EMPTY_RESPONSE = {"body": {"content": ""}, "headers": {}, "status_code": 100}
                 "airbyte_cdk": {"stream": {"name": A_STREAM_NAME}},
                 "http": {
                     "title": A_TITLE,
+                    "type": "HTTP",
                     "description": A_DESCRIPTION,
                     "request": {
                         "method": "GET",
@@ -208,6 +214,7 @@ EMPTY_RESPONSE = {"body": {"content": ""}, "headers": {}, "status_code": 100}
                 "airbyte_cdk": {"stream": {"name": A_STREAM_NAME}},
                 "http": {
                     "title": A_TITLE,
+                    "type": "HTTP",
                     "description": A_DESCRIPTION,
                     "request": {
                         "method": "POST",

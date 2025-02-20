@@ -58,6 +58,7 @@ class SessionTokenProvider(TokenProvider):
                 "Obtains session token",
                 None,
                 is_auxiliary=True,
+                type="AUTH",
             ),
         )
         if response is None:
