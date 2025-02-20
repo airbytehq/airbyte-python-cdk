@@ -3751,6 +3751,9 @@ interpolation:
       return_type: datetime.datetime
       examples:
         - "{{ str_to_datetime('2022-01-14') }}"
+        - "{{ str_to_datetime('2022-01-01 13:45:30') }}"
+        - "{{ str_to_datetime('2022-01-01T13:45:30+00:00') }}"
+        - "{{ str_to_datetime('2022-01-01T13:45:30.123456Z') }}"
   filters:
     - title: hash
       description: Convert the specified value to a hashed string.
