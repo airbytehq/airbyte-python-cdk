@@ -3024,8 +3024,9 @@ class ModelToComponentFactory:
         )
 
     def create_rate(self, model: RateModel, config: Config, **kwargs: Any) -> Rate:
+        interpolated_limit = InterpolatedString.create(str(model.limit), parameters={})
         return Rate(
-            limit=model.limit,
+            limit=int(interpolated_limit.eval(config=config)),
             interval=parse_duration(model.interval),
         )
 
