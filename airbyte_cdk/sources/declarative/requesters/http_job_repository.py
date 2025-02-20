@@ -23,6 +23,7 @@ from airbyte_cdk.sources.declarative.extractors.response_to_file_extractor impor
 )
 from airbyte_cdk.sources.declarative.requesters.requester import Requester
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
+from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.utils import AirbyteTracedException
 
@@ -71,7 +72,15 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         """
 
         polling_response: Optional[requests.Response] = self.polling_requester.send_request(
-            stream_slice=stream_slice
+            stream_slice=stream_slice,
+            log_formatter=lambda polling_response: format_http_message(
+                response=polling_response,
+                title="Async Job -- Polling",
+                description="Poll the status of the server-side async job.",
+                stream_name=None,
+                is_auxiliary=True,
+                type="ASYNC_POLL",
+            ),
         )
         if polling_response is None:
             raise AirbyteTracedException(
@@ -118,8 +127,17 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         """
 
         response: Optional[requests.Response] = self.creation_requester.send_request(
-            stream_slice=stream_slice
+            stream_slice=stream_slice,
+            log_formatter=lambda response: format_http_message(
+                response=response,
+                title="Async Job -- Create",
+                description="Create the server-side async job.",
+                stream_name=None,
+                is_auxiliary=True,
+                type="ASYNC_CREATE",
+            ),
         )
+
         if not response:
             raise AirbyteTracedException(
                 internal_message="Always expect a response or an exception from creation_requester",
@@ -217,13 +235,33 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         if not self.abort_requester:
             return
 
-        self.abort_requester.send_request(stream_slice=self._get_create_job_stream_slice(job))
+        abort_response = self.abort_requester.send_request(
+            stream_slice=self._get_create_job_stream_slice(job),
+            log_formatter=lambda abort_response: format_http_message(
+                response=abort_response,
+                title="Async Job -- Abort",
+                description="Abort the running server-side async job.",
+                stream_name=None,
+                is_auxiliary=True,
+                type="ASYNC_ABORT",
+            ),
+        )
 
     def delete(self, job: AsyncJob) -> None:
         if not self.delete_requester:
             return
 
-        self.delete_requester.send_request(stream_slice=self._get_create_job_stream_slice(job))
+        delete_job_reponse = self.delete_requester.send_request(
+            stream_slice=self._get_create_job_stream_slice(job),
+            log_formatter=lambda delete_job_reponse: format_http_message(
+                response=delete_job_reponse,
+                title="Async Job -- Delete",
+                description="Delete the specified job from the list of Jobs.",
+                stream_name=None,
+                is_auxiliary=True,
+                type="ASYNC_DELETE",
+            ),
+        )
         self._clean_up_job(job.api_job_id())
 
     def _clean_up_job(self, job_id: str) -> None:
