@@ -91,7 +91,7 @@ def get_message_groups(
     current_page_request: Optional[HttpRequest] = None
     current_page_response: Optional[HttpResponse] = None
     latest_state_message: Optional[Dict[str, Any]] = None
-    slice_auxiliary_requests: Optional[List[AuxiliaryRequest]] = []
+    slice_auxiliary_requests: List[AuxiliaryRequest] = []
 
     while records_count < limit and (message := next(messages, None)):
         json_message = airbyte_message_to_json(message)

@@ -600,7 +600,7 @@ def handle_record_message(
 # -------
 
 
-def get_airbyte_cdk_from_message(json_message: Dict[str, JsonType]) -> dict:
+def get_airbyte_cdk_from_message(json_message: Dict[str, JsonType]) -> dict:  # type: ignore
     """
     Retrieves the "airbyte_cdk" dictionary from the provided JSON message.
 
@@ -626,7 +626,7 @@ def get_airbyte_cdk_from_message(json_message: Dict[str, JsonType]) -> dict:
     return airbyte_cdk
 
 
-def get_stream_from_airbyte_cdk(airbyte_cdk: dict) -> dict:
+def get_stream_from_airbyte_cdk(airbyte_cdk: dict) -> dict:  # type: ignore
     """
     Retrieves the "stream" dictionary from the provided "airbyte_cdk" dictionary.
 
@@ -651,14 +651,14 @@ def get_stream_from_airbyte_cdk(airbyte_cdk: dict) -> dict:
     return stream
 
 
-def get_auxiliary_request_title_prefix(stream: dict) -> str:
+def get_auxiliary_request_title_prefix(stream: dict) -> str:  # type: ignore
     """
     Generates a title prefix based on the stream type.
     """
     return "Parent stream: " if stream.get("is_substream", False) else ""
 
 
-def get_http_property_from_message(json_message: Dict[str, JsonType]) -> dict:
+def get_http_property_from_message(json_message: Dict[str, JsonType]) -> dict:  # type: ignore
     """
     Retrieves the "http" dictionary from the provided JSON message.
 
@@ -682,7 +682,7 @@ def get_http_property_from_message(json_message: Dict[str, JsonType]) -> dict:
     return http
 
 
-def get_auxiliary_request_type(stream: dict, http: dict) -> str:
+def get_auxiliary_request_type(stream: dict, http: dict) -> str:  # type: ignore
     """
     Determines the type of the auxiliary request based on the stream and HTTP properties.
     """
