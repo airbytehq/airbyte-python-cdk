@@ -121,33 +121,24 @@ def test_utc_datetime_to_local_timestamp_conversion():
     """
     assert macros["format_datetime"](dt="2020-10-01T00:00:00Z", format="%s") == "1601510400"
 
+
 @pytest.mark.parametrize(
     "test_name, input_value, input_format, expected_output",
     [
-        (
-            "test_basic_date",
-            "2022-01-01",
-            "%Y-%m-%d",
-            datetime.datetime(2022, 1, 1)
-        ),
+        ("test_basic_date", "2022-01-01", "%Y-%m-%d", datetime.datetime(2022, 1, 1)),
         (
             "test_datetime_with_time",
             "2022-01-01 13:45:30",
             "%Y-%m-%d %H:%M:%S",
-            datetime.datetime(2022, 1, 1, 13, 45, 30)
+            datetime.datetime(2022, 1, 1, 13, 45, 30),
         ),
         (
             "test_datetime_with_timezone",
             "2022-01-01T13:45:30+00:00",
             "%Y-%m-%dT%H:%M:%S%z",
-            datetime.datetime(2022, 1, 1, 13, 45, 30, tzinfo=datetime.timezone.utc)
+            datetime.datetime(2022, 1, 1, 13, 45, 30, tzinfo=datetime.timezone.utc),
         ),
-        (
-            "test_datetime_custom_format",
-            "01/Jan/2022",
-            "%d/%b/%Y",
-            datetime.datetime(2022, 1, 1)
-        ),
+        ("test_datetime_custom_format", "01/Jan/2022", "%d/%b/%Y", datetime.datetime(2022, 1, 1)),
     ],
 )
 def test_str_to_datetime(test_name, input_value, input_format, expected_output):
