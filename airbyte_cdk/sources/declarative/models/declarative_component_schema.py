@@ -646,7 +646,7 @@ class Rate(BaseModel):
     class Config:
         extra = Extra.allow
 
-    limit: int = Field(
+    limit: Union[int, str] = Field(
         ...,
         description="The maximum number of calls allowed within the interval.",
         title="Limit",
