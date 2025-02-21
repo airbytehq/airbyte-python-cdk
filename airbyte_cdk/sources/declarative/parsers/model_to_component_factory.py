@@ -2091,10 +2091,10 @@ class ModelToComponentFactory:
     def create_json_decoder(model: JsonDecoderModel, config: Config, **kwargs: Any) -> Decoder:
         return JsonDecoder(parameters={})
 
-    @staticmethod
-    def create_csv_decoder(model: CsvDecoderModel, config: Config, **kwargs: Any) -> Decoder:
+    def create_csv_decoder(self, model: CsvDecoderModel, config: Config, **kwargs: Any) -> Decoder:
         return CompositeRawDecoder(
-            parser=ModelToComponentFactory._get_parser(model, config), stream_response=True
+            parser=ModelToComponentFactory._get_parser(model, config),
+            stream_response=False if self._emit_connector_builder_messages else True,
         )
 
     @staticmethod
