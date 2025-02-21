@@ -44,6 +44,7 @@ from airbyte_cdk.sources.declarative.types import ConnectionDefinition
 from airbyte_cdk.sources.source import TState
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
+from airbyte_cdk.sources.streams.concurrent.abstract_stream_facade import AbstractStreamFacade
 from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
     AlwaysAvailableAvailabilityStrategy,
 )
@@ -117,6 +118,12 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             slice_logger=self._slice_logger,
             message_repository=self.message_repository,
         )
+
+    # TODO: Remove this. This property is necessary to safely migrate Stripe during the transition state.
+    @property
+    def is_partially_declarative(self) -> bool:
+        """This flag used to avoid unexpected AbstractStreamFacade processing as concurrent streams."""
+        return False
 
     def read(
         self,
@@ -369,6 +376,14 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     )
                 else:
                     synchronous_streams.append(declarative_stream)
+            # TODO: Remove this. This check is necessary to safely migrate Stripe during the transition state.
+            # Condition below needs to ensure that concurrent support is not lost for sources that already support
+            # it before migration, but now are only partially migrated to declarative implementation (e.g., Stripe).
+            elif (
+                isinstance(declarative_stream, AbstractStreamFacade)
+                and self.is_partially_declarative
+            ):
+                concurrent_streams.append(declarative_stream.get_underlying_stream())
             else:
                 synchronous_streams.append(declarative_stream)
 

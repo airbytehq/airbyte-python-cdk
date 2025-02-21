@@ -1490,7 +1490,11 @@ definitions:
       limit:
         title: Limit
         description: The maximum number of calls allowed within the interval.
-        type: integer
+        anyOf:
+          - type: integer
+          - type: string
+        interpolation_context:
+          - config
       interval:
         title: Interval
         description: The time interval for the rate limit.
