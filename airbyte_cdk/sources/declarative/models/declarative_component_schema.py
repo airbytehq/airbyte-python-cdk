@@ -1943,10 +1943,12 @@ class DeclarativeStream(BaseModel):
         extra = Extra.allow
 
     type: Literal["DeclarativeStream"]
-    retriever: Union[AsyncRetriever, CustomRetriever, SimpleRetriever] = Field(
-        ...,
-        description="Component used to coordinate how records are extracted across stream slices and request pages.",
-        title="Retriever",
+    retriever: Union[AsyncRetriever, CustomRetriever, SimpleRetriever, StateDelegatingRetriever] = (
+        Field(
+            ...,
+            description="Component used to coordinate how records are extracted across stream slices and request pages.",
+            title="Retriever",
+        )
     )
     incremental_sync: Optional[Union[CustomIncrementalSync, DatetimeBasedCursor]] = Field(
         None,
@@ -2202,6 +2204,25 @@ class ParentStreamConfig(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class StateDelegatingRetriever(BaseModel):
+    type: Literal["StateDelegatingRetriever"]
+    ignore_first_request_options_provider: Optional[bool] = Field(
+        False,
+        description="If set to true, slice request options will be ignored when sending requests.",
+    )
+    incremental_data_retriever: Union[AsyncRetriever, CustomRetriever, SimpleRetriever] = Field(
+        ...,
+        description="Component used to coordinate how records are extracted across stream slices and request pages.",
+        title="Retriever",
+    )
+    full_data_retriever: Union[AsyncRetriever, CustomRetriever, SimpleRetriever] = Field(
+        ...,
+        description="Component used to coordinate how records are extracted across stream slices and request pages.",
+        title="Retriever",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class SimpleRetriever(BaseModel):
     type: Literal["SimpleRetriever"]
     record_selector: RecordSelector = Field(
@@ -2387,5 +2408,6 @@ SelectiveAuthenticator.update_forward_refs()
 DeclarativeStream.update_forward_refs()
 SessionTokenAuthenticator.update_forward_refs()
 DynamicSchemaLoader.update_forward_refs()
+StateDelegatingRetriever.update_forward_refs()
 SimpleRetriever.update_forward_refs()
 AsyncRetriever.update_forward_refs()

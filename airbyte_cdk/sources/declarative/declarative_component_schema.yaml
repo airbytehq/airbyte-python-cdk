@@ -1312,6 +1312,7 @@ definitions:
           - "$ref": "#/definitions/AsyncRetriever"
           - "$ref": "#/definitions/CustomRetriever"
           - "$ref": "#/definitions/SimpleRetriever"
+          - "$ref": "#/definitions/StateDelegatingRetriever"
       incremental_sync:
         title: Incremental Sync
         description: Component used to fetch data incrementally based on a time field in the data.
@@ -3095,6 +3096,38 @@ definitions:
         type: string
         examples:
           - "user/current"
+      $parameters:
+        type: object
+        additionalProperties: true
+  StateDelegatingRetriever:
+    description: Test state condition retriever.
+    type: object
+    required:
+      - type
+      - incremental_data_retriever
+      - full_data_retriever
+    properties:
+      type:
+        type: string
+        enum: [ StateDelegatingRetriever ]
+      ignore_first_request_options_provider:
+        description: If set to true, slice request options will be ignored when sending requests.
+        type: boolean
+        default: false
+      incremental_data_retriever:
+        title: Retriever
+        description: Component used to coordinate how records are extracted across stream slices and request pages.
+        anyOf:
+          - "$ref": "#/definitions/AsyncRetriever"
+          - "$ref": "#/definitions/CustomRetriever"
+          - "$ref": "#/definitions/SimpleRetriever"
+      full_data_retriever:
+        title: Retriever
+        description: Component used to coordinate how records are extracted across stream slices and request pages.
+        anyOf:
+          - "$ref": "#/definitions/AsyncRetriever"
+          - "$ref": "#/definitions/CustomRetriever"
+          - "$ref": "#/definitions/SimpleRetriever"
       $parameters:
         type: object
         additionalProperties: true
