@@ -3144,7 +3144,6 @@ def test_given_unfinished_first_parent_partition_no_parent_state_update():
             DeclarativePartition("test_stream", {}, MagicMock(), MagicMock(), slice)
         )
     cursor.ensure_at_least_one_state_emitted()
-    print(cursor.state)
 
     state = cursor.state
     assert state == {
@@ -3229,7 +3228,6 @@ def test_given_unfinished_last_parent_partition_with_partial_parent_state_update
             DeclarativePartition("test_stream", {}, MagicMock(), MagicMock(), slice)
         )
     cursor.ensure_at_least_one_state_emitted()
-    print(cursor.state)
 
     state = cursor.state
     assert state == {

@@ -251,7 +251,6 @@ class ConcurrentPerPartitionCursor(Cursor):
         self._message_repository.emit_message(state_message)
 
     def stream_slices(self) -> Iterable[StreamSlice]:
-        print("stream_slices")
         if self._timer.is_running():
             raise RuntimeError("stream_slices has been executed more than once.")
 
