@@ -2103,10 +2103,12 @@ class ModelToComponentFactory:
             parser=ModelToComponentFactory._get_parser(model, config), stream_response=True
         )
 
-    @staticmethod
-    def create_gzip_decoder(model: GzipDecoderModel, config: Config, **kwargs: Any) -> Decoder:
+    def create_gzip_decoder(
+        self, model: GzipDecoderModel, config: Config, **kwargs: Any
+    ) -> Decoder:
         return CompositeRawDecoder(
-            parser=ModelToComponentFactory._get_parser(model, config), stream_response=True
+            parser=ModelToComponentFactory._get_parser(model, config),
+            stream_response=False if self._emit_connector_builder_messages else True,
         )
 
     @staticmethod
