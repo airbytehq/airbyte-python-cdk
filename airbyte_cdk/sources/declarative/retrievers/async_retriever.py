@@ -78,7 +78,7 @@ class AsyncRetriever(Retriever):
         """
         return stream_slice.extra_fields.get("jobs", []) if stream_slice else []
 
-    def _get_cursor_slice_info(
+    def _get_cursor_slice(
         self,
         stream_slice: Optional[StreamSlice] = None,
     ) -> Mapping[str, Any]:
@@ -106,7 +106,7 @@ class AsyncRetriever(Retriever):
     ) -> Iterable[StreamData]:
         # emit the slice_descriptor log message, for connector builder TestRead
         yield self.slice_logger.create_slice_log_message(
-            self._get_cursor_slice_info(stream_slice),
+            self._get_cursor_slice(stream_slice),
         )
         stream_state: StreamState = self._get_stream_state()
         jobs: Iterable[AsyncJob] = self._validate_and_get_stream_slice_jobs(stream_slice)
