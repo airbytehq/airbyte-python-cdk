@@ -537,6 +537,7 @@ def test_read():
                         "pages": [{"records": [real_record], "request": None, "response": None}],
                         "slice_descriptor": None,
                         "state": None,
+                        "auxiliary_requests": None,
                     }
                 ],
                 "test_read_limit_reached": False,

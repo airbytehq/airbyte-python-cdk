@@ -15,11 +15,14 @@ def format_http_message(
     description: str,
     stream_name: Optional[str],
     is_auxiliary: bool | None = None,
+    type: Optional[str] = None,
 ) -> LogMessage:
+    request_type: str = type if type else "HTTP"
     request = response.request
     log_message = {
         "http": {
             "title": title,
+            "type": request_type,
             "description": description,
             "request": {
                 "method": request.method,
