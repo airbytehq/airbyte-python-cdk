@@ -78,24 +78,6 @@ class AsyncRetriever(Retriever):
         """
         return stream_slice.extra_fields.get("jobs", []) if stream_slice else []
 
-    def _get_cursor_slice(
-        self,
-        stream_slice: Optional[StreamSlice] = None,
-    ) -> Mapping[str, Any]:
-        """
-        Retrieve the cursor slice information from a provided stream slice.
-
-        This method checks if a stream slice is provided and contains a 'cursor_slice' attribute.
-        If present, it returns the value of 'cursor_slice' as a dictionary. Otherwise, it returns an empty dictionary.
-
-        Args:
-            stream_slice (Optional[StreamSlice]): An optional stream slice object that may include a 'cursor_slice' attribute.
-
-        Returns:
-            Mapping[str, Any]: A dictionary containing the cursor slice information if available, otherwise an empty dictionary.
-        """
-        return stream_slice.cursor_slice if stream_slice and stream_slice.cursor_slice else {}
-
     def stream_slices(self) -> Iterable[Optional[StreamSlice]]:
         yield from self.stream_slicer.stream_slices()
 
@@ -105,9 +87,8 @@ class AsyncRetriever(Retriever):
         stream_slice: Optional[StreamSlice] = None,
     ) -> Iterable[StreamData]:
         # emit the slice_descriptor log message, for connector builder TestRead
-        yield self.slice_logger.create_slice_log_message(
-            self._get_cursor_slice(stream_slice),
-        )
+        yield self.slice_logger.create_slice_log_message(stream_slice.cursor_slice)  # type: ignore
+
         stream_state: StreamState = self._get_stream_state()
         jobs: Iterable[AsyncJob] = self._validate_and_get_stream_slice_jobs(stream_slice)
         records: Iterable[Mapping[str, Any]] = self.stream_slicer.fetch_records(jobs)
