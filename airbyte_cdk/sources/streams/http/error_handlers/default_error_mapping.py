@@ -11,8 +11,14 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
     ErrorResolution,
     ResponseAction,
 )
+from airbyte_cdk.sources.streams.http.exceptions import DNSResolutionError
 
 DEFAULT_ERROR_MAPPING: Mapping[Union[int, str, Type[Exception]], ErrorResolution] = {
+    DNSResolutionError: ErrorResolution(
+        response_action=ResponseAction.RETRY,
+        failure_type=FailureType.transient_error,
+        error_message="Temporary DNS resolution error occurred. Retrying...",
+    ),
     InvalidSchema: ErrorResolution(
         response_action=ResponseAction.FAIL,
         failure_type=FailureType.config_error,

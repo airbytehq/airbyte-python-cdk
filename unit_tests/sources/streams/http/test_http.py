@@ -10,6 +10,7 @@ from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 import requests
+from requests.exceptions import ConnectionError, InvalidURL
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, SyncMode, Type
 from airbyte_cdk.sources.streams import CheckpointMixin
@@ -20,9 +21,13 @@ from airbyte_cdk.sources.streams.checkpoint.substream_resumable_full_refresh_cur
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.streams.http import HttpStream, HttpSubStream
 from airbyte_cdk.sources.streams.http.error_handlers import ErrorHandler, HttpStatusErrorHandler
-from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
+from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
+    FailureType,
+    ResponseAction,
+)
 from airbyte_cdk.sources.streams.http.exceptions import (
     DefaultBackoffException,
+    DNSResolutionError,
     RequestBodyException,
     UserDefinedBackoffException,
 )
@@ -325,6 +330,53 @@ def test_raise_on_http_errors(mocker, error):
     mocker.patch("time.sleep", lambda x: None)
     stream = AutoFailFalseHttpStream()
     send_mock = mocker.patch.object(requests.Session, "send", side_effect=error())
+
+    with pytest.raises(DefaultBackoffException):
+        list(stream.read_records(SyncMode.full_refresh))
+    assert send_mock.call_count == stream.max_retries + 1
+
+
+class StubHttpStreamWithErrorHandler(StubBasicReadHttpStream):
+    def get_error_handler(self) -> Optional[ErrorHandler]:
+        return HttpStatusErrorHandler(logging.getLogger())
+
+
+def test_dns_resolution_error_retry():
+    """Test that DNS resolution errors are retried"""
+    stream = StubHttpStreamWithErrorHandler()
+    error_handler = stream.get_error_handler()
+    request = requests.PreparedRequest()
+    request.url = "https://example.com"
+    dns_error = DNSResolutionError(
+        url="https://example.com", request=request, response=Exception("DNS lookup failed")
+    )
+    resolution = error_handler.interpret_response(dns_error)
+    assert resolution.response_action == ResponseAction.RETRY
+    assert resolution.failure_type == FailureType.transient_error
+
+
+def test_invalid_url_fails():
+    """Test that invalid URLs fail immediately"""
+    stream = StubHttpStreamWithErrorHandler()
+    error_handler = stream.get_error_handler()
+    resolution = error_handler.interpret_response(InvalidURL())
+    assert resolution.response_action == ResponseAction.FAIL
+    assert resolution.failure_type == FailureType.config_error
+
+
+def test_dns_resolution_error_retry_with_connection_error():
+    """Test that DNS resolution errors from ConnectionError are properly handled"""
+    stream = StubHttpStreamWithErrorHandler()
+    send_mock = MagicMock(
+        side_effect=requests.ConnectionError(
+            "HTTPSConnectionPool(host='api.example.com', port=443): "
+            "Max retries exceeded with url: /v1/data (Caused by "
+            'NameResolutionError("<urllib3.connection.HTTPSConnection '
+            "object at 0x7f9b1c1b3d30>: Failed to resolve 'api.example.com' "
+            '(Name or service not known)"))'
+        )
+    )
+    stream._http_client._session.send = send_mock
 
     with pytest.raises(DefaultBackoffException):
         list(stream.read_records(SyncMode.full_refresh))

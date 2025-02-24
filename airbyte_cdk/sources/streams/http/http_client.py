@@ -36,6 +36,7 @@ from airbyte_cdk.sources.streams.http.error_handlers import (
 )
 from airbyte_cdk.sources.streams.http.exceptions import (
     DefaultBackoffException,
+    DNSResolutionError,
     RateLimitBackoffException,
     RequestBodyException,
     UserDefinedBackoffException,
@@ -300,6 +301,16 @@ class HttpClient:
 
         try:
             response = self._session.send(request, **request_kwargs)
+        except requests.ConnectionError as e:
+            if "Name or service not known" in str(e) or "nodename nor servname provided" in str(e):
+                assert (
+                    request.url is not None
+                ), "Request URL cannot be None for DNS resolution error"
+                exc = DNSResolutionError(
+                    url=request.url, request=request, response=e, error_message=str(e)
+                )
+            else:
+                exc = e
         except requests.RequestException as e:
             exc = e
 
