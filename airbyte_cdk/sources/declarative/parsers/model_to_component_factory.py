@@ -246,6 +246,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     HttpResponseFilter as HttpResponseFilterModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    IncrementingCountCursor as IncrementingCountCursorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     InlineSchemaLoader as InlineSchemaLoaderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -496,6 +499,9 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_sta
     CustomFormatConcurrentStreamStateConverter,
     DateTimeStreamStateConverter,
 )
+from airbyte_cdk.sources.streams.concurrent.state_converters.incrementing_count_stream_state_converter import (
+    IncrementingCountStreamStateConverter,
+)
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
@@ -584,6 +590,7 @@ class ModelToComponentFactory:
             FlattenFieldsModel: self.create_flatten_fields,
             DpathFlattenFieldsModel: self.create_dpath_flatten_fields,
             IterableDecoderModel: self.create_iterable_decoder,
+            IncrementingCountCursorModel: self.create_incrementing_count_cursor,
             XmlDecoderModel: self.create_xml_decoder,
             JsonFileSchemaLoaderModel: self.create_json_file_schema_loader,
             DynamicSchemaLoaderModel: self.create_dynamic_schema_loader,
@@ -1189,6 +1196,70 @@ class ModelToComponentFactory:
             clamping_strategy=clamping_strategy,
         )
 
+    def create_concurrent_cursor_from_incrementing_count_cursor(
+        self,
+        model_type: Type[BaseModel],
+        component_definition: ComponentDefinition,
+        stream_name: str,
+        stream_namespace: Optional[str],
+        config: Config,
+        message_repository: Optional[MessageRepository] = None,
+        **kwargs: Any,
+    ) -> ConcurrentCursor:
+        # Per-partition incremental streams can dynamically create child cursors which will pass their current
+        # state via the stream_state keyword argument. Incremental syncs without parent streams use the
+        # incoming state and connector_state_manager that is initialized when the component factory is created
+        stream_state = (
+            self._connector_state_manager.get_stream_state(stream_name, stream_namespace)
+            if "stream_state" not in kwargs
+            else kwargs["stream_state"]
+        )
+
+        component_type = component_definition.get("type")
+        if component_definition.get("type") != model_type.__name__:
+            raise ValueError(
+                f"Expected manifest component of type {model_type.__name__}, but received {component_type} instead"
+            )
+
+        incrementing_count_cursor_model = model_type.parse_obj(component_definition)
+
+        if not isinstance(incrementing_count_cursor_model, IncrementingCountCursorModel):
+            raise ValueError(
+                f"Expected {model_type.__name__} component, but received {incrementing_count_cursor_model.__class__.__name__}"
+            )
+
+        interpolated_start_value = (
+            InterpolatedString.create(
+                incrementing_count_cursor_model.start_value,  # type: ignore
+                parameters=incrementing_count_cursor_model.parameters or {},
+            )
+            if incrementing_count_cursor_model.start_value
+            else 0
+        )
+
+        interpolated_cursor_field = InterpolatedString.create(
+            incrementing_count_cursor_model.cursor_field,
+            parameters=incrementing_count_cursor_model.parameters or {},
+        )
+        cursor_field = CursorField(interpolated_cursor_field.eval(config=config))
+
+        connector_state_converter = IncrementingCountStreamStateConverter(
+            is_sequential_state=True,  # ConcurrentPerPartitionCursor only works with sequential state
+        )
+
+        return ConcurrentCursor(
+            stream_name=stream_name,
+            stream_namespace=stream_namespace,
+            stream_state=stream_state,
+            message_repository=message_repository or self._message_repository,
+            connector_state_manager=self._connector_state_manager,
+            connector_state_converter=connector_state_converter,
+            cursor_field=cursor_field,
+            slice_boundary_fields=None,
+            start=interpolated_start_value,  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
+            end_provider=connector_state_converter.get_end_provider(),  # type: ignore  # Having issues w/ inspection for GapType and CursorValueType as shown in existing tests. Confirmed functionality is working in practice
+        )
+
     def _assemble_weekday(self, weekday: str) -> Weekday:
         match weekday:
             case "MONDAY":
@@ -1619,6 +1690,31 @@ class ModelToComponentFactory:
                 end_time_option=end_time_option,
                 partition_field_start=cursor_model.partition_field_end,
                 partition_field_end=cursor_model.partition_field_end,
+                config=config,
+                parameters=model.parameters or {},
+            )
+        elif model.incremental_sync and isinstance(
+            model.incremental_sync, IncrementingCountCursorModel
+        ):
+            cursor_model: IncrementingCountCursorModel = model.incremental_sync  # type: ignore
+
+            start_time_option = (
+                self._create_component_from_model(
+                    cursor_model.start_value_option,  # type: ignore # mypy still thinks cursor_model of type DatetimeBasedCursor
+                    config,
+                    parameters=cursor_model.parameters or {},
+                )
+                if cursor_model.start_value_option  # type: ignore # mypy still thinks cursor_model of type DatetimeBasedCursor
+                else None
+            )
+
+            # The concurrent engine defaults the start/end fields on the slice to "start" and "end", but
+            # the default DatetimeBasedRequestOptionsProvider() sets them to start_time/end_time
+            partition_field_start = "start"
+
+            request_options_provider = DatetimeBasedRequestOptionsProvider(
+                start_time_option=start_time_option,
+                partition_field_start=partition_field_start,
                 config=config,
                 parameters=model.parameters or {},
             )
@@ -2109,6 +2205,22 @@ class ModelToComponentFactory:
         return CompositeRawDecoder(
             parser=ModelToComponentFactory._get_parser(model, config),
             stream_response=False if self._emit_connector_builder_messages else True,
+        )
+
+    @staticmethod
+    def create_incrementing_count_cursor(
+        model: IncrementingCountCursorModel, config: Config, **kwargs: Any
+    ) -> DatetimeBasedCursor:
+        # This should not actually get used anywhere at runtime, but needed to add this to pass checks since
+        # we still parse models into components. The issue is that there's no runtime implementation of a
+        # IncrementingCountCursor.
+        # A known and expected issue with this stub is running a check with the declared IncrementingCountCursor because it is run without ConcurrentCursor.
+        return DatetimeBasedCursor(
+            cursor_field=model.cursor_field,
+            datetime_format="%Y-%m-%d",
+            start_datetime="2024-12-12",
+            config=config,
+            parameters={},
         )
 
     @staticmethod

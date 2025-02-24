@@ -4,7 +4,7 @@
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import TYPE_CHECKING, Any, List, MutableMapping, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, List, MutableMapping, Optional, Tuple
 
 if TYPE_CHECKING:
     from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 class ConcurrencyCompatibleStateType(Enum):
     date_range = "date-range"
+    integer = "integer"
 
 
 class AbstractStreamStateConverter(ABC):
