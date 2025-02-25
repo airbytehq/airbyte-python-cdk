@@ -1,8 +1,8 @@
 # AsyncHttpJobRepository sequence diagram
 
 - Components marked as optional are not required and can be ignored.
-- if `url_requester` is not provided, `download_target_extractor` will get urls from the `polling_job_response`
-- interpolation_context, e.g. `create_job_response` or `polling_job_response` can be obtained from stream_slice
+- if `url_requester` is not provided, `download_target_extractor` will get urls from the `polling_response`
+- interpolation_context, e.g. `creation_response` or `polling_response` can be obtained from stream_slice
 
 ```mermaid
 ---
@@ -25,14 +25,14 @@ sequenceDiagram
 
     loop Poll for job status
         AsyncHttpJobRepository ->> PollingRequester: Check job status
-        PollingRequester ->> Reporting Server: Status request (interpolation_context: `create_job_response`)
+        PollingRequester ->> Reporting Server: Status request (interpolation_context: `creation_response`)
         Reporting Server -->> PollingRequester: Status response
         PollingRequester -->> AsyncHttpJobRepository: Job status
     end
 
     alt Status: Ready
         AsyncHttpJobRepository ->> UrlRequester: Request download URLs (if applicable)
-        UrlRequester ->> Reporting Server: URL request (interpolation_context: `polling_job_response`)
+        UrlRequester ->> Reporting Server: URL request (interpolation_context: `polling_response`)
         Reporting Server -->> UrlRequester: Download URLs
         UrlRequester -->> AsyncHttpJobRepository: Download URLs
 

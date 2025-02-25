@@ -3615,7 +3615,7 @@ def test_create_async_retriever():
         "status_extractor": {"type": "DpathExtractor", "field_path": ["status"]},
         "polling_requester": {
             "type": "HttpRequester",
-            "path": "/v3/marketing/contacts/exports/{{stream_slice['create_job_response'].json()['id'] }}",
+            "path": "/v3/marketing/contacts/exports/{{creation_response['id'] }}",
             "url_base": "https://api.sendgrid.com",
             "http_method": "GET",
             "authenticator": {
@@ -3635,19 +3635,19 @@ def test_create_async_retriever():
         },
         "download_requester": {
             "type": "HttpRequester",
-            "path": "{{stream_slice['url']}}",
+            "path": "{{download_target}}",
             "url_base": "",
             "http_method": "GET",
         },
         "abort_requester": {
             "type": "HttpRequester",
-            "path": "{{stream_slice['url']}}/abort",
+            "path": "{{download_target}}/abort",
             "url_base": "",
             "http_method": "POST",
         },
         "delete_requester": {
             "type": "HttpRequester",
-            "path": "{{stream_slice['url']}}",
+            "path": "{{download_target}}",
             "url_base": "",
             "http_method": "POST",
         },

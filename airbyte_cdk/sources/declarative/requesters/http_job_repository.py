@@ -284,11 +284,11 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         if not self.url_requester:
             url_response = self._polling_job_response_by_id[job.api_job_id()]
         else:
+            polling_response = self._polling_job_response_by_id[job.api_job_id()].json()
             stream_slice: StreamSlice = StreamSlice(
-                partition={
-                    "polling_job_response": self._polling_job_response_by_id[job.api_job_id()]
-                },
+                partition={},
                 cursor_slice={},
+                extra_fields={"polling_response": polling_response},
             )
             url_response = self.url_requester.send_request(stream_slice=stream_slice)  # type: ignore # we expect url_requester to always be presented, otherwise raise an exception as we cannot proceed with the report
             if not url_response:

@@ -1780,6 +1780,7 @@ definitions:
           - stream_partition
           - stream_slice
           - creation_response
+          - polling_response
           - download_target
         examples:
           - "/products"
@@ -3671,6 +3672,11 @@ interpolation:
             count: 82
     - title: creation_response
       description: The response received from the creation_requester in the AsyncRetriever component.
+      type: object
+      examples:
+        - id: "1234"
+    - title: polling_response
+      description: The response received from the polling_requester in the AsyncRetriever component.
       type: object
       examples:
         - id: "1234"
