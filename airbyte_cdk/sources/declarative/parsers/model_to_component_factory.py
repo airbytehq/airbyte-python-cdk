@@ -2757,8 +2757,8 @@ class ModelToComponentFactory:
         status_extractor = self._create_component_from_model(
             model=model.status_extractor, decoder=decoder, config=config, name=name
         )
-        urls_extractor = self._create_component_from_model(
-            model=model.urls_extractor, decoder=decoder, config=config, name=name
+        download_target_extractor = self._create_component_from_model(
+            model=model.download_target_extractor, decoder=decoder, config=config, name=name
         )
         job_repository: AsyncJobRepository = AsyncHttpJobRepository(
             creation_requester=creation_requester,
@@ -2769,7 +2769,7 @@ class ModelToComponentFactory:
             delete_requester=delete_requester,
             status_extractor=status_extractor,
             status_mapping=self._create_async_job_status_mapping(model.status_mapping, config),
-            urls_extractor=urls_extractor,
+            download_target_extractor=download_target_extractor,
         )
 
         async_job_partition_router = AsyncJobPartitionRouter(

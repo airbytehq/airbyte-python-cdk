@@ -3607,7 +3607,7 @@ def test_create_async_retriever():
             "timeout": ["timeout"],
             "completed": ["ready"],
         },
-        "urls_extractor": {"type": "DpathExtractor", "field_path": ["urls"]},
+        "download_target_extractor": {"type": "DpathExtractor", "field_path": ["urls"]},
         "record_selector": {
             "type": "RecordSelector",
             "extractor": {"type": "DpathExtractor", "field_path": ["data"]},
@@ -3681,7 +3681,7 @@ def test_create_async_retriever():
     assert job_repository.abort_requester
     assert job_repository.delete_requester
     assert job_repository.status_extractor
-    assert job_repository.urls_extractor
+    assert job_repository.download_target_extractor
 
     selector = component.record_selector
     extractor = selector.extractor

@@ -299,7 +299,7 @@ _MANIFEST = {
                     "timeout": ["timeout"],
                     "completed": ["ready"],
                 },
-                "urls_extractor": {"type": "DpathExtractor", "field_path": ["urls"]},
+                "download_target_extractor": {"type": "DpathExtractor", "field_path": ["urls"]},
                 "record_selector": {
                     "type": "RecordSelector",
                     "extractor": {"type": "DpathExtractor", "field_path": []},

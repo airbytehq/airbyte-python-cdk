@@ -1779,6 +1779,8 @@ definitions:
           - stream_interval
           - stream_partition
           - stream_slice
+          - creation_response
+          - download_target
         examples:
           - "/products"
           - "/quotes/{{ stream_partition['id'] }}/quote_line_groups"
@@ -3223,7 +3225,7 @@ definitions:
       - polling_requester
       - download_requester
       - status_extractor
-      - urls_extractor
+      - download_target_extractor
     properties:
       type:
         type: string
@@ -3240,7 +3242,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/CustomRecordExtractor"
           - "$ref": "#/definitions/DpathExtractor"
-      urls_extractor:
+      download_target_extractor:
         description: Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.
         anyOf:
           - "$ref": "#/definitions/CustomRecordExtractor"
@@ -3667,6 +3669,16 @@ interpolation:
             self: https://api.sendgrid.com/v3/marketing/lists?page_size=1&page_token=
             next: https://api.sendgrid.com/v3/marketing/lists?page_size=1&page_token=0236d6d2
             count: 82
+    - title: creation_response
+      description: The response received from the creation_requester in the AsyncRetriever component.
+      type: object
+      examples:
+        - id: "1234"
+    - title: download_target
+      description: The `URL` received from the polling_requester in the AsyncRetriever with jobStatus as `COMPLETED`.
+      type: string
+      examples:
+        - url: "https://api.sendgrid.com/v3/marketing/lists?page_size=1&page_token=0236d6d2&filename=xxx_yyy_zzz.csv"
     - title: stream_interval
       description: The current stream interval being processed. The keys are defined by the incremental sync component. Default keys are `start_time` and `end_time`.
       type: object

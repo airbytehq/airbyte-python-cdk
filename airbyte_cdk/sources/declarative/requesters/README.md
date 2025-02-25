@@ -1,7 +1,7 @@
 # AsyncHttpJobRepository sequence diagram
 
 - Components marked as optional are not required and can be ignored.
-- if `url_requester` is not provided, `urls_extractor` will get urls from the `polling_job_response`
+- if `url_requester` is not provided, `download_target_extractor` will get urls from the `polling_job_response`
 - interpolation_context, e.g. `create_job_response` or `polling_job_response` can be obtained from stream_slice
 
 ```mermaid

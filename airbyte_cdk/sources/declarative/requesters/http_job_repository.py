@@ -43,7 +43,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
     delete_requester: Optional[Requester]
     status_extractor: DpathExtractor
     status_mapping: Mapping[str, AsyncJobStatus]
-    urls_extractor: DpathExtractor
+    download_target_extractor: DpathExtractor
 
     job_timeout: Optional[timedelta] = None
     record_extractor: RecordExtractor = field(
@@ -216,7 +216,10 @@ class AsyncHttpJobRepository(AsyncJobRepository):
             stream_slice = StreamSlice(
                 partition=job_slice.partition,
                 cursor_slice=job_slice.cursor_slice,
-                extra_fields={**job_slice.extra_fields, "url": url},
+                extra_fields={
+                    **job_slice.extra_fields,
+                    "download_target": url,
+                },
             )
             for message in self.download_retriever.read_records({}, stream_slice):
                 if isinstance(message, Record):
@@ -269,9 +272,11 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         del self._polling_job_response_by_id[job_id]
 
     def _get_create_job_stream_slice(self, job: AsyncJob) -> StreamSlice:
+        creation_response = self._create_job_response_by_id[job.api_job_id()].json()
         stream_slice = StreamSlice(
-            partition={"create_job_response": self._create_job_response_by_id[job.api_job_id()]},
+            partition={},
             cursor_slice={},
+            extra_fields={"creation_response": creation_response},
         )
         return stream_slice
 
@@ -292,4 +297,4 @@ class AsyncHttpJobRepository(AsyncJobRepository):
                     failure_type=FailureType.system_error,
                 )
 
-        yield from self.urls_extractor.extract_records(url_response)  # type: ignore # we expect urls_extractor to always return list of strings
+        yield from self.download_target_extractor.extract_records(url_response)  # type: ignore # we expect download_target_extractor to always return list of strings
