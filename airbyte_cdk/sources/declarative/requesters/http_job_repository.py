@@ -211,14 +211,14 @@ class AsyncHttpJobRepository(AsyncJobRepository):
 
         """
 
-        for url in self._get_download_url(job):
+        for target_url in self._get_download_targets(job):
             job_slice = job.job_parameters()
             stream_slice = StreamSlice(
                 partition=job_slice.partition,
                 cursor_slice=job_slice.cursor_slice,
                 extra_fields={
                     **job_slice.extra_fields,
-                    "download_target": url,
+                    "download_target": target_url,
                 },
             )
             for message in self.download_retriever.read_records({}, stream_slice):
@@ -280,7 +280,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         )
         return stream_slice
 
-    def _get_download_url(self, job: AsyncJob) -> Iterable[str]:
+    def _get_download_targets(self, job: AsyncJob) -> Iterable[str]:
         if not self.url_requester:
             url_response = self._polling_job_response_by_id[job.api_job_id()]
         else:
