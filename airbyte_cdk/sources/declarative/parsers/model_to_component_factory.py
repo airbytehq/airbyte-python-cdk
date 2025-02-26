@@ -2744,14 +2744,14 @@ class ModelToComponentFactory:
             if model.delete_requester
             else None
         )
-        url_requester = (
+        download_target_requester = (
             self._create_component_from_model(
-                model=model.url_requester,
+                model=model.download_target_requester,
                 decoder=decoder,
                 config=config,
                 name=f"job extract_url - {name}",
             )
-            if model.url_requester
+            if model.download_target_requester
             else None
         )
         status_extractor = self._create_component_from_model(
@@ -2764,7 +2764,7 @@ class ModelToComponentFactory:
             creation_requester=creation_requester,
             polling_requester=polling_requester,
             download_retriever=download_retriever,
-            url_requester=url_requester,
+            download_target_requester=download_target_requester,
             abort_requester=abort_requester,
             delete_requester=delete_requester,
             status_extractor=status_extractor,

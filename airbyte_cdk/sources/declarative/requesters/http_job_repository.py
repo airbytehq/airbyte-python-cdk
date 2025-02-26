@@ -49,7 +49,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
     record_extractor: RecordExtractor = field(
         init=False, repr=False, default_factory=lambda: ResponseToFileExtractor({})
     )
-    url_requester: Optional[Requester] = (
+    download_target_requester: Optional[Requester] = (
         None  # use it in case polling_requester provides some <id> and extra request is needed to obtain list of urls to download from
     )
 
@@ -281,7 +281,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         return stream_slice
 
     def _get_download_targets(self, job: AsyncJob) -> Iterable[str]:
-        if not self.url_requester:
+        if not self.download_target_requester:
             url_response = self._polling_job_response_by_id[job.api_job_id()]
         else:
             polling_response = self._polling_job_response_by_id[job.api_job_id()].json()
@@ -290,10 +290,10 @@ class AsyncHttpJobRepository(AsyncJobRepository):
                 cursor_slice={},
                 extra_fields={"polling_response": polling_response},
             )
-            url_response = self.url_requester.send_request(stream_slice=stream_slice)  # type: ignore # we expect url_requester to always be presented, otherwise raise an exception as we cannot proceed with the report
+            url_response = self.download_target_requester.send_request(stream_slice=stream_slice)  # type: ignore # we expect download_target_requester to always be presented, otherwise raise an exception as we cannot proceed with the report
             if not url_response:
                 raise AirbyteTracedException(
-                    internal_message="Always expect a response or an exception from url_requester",
+                    internal_message="Always expect a response or an exception from download_target_requester",
                     failure_type=FailureType.system_error,
                 )
 
