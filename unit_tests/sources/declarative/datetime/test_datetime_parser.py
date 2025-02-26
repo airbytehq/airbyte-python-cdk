@@ -50,6 +50,12 @@ from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimePar
             "%Y%m%d",
             datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
         ),
+        (
+            "test_parse_format_datetime_with__ms",
+            "2021-11-22T08:41:55.640Z",
+            "%Y-%m-%dT%H:%M:%S.%_msZ",
+            datetime.datetime(2021, 11, 22, 8, 41, 55, 640000, tzinfo=datetime.timezone.utc),
+        ),
     ],
 )
 def test_parse_date(test_name, input_date, date_format, expected_output_date):
@@ -90,6 +96,12 @@ def test_parse_date(test_name, input_date, date_format, expected_output_date):
             datetime.datetime(2021, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
             "%Y%m%d",
             "20210101",
+        ),
+        (
+            "test_parse_format_datetime_with__ms",
+            datetime.datetime(2021, 11, 22, 8, 41, 55, 640000, tzinfo=datetime.timezone.utc),
+            "%Y-%m-%dT%H:%M:%S.%_msZ",
+            "2021-11-22T08:41:55.640Z",
         ),
     ],
 )
