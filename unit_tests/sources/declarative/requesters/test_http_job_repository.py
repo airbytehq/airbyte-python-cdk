@@ -69,7 +69,7 @@ class HttpJobRepositoryTest(TestCase):
         self._polling_job_requester = HttpRequester(
             name="stream <name>: polling",
             url_base=_URL_BASE,
-            path=_EXPORT_PATH + "/{{stream_slice['create_job_response'].json()['id']}}",
+            path=_EXPORT_PATH + "/{{creation_response['id']}}",
             error_handler=error_handler,
             http_method=HttpMethod.GET,
             config=_ANY_CONFIG,
@@ -84,7 +84,7 @@ class HttpJobRepositoryTest(TestCase):
             requester=HttpRequester(
                 name="stream <name>: fetch_result",
                 url_base="",
-                path="{{stream_slice.extra_fields['url']}}",
+                path="{{download_target}}",
                 error_handler=error_handler,
                 http_method=HttpMethod.GET,
                 config=_ANY_CONFIG,
@@ -143,7 +143,7 @@ class HttpJobRepositoryTest(TestCase):
                 "failure": AsyncJobStatus.FAILED,
                 "pending": AsyncJobStatus.RUNNING,
             },
-            urls_extractor=DpathExtractor(
+            download_target_extractor=DpathExtractor(
                 decoder=JsonDecoder(parameters={}),
                 field_path=["urls"],
                 config={},

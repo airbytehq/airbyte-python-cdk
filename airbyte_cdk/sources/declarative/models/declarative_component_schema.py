@@ -646,7 +646,7 @@ class Rate(BaseModel):
     class Config:
         extra = Extra.allow
 
-    limit: int = Field(
+    limit: Union[int, str] = Field(
         ...,
         description="The maximum number of calls allowed within the interval.",
         title="Limit",
@@ -2263,7 +2263,7 @@ class AsyncRetriever(BaseModel):
     status_extractor: Union[CustomRecordExtractor, DpathExtractor] = Field(
         ..., description="Responsible for fetching the actual status of the async job."
     )
-    urls_extractor: Union[CustomRecordExtractor, DpathExtractor] = Field(
+    download_target_extractor: Union[CustomRecordExtractor, DpathExtractor] = Field(
         ...,
         description="Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.",
     )
@@ -2278,7 +2278,7 @@ class AsyncRetriever(BaseModel):
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to fetch the status of the running async job.",
     )
-    url_requester: Optional[Union[CustomRequester, HttpRequester]] = Field(
+    download_target_requester: Optional[Union[CustomRequester, HttpRequester]] = Field(
         None,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to extract the url from polling response by the completed async job.",
     )

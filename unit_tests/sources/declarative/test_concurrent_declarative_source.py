@@ -299,7 +299,7 @@ _MANIFEST = {
                     "timeout": ["timeout"],
                     "completed": ["ready"],
                 },
-                "urls_extractor": {"type": "DpathExtractor", "field_path": ["urls"]},
+                "download_target_extractor": {"type": "DpathExtractor", "field_path": ["urls"]},
                 "record_selector": {
                     "type": "RecordSelector",
                     "extractor": {"type": "DpathExtractor", "field_path": []},
@@ -307,7 +307,7 @@ _MANIFEST = {
                 "status_extractor": {"type": "DpathExtractor", "field_path": ["status"]},
                 "polling_requester": {
                     "type": "HttpRequester",
-                    "path": "/async_job/{{stream_slice['create_job_response'].json()['id'] }}",
+                    "path": "/async_job/{{creation_response['id'] }}",
                     "http_method": "GET",
                     "authenticator": {
                         "type": "BearerAuthenticator",
@@ -1587,38 +1587,6 @@ def test_concurrency_level_initial_number_partitions_to_generate_is_always_one_o
         source_config=_MANIFEST, config=config, catalog=catalog, state=[]
     )
     assert source._concurrent_source._initial_number_partitions_to_generate == 1
-
-
-def test_streams_with_stream_state_interpolation_should_be_synchronous():
-    manifest_with_stream_state_interpolation = copy.deepcopy(_MANIFEST)
-
-    # Add stream_state interpolation to the location stream's HttpRequester
-    manifest_with_stream_state_interpolation["definitions"]["locations_stream"]["retriever"][
-        "requester"
-    ]["request_parameters"] = {
-        "after": "{{ stream_state['updated_at'] }}",
-    }
-
-    # Add a RecordFilter component that uses stream_state interpolation to the party member stream
-    manifest_with_stream_state_interpolation["definitions"]["party_members_stream"]["retriever"][
-        "record_selector"
-    ]["record_filter"] = {
-        "type": "RecordFilter",
-        "condition": "{{ record.updated_at > stream_state['updated_at'] }}",
-    }
-
-    source = ConcurrentDeclarativeSource(
-        source_config=manifest_with_stream_state_interpolation,
-        config=_CONFIG,
-        catalog=_CATALOG,
-        state=None,
-    )
-    concurrent_streams, synchronous_streams = source._group_streams(config=_CONFIG)
-
-    # 1 full refresh stream, 2 with parent stream without incremental dependency, 1 stream with async retriever, 1 incremental with parent stream (palace_enemies)
-    assert len(concurrent_streams) == 5
-    # 2 incremental stream with interpolation on state (locations and party_members)
-    assert len(synchronous_streams) == 2
 
 
 def test_given_partition_routing_and_incremental_sync_then_stream_is_concurrent():

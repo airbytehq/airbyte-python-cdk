@@ -6,6 +6,7 @@
 from typing import Any, Dict, Iterator, List, Mapping, Optional
 
 from airbyte_cdk.connector_builder.models import (
+    AuxiliaryRequest,
     HttpRequest,
     HttpResponse,
     StreamReadPages,
@@ -24,6 +25,7 @@ from .helpers import (
     handle_current_slice,
     handle_log_message,
     handle_record_message,
+    is_async_auxiliary_request,
     is_config_update_message,
     is_log_message,
     is_record_message,
@@ -89,6 +91,7 @@ def get_message_groups(
     current_page_request: Optional[HttpRequest] = None
     current_page_response: Optional[HttpResponse] = None
     latest_state_message: Optional[Dict[str, Any]] = None
+    slice_auxiliary_requests: List[AuxiliaryRequest] = []
 
     while records_count < limit and (message := next(messages, None)):
         json_message = airbyte_message_to_json(message)
@@ -106,6 +109,7 @@ def get_message_groups(
                 current_slice_pages,
                 current_slice_descriptor,
                 latest_state_message,
+                slice_auxiliary_requests,
             )
             current_slice_descriptor = parse_slice_description(message.log.message)  # type: ignore
             current_slice_pages = []
@@ -118,7 +122,8 @@ def get_message_groups(
                 at_least_one_page_in_group,
                 current_page_request,
                 current_page_response,
-                log_or_auxiliary_request,
+                auxiliary_request,
+                log_message,
             ) = handle_log_message(
                 message,
                 json_message,
@@ -126,8 +131,15 @@ def get_message_groups(
                 current_page_request,
                 current_page_response,
             )
-            if log_or_auxiliary_request:
-                yield log_or_auxiliary_request
+
+            if auxiliary_request:
+                if is_async_auxiliary_request(auxiliary_request):
+                    slice_auxiliary_requests.append(auxiliary_request)
+                else:
+                    yield auxiliary_request
+
+            if log_message:
+                yield log_message
         elif is_trace_with_error(message):
             if message.trace is not None:
                 yield message.trace
@@ -157,4 +169,5 @@ def get_message_groups(
                 current_slice_pages,
                 current_slice_descriptor,
                 latest_state_message,
+                slice_auxiliary_requests,
             )

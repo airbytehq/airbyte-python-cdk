@@ -62,7 +62,9 @@ def test_composite_raw_decoder_gzip_csv_parser(requests_mock, encoding: str):
     )
     response = requests.get("https://airbyte.io/", stream=True)
 
-    parser = GzipParser(inner_parser=CsvParser(encoding=encoding, delimiter="\t"))
+    # the delimiter is set to `\\t` intentionally to test the parsing logic here
+    parser = GzipParser(inner_parser=CsvParser(encoding=encoding, delimiter="\\t"))
+
     composite_raw_decoder = CompositeRawDecoder(parser=parser)
     counter = 0
     for _ in composite_raw_decoder.decode(response):

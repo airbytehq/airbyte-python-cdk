@@ -2091,10 +2091,10 @@ class ModelToComponentFactory:
     def create_json_decoder(model: JsonDecoderModel, config: Config, **kwargs: Any) -> Decoder:
         return JsonDecoder(parameters={})
 
-    @staticmethod
-    def create_csv_decoder(model: CsvDecoderModel, config: Config, **kwargs: Any) -> Decoder:
+    def create_csv_decoder(self, model: CsvDecoderModel, config: Config, **kwargs: Any) -> Decoder:
         return CompositeRawDecoder(
-            parser=ModelToComponentFactory._get_parser(model, config), stream_response=True
+            parser=ModelToComponentFactory._get_parser(model, config),
+            stream_response=False if self._emit_connector_builder_messages else True,
         )
 
     @staticmethod
@@ -2103,10 +2103,12 @@ class ModelToComponentFactory:
             parser=ModelToComponentFactory._get_parser(model, config), stream_response=True
         )
 
-    @staticmethod
-    def create_gzip_decoder(model: GzipDecoderModel, config: Config, **kwargs: Any) -> Decoder:
+    def create_gzip_decoder(
+        self, model: GzipDecoderModel, config: Config, **kwargs: Any
+    ) -> Decoder:
         return CompositeRawDecoder(
-            parser=ModelToComponentFactory._get_parser(model, config), stream_response=True
+            parser=ModelToComponentFactory._get_parser(model, config),
+            stream_response=False if self._emit_connector_builder_messages else True,
         )
 
     @staticmethod
@@ -2627,6 +2629,47 @@ class ModelToComponentFactory:
         transformations: List[RecordTransformation],
         **kwargs: Any,
     ) -> AsyncRetriever:
+        def _get_download_retriever() -> SimpleRetrieverTestReadDecorator | SimpleRetriever:
+            record_selector = RecordSelector(
+                extractor=download_extractor,
+                name=name,
+                record_filter=None,
+                transformations=transformations,
+                schema_normalization=TypeTransformer(TransformConfig.NoTransform),
+                config=config,
+                parameters={},
+            )
+            paginator = (
+                self._create_component_from_model(
+                    model=model.download_paginator, decoder=decoder, config=config, url_base=""
+                )
+                if model.download_paginator
+                else NoPagination(parameters={})
+            )
+            maximum_number_of_slices = self._limit_slices_fetched or 5
+
+            if self._limit_slices_fetched or self._emit_connector_builder_messages:
+                return SimpleRetrieverTestReadDecorator(
+                    requester=download_requester,
+                    record_selector=record_selector,
+                    primary_key=None,
+                    name=job_download_components_name,
+                    paginator=paginator,
+                    config=config,
+                    parameters={},
+                    maximum_number_of_slices=maximum_number_of_slices,
+                )
+
+            return SimpleRetriever(
+                requester=download_requester,
+                record_selector=record_selector,
+                primary_key=None,
+                name=job_download_components_name,
+                paginator=paginator,
+                config=config,
+                parameters={},
+            )
+
         decoder = (
             self._create_component_from_model(model=model.decoder, config=config)
             if model.decoder
@@ -2680,29 +2723,7 @@ class ModelToComponentFactory:
             config=config,
             name=job_download_components_name,
         )
-        download_retriever = SimpleRetriever(
-            requester=download_requester,
-            record_selector=RecordSelector(
-                extractor=download_extractor,
-                name=name,
-                record_filter=None,
-                transformations=transformations,
-                schema_normalization=TypeTransformer(TransformConfig.NoTransform),
-                config=config,
-                parameters={},
-            ),
-            primary_key=None,
-            name=job_download_components_name,
-            paginator=(
-                self._create_component_from_model(
-                    model=model.download_paginator, decoder=decoder, config=config, url_base=""
-                )
-                if model.download_paginator
-                else NoPagination(parameters={})
-            ),
-            config=config,
-            parameters={},
-        )
+        download_retriever = _get_download_retriever()
         abort_requester = (
             self._create_component_from_model(
                 model=model.abort_requester,
@@ -2723,32 +2744,32 @@ class ModelToComponentFactory:
             if model.delete_requester
             else None
         )
-        url_requester = (
+        download_target_requester = (
             self._create_component_from_model(
-                model=model.url_requester,
+                model=model.download_target_requester,
                 decoder=decoder,
                 config=config,
                 name=f"job extract_url - {name}",
             )
-            if model.url_requester
+            if model.download_target_requester
             else None
         )
         status_extractor = self._create_component_from_model(
             model=model.status_extractor, decoder=decoder, config=config, name=name
         )
-        urls_extractor = self._create_component_from_model(
-            model=model.urls_extractor, decoder=decoder, config=config, name=name
+        download_target_extractor = self._create_component_from_model(
+            model=model.download_target_extractor, decoder=decoder, config=config, name=name
         )
         job_repository: AsyncJobRepository = AsyncHttpJobRepository(
             creation_requester=creation_requester,
             polling_requester=polling_requester,
             download_retriever=download_retriever,
-            url_requester=url_requester,
+            download_target_requester=download_target_requester,
             abort_requester=abort_requester,
             delete_requester=delete_requester,
             status_extractor=status_extractor,
             status_mapping=self._create_async_job_status_mapping(model.status_mapping, config),
-            urls_extractor=urls_extractor,
+            download_target_extractor=download_target_extractor,
         )
 
         async_job_partition_router = AsyncJobPartitionRouter(
@@ -3024,8 +3045,9 @@ class ModelToComponentFactory:
         )
 
     def create_rate(self, model: RateModel, config: Config, **kwargs: Any) -> Rate:
+        interpolated_limit = InterpolatedString.create(str(model.limit), parameters={})
         return Rate(
-            limit=model.limit,
+            limit=int(interpolated_limit.eval(config=config)),
             interval=parse_duration(model.interval),
         )
 

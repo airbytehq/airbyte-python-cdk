@@ -22,13 +22,13 @@ new_date = "2022-06-24T20:12:19.597854Z"
         (
             "test_time_is_greater_than_min",
             "{{ config['older'] }}",
-            "{{ stream_state['newer'] }}",
+            "{{ stream_interval['start_date'] }}",
             "",
             new_date,
         ),
         (
             "test_time_is_less_than_min",
-            "{{ stream_state['newer'] }}",
+            "{{ stream_interval['start_date'] }}",
             "{{ config['older'] }}",
             "",
             new_date,
@@ -42,7 +42,7 @@ new_date = "2022-06-24T20:12:19.597854Z"
         ),
         (
             "test_time_is_greater_than_max",
-            "{{ stream_state['newer'] }}",
+            "{{ stream_interval['start_date'] }}",
             "",
             "{{ config['older'] }}",
             old_date,
@@ -51,13 +51,13 @@ new_date = "2022-06-24T20:12:19.597854Z"
             "test_time_is_less_than_max",
             "{{ config['older'] }}",
             "",
-            "{{ stream_state['newer'] }}",
+            "{{ stream_interval['start_date'] }}",
             old_date,
         ),
         (
             "test_time_is_equal_to_min",
-            "{{ stream_state['newer'] }}",
-            "{{ stream_state['newer'] }}",
+            "{{ stream_interval['start_date'] }}",
+            "{{ stream_interval['start_date'] }}",
             "",
             new_date,
         ),
@@ -65,7 +65,7 @@ new_date = "2022-06-24T20:12:19.597854Z"
             "test_time_is_between_min_and_max",
             "{{ config['middle'] }}",
             "{{ config['older'] }}",
-            "{{ stream_state['newer'] }}",
+            "{{ stream_interval['start_date'] }}",
             middle_date,
         ),
         (
@@ -77,7 +77,7 @@ new_date = "2022-06-24T20:12:19.597854Z"
         ),
         (
             "test_max_newer_time_from_parameters",
-            "{{ stream_state['newer'] }}",
+            "{{ stream_interval['start_date'] }}",
             "",
             "{{ parameters['older'] }}",
             old_date,
@@ -86,29 +86,29 @@ new_date = "2022-06-24T20:12:19.597854Z"
 )
 def test_min_max_datetime(test_name, date, min_date, max_date, expected_date):
     config = {"older": old_date, "middle": middle_date}
-    stream_state = {"newer": new_date}
+    stream_slice = {"start_date": new_date}
     parameters = {"newer": new_date, "older": old_date}
 
     min_max_date = MinMaxDatetime(
         datetime=date, min_datetime=min_date, max_datetime=max_date, parameters=parameters
     )
-    actual_date = min_max_date.get_datetime(config, **{"stream_state": stream_state})
+    actual_date = min_max_date.get_datetime(config, **{"stream_slice": stream_slice})
 
     assert actual_date == datetime.datetime.strptime(expected_date, date_format)
 
 
 def test_custom_datetime_format():
     config = {"older": "2021-01-01T20:12:19", "middle": "2022-01-01T20:12:19"}
-    stream_state = {"newer": "2022-06-24T20:12:19"}
+    stream_slice = {"newer": "2022-06-24T20:12:19"}
 
     min_max_date = MinMaxDatetime(
         datetime="{{ config['middle'] }}",
         datetime_format="%Y-%m-%dT%H:%M:%S",
         min_datetime="{{ config['older'] }}",
-        max_datetime="{{ stream_state['newer'] }}",
+        max_datetime="{{ stream_slice['newer'] }}",
         parameters={},
     )
-    actual_date = min_max_date.get_datetime(config, **{"stream_state": stream_state})
+    actual_date = min_max_date.get_datetime(config, **{"stream_slice": stream_slice})
 
     assert actual_date == datetime.datetime.strptime(
         "2022-01-01T20:12:19", "%Y-%m-%dT%H:%M:%S"
@@ -117,16 +117,16 @@ def test_custom_datetime_format():
 
 def test_format_is_a_number():
     config = {"older": "20210101", "middle": "20220101"}
-    stream_state = {"newer": "20220624"}
+    stream_slice = {"newer": "20220624"}
 
     min_max_date = MinMaxDatetime(
         datetime="{{ config['middle'] }}",
         datetime_format="%Y%m%d",
         min_datetime="{{ config['older'] }}",
-        max_datetime="{{ stream_state['newer'] }}",
+        max_datetime="{{ stream_slice['newer'] }}",
         parameters={},
     )
-    actual_date = min_max_date.get_datetime(config, **{"stream_state": stream_state})
+    actual_date = min_max_date.get_datetime(config, **{"stream_slice": stream_slice})
 
     assert actual_date == datetime.datetime.strptime("20220101", "%Y%m%d").replace(
         tzinfo=datetime.timezone.utc

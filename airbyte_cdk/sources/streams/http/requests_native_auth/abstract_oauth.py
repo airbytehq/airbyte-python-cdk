@@ -396,6 +396,7 @@ class AbstractOauth2Authenticator(AuthBase):
                     "Obtains access token",
                     self._NO_STREAM_NAME,
                     is_auxiliary=True,
+                    type="AUTH",
                 ),
             )
 

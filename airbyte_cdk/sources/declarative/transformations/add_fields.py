@@ -64,9 +64,9 @@ class AddFields(RecordTransformation):
         - path: ["shop_id"]
           value: "{{ config.shop_id }}"
 
-        # from state
-        - path: ["current_state"]
-          value: "{{ stream_state.cursor_field }}" # Or {{ stream_state['cursor_field'] }}
+        # from stream_interval
+        - path: ["date"]
+          value: "{{ stream_interval.start_date }}"
 
         # from record
         - path: ["unnested_value"]
@@ -128,7 +128,7 @@ class AddFields(RecordTransformation):
     ) -> None:
         if config is None:
             config = {}
-        kwargs = {"record": record, "stream_state": stream_state, "stream_slice": stream_slice}
+        kwargs = {"record": record, "stream_slice": stream_slice}
         for parsed_field in self._parsed_fields:
             valid_types = (parsed_field.value_type,) if parsed_field.value_type else None
             value = parsed_field.value.eval(config, valid_types=valid_types, **kwargs)
