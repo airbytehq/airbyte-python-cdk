@@ -151,6 +151,8 @@ class CompositeRawDecoder(Decoder):
         self, response: requests.Response
     ) -> Generator[MutableMapping[str, Any], None, None]:
         if self.is_stream_response():
+            response.raw.auto_close = False
             yield from self.parser.parse(data=response.raw)  # type: ignore[arg-type]
+            response.raw.close()
         else:
             yield from self.parser.parse(data=io.BytesIO(response.content))
