@@ -31,7 +31,8 @@ class DatetimeParser:
             return datetime.datetime.fromtimestamp(float(date), tz=datetime.timezone.utc)
         elif format == "%ms":
             return self._UNIX_EPOCH + datetime.timedelta(milliseconds=int(date))
-
+        elif "%_ms" in format:
+            format = format.replace("%_ms", "%f")
         parsed_datetime = datetime.datetime.strptime(str(date), format)
         if self._is_naive(parsed_datetime):
             return parsed_datetime.replace(tzinfo=datetime.timezone.utc)
@@ -48,6 +49,11 @@ class DatetimeParser:
         if format == "%ms":
             # timstamp() returns a float representing the number of seconds since the unix epoch
             return str(int(dt.timestamp() * 1000))
+        if "%_ms" in format:
+            _format = format.replace("%_ms", "%f")
+            milliseconds = int(dt.microsecond / 1000)
+            formatted_dt = dt.strftime(_format).replace(dt.strftime("%f"), "%03d" % milliseconds)
+            return formatted_dt
         else:
             return dt.strftime(format)
 

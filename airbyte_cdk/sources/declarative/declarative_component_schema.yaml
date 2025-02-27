@@ -844,6 +844,7 @@ definitions:
             * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`
             * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`
             * **%f**: Microsecond (zero-padded to 6 digits) - `000000`
+            * **%_ms**: Millisecond (zero-padded to 3 digits) - `000`
             * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`
             * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`
             * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`
@@ -2409,6 +2410,7 @@ definitions:
             * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`
             * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`
             * **%f**: Microsecond (zero-padded to 6 digits) - `000000`, `000001`, ..., `999999`
+            * **%_ms**: Millisecond (zero-padded to 3 digits) - `000`, `001`, ..., `999`
             * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`
             * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`
             * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`
