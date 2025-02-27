@@ -876,6 +876,7 @@ def test_discover():
         "arcana_personas",
         "palace_enemies",
         "async_job_stream",
+        "incremental_counting_stream",
     }
 
     source = ConcurrentDeclarativeSource(
