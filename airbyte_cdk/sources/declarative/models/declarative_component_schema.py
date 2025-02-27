@@ -1524,7 +1524,7 @@ class IncrementingCountCursor(BaseModel):
     )
     start_value_option: Optional[RequestOption] = Field(
         None,
-        description="Optionally configures how the start datetime will be sent in requests to the source API.",
+        description="Optionally configures how the start value will be sent in requests to the source API.",
         title="Inject Start Value Into Outgoing HTTP Request",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
