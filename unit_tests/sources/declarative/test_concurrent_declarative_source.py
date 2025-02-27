@@ -720,6 +720,7 @@ def test_group_streams():
         concurrent_stream_4,
         concurrent_stream_5,
         concurrent_stream_6,
+        concurrent_stream_7,
     ) = concurrent_streams
     assert isinstance(concurrent_stream_0, DefaultStream)
     assert concurrent_stream_0.name == "party_members"
@@ -735,6 +736,8 @@ def test_group_streams():
     assert concurrent_stream_5.name == "palace_enemies"
     assert isinstance(concurrent_stream_6, DefaultStream)
     assert concurrent_stream_6.name == "async_job_stream"
+    assert isinstance(concurrent_stream_7, DefaultStream)
+    assert concurrent_stream_7.name == "incremental_counting_stream"
 
 
 @freezegun.freeze_time(time_to_freeze=datetime(2024, 9, 1, 0, 0, 0, 0, tzinfo=timezone.utc))
