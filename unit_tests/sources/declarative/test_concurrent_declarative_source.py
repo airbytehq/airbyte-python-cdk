@@ -709,9 +709,9 @@ def test_group_streams():
     )
     concurrent_streams, synchronous_streams = source._group_streams(config=_CONFIG)
 
-    # 1 full refresh stream, 2 incremental streams, 1 substream w/o incremental, 1 list based substream w/o incremental
+    # 1 full refresh stream, 3 incremental streams, 1 substream w/o incremental, 1 list based substream w/o incremental
     # 1 async job stream, 1 substream w/ incremental
-    assert len(concurrent_streams) == 7
+    assert len(concurrent_streams) == 8
     (
         concurrent_stream_0,
         concurrent_stream_1,
