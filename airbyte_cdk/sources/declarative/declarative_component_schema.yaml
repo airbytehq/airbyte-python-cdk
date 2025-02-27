@@ -810,7 +810,7 @@ definitions:
           - "{{ config['start_value'] }}"
       start_value_option:
         title: Inject Start Value Into Outgoing HTTP Request
-        description: Optionally configures how the start datetime will be sent in requests to the source API.
+        description: Optionally configures how the start value will be sent in requests to the source API.
         "$ref": "#/definitions/RequestOption"
       $parameters:
         type: object
