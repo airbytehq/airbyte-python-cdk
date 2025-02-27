@@ -825,7 +825,7 @@ def test_send_request_stream_slice_next_page_token():
             "test_trailing_slash_on_path",
             "https://airbyte.io",
             "/my_endpoint/",
-            "https://airbyte.io/my_endpoint/",
+            "https://airbyte.io/my_endpoint",
         ),
         (
             "test_nested_path_no_leading_slash",
