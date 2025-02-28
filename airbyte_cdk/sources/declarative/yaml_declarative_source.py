@@ -40,7 +40,7 @@ class YamlDeclarativeSource(ConcurrentDeclarativeSource[List[AirbyteStateMessage
 
     def _read_and_parse_yaml_file(self, path_to_yaml_file: str) -> ConnectionDefinition:
         try:
-            # For testing purposes, we want to allow to just pass a file. However, this
+            # For testing purposes, we want to allow to just pass a file
             with open(path_to_yaml_file, "r") as f:
                 return yaml.safe_load(f)  # type: ignore  # we assume the yaml represents a ConnectionDefinition
         except FileNotFoundError:
