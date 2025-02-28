@@ -108,9 +108,6 @@ def get_registered_components_module(
 
     Returns `None` if no components is provided and the `components` module is not found.
     """
-    if config and INJECTED_MANIFEST not in config:
-        raise RuntimeError(f"Expected {INJECTED_MANIFEST} to be in config.")
-
     if config and config.get(INJECTED_COMPONENTS_PY, None):
         if not custom_code_execution_permitted():
             raise AirbyteCustomCodeNotPermittedError
