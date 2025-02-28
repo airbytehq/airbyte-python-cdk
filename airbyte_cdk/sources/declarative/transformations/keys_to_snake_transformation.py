@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-import unidecode
+import anyascii
 
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
@@ -48,7 +48,7 @@ class KeysToSnakeCaseTransformation(RecordTransformation):
         return self.tokens_to_snake_case(tokens)
 
     def normalize_key(self, key: str) -> str:
-        return unidecode.unidecode(key)
+        return str(anyascii.anyascii(key))
 
     def tokenize_key(self, key: str) -> List[str]:
         tokens = []
