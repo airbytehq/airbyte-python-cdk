@@ -1409,8 +1409,11 @@ class ModelToComponentFactory:
                 # During testing, the modules containing the custom components are not moved to source_declarative_manifest. In order to run the test, add the source folder to your PYTHONPATH or add it runtime using sys.path.append
                 try:
                     import os
+
                     module_name_with_source_declarative_manifest = ".".join(split[1:-1])
-                    module_ref = importlib.import_module(module_name_with_source_declarative_manifest)
+                    module_ref = importlib.import_module(
+                        module_name_with_source_declarative_manifest
+                    )
                 except ModuleNotFoundError:
                     raise ValueError(f"Could not load module `{module_name_full}`.") from e
             else:
