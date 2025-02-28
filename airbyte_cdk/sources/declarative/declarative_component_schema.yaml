@@ -1794,7 +1794,6 @@ definitions:
     type: object
     required:
       - type
-      - path
       - url_base
     properties:
       type:
@@ -1806,9 +1805,18 @@ definitions:
         type: string
         interpolation_context:
           - config
+          - next_page_token
+          - stream_interval
+          - stream_partition
+          - stream_slice
+          - creation_response
+          - polling_response
+          - download_target
         examples:
           - "https://connect.squareup.com/v2"
-          - "{{ config['base_url'] or 'https://app.posthog.com'}}/api/"
+          - "{{ config['base_url'] or 'https://app.posthog.com'}}/api"
+          - "https://connect.squareup.com/v2/quotes/{{ stream_partition['id'] }}/quote_line_groups"
+          - "https://example.com/api/v1/resource/{{ next_page_token['id'] }}"
       path:
         title: URL Path
         description: Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.

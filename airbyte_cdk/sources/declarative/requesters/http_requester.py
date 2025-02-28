@@ -25,7 +25,7 @@ from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.sources.streams.call_rate import APIBudget
 from airbyte_cdk.sources.streams.http import HttpClient
 from airbyte_cdk.sources.streams.http.error_handlers import ErrorHandler
-from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
+from airbyte_cdk.sources.types import Config, EmptyString, StreamSlice, StreamState
 from airbyte_cdk.utils.mapping_helpers import combine_mappings
 
 
@@ -49,9 +49,10 @@ class HttpRequester(Requester):
 
     name: str
     url_base: Union[InterpolatedString, str]
-    path: Union[InterpolatedString, str]
     config: Config
     parameters: InitVar[Mapping[str, Any]]
+
+    path: Optional[Union[InterpolatedString, str]] = None
     authenticator: Optional[DeclarativeAuthenticator] = None
     http_method: Union[str, HttpMethod] = HttpMethod.GET
     request_options_provider: Optional[InterpolatedRequestOptionsProvider] = None
@@ -66,7 +67,9 @@ class HttpRequester(Requester):
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._url_base = InterpolatedString.create(self.url_base, parameters=parameters)
-        self._path = InterpolatedString.create(self.path, parameters=parameters)
+        self._path = InterpolatedString.create(
+            self.path if self.path else EmptyString, parameters=parameters
+        )
         if self.request_options_provider is None:
             self._request_options_provider = InterpolatedRequestOptionsProvider(
                 config=self.config, parameters=parameters
@@ -112,27 +115,50 @@ class HttpRequester(Requester):
     def get_authenticator(self) -> DeclarativeAuthenticator:
         return self._authenticator
 
-    def get_url_base(self) -> str:
-        return os.path.join(self._url_base.eval(self.config), "")
-
-    def get_path(
+    def _get_interpolation_context(
         self,
-        *,
-        stream_state: Optional[StreamState],
-        stream_slice: Optional[StreamSlice],
-        next_page_token: Optional[Mapping[str, Any]],
-    ) -> str:
-        kwargs = {
+        stream_state: Optional[StreamState] = None,
+        stream_slice: Optional[StreamSlice] = None,
+        next_page_token: Optional[Mapping[str, Any]] = None,
+    ) -> Mapping[str, Any]:
+        return {
             "stream_slice": stream_slice,
             "next_page_token": next_page_token,
-            # update the interpolation context with extra fields, if passed.
+            # update the context with extra fields, if passed.
             **(
                 stream_slice.extra_fields
                 if stream_slice is not None and hasattr(stream_slice, "extra_fields")
                 else {}
             ),
         }
-        path = str(self._path.eval(self.config, **kwargs))
+
+    def get_url_base(
+        self,
+        *,
+        stream_state: Optional[StreamState] = None,
+        stream_slice: Optional[StreamSlice] = None,
+        next_page_token: Optional[Mapping[str, Any]] = None,
+    ) -> str:
+        interpolation_context = self._get_interpolation_context(
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
+        )
+        return os.path.join(self._url_base.eval(self.config, **interpolation_context), EmptyString)
+
+    def get_path(
+        self,
+        *,
+        stream_state: Optional[StreamState] = None,
+        stream_slice: Optional[StreamSlice] = None,
+        next_page_token: Optional[Mapping[str, Any]] = None,
+    ) -> str:
+        interpolation_context = self._get_interpolation_context(
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
+        )
+        path = str(self._path.eval(self.config, **interpolation_context))
         return path.lstrip("/")
 
     def get_method(self) -> HttpMethod:
@@ -330,7 +356,20 @@ class HttpRequester(Requester):
 
     @classmethod
     def _join_url(cls, url_base: str, path: str) -> str:
-        return urljoin(url_base, path)
+        """
+        Joins a base URL with a given path and returns the resulting URL with any trailing slash removed.
+
+        This method ensures that there are no duplicate slashes when concatenating the base URL and the path,
+        which is useful when the full URL is provided from an interpolation context.
+
+        Args:
+            url_base (str): The base URL to which the path will be appended.
+            path (str): The path to join with the base URL.
+
+        Returns:
+            str: The concatenated URL with the trailing slash (if any) removed.
+        """
+        return urljoin(url_base, path).rstrip("/")
 
     def send_request(
         self,
@@ -347,7 +386,11 @@ class HttpRequester(Requester):
         request, response = self._http_client.send_request(
             http_method=self.get_method().value,
             url=self._join_url(
-                self.get_url_base(),
+                self.get_url_base(
+                    stream_state=stream_state,
+                    stream_slice=stream_slice,
+                    next_page_token=next_page_token,
+                ),
                 path
                 or self.get_path(
                     stream_state=stream_state,
