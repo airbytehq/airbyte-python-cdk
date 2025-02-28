@@ -946,7 +946,7 @@ def test_backoff_strategy_from_manifest_is_respected(http_requester_factory: Any
     )
 
 
-def test_http_requester_with_mock_apibudget(http_requester_factory, monkeypatch):
+def test_http_requester_with_mock_api_budget(http_requester_factory, monkeypatch):
     mock_budget = MagicMock(spec=HttpAPIBudget)
 
     requester = http_requester_factory(

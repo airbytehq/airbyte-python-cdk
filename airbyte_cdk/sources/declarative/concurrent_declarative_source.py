@@ -31,6 +31,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DatetimeBasedCursor as DatetimeBasedCursorModel,
 )
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    IncrementingCountCursor as IncrementingCountCursorModel,
+)
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
@@ -44,6 +47,7 @@ from airbyte_cdk.sources.declarative.types import ConnectionDefinition
 from airbyte_cdk.sources.source import TState
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
+from airbyte_cdk.sources.streams.concurrent.abstract_stream_facade import AbstractStreamFacade
 from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
     AlwaysAvailableAvailabilityStrategy,
 )
@@ -117,6 +121,12 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             slice_logger=self._slice_logger,
             message_repository=self.message_repository,
         )
+
+    # TODO: Remove this. This property is necessary to safely migrate Stripe during the transition state.
+    @property
+    def is_partially_declarative(self) -> bool:
+        """This flag used to avoid unexpected AbstractStreamFacade processing as concurrent streams."""
+        return False
 
     def read(
         self,
@@ -215,7 +225,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     and not incremental_sync_component_definition
                 )
 
-                if self._is_datetime_incremental_without_partition_routing(
+                if self._is_concurrent_cursor_incremental_without_partition_routing(
                     declarative_stream, incremental_sync_component_definition
                 ):
                     stream_state = self._connector_state_manager.get_stream_state(
@@ -247,15 +257,26 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             stream_slicer=declarative_stream.retriever.stream_slicer,
                         )
                     else:
-                        cursor = (
-                            self._constructor.create_concurrent_cursor_from_datetime_based_cursor(
+                        if (
+                            incremental_sync_component_definition
+                            and incremental_sync_component_definition.get("type")
+                            == IncrementingCountCursorModel.__name__
+                        ):
+                            cursor = self._constructor.create_concurrent_cursor_from_incrementing_count_cursor(
+                                model_type=IncrementingCountCursorModel,
+                                component_definition=incremental_sync_component_definition,  # type: ignore  # Not None because of the if condition above
+                                stream_name=declarative_stream.name,
+                                stream_namespace=declarative_stream.namespace,
+                                config=config or {},
+                            )
+                        else:
+                            cursor = self._constructor.create_concurrent_cursor_from_datetime_based_cursor(
                                 model_type=DatetimeBasedCursorModel,
                                 component_definition=incremental_sync_component_definition,  # type: ignore  # Not None because of the if condition above
                                 stream_name=declarative_stream.name,
                                 stream_namespace=declarative_stream.namespace,
                                 config=config or {},
                             )
-                        )
                         partition_generator = StreamSlicerPartitionGenerator(
                             partition_factory=DeclarativePartitionFactory(
                                 declarative_stream.name,
@@ -369,12 +390,20 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     )
                 else:
                     synchronous_streams.append(declarative_stream)
+            # TODO: Remove this. This check is necessary to safely migrate Stripe during the transition state.
+            # Condition below needs to ensure that concurrent support is not lost for sources that already support
+            # it before migration, but now are only partially migrated to declarative implementation (e.g., Stripe).
+            elif (
+                isinstance(declarative_stream, AbstractStreamFacade)
+                and self.is_partially_declarative
+            ):
+                concurrent_streams.append(declarative_stream.get_underlying_stream())
             else:
                 synchronous_streams.append(declarative_stream)
 
         return concurrent_streams, synchronous_streams
 
-    def _is_datetime_incremental_without_partition_routing(
+    def _is_concurrent_cursor_incremental_without_partition_routing(
         self,
         declarative_stream: DeclarativeStream,
         incremental_sync_component_definition: Mapping[str, Any] | None,
@@ -382,11 +411,18 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         return (
             incremental_sync_component_definition is not None
             and bool(incremental_sync_component_definition)
-            and incremental_sync_component_definition.get("type", "")
-            == DatetimeBasedCursorModel.__name__
+            and (
+                incremental_sync_component_definition.get("type", "")
+                in (DatetimeBasedCursorModel.__name__, IncrementingCountCursorModel.__name__)
+            )
             and hasattr(declarative_stream.retriever, "stream_slicer")
             and (
                 isinstance(declarative_stream.retriever.stream_slicer, DatetimeBasedCursor)
+                # IncrementingCountCursorModel is hardcoded to be of type DatetimeBasedCursor
+                # add isintance check here if we want to create a Declarative IncrementingCountCursor
+                # or isinstance(
+                #     declarative_stream.retriever.stream_slicer, IncrementingCountCursor
+                # )
                 or isinstance(declarative_stream.retriever.stream_slicer, AsyncJobPartitionRouter)
             )
         )

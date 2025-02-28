@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
 import datetime
@@ -120,3 +120,47 @@ def test_utc_datetime_to_local_timestamp_conversion():
     This test ensures correct timezone handling independent of the timezone of the system on which the sync is running.
     """
     assert macros["format_datetime"](dt="2020-10-01T00:00:00Z", format="%s") == "1601510400"
+
+
+@pytest.mark.parametrize(
+    "test_name, input_value, expected_output",
+    [
+        (
+            "test_basic_date",
+            "2022-01-14",
+            datetime.datetime(2022, 1, 14, tzinfo=datetime.timezone.utc),
+        ),
+        (
+            "test_datetime_with_time",
+            "2022-01-01 13:45:30",
+            datetime.datetime(2022, 1, 1, 13, 45, 30, tzinfo=datetime.timezone.utc),
+        ),
+        (
+            "test_datetime_with_timezone",
+            "2022-01-01T13:45:30+00:00",
+            datetime.datetime(2022, 1, 1, 13, 45, 30, tzinfo=datetime.timezone.utc),
+        ),
+        (
+            "test_datetime_with_timezone_offset",
+            "2022-01-01T13:45:30+05:30",
+            datetime.datetime(2022, 1, 1, 8, 15, 30, tzinfo=datetime.timezone.utc),
+        ),
+        (
+            "test_datetime_with_microseconds",
+            "2022-01-01T13:45:30.123456Z",
+            datetime.datetime(2022, 1, 1, 13, 45, 30, 123456, tzinfo=datetime.timezone.utc),
+        ),
+    ],
+)
+def test_give_valid_date_str_to_datetime_returns_datetime_object(
+    test_name, input_value, expected_output
+):
+    str_to_datetime_fn = macros["str_to_datetime"]
+    actual_output = str_to_datetime_fn(input_value)
+    assert actual_output == expected_output
+
+
+def test_given_invalid_date_str_to_datetime_raises_value_error():
+    str_to_datetime_fn = macros["str_to_datetime"]
+    with pytest.raises(ValueError):
+        str_to_datetime_fn("invalid-date")
