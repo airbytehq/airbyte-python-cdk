@@ -39,13 +39,18 @@ class YamlDeclarativeSource(ConcurrentDeclarativeSource[List[AirbyteStateMessage
         )
 
     def _read_and_parse_yaml_file(self, path_to_yaml_file: str) -> ConnectionDefinition:
-        package = self.__class__.__module__.split(".")[0]
+        try:
+            # For testing purposes, we want to allow to just pass a file
+            with open(path_to_yaml_file, "r") as f:
+                return yaml.safe_load(f)  # type: ignore  # we assume the yaml represents a ConnectionDefinition
+        except FileNotFoundError:
+            # Running inside the container, the working directory during an operation is not structured the same as the static files
+            package = self.__class__.__module__.split(".")[0]
 
-        yaml_config = pkgutil.get_data(package, path_to_yaml_file)
-        if yaml_config:
-            decoded_yaml = yaml_config.decode()
-            return self._parse(decoded_yaml)
-        else:
+            yaml_config = pkgutil.get_data(package, path_to_yaml_file)
+            if yaml_config:
+                decoded_yaml = yaml_config.decode()
+                return self._parse(decoded_yaml)
             return {}
 
     def _emit_manifest_debug_message(self, extra_args: dict[str, Any]) -> None:
