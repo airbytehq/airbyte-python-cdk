@@ -206,6 +206,8 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                 == "SimpleRetriever"
                 or name_to_stream_mapping[declarative_stream.name]["retriever"]["type"]
                 == "AsyncRetriever"
+                or name_to_stream_mapping[declarative_stream.name]["retriever"]["type"]
+                == "StateDelegatingRetriever"
             ):
                 incremental_sync_component_definition = name_to_stream_mapping[
                     declarative_stream.name

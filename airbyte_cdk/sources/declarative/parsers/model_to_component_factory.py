@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import copy
 import datetime
 import importlib
 import inspect
@@ -352,6 +353,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import Spec as SpecModel
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    StateDelegatingRetriever as StateDelegatingRetrieverModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     StreamConfig as StreamConfigModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -437,6 +441,7 @@ from airbyte_cdk.sources.declarative.retrievers import (
     AsyncRetriever,
     SimpleRetriever,
     SimpleRetrieverTestReadDecorator,
+    StateDelegatingRetriever,
 )
 from airbyte_cdk.sources.declarative.schema import (
     ComplexFieldType,
@@ -615,6 +620,7 @@ class ModelToComponentFactory:
             LegacySessionTokenAuthenticatorModel: self.create_legacy_session_token_authenticator,
             SelectiveAuthenticatorModel: self.create_selective_authenticator,
             SimpleRetrieverModel: self.create_simple_retriever,
+            StateDelegatingRetrieverModel: self.create_state_delegating_retriever,
             SpecModel: self.create_spec,
             SubstreamPartitionRouterModel: self.create_substream_partition_router,
             WaitTimeFromHeaderModel: self.create_wait_time_from_header,
@@ -1771,7 +1777,12 @@ class ModelToComponentFactory:
 
     def _build_stream_slicer_from_partition_router(
         self,
-        model: Union[AsyncRetrieverModel, CustomRetrieverModel, SimpleRetrieverModel],
+        model: Union[
+            AsyncRetrieverModel,
+            CustomRetrieverModel,
+            SimpleRetrieverModel,
+            StateDelegatingRetrieverModel,
+        ],
         config: Config,
     ) -> Optional[PartitionRouter]:
         if (
@@ -1780,7 +1791,6 @@ class ModelToComponentFactory:
             and model.partition_router
         ):
             stream_slicer_model = model.partition_router
-
             if isinstance(stream_slicer_model, list):
                 return CartesianProductStreamSlicer(
                     [
@@ -1790,85 +1800,52 @@ class ModelToComponentFactory:
                     parameters={},
                 )
             else:
-                return self._create_component_from_model(model=stream_slicer_model, config=config)  # type: ignore[no-any-return]
-                # Will be created PartitionRouter as stream_slicer_model is model.partition_router
+                return self._create_component_from_model(model=stream_slicer_model, config=config)  # type: ignore[no-any-return] # Will be created PartitionRouter as stream_slicer_model is model.partition_router
         return None
 
-    def _build_resumable_cursor_from_paginator(
+    def _build_incremental_cursor(
         self,
-        model: Union[AsyncRetrieverModel, CustomRetrieverModel, SimpleRetrieverModel],
-        stream_slicer: Optional[StreamSlicer],
+        model: DeclarativeStreamModel,
+        stream_slicer: Optional[PartitionRouter],
+        config: Config,
     ) -> Optional[StreamSlicer]:
-        if hasattr(model, "paginator") and model.paginator and not stream_slicer:
-            # For the regular Full-Refresh streams, we use the high level `ResumableFullRefreshCursor`
-            return ResumableFullRefreshCursor(parameters={})
-        return None
-
-    def _merge_stream_slicers(
-        self, model: DeclarativeStreamModel, config: Config
-    ) -> Optional[StreamSlicer]:
-        stream_slicer = self._build_stream_slicer_from_partition_router(model.retriever, config)
-
         if model.incremental_sync and stream_slicer:
             if model.retriever.type == "AsyncRetriever":
-                if model.incremental_sync.type != "DatetimeBasedCursor":
-                    # We are currently in a transition to the Concurrent CDK and AsyncRetriever can only work with the support or unordered slices (for example, when we trigger reports for January and February, the report in February can be completed first). Once we have support for custom concurrent cursor or have a new implementation available in the CDK, we can enable more cursors here.
-                    raise ValueError(
-                        "AsyncRetriever with cursor other than DatetimeBasedCursor is not supported yet"
-                    )
-                if stream_slicer:
-                    return self.create_concurrent_cursor_from_perpartition_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
-                        state_manager=self._connector_state_manager,
-                        model_type=DatetimeBasedCursorModel,
-                        component_definition=model.incremental_sync.__dict__,
-                        stream_name=model.name or "",
-                        stream_namespace=None,
-                        config=config or {},
-                        stream_state={},
-                        partition_router=stream_slicer,
-                    )
-                return self.create_concurrent_cursor_from_datetime_based_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
+                return self.create_concurrent_cursor_from_perpartition_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
+                    state_manager=self._connector_state_manager,
                     model_type=DatetimeBasedCursorModel,
                     component_definition=model.incremental_sync.__dict__,
                     stream_name=model.name or "",
                     stream_namespace=None,
                     config=config or {},
+                    stream_state={},
+                    partition_router=stream_slicer,
                 )
 
             incremental_sync_model = model.incremental_sync
-            if (
+            cursor_component = self._create_component_from_model(
+                model=incremental_sync_model, config=config
+            )
+            is_global_cursor = (
                 hasattr(incremental_sync_model, "global_substream_cursor")
                 and incremental_sync_model.global_substream_cursor
-            ):
-                cursor_component = self._create_component_from_model(
-                    model=incremental_sync_model, config=config
-                )
+            )
+
+            if is_global_cursor:
                 return GlobalSubstreamCursor(
                     stream_cursor=cursor_component, partition_router=stream_slicer
                 )
-            else:
-                cursor_component = self._create_component_from_model(
-                    model=incremental_sync_model, config=config
-                )
-                return PerPartitionWithGlobalCursor(
-                    cursor_factory=CursorFactory(
-                        lambda: self._create_component_from_model(
-                            model=incremental_sync_model, config=config
-                        ),
+            return PerPartitionWithGlobalCursor(
+                cursor_factory=CursorFactory(
+                    lambda: self._create_component_from_model(
+                        model=incremental_sync_model, config=config
                     ),
-                    partition_router=stream_slicer,
-                    stream_cursor=cursor_component,
-                )
+                ),
+                partition_router=stream_slicer,
+                stream_cursor=cursor_component,
+            )
         elif model.incremental_sync:
             if model.retriever.type == "AsyncRetriever":
-                if model.incremental_sync.type != "DatetimeBasedCursor":
-                    # We are currently in a transition to the Concurrent CDK and AsyncRetriever can only work with the support or unordered slices (for example, when we trigger reports for January and February, the report in February can be completed first). Once we have support for custom concurrent cursor or have a new implementation available in the CDK, we can enable more cursors here.
-                    raise ValueError(
-                        "AsyncRetriever with cursor other than DatetimeBasedCursor is not supported yet"
-                    )
-                if model.retriever.partition_router:
-                    # Note that this development is also done in parallel to the per partition development which once merged we could support here by calling `create_concurrent_cursor_from_perpartition_cursor`
-                    raise ValueError("Per partition state is not supported yet for AsyncRetriever")
                 return self.create_concurrent_cursor_from_datetime_based_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
                     model_type=DatetimeBasedCursorModel,
                     component_definition=model.incremental_sync.__dict__,
@@ -1877,13 +1854,22 @@ class ModelToComponentFactory:
                     config=config or {},
                     stream_state_migrations=model.state_migrations,
                 )
-            return (
-                self._create_component_from_model(model=model.incremental_sync, config=config)
-                if model.incremental_sync
-                else None
-            )
-        elif self._disable_resumable_full_refresh:
-            return stream_slicer
+            return self._create_component_from_model(model=model.incremental_sync, config=config)  # type: ignore[no-any-return]  # Will be created Cursor as stream_slicer_model is model.incremental_sync
+        return None
+
+    def _build_resumable_cursor(
+        self,
+        model: Union[
+            AsyncRetrieverModel,
+            CustomRetrieverModel,
+            SimpleRetrieverModel,
+            StateDelegatingRetrieverModel,
+        ],
+        stream_slicer: Optional[PartitionRouter],
+    ) -> Optional[StreamSlicer]:
+        if hasattr(model, "paginator") and model.paginator and not stream_slicer:
+            # For the regular Full-Refresh streams, we use the high level `ResumableFullRefreshCursor`
+            return ResumableFullRefreshCursor(parameters={})
         elif stream_slicer:
             # For the Full-Refresh sub-streams, we use the nested `ChildPartitionResumableFullRefreshCursor`
             return PerPartitionCursor(
@@ -1892,7 +1878,48 @@ class ModelToComponentFactory:
                 ),
                 partition_router=stream_slicer,
             )
-        return self._build_resumable_cursor_from_paginator(model.retriever, stream_slicer)
+        return None
+
+    def _merge_stream_slicers(
+        self, model: DeclarativeStreamModel, config: Config
+    ) -> Optional[StreamSlicer]:
+        if model.retriever.type == "StateDelegatingRetriever" and not model.incremental_sync:
+            raise ValueError("StateDelegatingRetriever requires 'incremental_sync' to be enabled.")
+
+        if model.retriever.type == "AsyncRetriever":
+            is_not_datetime_cursor = (
+                model.incremental_sync.type != "DatetimeBasedCursor"
+                if model.incremental_sync
+                else None
+            )
+            is_partition_router = (
+                bool(model.retriever.partition_router) if model.incremental_sync else None
+            )
+
+            if is_not_datetime_cursor:
+                # We are currently in a transition to the Concurrent CDK and AsyncRetriever can only work with the
+                # support or unordered slices (for example, when we trigger reports for January and February, the report
+                # in February can be completed first). Once we have support for custom concurrent cursor or have a new
+                # implementation available in the CDK, we can enable more cursors here.
+                raise ValueError(
+                    "AsyncRetriever with cursor other than DatetimeBasedCursor is not supported yet."
+                )
+
+            if is_partition_router:
+                # Note that this development is also done in parallel to the per partition development which once merged
+                # we could support here by calling create_concurrent_cursor_from_perpartition_cursor
+                raise ValueError("Per partition state is not supported yet for AsyncRetriever.")
+
+        stream_slicer = self._build_stream_slicer_from_partition_router(model.retriever, config)
+
+        if model.incremental_sync:
+            return self._build_incremental_cursor(model, stream_slicer, config)
+
+        return (
+            stream_slicer
+            if self._disable_resumable_full_refresh
+            else self._build_resumable_cursor(model.retriever, stream_slicer)
+        )
 
     def create_default_error_handler(
         self, model: DefaultErrorHandlerModel, config: Config, **kwargs: Any
@@ -2153,9 +2180,7 @@ class ModelToComponentFactory:
         self, model: DynamicSchemaLoaderModel, config: Config, **kwargs: Any
     ) -> DynamicSchemaLoader:
         stream_slicer = self._build_stream_slicer_from_partition_router(model.retriever, config)
-        combined_slicers = self._build_resumable_cursor_from_paginator(
-            model.retriever, stream_slicer
-        )
+        combined_slicers = self._build_resumable_cursor(model.retriever, stream_slicer)
 
         schema_transformations = []
         if model.schema_transformations:
@@ -2610,6 +2635,7 @@ class ModelToComponentFactory:
         request_options_provider: Optional[RequestOptionsProvider] = None,
         stop_condition_on_cursor: bool = False,
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
+        cursor: Optional[DeclarativeCursor] = None,
         transformations: List[RecordTransformation],
     ) -> SimpleRetriever:
         decoder = (
@@ -2695,6 +2721,58 @@ class ModelToComponentFactory:
             config=config,
             ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
             parameters=model.parameters or {},
+        )
+
+    def create_state_delegating_retriever(
+        self,
+        model: StateDelegatingRetrieverModel,
+        config: Config,
+        *,
+        name: str,
+        primary_key: Optional[Union[str, List[str], List[List[str]]]],
+        stream_slicer: Optional[StreamSlicer],
+        request_options_provider: Optional[RequestOptionsProvider] = None,
+        stop_condition_on_cursor: bool = False,
+        client_side_incremental_sync: Optional[Dict[str, Any]] = None,
+        transformations: List[RecordTransformation],
+    ) -> StateDelegatingRetriever:
+        if not isinstance(stream_slicer, DeclarativeCursor):
+            raise ValueError("StateDelegatingRetriever requires a DeclarativeCursor")
+
+        full_data_request_options_provider = copy.deepcopy(request_options_provider)
+
+        if model.ignore_first_request_options_provider:
+            stream_slicer._step = datetime.timedelta.max
+            full_data_request_options_provider = None
+
+        full_data_retriever = self._create_component_from_model(
+            model=model.full_data_retriever,
+            config=config,
+            name=name,
+            primary_key=primary_key,
+            stream_slicer=stream_slicer,
+            request_options_provider=full_data_request_options_provider,
+            stop_condition_on_cursor=stop_condition_on_cursor,
+            client_side_incremental_sync=client_side_incremental_sync,
+            transformations=transformations,
+        )
+
+        incremental_data_retriever = self._create_component_from_model(
+            model=model.incremental_data_retriever,
+            config=config,
+            name=name,
+            primary_key=primary_key,
+            stream_slicer=stream_slicer,
+            request_options_provider=request_options_provider,
+            stop_condition_on_cursor=stop_condition_on_cursor,
+            client_side_incremental_sync=client_side_incremental_sync,
+            transformations=transformations,
+        )
+
+        return StateDelegatingRetriever(
+            full_data_retriever=full_data_retriever,
+            incremental_data_retriever=incremental_data_retriever,
+            cursor=stream_slicer,
         )
 
     def _create_async_job_status_mapping(
@@ -3006,9 +3084,7 @@ class ModelToComponentFactory:
         self, model: HttpComponentsResolverModel, config: Config
     ) -> Any:
         stream_slicer = self._build_stream_slicer_from_partition_router(model.retriever, config)
-        combined_slicers = self._build_resumable_cursor_from_paginator(
-            model.retriever, stream_slicer
-        )
+        combined_slicers = self._build_resumable_cursor(model.retriever, stream_slicer)
 
         retriever = self._create_component_from_model(
             model=model.retriever,
