@@ -59,3 +59,24 @@ class DefaultBackoffException(BaseBackoffException):
 
 class RateLimitBackoffException(BaseBackoffException):
     pass
+
+
+class DNSResolutionError(BaseBackoffException):
+    """
+    Raised when a DNS resolution error occurs.
+    This is different from InvalidURL which is raised for malformed URLs.
+    """
+
+    def __init__(
+        self,
+        url: str,
+        request: requests.PreparedRequest,
+        response: Optional[Union[requests.Response, Exception]],
+        error_message: str = "",
+    ):
+        self.url = url
+        super().__init__(
+            request=request,
+            response=response,
+            error_message=error_message or f"Failed to resolve DNS for URL: {url}",
+        )
