@@ -145,9 +145,13 @@ class CohereEmbedder(Embedder):
     def __init__(self, config: CohereEmbeddingConfigModel):
         super().__init__()
         # Client is set internally
+        from pydantic import SecretStr
+        
         self.embeddings = CohereEmbeddings(
-            cohere_api_key=config.cohere_key, model="embed-english-light-v2.0"
-        )  # type: ignore
+            api_key=SecretStr(config.cohere_key), 
+            model="embed-english-light-v2.0",
+            client_kwargs={"user_agent": "langchain"}
+        )
 
     def check(self) -> Optional[str]:
         try:
