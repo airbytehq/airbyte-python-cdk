@@ -483,7 +483,6 @@ class UnstructuredParser(FileTypeParser):
         file_content = file.read()
         file.seek(0)
         from io import BytesIO
-
         file_bytes = BytesIO(file_content)
         type_based_on_content = detect_filetype(file=file_bytes)
         file.seek(0)  # detect_filetype is reading to read the file content, so we need to reset
