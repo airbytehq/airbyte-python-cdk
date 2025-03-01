@@ -7,10 +7,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Optional, Union, cast
 
-from langchain.embeddings.cohere import CohereEmbeddings
-from langchain.embeddings.fake import FakeEmbeddings
-from langchain.embeddings.localai import LocalAIEmbeddings
-from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain_community.embeddings.cohere import CohereEmbeddings
+from langchain_community.embeddings.fake import FakeEmbeddings
+from langchain_community.embeddings.localai import LocalAIEmbeddings
+from langchain_community.embeddings.openai import OpenAIEmbeddings
 
 from airbyte_cdk.destinations.vector_db_based.config import (
     AzureOpenAIEmbeddingConfigModel,
