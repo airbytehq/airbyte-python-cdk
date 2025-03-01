@@ -7,10 +7,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import List, Optional, Union, cast
 
-from langchain.embeddings.cohere import CohereEmbeddings
-from langchain.embeddings.fake import FakeEmbeddings
-from langchain.embeddings.localai import LocalAIEmbeddings
-from langchain.embeddings.openai import OpenAIEmbeddings
+from langchain_community.embeddings.cohere import CohereEmbeddings
+from langchain_community.embeddings.fake import FakeEmbeddings
+from langchain_community.embeddings.localai import LocalAIEmbeddings
+from langchain_openai.embeddings import OpenAIEmbeddings
 
 from airbyte_cdk.destinations.vector_db_based.config import (
     AzureOpenAIEmbeddingConfigModel,
@@ -106,30 +106,36 @@ class BaseOpenAIEmbedder(Embedder):
 
 class OpenAIEmbedder(BaseOpenAIEmbedder):
     def __init__(self, config: OpenAIEmbeddingConfigModel, chunk_size: int):
+        from pydantic import SecretStr
+
         super().__init__(
-            OpenAIEmbeddings(  # type: ignore [call-arg]
-                openai_api_key=config.openai_key, max_retries=15, disallowed_special=()
+            OpenAIEmbeddings(
+                api_key=SecretStr(config.openai_key), max_retries=15, disallowed_special=()
             ),
             chunk_size,
-        )  # type: ignore
+        )
 
 
 class AzureOpenAIEmbedder(BaseOpenAIEmbedder):
     def __init__(self, config: AzureOpenAIEmbeddingConfigModel, chunk_size: int):
         # Azure OpenAI API has — as of 20230927 — a limit of 16 documents per request
+        from pydantic import SecretStr
+
         super().__init__(
-            OpenAIEmbeddings(  # type: ignore [call-arg]
-                openai_api_key=config.openai_key,
+            OpenAIEmbeddings(
+                api_key=SecretStr(config.openai_key),
                 chunk_size=16,
                 max_retries=15,
-                openai_api_type="azure",
-                openai_api_version="2023-05-15",
-                openai_api_base=config.api_base,
-                deployment=config.deployment,
+                model_kwargs={
+                    "api_type": "azure",
+                    "api_base": config.api_base,
+                    "api_version": "2023-05-15",
+                    "deployment": config.deployment,
+                },
                 disallowed_special=(),
             ),
             chunk_size,
-        )  # type: ignore
+        )
 
 
 COHERE_VECTOR_SIZE = 1024
@@ -197,11 +203,13 @@ class OpenAICompatibleEmbedder(Embedder):
         # Always set an API key even if there is none defined in the config because the validator will fail otherwise. Embedding APIs that don't require an API key don't fail if one is provided, so this is not breaking usage.
         self.embeddings = LocalAIEmbeddings(
             model=config.model_name,
-            openai_api_key=config.api_key or "dummy-api-key",
-            openai_api_base=config.base_url,
+            model_kwargs={
+                "api_key": config.api_key or "dummy-api-key",
+                "base_url": config.base_url,
+            },
             max_retries=15,
             disallowed_special=(),
-        )  # type: ignore
+        )
 
     def check(self) -> Optional[str]:
         deployment_mode = os.environ.get("DEPLOYMENT_MODE", "")

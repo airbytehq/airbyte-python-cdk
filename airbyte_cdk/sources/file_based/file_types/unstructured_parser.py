@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 import logging
+import mimetypes
 import os
 import traceback
 from datetime import datetime
@@ -13,9 +14,6 @@ import dpath
 import nltk
 import requests
 from unstructured.file_utils.filetype import (
-    EXT_TO_FILETYPE,
-    FILETYPE_TO_MIMETYPE,
-    STR_TO_FILETYPE,
     FileType,
     detect_filetype,
 )
@@ -84,14 +82,34 @@ def _import_unstructured() -> None:
     global unstructured_partition_pdf
     global unstructured_partition_docx
     global unstructured_partition_pptx
-    from unstructured.partition.docx import partition_docx
-    from unstructured.partition.pdf import partition_pdf
-    from unstructured.partition.pptx import partition_pptx
 
-    # separate global variables to properly propagate typing
-    unstructured_partition_pdf = partition_pdf
-    unstructured_partition_docx = partition_docx
-    unstructured_partition_pptx = partition_pptx
+    # Import docx and pptx partitioners
+    try:
+        from unstructured.partition.docx import partition_docx
+        from unstructured.partition.pptx import partition_pptx
+
+        # Set docx and pptx partitioners
+        unstructured_partition_docx = partition_docx
+        unstructured_partition_pptx = partition_pptx
+    except ImportError:
+        # If docx or pptx partitioners are not available, set them to None
+        unstructured_partition_docx = None
+        unstructured_partition_pptx = None
+
+    # Try to import PDF partitioner, but handle the case when unstructured_inference is not available
+    try:
+        from unstructured.partition.pdf import partition_pdf
+
+        # separate global variables to properly propagate typing
+        unstructured_partition_pdf = partition_pdf
+    except ImportError as e:
+        if "unstructured_inference" in str(e):
+            # If unstructured_inference is not available, set PDF partitioner to None
+            # This will be handled in _read_file_locally
+            unstructured_partition_pdf = None
+        else:
+            # Re-raise if it's a different import error
+            raise
 
 
 def user_error(e: Exception) -> bool:
@@ -207,13 +225,6 @@ class UnstructuredParser(FileTypeParser):
         logger: logging.Logger,
     ) -> str:
         _import_unstructured()
-        if (
-            (not unstructured_partition_pdf)
-            or (not unstructured_partition_docx)
-            or (not unstructured_partition_pptx)
-        ):
-            # check whether unstructured library is actually available for better error message and to ensure proper typing (can't be None after this point)
-            raise Exception("unstructured library is not available")
 
         filetype: FileType | None = self._get_filetype(file_handle, remote_file)
 
@@ -227,6 +238,26 @@ class UnstructuredParser(FileTypeParser):
             decoded_content: str = optional_decode(file_content)
             return decoded_content
         if format.processing.mode == "local":
+            # Check if required partitioners are available
+            if filetype == FileType.PDF and not unstructured_partition_pdf:
+                raise self._create_parse_error(
+                    remote_file,
+                    "PDF parsing requires the unstructured_inference package. "
+                    "Please install it with `pip install unstructured_inference` or use API mode instead.",
+                )
+            elif filetype == FileType.DOCX and not unstructured_partition_docx:
+                raise self._create_parse_error(
+                    remote_file,
+                    "DOCX parsing requires the unstructured package with docx extras. "
+                    "Please install it with `pip install 'unstructured[docx]'` or use API mode instead.",
+                )
+            elif filetype == FileType.PPTX and not unstructured_partition_pptx:
+                raise self._create_parse_error(
+                    remote_file,
+                    "PPTX parsing requires the unstructured package with pptx extras. "
+                    "Please install it with `pip install 'unstructured[pptx]'` or use API mode instead.",
+                )
+
             return self._read_file_locally(
                 file_handle,
                 filetype,
@@ -335,7 +366,11 @@ class UnstructuredParser(FileTypeParser):
 
         data = self._params_to_dict(format.parameters, strategy)
 
-        file_data = {"files": ("filename", file_handle, FILETYPE_TO_MIMETYPE[filetype])}
+        # Use Python's mimetypes module to get the MIME type for the file type
+        mime_type = (
+            mimetypes.guess_type(f"test.{filetype.name.lower()}")[0] or "application/octet-stream"
+        )
+        file_data = {"files": ("filename", file_handle, mime_type)}
 
         response = requests.post(
             f"{format.api_url}/general/v0/general", headers=headers, data=data, files=file_data
@@ -355,15 +390,6 @@ class UnstructuredParser(FileTypeParser):
     def _read_file_locally(
         self, file_handle: IOBase, filetype: FileType, strategy: str, remote_file: RemoteFile
     ) -> str:
-        _import_unstructured()
-        if (
-            (not unstructured_partition_pdf)
-            or (not unstructured_partition_docx)
-            or (not unstructured_partition_pptx)
-        ):
-            # check whether unstructured library is actually available for better error message and to ensure proper typing (can't be None after this point)
-            raise Exception("unstructured library is not available")
-
         file: Any = file_handle
 
         # before the parsing logic is entered, the file is read completely to make sure it is in local memory
@@ -373,15 +399,37 @@ class UnstructuredParser(FileTypeParser):
 
         try:
             if filetype == FileType.PDF:
+                if not unstructured_partition_pdf:
+                    raise self._create_parse_error(
+                        remote_file,
+                        "PDF parsing requires the unstructured_inference package. "
+                        "Please install it with `pip install unstructured_inference` or use API mode instead.",
+                    )
                 # for PDF, read the file into a BytesIO object because some code paths in pdf parsing are doing an instance check on the file object and don't work with file-like objects
                 file_handle.seek(0)
                 with BytesIO(file_handle.read()) as file:
                     file_handle.seek(0)
                     elements = unstructured_partition_pdf(file=file, strategy=strategy)
             elif filetype == FileType.DOCX:
+                if not unstructured_partition_docx:
+                    raise self._create_parse_error(
+                        remote_file,
+                        "DOCX parsing requires the unstructured package with docx extras. "
+                        "Please install it with `pip install 'unstructured[docx]'` or use API mode instead.",
+                    )
                 elements = unstructured_partition_docx(file=file)
             elif filetype == FileType.PPTX:
+                if not unstructured_partition_pptx:
+                    raise self._create_parse_error(
+                        remote_file,
+                        "PPTX parsing requires the unstructured package with pptx extras. "
+                        "Please install it with `pip install 'unstructured[pptx]'` or use API mode instead.",
+                    )
                 elements = unstructured_partition_pptx(file=file)
+            else:
+                raise self._create_parse_error(
+                    remote_file, f"Unsupported file type for local processing: {filetype}"
+                )
         except Exception as e:
             raise self._create_parse_error(remote_file, str(e))
 
@@ -405,8 +453,11 @@ class UnstructuredParser(FileTypeParser):
         2. Use the file name if available
         3. Use the file content
         """
-        if remote_file.mime_type and remote_file.mime_type in STR_TO_FILETYPE:
-            return STR_TO_FILETYPE[remote_file.mime_type]
+        # In the new version of unstructured, we need to use detect_filetype with content_type
+        if remote_file.mime_type:
+            detected_type = detect_filetype(content_type=remote_file.mime_type)
+            if detected_type != FileType.UNK:
+                return detected_type
 
         # set name to none, otherwise unstructured will try to get the modified date from the local file system
         if hasattr(file, "name"):
@@ -418,7 +469,7 @@ class UnstructuredParser(FileTypeParser):
         file_type: FileType | None = None
         try:
             file_type = detect_filetype(
-                filename=remote_file.uri,
+                file_path=remote_file.uri,
             )
         except Exception:
             # Path doesn't exist locally. Try something else...
@@ -427,15 +478,26 @@ class UnstructuredParser(FileTypeParser):
         if file_type and file_type != FileType.UNK:
             return file_type
 
-        type_based_on_content = detect_filetype(file=file)
+        # Convert IOBase to BytesIO for compatibility with detect_filetype
+        file.seek(0)
+        file_content = file.read()
+        file.seek(0)
+        from io import BytesIO
+
+        file_bytes = BytesIO(file_content)
+        type_based_on_content = detect_filetype(file=file_bytes)
         file.seek(0)  # detect_filetype is reading to read the file content, so we need to reset
 
         if type_based_on_content and type_based_on_content != FileType.UNK:
             return type_based_on_content
 
-        extension = "." + remote_file.uri.split(".")[-1].lower()
-        if extension in EXT_TO_FILETYPE:
-            return EXT_TO_FILETYPE[extension]
+        # Try to detect file type from extension
+        extension = remote_file.uri.split(".")[-1].lower() if "." in remote_file.uri else ""
+        if extension:
+            # In the new version, we use detect_filetype with file_path
+            detected_type = detect_filetype(file_path=f"test.{extension}")
+            if detected_type != FileType.UNK:
+                return detected_type
 
         return None
 
