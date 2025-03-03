@@ -26,7 +26,7 @@ from airbyte_cdk.sources.streams.call_rate import APIBudget
 from airbyte_cdk.sources.streams.http import HttpClient
 from airbyte_cdk.sources.streams.http.error_handlers import ErrorHandler
 from airbyte_cdk.sources.types import Config, EmptyString, StreamSlice, StreamState
-from airbyte_cdk.utils.mapping_helpers import combine_mappings
+from airbyte_cdk.utils.mapping_helpers import combine_mappings, get_interpolation_context
 
 
 @dataclass
@@ -115,23 +115,6 @@ class HttpRequester(Requester):
     def get_authenticator(self) -> DeclarativeAuthenticator:
         return self._authenticator
 
-    def _get_interpolation_context(
-        self,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Mapping[str, Any]:
-        return {
-            "stream_slice": stream_slice,
-            "next_page_token": next_page_token,
-            # update the context with extra fields, if passed.
-            **(
-                stream_slice.extra_fields
-                if stream_slice is not None and hasattr(stream_slice, "extra_fields")
-                else {}
-            ),
-        }
-
     def get_url_base(
         self,
         *,
@@ -139,7 +122,7 @@ class HttpRequester(Requester):
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> str:
-        interpolation_context = self._get_interpolation_context(
+        interpolation_context = get_interpolation_context(
             stream_state=stream_state,
             stream_slice=stream_slice,
             next_page_token=next_page_token,
@@ -153,7 +136,7 @@ class HttpRequester(Requester):
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> str:
-        interpolation_context = self._get_interpolation_context(
+        interpolation_context = get_interpolation_context(
             stream_state=stream_state,
             stream_slice=stream_slice,
             next_page_token=next_page_token,

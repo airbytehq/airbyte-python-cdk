@@ -3,7 +3,7 @@
 #
 
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 import requests
@@ -26,7 +26,7 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies.page_incre
     PageIncrement,
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
-from airbyte_cdk.sources.declarative.types import Record
+from airbyte_cdk.sources.declarative.types import Record, StreamSlice, StreamState
 
 
 @pytest.mark.parametrize(
@@ -473,3 +473,77 @@ def test_request_option_mapping_validator():
                 parameters={},
             ),
         )
+
+
+def test_path_returns_none_when_no_token() -> None:
+    page_token_option = RequestPath(parameters={})
+    paginator = DefaultPaginator(
+        pagination_strategy=Mock(),
+        config={},
+        url_base="https://domain.com",
+        parameters={},
+        page_token_option=page_token_option,
+    )
+    result = paginator.path(None)
+
+    assert result is None
+
+
+def test_path_returns_none_when_option_not_request_path() -> None:
+    token_value = "https://domain.com/next_url"
+    next_page_token = {"next_page_token": token_value}
+
+    # Use a RequestOption instead of RequestPath.
+    page_token_option = RequestOption(
+        inject_into=RequestOptionType.request_parameter,
+        field_name="some_field",
+        parameters={},
+    )
+    paginator = DefaultPaginator(
+        pagination_strategy=Mock(),
+        config={},
+        url_base="https://domain.com",
+        parameters={},
+        page_token_option=page_token_option,
+    )
+    result = paginator.path(next_page_token)
+    assert result is None
+
+
+def test_path_with_additional_interpolation_context() -> None:
+    page_token_option = RequestPath(parameters={})
+    paginator = DefaultPaginator(
+        pagination_strategy=Mock(),
+        config={},
+        url_base="https://api.domain.com/{{ stream_slice['campaign_id'] }}",
+        parameters={},
+        page_token_option=page_token_option,
+    )
+    # define stream_state here
+    stream_state = {"state": "state_value"}
+    # define stream_slice here
+    stream_slice = StreamSlice(
+        partition={
+            "campaign_id": "123_abcd",
+        },
+        cursor_slice={
+            "start": "A",
+            "end": "B",
+        },
+        extra_fields={
+            "extra_field_A": "value_A",
+            "extra_field_B": "value_B",
+        },
+    )
+    # define next_page_token here
+    next_page_token = {
+        "next_page_token": "https://api.domain.com/123_abcd/some_next_page_token_here"
+    }
+
+    expected_after_interpolation = "/some_next_page_token_here"
+
+    assert expected_after_interpolation == paginator.path(
+        next_page_token=next_page_token,
+        stream_state=stream_state,
+        stream_slice=stream_slice,
+    )
