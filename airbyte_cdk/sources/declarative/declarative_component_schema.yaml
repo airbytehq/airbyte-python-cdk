@@ -3178,12 +3178,14 @@ definitions:
           - "$ref": "#/definitions/CustomPartitionRouter"
           - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/SubstreamPartitionRouter"
+          - "$ref": "#/definitions/GroupingPartitionRouter"
           - type: array
             items:
               anyOf:
                 - "$ref": "#/definitions/CustomPartitionRouter"
                 - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/SubstreamPartitionRouter"
+                - "$ref": "#/definitions/GroupingPartitionRouter"
       decoder:
         title: Decoder
         description: Component decoding the response so records can be extracted.
@@ -3338,12 +3340,14 @@ definitions:
           - "$ref": "#/definitions/CustomPartitionRouter"
           - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/SubstreamPartitionRouter"
+          - "$ref": "#/definitions/GroupingPartitionRouter"
           - type: array
             items:
               anyOf:
                 - "$ref": "#/definitions/CustomPartitionRouter"
                 - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/SubstreamPartitionRouter"
+                - "$ref": "#/definitions/GroupingPartitionRouter"
       decoder:
         title: Decoder
         description: Component decoding the response so records can be extracted.
@@ -3457,6 +3461,44 @@ definitions:
         type: number
         examples:
           - 3600
+      $parameters:
+        type: object
+        additionalProperties: true
+  GroupingPartitionRouter:
+    title: Grouping Partition Router
+    description: >
+      A decorator on top of a partition router that groups partitions into batches of a specified size.
+      This is useful for APIs that support filtering by multiple partition keys in a single request.
+      Note that per-partition incremental syncs may not work as expected because the grouping
+      of partitions might change between syncs, potentially leading to inconsistent state tracking.
+    type: object
+    required:
+      - type
+      - group_size
+      - underlying_partition_router
+    properties:
+      type:
+        type: string
+        enum: [GroupingPartitionRouter]
+      group_size:
+        title: Group Size
+        description: The number of partitions to include in each group. This determines how many partition values are batched together in a single slice.
+        type: integer
+        examples:
+          - 10
+          - 50
+      underlying_partition_router:
+        title: Underlying Partition Router
+        description: The partition router whose output will be grouped. This can be any valid partition router component.
+        anyOf:
+          - "$ref": "#/definitions/CustomPartitionRouter"
+          - "$ref": "#/definitions/ListPartitionRouter"
+          - "$ref": "#/definitions/SubstreamPartitionRouter"
+      deduplicate:
+        title: Deduplicate Partitions
+        description: If true, ensures that partitions are unique within each group by removing duplicates based on the partition key.
+        type: boolean
+        default: true
       $parameters:
         type: object
         additionalProperties: true

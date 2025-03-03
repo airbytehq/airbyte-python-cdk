@@ -2249,7 +2249,15 @@ class SimpleRetriever(BaseModel):
             CustomPartitionRouter,
             ListPartitionRouter,
             SubstreamPartitionRouter,
-            List[Union[CustomPartitionRouter, ListPartitionRouter, SubstreamPartitionRouter]],
+            GroupingPartitionRouter,
+            List[
+                Union[
+                    CustomPartitionRouter,
+                    ListPartitionRouter,
+                    SubstreamPartitionRouter,
+                    GroupingPartitionRouter,
+                ]
+            ],
         ]
     ] = Field(
         [],
@@ -2327,7 +2335,15 @@ class AsyncRetriever(BaseModel):
             CustomPartitionRouter,
             ListPartitionRouter,
             SubstreamPartitionRouter,
-            List[Union[CustomPartitionRouter, ListPartitionRouter, SubstreamPartitionRouter]],
+            GroupingPartitionRouter,
+            List[
+                Union[
+                    CustomPartitionRouter,
+                    ListPartitionRouter,
+                    SubstreamPartitionRouter,
+                    GroupingPartitionRouter,
+                ]
+            ],
         ]
     ] = Field(
         [],
@@ -2375,6 +2391,29 @@ class SubstreamPartitionRouter(BaseModel):
         ...,
         description="Specifies which parent streams are being iterated over and how parent records should be used to partition the child stream data set.",
         title="Parent Stream Configs",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class GroupingPartitionRouter(BaseModel):
+    type: Literal["GroupingPartitionRouter"]
+    group_size: int = Field(
+        ...,
+        description="The number of partitions to include in each group. This determines how many partition values are batched together in a single slice.",
+        examples=[10, 50],
+        title="Group Size",
+    )
+    underlying_partition_router: Union[
+        CustomPartitionRouter, ListPartitionRouter, SubstreamPartitionRouter
+    ] = Field(
+        ...,
+        description="The partition router whose output will be grouped. This can be any valid partition router component.",
+        title="Underlying Partition Router",
+    )
+    deduplicate: Optional[bool] = Field(
+        True,
+        description="If true, ensures that partitions are unique within each group by removing duplicates based on the partition key.",
+        title="Deduplicate Partitions",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 

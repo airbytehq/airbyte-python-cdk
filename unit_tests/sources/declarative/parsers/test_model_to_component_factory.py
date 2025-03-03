@@ -65,6 +65,9 @@ from airbyte_cdk.sources.declarative.models import CustomSchemaLoader as CustomS
 from airbyte_cdk.sources.declarative.models import DatetimeBasedCursor as DatetimeBasedCursorModel
 from airbyte_cdk.sources.declarative.models import DeclarativeStream as DeclarativeStreamModel
 from airbyte_cdk.sources.declarative.models import DefaultPaginator as DefaultPaginatorModel
+from airbyte_cdk.sources.declarative.models import (
+    GroupingPartitionRouter as GroupingPartitionRouterModel,
+)
 from airbyte_cdk.sources.declarative.models import HttpRequester as HttpRequesterModel
 from airbyte_cdk.sources.declarative.models import JwtAuthenticator as JwtAuthenticatorModel
 from airbyte_cdk.sources.declarative.models import ListPartitionRouter as ListPartitionRouterModel
@@ -96,6 +99,7 @@ from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
 from airbyte_cdk.sources.declarative.partition_routers import (
     AsyncJobPartitionRouter,
     CartesianProductStreamSlicer,
+    GroupingPartitionRouter,
     ListPartitionRouter,
     SinglePartitionRouter,
     SubstreamPartitionRouter,
@@ -3840,3 +3844,156 @@ def test_api_budget_fixed_window_policy():
     assert matcher._method == "GET"
     assert matcher._url_base == "https://example.org"
     assert matcher._url_path_pattern.pattern == "/v2/data"
+
+
+def test_create_grouping_partition_router_with_underlying_router():
+    content = """
+    schema_loader:
+      file_path: "./source_example/schemas/{{ parameters['name'] }}.yaml"
+      name: "{{ parameters['stream_name'] }}"
+    retriever:
+      requester:
+        type: "HttpRequester"
+        path: "example"
+      record_selector:
+        extractor:
+          field_path: []
+    stream_A:
+      type: DeclarativeStream
+      name: "A"
+      primary_key: "id"
+      $parameters:
+        retriever: "#/retriever"
+        url_base: "https://airbyte.io"
+        schema_loader: "#/schema_loader"
+    sub_partition_router:
+      type: SubstreamPartitionRouter
+      parent_stream_configs:
+        - stream: "#/stream_A"
+          parent_key: id
+          partition_field: repository_id
+    partition_router:
+      type: GroupingPartitionRouter
+      underlying_partition_router: "#/sub_partition_router"
+      group_size: 2
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    partition_router = factory.create_component(
+        model_type=GroupingPartitionRouterModel,
+        component_definition=partition_router_manifest,
+        config=input_config,
+    )
+
+    # Test the created partition router
+    assert isinstance(partition_router, GroupingPartitionRouter)
+    assert isinstance(partition_router.underlying_partition_router, SubstreamPartitionRouter)
+    assert partition_router.group_size == 2
+
+    # Test the underlying partition router
+    parent_stream_configs = partition_router.underlying_partition_router.parent_stream_configs
+    assert len(parent_stream_configs) == 1
+    assert isinstance(parent_stream_configs[0].stream, DeclarativeStream)
+    assert parent_stream_configs[0].parent_key.eval({}) == "id"
+    assert parent_stream_configs[0].partition_field.eval({}) == "repository_id"
+
+
+def test_create_grouping_partition_router_invalid_group_size():
+    """Test that an invalid group_size (< 1) raises a ValueError."""
+    content = """
+    schema_loader:
+      file_path: "./source_example/schemas/{{ parameters['name'] }}.yaml"
+      name: "{{ parameters['stream_name'] }}"
+    retriever:
+      requester:
+        type: "HttpRequester"
+        path: "example"
+      record_selector:
+        extractor:
+          field_path: []
+    stream_A:
+      type: DeclarativeStream
+      name: "A"
+      primary_key: "id"
+      $parameters:
+        retriever: "#/retriever"
+        url_base: "https://airbyte.io"
+        schema_loader: "#/schema_loader"
+    sub_partition_router:
+      type: SubstreamPartitionRouter
+      parent_stream_configs:
+        - stream: "#/stream_A"
+          parent_key: id
+          partition_field: repository_id
+    partition_router:
+      type: GroupingPartitionRouter
+      underlying_partition_router: "#/sub_partition_router"
+      group_size: 0
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    with pytest.raises(ValueError, match="Group size must be greater than 0, got 0"):
+        factory.create_component(
+            model_type=GroupingPartitionRouterModel,
+            component_definition=partition_router_manifest,
+            config=input_config,
+        )
+
+
+def test_create_grouping_partition_router_substream_with_request_option():
+    """Test that a SubstreamPartitionRouter with request_option raises a ValueError."""
+    content = """
+    schema_loader:
+      file_path: "./source_example/schemas/{{ parameters['name'] }}.yaml"
+      name: "{{ parameters['stream_name'] }}"
+    retriever:
+      requester:
+        type: "HttpRequester"
+        path: "example"
+      record_selector:
+        extractor:
+          field_path: []
+    stream_A:
+      type: DeclarativeStream
+      name: "A"
+      primary_key: "id"
+      $parameters:
+        retriever: "#/retriever"
+        url_base: "https://airbyte.io"
+        schema_loader: "#/schema_loader"
+    sub_partition_router:
+      type: SubstreamPartitionRouter
+      parent_stream_configs:
+        - stream: "#/stream_A"
+          parent_key: id
+          partition_field: repository_id
+          request_option:
+            inject_into: request_parameter
+            field_name: "repo_id"
+    partition_router:
+      type: GroupingPartitionRouter
+      underlying_partition_router: "#/sub_partition_router"
+      group_size: 2
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    with pytest.raises(
+        ValueError, match="Request options are not supported for GroupingPartitionRouter."
+    ):
+        factory.create_component(
+            model_type=GroupingPartitionRouterModel,
+            component_definition=partition_router_manifest,
+            config=input_config,
+        )
