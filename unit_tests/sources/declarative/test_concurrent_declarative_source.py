@@ -4,6 +4,7 @@
 
 import copy
 import json
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 from unittest.mock import patch
@@ -43,6 +44,9 @@ from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.checkpoint import Cursor
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
+from airbyte_cdk.sources.streams.concurrent.state_converters.incrementing_count_stream_state_converter import (
+    IncrementingCountStreamStateConverter,
+)
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
@@ -230,6 +234,16 @@ _MANIFEST = {
                 "inject_into": "request_parameter",
             },
         },
+        "incremental_counting_cursor": {
+            "type": "IncrementingCountCursor",
+            "cursor_field": "id",
+            "start_value": 0,
+            "start_time_option": {
+                "type": "RequestOption",
+                "field_name": "since_id",
+                "inject_into": "request_parameter",
+            },
+        },
         "base_stream": {"retriever": {"$ref": "#/definitions/retriever"}},
         "base_incremental_stream": {
             "retriever": {
@@ -237,6 +251,13 @@ _MANIFEST = {
                 "requester": {"$ref": "#/definitions/requester"},
             },
             "incremental_sync": {"$ref": "#/definitions/incremental_cursor"},
+        },
+        "base_incremental_counting_stream": {
+            "retriever": {
+                "$ref": "#/definitions/retriever",
+                "requester": {"$ref": "#/definitions/requester"},
+            },
+            "incremental_sync": {"$ref": "#/definitions/incremental_counting_cursor"},
         },
         "party_members_stream": {
             "$ref": "#/definitions/base_incremental_stream",
@@ -527,6 +548,35 @@ _MANIFEST = {
                 },
             },
         },
+        "incremental_counting_stream": {
+            "$ref": "#/definitions/base_incremental_counting_stream",
+            "retriever": {
+                "$ref": "#/definitions/base_incremental_counting_stream/retriever",
+                "record_selector": {"$ref": "#/definitions/selector"},
+            },
+            "$parameters": {
+                "name": "incremental_counting_stream",
+                "primary_key": "id",
+                "path": "/party_members",
+            },
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {
+                    "$schema": "https://json-schema.org/draft-07/schema#",
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "description": "The identifier",
+                            "type": ["null", "string"],
+                        },
+                        "name": {
+                            "description": "The name of the party member",
+                            "type": ["null", "string"],
+                        },
+                    },
+                },
+            },
+        },
     },
     "streams": [
         "#/definitions/party_members_stream",
@@ -536,6 +586,7 @@ _MANIFEST = {
         "#/definitions/arcana_personas_stream",
         "#/definitions/palace_enemies_stream",
         "#/definitions/async_job_stream",
+        "#/definitions/incremental_counting_stream",
     ],
     "check": {"stream_names": ["party_members", "locations"]},
     "concurrency_level": {
@@ -658,9 +709,9 @@ def test_group_streams():
     )
     concurrent_streams, synchronous_streams = source._group_streams(config=_CONFIG)
 
-    # 1 full refresh stream, 2 incremental streams, 1 substream w/o incremental, 1 list based substream w/o incremental
+    # 1 full refresh stream, 3 incremental streams, 1 substream w/o incremental, 1 list based substream w/o incremental
     # 1 async job stream, 1 substream w/ incremental
-    assert len(concurrent_streams) == 7
+    assert len(concurrent_streams) == 8
     (
         concurrent_stream_0,
         concurrent_stream_1,
@@ -669,6 +720,7 @@ def test_group_streams():
         concurrent_stream_4,
         concurrent_stream_5,
         concurrent_stream_6,
+        concurrent_stream_7,
     ) = concurrent_streams
     assert isinstance(concurrent_stream_0, DefaultStream)
     assert concurrent_stream_0.name == "party_members"
@@ -684,6 +736,8 @@ def test_group_streams():
     assert concurrent_stream_5.name == "palace_enemies"
     assert isinstance(concurrent_stream_6, DefaultStream)
     assert concurrent_stream_6.name == "async_job_stream"
+    assert isinstance(concurrent_stream_7, DefaultStream)
+    assert concurrent_stream_7.name == "incremental_counting_stream"
 
 
 @freezegun.freeze_time(time_to_freeze=datetime(2024, 9, 1, 0, 0, 0, 0, tzinfo=timezone.utc))
@@ -756,6 +810,20 @@ def test_create_concurrent_cursor():
         "state_type": "date-range",
     }
 
+    incremental_counting_stream = concurrent_streams[7]
+    assert isinstance(incremental_counting_stream, DefaultStream)
+    incremental_counting_cursor = incremental_counting_stream.cursor
+
+    assert isinstance(incremental_counting_cursor, ConcurrentCursor)
+    assert isinstance(
+        incremental_counting_cursor._connector_state_converter,
+        IncrementingCountStreamStateConverter,
+    )
+    assert incremental_counting_cursor._stream_name == "incremental_counting_stream"
+    assert incremental_counting_cursor._cursor_field.cursor_field_key == "id"
+    assert incremental_counting_cursor._start == 0
+    assert incremental_counting_cursor._end_provider() == math.inf
+
 
 def test_check():
     """
@@ -808,6 +876,7 @@ def test_discover():
         "arcana_personas",
         "palace_enemies",
         "async_job_stream",
+        "incremental_counting_stream",
     }
 
     source = ConcurrentDeclarativeSource(

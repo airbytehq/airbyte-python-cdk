@@ -1508,6 +1508,28 @@ class AuthFlow(BaseModel):
     oauth_config_specification: Optional[OAuthConfigSpecification] = None
 
 
+class IncrementingCountCursor(BaseModel):
+    type: Literal["IncrementingCountCursor"]
+    cursor_field: str = Field(
+        ...,
+        description="The location of the value on a record that will be used as a bookmark during sync. To ensure no data loss, the API must return records in ascending order based on the cursor field. Nested fields are not supported, so the field must be at the top level of the record. You can use a combination of Add Field and Remove Field transformations to move the nested field to the top.",
+        examples=["created_at", "{{ config['record_cursor'] }}"],
+        title="Cursor Field",
+    )
+    start_value: Optional[Union[str, int]] = Field(
+        None,
+        description="The value that determines the earliest record that should be synced.",
+        examples=[0, "{{ config['start_value'] }}"],
+        title="Start Value",
+    )
+    start_value_option: Optional[RequestOption] = Field(
+        None,
+        description="Optionally configures how the start value will be sent in requests to the source API.",
+        title="Inject Start Value Into Outgoing HTTP Request",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class DatetimeBasedCursor(BaseModel):
     type: Literal["DatetimeBasedCursor"]
     clamping: Optional[Clamping] = Field(
@@ -1948,7 +1970,9 @@ class DeclarativeStream(BaseModel):
         description="Component used to coordinate how records are extracted across stream slices and request pages.",
         title="Retriever",
     )
-    incremental_sync: Optional[Union[CustomIncrementalSync, DatetimeBasedCursor]] = Field(
+    incremental_sync: Optional[
+        Union[CustomIncrementalSync, DatetimeBasedCursor, IncrementingCountCursor]
+    ] = Field(
         None,
         description="Component used to fetch data incrementally based on a time field in the data.",
         title="Incremental Sync",
