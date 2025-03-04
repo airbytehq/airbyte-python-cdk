@@ -1678,6 +1678,10 @@ definitions:
       type:
         type: string
         enum: [ResponseToFileExtractor]
+      file_type:
+        title: The file type in which the response data is storred. Supported types are [csv, jsonl].
+        type: string
+        default: csv
       $parameters:
         type: object
         additionalProperties: true

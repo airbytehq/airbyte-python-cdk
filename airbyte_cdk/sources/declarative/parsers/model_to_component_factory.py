@@ -1992,7 +1992,9 @@ class ModelToComponentFactory:
         model: ResponseToFileExtractorModel,
         **kwargs: Any,
     ) -> ResponseToFileExtractor:
-        return ResponseToFileExtractor(parameters=model.parameters or {})
+        return ResponseToFileExtractor(
+            parameters=model.parameters or {}, file_type=model.file_type or "csv"
+        )
 
     @staticmethod
     def create_exponential_backoff_strategy(
