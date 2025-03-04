@@ -47,6 +47,7 @@ def to_configured_catalog(
 ) -> ConfiguredAirbyteCatalog:
     return ConfiguredAirbyteCatalog(streams=configured_streams)
 
+
 _CONFIG = {"start_date": "2024-07-01T00:00:00.000Z"}
 
 _MANIFEST = {
