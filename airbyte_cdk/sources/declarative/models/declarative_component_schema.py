@@ -939,7 +939,7 @@ class MinMaxDatetime(BaseModel):
     )
     datetime_format: Optional[str] = Field(
         "",
-        description='Format of the datetime value. Defaults to "%Y-%m-%dT%H:%M:%S.%f%z" if left empty. Use placeholders starting with "%" to describe the format the API is using. The following placeholders are available:\n  * **%s**: Epoch unix timestamp - `1686218963`\n  * **%s_as_float**: Epoch unix timestamp in seconds as float with microsecond precision - `1686218963.123456`\n  * **%ms**: Epoch unix timestamp - `1686218963123`\n  * **%a**: Weekday (abbreviated) - `Sun`\n  * **%A**: Weekday (full) - `Sunday`\n  * **%w**: Weekday (decimal) - `0` (Sunday), `6` (Saturday)\n  * **%d**: Day of the month (zero-padded) - `01`, `02`, ..., `31`\n  * **%b**: Month (abbreviated) - `Jan`\n  * **%B**: Month (full) - `January`\n  * **%m**: Month (zero-padded) - `01`, `02`, ..., `12`\n  * **%y**: Year (without century, zero-padded) - `00`, `01`, ..., `99`\n  * **%Y**: Year (with century) - `0001`, `0002`, ..., `9999`\n  * **%H**: Hour (24-hour, zero-padded) - `00`, `01`, ..., `23`\n  * **%I**: Hour (12-hour, zero-padded) - `01`, `02`, ..., `12`\n  * **%p**: AM/PM indicator\n  * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`\n  * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`\n  * **%f**: Microsecond (zero-padded to 6 digits) - `000000`, `000001`, ..., `999999`\n  * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`\n  * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`\n  * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`\n  * **%U**: Week number of the year (Sunday as first day) - `00`, `01`, ..., `53`\n  * **%W**: Week number of the year (Monday as first day) - `00`, `01`, ..., `53`\n  * **%c**: Date and time representation - `Tue Aug 16 21:30:00 1988`\n  * **%x**: Date representation - `08/16/1988`\n  * **%X**: Time representation - `21:30:00`\n  * **%%**: Literal \'%\' character\n\n  Some placeholders depend on the locale of the underlying system - in most cases this locale is configured as en/US. For more information see the [Python documentation](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes).\n',
+        description='Format of the datetime value. Defaults to "%Y-%m-%dT%H:%M:%S.%f%z" if left empty. Use placeholders starting with "%" to describe the format the API is using. The following placeholders are available:\n  * **%s**: Epoch unix timestamp - `1686218963`\n  * **%s_as_float**: Epoch unix timestamp in seconds as float with microsecond precision - `1686218963.123456`\n  * **%ms**: Epoch unix timestamp - `1686218963123`\n  * **%a**: Weekday (abbreviated) - `Sun`\n  * **%A**: Weekday (full) - `Sunday`\n  * **%w**: Weekday (decimal) - `0` (Sunday), `6` (Saturday)\n  * **%d**: Day of the month (zero-padded) - `01`, `02`, ..., `31`\n  * **%b**: Month (abbreviated) - `Jan`\n  * **%B**: Month (full) - `January`\n  * **%m**: Month (zero-padded) - `01`, `02`, ..., `12`\n  * **%y**: Year (without century, zero-padded) - `00`, `01`, ..., `99`\n  * **%Y**: Year (with century) - `0001`, `0002`, ..., `9999`\n  * **%H**: Hour (24-hour, zero-padded) - `00`, `01`, ..., `23`\n  * **%I**: Hour (12-hour, zero-padded) - `01`, `02`, ..., `12`\n  * **%p**: AM/PM indicator\n  * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`\n  * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`\n  * **%f**: Microsecond (zero-padded to 6 digits) - `000000`, `000001`, ..., `999999`\n  * **%_ms**: Millisecond (zero-padded to 3 digits) - `000`, `001`, ..., `999`\n  * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`\n  * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`\n  * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`\n  * **%U**: Week number of the year (Sunday as first day) - `00`, `01`, ..., `53`\n  * **%W**: Week number of the year (Monday as first day) - `00`, `01`, ..., `53`\n  * **%c**: Date and time representation - `Tue Aug 16 21:30:00 1988`\n  * **%x**: Date representation - `08/16/1988`\n  * **%X**: Time representation - `21:30:00`\n  * **%%**: Literal \'%\' character\n\n  Some placeholders depend on the locale of the underlying system - in most cases this locale is configured as en/US. For more information see the [Python documentation](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes).\n',
         examples=["%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%d", "%s"],
         title="Datetime Format",
     )
@@ -1508,6 +1508,28 @@ class AuthFlow(BaseModel):
     oauth_config_specification: Optional[OAuthConfigSpecification] = None
 
 
+class IncrementingCountCursor(BaseModel):
+    type: Literal["IncrementingCountCursor"]
+    cursor_field: str = Field(
+        ...,
+        description="The location of the value on a record that will be used as a bookmark during sync. To ensure no data loss, the API must return records in ascending order based on the cursor field. Nested fields are not supported, so the field must be at the top level of the record. You can use a combination of Add Field and Remove Field transformations to move the nested field to the top.",
+        examples=["created_at", "{{ config['record_cursor'] }}"],
+        title="Cursor Field",
+    )
+    start_value: Optional[Union[str, int]] = Field(
+        None,
+        description="The value that determines the earliest record that should be synced.",
+        examples=[0, "{{ config['start_value'] }}"],
+        title="Start Value",
+    )
+    start_value_option: Optional[RequestOption] = Field(
+        None,
+        description="Optionally configures how the start value will be sent in requests to the source API.",
+        title="Inject Start Value Into Outgoing HTTP Request",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class DatetimeBasedCursor(BaseModel):
     type: Literal["DatetimeBasedCursor"]
     clamping: Optional[Clamping] = Field(
@@ -1523,7 +1545,7 @@ class DatetimeBasedCursor(BaseModel):
     )
     datetime_format: str = Field(
         ...,
-        description="The datetime format used to format the datetime values that are sent in outgoing requests to the API. Use placeholders starting with \"%\" to describe the format the API is using. The following placeholders are available:\n  * **%s**: Epoch unix timestamp - `1686218963`\n  * **%s_as_float**: Epoch unix timestamp in seconds as float with microsecond precision - `1686218963.123456`\n  * **%ms**: Epoch unix timestamp (milliseconds) - `1686218963123`\n  * **%a**: Weekday (abbreviated) - `Sun`\n  * **%A**: Weekday (full) - `Sunday`\n  * **%w**: Weekday (decimal) - `0` (Sunday), `6` (Saturday)\n  * **%d**: Day of the month (zero-padded) - `01`, `02`, ..., `31`\n  * **%b**: Month (abbreviated) - `Jan`\n  * **%B**: Month (full) - `January`\n  * **%m**: Month (zero-padded) - `01`, `02`, ..., `12`\n  * **%y**: Year (without century, zero-padded) - `00`, `01`, ..., `99`\n  * **%Y**: Year (with century) - `0001`, `0002`, ..., `9999`\n  * **%H**: Hour (24-hour, zero-padded) - `00`, `01`, ..., `23`\n  * **%I**: Hour (12-hour, zero-padded) - `01`, `02`, ..., `12`\n  * **%p**: AM/PM indicator\n  * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`\n  * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`\n  * **%f**: Microsecond (zero-padded to 6 digits) - `000000`\n  * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`\n  * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`\n  * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`\n  * **%U**: Week number of the year (starting Sunday) - `00`, ..., `53`\n  * **%W**: Week number of the year (starting Monday) - `00`, ..., `53`\n  * **%c**: Date and time - `Tue Aug 16 21:30:00 1988`\n  * **%x**: Date standard format - `08/16/1988`\n  * **%X**: Time standard format - `21:30:00`\n  * **%%**: Literal '%' character\n\n  Some placeholders depend on the locale of the underlying system - in most cases this locale is configured as en/US. For more information see the [Python documentation](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes).\n",
+        description="The datetime format used to format the datetime values that are sent in outgoing requests to the API. Use placeholders starting with \"%\" to describe the format the API is using. The following placeholders are available:\n  * **%s**: Epoch unix timestamp - `1686218963`\n  * **%s_as_float**: Epoch unix timestamp in seconds as float with microsecond precision - `1686218963.123456`\n  * **%ms**: Epoch unix timestamp (milliseconds) - `1686218963123`\n  * **%a**: Weekday (abbreviated) - `Sun`\n  * **%A**: Weekday (full) - `Sunday`\n  * **%w**: Weekday (decimal) - `0` (Sunday), `6` (Saturday)\n  * **%d**: Day of the month (zero-padded) - `01`, `02`, ..., `31`\n  * **%b**: Month (abbreviated) - `Jan`\n  * **%B**: Month (full) - `January`\n  * **%m**: Month (zero-padded) - `01`, `02`, ..., `12`\n  * **%y**: Year (without century, zero-padded) - `00`, `01`, ..., `99`\n  * **%Y**: Year (with century) - `0001`, `0002`, ..., `9999`\n  * **%H**: Hour (24-hour, zero-padded) - `00`, `01`, ..., `23`\n  * **%I**: Hour (12-hour, zero-padded) - `01`, `02`, ..., `12`\n  * **%p**: AM/PM indicator\n  * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`\n  * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`\n  * **%f**: Microsecond (zero-padded to 6 digits) - `000000`\n  * **%_ms**: Millisecond (zero-padded to 3 digits) - `000`\n  * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`\n  * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`\n  * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`\n  * **%U**: Week number of the year (starting Sunday) - `00`, ..., `53`\n  * **%W**: Week number of the year (starting Monday) - `00`, ..., `53`\n  * **%c**: Date and time - `Tue Aug 16 21:30:00 1988`\n  * **%x**: Date standard format - `08/16/1988`\n  * **%X**: Time standard format - `21:30:00`\n  * **%%**: Literal '%' character\n\n  Some placeholders depend on the locale of the underlying system - in most cases this locale is configured as en/US. For more information see the [Python documentation](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes).\n",
         examples=["%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%d", "%s", "%ms", "%s_as_float"],
         title="Outgoing Datetime Format",
     )
@@ -1950,7 +1972,9 @@ class DeclarativeStream(BaseModel):
             title="Retriever",
         )
     )
-    incremental_sync: Optional[Union[CustomIncrementalSync, DatetimeBasedCursor]] = Field(
+    incremental_sync: Optional[
+        Union[CustomIncrementalSync, DatetimeBasedCursor, IncrementingCountCursor]
+    ] = Field(
         None,
         description="Component used to fetch data incrementally based on a time field in the data.",
         title="Incremental Sync",
@@ -2050,12 +2074,14 @@ class HttpRequester(BaseModel):
         description="Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.",
         examples=[
             "https://connect.squareup.com/v2",
-            "{{ config['base_url'] or 'https://app.posthog.com'}}/api/",
+            "{{ config['base_url'] or 'https://app.posthog.com'}}/api",
+            "https://connect.squareup.com/v2/quotes/{{ stream_partition['id'] }}/quote_line_groups",
+            "https://example.com/api/v1/resource/{{ next_page_token['id'] }}",
         ],
         title="API Base URL",
     )
-    path: str = Field(
-        ...,
+    path: Optional[str] = Field(
+        None,
         description="Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.",
         examples=[
             "/products",
@@ -2284,7 +2310,7 @@ class AsyncRetriever(BaseModel):
     status_extractor: Union[CustomRecordExtractor, DpathExtractor] = Field(
         ..., description="Responsible for fetching the actual status of the async job."
     )
-    urls_extractor: Union[CustomRecordExtractor, DpathExtractor] = Field(
+    download_target_extractor: Union[CustomRecordExtractor, DpathExtractor] = Field(
         ...,
         description="Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.",
     )
@@ -2299,7 +2325,7 @@ class AsyncRetriever(BaseModel):
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to fetch the status of the running async job.",
     )
-    url_requester: Optional[Union[CustomRequester, HttpRequester]] = Field(
+    download_target_requester: Optional[Union[CustomRequester, HttpRequester]] = Field(
         None,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to extract the url from polling response by the completed async job.",
     )

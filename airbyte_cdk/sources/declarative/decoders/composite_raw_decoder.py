@@ -126,7 +126,8 @@ class CsvParser(Parser):
         """
         text_data = TextIOWrapper(data, encoding=self.encoding)  # type: ignore
         reader = csv.DictReader(text_data, delimiter=self._get_delimiter() or ",")
-        yield from reader
+        for row in reader:
+            yield row
 
 
 @dataclass
