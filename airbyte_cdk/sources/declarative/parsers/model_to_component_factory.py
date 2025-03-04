@@ -2622,8 +2622,8 @@ class ModelToComponentFactory:
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
         transformations: List[RecordTransformation],
     ) -> StateDelegatingRetriever:
-        if not isinstance(stream_slicer, DeclarativeCursor):
-            raise ValueError("StateDelegatingRetriever requires a DeclarativeCursor")
+        if not isinstance(stream_slicer, DatetimeBasedCursor):
+            raise ValueError("StateDelegatingRetriever requires a DatetimeBasedCursor")
 
         full_data_request_options_provider = copy.deepcopy(request_options_provider)
 
