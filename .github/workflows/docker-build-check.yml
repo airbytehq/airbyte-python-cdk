@@ -8,7 +8,7 @@ on:
 jobs:
   docker-build-check:
     name: Docker Build Check
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: write  # Required for creating commit statuses
       pull-requests: read
@@ -30,6 +30,31 @@ jobs:
 
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "poetry"
+
+      - name: Set up Poetry
+        uses: Gr1N/setup-poetry@v9
+        with:
+          poetry-version: "2.0.1"
+
+      # Build the Python package to create the wheel files needed for the Docker build
+      - name: Build Python Package
+        uses: hynek/build-and-inspect-python-package@v2
+        env:
+          POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0dev0"
+
+      # Copy the wheel files to the dist directory
+      - name: Copy wheel files to dist directory
+        run: |
+          mkdir -p dist
+          cp /tmp/baipp/dist/*.whl dist/
 
       - name: Set up QEMU for multi-platform builds
         uses: docker/setup-qemu-action@v3
