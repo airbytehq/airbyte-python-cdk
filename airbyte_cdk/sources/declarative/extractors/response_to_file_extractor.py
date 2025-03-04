@@ -197,7 +197,7 @@ class ResponseToFileExtractor(RecordExtractor):
             "encoding": file_encoding,
         }
 
-        for chunk in pd.read_csv(path, **csv_read_params):
+        for chunk in pd.read_csv(path, **csv_read_params):  # type: ignore # ignoring how args are passed
             # replace NaN with None
             chunk = chunk.replace({nan: None}).to_dict(orient="records")
             for record in chunk:
@@ -227,7 +227,7 @@ class ResponseToFileExtractor(RecordExtractor):
             "convert_dates": False,
         }
 
-        for chunk in pd.read_json(path, **json_read_params):
+        for chunk in pd.read_json(path, **json_read_params):  # type: ignore # ignoring how args are passed
             for record in chunk.to_dict(orient="records"):
                 yield record
 
