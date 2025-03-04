@@ -21,7 +21,7 @@ DEFAULT_ERROR_MAPPING: Mapping[Union[int, str, Type[Exception]], ErrorResolution
     InvalidURL: ErrorResolution(
         response_action=ResponseAction.RETRY,
         failure_type=FailureType.transient_error,
-        error_message="Temporary DNS resolution error occurred. Retrying...",
+        error_message="Invalid URL specified or DNS error occurred: The endpoint that data is being requested from is not a valid URL. Exception: requests.exceptions.InvalidURL",
     ),
     RequestException: ErrorResolution(
         response_action=ResponseAction.RETRY,
