@@ -10,6 +10,7 @@ from jinja2.exceptions import TemplateSyntaxError
 
 from airbyte_cdk import StreamSlice
 from airbyte_cdk.sources.declarative.interpolation.jinja import JinjaInterpolation
+from airbyte_cdk.utils import AirbyteTracedException
 
 interpolation = JinjaInterpolation()
 
@@ -206,6 +207,11 @@ def test_invalid_jinja_statements(template_string):
     config = {"key": "value"}
     with pytest.raises(TemplateSyntaxError):
         interpolation.eval(template_string, config=config)
+
+
+def test_given_unsupported_jinja_expression_then_raises_airbyte_traced_exception():
+    with pytest.raises(AirbyteTracedException):
+        interpolation.eval("{{ stream_state.get('some_field') }}", config={})
 
 
 @pytest.mark.parametrize(

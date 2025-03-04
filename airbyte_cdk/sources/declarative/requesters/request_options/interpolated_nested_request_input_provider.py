@@ -10,7 +10,7 @@ from airbyte_cdk.sources.declarative.interpolation.interpolated_nested_mapping i
     NestedMapping,
 )
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
-from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
+from airbyte_cdk.sources.types import Config, StreamSlice
 
 
 @dataclass
@@ -42,20 +42,17 @@ class InterpolatedNestedRequestInputProvider:
 
     def eval_request_inputs(
         self,
-        stream_state: Optional[StreamState] = None,
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Mapping[str, Any]:
         """
         Returns the request inputs to set on an outgoing HTTP request
 
-        :param stream_state: The stream state
         :param stream_slice: The stream slice
         :param next_page_token: The pagination token
         :return: The request inputs to set on an outgoing HTTP request
         """
         kwargs = {
-            "stream_state": stream_state,
             "stream_slice": stream_slice,
             "next_page_token": next_page_token,
         }

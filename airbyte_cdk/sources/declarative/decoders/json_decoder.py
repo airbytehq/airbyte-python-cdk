@@ -10,21 +10,24 @@ from typing import Any, Generator, List, Mapping, MutableMapping, Optional
 import orjson
 import requests
 
+from airbyte_cdk.sources.declarative.decoders import CompositeRawDecoder, JsonParser
 from airbyte_cdk.sources.declarative.decoders.decoder import Decoder
 
 logger = logging.getLogger("airbyte")
 
 
-@dataclass
 class JsonDecoder(Decoder):
     """
     Decoder strategy that returns the json-encoded content of a response, if any.
+
+    Usually, we would try to instantiate the equivalent `CompositeRawDecoder(parser=JsonParser(), stream_response=False)` but there were specific historical behaviors related to the JsonDecoder that we didn't know if we could remove like the fallback on {} in case of errors.
     """
 
-    parameters: InitVar[Mapping[str, Any]]
+    def __init__(self, parameters: Mapping[str, Any]):
+        self._decoder = CompositeRawDecoder(parser=JsonParser(), stream_response=False)
 
     def is_stream_response(self) -> bool:
-        return False
+        return self._decoder.is_stream_response()
 
     def decode(
         self, response: requests.Response
@@ -32,25 +35,16 @@ class JsonDecoder(Decoder):
         """
         Given the response is an empty string or an emtpy list, the function will return a generator with an empty mapping.
         """
+        has_yielded = False
         try:
-            body_json = response.json()
-            yield from self.parse_body_json(body_json)
-        except requests.exceptions.JSONDecodeError:
-            logger.warning(
-                f"Response cannot be parsed into json: {response.status_code=}, {response.text=}"
-            )
+            for element in self._decoder.decode(response):
+                yield element
+                has_yielded = True
+        except Exception:
             yield {}
 
-    @staticmethod
-    def parse_body_json(
-        body_json: MutableMapping[str, Any] | List[MutableMapping[str, Any]],
-    ) -> Generator[MutableMapping[str, Any], None, None]:
-        if not isinstance(body_json, list):
-            body_json = [body_json]
-        if len(body_json) == 0:
+        if not has_yielded:
             yield {}
-        else:
-            yield from body_json
 
 
 @dataclass
@@ -69,43 +63,3 @@ class IterableDecoder(Decoder):
     ) -> Generator[MutableMapping[str, Any], None, None]:
         for line in response.iter_lines():
             yield {"record": line.decode()}
-
-
-@dataclass
-class JsonlDecoder(Decoder):
-    """
-    Decoder strategy that returns the json-encoded content of the response, if any.
-    """
-
-    parameters: InitVar[Mapping[str, Any]]
-
-    def is_stream_response(self) -> bool:
-        return True
-
-    def decode(
-        self, response: requests.Response
-    ) -> Generator[MutableMapping[str, Any], None, None]:
-        # TODO???: set delimiter? usually it is `\n` but maybe it would be useful to set optional?
-        #  https://github.com/airbytehq/airbyte-internal-issues/issues/8436
-        for record in response.iter_lines():
-            yield orjson.loads(record)
-
-
-@dataclass
-class GzipJsonDecoder(JsonDecoder):
-    encoding: Optional[str]
-
-    def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        if self.encoding:
-            try:
-                codecs.lookup(self.encoding)
-            except LookupError:
-                raise ValueError(
-                    f"Invalid encoding '{self.encoding}'. Please check provided encoding"
-                )
-
-    def decode(
-        self, response: requests.Response
-    ) -> Generator[MutableMapping[str, Any], None, None]:
-        raw_string = decompress(response.content).decode(encoding=self.encoding or "utf-8")
-        yield from self.parse_body_json(orjson.loads(raw_string))

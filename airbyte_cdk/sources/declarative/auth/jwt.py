@@ -3,6 +3,7 @@
 #
 
 import base64
+import json
 from dataclasses import InitVar, dataclass
 from datetime import datetime
 from typing import Any, Mapping, Optional, Union
@@ -104,21 +105,21 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         )
 
     def _get_jwt_headers(self) -> dict[str, Any]:
-        """ "
+        """
         Builds and returns the headers used when signing the JWT.
         """
-        headers = self._additional_jwt_headers.eval(self.config)
+        headers = self._additional_jwt_headers.eval(self.config, json_loads=json.loads)
         if any(prop in headers for prop in ["kid", "alg", "typ", "cty"]):
             raise ValueError(
                 "'kid', 'alg', 'typ', 'cty' are reserved headers and should not be set as part of 'additional_jwt_headers'"
             )
 
         if self._kid:
-            headers["kid"] = self._kid.eval(self.config)
+            headers["kid"] = self._kid.eval(self.config, json_loads=json.loads)
         if self._typ:
-            headers["typ"] = self._typ.eval(self.config)
+            headers["typ"] = self._typ.eval(self.config, json_loads=json.loads)
         if self._cty:
-            headers["cty"] = self._cty.eval(self.config)
+            headers["cty"] = self._cty.eval(self.config, json_loads=json.loads)
         headers["alg"] = self._algorithm
         return headers
 
@@ -130,18 +131,19 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         exp = now + self._token_duration if isinstance(self._token_duration, int) else now
         nbf = now
 
-        payload = self._additional_jwt_payload.eval(self.config)
+        payload = self._additional_jwt_payload.eval(self.config, json_loads=json.loads)
         if any(prop in payload for prop in ["iss", "sub", "aud", "iat", "exp", "nbf"]):
             raise ValueError(
                 "'iss', 'sub', 'aud', 'iat', 'exp', 'nbf' are reserved properties and should not be set as part of 'additional_jwt_payload'"
             )
 
         if self._iss:
-            payload["iss"] = self._iss.eval(self.config)
+            payload["iss"] = self._iss.eval(self.config, json_loads=json.loads)
         if self._sub:
-            payload["sub"] = self._sub.eval(self.config)
+            payload["sub"] = self._sub.eval(self.config, json_loads=json.loads)
         if self._aud:
-            payload["aud"] = self._aud.eval(self.config)
+            payload["aud"] = self._aud.eval(self.config, json_loads=json.loads)
+
         payload["iat"] = now
         payload["exp"] = exp
         payload["nbf"] = nbf
@@ -151,7 +153,7 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         """
         Returns the secret key used to sign the JWT.
         """
-        secret_key: str = self._secret_key.eval(self.config)
+        secret_key: str = self._secret_key.eval(self.config, json_loads=json.loads)
         return (
             base64.b64encode(secret_key.encode()).decode()
             if self._base64_encode_secret_key
@@ -176,7 +178,11 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         """
         Returns the header prefix to be used when attaching the token to the request.
         """
-        return self._header_prefix.eval(self.config) if self._header_prefix else None
+        return (
+            self._header_prefix.eval(self.config, json_loads=json.loads)
+            if self._header_prefix
+            else None
+        )
 
     @property
     def auth_header(self) -> str:

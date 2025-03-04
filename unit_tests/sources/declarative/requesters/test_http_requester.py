@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from datetime import timedelta
 from typing import Any, Mapping, Optional
 from unittest import mock
 from unittest.mock import MagicMock
@@ -9,10 +10,12 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest as pytest
 import requests
+import requests.sessions
 from requests import PreparedRequest
 
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
+from airbyte_cdk.sources.declarative.requesters.error_handlers import HttpResponseFilter
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies import (
     ConstantBackoffStrategy,
     ExponentialBackoffStrategy,
@@ -26,6 +29,13 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
     InterpolatedRequestOptionsProvider,
 )
 from airbyte_cdk.sources.message import MessageRepository
+from airbyte_cdk.sources.streams.call_rate import (
+    AbstractAPIBudget,
+    HttpAPIBudget,
+    MovingWindowCallRatePolicy,
+    Rate,
+)
+from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
 from airbyte_cdk.sources.streams.http.exceptions import (
     RequestBodyException,
     UserDefinedBackoffException,
@@ -43,6 +53,7 @@ def http_requester_factory():
         request_options_provider: Optional[InterpolatedRequestOptionsProvider] = None,
         authenticator: Optional[DeclarativeAuthenticator] = None,
         error_handler: Optional[ErrorHandler] = None,
+        api_budget: Optional[HttpAPIBudget] = None,
         config: Optional[Config] = None,
         parameters: Mapping[str, Any] = None,
         disable_retries: bool = False,
@@ -59,6 +70,7 @@ def http_requester_factory():
             http_method=http_method,
             request_options_provider=request_options_provider,
             error_handler=error_handler,
+            api_budget=api_budget,
             disable_retries=disable_retries,
             message_repository=message_repository or MagicMock(),
             use_cache=use_cache,
@@ -277,8 +289,8 @@ def test_basic_send_request():
             None,
             '{"field": "value", "field2": "value", "authfield": "val"}',
         ),
-        (None, {"field": "value"}, None, {"field": "value"}, None, None, ValueError, None),
-        (None, {"field": "value"}, None, None, None, {"field": "value"}, ValueError, None),
+        (None, {"field": "value"}, None, {"field": "value"}, None, None, None, "field=value"),
+        (None, {"field": "value"}, None, None, None, {"field": "value"}, None, "field=value"),
         # raise on mixed data and json params
         (
             {"field": "value"},
@@ -813,7 +825,7 @@ def test_send_request_stream_slice_next_page_token():
             "test_trailing_slash_on_path",
             "https://airbyte.io",
             "/my_endpoint/",
-            "https://airbyte.io/my_endpoint/",
+            "https://airbyte.io/my_endpoint",
         ),
         (
             "test_nested_path_no_leading_slash",
@@ -901,3 +913,56 @@ def test_request_attempt_count_with_exponential_backoff_strategy(http_requester_
         http_requester._http_client._request_attempt_count.get(request_mock)
         == http_requester._http_client._max_retries + 1
     )
+
+
+@pytest.mark.usefixtures("mock_sleep")
+def test_backoff_strategy_from_manifest_is_respected(http_requester_factory: Any) -> None:
+    backoff_strategy = ConstantBackoffStrategy(
+        parameters={}, config={}, backoff_time_in_seconds=0.1
+    )
+    error_handler = DefaultErrorHandler(
+        parameters={}, config={}, max_retries=1, backoff_strategies=[backoff_strategy]
+    )
+
+    request_mock = MagicMock(spec=requests.PreparedRequest)
+    request_mock.headers = {}
+    request_mock.url = "https://orksy.com/orks_rule_humies_drule"
+    request_mock.method = "GET"
+    request_mock.body = {}
+
+    http_requester = http_requester_factory(error_handler=error_handler)
+    http_requester._http_client._session.send = MagicMock()
+
+    response = requests.Response()
+    response.status_code = 500
+    http_requester._http_client._session.send.return_value = response
+
+    with pytest.raises(UserDefinedBackoffException):
+        http_requester._http_client._send_with_retry(request=request_mock, request_kwargs={})
+
+    assert (
+        http_requester._http_client._request_attempt_count.get(request_mock)
+        == http_requester._http_client._max_retries + 1
+    )
+
+
+def test_http_requester_with_mock_api_budget(http_requester_factory, monkeypatch):
+    mock_budget = MagicMock(spec=HttpAPIBudget)
+
+    requester = http_requester_factory(
+        url_base="https://example.com",
+        path="test",
+        api_budget=mock_budget,
+    )
+
+    dummy_response = requests.Response()
+    dummy_response.status_code = 200
+    send_mock = MagicMock(return_value=dummy_response)
+    monkeypatch.setattr(requests.Session, "send", send_mock)
+
+    response = requester.send_request()
+
+    assert send_mock.call_count == 1
+    assert response.status_code == 200
+
+    assert mock_budget.acquire_call.call_count == 1

@@ -3,16 +3,23 @@
 #
 
 # mypy: ignore-errors
-import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Mapping
 
 import freezegun
-import pendulum
 import pytest
 import requests
 
 from airbyte_cdk import AirbyteTracedException
-from airbyte_cdk.models import FailureType, Level
+from airbyte_cdk.models import (
+    AirbyteStateBlob,
+    AirbyteStateMessage,
+    AirbyteStateType,
+    AirbyteStreamState,
+    FailureType,
+    Level,
+    StreamDescriptor,
+)
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator
 from airbyte_cdk.sources.declarative.auth import DeclarativeOauth2Authenticator, JwtAuthenticator
@@ -135,6 +142,15 @@ from airbyte_cdk.sources.declarative.spec import Spec
 from airbyte_cdk.sources.declarative.transformations import AddFields, RemoveFields
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
+from airbyte_cdk.sources.streams.call_rate import MovingWindowCallRatePolicy
+from airbyte_cdk.sources.streams.concurrent.clamping import (
+    ClampingEndProvider,
+    DayClampingStrategy,
+    MonthClampingStrategy,
+    NoClamping,
+    WeekClampingStrategy,
+    Weekday,
+)
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
@@ -144,6 +160,7 @@ from airbyte_cdk.sources.streams.http.requests_native_auth.oauth import (
     SingleUseRefreshTokenOauth2Authenticator,
 )
 from airbyte_cdk.sources.types import StreamSlice
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now, ab_datetime_parse
 from unit_tests.sources.declarative.parsers.testing_components import (
     TestingCustomSubstreamPartitionRouter,
     TestingSomeComponent,
@@ -593,8 +610,8 @@ def test_list_based_stream_slicer_with_values_defined_in_config():
       cursor_field: repository
       request_option:
         type: RequestOption
-        inject_into: header
-        field_name: repository
+        inject_into: body_json
+        field_path: ["repository", "id"]
     """
     parsed_manifest = YamlDeclarativeSource._parse(content)
     resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
@@ -610,8 +627,10 @@ def test_list_based_stream_slicer_with_values_defined_in_config():
 
     assert isinstance(partition_router, ListPartitionRouter)
     assert partition_router.values == ["airbyte", "airbyte-cloud"]
-    assert partition_router.request_option.inject_into == RequestOptionType.header
-    assert partition_router.request_option.field_name.eval(config=input_config) == "repository"
+    assert partition_router.request_option.inject_into == RequestOptionType.body_json
+    for field in partition_router.request_option.field_path:
+        assert isinstance(field, InterpolatedString)
+    assert len(partition_router.request_option.field_path) == 2
 
 
 def test_create_substream_partition_router():
@@ -714,7 +733,7 @@ def test_datetime_based_cursor():
         end_time_option:
           type: RequestOption
           inject_into: body_json
-          field_name: "before_{{ parameters['cursor_field'] }}"
+          field_path: ["before_{{ parameters['cursor_field'] }}"]
         partition_field_start: star
         partition_field_end: en
     """
@@ -731,7 +750,7 @@ def test_datetime_based_cursor():
     )
 
     assert isinstance(stream_slicer, DatetimeBasedCursor)
-    assert stream_slicer._step == datetime.timedelta(days=10)
+    assert stream_slicer._step == timedelta(days=10)
     assert stream_slicer.cursor_field.string == "created"
     assert stream_slicer.cursor_granularity == "PT0.000001S"
     assert stream_slicer._lookback_window.string == "P5D"
@@ -743,7 +762,9 @@ def test_datetime_based_cursor():
         == "since_updated_at"
     )
     assert stream_slicer.end_time_option.inject_into == RequestOptionType.body_json
-    assert stream_slicer.end_time_option.field_name.eval({}) == "before_created_at"
+    assert [field.eval({}) for field in stream_slicer.end_time_option.field_path] == [
+        "before_created_at"
+    ]
     assert stream_slicer._partition_field_start.eval({}) == "star"
     assert stream_slicer._partition_field_end.eval({}) == "en"
 
@@ -904,8 +925,8 @@ metadata_paginator:
     type: DefaultPaginator
     page_size_option:
       type: RequestOption
-      inject_into: request_parameter
-      field_name: page_size
+      inject_into: body_json
+      field_path: ["variables", "page_size"]
     page_token_option:
       type: RequestPath
     pagination_strategy:
@@ -1003,11 +1024,10 @@ spec:
 
     assert isinstance(stream.retriever.paginator, DefaultPaginator)
     assert isinstance(stream.retriever.paginator.decoder, PaginationDecoderDecorator)
-    assert stream.retriever.paginator.page_size_option.field_name.eval(input_config) == "page_size"
-    assert (
-        stream.retriever.paginator.page_size_option.inject_into
-        == RequestOptionType.request_parameter
-    )
+    for string in stream.retriever.paginator.page_size_option.field_path:
+        assert isinstance(string, InterpolatedString)
+    assert len(stream.retriever.paginator.page_size_option.field_path) == 2
+    assert stream.retriever.paginator.page_size_option.inject_into == RequestOptionType.body_json
     assert isinstance(stream.retriever.paginator.page_token_option, RequestPath)
     assert stream.retriever.paginator.url_base.string == "https://api.sendgrid.com/v3/"
     assert stream.retriever.paginator.url_base.default == "https://api.sendgrid.com/v3/"
@@ -1174,6 +1194,8 @@ list_stream:
         stream.retriever.record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
     )
 
+    assert stream.retriever.record_selector.transform_before_filtering == True
+
 
 def test_client_side_incremental_with_partition_router():
     content = """
@@ -1254,8 +1276,9 @@ list_stream:
     assert isinstance(
         stream.retriever.record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
     )
+    assert stream.retriever.record_selector.transform_before_filtering == True
     assert isinstance(
-        stream.retriever.record_selector.record_filter._substream_cursor,
+        stream.retriever.record_selector.record_filter._cursor,
         PerPartitionWithGlobalCursor,
     )
 
@@ -2509,7 +2532,6 @@ def test_merge_incremental_and_partition_router(incremental, partition_router, e
 
     assert isinstance(stream, DeclarativeStream)
     assert isinstance(stream.retriever, SimpleRetriever)
-    print(stream.retriever.stream_slicer)
     assert isinstance(stream.retriever.stream_slicer, expected_type)
 
     if incremental and partition_router:
@@ -2817,11 +2839,12 @@ def test_create_jwt_authenticator(config, manifest, expected):
         assert authenticator._header_prefix.eval(config) == expected["header_prefix"]
     assert authenticator._get_jwt_headers() == expected["jwt_headers"]
     jwt_payload = expected["jwt_payload"]
+    now_timestamp = int(ab_datetime_now().timestamp())
     jwt_payload.update(
         {
-            "iat": int(datetime.datetime.now().timestamp()),
-            "nbf": int(datetime.datetime.now().timestamp()),
-            "exp": int(datetime.datetime.now().timestamp()) + expected["token_duration"],
+            "iat": now_timestamp,
+            "nbf": now_timestamp,
+            "exp": now_timestamp + expected["token_duration"],
         }
     )
     assert authenticator._get_jwt_payload() == jwt_payload
@@ -3049,14 +3072,14 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
     expected_cursor_field = "updated_at"
     expected_start_boundary = "custom_start"
     expected_end_boundary = "custom_end"
-    expected_step = datetime.timedelta(days=10)
-    expected_lookback_window = datetime.timedelta(days=3)
+    expected_step = timedelta(days=10)
+    expected_lookback_window = timedelta(days=3)
     expected_datetime_format = "%Y-%m-%dT%H:%M:%S.%fZ"
-    expected_cursor_granularity = datetime.timedelta(microseconds=1)
+    expected_cursor_granularity = timedelta(microseconds=1)
 
-    expected_start = pendulum.parse(expected_start)
-    expected_end = datetime.datetime(
-        year=2024, month=10, day=15, second=0, microsecond=0, tzinfo=datetime.timezone.utc
+    expected_start = ab_datetime_parse(expected_start)
+    expected_end = AirbyteDateTime(
+        year=2024, month=10, day=15, second=0, microsecond=0, tzinfo=timezone.utc
     )
     if stream_state:
         # Using incoming state, the resulting already completed partition is the start_time up to the last successful
@@ -3064,9 +3087,9 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
         expected_concurrent_state = {
             "slices": [
                 {
-                    "start": pendulum.parse(config["start_time"]),
-                    "end": pendulum.parse(stream_state["updated_at"]),
-                    "most_recent_cursor_value": pendulum.parse(stream_state["updated_at"]),
+                    "start": ab_datetime_parse(config["start_time"]),
+                    "end": ab_datetime_parse(stream_state["updated_at"]),
+                    "most_recent_cursor_value": ab_datetime_parse(stream_state["updated_at"]),
                 },
             ],
             "state_type": "date-range",
@@ -3076,20 +3099,32 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
         expected_concurrent_state = {
             "slices": [
                 {
-                    "start": pendulum.parse(config["start_time"]),
-                    "end": pendulum.parse(config["start_time"]),
-                    "most_recent_cursor_value": pendulum.parse(config["start_time"]),
+                    "start": ab_datetime_parse(config["start_time"]),
+                    "end": ab_datetime_parse(config["start_time"]),
+                    "most_recent_cursor_value": ab_datetime_parse(config["start_time"]),
                 },
             ],
             "state_type": "date-range",
             "legacy": {},
         }
 
-    connector_state_manager = ConnectorStateManager()
-
-    connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
-
     stream_name = "test"
+
+    connector_state_manager = ConnectorStateManager(
+        state=[
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name=stream_name),
+                    stream_state=AirbyteStateBlob(stream_state),
+                ),
+            )
+        ]
+    )
+
+    connector_builder_factory = ModelToComponentFactory(
+        emit_connector_builder_messages=True, connector_state_manager=connector_state_manager
+    )
 
     cursor_component_definition = {
         "type": "DatetimeBasedCursor",
@@ -3106,13 +3141,11 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
 
     concurrent_cursor = (
         connector_builder_factory.create_concurrent_cursor_from_datetime_based_cursor(
-            state_manager=connector_state_manager,
             model_type=DatetimeBasedCursorModel,
             component_definition=cursor_component_definition,
             stream_name=stream_name,
             stream_namespace=None,
             config=config,
-            stream_state=stream_state,
         )
     )
 
@@ -3185,7 +3218,7 @@ def test_create_concurrent_cursor_from_datetime_based_cursor_all_fields(
                 "step": None,
             },
             "_slice_range",
-            datetime.timedelta.max,
+            timedelta.max,
             None,
             id="test_uses_a_single_time_interval_when_no_specified_step_and_granularity",
         ),
@@ -3252,17 +3285,137 @@ def test_create_concurrent_cursor_from_datetime_based_cursor(
         assert getattr(concurrent_cursor, assertion_field) == expected_value
 
 
+def test_create_concurrent_cursor_from_datetime_based_cursor_runs_state_migrations():
+    class DummyStateMigration:
+        def should_migrate(self, stream_state: Mapping[str, Any]) -> bool:
+            return True
+
+        def migrate(self, stream_state: Mapping[str, Any]) -> Mapping[str, Any]:
+            updated_at = stream_state["updated_at"]
+            return {
+                "states": [
+                    {
+                        "partition": {"type": "type_1"},
+                        "cursor": {"updated_at": updated_at},
+                    },
+                    {
+                        "partition": {"type": "type_2"},
+                        "cursor": {"updated_at": updated_at},
+                    },
+                ]
+            }
+
+    stream_name = "test"
+    config = {
+        "start_time": "2024-08-01T00:00:00.000000Z",
+        "end_time": "2024-09-01T00:00:00.000000Z",
+    }
+    stream_state = {"updated_at": "2025-01-01T00:00:00.000000Z"}
+    connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
+    connector_state_manager = ConnectorStateManager()
+    cursor_component_definition = {
+        "type": "DatetimeBasedCursor",
+        "cursor_field": "updated_at",
+        "datetime_format": "%Y-%m-%dT%H:%M:%S.%fZ",
+        "start_datetime": "{{ config['start_time'] }}",
+        "end_datetime": "{{ config['end_time'] }}",
+        "partition_field_start": "custom_start",
+        "partition_field_end": "custom_end",
+        "step": "P10D",
+        "cursor_granularity": "PT0.000001S",
+        "lookback_window": "P3D",
+    }
+    concurrent_cursor = (
+        connector_builder_factory.create_concurrent_cursor_from_datetime_based_cursor(
+            state_manager=connector_state_manager,
+            model_type=DatetimeBasedCursorModel,
+            component_definition=cursor_component_definition,
+            stream_name=stream_name,
+            stream_namespace=None,
+            config=config,
+            stream_state=stream_state,
+            stream_state_migrations=[DummyStateMigration()],
+        )
+    )
+    assert concurrent_cursor.state["states"] == [
+        {"cursor": {"updated_at": stream_state["updated_at"]}, "partition": {"type": "type_1"}},
+        {"cursor": {"updated_at": stream_state["updated_at"]}, "partition": {"type": "type_2"}},
+    ]
+
+
+def test_create_concurrent_cursor_from_perpartition_cursor_runs_state_migrations():
+    class DummyStateMigration:
+        def should_migrate(self, stream_state: Mapping[str, Any]) -> bool:
+            return True
+
+        def migrate(self, stream_state: Mapping[str, Any]) -> Mapping[str, Any]:
+            stream_state["lookback_window"] = 10 * 2
+            return stream_state
+
+    state = {
+        "states": [
+            {
+                "partition": {"type": "typ_1"},
+                "cursor": {"updated_at": "2024-08-01T00:00:00.000000Z"},
+            }
+        ],
+        "state": {"updated_at": "2024-08-01T00:00:00.000000Z"},
+        "lookback_window": 10,
+        "parent_state": {"parent_test": {"last_updated": "2024-08-01T00:00:00.000000Z"}},
+    }
+    config = {
+        "start_time": "2024-08-01T00:00:00.000000Z",
+        "end_time": "2024-09-01T00:00:00.000000Z",
+    }
+    list_partition_router = ListPartitionRouter(
+        cursor_field="id",
+        values=["type_1", "type_2", "type_3"],
+        config=config,
+        parameters={},
+    )
+    connector_state_manager = ConnectorStateManager()
+    stream_name = "test"
+    cursor_component_definition = {
+        "type": "DatetimeBasedCursor",
+        "cursor_field": "updated_at",
+        "datetime_format": "%Y-%m-%dT%H:%M:%S.%fZ",
+        "start_datetime": "{{ config['start_time'] }}",
+        "end_datetime": "{{ config['end_time'] }}",
+        "partition_field_start": "custom_start",
+        "partition_field_end": "custom_end",
+        "step": "P10D",
+        "cursor_granularity": "PT0.000001S",
+        "lookback_window": "P3D",
+    }
+    connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
+    cursor = connector_builder_factory.create_concurrent_cursor_from_perpartition_cursor(
+        state_manager=connector_state_manager,
+        model_type=DatetimeBasedCursorModel,
+        component_definition=cursor_component_definition,
+        stream_name=stream_name,
+        stream_namespace=None,
+        config=config,
+        stream_state=state,
+        partition_router=list_partition_router,
+        stream_state_migrations=[DummyStateMigration()],
+    )
+    assert cursor.state["lookback_window"] != 10, "State migration wasn't called"
+    assert (
+        cursor.state["lookback_window"] == 20
+    ), "State migration was called, but actual state don't match expected"
+
+
 def test_create_concurrent_cursor_uses_min_max_datetime_format_if_defined():
     """
     Validates a special case for when the start_time.datetime_format and end_time.datetime_format are defined, the date to
     string parser should not inherit from the parent DatetimeBasedCursor.datetime_format. The parent which uses an incorrect
     precision would fail if it were used by the dependent children.
     """
-    expected_start = datetime.datetime(
-        year=2024, month=8, day=1, second=0, microsecond=0, tzinfo=datetime.timezone.utc
+    expected_start = AirbyteDateTime(
+        year=2024, month=8, day=1, second=0, microsecond=0, tzinfo=timezone.utc
     )
-    expected_end = datetime.datetime(
-        year=2024, month=9, day=1, second=0, microsecond=0, tzinfo=datetime.timezone.utc
+    expected_end = AirbyteDateTime(
+        year=2024, month=9, day=1, second=0, microsecond=0, tzinfo=timezone.utc
     )
 
     connector_state_manager = ConnectorStateManager()
@@ -3321,6 +3474,111 @@ def test_create_concurrent_cursor_uses_min_max_datetime_format_if_defined():
     }
 
 
+@pytest.mark.parametrize(
+    "clamping,expected_clamping_strategy,expected_error",
+    [
+        pytest.param(
+            {"target": "DAY", "target_details": {}},
+            DayClampingStrategy,
+            None,
+            id="test_day_clamping_strategy",
+        ),
+        pytest.param(
+            {"target": "WEEK", "target_details": {"weekday": "SUNDAY"}},
+            WeekClampingStrategy,
+            None,
+            id="test_week_clamping_strategy",
+        ),
+        pytest.param(
+            {"target": "MONTH", "target_details": {}},
+            MonthClampingStrategy,
+            None,
+            id="test_month_clamping_strategy",
+        ),
+        pytest.param(
+            {"target": "WEEK", "target_details": {}},
+            None,
+            ValueError,
+            id="test_week_clamping_strategy_no_target_details",
+        ),
+        pytest.param(
+            {"target": "FAKE", "target_details": {}},
+            None,
+            ValueError,
+            id="test_invalid_clamping_target",
+        ),
+        pytest.param(
+            {"target": "{{ config['clamping_target'] }}"},
+            MonthClampingStrategy,
+            None,
+            id="test_clamping_with_interpolation",
+        ),
+    ],
+)
+def test_create_concurrent_cursor_from_datetime_based_cursor_with_clamping(
+    clamping,
+    expected_clamping_strategy,
+    expected_error,
+):
+    config = {
+        "start_time": "2024-08-01T00:00:00.000000Z",
+        "end_time": "2024-10-15T00:00:00.000000Z",
+        "clamping_target": "MONTH",
+    }
+
+    cursor_component_definition = {
+        "type": "DatetimeBasedCursor",
+        "cursor_field": "updated_at",
+        "datetime_format": "%Y-%m-%dT%H:%M:%S.%fZ",
+        "start_datetime": "{{ config['start_time'] }}",
+        "end_datetime": "{{ config['end_time'] }}",
+        "partition_field_start": "custom_start",
+        "partition_field_end": "custom_end",
+        "step": "P10D",
+        "cursor_granularity": "PT1S",
+        "lookback_window": "P3D",
+        "clamping": clamping,
+    }
+
+    connector_state_manager = ConnectorStateManager()
+
+    connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
+
+    stream_name = "test"
+
+    if expected_error:
+        with pytest.raises(ValueError):
+            connector_builder_factory.create_concurrent_cursor_from_datetime_based_cursor(
+                state_manager=connector_state_manager,
+                model_type=DatetimeBasedCursorModel,
+                component_definition=cursor_component_definition,
+                stream_name=stream_name,
+                stream_namespace=None,
+                config=config,
+                stream_state={},
+            )
+
+    else:
+        concurrent_cursor = (
+            connector_builder_factory.create_concurrent_cursor_from_datetime_based_cursor(
+                state_manager=connector_state_manager,
+                model_type=DatetimeBasedCursorModel,
+                component_definition=cursor_component_definition,
+                stream_name=stream_name,
+                stream_namespace=None,
+                config=config,
+                stream_state={},
+            )
+        )
+
+        assert concurrent_cursor._clamping_strategy.__class__ == expected_clamping_strategy
+        assert isinstance(concurrent_cursor._end_provider, ClampingEndProvider)
+        assert isinstance(
+            concurrent_cursor._end_provider._clamping_strategy, expected_clamping_strategy
+        )
+        assert concurrent_cursor._end_provider._granularity == timedelta(seconds=1)
+
+
 class CustomRecordExtractor(RecordExtractor):
     def extract_records(
         self,
@@ -3349,7 +3607,7 @@ def test_create_async_retriever():
             "timeout": ["timeout"],
             "completed": ["ready"],
         },
-        "urls_extractor": {"type": "DpathExtractor", "field_path": ["urls"]},
+        "download_target_extractor": {"type": "DpathExtractor", "field_path": ["urls"]},
         "record_selector": {
             "type": "RecordSelector",
             "extractor": {"type": "DpathExtractor", "field_path": ["data"]},
@@ -3357,7 +3615,7 @@ def test_create_async_retriever():
         "status_extractor": {"type": "DpathExtractor", "field_path": ["status"]},
         "polling_requester": {
             "type": "HttpRequester",
-            "path": "/v3/marketing/contacts/exports/{{stream_slice['create_job_response'].json()['id'] }}",
+            "path": "/v3/marketing/contacts/exports/{{creation_response['id'] }}",
             "url_base": "https://api.sendgrid.com",
             "http_method": "GET",
             "authenticator": {
@@ -3377,19 +3635,19 @@ def test_create_async_retriever():
         },
         "download_requester": {
             "type": "HttpRequester",
-            "path": "{{stream_slice['url']}}",
+            "path": "{{download_target}}",
             "url_base": "",
             "http_method": "GET",
         },
         "abort_requester": {
             "type": "HttpRequester",
-            "path": "{{stream_slice['url']}}/abort",
+            "path": "{{download_target}}/abort",
             "url_base": "",
             "http_method": "POST",
         },
         "delete_requester": {
             "type": "HttpRequester",
-            "path": "{{stream_slice['url']}}",
+            "path": "{{download_target}}",
             "url_base": "",
             "http_method": "POST",
         },
@@ -3423,10 +3681,162 @@ def test_create_async_retriever():
     assert job_repository.abort_requester
     assert job_repository.delete_requester
     assert job_repository.status_extractor
-    assert job_repository.urls_extractor
+    assert job_repository.download_target_extractor
 
     selector = component.record_selector
     extractor = selector.extractor
     assert isinstance(selector, RecordSelector)
     assert isinstance(extractor, DpathExtractor)
     assert extractor.field_path == ["data"]
+
+
+def test_api_budget():
+    manifest = {
+        "type": "DeclarativeSource",
+        "api_budget": {
+            "type": "HTTPAPIBudget",
+            "ratelimit_reset_header": "X-RateLimit-Reset",
+            "ratelimit_remaining_header": "X-RateLimit-Remaining",
+            "status_codes_for_ratelimit_hit": [429, 503],
+            "policies": [
+                {
+                    "type": "MovingWindowCallRatePolicy",
+                    "rates": [
+                        {
+                            "type": "Rate",
+                            "limit": 3,
+                            "interval": "PT0.1S",  # 0.1 seconds
+                        }
+                    ],
+                    "matchers": [
+                        {
+                            "type": "HttpRequestRegexMatcher",
+                            "method": "GET",
+                            "url_base": "https://api.sendgrid.com",
+                            "url_path_pattern": "/v3/marketing/lists",
+                        }
+                    ],
+                }
+            ],
+        },
+        "my_requester": {
+            "type": "HttpRequester",
+            "path": "/v3/marketing/lists",
+            "url_base": "https://api.sendgrid.com",
+            "http_method": "GET",
+            "authenticator": {
+                "type": "BasicHttpAuthenticator",
+                "username": "admin",
+                "password": "{{ config['password'] }}",
+            },
+        },
+    }
+
+    config = {
+        "password": "verysecrettoken",
+    }
+
+    factory = ModelToComponentFactory()
+    if "api_budget" in manifest:
+        factory.set_api_budget(manifest["api_budget"], config)
+
+    from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+        HttpRequester as HttpRequesterModel,
+    )
+
+    requester_definition = manifest["my_requester"]
+    assert requester_definition["type"] == "HttpRequester"
+
+    http_requester = factory.create_component(
+        model_type=HttpRequesterModel,
+        component_definition=requester_definition,
+        config=config,
+        name="lists_stream",
+        decoder=None,
+    )
+
+    assert http_requester.api_budget is not None
+    assert http_requester.api_budget._ratelimit_reset_header == "X-RateLimit-Reset"
+    assert http_requester.api_budget._status_codes_for_ratelimit_hit == [429, 503]
+    assert len(http_requester.api_budget._policies) == 1
+
+    # The single policy is a MovingWindowCallRatePolicy
+    policy = http_requester.api_budget._policies[0]
+    assert isinstance(policy, MovingWindowCallRatePolicy)
+    assert policy._bucket.rates[0].limit == 3
+    # The 0.1s from 'PT0.1S' is stored in ms by PyRateLimiter internally
+    # but here just check that the limit and interval exist
+    assert policy._bucket.rates[0].interval == 100  # 100 ms
+
+
+def test_api_budget_fixed_window_policy():
+    manifest = {
+        "type": "DeclarativeSource",
+        # Root-level api_budget referencing a FixedWindowCallRatePolicy
+        "api_budget": {
+            "type": "HTTPAPIBudget",
+            "policies": [
+                {
+                    "type": "FixedWindowCallRatePolicy",
+                    "period": "PT1M",  # 1 minute
+                    "call_limit": 10,
+                    "matchers": [
+                        {
+                            "type": "HttpRequestRegexMatcher",
+                            "method": "GET",
+                            "url_base": "https://example.org",
+                            "url_path_pattern": "/v2/data",
+                        }
+                    ],
+                }
+            ],
+        },
+        # We'll define a single HttpRequester that references that base
+        "my_requester": {
+            "type": "HttpRequester",
+            "path": "/v2/data",
+            "url_base": "https://example.org",
+            "http_method": "GET",
+            "authenticator": {"type": "NoAuth"},
+        },
+    }
+
+    config = {}
+
+    factory = ModelToComponentFactory()
+    if "api_budget" in manifest:
+        factory.set_api_budget(manifest["api_budget"], config)
+
+    from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+        HttpRequester as HttpRequesterModel,
+    )
+
+    requester_definition = manifest["my_requester"]
+    assert requester_definition["type"] == "HttpRequester"
+    http_requester = factory.create_component(
+        model_type=HttpRequesterModel,
+        component_definition=requester_definition,
+        config=config,
+        name="my_stream",
+        decoder=None,
+    )
+
+    assert http_requester.api_budget is not None
+    assert len(http_requester.api_budget._policies) == 1
+
+    from airbyte_cdk.sources.streams.call_rate import FixedWindowCallRatePolicy
+
+    policy = http_requester.api_budget._policies[0]
+    assert isinstance(policy, FixedWindowCallRatePolicy)
+    assert policy._call_limit == 10
+    # The period is "PT1M" => 60 seconds
+    assert policy._offset.total_seconds() == 60
+
+    assert len(policy._matchers) == 1
+    matcher = policy._matchers[0]
+    from airbyte_cdk.sources.streams.call_rate import HttpRequestRegexMatcher
+
+    assert isinstance(matcher, HttpRequestRegexMatcher)
+    assert matcher._method == "GET"
+    assert matcher._url_base == "https://example.org"
+    assert matcher._url_path_pattern.pattern == "/v2/data"

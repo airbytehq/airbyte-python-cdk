@@ -248,3 +248,38 @@ def test_api_key_authenticator_inject(
         parameters=parameters,
     )
     assert {expected_field_name: expected_field_value} == getattr(token_auth, validation_fn)()
+
+
+@pytest.mark.parametrize(
+    "field_path, token, expected_result",
+    [
+        (
+            ["data", "auth", "token"],
+            "test-token",
+            {"data": {"auth": {"token": "test-token"}}},
+        ),
+        (
+            ["api", "{{ config.api_version }}", "auth", "token"],
+            "test-token",
+            {"api": {"v2": {"auth": {"token": "test-token"}}}},
+        ),
+    ],
+    ids=["Basic nested structure", "Nested with config interpolation"],
+)
+def test_api_key_authenticator_nested_token_injection(field_path, token, expected_result):
+    """Test that the ApiKeyAuthenticator can properly inject tokens into nested structures when using body_json"""
+    config = {"api_version": "v2"}
+    parameters = {"auth_type": "bearer"}
+
+    token_provider = InterpolatedStringTokenProvider(
+        config=config, api_token=token, parameters=parameters
+    )
+    token_auth = ApiKeyAuthenticator(
+        request_option=RequestOption(
+            inject_into=RequestOptionType.body_json, field_path=field_path, parameters=parameters
+        ),
+        token_provider=token_provider,
+        config=config,
+        parameters=parameters,
+    )
+    assert token_auth.get_request_body_json() == expected_result

@@ -56,7 +56,7 @@ RECORDS_TO_FILTER_DATE_TIME_WITHOUT_TZ_FORMAT = [
     "filter_template, records, expected_records",
     [
         (
-            "{{ record['created_at'] > stream_state['created_at'] }}",
+            "{{ record['created_at'] >= stream_interval.extra_fields['created_at'] }}",
             [
                 {"id": 1, "created_at": "06-06-21"},
                 {"id": 2, "created_at": "06-07-21"},
@@ -290,8 +290,7 @@ def test_client_side_record_filter_decorator_no_parent_stream(
         config={},
         condition=record_filter_expression,
         parameters={},
-        date_time_based_cursor=date_time_based_cursor,
-        substream_cursor=None,
+        cursor=date_time_based_cursor,
     )
 
     filtered_records = list(
@@ -429,8 +428,7 @@ def test_client_side_record_filter_decorator_with_cursor_types(
     record_filter_decorator = ClientSideIncrementalRecordFilterDecorator(
         config={},
         parameters={},
-        date_time_based_cursor=date_time_based_cursor,
-        substream_cursor=substream_cursor,
+        cursor=substream_cursor or date_time_based_cursor,
     )
 
     # The partition we're testing

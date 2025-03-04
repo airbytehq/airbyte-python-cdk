@@ -128,9 +128,11 @@ class SimpleRetriever(Retriever):
         Returned merged mapping otherwise
         """
         # FIXME we should eventually remove the usage of stream_state as part of the interpolation
+
+        is_body_json = paginator_method.__name__ == "get_request_body_json"
+
         mappings = [
             paginator_method(
-                stream_state=stream_state,
                 stream_slice=stream_slice,
                 next_page_token=next_page_token,
             ),
@@ -138,12 +140,11 @@ class SimpleRetriever(Retriever):
         if not next_page_token or not self.ignore_stream_slicer_parameters_on_paginated_requests:
             mappings.append(
                 stream_slicer_method(
-                    stream_state=stream_state,
                     stream_slice=stream_slice,
                     next_page_token=next_page_token,
                 )
             )
-        return combine_mappings(mappings)
+        return combine_mappings(mappings, allow_same_value_merge=is_body_json)
 
     def _request_headers(
         self,
@@ -160,7 +161,7 @@ class SimpleRetriever(Retriever):
             stream_slice,
             next_page_token,
             self._paginator.get_request_headers,
-            self.stream_slicer.get_request_headers,
+            self.request_option_provider.get_request_headers,
         )
         if isinstance(headers, str):
             raise ValueError("Request headers cannot be a string")
@@ -233,13 +234,22 @@ class SimpleRetriever(Retriever):
             raise ValueError("Request body json cannot be a string")
         return body_json
 
-    def _paginator_path(self, next_page_token: Optional[Mapping[str, Any]] = None) -> Optional[str]:
+    def _paginator_path(
+        self,
+        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Optional[Mapping[str, Any]] = None,
+        stream_slice: Optional[StreamSlice] = None,
+    ) -> Optional[str]:
         """
         If the paginator points to a path, follow it, else return nothing so the requester is used.
         :param next_page_token:
         :return:
         """
-        return self._paginator.path(next_page_token=next_page_token)
+        return self._paginator.path(
+            next_page_token=next_page_token,
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+        )
 
     def _parse_response(
         self,
@@ -298,7 +308,11 @@ class SimpleRetriever(Retriever):
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Optional[requests.Response]:
         return self.requester.send_request(
-            path=self._paginator_path(next_page_token=next_page_token),
+            path=self._paginator_path(
+                next_page_token=next_page_token,
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+            ),
             stream_state=stream_state,
             stream_slice=stream_slice,
             next_page_token=next_page_token,
@@ -569,7 +583,11 @@ class SimpleRetrieverTestReadDecorator(SimpleRetriever):
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Optional[requests.Response]:
         return self.requester.send_request(
-            path=self._paginator_path(next_page_token=next_page_token),
+            path=self._paginator_path(
+                next_page_token=next_page_token,
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+            ),
             stream_state=stream_state,
             stream_slice=stream_slice,
             next_page_token=next_page_token,

@@ -344,7 +344,7 @@ def test_resolve_manifest(valid_resolve_manifest_config_file):
     config = copy.deepcopy(RESOLVE_MANIFEST_CONFIG)
     command = "resolve_manifest"
     config["__command"] = command
-    source = ManifestDeclarativeSource(MANIFEST)
+    source = ManifestDeclarativeSource(source_config=MANIFEST)
     limits = TestReadLimits()
     resolved_manifest = handle_connector_builder_request(
         source, command, config, create_configured_catalog("dummy_stream"), _A_STATE, limits
@@ -505,7 +505,7 @@ def test_resolve_manifest_error_returns_error_response():
 
 def test_read():
     config = TEST_READ_CONFIG
-    source = ManifestDeclarativeSource(MANIFEST)
+    source = ManifestDeclarativeSource(source_config=MANIFEST)
 
     real_record = AirbyteRecordMessage(
         data={"id": "1234", "key": "value"}, emitted_at=1, stream=_stream_name
@@ -537,6 +537,7 @@ def test_read():
                         "pages": [{"records": [real_record], "request": None, "response": None}],
                         "slice_descriptor": None,
                         "state": None,
+                        "auxiliary_requests": None,
                     }
                 ],
                 "test_read_limit_reached": False,
@@ -550,7 +551,7 @@ def test_read():
     )
     limits = TestReadLimits()
     with patch(
-        "airbyte_cdk.connector_builder.message_grouper.MessageGrouper.get_message_groups",
+        "airbyte_cdk.connector_builder.test_reader.TestReader.run_test_read",
         return_value=stream_read,
     ) as mock:
         output_record = handle_connector_builder_request(
@@ -592,7 +593,7 @@ def test_config_update() -> None:
         "client_secret": "a client secret",
         "refresh_token": "a refresh token",
     }
-    source = ManifestDeclarativeSource(manifest)
+    source = ManifestDeclarativeSource(source_config=manifest)
 
     refresh_request_response = {
         "access_token": "an updated access token",
@@ -600,7 +601,7 @@ def test_config_update() -> None:
         "expires_in": 3600,
     }
     with patch(
-        "airbyte_cdk.sources.streams.http.requests_native_auth.SingleUseRefreshTokenOauth2Authenticator._get_refresh_access_token_response",
+        "airbyte_cdk.sources.streams.http.requests_native_auth.SingleUseRefreshTokenOauth2Authenticator._make_handled_request",
         return_value=refresh_request_response,
     ):
         output = handle_connector_builder_request(
@@ -1169,7 +1170,7 @@ def test_read_stream_exception_with_secrets():
 
     # Patch the handler to raise an exception
     with patch(
-        "airbyte_cdk.connector_builder.message_grouper.MessageGrouper.get_message_groups"
+        "airbyte_cdk.connector_builder.test_reader.TestReader.run_test_read"
     ) as mock_handler:
         mock_handler.side_effect = Exception("Test exception with secret key: super_secret_key")
 

@@ -1,5 +1,5 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
-
+import gzip
 from unittest import TestCase
 
 import pytest
@@ -74,6 +74,34 @@ class HttpMockerTest(TestCase):
 
         assert response.text == _A_RESPONSE_BODY
         assert response.status_code == 474
+
+    @HttpMocker()
+    def test_given_put_request_match_when_decorate_then_return_response(self, http_mocker):
+        http_mocker.put(
+            HttpRequest(_A_URL, _SOME_QUERY_PARAMS, _SOME_HEADERS, _SOME_REQUEST_BODY_STR),
+            HttpResponse(_A_RESPONSE_BODY, 474),
+        )
+
+        response = requests.put(
+            _A_URL, params=_SOME_QUERY_PARAMS, headers=_SOME_HEADERS, data=_SOME_REQUEST_BODY_STR
+        )
+
+        assert response.text == _A_RESPONSE_BODY
+        assert response.status_code == 474
+
+    @HttpMocker()
+    def test_given_response_in_bytes_when_decorate_then_match(self, http_mocker):
+        response_content = gzip.compress(bytes("This is the response within the gzip", "utf-8"))
+        http_mocker.put(
+            HttpRequest(_A_URL, _SOME_QUERY_PARAMS, _SOME_HEADERS, _SOME_REQUEST_BODY_STR),
+            HttpResponse(response_content, 474),
+        )
+
+        response = requests.put(
+            _A_URL, params=_SOME_QUERY_PARAMS, headers=_SOME_HEADERS, data=_SOME_REQUEST_BODY_STR
+        )
+
+        assert response.content == response_content
 
     @HttpMocker()
     def test_given_multiple_responses_when_decorate_get_request_then_return_response(

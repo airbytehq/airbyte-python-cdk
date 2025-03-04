@@ -2,11 +2,11 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-import dataclasses
-from datetime import datetime
+
+from dataclasses import asdict, dataclass, field
 from typing import Any, List, Mapping
 
-from airbyte_cdk.connector_builder.message_grouper import MessageGrouper
+from airbyte_cdk.connector_builder.test_reader import TestReader
 from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteRecordMessage,
@@ -21,6 +21,7 @@ from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE = 5
@@ -32,11 +33,11 @@ MAX_SLICES_KEY = "max_slices"
 MAX_RECORDS_KEY = "max_records"
 
 
-@dataclasses.dataclass
+@dataclass
 class TestReadLimits:
-    max_records: int = dataclasses.field(default=DEFAULT_MAXIMUM_RECORDS)
-    max_pages_per_slice: int = dataclasses.field(default=DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE)
-    max_slices: int = dataclasses.field(default=DEFAULT_MAXIMUM_NUMBER_OF_SLICES)
+    max_records: int = field(default=DEFAULT_MAXIMUM_RECORDS)
+    max_pages_per_slice: int = field(default=DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE)
+    max_slices: int = field(default=DEFAULT_MAXIMUM_NUMBER_OF_SLICES)
 
 
 def get_limits(config: Mapping[str, Any]) -> TestReadLimits:
@@ -52,6 +53,7 @@ def get_limits(config: Mapping[str, Any]) -> TestReadLimits:
 def create_source(config: Mapping[str, Any], limits: TestReadLimits) -> ManifestDeclarativeSource:
     manifest = config["__injected_declarative_manifest"]
     return ManifestDeclarativeSource(
+        config=config,
         emit_connector_builder_messages=True,
         source_config=manifest,
         component_factory=ModelToComponentFactory(
@@ -72,17 +74,20 @@ def read_stream(
     limits: TestReadLimits,
 ) -> AirbyteMessage:
     try:
-        handler = MessageGrouper(limits.max_pages_per_slice, limits.max_slices, limits.max_records)
-        stream_name = configured_catalog.streams[
-            0
-        ].stream.name  # The connector builder only supports a single stream
-        stream_read = handler.get_message_groups(
+        test_read_handler = TestReader(
+            limits.max_pages_per_slice, limits.max_slices, limits.max_records
+        )
+        # The connector builder only supports a single stream
+        stream_name = configured_catalog.streams[0].stream.name
+
+        stream_read = test_read_handler.run_test_read(
             source, config, configured_catalog, state, limits.max_records
         )
+
         return AirbyteMessage(
             type=MessageType.RECORD,
             record=AirbyteRecordMessage(
-                data=dataclasses.asdict(stream_read), stream=stream_name, emitted_at=_emitted_at()
+                data=asdict(stream_read), stream=stream_name, emitted_at=_emitted_at()
             ),
         )
     except Exception as exc:
@@ -113,4 +118,4 @@ def resolve_manifest(source: ManifestDeclarativeSource) -> AirbyteMessage:
 
 
 def _emitted_at() -> int:
-    return int(datetime.now().timestamp()) * 1000
+    return ab_datetime_now().to_epoch_millis()

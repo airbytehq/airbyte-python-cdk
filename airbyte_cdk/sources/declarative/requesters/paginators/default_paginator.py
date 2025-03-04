@@ -23,6 +23,10 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
+from airbyte_cdk.utils.mapping_helpers import (
+    _validate_component_request_option_paths,
+    get_interpolation_context,
+)
 
 
 @dataclass
@@ -113,6 +117,13 @@ class DefaultPaginator(Paginator):
         if isinstance(self.url_base, str):
             self.url_base = InterpolatedString(string=self.url_base, parameters=parameters)
 
+        if self.page_token_option and not isinstance(self.page_token_option, RequestPath):
+            _validate_component_request_option_paths(
+                self.config,
+                self.page_size_option,
+                self.page_token_option,
+            )
+
     def get_initial_token(self) -> Optional[Any]:
         """
         Return the page token that should be used for the first request of a stream
@@ -140,11 +151,22 @@ class DefaultPaginator(Paginator):
         else:
             return None
 
-    def path(self, next_page_token: Optional[Mapping[str, Any]]) -> Optional[str]:
+    def path(
+        self,
+        next_page_token: Optional[Mapping[str, Any]],
+        stream_state: Optional[Mapping[str, Any]] = None,
+        stream_slice: Optional[StreamSlice] = None,
+    ) -> Optional[str]:
         token = next_page_token.get("next_page_token") if next_page_token else None
         if token and self.page_token_option and isinstance(self.page_token_option, RequestPath):
+            # make additional interpolation context
+            interpolation_context = get_interpolation_context(
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
+            )
             # Replace url base to only return the path
-            return str(token).replace(self.url_base.eval(self.config), "")  # type: ignore # url_base is casted to a InterpolatedString in __post_init__
+            return str(token).replace(self.url_base.eval(self.config, **interpolation_context), "")  # type: ignore # url_base is casted to a InterpolatedString in __post_init__
         else:
             return None
 
@@ -187,7 +209,7 @@ class DefaultPaginator(Paginator):
     def _get_request_options(
         self, option_type: RequestOptionType, next_page_token: Optional[Mapping[str, Any]]
     ) -> MutableMapping[str, Any]:
-        options = {}
+        options: MutableMapping[str, Any] = {}
 
         token = next_page_token.get("next_page_token") if next_page_token else None
         if (
@@ -196,15 +218,16 @@ class DefaultPaginator(Paginator):
             and isinstance(self.page_token_option, RequestOption)
             and self.page_token_option.inject_into == option_type
         ):
-            options[self.page_token_option.field_name.eval(config=self.config)] = token  # type: ignore # field_name is always cast to an interpolated string
+            self.page_token_option.inject_into_request(options, token, self.config)
+
         if (
             self.page_size_option
             and self.pagination_strategy.get_page_size()
             and self.page_size_option.inject_into == option_type
         ):
-            options[self.page_size_option.field_name.eval(config=self.config)] = (  # type: ignore [union-attr]
-                self.pagination_strategy.get_page_size()
-            )  # type: ignore # field_name is always cast to an interpolated string
+            page_size = self.pagination_strategy.get_page_size()
+            self.page_size_option.inject_into_request(options, page_size, self.config)
+
         return options
 
 
@@ -247,8 +270,17 @@ class PaginatorTestReadDecorator(Paginator):
             response, last_page_size, last_record, last_page_token_value
         )
 
-    def path(self, next_page_token: Optional[Mapping[str, Any]]) -> Optional[str]:
-        return self._decorated.path(next_page_token)
+    def path(
+        self,
+        next_page_token: Optional[Mapping[str, Any]],
+        stream_state: Optional[Mapping[str, Any]] = None,
+        stream_slice: Optional[StreamSlice] = None,
+    ) -> Optional[str]:
+        return self._decorated.path(
+            next_page_token=next_page_token,
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+        )
 
     def get_request_params(
         self,

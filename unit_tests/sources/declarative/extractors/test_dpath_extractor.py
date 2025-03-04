@@ -9,10 +9,11 @@ import pytest
 import requests
 
 from airbyte_cdk import Decoder
+from airbyte_cdk.sources.declarative.decoders import CompositeRawDecoder
+from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import JsonLineParser
 from airbyte_cdk.sources.declarative.decoders.json_decoder import (
     IterableDecoder,
     JsonDecoder,
-    JsonlDecoder,
 )
 from airbyte_cdk.sources.declarative.extractors.dpath_extractor import DpathExtractor
 
@@ -20,7 +21,7 @@ config = {"field": "record_array"}
 parameters = {"parameters_field": "record_array"}
 
 decoder_json = JsonDecoder(parameters={})
-decoder_jsonl = JsonlDecoder(parameters={})
+decoder_jsonl = CompositeRawDecoder(parser=JsonLineParser(), stream_response=True)
 decoder_iterable = IterableDecoder(parameters={})
 
 

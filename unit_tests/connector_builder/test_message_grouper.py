@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, Mock, patch
 import orjson
 import pytest
 
-from airbyte_cdk.connector_builder.message_grouper import MessageGrouper
 from airbyte_cdk.connector_builder.models import (
     HttpRequest,
     HttpResponse,
@@ -17,6 +16,8 @@ from airbyte_cdk.connector_builder.models import (
     StreamRead,
     StreamReadPages,
 )
+from airbyte_cdk.connector_builder.test_reader import TestReader
+from airbyte_cdk.connector_builder.test_reader.helpers import create_response_from_log_message
 from airbyte_cdk.models import (
     AirbyteControlConnectorConfigMessage,
     AirbyteControlMessage,
@@ -144,7 +145,7 @@ CONFIG = {"rank": "upper-six"}
 A_SOURCE = MagicMock()
 
 
-@patch("airbyte_cdk.connector_builder.message_grouper.AirbyteEntrypoint.read")
+@patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_get_grouped_messages(mock_entrypoint_read: Mock) -> None:
     url = "https://demonslayers.com/api/v1/hashiras?era=taisho"
     request = {
@@ -202,8 +203,8 @@ def test_get_grouped_messages(mock_entrypoint_read: Mock) -> None:
         ),
     )
 
-    connector_builder_handler = MessageGrouper(MAX_PAGES_PER_SLICE, MAX_SLICES)
-    actual_response: StreamRead = connector_builder_handler.get_message_groups(
+    connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
+    actual_response: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
         configured_catalog=create_configured_catalog("hashiras"),
@@ -218,7 +219,7 @@ def test_get_grouped_messages(mock_entrypoint_read: Mock) -> None:
         assert actual_page == expected_pages[i]
 
 
-@patch("airbyte_cdk.connector_builder.message_grouper.AirbyteEntrypoint.read")
+@patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_get_grouped_messages_with_logs(mock_entrypoint_read: Mock) -> None:
     url = "https://demonslayers.com/api/v1/hashiras?era=taisho"
     request = {
@@ -286,9 +287,9 @@ def test_get_grouped_messages_with_logs(mock_entrypoint_read: Mock) -> None:
         ),
     )
 
-    connector_builder_handler = MessageGrouper(MAX_PAGES_PER_SLICE, MAX_SLICES)
+    connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
 
-    actual_response: StreamRead = connector_builder_handler.get_message_groups(
+    actual_response: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
         configured_catalog=create_configured_catalog("hashiras"),
@@ -309,7 +310,7 @@ def test_get_grouped_messages_with_logs(mock_entrypoint_read: Mock) -> None:
         pytest.param(3, 1, True, id="test_create_request_record_limit_exceeds_max"),
     ],
 )
-@patch("airbyte_cdk.connector_builder.message_grouper.AirbyteEntrypoint.read")
+@patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_get_grouped_messages_record_limit(
     mock_entrypoint_read: Mock, request_record_limit: int, max_record_limit: int, should_fail: bool
 ) -> None:
@@ -339,11 +340,11 @@ def test_get_grouped_messages_record_limit(
     n_records = 2
     record_limit = min(request_record_limit, max_record_limit)
 
-    api = MessageGrouper(MAX_PAGES_PER_SLICE, MAX_SLICES, max_record_limit=max_record_limit)
+    api = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES, max_record_limit=max_record_limit)
     # this is the call we expect to raise an exception
     if should_fail:
         with pytest.raises(ValueError):
-            api.get_message_groups(
+            api.run_test_read(
                 mock_source,
                 config=CONFIG,
                 configured_catalog=create_configured_catalog("hashiras"),
@@ -351,7 +352,7 @@ def test_get_grouped_messages_record_limit(
                 record_limit=request_record_limit,
             )
     else:
-        actual_response: StreamRead = api.get_message_groups(
+        actual_response: StreamRead = api.run_test_read(
             mock_source,
             config=CONFIG,
             configured_catalog=create_configured_catalog("hashiras"),
@@ -374,7 +375,7 @@ def test_get_grouped_messages_record_limit(
         pytest.param(1, id="test_create_request_no_record_limit_n_records_exceed_max"),
     ],
 )
-@patch("airbyte_cdk.connector_builder.message_grouper.AirbyteEntrypoint.read")
+@patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_get_grouped_messages_default_record_limit(
     mock_entrypoint_read: Mock, max_record_limit: int
 ) -> None:
@@ -403,8 +404,8 @@ def test_get_grouped_messages_default_record_limit(
     )
     n_records = 2
 
-    api = MessageGrouper(MAX_PAGES_PER_SLICE, MAX_SLICES, max_record_limit=max_record_limit)
-    actual_response: StreamRead = api.get_message_groups(
+    api = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES, max_record_limit=max_record_limit)
+    actual_response: StreamRead = api.run_test_read(
         source=mock_source,
         config=CONFIG,
         configured_catalog=create_configured_catalog("hashiras"),
@@ -417,7 +418,7 @@ def test_get_grouped_messages_default_record_limit(
     assert total_records == min([max_record_limit, n_records])
 
 
-@patch("airbyte_cdk.connector_builder.message_grouper.AirbyteEntrypoint.read")
+@patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_get_grouped_messages_limit_0(mock_entrypoint_read: Mock) -> None:
     url = "https://demonslayers.com/api/v1/hashiras?era=taisho"
     request = {
@@ -442,10 +443,10 @@ def test_get_grouped_messages_limit_0(mock_entrypoint_read: Mock) -> None:
             ]
         ),
     )
-    api = MessageGrouper(MAX_PAGES_PER_SLICE, MAX_SLICES)
+    api = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
 
     with pytest.raises(ValueError):
-        api.get_message_groups(
+        api.run_test_read(
             source=mock_source,
             config=CONFIG,
             configured_catalog=create_configured_catalog("hashiras"),
@@ -454,7 +455,7 @@ def test_get_grouped_messages_limit_0(mock_entrypoint_read: Mock) -> None:
         )
 
 
-@patch("airbyte_cdk.connector_builder.message_grouper.AirbyteEntrypoint.read")
+@patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_get_grouped_messages_no_records(mock_entrypoint_read: Mock) -> None:
     url = "https://demonslayers.com/api/v1/hashiras?era=taisho"
     request = {
@@ -500,9 +501,9 @@ def test_get_grouped_messages_no_records(mock_entrypoint_read: Mock) -> None:
         ),
     )
 
-    message_grouper = MessageGrouper(MAX_PAGES_PER_SLICE, MAX_SLICES)
+    message_grouper = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
 
-    actual_response: StreamRead = message_grouper.get_message_groups(
+    actual_response: StreamRead = message_grouper.run_test_read(
         source=mock_source,
         config=CONFIG,
         configured_catalog=create_configured_catalog("hashiras"),
@@ -585,13 +586,10 @@ def test_create_response_from_log_message(
     else:
         response_message = log_message
 
-    connector_builder_handler = MessageGrouper(MAX_PAGES_PER_SLICE, MAX_SLICES)
-    actual_response = connector_builder_handler._create_response_from_log_message(response_message)
-
-    assert actual_response == expected_response
+    assert create_response_from_log_message(response_message) == expected_response
 
 
-@patch("airbyte_cdk.connector_builder.message_grouper.AirbyteEntrypoint.read")
+@patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_get_grouped_messages_with_many_slices(mock_entrypoint_read: Mock) -> None:
     url = "http://a-url.com"
     request: Mapping[str, Any] = {}
@@ -616,9 +614,9 @@ def test_get_grouped_messages_with_many_slices(mock_entrypoint_read: Mock) -> No
         ),
     )
 
-    connector_builder_handler = MessageGrouper(MAX_PAGES_PER_SLICE, MAX_SLICES)
+    connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
 
-    stream_read: StreamRead = connector_builder_handler.get_message_groups(
+    stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
         configured_catalog=create_configured_catalog("hashiras"),
@@ -645,7 +643,7 @@ def test_get_grouped_messages_with_many_slices(mock_entrypoint_read: Mock) -> No
     )
 
 
-@patch("airbyte_cdk.connector_builder.message_grouper.AirbyteEntrypoint.read")
+@patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_get_grouped_messages_given_maximum_number_of_slices_then_test_read_limit_reached(
     mock_entrypoint_read: Mock,
 ) -> None:
@@ -660,9 +658,9 @@ def test_get_grouped_messages_given_maximum_number_of_slices_then_test_read_limi
         ),
     )
 
-    api = MessageGrouper(MAX_PAGES_PER_SLICE, MAX_SLICES)
+    api = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
 
-    stream_read: StreamRead = api.get_message_groups(
+    stream_read: StreamRead = api.run_test_read(
         source=mock_source,
         config=CONFIG,
         configured_catalog=create_configured_catalog("hashiras"),
@@ -672,7 +670,7 @@ def test_get_grouped_messages_given_maximum_number_of_slices_then_test_read_limi
     assert stream_read.test_read_limit_reached
 
 
-@patch("airbyte_cdk.connector_builder.message_grouper.AirbyteEntrypoint.read")
+@patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_get_grouped_messages_given_maximum_number_of_pages_then_test_read_limit_reached(
     mock_entrypoint_read: Mock,
 ) -> None:
@@ -688,9 +686,9 @@ def test_get_grouped_messages_given_maximum_number_of_pages_then_test_read_limit
         ),
     )
 
-    api = MessageGrouper(MAX_PAGES_PER_SLICE, MAX_SLICES)
+    api = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
 
-    stream_read: StreamRead = api.get_message_groups(
+    stream_read: StreamRead = api.run_test_read(
         source=mock_source,
         config=CONFIG,
         configured_catalog=create_configured_catalog("hashiras"),
@@ -707,8 +705,8 @@ def test_read_stream_returns_error_if_stream_does_not_exist() -> None:
 
     full_config: Mapping[str, Any] = {**CONFIG, **{"__injected_declarative_manifest": MANIFEST}}
 
-    message_grouper = MessageGrouper(MAX_PAGES_PER_SLICE, MAX_SLICES)
-    actual_response = message_grouper.get_message_groups(
+    message_grouper = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
+    actual_response = message_grouper.run_test_read(
         source=mock_source,
         config=full_config,
         configured_catalog=create_configured_catalog("not_in_manifest"),
@@ -720,7 +718,7 @@ def test_read_stream_returns_error_if_stream_does_not_exist() -> None:
     assert "ERROR" in actual_response.logs[0].level
 
 
-@patch("airbyte_cdk.connector_builder.message_grouper.AirbyteEntrypoint.read")
+@patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_given_control_message_then_stream_read_has_config_update(
     mock_entrypoint_read: Mock,
 ) -> None:
@@ -732,8 +730,8 @@ def test_given_control_message_then_stream_read_has_config_update(
             + [connector_configuration_control_message(1, updated_config)]
         ),
     )
-    connector_builder_handler = MessageGrouper(MAX_PAGES_PER_SLICE, MAX_SLICES)
-    stream_read: StreamRead = connector_builder_handler.get_message_groups(
+    connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
+    stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
         configured_catalog=create_configured_catalog("hashiras"),
@@ -743,7 +741,7 @@ def test_given_control_message_then_stream_read_has_config_update(
     assert stream_read.latest_config_update == updated_config
 
 
-@patch("airbyte_cdk.connector_builder.message_grouper.AirbyteEntrypoint.read")
+@patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_given_multiple_control_messages_then_stream_read_has_latest_based_on_emitted_at(
     mock_entrypoint_read: Mock,
 ) -> None:
@@ -762,8 +760,8 @@ def test_given_multiple_control_messages_then_stream_read_has_latest_based_on_em
             ]
         ),
     )
-    connector_builder_handler = MessageGrouper(MAX_PAGES_PER_SLICE, MAX_SLICES)
-    stream_read: StreamRead = connector_builder_handler.get_message_groups(
+    connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
+    stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
         configured_catalog=create_configured_catalog("hashiras"),
@@ -773,7 +771,7 @@ def test_given_multiple_control_messages_then_stream_read_has_latest_based_on_em
     assert stream_read.latest_config_update == latest_config
 
 
-@patch("airbyte_cdk.connector_builder.message_grouper.AirbyteEntrypoint.read")
+@patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_given_multiple_control_messages_with_same_timestamp_then_stream_read_has_latest_based_on_message_order(
     mock_entrypoint_read: Mock,
 ) -> None:
@@ -790,8 +788,8 @@ def test_given_multiple_control_messages_with_same_timestamp_then_stream_read_ha
             ]
         ),
     )
-    connector_builder_handler = MessageGrouper(MAX_PAGES_PER_SLICE, MAX_SLICES)
-    stream_read: StreamRead = connector_builder_handler.get_message_groups(
+    connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
+    stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
         configured_catalog=create_configured_catalog("hashiras"),
@@ -801,14 +799,14 @@ def test_given_multiple_control_messages_with_same_timestamp_then_stream_read_ha
     assert stream_read.latest_config_update == latest_config
 
 
-@patch("airbyte_cdk.connector_builder.message_grouper.AirbyteEntrypoint.read")
+@patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_given_auxiliary_requests_then_return_auxiliary_request(mock_entrypoint_read: Mock) -> None:
     mock_source = make_mock_source(
         mock_entrypoint_read,
         iter(any_request_and_response_with_a_record() + [auxiliary_request_log_message()]),
     )
-    connector_builder_handler = MessageGrouper(MAX_PAGES_PER_SLICE, MAX_SLICES)
-    stream_read: StreamRead = connector_builder_handler.get_message_groups(
+    connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
+    stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
         configured_catalog=create_configured_catalog("hashiras"),
@@ -818,11 +816,11 @@ def test_given_auxiliary_requests_then_return_auxiliary_request(mock_entrypoint_
     assert len(stream_read.auxiliary_requests) == 1
 
 
-@patch("airbyte_cdk.connector_builder.message_grouper.AirbyteEntrypoint.read")
+@patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_given_no_slices_then_return_empty_slices(mock_entrypoint_read: Mock) -> None:
     mock_source = make_mock_source(mock_entrypoint_read, iter([auxiliary_request_log_message()]))
-    connector_builder_handler = MessageGrouper(MAX_PAGES_PER_SLICE, MAX_SLICES)
-    stream_read: StreamRead = connector_builder_handler.get_message_groups(
+    connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
+    stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
         configured_catalog=create_configured_catalog("hashiras"),
@@ -832,7 +830,7 @@ def test_given_no_slices_then_return_empty_slices(mock_entrypoint_read: Mock) ->
     assert len(stream_read.slices) == 0
 
 
-@patch("airbyte_cdk.connector_builder.message_grouper.AirbyteEntrypoint.read")
+@patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_given_pk_then_ensure_pk_is_pass_to_schema_inferrence(mock_entrypoint_read: Mock) -> None:
     mock_source = make_mock_source(
         mock_entrypoint_read,
@@ -847,9 +845,9 @@ def test_given_pk_then_ensure_pk_is_pass_to_schema_inferrence(mock_entrypoint_re
     mock_source.streams.return_value = [Mock()]
     mock_source.streams.return_value[0].primary_key = [["id"]]
     mock_source.streams.return_value[0].cursor_field = _NO_CURSOR_FIELD
-    connector_builder_handler = MessageGrouper(MAX_PAGES_PER_SLICE, MAX_SLICES)
+    connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
 
-    stream_read: StreamRead = connector_builder_handler.get_message_groups(
+    stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
         configured_catalog=create_configured_catalog("hashiras"),
@@ -859,7 +857,7 @@ def test_given_pk_then_ensure_pk_is_pass_to_schema_inferrence(mock_entrypoint_re
     assert stream_read.inferred_schema["required"] == ["id"]
 
 
-@patch("airbyte_cdk.connector_builder.message_grouper.AirbyteEntrypoint.read")
+@patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_given_cursor_field_then_ensure_cursor_field_is_pass_to_schema_inferrence(
     mock_entrypoint_read: Mock,
 ) -> None:
@@ -876,9 +874,9 @@ def test_given_cursor_field_then_ensure_cursor_field_is_pass_to_schema_inferrenc
     mock_source.streams.return_value = [Mock()]
     mock_source.streams.return_value[0].primary_key = _NO_PK
     mock_source.streams.return_value[0].cursor_field = ["date"]
-    connector_builder_handler = MessageGrouper(MAX_PAGES_PER_SLICE, MAX_SLICES)
+    connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
 
-    stream_read: StreamRead = connector_builder_handler.get_message_groups(
+    stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
         configured_catalog=create_configured_catalog("hashiras"),

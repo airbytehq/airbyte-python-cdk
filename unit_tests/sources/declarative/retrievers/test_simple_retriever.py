@@ -58,12 +58,22 @@ def test_simple_retriever_full(mock_http_stream):
     request_params = {"param": "value"}
     requester.get_request_params.return_value = request_params
 
+    requester.get_request_params.__name__ = "get_request_params"
+    requester.get_request_headers.__name__ = "get_request_headers"
+    requester.get_request_body_data.__name__ = "get_request_body_data"
+    requester.get_request_body_json.__name__ = "get_request_body_json"
+
     paginator = MagicMock()
     paginator.get_initial_token.return_value = None
     next_page_token = {"cursor": "cursor_value"}
     paginator.path.return_value = None
     paginator.next_page_token.return_value = next_page_token
     paginator.get_request_headers.return_value = {}
+
+    paginator.get_request_params.__name__ = "get_request_params"
+    paginator.get_request_headers.__name__ = "get_request_headers"
+    paginator.get_request_body_data.__name__ = "get_request_body_data"
+    paginator.get_request_body_json.__name__ = "get_request_body_json"
 
     record_selector = MagicMock()
     record_selector.select_records.return_value = records
@@ -119,7 +129,7 @@ def test_simple_retriever_full(mock_http_stream):
         retriever._next_page_token(response, last_page_size, last_record, last_page_token_value)
         == next_page_token
     )
-    assert retriever._request_params(None, None, None) == {}
+    assert retriever._request_params(None, None) == {}
     assert retriever.stream_slices() == stream_slices
 
 
@@ -442,10 +452,18 @@ def test_get_request_options_from_pagination(
     paginator.get_request_body_data.return_value = paginator_mapping
     paginator.get_request_body_json.return_value = paginator_mapping
 
+    paginator.get_request_params.__name__ = "get_request_params"
+    paginator.get_request_body_data.__name__ = "get_request_body_data"
+    paginator.get_request_body_json.__name__ = "get_request_body_json"
+
     request_options_provider = MagicMock()
     request_options_provider.get_request_params.return_value = request_options_provider_mapping
     request_options_provider.get_request_body_data.return_value = request_options_provider_mapping
     request_options_provider.get_request_body_json.return_value = request_options_provider_mapping
+
+    request_options_provider.get_request_params.__name__ = "get_request_params"
+    request_options_provider.get_request_body_data.__name__ = "get_request_body_data"
+    request_options_provider.get_request_body_json.__name__ = "get_request_body_json"
 
     record_selector = MagicMock()
     retriever = SimpleRetriever(
@@ -489,10 +507,12 @@ def test_get_request_headers(test_name, paginator_mapping, expected_mapping):
     # This test is separate from the other request options because request headers must be strings
     paginator = MagicMock()
     paginator.get_request_headers.return_value = paginator_mapping
+    paginator.get_request_headers.__name__ = "get_request_headers"
     requester = MagicMock(use_cache=False)
 
-    stream_slicer = MagicMock()
-    stream_slicer.get_request_headers.return_value = {"key": "value"}
+    request_option_provider = MagicMock()
+    request_option_provider.get_request_headers.return_value = {"key": "value"}
+    request_option_provider.get_request_headers.__name__ = "get_request_headers"
 
     record_selector = MagicMock()
     retriever = SimpleRetriever(
@@ -500,7 +520,7 @@ def test_get_request_headers(test_name, paginator_mapping, expected_mapping):
         primary_key=primary_key,
         requester=requester,
         record_selector=record_selector,
-        stream_slicer=stream_slicer,
+        request_option_provider=request_option_provider,
         paginator=paginator,
         parameters={},
         config={},
@@ -555,7 +575,7 @@ def test_get_request_headers(test_name, paginator_mapping, expected_mapping):
         ),
     ],
 )
-def test_ignore_stream_slicer_parameters_on_paginated_requests(
+def test_ignore_request_option_provider_parameters_on_paginated_requests(
     test_name,
     paginator_mapping,
     ignore_stream_slicer_parameters_on_paginated_requests,
@@ -565,10 +585,12 @@ def test_ignore_stream_slicer_parameters_on_paginated_requests(
     # This test is separate from the other request options because request headers must be strings
     paginator = MagicMock()
     paginator.get_request_headers.return_value = paginator_mapping
+    paginator.get_request_headers.__name__ = "get_request_headers"
     requester = MagicMock(use_cache=False)
 
-    stream_slicer = MagicMock()
-    stream_slicer.get_request_headers.return_value = {"key_from_slicer": "value"}
+    request_option_provider = MagicMock()
+    request_option_provider.get_request_headers.return_value = {"key_from_slicer": "value"}
+    request_option_provider.get_request_headers.__name__ = "get_request_headers"
 
     record_selector = MagicMock()
     retriever = SimpleRetriever(
@@ -576,7 +598,7 @@ def test_ignore_stream_slicer_parameters_on_paginated_requests(
         primary_key=primary_key,
         requester=requester,
         record_selector=record_selector,
-        stream_slicer=stream_slicer,
+        request_option_provider=request_option_provider,
         paginator=paginator,
         ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
         parameters={},
@@ -612,6 +634,7 @@ def test_request_body_data(
 ):
     paginator = MagicMock()
     paginator.get_request_body_data.return_value = paginator_body_data
+    paginator.get_request_body_data.__name__ = "get_request_body_data"
     requester = MagicMock(use_cache=False)
 
     request_option_provider = MagicMock()
@@ -825,11 +848,25 @@ def test_emit_log_request_response_messages(mocker):
         "airbyte_cdk.sources.declarative.retrievers.simple_retriever.format_http_message"
     )
     requester = MagicMock()
+
+    # Add __name__ to mock methods
+    requester.get_request_params.__name__ = "get_request_params"
+    requester.get_request_headers.__name__ = "get_request_headers"
+    requester.get_request_body_data.__name__ = "get_request_body_data"
+    requester.get_request_body_json.__name__ = "get_request_body_json"
+
+    # The paginator mock also needs __name__ attributes
+    paginator = MagicMock()
+    paginator.get_request_params.__name__ = "get_request_params"
+    paginator.get_request_headers.__name__ = "get_request_headers"
+    paginator.get_request_body_data.__name__ = "get_request_body_data"
+    paginator.get_request_body_json.__name__ = "get_request_body_json"
+
     retriever = SimpleRetrieverTestReadDecorator(
         name="stream_name",
         primary_key=primary_key,
         requester=requester,
-        paginator=MagicMock(),
+        paginator=paginator,
         record_selector=record_selector,
         stream_slicer=SinglePartitionRouter(parameters={}),
         parameters={},

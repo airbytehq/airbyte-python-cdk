@@ -3,6 +3,7 @@
 #
 
 import json
+from copy import deepcopy
 from unittest.mock import MagicMock
 
 import pytest
@@ -360,6 +361,34 @@ def test_http_components_resolver(
 
     result = list(resolver.resolve_components(stream_template_config=stream_template_config))
     assert result == expected_result
+
+
+def test_wrong_stream_name_type():
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/int_items"),
+            HttpResponse(
+                body=json.dumps(
+                    [
+                        {"id": 1, "name": 1},
+                        {"id": 2, "name": 2},
+                    ]
+                )
+            ),
+        )
+
+        manifest = deepcopy(_MANIFEST)
+        manifest["dynamic_streams"][0]["components_resolver"]["retriever"]["requester"]["path"] = (
+            "int_items"
+        )
+
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest, config=_CONFIG, catalog=None, state=None
+        )
+        with pytest.raises(ValueError) as exc_info:
+            source.discover(logger=source.logger, config=_CONFIG)
+
+        assert str(exc_info.value) == "Expected stream name 1 to be a string, got <class 'int'>."
 
 
 @pytest.mark.parametrize(

@@ -9,7 +9,7 @@ on:
 jobs:
   test-build:
     name: Build and Inspect Python Package
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -17,7 +17,7 @@ jobs:
       - name: Set up Poetry
         uses: Gr1N/setup-poetry@v9
         with:
-          poetry-version: "1.8.4"
+          poetry-version: "2.0.1"
 
       - name: Check Poetry lock file is current
         run: poetry check
@@ -36,7 +36,7 @@ jobs:
 
   pytest-fast:
     name: Pytest (Fast)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # Common steps:
       - name: Checkout code
@@ -44,7 +44,7 @@ jobs:
       - name: Set up Poetry
         uses: Gr1N/setup-poetry@v9
         with:
-          poetry-version: "1.8.4"
+          poetry-version: "2.0.1"
       - name: Set up Python
         uses: actions/setup-python@v5
         with:

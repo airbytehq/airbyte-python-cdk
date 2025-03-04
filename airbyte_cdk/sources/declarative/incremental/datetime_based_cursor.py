@@ -21,6 +21,7 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
 )
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
+from airbyte_cdk.utils.mapping_helpers import _validate_component_request_option_paths
 
 
 @dataclass
@@ -121,6 +122,10 @@ class DatetimeBasedCursor(DeclarativeCursor):
 
         if not self.cursor_datetime_formats:
             self.cursor_datetime_formats = [self.datetime_format]
+
+        _validate_component_request_option_paths(
+            self.config, self.start_time_option, self.end_time_option
+        )
 
     def get_stream_state(self) -> StreamState:
         return {self.cursor_field.eval(self.config): self._cursor} if self._cursor else {}  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__
@@ -365,14 +370,15 @@ class DatetimeBasedCursor(DeclarativeCursor):
         options: MutableMapping[str, Any] = {}
         if not stream_slice:
             return options
+
         if self.start_time_option and self.start_time_option.inject_into == option_type:
-            options[self.start_time_option.field_name.eval(config=self.config)] = stream_slice.get(  # type: ignore # field_name is always casted to an interpolated string
-                self._partition_field_start.eval(self.config)
-            )
+            start_time_value = stream_slice.get(self._partition_field_start.eval(self.config))
+            self.start_time_option.inject_into_request(options, start_time_value, self.config)
+
         if self.end_time_option and self.end_time_option.inject_into == option_type:
-            options[self.end_time_option.field_name.eval(config=self.config)] = stream_slice.get(  # type: ignore [union-attr]
-                self._partition_field_end.eval(self.config)
-            )
+            end_time_value = stream_slice.get(self._partition_field_end.eval(self.config))
+            self.end_time_option.inject_into_request(options, end_time_value, self.config)
+
         return options
 
     def should_be_synced(self, record: Record) -> bool:

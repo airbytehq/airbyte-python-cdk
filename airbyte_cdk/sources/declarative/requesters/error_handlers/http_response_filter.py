@@ -151,16 +151,16 @@ class HttpResponseFilter:
         :param response: The HTTP response which can be used during interpolation
         :return: The evaluated error message string to be emitted
         """
-        return self.error_message.eval(  # type: ignore [no-any-return, union-attr]
+        return self.error_message.eval(  # type: ignore[no-any-return, union-attr]
             self.config, response=self._safe_response_json(response), headers=response.headers
         )
 
     def _response_matches_predicate(self, response: requests.Response) -> bool:
         return (
             bool(
-                self.predicate.condition  # type: ignore [union-attr]
-                and self.predicate.eval(  # type: ignore [union-attr]
-                    None,  # type: ignore [arg-type]
+                self.predicate.condition  # type:ignore[union-attr]
+                and self.predicate.eval(  # type:ignore[union-attr]
+                    None,  # type: ignore[arg-type]
                     response=self._safe_response_json(response),
                     headers=response.headers,
                 )

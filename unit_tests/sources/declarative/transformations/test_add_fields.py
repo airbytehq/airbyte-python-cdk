@@ -88,22 +88,6 @@ from airbyte_cdk.sources.types import FieldPointer
         ),
         pytest.param(
             {"k": "v"},
-            [(["k2"], '{{ stream_state["cursor"] }}')],
-            None,
-            {"stream_state": {"cursor": "t0"}},
-            {"k": "v", "k2": "t0"},
-            id="set a value from the state using bracket notation",
-        ),
-        pytest.param(
-            {"k": "v"},
-            [(["k2"], "{{ stream_state.cursor }}")],
-            None,
-            {"stream_state": {"cursor": "t0"}},
-            {"k": "v", "k2": "t0"},
-            id="set a value from the state using dot notation",
-        ),
-        pytest.param(
-            {"k": "v"},
             [(["k2"], '{{ stream_slice["start_date"] }}')],
             None,
             {"stream_slice": {"start_date": "oct1"}},

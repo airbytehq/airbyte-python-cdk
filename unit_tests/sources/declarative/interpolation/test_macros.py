@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
 import datetime
@@ -30,68 +30,91 @@ def test_macros_export(test_name, fn_name, found_in_macros):
 
 
 @pytest.mark.parametrize(
-    "test_name, input_value, format, input_format, expected_output",
+    "input_value, format, input_format, expected_output",
     [
-        ("test_datetime_string_to_date", "2022-01-01T01:01:01Z", "%Y-%m-%d", None, "2022-01-01"),
-        ("test_date_string_to_date", "2022-01-01", "%Y-%m-%d", None, "2022-01-01"),
-        ("test_datetime_string_to_date", "2022-01-01T00:00:00Z", "%Y-%m-%d", None, "2022-01-01"),
+        ("2022-01-01T01:01:01Z", "%Y-%m-%d", None, "2022-01-01"),
+        ("2022-01-01", "%Y-%m-%d", None, "2022-01-01"),
+        ("2022-01-01T00:00:00Z", "%Y-%m-%d", None, "2022-01-01"),
         (
-            "test_datetime_with_tz_string_to_date",
             "2022-01-01T00:00:00Z",
             "%Y-%m-%d",
             None,
             "2022-01-01",
         ),
         (
-            "test_datetime_string_to_datetime",
             "2022-01-01T01:01:01Z",
             "%Y-%m-%dT%H:%M:%SZ",
             None,
             "2022-01-01T01:01:01Z",
         ),
         (
-            "test_datetime_string_with_tz_to_datetime",
             "2022-01-01T01:01:01-0800",
             "%Y-%m-%dT%H:%M:%SZ",
             None,
             "2022-01-01T09:01:01Z",
         ),
         (
-            "test_datetime_object_tz_to_date",
             datetime.datetime(2022, 1, 1, 1, 1, 1),
             "%Y-%m-%d",
             None,
             "2022-01-01",
         ),
         (
-            "test_datetime_object_tz_to_datetime",
             datetime.datetime(2022, 1, 1, 1, 1, 1),
             "%Y-%m-%dT%H:%M:%SZ",
             None,
             "2022-01-01T01:01:01Z",
         ),
         (
-            "test_datetime_string_to_rfc2822_date",
             "Sat, 01 Jan 2022 01:01:01 +0000",
             "%Y-%m-%d",
             "%a, %d %b %Y %H:%M:%S %z",
             "2022-01-01",
         ),
+        (
+            "2022-01-01T01:01:01Z",
+            "%s",
+            "%Y-%m-%dT%H:%M:%SZ",
+            "1640998861",
+        ),
+        (
+            "2022-01-01T01:01:01Z",
+            "%ms",
+            "%Y-%m-%dT%H:%M:%SZ",
+            "1640998861000000",
+        ),
+    ],
+    ids=[
+        "test_datetime_string_to_date",
+        "test_date_string_to_date",
+        "test_datetime_string_to_date",
+        "test_datetime_with_tz_string_to_date",
+        "test_datetime_string_to_datetime",
+        "test_datetime_string_with_tz_to_datetime",
+        "test_datetime_object_tz_to_date",
+        "test_datetime_object_tz_to_datetime",
+        "test_datetime_string_to_rfc2822_date",
+        "test_datetime_string_to_timestamp_in_seconds",
+        "test_datetime_string_to_timestamp_in_microseconds",
     ],
 )
-def test_format_datetime(test_name, input_value, format, input_format, expected_output):
+def test_format_datetime(input_value, format, input_format, expected_output):
     format_datetime = macros["format_datetime"]
     assert format_datetime(input_value, format, input_format) == expected_output
 
 
 @pytest.mark.parametrize(
-    "test_name, input_value, expected_output",
+    "input_value, expected_output",
     [
-        ("test_one_day", "P1D", datetime.timedelta(days=1)),
-        ("test_6_days_23_hours", "P6DT23H", datetime.timedelta(days=6, hours=23)),
+        ("P1D", datetime.timedelta(days=1)),
+        ("P6DT23H", datetime.timedelta(days=6, hours=23)),
+    ],
+    ids=[
+        "test_one_day",
+        "test_6_days_23_hours",
     ],
 )
-def test_duration(test_name, input_value, expected_output):
+def test_duration(input_value: str, expected_output: datetime.timedelta):
     duration_fn = macros["duration"]
     assert duration_fn(input_value) == expected_output
 
@@ -120,3 +143,47 @@ def test_utc_datetime_to_local_timestamp_conversion():
     This test ensures correct timezone handling independent of the timezone of the system on which the sync is running.
     """
     assert macros["format_datetime"](dt="2020-10-01T00:00:00Z", format="%s") == "1601510400"
+
+
+@pytest.mark.parametrize(
+    "test_name, input_value, expected_output",
+    [
+        (
+            "test_basic_date",
+            "2022-01-14",
+            datetime.datetime(2022, 1, 14, tzinfo=datetime.timezone.utc),
+        ),
+        (
+            "test_datetime_with_time",
+            "2022-01-01 13:45:30",
+            datetime.datetime(2022, 1, 1, 13, 45, 30, tzinfo=datetime.timezone.utc),
+        ),
+        (
+            "test_datetime_with_timezone",
+            "2022-01-01T13:45:30+00:00",
+            datetime.datetime(2022, 1, 1, 13, 45, 30, tzinfo=datetime.timezone.utc),
+        ),
+        (
+            "test_datetime_with_timezone_offset",
+            "2022-01-01T13:45:30+05:30",
+            datetime.datetime(2022, 1, 1, 8, 15, 30, tzinfo=datetime.timezone.utc),
+        ),
+        (
+            "test_datetime_with_microseconds",
+            "2022-01-01T13:45:30.123456Z",
+            datetime.datetime(2022, 1, 1, 13, 45, 30, 123456, tzinfo=datetime.timezone.utc),
+        ),
+    ],
+)
+def test_give_valid_date_str_to_datetime_returns_datetime_object(
+    test_name, input_value, expected_output
+):
+    str_to_datetime_fn = macros["str_to_datetime"]
+    actual_output = str_to_datetime_fn(input_value)
+    assert actual_output == expected_output
+
+
+def test_given_invalid_date_str_to_datetime_raises_value_error():
+    str_to_datetime_fn = macros["str_to_datetime"]
+    with pytest.raises(ValueError):
+        str_to_datetime_fn("invalid-date")

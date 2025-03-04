@@ -40,6 +40,8 @@ properties:
     "$ref": "#/definitions/Spec"
   concurrency_level:
     "$ref": "#/definitions/ConcurrencyLevel"
+  api_budget:
+    "$ref": "#/definitions/HTTPAPIBudget"
   metadata:
     type: object
     description: For internal Airbyte use only - DO NOT modify manually. Used by consumers of declarative manifests for storing related metadata.
@@ -80,7 +82,6 @@ definitions:
           - stream_interval
           - stream_partition
           - stream_slice
-          - stream_state
         examples:
           - "{{ record['updates'] }}"
           - "{{ record['MetaData']['LastUpdatedTime'] }}"
@@ -320,6 +321,11 @@ definitions:
         title: Stream Count
         description: Numbers of the streams to try reading from when running a check operation.
         type: integer
+      use_check_availability:
+        title: Use Check Availability
+        description: Enables stream check availability. This field is automatically set by the CDK.
+        type: boolean
+        default: true
   CompositeErrorHandler:
     title: Composite Error Handler
     description: Error handler that sequentially iterates over a list of error handlers.
@@ -771,6 +777,44 @@ definitions:
       type:
         type: string
         enum: [LegacyToPerPartitionStateMigration]
+  IncrementingCountCursor:
+    title: Incrementing Count Cursor
+    description: Cursor that allows for incremental sync according to a continuously increasing integer.
+    type: object
+    required:
+      - type
+      - cursor_field
+    properties:
+      type:
+        type: string
+        enum: [IncrementingCountCursor]
+      cursor_field:
+        title: Cursor Field
+        description: The location of the value on a record that will be used as a bookmark during sync. To ensure no data loss, the API must return records in ascending order based on the cursor field. Nested fields are not supported, so the field must be at the top level of the record. You can use a combination of Add Field and Remove Field transformations to move the nested field to the top.
+        type: string
+        interpolation_context:
+          - config
+        examples:
+          - "created_at"
+          - "{{ config['record_cursor'] }}"
+      start_value:
+        title: Start Value
+        description: The value that determines the earliest record that should be synced.
+        anyOf:
+          - type: string
+          - type: integer
+        interpolation_context:
+          - config
+        examples:
+          - 0
+          - "{{ config['start_value'] }}"
+      start_value_option:
+        title: Inject Start Value Into Outgoing HTTP Request
+        description: Optionally configures how the start value will be sent in requests to the source API.
+        "$ref": "#/definitions/RequestOption"
+      $parameters:
+        type: object
+        additionalProperties: true
   DatetimeBasedCursor:
     title: Datetime Based Cursor
     description: Cursor to provide incremental capabilities over datetime.
@@ -784,6 +828,29 @@ definitions:
       type:
         type: string
         enum: [DatetimeBasedCursor]
+      clamping:
+        title: Date Range Clamping
+        description: This option is used to adjust the upper and lower boundaries of each datetime window to beginning and end of the provided target period (day, week, month)
+        type: object
+        required:
+          - target
+        properties:
+          target:
+            title: Target
+            description: The period of time that datetime windows will be clamped by
+            # This should ideally be an enum. However, we don't use an enum because we want to allow for connectors
+            # to support interpolation on the connector config to get the target which is an arbitrary string
+            type: string
+            interpolation_context:
+              - config
+            examples:
+              - "DAY"
+              - "WEEK"
+              - "MONTH"
+              - "{{ config['target'] }}"
+          target_details:
+            type: object
+            additionalProperties: true
       cursor_field:
         title: Cursor Field
         description: The location of the value on a record that will be used as a bookmark during sync. To ensure no data loss, the API must return records in ascending order based on the cursor field. Nested fields are not supported, so the field must be at the top level of the record. You can use a combination of Add Field and Remove Field transformations to move the nested field to the top.
@@ -815,6 +882,7 @@ definitions:
             * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`
             * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`
             * **%f**: Microsecond (zero-padded to 6 digits) - `000000`
+            * **%_ms**: Millisecond (zero-padded to 3 digits) - `000`
             * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`
             * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`
             * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`
@@ -1058,8 +1126,6 @@ definitions:
     type: object
     required:
       - type
-      - client_id
-      - client_secret
     properties:
       type:
         type: string
@@ -1254,6 +1320,15 @@ definitions:
             default: []
             examples:
               - ["invalid_grant", "invalid_permissions"]
+      profile_assertion:
+        title: Profile Assertion
+        description: The authenticator being used to authenticate the client authenticator.
+        "$ref": "#/definitions/JwtAuthenticator"
+      use_profile_assertion:
+        title: Use Profile Assertion
+        description: Enable using profile assertion as a flow for OAuth authorization.
+        type: boolean
+        default: false
       $parameters:
         type: object
         additionalProperties: true
@@ -1282,6 +1357,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/CustomIncrementalSync"
           - "$ref": "#/definitions/DatetimeBasedCursor"
+          - "$ref": "#/definitions/IncrementingCountCursor"
       name:
         title: Name
         description: The stream name.
@@ -1330,6 +1406,174 @@ definitions:
       $parameters:
         type: object
         additional_properties: true
+  HTTPAPIBudget:
+    title: HTTP API Budget
+    description: >
+      Defines how many requests can be made to the API in a given time frame. `HTTPAPIBudget` extracts the remaining
+      call count and the reset time from HTTP response headers using the header names provided by
+      `ratelimit_remaining_header` and `ratelimit_reset_header`. Only requests using `HttpRequester`
+      are rate-limited; custom components that bypass `HttpRequester` are not covered by this budget.
+    type: object
+    required:
+      - type
+      - policies
+    properties:
+      type:
+        type: string
+        enum: [HTTPAPIBudget]
+      policies:
+        title: Policies
+        description: List of call rate policies that define how many calls are allowed.
+        type: array
+        items:
+          anyOf:
+            - "$ref": "#/definitions/FixedWindowCallRatePolicy"
+            - "$ref": "#/definitions/MovingWindowCallRatePolicy"
+            - "$ref": "#/definitions/UnlimitedCallRatePolicy"
+      ratelimit_reset_header:
+        title: Rate Limit Reset Header
+        description: The HTTP response header name that indicates when the rate limit resets.
+        type: string
+        default: "ratelimit-reset"
+      ratelimit_remaining_header:
+        title: Rate Limit Remaining Header
+        description: The HTTP response header name that indicates the number of remaining allowed calls.
+        type: string
+        default: "ratelimit-remaining"
+      status_codes_for_ratelimit_hit:
+        title: Status Codes for Rate Limit Hit
+        description: List of HTTP status codes that indicate a rate limit has been hit.
+        type: array
+        items:
+          type: integer
+        default: [429]
+    additionalProperties: true
+  FixedWindowCallRatePolicy:
+    title: Fixed Window Call Rate Policy
+    description: A policy that allows a fixed number of calls within a specific time window.
+    type: object
+    required:
+      - type
+      - period
+      - call_limit
+      - matchers
+    properties:
+      type:
+        type: string
+        enum: [FixedWindowCallRatePolicy]
+      period:
+        title: Period
+        description: The time interval for the rate limit window.
+        type: string
+      call_limit:
+        title: Call Limit
+        description: The maximum number of calls allowed within the period.
+        type: integer
+      matchers:
+        title: Matchers
+        description: List of matchers that define which requests this policy applies to.
+        type: array
+        items:
+          "$ref": "#/definitions/HttpRequestRegexMatcher"
+    additionalProperties: true
+  MovingWindowCallRatePolicy:
+    title: Moving Window Call Rate Policy
+    description: A policy that allows a fixed number of calls within a moving time window.
+    type: object
+    required:
+      - type
+      - rates
+      - matchers
+    properties:
+      type:
+        type: string
+        enum: [MovingWindowCallRatePolicy]
+      rates:
+        title: Rates
+        description: List of rates that define the call limits for different time intervals.
+        type: array
+        items:
+          "$ref": "#/definitions/Rate"
+      matchers:
+        title: Matchers
+        description: List of matchers that define which requests this policy applies to.
+        type: array
+        items:
+          "$ref": "#/definitions/HttpRequestRegexMatcher"
+    additionalProperties: true
+  UnlimitedCallRatePolicy:
+    title: Unlimited Call Rate Policy
+    description: A policy that allows unlimited calls for specific requests.
+    type: object
+    required:
+      - type
+      - matchers
+    properties:
+      type:
+        type: string
+        enum: [UnlimitedCallRatePolicy]
+      matchers:
+        title: Matchers
+        description: List of matchers that define which requests this policy applies to.
+        type: array
+        items:
+          "$ref": "#/definitions/HttpRequestRegexMatcher"
+    additionalProperties: true
+  Rate:
+    title: Rate
+    description: Defines a rate limit with a specific number of calls allowed within a time interval.
+    type: object
+    required:
+      - limit
+      - interval
+    properties:
+      limit:
+        title: Limit
+        description: The maximum number of calls allowed within the interval.
+        anyOf:
+          - type: integer
+          - type: string
+        interpolation_context:
+          - config
+      interval:
+        title: Interval
+        description: The time interval for the rate limit.
+        type: string
+        examples:
+          - "PT1H"
+          - "P1D"
+    additionalProperties: true
+  HttpRequestRegexMatcher:
+    title: HTTP Request Matcher
+    description: >
+      Matches HTTP requests based on method, base URL, URL path pattern, query parameters, and headers.
+      Use `url_base` to specify the scheme and host (without trailing slash) and
+      `url_path_pattern` to apply a regex to the request path.
+    type: object
+    properties:
+      method:
+        title: Method
+        description: The HTTP method to match (e.g., GET, POST).
+        type: string
+      url_base:
+        title: URL Base
+        description: The base URL (scheme and host, e.g. "https://api.example.com") to match.
+        type: string
+      url_path_pattern:
+        title: URL Path Pattern
+        description: A regular expression pattern to match the URL path.
+        type: string
+      params:
+        title: Parameters
+        description: The query parameters to match.
+        type: object
+        additionalProperties: true
+      headers:
+        title: Headers
+        description: The headers to match.
+        type: object
+        additionalProperties: true
+    additionalProperties: true
   DefaultErrorHandler:
     title: Default Error Handler
     description: Component defining how to handle errors. Default behavior includes only retrying server errors (HTTP 5XX) and too many requests (HTTP 429) with an exponential backoff.
@@ -1514,7 +1758,6 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/JsonDecoder"
           - "$ref": "#/definitions/XmlDecoder"
-          - "$ref": "#/definitions/CompositeRawDecoder"
       $parameters:
         type: object
         additionalProperties: true
@@ -1551,7 +1794,6 @@ definitions:
     type: object
     required:
       - type
-      - path
       - url_base
     properties:
       type:
@@ -1563,9 +1805,18 @@ definitions:
         type: string
         interpolation_context:
           - config
+          - next_page_token
+          - stream_interval
+          - stream_partition
+          - stream_slice
+          - creation_response
+          - polling_response
+          - download_target
         examples:
           - "https://connect.squareup.com/v2"
-          - "{{ config['base_url'] or 'https://app.posthog.com'}}/api/"
+          - "{{ config['base_url'] or 'https://app.posthog.com'}}/api"
+          - "https://connect.squareup.com/v2/quotes/{{ stream_partition['id'] }}/quote_line_groups"
+          - "https://example.com/api/v1/resource/{{ next_page_token['id'] }}"
       path:
         title: URL Path
         description: Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
@@ -1576,7 +1827,9 @@ definitions:
           - stream_interval
           - stream_partition
           - stream_slice
-          - stream_state
+          - creation_response
+          - polling_response
+          - download_target
         examples:
           - "/products"
           - "/quotes/{{ stream_partition['id'] }}/quote_line_groups"
@@ -1626,7 +1879,6 @@ definitions:
           - stream_interval
           - stream_partition
           - stream_slice
-          - stream_state
         examples:
           - |
             [{"clause": {"type": "timestamp", "operator": 10, "parameters":
@@ -1644,7 +1896,6 @@ definitions:
           - stream_interval
           - stream_partition
           - stream_slice
-          - stream_state
         examples:
           - sort_order: "ASC"
             sort_field: "CREATED_AT"
@@ -1665,7 +1916,6 @@ definitions:
           - stream_interval
           - stream_partition
           - stream_slice
-          - stream_state
         examples:
           - Output-Format: JSON
           - Version: "{{ config['version'] }}"
@@ -1682,7 +1932,6 @@ definitions:
           - stream_interval
           - stream_partition
           - stream_slice
-          - stream_state
         examples:
           - unit: "day"
           - query: 'last_event_time BETWEEN TIMESTAMP "{{ stream_interval.start_time }}" AND TIMESTAMP "{{ stream_interval.end_time }}"'
@@ -1770,6 +2019,19 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  ComplexFieldType:
+    title: Schema Field Type
+    description: (This component is experimental. Use at your own risk.) Represents a complex field type.
+    type: object
+    required:
+      - field_type
+    properties:
+      field_type:
+        type: string
+      items:
+        anyOf:
+          - type: string
+          - "$ref": "#/definitions/ComplexFieldType"
   TypesMap:
     title: Types Map
     description: (This component is experimental. Use at your own risk.) Represents a mapping between a current type and its corresponding target type.
@@ -1784,6 +2046,7 @@ definitions:
           - type: array
             items:
               type: string
+          - "$ref": "#/definitions/ComplexFieldType"
       current_type:
         anyOf:
           - type: string
@@ -2023,7 +2286,6 @@ definitions:
         interpolation_context:
           - config
           - record
-          - stream_state
           - stream_slice
       new:
         type: string
@@ -2037,7 +2299,6 @@ definitions:
         interpolation_context:
           - config
           - record
-          - stream_state
           - stream_slice
       $parameters:
         type: object
@@ -2084,23 +2345,6 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
-  GzipJsonDecoder:
-    title: GzipJson Decoder
-    description: Use this if the response is Gzip compressed Json.
-    type: object
-    additionalProperties: true
-    required:
-      - type
-    properties:
-      type:
-        type: string
-        enum: [GzipJsonDecoder]
-      encoding:
-        type: string
-        default: utf-8
-      $parameters:
-        type: object
-        additionalProperties: true
   ZipfileDecoder:
     title: Zipfile Decoder
     description: Decoder for response data that is returned as zipfile(s).
@@ -2108,19 +2352,19 @@ definitions:
     additionalProperties: true
     required:
       - type
-      - parser
+      - decoder
     properties:
       type:
         type: string
         enum: [ZipfileDecoder]
-      parser:
+      decoder:
         title: Parser
         description: Parser to parse the decompressed data from the zipfile(s).
         anyOf:
-          - "$ref": "#/definitions/GzipParser"
-          - "$ref": "#/definitions/JsonParser"
-          - "$ref": "#/definitions/JsonLineParser"
-          - "$ref": "#/definitions/CsvParser"
+          - "$ref": "#/definitions/CsvDecoder"
+          - "$ref": "#/definitions/GzipDecoder"
+          - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonlDecoder"
   ListPartitionRouter:
     title: List Partition Router
     description: A Partition router that specifies a list of attributes where each attribute describes a portion of the complete data set for a stream. During a sync, each value is iterated over and can be used as input to outbound API requests.
@@ -2205,6 +2449,7 @@ definitions:
             * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`
             * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`
             * **%f**: Microsecond (zero-padded to 6 digits) - `000000`, `000001`, ..., `999999`
+            * **%_ms**: Millisecond (zero-padded to 3 digits) - `000`, `001`, ..., `999`
             * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`
             * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`
             * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`
@@ -2704,7 +2949,6 @@ definitions:
           - stream_interval
           - stream_partition
           - stream_slice
-          - stream_state
         examples:
           - "{{ record['created_at'] >= stream_interval['start_time'] }}"
           - "{{ record.status in ['active', 'expired'] }}"
@@ -2798,22 +3042,32 @@ definitions:
         enum: [RequestPath]
   RequestOption:
     title: Request Option
-    description: Specifies the key field and where in the request a component's value should be injected.
+    description: Specifies the key field or path and where in the request a component's value should be injected.
     type: object
     required:
       - type
-      - field_name
       - inject_into
     properties:
       type:
         type: string
         enum: [RequestOption]
       field_name:
-        title: Request Option
-        description: Configures which key should be used in the location that the descriptor is being injected into
+        title: Field Name
+        description: Configures which key should be used in the location that the descriptor is being injected into. We hope to eventually deprecate this field in favor of `field_path` for all request_options, but must currently maintain it for backwards compatibility in the Builder.
         type: string
         examples:
           - segment_id
+        interpolation_context:
+          - config
+          - parameters
+      field_path:
+        title: Field Path
+        description: Configures a path to be used for nested structures in JSON body requests (e.g. GraphQL queries)
+        type: array
+        items:
+          type: string
+        examples:
+          - ["data", "viewer", "id"]
         interpolation_context:
           - config
           - parameters
@@ -2943,79 +3197,39 @@ definitions:
         description: Component decoding the response so records can be extracted.
         anyOf:
           - "$ref": "#/definitions/CustomDecoder"
+          - "$ref": "#/definitions/CsvDecoder"
+          - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
-          - "$ref": "#/definitions/GzipJsonDecoder"
-          - "$ref": "#/definitions/CompositeRawDecoder"
           - "$ref": "#/definitions/ZipfileDecoder"
       $parameters:
         type: object
         additionalProperties: true
-  CompositeRawDecoder:
-    description: "(This is experimental, use at your own risk)"
+  GzipDecoder:
     type: object
     required:
       - type
-      - parser
+      - decoder
     properties:
       type:
         type: string
-        enum: [CompositeRawDecoder]
-      parser:
+        enum: [GzipDecoder]
+      decoder:
         anyOf:
-          - "$ref": "#/definitions/GzipParser"
-          - "$ref": "#/definitions/JsonParser"
-          - "$ref": "#/definitions/JsonLineParser"
-          - "$ref": "#/definitions/CsvParser"
-  #    PARSERS
-  GzipParser:
-    type: object
-    required:
-      - type
-      - inner_parser
-    properties:
-      type:
-        type: string
-        enum: [GzipParser]
-      inner_parser:
-        anyOf:
-          - "$ref": "#/definitions/JsonLineParser"
-          - "$ref": "#/definitions/CsvParser"
-          - "$ref": "#/definitions/JsonParser"
-  JsonParser:
-    title: JsonParser
-    description: Parser used for parsing str, bytes, or bytearray data and returning data in a dictionary format.
+          - "$ref": "#/definitions/CsvDecoder"
+          - "$ref": "#/definitions/GzipDecoder"
+          - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonlDecoder"
+  CsvDecoder:
     type: object
     required:
       - type
     properties:
       type:
         type: string
-        enum: [JsonParser]
-      encoding:
-        type: string
-        default: utf-8
-  JsonLineParser:
-    type: object
-    required:
-      - type
-    properties:
-      type:
-        type: string
-        enum: [JsonLineParser]
-      encoding:
-        type: string
-        default: utf-8
-  CsvParser:
-    type: object
-    required:
-      - type
-    properties:
-      type:
-        type: string
-        enum: [CsvParser]
+        enum: [CsvDecoder]
       encoding:
         type: string
         default: utf-8
@@ -3061,7 +3275,7 @@ definitions:
       - polling_requester
       - download_requester
       - status_extractor
-      - urls_extractor
+      - download_target_extractor
     properties:
       type:
         type: string
@@ -3078,7 +3292,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/CustomRecordExtractor"
           - "$ref": "#/definitions/DpathExtractor"
-      urls_extractor:
+      download_target_extractor:
         description: Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.
         anyOf:
           - "$ref": "#/definitions/CustomRecordExtractor"
@@ -3099,7 +3313,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/CustomRequester"
           - "$ref": "#/definitions/HttpRequester"
-      url_requester:
+      download_target_requester:
         description: Requester component that describes how to prepare HTTP requests to send to the source API to extract the url from polling response by the completed async job.
         anyOf:
           - "$ref": "#/definitions/CustomRequester"
@@ -3143,24 +3357,24 @@ definitions:
         description: Component decoding the response so records can be extracted.
         anyOf:
           - "$ref": "#/definitions/CustomDecoder"
+          - "$ref": "#/definitions/CsvDecoder"
+          - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
-          - "$ref": "#/definitions/GzipJsonDecoder"
-          - "$ref": "#/definitions/CompositeRawDecoder"
           - "$ref": "#/definitions/ZipfileDecoder"
       download_decoder:
         title: Download Decoder
         description: Component decoding the download response so records can be extracted.
         anyOf:
           - "$ref": "#/definitions/CustomDecoder"
+          - "$ref": "#/definitions/CsvDecoder"
+          - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
-          - "$ref": "#/definitions/GzipJsonDecoder"
-          - "$ref": "#/definitions/CompositeRawDecoder"
           - "$ref": "#/definitions/ZipfileDecoder"
       $parameters:
         type: object
@@ -3505,6 +3719,21 @@ interpolation:
             self: https://api.sendgrid.com/v3/marketing/lists?page_size=1&page_token=
             next: https://api.sendgrid.com/v3/marketing/lists?page_size=1&page_token=0236d6d2
             count: 82
+    - title: creation_response
+      description: The response received from the creation_requester in the AsyncRetriever component.
+      type: object
+      examples:
+        - id: "1234"
+    - title: polling_response
+      description: The response received from the polling_requester in the AsyncRetriever component.
+      type: object
+      examples:
+        - id: "1234"
+    - title: download_target
+      description: The `URL` received from the polling_requester in the AsyncRetriever with jobStatus as `COMPLETED`.
+      type: string
+      examples:
+        - "https://api.sendgrid.com/v3/marketing/lists?page_size=1&page_token=0236d6d2&filename=xxx_yyy_zzz.csv"
     - title: stream_interval
       description: The current stream interval being processed. The keys are defined by the incremental sync component. Default keys are `start_time` and `end_time`.
       type: object
@@ -3522,12 +3751,6 @@ interpolation:
     - title: stream_slice
       description: This variable is deprecated. Use stream_interval or stream_partition instead.
       type: object
-    - title: stream_state
-      description: The current state of the stream. The object's keys are defined by the incremental sync's cursor_field the and partition router's values.
-      type: object
-      examples:
-        - created_at: "2020-01-01 00:00:00.000+00:00"
-        - updated_at: "2020-01-02 00:00:00.000+00:00"
   macros:
     - title: now_utc
       description: Returns the current date and time in the UTC timezone.
@@ -3592,6 +3815,16 @@ interpolation:
         - "{{ format_datetime(config['start_time'], '%Y-%m-%d') }}"
         - "{{ format_datetime(config['start_date'], '%Y-%m-%dT%H:%M:%S.%fZ') }}"
         - "{{ format_datetime(config['start_date'], '%Y-%m-%dT%H:%M:%S.%fZ', '%a, %d %b %Y %H:%M:%S %z') }}"
+    - title: str_to_datetime
+      description: Converts a string to a datetime object with UTC timezone.
+      arguments:
+        s: The string to convert.
+      return_type: datetime.datetime
+      examples:
+        - "{{ str_to_datetime('2022-01-14') }}"
+        - "{{ str_to_datetime('2022-01-01 13:45:30') }}"
+        - "{{ str_to_datetime('2022-01-01T13:45:30+00:00') }}"
+        - "{{ str_to_datetime('2022-01-01T13:45:30.123456Z') }}"
   filters:
     - title: hash
       description: Convert the specified value to a hashed string.

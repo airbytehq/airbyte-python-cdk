@@ -1,5 +1,6 @@
 import csv
 import gzip
+import io
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -106,6 +107,16 @@ class CsvParser(Parser):
     encoding: Optional[str] = "utf-8"
     delimiter: Optional[str] = ","
 
+    def _get_delimiter(self) -> Optional[str]:
+        """
+        Get delimiter from the configuration. Check for the escape character and decode it.
+        """
+        if self.delimiter is not None:
+            if self.delimiter.startswith("\\"):
+                self.delimiter = self.delimiter.encode("utf-8").decode("unicode_escape")
+
+        return self.delimiter
+
     def parse(
         self,
         data: BufferedIOBase,
@@ -114,8 +125,9 @@ class CsvParser(Parser):
         Parse CSV data from decompressed bytes.
         """
         text_data = TextIOWrapper(data, encoding=self.encoding)  # type: ignore
-        reader = csv.DictReader(text_data, delimiter=self.delimiter or ",")
-        yield from reader
+        reader = csv.DictReader(text_data, delimiter=self._get_delimiter() or ",")
+        for row in reader:
+            yield row
 
 
 @dataclass
@@ -130,11 +142,15 @@ class CompositeRawDecoder(Decoder):
     """
 
     parser: Parser
+    stream_response: bool = True
 
     def is_stream_response(self) -> bool:
-        return True
+        return self.stream_response
 
     def decode(
         self, response: requests.Response
     ) -> Generator[MutableMapping[str, Any], None, None]:
-        yield from self.parser.parse(data=response.raw)  # type: ignore[arg-type]
+        if self.is_stream_response():
+            yield from self.parser.parse(data=response.raw)  # type: ignore[arg-type]
+        else:
+            yield from self.parser.parse(data=io.BytesIO(response.content))

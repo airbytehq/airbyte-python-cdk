@@ -4,7 +4,7 @@
 import copy
 import logging
 from dataclasses import InitVar, dataclass
-from typing import TYPE_CHECKING, Any, Iterable, List, Mapping, Optional, Union
+from typing import TYPE_CHECKING, Any, Iterable, List, Mapping, MutableMapping, Optional, Union
 
 import dpath
 
@@ -118,7 +118,7 @@ class SubstreamPartitionRouter(PartitionRouter):
     def _get_request_option(
         self, option_type: RequestOptionType, stream_slice: Optional[StreamSlice]
     ) -> Mapping[str, Any]:
-        params = {}
+        params: MutableMapping[str, Any] = {}
         if stream_slice:
             for parent_config in self.parent_stream_configs:
                 if (
@@ -128,13 +128,7 @@ class SubstreamPartitionRouter(PartitionRouter):
                     key = parent_config.partition_field.eval(self.config)  # type: ignore # partition_field is always casted to an interpolated string
                     value = stream_slice.get(key)
                     if value:
-                        params.update(
-                            {
-                                parent_config.request_option.field_name.eval(  # type: ignore [union-attr]
-                                    config=self.config
-                                ): value
-                            }
-                        )
+                        parent_config.request_option.inject_into_request(params, value, self.config)
         return params
 
     def stream_slices(self) -> Iterable[StreamSlice]:
@@ -295,23 +289,71 @@ class SubstreamPartitionRouter(PartitionRouter):
             return
 
         if not parent_state and incremental_dependency:
-            # Attempt to retrieve child state
-            substream_state = list(stream_state.values())
-            substream_state = substream_state[0] if substream_state else {}  # type: ignore [assignment]  # Incorrect type for assignment
-            parent_state = {}
-
-            # Copy child state to parent streams with incremental dependencies
-            if substream_state:
-                for parent_config in self.parent_stream_configs:
-                    if parent_config.incremental_dependency:
-                        parent_state[parent_config.stream.name] = {
-                            parent_config.stream.cursor_field: substream_state
-                        }
+            # Migrate child state to parent state format
+            parent_state = self._migrate_child_state_to_parent_state(stream_state)
 
         # Set state for each parent stream with an incremental dependency
         for parent_config in self.parent_stream_configs:
             if parent_config.incremental_dependency:
                 parent_config.stream.state = parent_state.get(parent_config.stream.name, {})
+
+    def _migrate_child_state_to_parent_state(self, stream_state: StreamState) -> StreamState:
+        """
+        Migrate the child or global stream state into the parent stream's state format.
+
+        This method converts the child stream state—or, if present, the global state—into a format that is
+        compatible with parent streams that use incremental synchronization. The migration occurs only for
+        parent streams with incremental dependencies. It filters out per-partition states and retains only the
+        global state in the form {cursor_field: cursor_value}.
+
+        The method supports multiple input formats:
+          - A simple global state, e.g.:
+                {"updated_at": "2023-05-27T00:00:00Z"}
+          - A state object that contains a "state" key (which is assumed to hold the global state), e.g.:
+                {"state": {"updated_at": "2023-05-27T00:00:00Z"}, ...}
+            In this case, the migration uses the first value from the "state" dictionary.
+          - Any per-partition state formats or other non-simple structures are ignored during migration.
+
+        Args:
+            stream_state (StreamState): The state to migrate. Expected formats include:
+                - {"updated_at": "2023-05-27T00:00:00Z"}
+                - {"state": {"updated_at": "2023-05-27T00:00:00Z"}, ...}
+                  (In this format, only the first global state value is used, and per-partition states are ignored.)
+
+        Returns:
+            StreamState: A migrated state for parent streams in the format:
+                {
+                    "parent_stream_name": {"parent_stream_cursor": "2023-05-27T00:00:00Z"}
+                }
+            where each parent stream with an incremental dependency is assigned its corresponding cursor value.
+
+        Example:
+            Input: {"updated_at": "2023-05-27T00:00:00Z"}
+            Output: {
+                "parent_stream_name": {"parent_stream_cursor": "2023-05-27T00:00:00Z"}
+            }
+        """
+        substream_state_values = list(stream_state.values())
+        substream_state = substream_state_values[0] if substream_state_values else {}
+
+        # Ignore per-partition states or invalid formats.
+        if isinstance(substream_state, (list, dict)) or len(substream_state_values) != 1:
+            # If a global state is present under the key "state", use its first value.
+            if "state" in stream_state and isinstance(stream_state["state"], dict):
+                substream_state = list(stream_state["state"].values())[0]
+            else:
+                return {}
+
+        # Build the parent state for all parent streams with incremental dependencies.
+        parent_state = {}
+        if substream_state:
+            for parent_config in self.parent_stream_configs:
+                if parent_config.incremental_dependency:
+                    parent_state[parent_config.stream.name] = {
+                        parent_config.stream.cursor_field: substream_state
+                    }
+
+        return parent_state
 
     def get_stream_state(self) -> Optional[Mapping[str, StreamState]]:
         """

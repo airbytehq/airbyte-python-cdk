@@ -30,39 +30,41 @@ def compress_with_gzip(data: str, encoding: str = "utf-8"):
     return buf.getvalue()
 
 
-def generate_csv(encoding: str) -> bytes:
-    """
-    Generate CSV data with tab-separated values (\t).
-    """
+def generate_csv(
+    encoding: str = "utf-8", delimiter: str = ",", should_compress: bool = False
+) -> bytes:
     data = [
-        {"id": 1, "name": "John", "age": 28},
-        {"id": 2, "name": "Alice", "age": 34},
-        {"id": 3, "name": "Bob", "age": 25},
+        {"id": "1", "name": "John", "age": "28"},
+        {"id": "2", "name": "Alice", "age": "34"},
+        {"id": "3", "name": "Bob", "age": "25"},
     ]
 
     output = StringIO()
-    writer = csv.DictWriter(output, fieldnames=["id", "name", "age"], delimiter="\t")
+    writer = csv.DictWriter(output, fieldnames=["id", "name", "age"], delimiter=delimiter)
     writer.writeheader()
     for row in data:
         writer.writerow(row)
 
-    # Ensure the pointer is at the beginning of the buffer before compressing
     output.seek(0)
+    csv_data = output.read()
 
-    # Compress the CSV data with Gzip
-    compressed_data = compress_with_gzip(output.read(), encoding=encoding)
-
-    return compressed_data
+    if should_compress:
+        return compress_with_gzip(csv_data, encoding=encoding)
+    return csv_data.encode(encoding)
 
 
 @pytest.mark.parametrize("encoding", ["utf-8", "utf", "iso-8859-1"])
 def test_composite_raw_decoder_gzip_csv_parser(requests_mock, encoding: str):
     requests_mock.register_uri(
-        "GET", "https://airbyte.io/", content=generate_csv(encoding=encoding)
+        "GET",
+        "https://airbyte.io/",
+        content=generate_csv(encoding=encoding, delimiter="\t", should_compress=True),
     )
     response = requests.get("https://airbyte.io/", stream=True)
 
-    parser = GzipParser(inner_parser=CsvParser(encoding=encoding, delimiter="\t"))
+    # the delimiter is set to `\\t` intentionally to test the parsing logic here
+    parser = GzipParser(inner_parser=CsvParser(encoding=encoding, delimiter="\\t"))
+
     composite_raw_decoder = CompositeRawDecoder(parser=parser)
     counter = 0
     for _ in composite_raw_decoder.decode(response):
@@ -175,3 +177,57 @@ def test_composite_raw_decoder_raises_traced_exception_when_both_parsers_fail(re
         with patch("json.loads", side_effect=Exception("test")):
             with pytest.raises(AirbyteTracedException):
                 list(composite_raw_decoder.decode(response))
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", "utf", "iso-8859-1"])
+@pytest.mark.parametrize("delimiter", [",", "\t", ";"])
+def test_composite_raw_decoder_csv_parser_values(requests_mock, encoding: str, delimiter: str):
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        content=generate_csv(encoding=encoding, delimiter=delimiter, should_compress=False),
+    )
+    response = requests.get("https://airbyte.io/", stream=True)
+
+    parser = CsvParser(encoding=encoding, delimiter=delimiter)
+    composite_raw_decoder = CompositeRawDecoder(parser=parser)
+
+    expected_data = [
+        {"id": "1", "name": "John", "age": "28"},
+        {"id": "2", "name": "Alice", "age": "34"},
+        {"id": "3", "name": "Bob", "age": "25"},
+    ]
+
+    parsed_records = list(composite_raw_decoder.decode(response))
+    assert parsed_records == expected_data
+
+
+def test_given_response_already_consumed_when_decode_then_no_data_is_returned(requests_mock):
+    requests_mock.register_uri(
+        "GET", "https://airbyte.io/", content=json.dumps({"test": "test"}).encode()
+    )
+    response = requests.get("https://airbyte.io/", stream=True)
+    composite_raw_decoder = CompositeRawDecoder(parser=JsonParser(encoding="utf-8"))
+
+    content = list(composite_raw_decoder.decode(response))
+    assert content
+
+    with pytest.raises(Exception):
+        list(composite_raw_decoder.decode(response))
+
+
+def test_given_response_is_not_streamed_when_decode_then_can_be_called_multiple_times(
+    requests_mock,
+):
+    requests_mock.register_uri(
+        "GET", "https://airbyte.io/", content=json.dumps({"test": "test"}).encode()
+    )
+    response = requests.get("https://airbyte.io/")
+    composite_raw_decoder = CompositeRawDecoder(
+        parser=JsonParser(encoding="utf-8"), stream_response=False
+    )
+
+    content = list(composite_raw_decoder.decode(response))
+    content_second_time = list(composite_raw_decoder.decode(response))
+
+    assert content == content_second_time

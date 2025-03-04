@@ -145,7 +145,7 @@ SUBSTREAM_MANIFEST: MutableMapping[str, Any] = {
                     "type": "RecordSelector",
                     "extractor": {"type": "DpathExtractor", "field_path": ["comments"]},
                     "record_filter": {
-                        "condition": "{{ record['updated_at'] >= stream_state.get('updated_at', config.get('start_date')) }}"
+                        "condition": "{{ record['updated_at'] >= stream_interval.get('start_date', config.get('start_date')) }}"
                     },
                 },
                 "paginator": "#/definitions/retriever/paginator",
@@ -1655,7 +1655,7 @@ SUBSTREAM_MANIFEST_GLOBAL_PARENT_CURSOR: MutableMapping[str, Any] = {
                     "type": "RecordSelector",
                     "extractor": {"type": "DpathExtractor", "field_path": ["comments"]},
                     "record_filter": {
-                        "condition": "{{ record['updated_at'] >= stream_state.get('updated_at', config.get('start_date')) }}"
+                        "condition": "{{ record['updated_at'] >= stream_interval.get('start_date', config.get('start_date')) }}"
                     },
                 },
                 "paginator": "#/definitions/retriever/paginator",
