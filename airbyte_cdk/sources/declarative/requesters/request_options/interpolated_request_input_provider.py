@@ -37,7 +37,6 @@ class InterpolatedRequestInputProvider:
 
     def eval_request_inputs(
         self,
-        stream_state: Optional[StreamState] = None,
         stream_slice: Optional[StreamSlice] = None,
         next_page_token: Optional[Mapping[str, Any]] = None,
         valid_key_types: Optional[Tuple[Type[Any]]] = None,
@@ -46,7 +45,6 @@ class InterpolatedRequestInputProvider:
         """
         Returns the request inputs to set on an outgoing HTTP request
 
-        :param stream_state: The stream state
         :param stream_slice: The stream slice
         :param next_page_token: The pagination token
         :param valid_key_types: A tuple of types that the interpolator should allow
@@ -54,7 +52,6 @@ class InterpolatedRequestInputProvider:
         :return: The request inputs to set on an outgoing HTTP request
         """
         kwargs = {
-            "stream_state": stream_state,
             "stream_slice": stream_slice,
             "next_page_token": next_page_token,
         }

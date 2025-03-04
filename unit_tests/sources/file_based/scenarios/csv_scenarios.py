@@ -534,6 +534,27 @@ single_csv_scenario: TestScenario[InMemoryFilesSource] = (
                                 "description": "Copy raw files without parsing their contents. Bits are copied into the destination exactly as they appeared in the source. Recommended for use with unstructured text data, non-text and compressed files.",
                                 "required": ["delivery_type"],
                             },
+                            {
+                                "description": "Sends one identity stream and one for more permissions (ACL) streams to the destination. This data can be used in downstream systems to recreate permission restrictions mirroring the original source.",
+                                "properties": {
+                                    "delivery_type": {
+                                        "const": "use_permissions_transfer",
+                                        "default": "use_permissions_transfer",
+                                        "enum": ["use_permissions_transfer"],
+                                        "title": "Delivery Type",
+                                        "type": "string",
+                                    },
+                                    "include_identities_stream": {
+                                        "default": True,
+                                        "description": "This data can be used in downstream systems to recreate permission restrictions mirroring the original source",
+                                        "title": "Include Identity Stream",
+                                        "type": "boolean",
+                                    },
+                                },
+                                "required": ["delivery_type"],
+                                "title": "Replicate Permissions ACL",
+                                "type": "object",
+                            },
                         ],
                     },
                 },

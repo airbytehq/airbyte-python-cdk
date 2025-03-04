@@ -23,7 +23,7 @@ from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
         (
             "test_with_extractor_and_filter",
             ["data"],
-            "{{ record['created_at'] > stream_state['created_at'] }}",
+            "{{ record['created_at'] > stream_interval.extra_fields['created_at'] }}",
             {
                 "data": [
                     {"id": 1, "created_at": "06-06-21"},
@@ -80,7 +80,11 @@ def test_record_filter(test_name, field_path, filter_template, body, expected_da
     config = {"response_override": "stop_if_you_see_me"}
     parameters = {"parameters_field": "data", "created_at": "06-07-21"}
     stream_state = {"created_at": "06-06-21"}
-    stream_slice = StreamSlice(partition={}, cursor_slice={"last_seen": "06-10-21"})
+    stream_slice = StreamSlice(
+        partition={},
+        cursor_slice={"last_seen": "06-10-21"},
+        extra_fields={"created_at": "06-06-21"},
+    )
     next_page_token = {"last_seen_id": 14}
     schema = create_schema()
     first_transformation = Mock(spec=RecordTransformation)

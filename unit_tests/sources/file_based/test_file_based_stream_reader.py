@@ -84,6 +84,20 @@ class TestStreamReader(AbstractFileBasedStreamReader):
     ) -> Dict[str, Any]:
         return {}
 
+    def get_file_acl_permissions(self, file: RemoteFile, logger: logging.Logger) -> Dict[str, Any]:
+        return {}
+
+    def load_identity_groups(self, logger: logging.Logger) -> Iterable[Dict[str, Any]]:
+        return [{}]
+
+    @property
+    def file_permissions_schema(self) -> Dict[str, Any]:
+        return {"type": "object", "properties": {}}
+
+    @property
+    def identities_schema(self) -> Dict[str, Any]:
+        return {"type": "object", "properties": {}}
+
 
 class TestSpec(AbstractFileBasedSpec):
     @classmethod

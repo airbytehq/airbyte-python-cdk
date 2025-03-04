@@ -85,7 +85,7 @@ class HttpRequester(Requester):
         self._parameters = parameters
 
         if self.error_handler is not None and hasattr(self.error_handler, "backoff_strategies"):
-            backoff_strategies = self.error_handler.backoff_strategies
+            backoff_strategies = self.error_handler.backoff_strategies  # type: ignore
         else:
             backoff_strategies = None
 
@@ -123,9 +123,14 @@ class HttpRequester(Requester):
         next_page_token: Optional[Mapping[str, Any]],
     ) -> str:
         kwargs = {
-            "stream_state": stream_state,
             "stream_slice": stream_slice,
             "next_page_token": next_page_token,
+            # update the interpolation context with extra fields, if passed.
+            **(
+                stream_slice.extra_fields
+                if stream_slice is not None and hasattr(stream_slice, "extra_fields")
+                else {}
+            ),
         }
         path = str(self._path.eval(self.config, **kwargs))
         return path.lstrip("/")

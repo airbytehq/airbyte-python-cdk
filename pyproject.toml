@@ -79,7 +79,7 @@ orjson = "^3.10.7"
 serpyco-rs = "^1.10.2"
 sqlalchemy = {version = "^2.0,!=2.0.36", optional = true }
 xmltodict = ">=0.13,<0.15"
-Unidecode = "^1.3"
+anyascii = "^0.3.2"
 whenever = "^0.6.16"
 
 [tool.poetry.group.dev.dependencies]

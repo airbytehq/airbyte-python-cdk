@@ -115,7 +115,9 @@ class GlobalSubstreamCursor(DeclarativeCursor):
         * Yield the last slice. At that point, once there are as many slices yielded as closes, the global slice will be closed too
         """
         slice_generator = (
-            StreamSlice(partition=partition, cursor_slice=cursor_slice)
+            StreamSlice(
+                partition=partition, cursor_slice=cursor_slice, extra_fields=partition.extra_fields
+            )
             for partition in self._partition_router.stream_slices()
             for cursor_slice in self._stream_cursor.stream_slices()
         )
@@ -131,7 +133,9 @@ class GlobalSubstreamCursor(DeclarativeCursor):
 
     def generate_slices_from_partition(self, partition: StreamSlice) -> Iterable[StreamSlice]:
         slice_generator = (
-            StreamSlice(partition=partition, cursor_slice=cursor_slice)
+            StreamSlice(
+                partition=partition, cursor_slice=cursor_slice, extra_fields=partition.extra_fields
+            )
             for cursor_slice in self._stream_cursor.stream_slices()
         )
 

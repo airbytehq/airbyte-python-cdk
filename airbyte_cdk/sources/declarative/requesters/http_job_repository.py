@@ -23,6 +23,7 @@ from airbyte_cdk.sources.declarative.extractors.response_to_file_extractor impor
 )
 from airbyte_cdk.sources.declarative.requesters.requester import Requester
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
+from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.utils import AirbyteTracedException
 
@@ -42,13 +43,13 @@ class AsyncHttpJobRepository(AsyncJobRepository):
     delete_requester: Optional[Requester]
     status_extractor: DpathExtractor
     status_mapping: Mapping[str, AsyncJobStatus]
-    urls_extractor: DpathExtractor
+    download_target_extractor: DpathExtractor
 
     job_timeout: Optional[timedelta] = None
     record_extractor: RecordExtractor = field(
         init=False, repr=False, default_factory=lambda: ResponseToFileExtractor({})
     )
-    url_requester: Optional[Requester] = (
+    download_target_requester: Optional[Requester] = (
         None  # use it in case polling_requester provides some <id> and extra request is needed to obtain list of urls to download from
     )
 
@@ -71,7 +72,15 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         """
 
         polling_response: Optional[requests.Response] = self.polling_requester.send_request(
-            stream_slice=stream_slice
+            stream_slice=stream_slice,
+            log_formatter=lambda polling_response: format_http_message(
+                response=polling_response,
+                title="Async Job -- Polling",
+                description="Poll the status of the server-side async job.",
+                stream_name=None,
+                is_auxiliary=True,
+                type="ASYNC_POLL",
+            ),
         )
         if polling_response is None:
             raise AirbyteTracedException(
@@ -118,8 +127,17 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         """
 
         response: Optional[requests.Response] = self.creation_requester.send_request(
-            stream_slice=stream_slice
+            stream_slice=stream_slice,
+            log_formatter=lambda response: format_http_message(
+                response=response,
+                title="Async Job -- Create",
+                description="Create the server-side async job.",
+                stream_name=None,
+                is_auxiliary=True,
+                type="ASYNC_CREATE",
+            ),
         )
+
         if not response:
             raise AirbyteTracedException(
                 internal_message="Always expect a response or an exception from creation_requester",
@@ -193,12 +211,15 @@ class AsyncHttpJobRepository(AsyncJobRepository):
 
         """
 
-        for url in self._get_download_url(job):
+        for target_url in self._get_download_targets(job):
             job_slice = job.job_parameters()
             stream_slice = StreamSlice(
                 partition=job_slice.partition,
                 cursor_slice=job_slice.cursor_slice,
-                extra_fields={**job_slice.extra_fields, "url": url},
+                extra_fields={
+                    **job_slice.extra_fields,
+                    "download_target": target_url,
+                },
             )
             for message in self.download_retriever.read_records({}, stream_slice):
                 if isinstance(message, Record):
@@ -217,13 +238,33 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         if not self.abort_requester:
             return
 
-        self.abort_requester.send_request(stream_slice=self._get_create_job_stream_slice(job))
+        abort_response = self.abort_requester.send_request(
+            stream_slice=self._get_create_job_stream_slice(job),
+            log_formatter=lambda abort_response: format_http_message(
+                response=abort_response,
+                title="Async Job -- Abort",
+                description="Abort the running server-side async job.",
+                stream_name=None,
+                is_auxiliary=True,
+                type="ASYNC_ABORT",
+            ),
+        )
 
     def delete(self, job: AsyncJob) -> None:
         if not self.delete_requester:
             return
 
-        self.delete_requester.send_request(stream_slice=self._get_create_job_stream_slice(job))
+        delete_job_reponse = self.delete_requester.send_request(
+            stream_slice=self._get_create_job_stream_slice(job),
+            log_formatter=lambda delete_job_reponse: format_http_message(
+                response=delete_job_reponse,
+                title="Async Job -- Delete",
+                description="Delete the specified job from the list of Jobs.",
+                stream_name=None,
+                is_auxiliary=True,
+                type="ASYNC_DELETE",
+            ),
+        )
         self._clean_up_job(job.api_job_id())
 
     def _clean_up_job(self, job_id: str) -> None:
@@ -231,27 +272,29 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         del self._polling_job_response_by_id[job_id]
 
     def _get_create_job_stream_slice(self, job: AsyncJob) -> StreamSlice:
+        creation_response = self._create_job_response_by_id[job.api_job_id()].json()
         stream_slice = StreamSlice(
-            partition={"create_job_response": self._create_job_response_by_id[job.api_job_id()]},
+            partition={},
             cursor_slice={},
+            extra_fields={"creation_response": creation_response},
         )
         return stream_slice
 
-    def _get_download_url(self, job: AsyncJob) -> Iterable[str]:
-        if not self.url_requester:
+    def _get_download_targets(self, job: AsyncJob) -> Iterable[str]:
+        if not self.download_target_requester:
             url_response = self._polling_job_response_by_id[job.api_job_id()]
         else:
+            polling_response = self._polling_job_response_by_id[job.api_job_id()].json()
             stream_slice: StreamSlice = StreamSlice(
-                partition={
-                    "polling_job_response": self._polling_job_response_by_id[job.api_job_id()]
-                },
+                partition={},
                 cursor_slice={},
+                extra_fields={"polling_response": polling_response},
             )
-            url_response = self.url_requester.send_request(stream_slice=stream_slice)  # type: ignore # we expect url_requester to always be presented, otherwise raise an exception as we cannot proceed with the report
+            url_response = self.download_target_requester.send_request(stream_slice=stream_slice)  # type: ignore # we expect download_target_requester to always be presented, otherwise raise an exception as we cannot proceed with the report
             if not url_response:
                 raise AirbyteTracedException(
-                    internal_message="Always expect a response or an exception from url_requester",
+                    internal_message="Always expect a response or an exception from download_target_requester",
                     failure_type=FailureType.system_error,
                 )
 
-        yield from self.urls_extractor.extract_records(url_response)  # type: ignore # we expect urls_extractor to always return list of strings
+        yield from self.download_target_extractor.extract_records(url_response)  # type: ignore # we expect download_target_extractor to always return list of strings

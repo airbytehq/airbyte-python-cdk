@@ -16,6 +16,7 @@ from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
 )
 
 
+@pytest.mark.slow
 @pytest.fixture(name="large_events_response")
 def large_event_response_fixture():
     data = {"email": "email1@example.com"}

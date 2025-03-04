@@ -133,7 +133,6 @@ class SimpleRetriever(Retriever):
 
         mappings = [
             paginator_method(
-                stream_state=stream_state,
                 stream_slice=stream_slice,
                 next_page_token=next_page_token,
             ),
@@ -141,7 +140,6 @@ class SimpleRetriever(Retriever):
         if not next_page_token or not self.ignore_stream_slicer_parameters_on_paginated_requests:
             mappings.append(
                 stream_slicer_method(
-                    stream_state=stream_state,
                     stream_slice=stream_slice,
                     next_page_token=next_page_token,
                 )

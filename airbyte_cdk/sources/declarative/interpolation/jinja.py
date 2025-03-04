@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
 import ast
@@ -11,10 +11,12 @@ from jinja2.environment import Template
 from jinja2.exceptions import UndefinedError
 from jinja2.sandbox import SandboxedEnvironment
 
+from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.interpolation.filters import filters
 from airbyte_cdk.sources.declarative.interpolation.interpolation import Interpolation
 from airbyte_cdk.sources.declarative.interpolation.macros import macros
 from airbyte_cdk.sources.types import Config
+from airbyte_cdk.utils import AirbyteTracedException
 
 
 class StreamPartitionAccessEnvironment(SandboxedEnvironment):
@@ -34,6 +36,10 @@ class StreamPartitionAccessEnvironment(SandboxedEnvironment):
 _ALIASES = {
     "stream_interval": "stream_slice",  # Use stream_interval to access incremental_sync values
     "stream_partition": "stream_slice",  # Use stream_partition to access partition router's values
+}
+
+_UNSUPPORTED_INTERPOLATION_VARIABLES: Mapping[str, str] = {
+    "stream_state": "`stream_state` is no longer supported for interpolation. We recommend using `stream_interval` instead. Please reference the CDK Migration Guide for more information.",
 }
 
 # These extensions are not installed so they're not currently a problem,
@@ -95,6 +101,13 @@ class JinjaInterpolation(Interpolation):
             elif equivalent in context:
                 context[alias] = context[equivalent]
 
+        for variable_name in _UNSUPPORTED_INTERPOLATION_VARIABLES:
+            if variable_name in input_str:
+                raise AirbyteTracedException(
+                    message=_UNSUPPORTED_INTERPOLATION_VARIABLES[variable_name],
+                    internal_message=_UNSUPPORTED_INTERPOLATION_VARIABLES[variable_name],
+                    failure_type=FailureType.config_error,
+                )
         try:
             if isinstance(input_str, str):
                 result = self._eval(input_str, context)

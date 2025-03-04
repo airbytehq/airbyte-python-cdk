@@ -21,6 +21,7 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
 )
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
+from airbyte_cdk.utils.mapping_helpers import _validate_component_request_option_paths
 
 
 @dataclass
@@ -121,6 +122,10 @@ class DatetimeBasedCursor(DeclarativeCursor):
 
         if not self.cursor_datetime_formats:
             self.cursor_datetime_formats = [self.datetime_format]
+
+        _validate_component_request_option_paths(
+            self.config, self.start_time_option, self.end_time_option
+        )
 
     def get_stream_state(self) -> StreamState:
         return {self.cursor_field.eval(self.config): self._cursor} if self._cursor else {}  # type: ignore  # cursor_field is converted to an InterpolatedString in __post_init__

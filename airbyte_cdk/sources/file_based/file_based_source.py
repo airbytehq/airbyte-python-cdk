@@ -33,6 +33,12 @@ from airbyte_cdk.sources.file_based.config.file_based_stream_config import (
     FileBasedStreamConfig,
     ValidationPolicy,
 )
+from airbyte_cdk.sources.file_based.config.validate_config_transfer_modes import (
+    include_identities_stream,
+    preserve_directory_structure,
+    use_file_transfer,
+    use_permissions_transfer,
+)
 from airbyte_cdk.sources.file_based.discovery_policy import (
     AbstractDiscoveryPolicy,
     DefaultDiscoveryPolicy,
@@ -49,7 +55,12 @@ from airbyte_cdk.sources.file_based.schema_validation_policies import (
     DEFAULT_SCHEMA_VALIDATION_POLICIES,
     AbstractSchemaValidationPolicy,
 )
-from airbyte_cdk.sources.file_based.stream import AbstractFileBasedStream, DefaultFileBasedStream
+from airbyte_cdk.sources.file_based.stream import (
+    AbstractFileBasedStream,
+    DefaultFileBasedStream,
+    FileIdentitiesStream,
+    PermissionsFileBasedStream,
+)
 from airbyte_cdk.sources.file_based.stream.concurrent.adapters import FileBasedStreamFacade
 from airbyte_cdk.sources.file_based.stream.concurrent.cursor import (
     AbstractConcurrentFileBasedCursor,
@@ -66,6 +77,7 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 DEFAULT_CONCURRENCY = 100
 MAX_CONCURRENCY = 100
 INITIAL_N_PARTITIONS = MAX_CONCURRENCY // 2
+IDENTITIES_STREAM = "identities"
 
 
 class FileBasedSource(ConcurrentSourceAdapter, ABC):
@@ -157,13 +169,20 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         errors = []
         tracebacks = []
         for stream in streams:
+            if isinstance(stream, FileIdentitiesStream):
+                identity = next(iter(stream.load_identity_groups()))
+                if not identity:
+                    errors.append(
+                        "Unable to get identities for current configuration, please check your credentials"
+                    )
+                continue
             if not isinstance(stream, AbstractFileBasedStream):
                 raise ValueError(f"Stream {stream} is not a file-based stream.")
             try:
                 parsed_config = self._get_parsed_config(config)
                 availability_method = (
                     stream.availability_strategy.check_availability
-                    if self._use_file_transfer(parsed_config)
+                    if use_file_transfer(parsed_config) or use_permissions_transfer(parsed_config)
                     else stream.availability_strategy.check_availability_and_parsability
                 )
                 (
@@ -239,7 +258,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                         message_repository=self.message_repository,
                     )
                     stream = FileBasedStreamFacade.create_from_stream(
-                        stream=self._make_default_stream(
+                        stream=self._make_file_based_stream(
                             stream_config=stream_config,
                             cursor=cursor,
                             parsed_config=parsed_config,
@@ -270,7 +289,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                         CursorField(DefaultFileBasedStream.ab_last_mod_col),
                     )
                     stream = FileBasedStreamFacade.create_from_stream(
-                        stream=self._make_default_stream(
+                        stream=self._make_file_based_stream(
                             stream_config=stream_config,
                             cursor=cursor,
                             parsed_config=parsed_config,
@@ -282,13 +301,17 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                     )
                 else:
                     cursor = self.cursor_cls(stream_config)
-                    stream = self._make_default_stream(
+                    stream = self._make_file_based_stream(
                         stream_config=stream_config,
                         cursor=cursor,
                         parsed_config=parsed_config,
                     )
 
                 streams.append(stream)
+
+            if include_identities_stream(parsed_config):
+                identities_stream = self._make_identities_stream()
+                streams.append(identities_stream)
             return streams
 
         except ValidationError as exc:
@@ -310,8 +333,48 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
             validation_policy=self._validate_and_get_validation_policy(stream_config),
             errors_collector=self.errors_collector,
             cursor=cursor,
-            use_file_transfer=self._use_file_transfer(parsed_config),
-            preserve_directory_structure=self._preserve_directory_structure(parsed_config),
+            use_file_transfer=use_file_transfer(parsed_config),
+            preserve_directory_structure=preserve_directory_structure(parsed_config),
+        )
+
+    def _make_permissions_stream(
+        self, stream_config: FileBasedStreamConfig, cursor: Optional[AbstractFileBasedCursor]
+    ) -> AbstractFileBasedStream:
+        return PermissionsFileBasedStream(
+            config=stream_config,
+            catalog_schema=self.stream_schemas.get(stream_config.name),
+            stream_reader=self.stream_reader,
+            availability_strategy=self.availability_strategy,
+            discovery_policy=self.discovery_policy,
+            parsers=self.parsers,
+            validation_policy=self._validate_and_get_validation_policy(stream_config),
+            errors_collector=self.errors_collector,
+            cursor=cursor,
+        )
+
+    def _make_file_based_stream(
+        self,
+        stream_config: FileBasedStreamConfig,
+        cursor: Optional[AbstractFileBasedCursor],
+        parsed_config: AbstractFileBasedSpec,
+    ) -> AbstractFileBasedStream:
+        """
+        Creates different streams depending on the type of the transfer mode selected
+        """
+        if use_permissions_transfer(parsed_config):
+            return self._make_permissions_stream(stream_config, cursor)
+        # we should have a stream for File transfer mode to decouple from DefaultFileBasedStream
+        else:
+            return self._make_default_stream(stream_config, cursor, parsed_config)
+
+    def _make_identities_stream(
+        self,
+    ) -> Stream:
+        return FileIdentitiesStream(
+            catalog_schema=self.stream_schemas.get(FileIdentitiesStream.IDENTITIES_STREAM_NAME),
+            stream_reader=self.stream_reader,
+            discovery_policy=self.discovery_policy,
+            errors_collector=self.errors_collector,
         )
 
     def _get_stream_from_catalog(
@@ -378,33 +441,3 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                 "`input_schema` and `schemaless` options cannot both be set",
                 model=FileBasedStreamConfig,
             )
-
-    @staticmethod
-    def _use_file_transfer(parsed_config: AbstractFileBasedSpec) -> bool:
-        use_file_transfer = (
-            hasattr(parsed_config.delivery_method, "delivery_type")
-            and parsed_config.delivery_method.delivery_type == "use_file_transfer"
-        )
-        return use_file_transfer
-
-    @staticmethod
-    def _preserve_directory_structure(parsed_config: AbstractFileBasedSpec) -> bool:
-        """
-        Determines whether to preserve directory structure during file transfer.
-
-        When enabled, files maintain their subdirectory paths in the destination.
-        When disabled, files are flattened to the root of the destination.
-
-        Args:
-            parsed_config: The parsed configuration containing delivery method settings
-
-        Returns:
-            True if directory structure should be preserved (default), False otherwise
-        """
-        if (
-            FileBasedSource._use_file_transfer(parsed_config)
-            and hasattr(parsed_config.delivery_method, "preserve_directory_structure")
-            and parsed_config.delivery_method.preserve_directory_structure is not None
-        ):
-            return parsed_config.delivery_method.preserve_directory_structure
-        return True

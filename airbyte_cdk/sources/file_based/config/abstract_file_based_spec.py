@@ -11,6 +11,7 @@ from pydantic.v1 import AnyUrl, BaseModel, Field
 
 from airbyte_cdk import OneOfOptionConfig
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
+from airbyte_cdk.sources.specs.transfer_modes import DeliverPermissions
 from airbyte_cdk.sources.utils import schema_helpers
 
 
@@ -65,7 +66,7 @@ class AbstractFileBasedSpec(BaseModel):
         order=10,
     )
 
-    delivery_method: Union[DeliverRecords, DeliverRawFiles] = Field(
+    delivery_method: Union[DeliverRecords, DeliverRawFiles, DeliverPermissions] = Field(
         title="Delivery Method",
         discriminator="delivery_type",
         type="object",

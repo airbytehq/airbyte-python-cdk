@@ -48,6 +48,7 @@ def test_jsonl_decoder(requests_mock, response_body, expected_json):
     )
 
 
+@pytest.mark.slow
 @pytest.fixture(name="large_events_response")
 def large_event_response_fixture():
     data = {"email": "email1@example.com"}
