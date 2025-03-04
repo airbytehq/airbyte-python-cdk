@@ -205,20 +205,19 @@ def test_composite_raw_decoder_csv_parser_values(requests_mock, encoding: str, d
 
 
 class TestServer(BaseHTTPRequestHandler):
-
     def do_GET(self) -> None:
-       self.send_response(200)
-       self.end_headers()
-       self.wfile.write(bytes("col1,col2\nval1,val2", 'utf-8'))
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(bytes("col1,col2\nval1,val2", "utf-8"))
 
 
 def test_composite_raw_decoder_csv_parser_without_mocked_response():
     """
-    This test reproduce a `ValueError: I/O operation on closed file` error we had with CSV parsing. We could not catch this with other tests because the closing of the mocked response from requests_mock was not the same as the one in requests.  
+    This test reproduce a `ValueError: I/O operation on closed file` error we had with CSV parsing. We could not catch this with other tests because the closing of the mocked response from requests_mock was not the same as the one in requests.
     """
     # start server
-    httpd = HTTPServer(('localhost', 8080), TestServer)
-    thread = Thread(target=httpd.serve_forever, args = ())
+    httpd = HTTPServer(("localhost", 8080), TestServer)
+    thread = Thread(target=httpd.serve_forever, args=())
     thread.start()
 
     response = requests.get("http://localhost:8080", stream=True)
