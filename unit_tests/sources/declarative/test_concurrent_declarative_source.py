@@ -2027,3 +2027,98 @@ def get_states_for_stream(
         for message in messages
         if message.state and message.state.stream.stream_descriptor.name == stream_name
     ]
+
+
+
+_PAGINATION_ISSUE_MANIFEST = {
+    "version": "5.0.0",
+    "definitions": {
+        "selector": {
+            "type": "RecordSelector",
+            "extractor": {"type": "DpathExtractor", "field_path": ["records"]},
+        },
+        "requester": {
+            "type": "HttpRequester",
+            "url_base": "https://persona.metaverse.com/{{stream_partition.get('id', 'undefined')}}",
+            "http_method": "GET",
+        },
+        "retriever": {
+            "type": "SimpleRetriever",
+            "record_selector": {"$ref": "#/definitions/selector"},
+            "paginator": {
+                "type": "DefaultPaginator",
+                "page_token_option": {
+                    "type": "RequestPath",
+                },
+                "pagination_strategy": {
+                    "type": "CursorPagination",
+                    "page_size": 1,
+                    "cursor_value": "{{ response.get(\"nextCursor\", {}) }}",
+                    "stop_condition": "{{ not response.get(\"nextCursor\", {}) }}"
+                }
+            },
+            "requester": {"$ref": "#/definitions/requester"},
+        },
+        "base_stream": {"retriever": {"$ref": "#/definitions/retriever"}},
+        "palaces_stream": {
+            "$ref": "#/definitions/base_stream",
+            "$parameters": {"name": "palaces", "primary_key": "id", "path": "/palaces"},
+            "schema_loader": {
+                "type": "InlineSchemaLoader",
+                "schema": {
+                    "$schema": "https://json-schema.org/draft-07/schema#",
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "description": "The identifier",
+                            "type": ["null", "string"],
+                        },
+                        "name": {
+                            "description": "The name of the metaverse palace",
+                            "type": ["null", "string"],
+                        },
+                    },
+                },
+            },
+        }
+    },
+    "streams": [
+        "#/definitions/palaces_stream",
+    ],
+    "check": {"stream_names": ["palaces"]},
+    "concurrency_level": {
+        "type": "ConcurrencyLevel",
+        "default_concurrency": "{{ config['num_workers'] or 10 }}",
+        "max_concurrency": 25,
+    },
+}
+
+def test_toto():
+    catalog = ConfiguredAirbyteCatalog(
+        streams=[
+            ConfiguredAirbyteStream(
+                stream=AirbyteStream(
+                    name="palaces", json_schema={}, supported_sync_modes=[SyncMode.full_refresh]
+                ),
+                sync_mode=SyncMode.full_refresh,
+                destination_sync_mode=DestinationSyncMode.append,
+            )
+        ]
+    )
+
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest("https://persona.metaverse.com/undefined/palaces"),
+            HttpResponse(json.dumps({"records": [{"id": "palace_1"}], "nextCursor": "https://persona.metaverse.com/toto/palaces"})),
+        )
+        http_mocker.get(
+            HttpRequest("https://persona.metaverse.com/toto/palaces"),
+            HttpResponse(json.dumps({"records": [{"id": "palace_2"}]})),
+        )
+        source = ConcurrentDeclarativeSource(
+            source_config=_PAGINATION_ISSUE_MANIFEST, config=_CONFIG, catalog=None, state=None
+        )
+
+        output = list(source.read(logger=source.logger, config=_CONFIG, catalog=catalog, state=[]))
+
+    assert output
