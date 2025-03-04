@@ -777,6 +777,44 @@ definitions:
       type:
         type: string
         enum: [LegacyToPerPartitionStateMigration]
+  IncrementingCountCursor:
+    title: Incrementing Count Cursor
+    description: Cursor that allows for incremental sync according to a continuously increasing integer.
+    type: object
+    required:
+      - type
+      - cursor_field
+    properties:
+      type:
+        type: string
+        enum: [IncrementingCountCursor]
+      cursor_field:
+        title: Cursor Field
+        description: The location of the value on a record that will be used as a bookmark during sync. To ensure no data loss, the API must return records in ascending order based on the cursor field. Nested fields are not supported, so the field must be at the top level of the record. You can use a combination of Add Field and Remove Field transformations to move the nested field to the top.
+        type: string
+        interpolation_context:
+          - config
+        examples:
+          - "created_at"
+          - "{{ config['record_cursor'] }}"
+      start_value:
+        title: Start Value
+        description: The value that determines the earliest record that should be synced.
+        anyOf:
+          - type: string
+          - type: integer
+        interpolation_context:
+          - config
+        examples:
+          - 0
+          - "{{ config['start_value'] }}"
+      start_value_option:
+        title: Inject Start Value Into Outgoing HTTP Request
+        description: Optionally configures how the start value will be sent in requests to the source API.
+        "$ref": "#/definitions/RequestOption"
+      $parameters:
+        type: object
+        additionalProperties: true
   DatetimeBasedCursor:
     title: Datetime Based Cursor
     description: Cursor to provide incremental capabilities over datetime.
@@ -844,6 +882,7 @@ definitions:
             * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`
             * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`
             * **%f**: Microsecond (zero-padded to 6 digits) - `000000`
+            * **%_ms**: Millisecond (zero-padded to 3 digits) - `000`
             * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`
             * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`
             * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`
@@ -1319,6 +1358,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/CustomIncrementalSync"
           - "$ref": "#/definitions/DatetimeBasedCursor"
+          - "$ref": "#/definitions/IncrementingCountCursor"
       name:
         title: Name
         description: The stream name.
@@ -1755,7 +1795,6 @@ definitions:
     type: object
     required:
       - type
-      - path
       - url_base
     properties:
       type:
@@ -1767,9 +1806,18 @@ definitions:
         type: string
         interpolation_context:
           - config
+          - next_page_token
+          - stream_interval
+          - stream_partition
+          - stream_slice
+          - creation_response
+          - polling_response
+          - download_target
         examples:
           - "https://connect.squareup.com/v2"
-          - "{{ config['base_url'] or 'https://app.posthog.com'}}/api/"
+          - "{{ config['base_url'] or 'https://app.posthog.com'}}/api"
+          - "https://connect.squareup.com/v2/quotes/{{ stream_partition['id'] }}/quote_line_groups"
+          - "https://example.com/api/v1/resource/{{ next_page_token['id'] }}"
       path:
         title: URL Path
         description: Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
@@ -1780,6 +1828,9 @@ definitions:
           - stream_interval
           - stream_partition
           - stream_slice
+          - creation_response
+          - polling_response
+          - download_target
         examples:
           - "/products"
           - "/quotes/{{ stream_partition['id'] }}/quote_line_groups"
@@ -2399,6 +2450,7 @@ definitions:
             * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`
             * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`
             * **%f**: Microsecond (zero-padded to 6 digits) - `000000`, `000001`, ..., `999999`
+            * **%_ms**: Millisecond (zero-padded to 3 digits) - `000`, `001`, ..., `999`
             * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`
             * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`
             * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`
@@ -3256,7 +3308,7 @@ definitions:
       - polling_requester
       - download_requester
       - status_extractor
-      - urls_extractor
+      - download_target_extractor
     properties:
       type:
         type: string
@@ -3273,7 +3325,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/CustomRecordExtractor"
           - "$ref": "#/definitions/DpathExtractor"
-      urls_extractor:
+      download_target_extractor:
         description: Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.
         anyOf:
           - "$ref": "#/definitions/CustomRecordExtractor"
@@ -3294,7 +3346,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/CustomRequester"
           - "$ref": "#/definitions/HttpRequester"
-      url_requester:
+      download_target_requester:
         description: Requester component that describes how to prepare HTTP requests to send to the source API to extract the url from polling response by the completed async job.
         anyOf:
           - "$ref": "#/definitions/CustomRequester"
@@ -3700,6 +3752,21 @@ interpolation:
             self: https://api.sendgrid.com/v3/marketing/lists?page_size=1&page_token=
             next: https://api.sendgrid.com/v3/marketing/lists?page_size=1&page_token=0236d6d2
             count: 82
+    - title: creation_response
+      description: The response received from the creation_requester in the AsyncRetriever component.
+      type: object
+      examples:
+        - id: "1234"
+    - title: polling_response
+      description: The response received from the polling_requester in the AsyncRetriever component.
+      type: object
+      examples:
+        - id: "1234"
+    - title: download_target
+      description: The `URL` received from the polling_requester in the AsyncRetriever with jobStatus as `COMPLETED`.
+      type: string
+      examples:
+        - "https://api.sendgrid.com/v3/marketing/lists?page_size=1&page_token=0236d6d2&filename=xxx_yyy_zzz.csv"
     - title: stream_interval
       description: The current stream interval being processed. The keys are defined by the incremental sync component. Default keys are `start_time` and `end_time`.
       type: object

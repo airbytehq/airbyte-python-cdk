@@ -14,6 +14,7 @@ FieldPointer = List[str]
 Config = Mapping[str, Any]
 ConnectionDefinition = Mapping[str, Any]
 StreamState = Mapping[str, Any]
+EmptyString = str()
 
 
 class Record(Mapping[str, Any]):

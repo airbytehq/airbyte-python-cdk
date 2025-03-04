@@ -22,6 +22,23 @@ class HttpRequest:
 
 
 @dataclass
+class LogMessage:
+    message: str
+    level: str
+    internal_message: Optional[str] = None
+    stacktrace: Optional[str] = None
+
+
+@dataclass
+class AuxiliaryRequest:
+    title: str
+    type: str
+    description: str
+    request: HttpRequest
+    response: HttpResponse
+
+
+@dataclass
 class StreamReadPages:
     records: List[object]
     request: Optional[HttpRequest] = None
@@ -33,22 +50,7 @@ class StreamReadSlices:
     pages: List[StreamReadPages]
     slice_descriptor: Optional[Dict[str, Any]]
     state: Optional[List[Dict[str, Any]]] = None
-
-
-@dataclass
-class LogMessage:
-    message: str
-    level: str
-    internal_message: Optional[str] = None
-    stacktrace: Optional[str] = None
-
-
-@dataclass
-class AuxiliaryRequest:
-    title: str
-    description: str
-    request: HttpRequest
-    response: HttpResponse
+    auxiliary_requests: Optional[List[AuxiliaryRequest]] = None
 
 
 @dataclass

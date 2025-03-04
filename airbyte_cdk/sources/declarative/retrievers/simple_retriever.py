@@ -234,13 +234,22 @@ class SimpleRetriever(Retriever):
             raise ValueError("Request body json cannot be a string")
         return body_json
 
-    def _paginator_path(self, next_page_token: Optional[Mapping[str, Any]] = None) -> Optional[str]:
+    def _paginator_path(
+        self,
+        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Optional[Mapping[str, Any]] = None,
+        stream_slice: Optional[StreamSlice] = None,
+    ) -> Optional[str]:
         """
         If the paginator points to a path, follow it, else return nothing so the requester is used.
         :param next_page_token:
         :return:
         """
-        return self._paginator.path(next_page_token=next_page_token)
+        return self._paginator.path(
+            next_page_token=next_page_token,
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+        )
 
     def _parse_response(
         self,
@@ -299,7 +308,11 @@ class SimpleRetriever(Retriever):
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Optional[requests.Response]:
         return self.requester.send_request(
-            path=self._paginator_path(next_page_token=next_page_token),
+            path=self._paginator_path(
+                next_page_token=next_page_token,
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+            ),
             stream_state=stream_state,
             stream_slice=stream_slice,
             next_page_token=next_page_token,
@@ -570,7 +583,11 @@ class SimpleRetrieverTestReadDecorator(SimpleRetriever):
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Optional[requests.Response]:
         return self.requester.send_request(
-            path=self._paginator_path(next_page_token=next_page_token),
+            path=self._paginator_path(
+                next_page_token=next_page_token,
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+            ),
             stream_state=stream_state,
             stream_slice=stream_slice,
             next_page_token=next_page_token,

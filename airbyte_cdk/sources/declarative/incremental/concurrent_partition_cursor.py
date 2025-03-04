@@ -95,6 +95,10 @@ class ConcurrentPerPartitionCursor(Cursor):
         # the oldest partitions can be efficiently removed, maintaining the most recent partitions.
         self._cursor_per_partition: OrderedDict[str, ConcurrentCursor] = OrderedDict()
         self._semaphore_per_partition: OrderedDict[str, threading.Semaphore] = OrderedDict()
+
+        # Parent-state tracking: store each partition’s parent state in creation order
+        self._partition_parent_state_map: OrderedDict[str, Mapping[str, Any]] = OrderedDict()
+
         self._finished_partitions: set[str] = set()
         self._lock = threading.Lock()
         self._timer = Timer()
@@ -155,11 +159,62 @@ class ConcurrentPerPartitionCursor(Cursor):
                     and self._semaphore_per_partition[partition_key]._value == 0
                 ):
                     self._update_global_cursor(cursor.state[self.cursor_field.cursor_field_key])
-                self._emit_state_message()
+
+            self._check_and_update_parent_state()
+
+            self._emit_state_message()
+
+    def _check_and_update_parent_state(self) -> None:
+        """
+        Pop the leftmost partition state from _partition_parent_state_map only if
+        *all partitions* up to (and including) that partition key in _semaphore_per_partition
+        are fully finished (i.e. in _finished_partitions and semaphore._value == 0).
+        Additionally, delete finished semaphores with a value of 0 to free up memory,
+        as they are only needed to track errors and completion status.
+        """
+        last_closed_state = None
+
+        while self._partition_parent_state_map:
+            # Look at the earliest partition key in creation order
+            earliest_key = next(iter(self._partition_parent_state_map))
+
+            # Verify ALL partitions from the left up to earliest_key are finished
+            all_left_finished = True
+            for p_key, sem in list(
+                self._semaphore_per_partition.items()
+            ):  # Use list to allow modification during iteration
+                # If any earlier partition is still not finished, we must stop
+                if p_key not in self._finished_partitions or sem._value != 0:
+                    all_left_finished = False
+                    break
+                # Once we've reached earliest_key in the semaphore order, we can stop checking
+                if p_key == earliest_key:
+                    break
+
+            # If the partitions up to earliest_key are not all finished, break the while-loop
+            if not all_left_finished:
+                break
+
+            # Pop the leftmost entry from parent-state map
+            _, closed_parent_state = self._partition_parent_state_map.popitem(last=False)
+            last_closed_state = closed_parent_state
+
+            # Clean up finished semaphores with value 0 up to and including earliest_key
+            for p_key in list(self._semaphore_per_partition.keys()):
+                sem = self._semaphore_per_partition[p_key]
+                if p_key in self._finished_partitions and sem._value == 0:
+                    del self._semaphore_per_partition[p_key]
+                    logger.debug(f"Deleted finished semaphore for partition {p_key} with value 0")
+                if p_key == earliest_key:
+                    break
+
+        # Update _parent_state if we popped at least one partition
+        if last_closed_state is not None:
+            self._parent_state = last_closed_state
 
     def ensure_at_least_one_state_emitted(self) -> None:
         """
-        The platform expect to have at least one state message on successful syncs. Hence, whatever happens, we expect this method to be
+        The platform expects at least one state message on successful syncs. Hence, whatever happens, we expect this method to be
         called.
         """
         if not any(
@@ -201,12 +256,18 @@ class ConcurrentPerPartitionCursor(Cursor):
 
         slices = self._partition_router.stream_slices()
         self._timer.start()
-        for partition in slices:
-            yield from self._generate_slices_from_partition(partition)
+        for partition, last, parent_state in iterate_with_last_flag_and_state(
+            slices, self._partition_router.get_stream_state
+        ):
+            yield from self._generate_slices_from_partition(partition, parent_state)
 
-    def _generate_slices_from_partition(self, partition: StreamSlice) -> Iterable[StreamSlice]:
+    def _generate_slices_from_partition(
+        self, partition: StreamSlice, parent_state: Mapping[str, Any]
+    ) -> Iterable[StreamSlice]:
         # Ensure the maximum number of partitions is not exceeded
         self._ensure_partition_limit()
+
+        partition_key = self._to_partition_key(partition.partition)
 
         cursor = self._cursor_per_partition.get(self._to_partition_key(partition.partition))
         if not cursor:
@@ -216,18 +277,26 @@ class ConcurrentPerPartitionCursor(Cursor):
             )
             with self._lock:
                 self._number_of_partitions += 1
-                self._cursor_per_partition[self._to_partition_key(partition.partition)] = cursor
-            self._semaphore_per_partition[self._to_partition_key(partition.partition)] = (
-                threading.Semaphore(0)
-            )
+                self._cursor_per_partition[partition_key] = cursor
+        self._semaphore_per_partition[partition_key] = threading.Semaphore(0)
+
+        with self._lock:
+            if (
+                len(self._partition_parent_state_map) == 0
+                or self._partition_parent_state_map[
+                    next(reversed(self._partition_parent_state_map))
+                ]
+                != parent_state
+            ):
+                self._partition_parent_state_map[partition_key] = deepcopy(parent_state)
 
         for cursor_slice, is_last_slice, _ in iterate_with_last_flag_and_state(
             cursor.stream_slices(),
             lambda: None,
         ):
-            self._semaphore_per_partition[self._to_partition_key(partition.partition)].release()
+            self._semaphore_per_partition[partition_key].release()
             if is_last_slice:
-                self._finished_partitions.add(self._to_partition_key(partition.partition))
+                self._finished_partitions.add(partition_key)
             yield StreamSlice(
                 partition=partition, cursor_slice=cursor_slice, extra_fields=partition.extra_fields
             )
@@ -257,9 +326,9 @@ class ConcurrentPerPartitionCursor(Cursor):
             while len(self._cursor_per_partition) > self.DEFAULT_MAX_PARTITIONS_NUMBER - 1:
                 # Try removing finished partitions first
                 for partition_key in list(self._cursor_per_partition.keys()):
-                    if (
-                        partition_key in self._finished_partitions
-                        and self._semaphore_per_partition[partition_key]._value == 0
+                    if partition_key in self._finished_partitions and (
+                        partition_key not in self._semaphore_per_partition
+                        or self._semaphore_per_partition[partition_key]._value == 0
                     ):
                         oldest_partition = self._cursor_per_partition.pop(
                             partition_key
@@ -337,9 +406,6 @@ class ConcurrentPerPartitionCursor(Cursor):
                 self._number_of_partitions += 1
                 self._cursor_per_partition[self._to_partition_key(state["partition"])] = (
                     self._create_cursor(state["cursor"])
-                )
-                self._semaphore_per_partition[self._to_partition_key(state["partition"])] = (
-                    threading.Semaphore(0)
                 )
 
             # set default state for missing partitions if it is per partition with fallback to global

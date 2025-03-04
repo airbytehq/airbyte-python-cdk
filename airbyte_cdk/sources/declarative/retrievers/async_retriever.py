@@ -1,13 +1,12 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 
-from dataclasses import InitVar, dataclass
+from dataclasses import InitVar, dataclass, field
 from typing import Any, Iterable, Mapping, Optional
 
 from typing_extensions import deprecated
 
 from airbyte_cdk.sources.declarative.async_job.job import AsyncJob
-from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncPartition
 from airbyte_cdk.sources.declarative.extractors.record_selector import RecordSelector
 from airbyte_cdk.sources.declarative.partition_routers.async_job_partition_router import (
     AsyncJobPartitionRouter,
@@ -16,6 +15,7 @@ from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
+from airbyte_cdk.sources.utils.slice_logger import AlwaysLogSliceLogger
 
 
 @deprecated(
@@ -28,6 +28,10 @@ class AsyncRetriever(Retriever):
     parameters: InitVar[Mapping[str, Any]]
     record_selector: RecordSelector
     stream_slicer: AsyncJobPartitionRouter
+    slice_logger: AlwaysLogSliceLogger = field(
+        init=False,
+        default_factory=lambda: AlwaysLogSliceLogger(),
+    )
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._parameters = parameters
@@ -75,13 +79,16 @@ class AsyncRetriever(Retriever):
         return stream_slice.extra_fields.get("jobs", []) if stream_slice else []
 
     def stream_slices(self) -> Iterable[Optional[StreamSlice]]:
-        return self.stream_slicer.stream_slices()
+        yield from self.stream_slicer.stream_slices()
 
     def read_records(
         self,
         records_schema: Mapping[str, Any],
         stream_slice: Optional[StreamSlice] = None,
     ) -> Iterable[StreamData]:
+        # emit the slice_descriptor log message, for connector builder TestRead
+        yield self.slice_logger.create_slice_log_message(stream_slice.cursor_slice)  # type: ignore
+
         stream_state: StreamState = self._get_stream_state()
         jobs: Iterable[AsyncJob] = self._validate_and_get_stream_slice_jobs(stream_slice)
         records: Iterable[Mapping[str, Any]] = self.stream_slicer.fetch_records(jobs)

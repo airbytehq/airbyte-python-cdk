@@ -45,7 +45,7 @@ class AirbyteCustomCodeNotPermittedError(Exception):
 def _hash_text(input_text: str, hash_type: str = "md5") -> str:
     """Return the hash of the input text using the specified hash type."""
     if not input_text:
-        raise ValueError("Input text cannot be empty.")
+        raise ValueError("Hash input text cannot be empty.")
 
     hash_object = CHECKSUM_FUNCTIONS[hash_type]()
     hash_object.update(input_text.encode())
@@ -68,6 +68,10 @@ def validate_python_code(
 
     Currently we fail if no checksums are provided, although this may change in the future.
     """
+    if not code_text:
+        # No code provided, nothing to validate.
+        return
+
     if not checksums:
         raise ValueError(f"A checksum is required to validate the code. Received: {checksums}")
 
@@ -77,8 +81,18 @@ def validate_python_code(
                 f"Unsupported checksum type: {checksum_type}. Supported checksum types are: {CHECKSUM_FUNCTIONS.keys()}"
             )
 
-        if _hash_text(code_text, checksum_type) != checksum:
-            raise AirbyteCodeTamperedError(f"{checksum_type} checksum does not match.")
+        calculated_checksum = _hash_text(code_text, checksum_type)
+        if calculated_checksum != checksum:
+            raise AirbyteCodeTamperedError(
+                f"{checksum_type} checksum does not match."
+                + str(
+                    {
+                        "expected_checksum": checksum,
+                        "actual_checksum": calculated_checksum,
+                        "code_text": code_text,
+                    }
+                ),
+            )
 
 
 def get_registered_components_module(
@@ -94,7 +108,7 @@ def get_registered_components_module(
 
     Returns `None` if no components is provided and the `components` module is not found.
     """
-    if config and INJECTED_COMPONENTS_PY in config:
+    if config and config.get(INJECTED_COMPONENTS_PY, None):
         if not custom_code_execution_permitted():
             raise AirbyteCustomCodeNotPermittedError
 
