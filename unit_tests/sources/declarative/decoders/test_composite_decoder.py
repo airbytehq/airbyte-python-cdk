@@ -212,7 +212,10 @@ class TestServer(BaseHTTPRequestHandler):
        self.wfile.write(bytes("col1,col2\nval1,val2", 'utf-8'))
 
 
-def test_composite_raw_decoder_csv_parser():
+def test_composite_raw_decoder_csv_parser_without_mocked_response():
+    """
+    This test reproduce a `ValueError: I/O operation on closed file` error we had with CSV parsing. We could not catch this with other tests because the closing of the mocked response from requests_mock was not the same as the one in requests.  
+    """
     # start server
     httpd = HTTPServer(('localhost', 8080), TestServer)
     thread = Thread(target=httpd.serve_forever, args = ())
