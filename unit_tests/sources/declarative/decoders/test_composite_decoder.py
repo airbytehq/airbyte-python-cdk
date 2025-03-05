@@ -222,7 +222,6 @@ def test_composite_raw_decoder_csv_parser_without_mocked_response():
     """
     # self.wfile.write(bytes('John,Doe,120 jefferson st.,Riverside, NJ, 08075\nJack,McGinnis,220 hobo Av.,Phila, PA,09119\n"John ""Da Man""",Repici,120 Jefferson St.,Riverside, NJ,08075\nStephen,Tyler,"7452 Terrace ""At the Plaza"" road",SomeTown,SD, 91234\n,Blankman,,SomeTown, SD, 00298\n"Joan ""the bone"", Anne",Jet,"9th, at Terrace plc",Desert City,CO,00123\n', "utf-8"))
 
-
     # start server
     httpd = HTTPServer(("localhost", 8080), TestServer)
     thread = Thread(target=httpd.serve_forever, args=())
@@ -231,11 +230,12 @@ def test_composite_raw_decoder_csv_parser_without_mocked_response():
     try:
         response = requests.get(f"http://localhost:{port}", stream=True)
         result = list(CompositeRawDecoder(parser=CsvParser()).decode(response))
-        
+
         assert len(result) == 1
     finally:
         httpd.shutdown()  # release port and kill the thread
         thread.join(timeout=5)  # ensure thread is cleaned up
+
 
 def test_given_response_already_consumed_when_decode_then_no_data_is_returned(requests_mock):
     requests_mock.register_uri(
