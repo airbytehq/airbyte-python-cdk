@@ -825,6 +825,73 @@ def test_create_concurrent_cursor():
     assert incremental_counting_cursor._end_provider() == math.inf
 
 
+@freezegun.freeze_time(_NOW)
+def test_concurrent_cursor_with_state_in_read_method():
+    """
+    This test mimicks the behavior of a source in a real life low-code connector
+    where the source is instantiated without a state and the state is provided
+    via the read() method.
+
+    Note: this test specifically checks that for DatetimeBasedCursor
+    """
+    state = [
+        AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(name="party_members", namespace=None),
+                stream_state=AirbyteStateBlob(updated_at="2024-09-05"),
+            ),
+        ),
+    ]
+
+    catalog = ConfiguredAirbyteCatalog(
+        streams=[
+            ConfiguredAirbyteStream(
+                stream=AirbyteStream(
+                    name="party_members", json_schema={}, supported_sync_modes=[SyncMode.incremental]
+                ),
+                sync_mode=SyncMode.incremental,
+                destination_sync_mode=DestinationSyncMode.append,
+            ),
+        ]
+    )
+
+
+    def get_source():
+        return ConcurrentDeclarativeSource(
+            source_config=_MANIFEST, config=_CONFIG, catalog=catalog, state=[]
+        )
+
+
+    source = get_source()
+    with HttpMocker() as http_mocker:
+        _mock_party_members_requests(http_mocker, _NO_STATE_PARTY_MEMBERS_SLICES_AND_RESPONSES)
+        messages_iterator = source.read(logger=source.logger, config=_CONFIG, catalog=catalog, state=state)
+    
+    # Get the first message only to get the stream running so that we can check the cursor
+    first_message = next(messages_iterator)
+        
+    concurrent_streams, _ = source._group_streams(config=_CONFIG)
+    party_members_stream = [s for s in concurrent_streams if s.name == "party_members"][0]
+
+    assert party_members_stream is not None, "Could not find party_members stream"
+    party_members_cursor = party_members_stream.cursor
+
+    assert isinstance(party_members_cursor, ConcurrentCursor)
+    assert party_members_cursor._stream_name == "party_members"
+    assert party_members_cursor._cursor_field.cursor_field_key == "updated_at"
+    
+    cursor_value = AirbyteDateTime.strptime("2024-09-05", "%Y-%m-%d")
+    
+    assert len(party_members_cursor._concurrent_state["slices"]) == 1
+    assert party_members_cursor._concurrent_state["slices"][0]["most_recent_cursor_value"] == cursor_value
+    
+    messages = list(messages_iterator)
+    party_members_records = get_records_for_stream("party_members", messages)
+    # There is only one record after 2024-09-05
+    assert len(party_members_records) == 1
+    assert party_members_records[0].data["id"] == "yoshizawa"
+
 def test_check():
     """
     Verifies that the ConcurrentDeclarativeSource check command is run against synchronous streams
