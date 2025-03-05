@@ -226,9 +226,8 @@ def test_composite_raw_decoder_csv_parser_without_mocked_response():
     httpd = HTTPServer(("localhost", 8080), TestServer)
     thread = Thread(target=httpd.serve_forever, args=())
     thread.start()
-    thread.start()
     try:
-        response = requests.get(f"http://localhost:{port}", stream=True)
+        response = requests.get(f"http://localhost:8080", stream=True)
         result = list(CompositeRawDecoder(parser=CsvParser()).decode(response))
 
         assert len(result) == 1
