@@ -1992,9 +1992,7 @@ class ModelToComponentFactory:
         model: ResponseToFileExtractorModel,
         **kwargs: Any,
     ) -> ResponseToFileExtractor:
-        return ResponseToFileExtractor(
-            parameters=model.parameters or {}, file_type=model.file_type or "csv"
-        )
+        return ResponseToFileExtractor(parameters=model.parameters or {})
 
     @staticmethod
     def create_exponential_backoff_strategy(
@@ -2195,10 +2193,12 @@ class ModelToComponentFactory:
             stream_response=False if self._emit_connector_builder_messages else True,
         )
 
-    @staticmethod
-    def create_jsonl_decoder(model: JsonlDecoderModel, config: Config, **kwargs: Any) -> Decoder:
+    def create_jsonl_decoder(
+        self, model: JsonlDecoderModel, config: Config, **kwargs: Any
+    ) -> Decoder:
         return CompositeRawDecoder(
-            parser=ModelToComponentFactory._get_parser(model, config), stream_response=True
+            parser=ModelToComponentFactory._get_parser(model, config),
+            stream_response=False if self._emit_connector_builder_messages else True,
         )
 
     def create_gzip_decoder(
@@ -2755,7 +2755,10 @@ class ModelToComponentFactory:
             )
             paginator = (
                 self._create_component_from_model(
-                    model=model.download_paginator, decoder=decoder, config=config, url_base=""
+                    model=model.download_paginator,
+                    decoder=operational_decoder,
+                    config=config,
+                    url_base="",
                 )
                 if model.download_paginator
                 else NoPagination(parameters={})
@@ -2784,7 +2787,7 @@ class ModelToComponentFactory:
                 parameters={},
             )
 
-        decoder = (
+        operational_decoder = (
             self._create_component_from_model(model=model.decoder, config=config)
             if model.decoder
             else JsonDecoder(parameters={})
@@ -2792,7 +2795,7 @@ class ModelToComponentFactory:
         record_selector = self._create_component_from_model(
             model=model.record_selector,
             config=config,
-            decoder=decoder,
+            decoder=operational_decoder,
             name=name,
             transformations=transformations,
             client_side_incremental_sync=client_side_incremental_sync,
@@ -2800,13 +2803,13 @@ class ModelToComponentFactory:
         stream_slicer = stream_slicer or SinglePartitionRouter(parameters={})
         creation_requester = self._create_component_from_model(
             model=model.creation_requester,
-            decoder=decoder,
+            decoder=operational_decoder,
             config=config,
             name=f"job creation - {name}",
         )
         polling_requester = self._create_component_from_model(
             model=model.polling_requester,
-            decoder=decoder,
+            decoder=operational_decoder,
             config=config,
             name=f"job polling - {name}",
         )
@@ -2841,7 +2844,7 @@ class ModelToComponentFactory:
         abort_requester = (
             self._create_component_from_model(
                 model=model.abort_requester,
-                decoder=decoder,
+                decoder=operational_decoder,
                 config=config,
                 name=f"job abort - {name}",
             )
@@ -2851,7 +2854,7 @@ class ModelToComponentFactory:
         delete_requester = (
             self._create_component_from_model(
                 model=model.delete_requester,
-                decoder=decoder,
+                decoder=operational_decoder,
                 config=config,
                 name=f"job delete - {name}",
             )
@@ -2861,7 +2864,7 @@ class ModelToComponentFactory:
         download_target_requester = (
             self._create_component_from_model(
                 model=model.download_target_requester,
-                decoder=decoder,
+                decoder=operational_decoder,
                 config=config,
                 name=f"job extract_url - {name}",
             )
@@ -2869,10 +2872,13 @@ class ModelToComponentFactory:
             else None
         )
         status_extractor = self._create_component_from_model(
-            model=model.status_extractor, decoder=decoder, config=config, name=name
+            model=model.status_extractor, decoder=operational_decoder, config=config, name=name
         )
         download_target_extractor = self._create_component_from_model(
-            model=model.download_target_extractor, decoder=decoder, config=config, name=name
+            model=model.download_target_extractor,
+            decoder=operational_decoder,
+            config=config,
+            name=name,
         )
         job_repository: AsyncJobRepository = AsyncHttpJobRepository(
             creation_requester=creation_requester,

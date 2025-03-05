@@ -702,10 +702,6 @@ class DpathExtractor(BaseModel):
 
 class ResponseToFileExtractor(BaseModel):
     type: Literal["ResponseToFileExtractor"]
-    file_type: Optional[str] = Field(
-        "csv",
-        title="The file type in which the response data is storred. Supported types are [csv, jsonl].",
-    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 

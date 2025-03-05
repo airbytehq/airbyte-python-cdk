@@ -35,15 +35,36 @@ class Parser(ABC):
 class GzipParser(Parser):
     inner_parser: Parser
 
+    def _reset_reader_pointer(self, data: BufferedIOBase) -> None:
+        """
+        Reset the reader pointer to the beginning of the data.
+
+        Note:
+            - This is necessary because the gzip decompression will consume the data stream.
+        """
+        data.seek(0)
+
     def parse(
         self,
         data: BufferedIOBase,
     ) -> Generator[MutableMapping[str, Any], None, None]:
         """
         Decompress gzipped bytes and pass decompressed data to the inner parser.
+
+        IMPORTANT:
+            - If the data is not gzipped, reset the pointer and pass the data to the inner parser as is.
+
+        Note:
+            - The data is not decoded by default.
         """
-        with gzip.GzipFile(fileobj=data, mode="rb") as gzipobj:
-            yield from self.inner_parser.parse(gzipobj)
+
+        try:
+            with gzip.GzipFile(fileobj=data, mode="rb") as gzipobj:
+                yield from self.inner_parser.parse(gzipobj)
+        except gzip.BadGzipFile:
+            logger.warning(f"GzipParser(): Received non-gzipped data, parsing the data as is.")
+            self._reset_reader_pointer(data)
+            yield from self.inner_parser.parse(data)
 
 
 @dataclass
