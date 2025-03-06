@@ -1808,10 +1808,11 @@ class ModelToComponentFactory:
         stream_slicer: Optional[PartitionRouter],
         config: Config,
     ) -> Optional[StreamSlicer]:
-
         if model.retriever.type == "StateDelegatingRetriever":
             if not model.incremental_sync:
-                raise ValueError("StateDelegatingRetriever requires 'incremental_sync' to be enabled.")
+                raise ValueError(
+                    "StateDelegatingRetriever requires 'incremental_sync' to be enabled."
+                )
             elif model.incremental_sync.type != "DatetimeBasedCursor":
                 raise ValueError("StateDelegatingRetriever support only DatetimeBasedCursor.")
             elif model.retriever.full_refresh_no_slice_in_params:
