@@ -111,6 +111,30 @@ def test_composite_raw_decoder_gzip_jsonline_parser(requests_mock, encoding: str
 
 
 @pytest.mark.parametrize("encoding", ["utf-8", "utf", "iso-8859-1"])
+def test_composite_raw_decoder_gzip_jsonline_parser_decodes_non_gzipped_raw_response(
+    requests_mock, encoding: str
+) -> None:
+    """
+    Test the GzipParser with a non-compressed response.
+    """
+
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        # we encode the jsonl content as bytes here
+        content="".join(generate_jsonlines()).encode(encoding),
+    )
+    response = requests.get("https://airbyte.io/", stream=True)
+
+    parser = GzipParser(inner_parser=JsonLineParser(encoding=encoding))
+    composite_raw_decoder = CompositeRawDecoder(parser=parser)
+    counter = 0
+    for _ in composite_raw_decoder.decode(response):
+        counter += 1
+    assert counter == 3
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", "utf", "iso-8859-1"])
 def test_composite_raw_decoder_jsonline_parser(requests_mock, encoding: str):
     response_content = "".join(generate_jsonlines())
     requests_mock.register_uri(
@@ -224,7 +248,8 @@ def test_given_response_is_not_streamed_when_decode_then_can_be_called_multiple_
     )
     response = requests.get("https://airbyte.io/")
     composite_raw_decoder = CompositeRawDecoder(
-        parser=JsonParser(encoding="utf-8"), stream_response=False
+        parser=JsonParser(encoding="utf-8"),
+        stream_response=False,
     )
 
     content = list(composite_raw_decoder.decode(response))

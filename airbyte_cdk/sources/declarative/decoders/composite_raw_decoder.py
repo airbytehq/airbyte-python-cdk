@@ -1,3 +1,7 @@
+#
+# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+#
+
 import csv
 import gzip
 import io
@@ -18,12 +22,21 @@ from airbyte_cdk.utils import AirbyteTracedException
 logger = logging.getLogger("airbyte")
 
 
+COMPRESSION_TYPES = [
+    "gzip",
+    "x-gzip",
+    "gzip, deflate",
+    "x-gzip, deflate",
+]
+
+
 @dataclass
 class Parser(ABC):
     @abstractmethod
     def parse(
         self,
         data: BufferedIOBase,
+        compressed: Optional[bool] = False,
     ) -> Generator[MutableMapping[str, Any], None, None]:
         """
         Parse data and yield dictionaries.
@@ -35,18 +48,10 @@ class Parser(ABC):
 class GzipParser(Parser):
     inner_parser: Parser
 
-    def _reset_reader_pointer(self, data: BufferedIOBase) -> None:
-        """
-        Reset the reader pointer to the beginning of the data.
-
-        Note:
-            - This is necessary because the gzip decompression will consume the data stream.
-        """
-        data.seek(0)
-
     def parse(
         self,
         data: BufferedIOBase,
+        compressed: Optional[bool] = False,
     ) -> Generator[MutableMapping[str, Any], None, None]:
         """
         Decompress gzipped bytes and pass decompressed data to the inner parser.
@@ -58,12 +63,10 @@ class GzipParser(Parser):
             - The data is not decoded by default.
         """
 
-        try:
+        if compressed:
             with gzip.GzipFile(fileobj=data, mode="rb") as gzipobj:
                 yield from self.inner_parser.parse(gzipobj)
-        except gzip.BadGzipFile:
-            logger.warning(f"GzipParser(): Received non-gzipped data, parsing the data as is.")
-            self._reset_reader_pointer(data)
+        else:
             yield from self.inner_parser.parse(data)
 
 
@@ -71,7 +74,11 @@ class GzipParser(Parser):
 class JsonParser(Parser):
     encoding: str = "utf-8"
 
-    def parse(self, data: BufferedIOBase) -> Generator[MutableMapping[str, Any], None, None]:
+    def parse(
+        self,
+        data: BufferedIOBase,
+        compressed: Optional[bool] = False,
+    ) -> Generator[MutableMapping[str, Any], None, None]:
         """
         Attempts to deserialize data using orjson library. As an extra layer of safety we fallback on the json library to deserialize the data.
         """
@@ -114,6 +121,7 @@ class JsonLineParser(Parser):
     def parse(
         self,
         data: BufferedIOBase,
+        compressed: Optional[bool] = False,
     ) -> Generator[MutableMapping[str, Any], None, None]:
         for line in data:
             try:
@@ -141,6 +149,7 @@ class CsvParser(Parser):
     def parse(
         self,
         data: BufferedIOBase,
+        compressed: Optional[bool] = False,
     ) -> Generator[MutableMapping[str, Any], None, None]:
         """
         Parse CSV data from decompressed bytes.
@@ -156,10 +165,15 @@ class CompositeRawDecoder(Decoder):
     """
     Decoder strategy to transform a requests.Response into a Generator[MutableMapping[str, Any], None, None]
     passed response.raw to parser(s).
-    Note: response.raw is not decoded/decompressed by default.
-    parsers should be instantiated recursively.
+
+    Note: response.raw is not decoded/decompressed by default. Parsers should be instantiated recursively.
+
     Example:
-    composite_raw_decoder = CompositeRawDecoder(parser=GzipParser(inner_parser=JsonLineParser(encoding="iso-8859-1")))
+        composite_raw_decoder = CompositeRawDecoder(
+            parser=GzipParser(
+                inner_parser=JsonLineParser(encoding="iso-8859-1")
+            )
+        )
     """
 
     parser: Parser
@@ -168,10 +182,17 @@ class CompositeRawDecoder(Decoder):
     def is_stream_response(self) -> bool:
         return self.stream_response
 
+    def is_compressed(self, response: requests.Response) -> bool:
+        """
+        Check if the response is compressed based on the Content-Encoding header.
+        """
+        return response.headers.get("Content-Encoding") in COMPRESSION_TYPES
+
     def decode(
-        self, response: requests.Response
+        self,
+        response: requests.Response,
     ) -> Generator[MutableMapping[str, Any], None, None]:
         if self.is_stream_response():
-            yield from self.parser.parse(data=response.raw)  # type: ignore[arg-type]
+            yield from self.parser.parse(data=response.raw, compressed=self.is_compressed(response))  # type: ignore[arg-type]
         else:
             yield from self.parser.parse(data=io.BytesIO(response.content))
