@@ -42,7 +42,7 @@ _MANIFEST = {
             },
             "retriever": {
                 "type": "StateDelegatingRetriever",
-                "full_data_retriever": {
+                "full_refresh_retriever": {
                     "type": "SimpleRetriever",
                     "requester": {
                         "type": "HttpRequester",
@@ -55,7 +55,7 @@ _MANIFEST = {
                         "extractor": {"type": "DpathExtractor", "field_path": []},
                     },
                 },
-                "incremental_data_retriever": {
+                "incremental_retriever": {
                     "type": "SimpleRetriever",
                     "requester": {
                         "type": "HttpRequester",
@@ -190,6 +190,9 @@ def test_state_retriever():
                 ),
             )
         ]
+        source = ConcurrentDeclarativeSource(
+            source_config=_MANIFEST, config=_CONFIG, catalog=None, state=state
+        )
         incremental_records = get_records(source, _CONFIG, configured_catalog, state)
         expected_incremental = [
             {"id": 3, "name": "item_3", "updated_at": "2024-02-01"},

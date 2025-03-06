@@ -3152,7 +3152,7 @@ definitions:
         type: object
         additionalProperties: true
   StateDelegatingRetriever:
-    description: Test state condition retriever.
+    description: (This component is experimental. Use at your own risk.) Orchestrate the retriever's usage based on the state value.
     type: object
     required:
       - type
@@ -3168,14 +3168,14 @@ definitions:
         default: false
       full_refresh_retriever:
         title: Retriever
-        description: Component used to coordinate how records are extracted across stream slices and request pages.
+        description: Component used to coordinate how records are extracted across stream slices and request pages when the state is empty or not provided.
         anyOf:
           - "$ref": "#/definitions/AsyncRetriever"
           - "$ref": "#/definitions/CustomRetriever"
           - "$ref": "#/definitions/SimpleRetriever"
       incremental_retriever:
         title: Retriever
-        description: Component used to coordinate how records are extracted across stream slices and request pages.
+        description: Component used to coordinate how records are extracted across stream slices and request pages when the state provided.
         anyOf:
           - "$ref": "#/definitions/AsyncRetriever"
           - "$ref": "#/definitions/CustomRetriever"

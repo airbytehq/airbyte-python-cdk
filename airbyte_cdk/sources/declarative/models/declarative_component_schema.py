@@ -2251,14 +2251,14 @@ class StateDelegatingRetriever(BaseModel):
     full_refresh_retriever: Union[AsyncRetriever, CustomRetriever, SimpleRetriever] = (
         Field(
             ...,
-            description="Component used to coordinate how records are extracted across stream slices and request pages.",
+            description="Component used to coordinate how records are extracted across stream slices and request pages when the state is empty or not provided.",
             title="Retriever",
         )
     )
     incremental_retriever: Union[AsyncRetriever, CustomRetriever, SimpleRetriever] = (
         Field(
             ...,
-            description="Component used to coordinate how records are extracted across stream slices and request pages.",
+            description="Component used to coordinate how records are extracted across stream slices and request pages when the state provided.",
             title="Retriever",
         )
     )

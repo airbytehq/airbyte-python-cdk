@@ -55,7 +55,6 @@ class PartitionEnqueuer:
                 #
                 # Also note that prune_to_validate_has_reached_futures_limit has a lock while pruning which might create a bottleneck in
                 # terms of performance.
-
                 while self._thread_pool_manager.prune_to_validate_has_reached_futures_limit():
                     time.sleep(self._sleep_time_in_seconds)
                 self._queue.put(partition)

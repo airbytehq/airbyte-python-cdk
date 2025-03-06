@@ -162,6 +162,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         else:
             filtered_catalog = catalog
 
+        # It is no need run read for synchronous streams if they are not exists.
         if not filtered_catalog.streams:
             return
 
