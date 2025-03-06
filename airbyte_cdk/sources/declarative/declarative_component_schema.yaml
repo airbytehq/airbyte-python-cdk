@@ -3376,6 +3376,12 @@ definitions:
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
           - "$ref": "#/definitions/ZipfileDecoder"
+      maximum_job_count:
+        title: Maximum Job Count
+        description: Maximum number of asynchronous jobs to run concurrently.
+        anyOf:
+          - type: number
+        default: 1
       $parameters:
         type: object
         additionalProperties: true
