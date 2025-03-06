@@ -26,7 +26,7 @@ def test_stream_slices_with_single_partition_router():
         job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
             MockAsyncJobRepository(),
             stream_slices,
-            JobTracker(_NO_LIMIT),
+            JobTracker(_NO_LIMIT, config={}),
             NoopMessageRepository(),
         ),
         config={},
@@ -58,7 +58,7 @@ def test_stream_slices_with_parent_slicer():
         job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
             MockAsyncJobRepository(),
             stream_slices,
-            JobTracker(_NO_LIMIT),
+            JobTracker(_NO_LIMIT, config={}),
             NoopMessageRepository(),
         ),
         config={},

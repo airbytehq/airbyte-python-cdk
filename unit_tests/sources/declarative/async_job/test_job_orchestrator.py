@@ -137,7 +137,7 @@ class AsyncJobOrchestratorTest(TestCase):
     def test_given_timeout_when_create_and_get_completed_partitions_then_free_budget_and_raise_exception(
         self, mock_sleep: MagicMock
     ) -> None:
-        job_tracker = JobTracker(1)
+        job_tracker = JobTracker(1, config={})
         self._job_repository.start.return_value = self._job_for_a_slice
         self._job_repository.update_jobs_status.side_effect = _status_update_per_jobs(
             {self._job_for_a_slice: [AsyncJobStatus.TIMED_OUT]}
@@ -184,7 +184,7 @@ class AsyncJobOrchestratorTest(TestCase):
     def _orchestrator(
         self, slices: List[StreamSlice], job_tracker: Optional[JobTracker] = None
     ) -> AsyncJobOrchestrator:
-        job_tracker = job_tracker if job_tracker else JobTracker(_NO_JOB_LIMIT)
+        job_tracker = job_tracker if job_tracker else JobTracker(_NO_JOB_LIMIT, config={})
         return AsyncJobOrchestrator(
             self._job_repository, slices, job_tracker, self._message_repository
         )
@@ -192,7 +192,7 @@ class AsyncJobOrchestratorTest(TestCase):
     def test_given_more_jobs_than_limit_when_create_and_get_completed_partitions_then_still_return_all_slices_and_free_job_budget(
         self,
     ) -> None:
-        job_tracker = JobTracker(1)
+        job_tracker = JobTracker(1, config={})
         self._job_repository.start.side_effect = [
             self._job_for_a_slice,
             self._job_for_another_slice,
@@ -220,7 +220,7 @@ class AsyncJobOrchestratorTest(TestCase):
         orchestrator = AsyncJobOrchestrator(
             self._job_repository,
             [_A_STREAM_SLICE, _ANOTHER_STREAM_SLICE],
-            JobTracker(_NO_JOB_LIMIT),
+            JobTracker(_NO_JOB_LIMIT, config={}),
             self._message_repository,
             exceptions_to_break_on=[ValueError],
         )
@@ -241,7 +241,7 @@ class AsyncJobOrchestratorTest(TestCase):
         """
         Since this is a config error, we assume the other jobs will fail for the same reasons.
         """
-        job_tracker = JobTracker(1)
+        job_tracker = JobTracker(1, config={})
         self._job_repository.start.side_effect = MessageRepresentationAirbyteTracedErrors(
             "Can't create job", failure_type=FailureType.config_error
         )
@@ -318,7 +318,7 @@ class AsyncJobOrchestratorTest(TestCase):
     def given_budget_already_taken_before_start_when_create_and_get_completed_partitions_then_wait_for_budget_to_be_freed(
         self,
     ) -> None:
-        job_tracker = JobTracker(1)
+        job_tracker = JobTracker(1, config={})
         intent_to_free = job_tracker.try_to_get_intent()
 
         def wait_and_free_intent(_job_tracker: JobTracker, _intent_to_free: str) -> None:
@@ -341,7 +341,7 @@ class AsyncJobOrchestratorTest(TestCase):
     def test_given_start_job_raise_when_create_and_get_completed_partitions_then_free_budget(
         self,
     ) -> None:
-        job_tracker = JobTracker(1)
+        job_tracker = JobTracker(1, config={})
         self._job_repository.start.side_effect = ValueError("Can't create job")
 
         orchestrator = AsyncJobOrchestrator(

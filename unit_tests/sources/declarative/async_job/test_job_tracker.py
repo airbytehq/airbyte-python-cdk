@@ -15,7 +15,7 @@ _LIMIT = 3
 
 class JobTrackerTest(TestCase):
     def setUp(self) -> None:
-        self._tracker = JobTracker(_LIMIT)
+        self._tracker = JobTracker(_LIMIT, config={})
 
     def test_given_limit_reached_when_remove_job_then_can_get_intent_again(self) -> None:
         intents = self._reach_limit()

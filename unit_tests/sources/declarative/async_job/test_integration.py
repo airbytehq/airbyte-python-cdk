@@ -87,7 +87,7 @@ class MockSource(AbstractSource):
                         job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
                             MockAsyncJobRepository(),
                             stream_slices,
-                            JobTracker(_NO_LIMIT),
+                            JobTracker(_NO_LIMIT, config={}),
                             self._message_repository,
                         ),
                         config={},
