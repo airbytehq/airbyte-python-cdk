@@ -848,7 +848,9 @@ def test_concurrent_cursor_with_state_in_read_method():
         streams=[
             ConfiguredAirbyteStream(
                 stream=AirbyteStream(
-                    name="party_members", json_schema={}, supported_sync_modes=[SyncMode.incremental]
+                    name="party_members",
+                    json_schema={},
+                    supported_sync_modes=[SyncMode.incremental],
                 ),
                 sync_mode=SyncMode.incremental,
                 destination_sync_mode=DestinationSyncMode.append,
@@ -856,21 +858,21 @@ def test_concurrent_cursor_with_state_in_read_method():
         ]
     )
 
-
     def get_source():
         return ConcurrentDeclarativeSource(
             source_config=_MANIFEST, config=_CONFIG, catalog=catalog, state=[]
         )
 
-
     source = get_source()
     with HttpMocker() as http_mocker:
         _mock_party_members_requests(http_mocker, _NO_STATE_PARTY_MEMBERS_SLICES_AND_RESPONSES)
-        messages_iterator = source.read(logger=source.logger, config=_CONFIG, catalog=catalog, state=state)
-    
+        messages_iterator = source.read(
+            logger=source.logger, config=_CONFIG, catalog=catalog, state=state
+        )
+
     # Get the first message only to get the stream running so that we can check the cursor
     first_message = next(messages_iterator)
-        
+
     concurrent_streams, _ = source._group_streams(config=_CONFIG)
     party_members_stream = [s for s in concurrent_streams if s.name == "party_members"][0]
 
@@ -880,17 +882,21 @@ def test_concurrent_cursor_with_state_in_read_method():
     assert isinstance(party_members_cursor, ConcurrentCursor)
     assert party_members_cursor._stream_name == "party_members"
     assert party_members_cursor._cursor_field.cursor_field_key == "updated_at"
-    
+
     cursor_value = AirbyteDateTime.strptime("2024-09-05", "%Y-%m-%d")
-    
+
     assert len(party_members_cursor._concurrent_state["slices"]) == 1
-    assert party_members_cursor._concurrent_state["slices"][0]["most_recent_cursor_value"] == cursor_value
-    
+    assert (
+        party_members_cursor._concurrent_state["slices"][0]["most_recent_cursor_value"]
+        == cursor_value
+    )
+
     messages = list(messages_iterator)
     party_members_records = get_records_for_stream("party_members", messages)
     # There is only one record after 2024-09-05
     assert len(party_members_records) == 1
     assert party_members_records[0].data["id"] == "yoshizawa"
+
 
 def test_check():
     """
