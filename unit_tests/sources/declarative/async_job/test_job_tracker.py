@@ -15,7 +15,9 @@ _LIMIT = 3
 
 class JobTrackerTest(TestCase):
     def setUp(self) -> None:
-        self._tracker = JobTracker(_LIMIT, config={})
+        self._tracker = JobTracker(
+            limit="{{config['max_concurrent_jobs']}}", config={"max_concurrent_jobs": _LIMIT}
+        )
 
     def test_given_limit_reached_when_remove_job_then_can_get_intent_again(self) -> None:
         intents = self._reach_limit()
@@ -39,3 +41,15 @@ class JobTrackerTest(TestCase):
 
     def _reach_limit(self) -> List[str]:
         return [self._tracker.try_to_get_intent() for i in range(_LIMIT)]
+
+
+def test_given_limit_is_interpolated_string_when_init_then_limit_is_int():
+    tracker = JobTracker(
+        limit="{{config['max_concurrent_jobs']}}", config={"max_concurrent_jobs": _LIMIT}
+    )
+    assert tracker._limit == _LIMIT
+
+
+def test_given_limit_is_less_than_1_when_init_then_raise_value_error():
+    with pytest.raises(ValueError):
+        JobTracker(limit="-1", config={})

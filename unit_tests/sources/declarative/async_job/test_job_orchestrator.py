@@ -301,7 +301,7 @@ class AsyncJobOrchestratorTest(TestCase):
     def test_given_jobs_failed_more_than_max_attempts_when_create_and_get_completed_partitions_then_free_job_budget(
         self, mock_sleep: MagicMock
     ) -> None:
-        job_tracker = JobTracker(1)
+        job_tracker = JobTracker(1, config={})
         jobs = [self._an_async_job(str(i), _A_STREAM_SLICE) for i in range(_MAX_NUMBER_OF_ATTEMPTS)]
         self._job_repository.start.side_effect = jobs
         self._job_repository.update_jobs_status.side_effect = _status_update_per_jobs(

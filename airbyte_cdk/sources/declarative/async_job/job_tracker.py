@@ -17,9 +17,9 @@ class ConcurrentJobLimitReached(Exception):
 
 
 class JobTracker:
-    def __init__(self, limit: Union[int, InterpolatedString], config: Mapping[str, Any]):
-        if isinstance(limit, InterpolatedString):
-            limit = int(limit.eval(config=config, json_loads=json.loads))
+    def __init__(self, limit: Union[int, str], config: Mapping[str, Any] = {}):
+        if isinstance(limit, str):
+            limit = int(InterpolatedString(limit, parameters={}).eval(config=config))
 
         if limit < 1:
             raise ValueError(f"Invalid max concurrent jobs limit: {limit}. Minimum value is 1.")
