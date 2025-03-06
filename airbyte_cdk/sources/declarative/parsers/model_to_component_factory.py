@@ -2888,7 +2888,7 @@ class ModelToComponentFactory:
             job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
                 job_repository,
                 stream_slices,
-                JobTracker(model.max_concurrent_jobs, config),
+                JobTracker(model.max_concurrent_jobs or 1, config),
                 self._message_repository,
                 has_bulk_parent=False,
                 # FIXME work would need to be done here in order to detect if a stream as a parent stream that is bulk
