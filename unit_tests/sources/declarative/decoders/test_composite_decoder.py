@@ -4,6 +4,7 @@
 import csv
 import gzip
 import json
+import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from io import BytesIO, StringIO
 from threading import Thread
@@ -20,6 +21,12 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     JsonParser,
 )
 from airbyte_cdk.utils import AirbyteTracedException
+
+
+def find_available_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('localhost', 0))
+        return s.getsockname()[1]  # type: ignore  # this should return a int
 
 
 def compress_with_gzip(data: str, encoding: str = "utf-8"):
@@ -223,11 +230,12 @@ def test_composite_raw_decoder_csv_parser_without_mocked_response():
     # self.wfile.write(bytes('John,Doe,120 jefferson st.,Riverside, NJ, 08075\nJack,McGinnis,220 hobo Av.,Phila, PA,09119\n"John ""Da Man""",Repici,120 Jefferson St.,Riverside, NJ,08075\nStephen,Tyler,"7452 Terrace ""At the Plaza"" road",SomeTown,SD, 91234\n,Blankman,,SomeTown, SD, 00298\n"Joan ""the bone"", Anne",Jet,"9th, at Terrace plc",Desert City,CO,00123\n', "utf-8"))
 
     # start server
-    httpd = HTTPServer(("localhost", 8080), TestServer)
+    port = find_available_port()
+    httpd = HTTPServer(("localhost", port), TestServer)
     thread = Thread(target=httpd.serve_forever, args=())
     thread.start()
     try:
-        response = requests.get(f"http://localhost:8080", stream=True)
+        response = requests.get(f"http://localhost:{port}", stream=True)
         result = list(CompositeRawDecoder(parser=CsvParser()).decode(response))
 
         assert len(result) == 1
