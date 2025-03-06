@@ -163,8 +163,12 @@ class ManifestDeclarativeSource(DeclarativeSource):
             for parent_config in parent_configs:
                 parent_streams.add(parent_config["stream"]["name"])
                 if parent_config["stream"]["retriever"]["type"] == "StateDelegatingRetriever":
-                    parent_config["stream"]["retriever"]["full_refresh_retriever"]["requester"]["use_cache"] = True
-                    parent_config["stream"]["retriever"]["incremental_retriever"]["requester"]["use_cache"] = True
+                    parent_config["stream"]["retriever"]["full_refresh_retriever"]["requester"][
+                        "use_cache"
+                    ] = True
+                    parent_config["stream"]["retriever"]["incremental_retriever"]["requester"][
+                        "use_cache"
+                    ] = True
                 else:
                     parent_config["stream"]["retriever"]["requester"]["use_cache"] = True
 
@@ -190,8 +194,12 @@ class ManifestDeclarativeSource(DeclarativeSource):
         for stream_config in stream_configs:
             if stream_config["name"] in parent_streams:
                 if stream_config["retriever"]["type"] == "StateDelegatingRetriever":
-                    stream_config["retriever"]["full_refresh_retriever"]["requester"]["use_cache"] = True
-                    stream_config["retriever"]["incremental_retriever"]["requester"]["use_cache"] = True
+                    stream_config["retriever"]["full_refresh_retriever"]["requester"][
+                        "use_cache"
+                    ] = True
+                    stream_config["retriever"]["incremental_retriever"]["requester"][
+                        "use_cache"
+                    ] = True
                 else:
                     stream_config["retriever"]["requester"]["use_cache"] = True
 

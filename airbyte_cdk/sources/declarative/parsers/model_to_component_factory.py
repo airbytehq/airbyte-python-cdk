@@ -1808,7 +1808,10 @@ class ModelToComponentFactory:
         stream_slicer: Optional[PartitionRouter],
         config: Config,
     ) -> Optional[StreamSlicer]:
-        if model.retriever.type == "StateDelegatingRetriever" and model.retriever.full_refresh_no_slice_in_params:
+        if (
+            model.retriever.type == "StateDelegatingRetriever"
+            and model.retriever.full_refresh_no_slice_in_params
+        ):
             model.incremental_sync.step = None
             model.incremental_sync.cursor_granularity = None
             model.incremental_sync.start_time_option = None
@@ -1918,7 +1921,11 @@ class ModelToComponentFactory:
                 raise ValueError("Per partition state is not supported yet for AsyncRetriever.")
 
         if retriever_model.type == "StateDelegatingRetriever":
-            retriever_model = retriever_model.incremental_retriever if self._connector_state_manager.get_stream_state(model.name, None) else retriever_model.full_refresh_retriever
+            retriever_model = (
+                retriever_model.incremental_retriever
+                if self._connector_state_manager.get_stream_state(model.name, None)
+                else retriever_model.full_refresh_retriever
+            )
 
         stream_slicer = self._build_stream_slicer_from_partition_router(retriever_model, config)
 
@@ -2746,8 +2753,11 @@ class ModelToComponentFactory:
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
         transformations: List[RecordTransformation],
     ) -> SimpleRetriever:
-
-        retriever_model = model.incremental_retriever if self._connector_state_manager.get_stream_state(name, None) else model.full_refresh_retriever
+        retriever_model = (
+            model.incremental_retriever
+            if self._connector_state_manager.get_stream_state(name, None)
+            else model.full_refresh_retriever
+        )
 
         return self._create_component_from_model(
             model=retriever_model,
