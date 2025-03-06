@@ -13,9 +13,7 @@ import requests
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.decoders import Decoder
-from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
-    Parser,
-)
+from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import COMPRESSION_TYPES, Parser
 from airbyte_cdk.utils import AirbyteTracedException
 
 logger = logging.getLogger("airbyte")
@@ -28,6 +26,12 @@ class ZipfileDecoder(Decoder):
     def is_stream_response(self) -> bool:
         return False
 
+    def is_compressed(self, response: requests.Response) -> bool:
+        """
+        Check if the response is compressed based on the Content-Encoding header.
+        """
+        return response.headers.get("Content-Encoding") in COMPRESSION_TYPES
+
     def decode(
         self, response: requests.Response
     ) -> Generator[MutableMapping[str, Any], None, None]:
@@ -37,7 +41,10 @@ class ZipfileDecoder(Decoder):
                     unzipped_content = zip_file.read(file_name)
                     buffered_content = BytesIO(unzipped_content)
                     try:
-                        yield from self.parser.parse(buffered_content)
+                        yield from self.parser.parse(
+                            buffered_content,
+                            compressed=self.is_compressed(response),
+                        )
                     except Exception as e:
                         logger.error(
                             f"Failed to parse file: {file_name} from zip file: {response.request.url} with exception {e}."

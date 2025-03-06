@@ -27,6 +27,10 @@ COMPRESSION_TYPES = [
     "x-gzip",
     "gzip, deflate",
     "x-gzip, deflate",
+    "application/zip",
+    "application/gzip",
+    "application/x-gzip",
+    "application/x-zip-compressed",
 ]
 
 
@@ -64,6 +68,7 @@ class GzipParser(Parser):
         """
 
         if compressed:
+            print(f"\n\nHERE\n\n")
             with gzip.GzipFile(fileobj=data, mode="rb") as gzipobj:
                 yield from self.inner_parser.parse(gzipobj)
         else:
@@ -193,9 +198,9 @@ class CompositeRawDecoder(Decoder):
         response: requests.Response,
     ) -> Generator[MutableMapping[str, Any], None, None]:
         if self.is_stream_response():
-            # urllib mentions that some interfaces don't play nice with auto_close 
-            # [here](https://urllib3.readthedocs.io/en/stable/user-guide.html#using-io-wrappers-with-response-content)
-            # We have indeed observed some issues with CSV parsing. 
+            # urllib mentions that some interfaces don't play nice with auto_close
+            # More info here: https://urllib3.readthedocs.io/en/stable/user-guide.html#using-io-wrappers-with-response-content
+            # We have indeed observed some issues with CSV parsing.
             # Hence, we will manage the closing of the file ourselves until we find a better solution.
             response.raw.auto_close = False
             yield from self.parser.parse(data=response.raw, compressed=self.is_compressed(response))  # type: ignore[arg-type]

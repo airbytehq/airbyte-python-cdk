@@ -68,6 +68,7 @@ def test_composite_raw_decoder_gzip_csv_parser(requests_mock, encoding: str):
         "GET",
         "https://airbyte.io/",
         content=generate_csv(encoding=encoding, delimiter="\t", should_compress=True),
+        headers={"Content-Encoding": "gzip"},
     )
     response = requests.get("https://airbyte.io/", stream=True)
 
@@ -107,7 +108,10 @@ def generate_compressed_jsonlines(encoding: str = "utf-8") -> bytes:
 @pytest.mark.parametrize("encoding", ["utf-8", "utf", "iso-8859-1"])
 def test_composite_raw_decoder_gzip_jsonline_parser(requests_mock, encoding: str):
     requests_mock.register_uri(
-        "GET", "https://airbyte.io/", content=generate_compressed_jsonlines(encoding=encoding)
+        "GET",
+        "https://airbyte.io/",
+        content=generate_compressed_jsonlines(encoding=encoding),
+        headers={"Content-Encoding": "gzip"},
     )
     response = requests.get("https://airbyte.io/", stream=True)
 
@@ -132,6 +136,11 @@ def test_composite_raw_decoder_gzip_jsonline_parser_decodes_non_gzipped_raw_resp
         "https://airbyte.io/",
         # we encode the jsonl content as bytes here
         content="".join(generate_jsonlines()).encode(encoding),
+        # we don't specify the `Content-Encoding` header here
+        # to simulate a non-compressed response
+        # but we still use the GzipParser to decode it
+        # to test the GzipParser's behavior with non-compressed data
+        # and to ensure it doesn't raise an error.
     )
     response = requests.get("https://airbyte.io/", stream=True)
 
