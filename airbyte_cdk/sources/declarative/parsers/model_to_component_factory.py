@@ -1808,14 +1808,17 @@ class ModelToComponentFactory:
         stream_slicer: Optional[PartitionRouter],
         config: Config,
     ) -> Optional[StreamSlicer]:
-        if (
-            model.retriever.type == "StateDelegatingRetriever"
-            and model.retriever.full_refresh_no_slice_in_params
-        ):
-            model.incremental_sync.step = None
-            model.incremental_sync.cursor_granularity = None
-            model.incremental_sync.start_time_option = None
-            model.incremental_sync.end_time_option = None
+
+        if model.retriever.type == "StateDelegatingRetriever":
+            if not model.incremental_sync:
+                raise ValueError("StateDelegatingRetriever requires 'incremental_sync' to be enabled.")
+            elif model.incremental_sync.type != "DatetimeBasedCursor":
+                raise ValueError("StateDelegatingRetriever support only DatetimeBasedCursor.")
+            elif model.retriever.full_refresh_no_slice_in_params:
+                model.incremental_sync.step = None
+                model.incremental_sync.cursor_granularity = None
+                model.incremental_sync.start_time_option = None
+                model.incremental_sync.end_time_option = None
 
         if model.incremental_sync and stream_slicer:
             if model.retriever.type == "AsyncRetriever":
@@ -1893,9 +1896,6 @@ class ModelToComponentFactory:
     ) -> Optional[StreamSlicer]:
         retriever_model = model.retriever
 
-        if retriever_model.type == "StateDelegatingRetriever" and not model.incremental_sync:
-            raise ValueError("StateDelegatingRetriever requires 'incremental_sync' to be enabled.")
-
         if retriever_model.type == "AsyncRetriever":
             is_not_datetime_cursor = (
                 model.incremental_sync.type != "DatetimeBasedCursor"
@@ -1921,9 +1921,10 @@ class ModelToComponentFactory:
                 raise ValueError("Per partition state is not supported yet for AsyncRetriever.")
 
         if retriever_model.type == "StateDelegatingRetriever":
+            stream_name = model.name or ""
             retriever_model = (
                 retriever_model.incremental_retriever
-                if self._connector_state_manager.get_stream_state(model.name, None)
+                if self._connector_state_manager.get_stream_state(stream_name, None)
                 else retriever_model.full_refresh_retriever
             )
 
@@ -2752,14 +2753,14 @@ class ModelToComponentFactory:
         stop_condition_on_cursor: bool = False,
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
         transformations: List[RecordTransformation],
-    ) -> SimpleRetriever:
+    ) -> Optional[SimpleRetriever]:
         retriever_model = (
             model.incremental_retriever
             if self._connector_state_manager.get_stream_state(name, None)
             else model.full_refresh_retriever
         )
 
-        return self._create_component_from_model(
+        return self._create_component_from_model(  # type: ignore[no-any-return] # Will be created SimpleRetriever
             model=retriever_model,
             config=config,
             name=name,
