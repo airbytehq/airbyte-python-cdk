@@ -173,7 +173,7 @@ def format_datetime(
     )
     if format == "%s":
         return str(int(dt_datetime.timestamp()))
-    elif format == "%ms":
+    elif format == "%epoch_microseconds":
         return str(int(dt_datetime.timestamp() * 1_000_000))
     return dt_datetime.strftime(format)
 
