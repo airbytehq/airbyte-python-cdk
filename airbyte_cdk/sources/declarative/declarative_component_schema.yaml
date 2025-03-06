@@ -3376,12 +3376,16 @@ definitions:
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
           - "$ref": "#/definitions/ZipfileDecoder"
-      maximum_job_count:
-        title: Maximum Job Count
-        description: Maximum number of asynchronous jobs to run concurrently.
+      max_concurrent_jobs:
+        title: Maximum Conccurent Job Count
+        description: Maximum number of concurrent jobs to run.
         anyOf:
-          - type: number
+          - type: integer
+          - type: string
         default: 1
+        examples:
+          - 2
+          - "{{ config['max_concurrent_jobs'] }}"
       $parameters:
         type: object
         additionalProperties: true

@@ -3,9 +3,11 @@
 import logging
 import threading
 import uuid
-from typing import Set
+from typing import Any, Mapping, Set, Union
 
+import json
 from airbyte_cdk.logger import lazy_log
+from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 
 LOGGER = logging.getLogger("airbyte")
 
@@ -15,7 +17,13 @@ class ConcurrentJobLimitReached(Exception):
 
 
 class JobTracker:
-    def __init__(self, limit: int):
+    def __init__(self, limit: Union[int, InterpolatedString], config: Mapping[str, Any]):
+        if isinstance(limit, InterpolatedString):
+            limit = int(limit.eval(config=config, json_loads=json.loads))
+
+        if limit < 1:
+            raise ValueError(f"Invalid max concurrent jobs limit: {limit}. Minimum value is 1.")
+
         self._jobs: Set[str] = set()
         self._limit = limit
         self._lock = threading.Lock()
