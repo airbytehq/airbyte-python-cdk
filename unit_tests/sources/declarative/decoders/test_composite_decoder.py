@@ -25,7 +25,7 @@ from airbyte_cdk.utils import AirbyteTracedException
 
 def find_available_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('localhost', 0))
+        s.bind(("localhost", 0))
         return s.getsockname()[1]  # type: ignore  # this should return a int
 
 
