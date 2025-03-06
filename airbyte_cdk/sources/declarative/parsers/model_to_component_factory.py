@@ -441,7 +441,6 @@ from airbyte_cdk.sources.declarative.retrievers import (
     AsyncRetriever,
     SimpleRetriever,
     SimpleRetrieverTestReadDecorator,
-    StateDelegatingRetriever,
 )
 from airbyte_cdk.sources.declarative.schema import (
     ComplexFieldType,
@@ -1809,6 +1808,12 @@ class ModelToComponentFactory:
         stream_slicer: Optional[PartitionRouter],
         config: Config,
     ) -> Optional[StreamSlicer]:
+        if model.retriever.type == "StateDelegatingRetriever" and model.retriever.full_refresh_no_slice_in_params:
+            model.incremental_sync.step = None
+            model.incremental_sync.cursor_granularity = None
+            model.incremental_sync.start_time_option = None
+            model.incremental_sync.end_time_option = None
+
         if model.incremental_sync and stream_slicer:
             if model.retriever.type == "AsyncRetriever":
                 return self.create_concurrent_cursor_from_perpartition_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
@@ -1883,17 +1888,19 @@ class ModelToComponentFactory:
     def _merge_stream_slicers(
         self, model: DeclarativeStreamModel, config: Config
     ) -> Optional[StreamSlicer]:
-        if model.retriever.type == "StateDelegatingRetriever" and not model.incremental_sync:
+        retriever_model = model.retriever
+
+        if retriever_model.type == "StateDelegatingRetriever" and not model.incremental_sync:
             raise ValueError("StateDelegatingRetriever requires 'incremental_sync' to be enabled.")
 
-        if model.retriever.type == "AsyncRetriever":
+        if retriever_model.type == "AsyncRetriever":
             is_not_datetime_cursor = (
                 model.incremental_sync.type != "DatetimeBasedCursor"
                 if model.incremental_sync
                 else None
             )
             is_partition_router = (
-                bool(model.retriever.partition_router) if model.incremental_sync else None
+                bool(retriever_model.partition_router) if model.incremental_sync else None
             )
 
             if is_not_datetime_cursor:
@@ -1910,7 +1917,10 @@ class ModelToComponentFactory:
                 # we could support here by calling create_concurrent_cursor_from_perpartition_cursor
                 raise ValueError("Per partition state is not supported yet for AsyncRetriever.")
 
-        stream_slicer = self._build_stream_slicer_from_partition_router(model.retriever, config)
+        if retriever_model.type == "StateDelegatingRetriever":
+            retriever_model = retriever_model.incremental_retriever if self._connector_state_manager.get_stream_state(model.name, None) else retriever_model.full_refresh_retriever
+
+        stream_slicer = self._build_stream_slicer_from_partition_router(retriever_model, config)
 
         if model.incremental_sync:
             return self._build_incremental_cursor(model, stream_slicer, config)
@@ -1918,7 +1928,7 @@ class ModelToComponentFactory:
         return (
             stream_slicer
             if self._disable_resumable_full_refresh
-            else self._build_resumable_cursor(model.retriever, stream_slicer)
+            else self._build_resumable_cursor(retriever_model, stream_slicer)
         )
 
     def create_default_error_handler(
@@ -2735,30 +2745,12 @@ class ModelToComponentFactory:
         stop_condition_on_cursor: bool = False,
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
         transformations: List[RecordTransformation],
-    ) -> StateDelegatingRetriever:
-        if not isinstance(stream_slicer, DatetimeBasedCursor):
-            raise ValueError("StateDelegatingRetriever requires a DatetimeBasedCursor")
+    ) -> SimpleRetriever:
 
-        full_data_request_options_provider = copy.deepcopy(request_options_provider)
+        retriever_model = model.incremental_retriever if self._connector_state_manager.get_stream_state(name, None) else model.full_refresh_retriever
 
-        if model.ignore_first_request_options_provider:
-            stream_slicer._step = datetime.timedelta.max
-            full_data_request_options_provider = None
-
-        full_data_retriever = self._create_component_from_model(
-            model=model.full_data_retriever,
-            config=config,
-            name=name,
-            primary_key=primary_key,
-            stream_slicer=stream_slicer,
-            request_options_provider=full_data_request_options_provider,
-            stop_condition_on_cursor=stop_condition_on_cursor,
-            client_side_incremental_sync=client_side_incremental_sync,
-            transformations=transformations,
-        )
-
-        incremental_data_retriever = self._create_component_from_model(
-            model=model.incremental_data_retriever,
+        return self._create_component_from_model(
+            model=retriever_model,
             config=config,
             name=name,
             primary_key=primary_key,
@@ -2767,12 +2759,6 @@ class ModelToComponentFactory:
             stop_condition_on_cursor=stop_condition_on_cursor,
             client_side_incremental_sync=client_side_incremental_sync,
             transformations=transformations,
-        )
-
-        return StateDelegatingRetriever(
-            full_data_retriever=full_data_retriever,
-            incremental_data_retriever=incremental_data_retriever,
-            cursor=stream_slicer,
         )
 
     def _create_async_job_status_mapping(

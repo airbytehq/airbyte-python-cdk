@@ -3156,24 +3156,24 @@ definitions:
     type: object
     required:
       - type
-      - incremental_data_retriever
-      - full_data_retriever
+      - full_refresh_retriever
+      - incremental_retriever
     properties:
       type:
         type: string
         enum: [ StateDelegatingRetriever ]
-      ignore_first_request_options_provider:
-        description: If set to true, slice request options will be ignored when sending requests.
+      full_refresh_no_slice_in_params:
+        description: If set to true, a single slice will be used and its request options will be ignored when sending requests.
         type: boolean
         default: false
-      incremental_data_retriever:
+      full_refresh_retriever:
         title: Retriever
         description: Component used to coordinate how records are extracted across stream slices and request pages.
         anyOf:
           - "$ref": "#/definitions/AsyncRetriever"
           - "$ref": "#/definitions/CustomRetriever"
           - "$ref": "#/definitions/SimpleRetriever"
-      full_data_retriever:
+      incremental_retriever:
         title: Retriever
         description: Component used to coordinate how records are extracted across stream slices and request pages.
         anyOf:

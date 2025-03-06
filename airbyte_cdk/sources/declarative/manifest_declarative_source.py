@@ -162,7 +162,11 @@ class ManifestDeclarativeSource(DeclarativeSource):
         def update_with_cache_parent_configs(parent_configs: list[dict[str, Any]]) -> None:
             for parent_config in parent_configs:
                 parent_streams.add(parent_config["stream"]["name"])
-                parent_config["stream"]["retriever"]["requester"]["use_cache"] = True
+                if parent_config["stream"]["retriever"]["type"] == "StateDelegatingRetriever":
+                    parent_config["stream"]["retriever"]["full_refresh_retriever"]["requester"]["use_cache"] = True
+                    parent_config["stream"]["retriever"]["incremental_retriever"]["requester"]["use_cache"] = True
+                else:
+                    parent_config["stream"]["retriever"]["requester"]["use_cache"] = True
 
         for stream_config in stream_configs:
             if stream_config.get("incremental_sync", {}).get("parent_stream"):
@@ -185,7 +189,11 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
         for stream_config in stream_configs:
             if stream_config["name"] in parent_streams:
-                stream_config["retriever"]["requester"]["use_cache"] = True
+                if stream_config["retriever"]["type"] == "StateDelegatingRetriever":
+                    stream_config["retriever"]["full_refresh_retriever"]["requester"]["use_cache"] = True
+                    stream_config["retriever"]["incremental_retriever"]["requester"]["use_cache"] = True
+                else:
+                    stream_config["retriever"]["requester"]["use_cache"] = True
 
         return stream_configs
 
