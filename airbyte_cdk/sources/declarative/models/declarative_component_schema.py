@@ -2368,6 +2368,11 @@ class AsyncRetriever(BaseModel):
         description="Component decoding the download response so records can be extracted.",
         title="Download Decoder",
     )
+    maximum_job_count: Optional[float] = Field(
+        1,
+        description="Maximum number of asynchronous jobs to run concurrently.",
+        title="Maximum Job Count",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
