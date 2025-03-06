@@ -12,6 +12,8 @@ import pytz
 from dateutil import parser
 from isodate import parse_duration
 
+from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser
+
 """
 This file contains macros that can be evaluated by a `JinjaInterpolation` object
 """
@@ -171,11 +173,7 @@ def format_datetime(
     dt_datetime = (
         datetime.datetime.strptime(dt, input_format) if input_format else str_to_datetime(dt)
     )
-    if format == "%s":
-        return str(int(dt_datetime.timestamp()))
-    elif format == "%ms":
-        return str(int(dt_datetime.timestamp() * 1_000_000))
-    return dt_datetime.strftime(format)
+    return DatetimeParser().format(dt=dt_datetime, format=format)
 
 
 _macros_list = [

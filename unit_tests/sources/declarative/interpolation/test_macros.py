@@ -79,7 +79,7 @@ def test_macros_export(test_name, fn_name, found_in_macros):
         ),
         (
             "2022-01-01T01:01:01Z",
-            "%ms",
+            "%epoch_microseconds",
             "%Y-%m-%dT%H:%M:%SZ",
             "1640998861000000",
         ),
