@@ -7,16 +7,40 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from airbyte_cdk.models import Type
+from airbyte_cdk.models import (
+    ConfiguredAirbyteCatalog,
+    ConfiguredAirbyteStream,
+    DestinationSyncMode,
+    Type,
+)
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
-from airbyte_cdk.sources.embedded.catalog import (
-    to_configured_catalog,
-    to_configured_stream,
-)
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
+
+
+def to_configured_stream(
+    stream,
+    sync_mode=None,
+    destination_sync_mode=DestinationSyncMode.append,
+    cursor_field=None,
+    primary_key=None,
+) -> ConfiguredAirbyteStream:
+    return ConfiguredAirbyteStream(
+        stream=stream,
+        sync_mode=sync_mode,
+        destination_sync_mode=destination_sync_mode,
+        cursor_field=cursor_field,
+        primary_key=primary_key,
+    )
+
+
+def to_configured_catalog(
+    configured_streams,
+) -> ConfiguredAirbyteCatalog:
+    return ConfiguredAirbyteCatalog(streams=configured_streams)
+
 
 _CONFIG = {
     "start_date": "2024-07-01T00:00:00.000Z",
