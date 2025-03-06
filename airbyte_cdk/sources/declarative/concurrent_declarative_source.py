@@ -216,7 +216,11 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     declarative_stream.name
                 ].get("incremental_sync")
 
-                if name_to_stream_mapping[declarative_stream.name].get("retriever", {}).get("full_refresh_no_slice_in_params", False):
+                if (
+                    name_to_stream_mapping[declarative_stream.name]
+                    .get("retriever", {})
+                    .get("full_refresh_no_slice_in_params", False)
+                ):
                     incremental_sync_component_definition["step"] = None
                     incremental_sync_component_definition["cursor_granularity"] = None
                     incremental_sync_component_definition["start_time_option"] = None
