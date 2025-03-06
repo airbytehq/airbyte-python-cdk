@@ -68,7 +68,6 @@ class GzipParser(Parser):
         """
 
         if compressed:
-            print(f"\n\nHERE\n\n")
             with gzip.GzipFile(fileobj=data, mode="rb") as gzipobj:
                 yield from self.inner_parser.parse(gzipobj)
         else:
