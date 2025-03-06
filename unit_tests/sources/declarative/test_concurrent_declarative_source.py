@@ -839,7 +839,7 @@ def test_concurrent_cursor_with_state_in_read_method():
             type=AirbyteStateType.STREAM,
             stream=AirbyteStreamState(
                 stream_descriptor=StreamDescriptor(name="party_members", namespace=None),
-                stream_state=AirbyteStateBlob(updated_at="2024-09-05"),
+                stream_state=AirbyteStateBlob(updated_at="2024-09-04"),
             ),
         ),
     ]
@@ -858,20 +858,15 @@ def test_concurrent_cursor_with_state_in_read_method():
         ]
     )
 
-    def get_source():
-        return ConcurrentDeclarativeSource(
-            source_config=_MANIFEST, config=_CONFIG, catalog=catalog, state=[]
-        )
-
-    source = get_source()
+    source = ConcurrentDeclarativeSource(
+        source_config=_MANIFEST, config=_CONFIG, catalog=catalog, state=[]
+    )
+    
     with HttpMocker() as http_mocker:
         _mock_party_members_requests(http_mocker, _NO_STATE_PARTY_MEMBERS_SLICES_AND_RESPONSES)
-        messages_iterator = source.read(
+        messages = list(source.read(
             logger=source.logger, config=_CONFIG, catalog=catalog, state=state
-        )
-
-    # Get the first message only to get the stream running so that we can check the cursor
-    first_message = next(messages_iterator)
+        ))
 
     concurrent_streams, _ = source._group_streams(config=_CONFIG)
     party_members_stream = [s for s in concurrent_streams if s.name == "party_members"][0]
@@ -883,7 +878,7 @@ def test_concurrent_cursor_with_state_in_read_method():
     assert party_members_cursor._stream_name == "party_members"
     assert party_members_cursor._cursor_field.cursor_field_key == "updated_at"
 
-    cursor_value = AirbyteDateTime.strptime("2024-09-05", "%Y-%m-%d")
+    cursor_value = AirbyteDateTime.strptime("2024-09-04", "%Y-%m-%d")
 
     assert len(party_members_cursor._concurrent_state["slices"]) == 1
     assert (
@@ -891,11 +886,15 @@ def test_concurrent_cursor_with_state_in_read_method():
         == cursor_value
     )
 
-    messages = list(messages_iterator)
-    party_members_records = get_records_for_stream("party_members", messages)
     # There is only one record after 2024-09-05
+    party_members_records = get_records_for_stream("party_members", messages)
     assert len(party_members_records) == 1
     assert party_members_records[0].data["id"] == "yoshizawa"
+
+    # Emitted state should have the updated_at of the one record read
+    states = get_states_for_stream("party_members", messages)
+    assert len(states) == 2
+    assert states[1].stream.stream_state == AirbyteStateBlob(updated_at=party_members_records[0].data["updated_at"])
 
 
 def test_check():
