@@ -50,7 +50,6 @@ class YamlDeclarativeSource(ConcurrentDeclarativeSource[List[AirbyteStateMessage
 
     def _emit_manifest_debug_message(self, extra_args: dict[str, Any]) -> None:
         extra_args["path_to_yaml"] = self._path_to_yaml
-        self.logger.debug("declarative source created from parsed YAML manifest", extra=extra_args)
 
     @staticmethod
     def _parse(connection_definition_str: str) -> ConnectionDefinition:
