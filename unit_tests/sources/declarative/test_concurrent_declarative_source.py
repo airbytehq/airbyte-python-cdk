@@ -861,12 +861,12 @@ def test_concurrent_cursor_with_state_in_read_method():
     source = ConcurrentDeclarativeSource(
         source_config=_MANIFEST, config=_CONFIG, catalog=catalog, state=[]
     )
-    
+
     with HttpMocker() as http_mocker:
         _mock_party_members_requests(http_mocker, _NO_STATE_PARTY_MEMBERS_SLICES_AND_RESPONSES)
-        messages = list(source.read(
-            logger=source.logger, config=_CONFIG, catalog=catalog, state=state
-        ))
+        messages = list(
+            source.read(logger=source.logger, config=_CONFIG, catalog=catalog, state=state)
+        )
 
     concurrent_streams, _ = source._group_streams(config=_CONFIG)
     party_members_stream = [s for s in concurrent_streams if s.name == "party_members"][0]
@@ -894,7 +894,9 @@ def test_concurrent_cursor_with_state_in_read_method():
     # Emitted state should have the updated_at of the one record read
     states = get_states_for_stream("party_members", messages)
     assert len(states) == 2
-    assert states[1].stream.stream_state == AirbyteStateBlob(updated_at=party_members_records[0].data["updated_at"])
+    assert states[1].stream.stream_state == AirbyteStateBlob(
+        updated_at=party_members_records[0].data["updated_at"]
+    )
 
 
 def test_check():
