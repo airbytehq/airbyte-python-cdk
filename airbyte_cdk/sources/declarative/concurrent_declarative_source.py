@@ -135,7 +135,8 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         catalog: ConfiguredAirbyteCatalog,
         state: Optional[List[AirbyteStateMessage]] = None,
     ) -> Iterator[AirbyteMessage]:
-        self._connector_state_manager = ConnectorStateManager(state=state)
+        if state:
+            self._connector_state_manager = ConnectorStateManager(state=state)
         concurrent_streams, _ = self._group_streams(config=config)
 
         # ConcurrentReadProcessor pops streams that are finished being read so before syncing, the names of
