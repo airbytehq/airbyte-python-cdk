@@ -16,7 +16,9 @@ from airbyte_cdk.sources.declarative.auth.declarative_authenticator import (
 )
 from airbyte_cdk.sources.declarative.decoders import Decoder
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder
-from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
+from airbyte_cdk.sources.declarative.interpolation.interpolated_string import (
+    InterpolatedString,
+)
 from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_request_options_provider import (
     InterpolatedRequestOptionsProvider,
 )
@@ -26,7 +28,10 @@ from airbyte_cdk.sources.streams.call_rate import APIBudget
 from airbyte_cdk.sources.streams.http import HttpClient
 from airbyte_cdk.sources.streams.http.error_handlers import ErrorHandler
 from airbyte_cdk.sources.types import Config, EmptyString, StreamSlice, StreamState
-from airbyte_cdk.utils.mapping_helpers import combine_mappings, get_interpolation_context
+from airbyte_cdk.utils.mapping_helpers import (
+    combine_mappings,
+    get_interpolation_context,
+)
 
 
 @dataclass
@@ -155,7 +160,9 @@ class HttpRequester(Requester):
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> MutableMapping[str, Any]:
         return self._request_options_provider.get_request_params(
-            stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
         )
 
     def get_request_headers(
@@ -166,7 +173,9 @@ class HttpRequester(Requester):
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Mapping[str, Any]:
         return self._request_options_provider.get_request_headers(
-            stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
         )
 
     # fixing request options provider types has a lot of dependencies
@@ -195,7 +204,9 @@ class HttpRequester(Requester):
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Optional[Mapping[str, Any]]:
         return self._request_options_provider.get_request_body_json(
-            stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
         )
 
     @property
@@ -350,9 +361,24 @@ class HttpRequester(Requester):
             path (str): The path to join with the base URL.
 
         Returns:
-            str: The concatenated URL with the trailing slash (if any) removed.
+            str: The resulting joined URL.
+
+        Note:
+            Related issue: https://github.com/airbytehq/airbyte-internal-issues/issues/11869
+            - If the path is an empty string or None, the method returns the base URL with any trailing slash removed.
+
+        Example:
+            1) _join_url("https://example.com/api/", "endpoint") >> 'https://example.com/api/endpoint'
+            2) _join_url("https://example.com/api", "/endpoint") >> 'https://example.com/api/endpoint'
+            3) _join_url("https://example.com/api/", "") >> 'https://example.com/api'
+            4) _join_url("https://example.com/api", None) >> 'https://example.com/api'
         """
-        return urljoin(url_base, path).rstrip("/")
+
+        # return a full-url if provided directly from interpolation context
+        if path == EmptyString or path is None:
+            return url_base.rstrip("/")
+
+        return urljoin(url_base, path)
 
     def send_request(
         self,
