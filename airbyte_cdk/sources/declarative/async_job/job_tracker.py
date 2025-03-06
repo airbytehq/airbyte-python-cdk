@@ -5,7 +5,6 @@ import threading
 import uuid
 from typing import Any, Mapping, Set, Union
 
-import json
 from airbyte_cdk.logger import lazy_log
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 
