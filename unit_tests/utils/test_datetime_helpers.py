@@ -284,7 +284,9 @@ def test_parse_with_formats():
 
     # Test with disallow_other_formats=True where no format matches
     with pytest.raises(ValueError, match="No format in"):
-        ab_datetime_parse("2023-03-14T15:09:26Z", formats=["%Y-%m-%d", "%Y/%m/%d"], disallow_other_formats=True)
+        ab_datetime_parse(
+            "2023-03-14T15:09:26Z", formats=["%Y-%m-%d", "%Y/%m/%d"], disallow_other_formats=True
+        )
 
 
 def test_try_parse_with_formats():
@@ -302,4 +304,9 @@ def test_try_parse_with_formats():
     assert str(dt) == "2023-03-14T15:09:26+00:00"
 
     # Test try_parse with disallow_other_formats=True where no format matches
-    assert ab_datetime_try_parse("2023-03-14T15:09:26Z", formats=["%Y-%m-%d", "%Y/%m/%d"], disallow_other_formats=True) is None
+    assert (
+        ab_datetime_try_parse(
+            "2023-03-14T15:09:26Z", formats=["%Y-%m-%d", "%Y/%m/%d"], disallow_other_formats=True
+        )
+        is None
+    )
