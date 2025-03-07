@@ -396,6 +396,7 @@ def ab_datetime_parse(
     """
     # Handle numeric values as Unix timestamps (UTC)
     if isinstance(dt_str, int):
+        timestamp: int = dt_str
         if timestamp < 0:
             raise ValueError("Timestamp cannot be negative")
         if len(str(abs(timestamp))) > 10:
