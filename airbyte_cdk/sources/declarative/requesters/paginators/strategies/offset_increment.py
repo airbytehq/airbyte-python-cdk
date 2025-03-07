@@ -52,10 +52,10 @@ class OffsetIncrement(PaginationStrategy):
     inject_on_first_request: bool = False
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        page_size = str(self.page_size) if isinstance(self.page_size, int) else self.page_size
-        if page_size:
+        self.page_size = str(self.page_size) if isinstance(self.page_size, int) else self.page_size
+        if self.page_size:
             self._page_size: Optional[InterpolatedString] = InterpolatedString(
-                page_size, parameters=parameters
+                self.page_size, parameters=parameters
             )
         else:
             self._page_size = None
