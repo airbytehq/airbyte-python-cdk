@@ -36,7 +36,6 @@ class ZipfileDecoder(Decoder):
                     try:
                         yield from self.parser.parse(
                             buffered_content,
-                            compressed=self.is_compressed_response(response),
                         )
                     except Exception as e:
                         logger.error(

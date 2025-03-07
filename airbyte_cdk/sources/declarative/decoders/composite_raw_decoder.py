@@ -10,7 +10,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from io import BufferedIOBase, TextIOWrapper
-from typing import Any, Generator, MutableMapping, Optional
+from typing import Any, Dict, Generator, List, MutableMapping, Optional, Set, Tuple
 
 import orjson
 import requests
@@ -28,7 +28,6 @@ class Parser(ABC):
     def parse(
         self,
         data: BufferedIOBase,
-        compressed: Optional[bool] = False,
     ) -> Generator[MutableMapping[str, Any], None, None]:
         """
         Parse data and yield dictionaries.
@@ -43,7 +42,6 @@ class GzipParser(Parser):
     def parse(
         self,
         data: BufferedIOBase,
-        compressed: Optional[bool] = False,
     ) -> Generator[MutableMapping[str, Any], None, None]:
         """
         Decompress gzipped bytes and pass decompressed data to the inner parser.
@@ -55,11 +53,8 @@ class GzipParser(Parser):
             - The data is not decoded by default.
         """
 
-        if compressed:
-            with gzip.GzipFile(fileobj=data, mode="rb") as gzipobj:
-                yield from self.inner_parser.parse(gzipobj)
-        else:
-            yield from self.inner_parser.parse(data)
+        with gzip.GzipFile(fileobj=data, mode="rb") as gzipobj:
+            yield from self.inner_parser.parse(gzipobj)
 
 
 @dataclass
@@ -69,7 +64,6 @@ class JsonParser(Parser):
     def parse(
         self,
         data: BufferedIOBase,
-        compressed: Optional[bool] = False,
     ) -> Generator[MutableMapping[str, Any], None, None]:
         """
         Attempts to deserialize data using orjson library. As an extra layer of safety we fallback on the json library to deserialize the data.
@@ -113,7 +107,6 @@ class JsonLineParser(Parser):
     def parse(
         self,
         data: BufferedIOBase,
-        compressed: Optional[bool] = False,
     ) -> Generator[MutableMapping[str, Any], None, None]:
         for line in data:
             try:
@@ -141,7 +134,6 @@ class CsvParser(Parser):
     def parse(
         self,
         data: BufferedIOBase,
-        compressed: Optional[bool] = False,
     ) -> Generator[MutableMapping[str, Any], None, None]:
         """
         Parse CSV data from decompressed bytes.
@@ -152,7 +144,9 @@ class CsvParser(Parser):
             yield row
 
 
-@dataclass
+_HEADER = str
+_HEADER_VALUE = str
+
 class CompositeRawDecoder(Decoder):
     """
     Decoder strategy to transform a requests.Response into a Generator[MutableMapping[str, Any], None, None]
@@ -168,26 +162,46 @@ class CompositeRawDecoder(Decoder):
         )
     """
 
-    parser: Parser
-    stream_response: bool = True
+    @classmethod
+    def by_headers(cls, parsers: List[Tuple[Set[_HEADER], Set[_HEADER_VALUE], Parser]], stream_response: bool, fallback_parser: Parser) -> "CompositeRawDecoder":
+        parsers_by_header = {}
+        for headers, header_values, parser in parsers:
+            for header in headers:
+                parsers_by_header[header] = {header_value: parser for header_value in header_values}
+        return cls(fallback_parser, stream_response, parsers_by_header)
+
+    @classmethod
+    def from_parser(cls, parser: Parser, stream_response: bool) -> "CompositeRawDecoder":
+        return cls(parser, stream_response, {})
+
+    def __init__(self, parser: Parser, stream_response: bool = True, parsers_by_header: Optional[Dict[_HEADER, Dict[_HEADER_VALUE, Parser]]] = None) -> None:
+        self._parsers_by_header = parsers_by_header if parsers_by_header else {}
+        self._fallback_parser = parser
+        self._stream_response = stream_response
 
     def is_stream_response(self) -> bool:
-        return self.stream_response
+        return self._stream_response
 
     def decode(
         self,
         response: requests.Response,
     ) -> Generator[MutableMapping[str, Any], None, None]:
+        parser = self._select_parser(response)
         if self.is_stream_response():
             # urllib mentions that some interfaces don't play nice with auto_close
             # More info here: https://urllib3.readthedocs.io/en/stable/user-guide.html#using-io-wrappers-with-response-content
             # We have indeed observed some issues with CSV parsing.
             # Hence, we will manage the closing of the file ourselves until we find a better solution.
             response.raw.auto_close = False
-            yield from self.parser.parse(
+            yield from parser.parse(
                 data=response.raw,  # type: ignore[arg-type]
-                compressed=self.is_compressed_response(response),
             )
             response.raw.close()
         else:
-            yield from self.parser.parse(data=io.BytesIO(response.content))
+            yield from parser.parse(data=io.BytesIO(response.content))
+
+    def _select_parser(self, response: requests.Response) -> Parser:
+        for header, parser_by_header_value in self._parsers_by_header.items():
+            if header in response.headers and response.headers[header] in parser_by_header_value.keys():
+                return parser_by_header_value[response.headers[header]]
+        return self._fallback_parser

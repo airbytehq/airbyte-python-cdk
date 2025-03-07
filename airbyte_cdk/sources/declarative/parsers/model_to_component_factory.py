@@ -513,6 +513,17 @@ SCHEMA_TRANSFORMER_TYPE_MAPPING = {
     SchemaNormalizationModel.Default: TransformConfig.DefaultSchemaNormalization,
 }
 
+_COMPRESSED_RESPONSE_TYPES = {
+    "gzip",
+    "x-gzip",
+    "gzip, deflate",
+    "x-gzip, deflate",
+    "application/zip",
+    "application/gzip",
+    "application/x-gzip",
+    "application/x-zip-compressed",
+}
+
 
 class ModelToComponentFactory:
     EPOCH_DATETIME_FORMAT = "%s"
@@ -2204,9 +2215,13 @@ class ModelToComponentFactory:
     def create_gzip_decoder(
         self, model: GzipDecoderModel, config: Config, **kwargs: Any
     ) -> Decoder:
-        return CompositeRawDecoder(
-            parser=ModelToComponentFactory._get_parser(model, config),
+        gzip_parser: GzipParser = ModelToComponentFactory._get_parser(model, config)  # type: ignore  # based on the model, we know this will be a GzipParser
+        return CompositeRawDecoder.by_headers(
+            [
+                ({"Content-Encoding", "Content-Type"}, _COMPRESSED_RESPONSE_TYPES, gzip_parser)
+            ],
             stream_response=False if self._emit_connector_builder_messages else True,
+            fallback_parser=gzip_parser.inner_parser,
         )
 
     @staticmethod
