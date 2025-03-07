@@ -2217,9 +2217,7 @@ class ModelToComponentFactory:
     ) -> Decoder:
         gzip_parser: GzipParser = ModelToComponentFactory._get_parser(model, config)  # type: ignore  # based on the model, we know this will be a GzipParser
         return CompositeRawDecoder.by_headers(
-            [
-                ({"Content-Encoding", "Content-Type"}, _COMPRESSED_RESPONSE_TYPES, gzip_parser)
-            ],
+            [({"Content-Encoding", "Content-Type"}, _COMPRESSED_RESPONSE_TYPES, gzip_parser)],
             stream_response=False if self._emit_connector_builder_messages else True,
             fallback_parser=gzip_parser.inner_parser,
         )

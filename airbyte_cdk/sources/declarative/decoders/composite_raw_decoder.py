@@ -147,6 +147,7 @@ class CsvParser(Parser):
 _HEADER = str
 _HEADER_VALUE = str
 
+
 class CompositeRawDecoder(Decoder):
     """
     Decoder strategy to transform a requests.Response into a Generator[MutableMapping[str, Any], None, None]
@@ -163,7 +164,12 @@ class CompositeRawDecoder(Decoder):
     """
 
     @classmethod
-    def by_headers(cls, parsers: List[Tuple[Set[_HEADER], Set[_HEADER_VALUE], Parser]], stream_response: bool, fallback_parser: Parser) -> "CompositeRawDecoder":
+    def by_headers(
+        cls,
+        parsers: List[Tuple[Set[_HEADER], Set[_HEADER_VALUE], Parser]],
+        stream_response: bool,
+        fallback_parser: Parser,
+    ) -> "CompositeRawDecoder":
         parsers_by_header = {}
         for headers, header_values, parser in parsers:
             for header in headers:
@@ -174,7 +180,12 @@ class CompositeRawDecoder(Decoder):
     def from_parser(cls, parser: Parser, stream_response: bool) -> "CompositeRawDecoder":
         return cls(parser, stream_response, {})
 
-    def __init__(self, parser: Parser, stream_response: bool = True, parsers_by_header: Optional[Dict[_HEADER, Dict[_HEADER_VALUE, Parser]]] = None) -> None:
+    def __init__(
+        self,
+        parser: Parser,
+        stream_response: bool = True,
+        parsers_by_header: Optional[Dict[_HEADER, Dict[_HEADER_VALUE, Parser]]] = None,
+    ) -> None:
         self._parsers_by_header = parsers_by_header if parsers_by_header else {}
         self._fallback_parser = parser
         self._stream_response = stream_response
@@ -202,6 +213,9 @@ class CompositeRawDecoder(Decoder):
 
     def _select_parser(self, response: requests.Response) -> Parser:
         for header, parser_by_header_value in self._parsers_by_header.items():
-            if header in response.headers and response.headers[header] in parser_by_header_value.keys():
+            if (
+                header in response.headers
+                and response.headers[header] in parser_by_header_value.keys()
+            ):
                 return parser_by_header_value[response.headers[header]]
         return self._fallback_parser

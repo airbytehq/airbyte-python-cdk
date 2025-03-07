@@ -134,7 +134,11 @@ def test_given_header_match_when_decode_then_select_parser(requests_mock):
 
     parser = GzipParser(inner_parser=JsonLineParser())
     unused_parser = Mock()
-    composite_raw_decoder = CompositeRawDecoder.by_headers([({"Content-Encoding"}, {"gzip"}, parser)], stream_response=True, fallback_parser=unused_parser)
+    composite_raw_decoder = CompositeRawDecoder.by_headers(
+        [({"Content-Encoding"}, {"gzip"}, parser)],
+        stream_response=True,
+        fallback_parser=unused_parser,
+    )
     counter = 0
     for _ in composite_raw_decoder.decode(response):
         counter += 1
@@ -151,7 +155,11 @@ def test_given_header_does_not_match_when_decode_then_select_fallback_parser(req
     response = requests.get("https://airbyte.io/", stream=True)
 
     unused_parser = GzipParser(inner_parser=Mock())
-    composite_raw_decoder = CompositeRawDecoder.by_headers([({"Content-Encoding"}, {"gzip"}, unused_parser)], stream_response=True, fallback_parser=JsonLineParser())
+    composite_raw_decoder = CompositeRawDecoder.by_headers(
+        [({"Content-Encoding"}, {"gzip"}, unused_parser)],
+        stream_response=True,
+        fallback_parser=JsonLineParser(),
+    )
     counter = 0
     for _ in composite_raw_decoder.decode(response):
         counter += 1
