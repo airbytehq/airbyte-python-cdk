@@ -6,13 +6,13 @@ import logging
 import zipfile
 from dataclasses import dataclass
 from io import BytesIO
-from typing import Any, Generator, MutableMapping
 
 import requests
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.declarative.decoders import Decoder
 from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import Parser
+from airbyte_cdk.sources.declarative.decoders.decoder import DECODER_OUTPUT_TYPE
 from airbyte_cdk.utils import AirbyteTracedException
 
 logger = logging.getLogger("airbyte")
@@ -25,9 +25,7 @@ class ZipfileDecoder(Decoder):
     def is_stream_response(self) -> bool:
         return False
 
-    def decode(
-        self, response: requests.Response
-    ) -> Generator[MutableMapping[str, Any], None, None]:
+    def decode(self, response: requests.Response) -> DECODER_OUTPUT_TYPE:
         try:
             with zipfile.ZipFile(BytesIO(response.content)) as zip_file:
                 for file_name in zip_file.namelist():
@@ -36,7 +34,6 @@ class ZipfileDecoder(Decoder):
                     try:
                         yield from self.parser.parse(
                             buffered_content,
-                            compressed=self.is_compressed_response(response),
                         )
                     except Exception as e:
                         logger.error(
