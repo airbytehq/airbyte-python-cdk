@@ -272,11 +272,15 @@ def test_epoch_millis():
         # Formats that use the whenever parser
         ("2023-03-14", "whenever"),  # Date-only format
         (1678806566, "whenever"),  # Unix timestamp
-        # Formats that use the dateutil parser
-        ("2023-03-14T15:09:26Z", "dateutil"),  # ISO format with T delimiter
-        ("2023-03-14T15:09:26+00:00", "dateutil"),  # ISO format with timezone
-        ("2023-03-14 15:09:26", "dateutil"),  # Missing T delimiter
+        ("2023-03-14T15:09:26Z", "whenever"),  # ISO format with T delimiter
+        ("2023-03-14T15:09:26+00:00", "whenever"),  # ISO format with timezone
+        ("2023-03-14T15:09:26.123456Z", "whenever"),  # ISO format with microseconds
+        ("2023-03-14T15:09:26-04:00", "whenever"),  # ISO format with non-UTC timezone
+        ("2023-03-14 15:09:26Z", "whenever"),  # Missing T delimiter but with Z
+        # Formats that still use the dateutil parser
+        ("2023-03-14 15:09:26", "dateutil"),  # Missing T delimiter and timezone
         ("14/03/2023 15:09:26", "dateutil"),  # Different date format
+        ("2023/03/14T15:09:26Z", "dateutil"),  # Non-standard date separator
     ],
 )
 def test_datetime_parser_selection(input_value, expected_parser, monkeypatch):
@@ -286,31 +290,43 @@ def test_datetime_parser_selection(input_value, expected_parser, monkeypatch):
     dateutil_called = False
 
     # Store original functions
-    original_instant_module = __import__("whenever").Instant
+    original_instant = __import__("whenever").Instant
+    original_offset_dt = __import__("whenever").OffsetDateTime
     original_parser_parse = parser.parse
 
-    # Create a spy for Instant.from_timestamp
+    # Create spies for whenever methods
     def spy_from_timestamp(*args, **kwargs):
         nonlocal whenever_called
         whenever_called = True
-        # Call the original function
-        return original_instant_module.from_timestamp(*args, **kwargs)
+        return original_instant.from_timestamp(*args, **kwargs)
 
-    # Create a spy for Instant.from_utc
     def spy_from_utc(*args, **kwargs):
         nonlocal whenever_called
         whenever_called = True
-        # Call the original function
-        return original_instant_module.from_utc(*args, **kwargs)
+        return original_instant.from_utc(*args, **kwargs)
+
+    def spy_parse_common_iso(*args, **kwargs):
+        nonlocal whenever_called
+        whenever_called = True
+        return original_instant.parse_common_iso(*args, **kwargs)
+
+    def spy_parse_rfc3339(*args, **kwargs):
+        nonlocal whenever_called
+        whenever_called = True
+        return original_instant.parse_rfc3339(*args, **kwargs)
+
+    def spy_offset_parse_common_iso(*args, **kwargs):
+        nonlocal whenever_called
+        whenever_called = True
+        return original_offset_dt.parse_common_iso(*args, **kwargs)
 
     # Create a spy for parser.parse
     def spy_parser_parse(*args, **kwargs):
         nonlocal dateutil_called
         dateutil_called = True
-        # Call the original function
         return original_parser_parse(*args, **kwargs)
 
-    # Create a mock Instant class with our spy methods
+    # Create mock classes with our spy methods
     class MockInstant:
         @staticmethod
         def from_timestamp(*args, **kwargs):
@@ -320,13 +336,30 @@ def test_datetime_parser_selection(input_value, expected_parser, monkeypatch):
         def from_utc(*args, **kwargs):
             return spy_from_utc(*args, **kwargs)
 
-        # Add any other methods that might be called
+        @staticmethod
+        def parse_common_iso(*args, **kwargs):
+            return spy_parse_common_iso(*args, **kwargs)
+
+        @staticmethod
+        def parse_rfc3339(*args, **kwargs):
+            return spy_parse_rfc3339(*args, **kwargs)
+
         @staticmethod
         def py_datetime():
-            return original_instant_module.py_datetime()
+            return original_instant.py_datetime()
+
+    class MockOffsetDateTime:
+        @staticmethod
+        def parse_common_iso(*args, **kwargs):
+            return spy_offset_parse_common_iso(*args, **kwargs)
+
+        @staticmethod
+        def py_datetime():
+            return original_offset_dt.py_datetime()
 
     # Apply the mocks at the module level
     monkeypatch.setattr("airbyte_cdk.utils.datetime_helpers.Instant", MockInstant)
+    monkeypatch.setattr("airbyte_cdk.utils.datetime_helpers.OffsetDateTime", MockOffsetDateTime)
     monkeypatch.setattr("airbyte_cdk.utils.datetime_helpers.parser.parse", spy_parser_parse)
 
     # Parse the datetime

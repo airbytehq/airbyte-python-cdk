@@ -86,7 +86,7 @@ from typing import Any, Optional, Union, overload
 
 from dateutil import parser
 from typing_extensions import Never
-from whenever import Instant, LocalDateTime, ZonedDateTime
+from whenever import Instant, LocalDateTime, OffsetDateTime, ZonedDateTime
 
 
 class AirbyteDateTime(datetime):
@@ -423,7 +423,40 @@ def ab_datetime_parse(dt_str: str | int) -> AirbyteDateTime:
         if ":" in dt_str and dt_str.count("-") < 2 and dt_str.count("/") < 2:
             raise ValueError(f"Missing date part in datetime string: {dt_str}")
 
-        # Try parsing with dateutil for timezone handling
+        # Try parsing standard ISO/RFC formats with whenever
+        # Only attempt whenever parsing for specific ISO/RFC formats
+        if (
+            isinstance(dt_str, str)
+            and "/" not in dt_str  # Exclude non-standard date separators
+            and (
+                # ISO format with T delimiter and Z timezone or +00:00 timezone
+                (("T" in dt_str) and ("Z" in dt_str or "+" in dt_str or "-" in dt_str))
+                # ISO format with space delimiter and Z timezone
+                or (" " in dt_str and "Z" in dt_str)
+            )
+        ):
+            # First try Instant.parse_common_iso for UTC formats
+            try:
+                instant = Instant.parse_common_iso(dt_str)
+                return AirbyteDateTime.from_datetime(instant.py_datetime())
+            except Exception:
+                pass
+
+            # Then try Instant.parse_rfc3339 which is more flexible
+            try:
+                instant = Instant.parse_rfc3339(dt_str)
+                return AirbyteDateTime.from_datetime(instant.py_datetime())
+            except Exception:
+                pass
+
+            # Try OffsetDateTime for non-UTC timezones
+            try:
+                offset_dt = OffsetDateTime.parse_common_iso(dt_str)
+                return AirbyteDateTime.from_datetime(offset_dt.py_datetime())
+            except Exception:
+                pass
+
+        # Fall back to dateutil for other formats
         try:
             parsed = parser.parse(dt_str)
             if parsed.tzinfo is None:
