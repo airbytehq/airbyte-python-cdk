@@ -302,6 +302,15 @@ class StreamPartition(Partition):
                         stream_name=self.stream_name(),
                         associated_slice=self._slice,  # type: ignore [arg-type]
                     )
+                elif (
+                    isinstance(record_data, AirbyteMessage)
+                    and record_data.record is not None
+                ):
+                    yield Record(
+                        data=record_data.record.data,
+                        stream_name=self.stream_name(),
+                        associated_slice=self._slice,  # type: ignore [arg-type]
+                    )
                 else:
                     self._message_repository.emit_message(record_data)
         except Exception as e:
