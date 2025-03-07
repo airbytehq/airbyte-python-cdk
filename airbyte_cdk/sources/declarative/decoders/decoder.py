@@ -8,6 +8,17 @@ from typing import Any, Generator, MutableMapping
 
 import requests
 
+COMPRESSION_RESPONSE_TYPES = [
+    "gzip",
+    "x-gzip",
+    "gzip, deflate",
+    "x-gzip, deflate",
+    "application/zip",
+    "application/gzip",
+    "application/x-gzip",
+    "application/x-zip-compressed",
+]
+
 
 @dataclass
 class Decoder:
@@ -30,3 +41,12 @@ class Decoder:
         :param response: the response to decode
         :return: Generator of Mapping describing the response
         """
+
+    def is_compressed_response(self, response: requests.Response) -> bool:
+        """
+        Check if the response is compressed based on the Content-Encoding header.
+        """
+        return (
+            response.headers.get("Content-Encoding") in COMPRESSION_RESPONSE_TYPES
+            or response.headers.get("Content-Type") in COMPRESSION_RESPONSE_TYPES
+        )

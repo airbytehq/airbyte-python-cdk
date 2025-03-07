@@ -22,18 +22,6 @@ from airbyte_cdk.utils import AirbyteTracedException
 logger = logging.getLogger("airbyte")
 
 
-COMPRESSION_TYPES = [
-    "gzip",
-    "x-gzip",
-    "gzip, deflate",
-    "x-gzip, deflate",
-    "application/zip",
-    "application/gzip",
-    "application/x-gzip",
-    "application/x-zip-compressed",
-]
-
-
 @dataclass
 class Parser(ABC):
     @abstractmethod
@@ -186,12 +174,6 @@ class CompositeRawDecoder(Decoder):
     def is_stream_response(self) -> bool:
         return self.stream_response
 
-    def is_compressed(self, response: requests.Response) -> bool:
-        """
-        Check if the response is compressed based on the Content-Encoding header.
-        """
-        return response.headers.get("Content-Encoding") in COMPRESSION_TYPES
-
     def decode(
         self,
         response: requests.Response,
@@ -202,7 +184,10 @@ class CompositeRawDecoder(Decoder):
             # We have indeed observed some issues with CSV parsing.
             # Hence, we will manage the closing of the file ourselves until we find a better solution.
             response.raw.auto_close = False
-            yield from self.parser.parse(data=response.raw, compressed=self.is_compressed(response))  # type: ignore[arg-type]
+            yield from self.parser.parse(
+                data=response.raw,  # type: ignore[arg-type]
+                compressed=self.is_compressed_response(response),
+            )
             response.raw.close()
         else:
             yield from self.parser.parse(data=io.BytesIO(response.content))
