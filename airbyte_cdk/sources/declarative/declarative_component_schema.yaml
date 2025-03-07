@@ -1351,6 +1351,7 @@ definitions:
           - "$ref": "#/definitions/AsyncRetriever"
           - "$ref": "#/definitions/CustomRetriever"
           - "$ref": "#/definitions/SimpleRetriever"
+          - "$ref": "#/definitions/StateDelegatingRetriever"
       incremental_sync:
         title: Incremental Sync
         description: Component used to fetch data incrementally based on a time field in the data.
@@ -3147,6 +3148,42 @@ definitions:
         type: string
         examples:
           - "user/current"
+      $parameters:
+        type: object
+        additionalProperties: true
+  StateDelegatingRetriever:
+    description: (This component is experimental. Use at your own risk.) Orchestrate the retriever's usage based on the state value.
+    type: object
+    required:
+      - type
+      - full_refresh_retriever
+      - incremental_retriever
+    properties:
+      type:
+        type: string
+        enum: [ StateDelegatingRetriever ]
+      full_refresh_no_slice_in_params:
+        description: If set to true, a single slice will be used and its request options will be ignored when sending requests.
+        type: boolean
+        default: false
+      full_refresh_ignore_min_max_datetime:
+        description: If set to true, a min and max limitation for start and end datetime will be ignored for full refresh retriever.
+        type: boolean
+        default: false
+      full_refresh_retriever:
+        title: Retriever
+        description: Component used to coordinate how records are extracted across stream slices and request pages when the state is empty or not provided.
+        anyOf:
+          - "$ref": "#/definitions/AsyncRetriever"
+          - "$ref": "#/definitions/CustomRetriever"
+          - "$ref": "#/definitions/SimpleRetriever"
+      incremental_retriever:
+        title: Retriever
+        description: Component used to coordinate how records are extracted across stream slices and request pages when the state provided.
+        anyOf:
+          - "$ref": "#/definitions/AsyncRetriever"
+          - "$ref": "#/definitions/CustomRetriever"
+          - "$ref": "#/definitions/SimpleRetriever"
       $parameters:
         type: object
         additionalProperties: true

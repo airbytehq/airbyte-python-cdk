@@ -1965,10 +1965,12 @@ class DeclarativeStream(BaseModel):
         extra = Extra.allow
 
     type: Literal["DeclarativeStream"]
-    retriever: Union[AsyncRetriever, CustomRetriever, SimpleRetriever] = Field(
-        ...,
-        description="Component used to coordinate how records are extracted across stream slices and request pages.",
-        title="Retriever",
+    retriever: Union[AsyncRetriever, CustomRetriever, SimpleRetriever, StateDelegatingRetriever] = (
+        Field(
+            ...,
+            description="Component used to coordinate how records are extracted across stream slices and request pages.",
+            title="Retriever",
+        )
     )
     incremental_sync: Optional[
         Union[CustomIncrementalSync, DatetimeBasedCursor, IncrementingCountCursor]
@@ -2228,6 +2230,29 @@ class ParentStreamConfig(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class StateDelegatingRetriever(BaseModel):
+    type: Literal["StateDelegatingRetriever"]
+    full_refresh_no_slice_in_params: Optional[bool] = Field(
+        False,
+        description="If set to true, a single slice will be used and its request options will be ignored when sending requests.",
+    )
+    full_refresh_ignore_min_max_datetime: Optional[bool] = Field(
+        False,
+        description="If set to true, a min and max limitation for start and end datetime will be ignored for full refresh retriever.",
+    )
+    full_refresh_retriever: Union[AsyncRetriever, CustomRetriever, SimpleRetriever] = Field(
+        ...,
+        description="Component used to coordinate how records are extracted across stream slices and request pages when the state is empty or not provided.",
+        title="Retriever",
+    )
+    incremental_retriever: Union[AsyncRetriever, CustomRetriever, SimpleRetriever] = Field(
+        ...,
+        description="Component used to coordinate how records are extracted across stream slices and request pages when the state provided.",
+        title="Retriever",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class SimpleRetriever(BaseModel):
     type: Literal["SimpleRetriever"]
     record_selector: RecordSelector = Field(
@@ -2413,5 +2438,6 @@ SelectiveAuthenticator.update_forward_refs()
 DeclarativeStream.update_forward_refs()
 SessionTokenAuthenticator.update_forward_refs()
 DynamicSchemaLoader.update_forward_refs()
+StateDelegatingRetriever.update_forward_refs()
 SimpleRetriever.update_forward_refs()
 AsyncRetriever.update_forward_refs()
