@@ -8,7 +8,7 @@ from typing import Any, Generator, MutableMapping
 
 import requests
 
-COMPRESSION_RESPONSE_TYPES = [
+COMPRESSSED_RESPONSE_TYPES = [
     "gzip",
     "x-gzip",
     "gzip, deflate",
@@ -44,9 +44,9 @@ class Decoder:
 
     def is_compressed_response(self, response: requests.Response) -> bool:
         """
-        Check if the response is compressed based on the Content-Encoding header.
+        Check if the response is compressed based on the `Content-Encoding` or `Content-Type` header.
         """
         return (
-            response.headers.get("Content-Encoding") in COMPRESSION_RESPONSE_TYPES
-            or response.headers.get("Content-Type") in COMPRESSION_RESPONSE_TYPES
+            response.headers.get("Content-Encoding") in COMPRESSSED_RESPONSE_TYPES
+            or response.headers.get("Content-Type") in COMPRESSSED_RESPONSE_TYPES
         )
