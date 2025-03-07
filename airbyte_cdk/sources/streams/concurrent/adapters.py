@@ -292,6 +292,8 @@ class StreamPartition(Partition):
                 stream_slice=copy.deepcopy(self._slice),
                 stream_state=self._state,
             ):
+                # Noting we'll also need to support FileTransferRecordMessage if we want to support file-based connectors in this facade
+                # For now, file-based connectors have their own stream facade
                 if isinstance(record_data, Mapping):
                     data_to_return = dict(record_data)
                     self._stream.transformer.transform(
