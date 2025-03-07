@@ -404,6 +404,11 @@ def ab_datetime_parse(
         instant = Instant.from_timestamp(timestamp)
         return AirbyteDateTime.from_datetime(instant.py_datetime())
 
+    if not isinstance(dt_str, str):
+        raise ValueError(
+            f"Could not parse datetime string: expected string or integer, got {type(dt_str)}"
+        )
+
     if formats:
         ex_list: list[Exception] = []
         for format in formats:
@@ -417,13 +422,8 @@ def ab_datetime_parse(
 
         if disallow_other_formats:
             raise ValueError(
-                f"Could not parse datetime string. {str(ex_list)}"
+                f"Could not parse datetime string with provided formats [{formats}]: {str(ex_list)}"
             )
-
-    if not isinstance(dt_str, str):
-        raise ValueError(
-            f"Could not parse datetime string: expected string or integer, got {type(dt_str)}"
-        )
 
     # Else, value is a string
 
@@ -436,9 +436,7 @@ def ab_datetime_parse(
 
     # Handle int-like strings
     if (
-        isinstance(dt_str, str) and (
-            dt_str.isdigit() or (dt_str.startswith("-") and dt_str[1:].isdigit())
-        )
+        dt_str.isdigit() or (dt_str.startswith("-") and dt_str[1:].isdigit())
     ):
         try:
             return ab_datetime_format(int(dt_str))
@@ -453,7 +451,7 @@ def ab_datetime_parse(
 
         return AirbyteDateTime.from_datetime(parsed)
     except (ValueError, TypeError):
-        raise ValueError(f"Could not parse datetime string: {dt_str}")
+        raise ValueError(f"Could not parse datetime string: {dt_str}, ({type(dt_str).__name__})")
 
 
 def ab_datetime_try_parse(dt_str: str) -> AirbyteDateTime | None:
