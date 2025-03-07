@@ -276,7 +276,7 @@ class StreamPartition(Partition):
     def read(self) -> Iterable[Record]:
         """
         Read messages from the stream.
-        If the StreamData is a Mapping, it will be converted to a Record.
+        If the StreamData is a Mapping or an AirbyteMessage of type RECORD, it will be converted to a Record.
         Otherwise, the message will be emitted on the message repository.
         """
         try:
