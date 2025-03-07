@@ -262,3 +262,44 @@ def test_epoch_millis():
     # Test roundtrip conversion
     dt3 = AirbyteDateTime.from_epoch_millis(dt.to_epoch_millis())
     assert dt3 == dt
+
+
+def test_parse_with_formats():
+    """Test parsing with specific formats."""
+    # Test with a single format that matches
+    dt = ab_datetime_parse("2023-03-14", formats=["%Y-%m-%d"])
+    assert str(dt) == "2023-03-14T00:00:00+00:00"
+
+    # Test with multiple formats where the first one matches
+    dt = ab_datetime_parse("2023-03-14", formats=["%Y-%m-%d", "%Y/%m/%d"])
+    assert str(dt) == "2023-03-14T00:00:00+00:00"
+
+    # Test with multiple formats where the second one matches
+    dt = ab_datetime_parse("2023/03/14", formats=["%Y-%m-%d", "%Y/%m/%d"])
+    assert str(dt) == "2023-03-14T00:00:00+00:00"
+
+    # Test with disallow_other_formats=False (default) where no format matches but fallback parsing works
+    dt = ab_datetime_parse("2023-03-14T15:09:26Z", formats=["%Y-%m-%d", "%Y/%m/%d"])
+    assert str(dt) == "2023-03-14T15:09:26+00:00"
+
+    # Test with disallow_other_formats=True where no format matches
+    with pytest.raises(ValueError, match="No format in"):
+        ab_datetime_parse("2023-03-14T15:09:26Z", formats=["%Y-%m-%d", "%Y/%m/%d"], disallow_other_formats=True)
+
+
+def test_try_parse_with_formats():
+    """Test try_parse with formats and disallow_other_formats parameter."""
+    # Test try_parse with formats
+    dt = ab_datetime_try_parse("2023-03-14", formats=["%Y-%m-%d"])
+    assert str(dt) == "2023-03-14T00:00:00+00:00"
+
+    # Test try_parse with multiple formats where the second one matches
+    dt = ab_datetime_try_parse("2023/03/14", formats=["%Y-%m-%d", "%Y/%m/%d"])
+    assert str(dt) == "2023-03-14T00:00:00+00:00"
+
+    # Test try_parse with disallow_other_formats=False (default) where no format matches but fallback parsing works
+    dt = ab_datetime_try_parse("2023-03-14T15:09:26Z", formats=["%Y-%m-%d", "%Y/%m/%d"])
+    assert str(dt) == "2023-03-14T15:09:26+00:00"
+
+    # Test try_parse with disallow_other_formats=True where no format matches
+    assert ab_datetime_try_parse("2023-03-14T15:09:26Z", formats=["%Y-%m-%d", "%Y/%m/%d"], disallow_other_formats=True) is None

@@ -358,7 +358,7 @@ def ab_datetime_now() -> AirbyteDateTime:
     return AirbyteDateTime.from_datetime(datetime.now(timezone.utc))
 
 
-def ab_datetime_parse(dt_str: str | int) -> AirbyteDateTime:
+def ab_datetime_parse(dt_str: str | int, formats: list[str] | None = None, disallow_other_formats: bool = False) -> AirbyteDateTime:
     """Parses a datetime string or timestamp into an AirbyteDateTime with timezone awareness.
 
     This implementation is as flexible as possible to handle various datetime formats.
@@ -374,6 +374,10 @@ def ab_datetime_parse(dt_str: str | int) -> AirbyteDateTime:
     Args:
         dt_str: A datetime string in ISO8601/RFC3339 format, Unix timestamp (int/str),
             or other recognizable datetime format.
+        formats: Optional list of format strings to try before falling back to more
+            forgiving parsing logic. If provided, each format will be tried in order.
+        disallow_other_formats: If True, only try the provided formats and raise an error
+            if none match. If False (default), fall back to more forgiving parsing logic.
 
     Returns:
         AirbyteDateTime: A timezone-aware datetime object.
@@ -387,6 +391,10 @@ def ab_datetime_parse(dt_str: str | int) -> AirbyteDateTime:
         >>> ab_datetime_parse(1678806000)  # Unix timestamp
         '2023-03-14T15:00:00+00:00'
         >>> ab_datetime_parse("2023-03-14")  # Date-only
+        '2023-03-14T00:00:00+00:00'
+        >>> ab_datetime_parse("2023-03-14", formats=["%Y-%m-%d", "%Y/%m/%d"])  # With specific formats
+        '2023-03-14T00:00:00+00:00'
+        >>> ab_datetime_parse("2023-03-14", formats=["%Y-%m-%d"], disallow_other_formats=True)  # Only try specific formats
         '2023-03-14T00:00:00+00:00'
     """
     try:
@@ -407,6 +415,21 @@ def ab_datetime_parse(dt_str: str | int) -> AirbyteDateTime:
             raise ValueError(
                 f"Could not parse datetime string: expected string or integer, got {type(dt_str)}"
             )
+
+        # Try specific formats first if provided
+        if formats:
+            for fmt in formats:
+                try:
+                    parsed = datetime.strptime(dt_str, fmt)
+                    if parsed.tzinfo is None:
+                        parsed = parsed.replace(tzinfo=timezone.utc)
+                    return AirbyteDateTime.from_datetime(parsed)
+                except ValueError:
+                    continue
+            
+            # If disallow_other_formats is True and none of the formats matched, raise an error
+            if disallow_other_formats:
+                raise ValueError(f"No format in {formats} matching {dt_str}")
 
         # Handle date-only format first
         if ":" not in dt_str and dt_str.count("-") == 2 and "/" not in dt_str:
@@ -439,10 +462,12 @@ def ab_datetime_parse(dt_str: str | int) -> AirbyteDateTime:
             raise
         if "Timestamp value too large" in str(e):
             raise
+        if "No format in" in str(e):
+            raise
         raise ValueError(f"Could not parse datetime string: {dt_str}")
 
 
-def ab_datetime_try_parse(dt_str: str) -> AirbyteDateTime | None:
+def ab_datetime_try_parse(dt_str: str, formats: list[str] | None = None, disallow_other_formats: bool = False) -> AirbyteDateTime | None:
     """Try to parse the input as a datetime, failing gracefully instead of raising an exception.
 
     This is a thin wrapper around `ab_datetime_parse()` that catches parsing errors and
@@ -450,13 +475,26 @@ def ab_datetime_try_parse(dt_str: str) -> AirbyteDateTime | None:
     The implementation is as flexible as possible to handle various datetime formats.
     Always returns a timezone-aware datetime (defaults to `UTC` if no timezone specified).
 
+    Args:
+        dt_str: A datetime string in ISO8601/RFC3339 format, Unix timestamp (int/str),
+            or other recognizable datetime format.
+        formats: Optional list of format strings to try before falling back to more
+            forgiving parsing logic. If provided, each format will be tried in order.
+        disallow_other_formats: If True, only try the provided formats and return None
+            if none match. If False (default), fall back to more forgiving parsing logic.
+
+    Returns:
+        AirbyteDateTime | None: A timezone-aware datetime object, or None if parsing fails.
+
     Example:
         >>> ab_datetime_try_parse("2023-03-14T15:09:26Z")  # Returns AirbyteDateTime
         >>> ab_datetime_try_parse("2023-03-14 15:09:26Z")  # Missing 'T' delimiter still parsable
         >>> ab_datetime_try_parse("2023-03-14")            # Returns midnight UTC time
+        >>> ab_datetime_try_parse("2023-03-14", formats=["%Y-%m-%d", "%Y/%m/%d"])  # With specific formats
+        >>> ab_datetime_try_parse("2023-03-14", formats=["%Y-%m-%d"], disallow_other_formats=True)  # Only try specific formats
     """
     try:
-        return ab_datetime_parse(dt_str)
+        return ab_datetime_parse(dt_str, formats, disallow_other_formats)
     except (ValueError, TypeError):
         return None
 
