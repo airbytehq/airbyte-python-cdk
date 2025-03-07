@@ -2766,7 +2766,9 @@ class ModelToComponentFactory:
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
         transformations: List[RecordTransformation],
     ) -> Optional[StateDelegatingRetriever]:
-        if not isinstance(stream_slicer, DatetimeBasedCursor) and not isinstance(stream_slicer, PerPartitionCursor):
+        if not isinstance(stream_slicer, DatetimeBasedCursor) and not isinstance(
+            stream_slicer, PerPartitionCursor
+        ):
             raise ValueError("StateDelegatingRetriever requires a DatetimeBasedCursor")
 
         full_refresh_retriever = self._create_component_from_model(
@@ -2797,7 +2799,7 @@ class ModelToComponentFactory:
             full_data_retriever=full_refresh_retriever,
             incremental_data_retriever=incremental_retriever,
             cursor=stream_slicer,
-            started_with_state=bool(self._connector_state_manager.get_stream_state(name, None))
+            started_with_state=bool(self._connector_state_manager.get_stream_state(name, None)),
         )
 
     def _create_async_job_status_mapping(

@@ -56,9 +56,7 @@ class StateDelegatingRetriever:
     @property
     def retriever(self) -> Retriever:
         return (
-            self.incremental_data_retriever
-            if self.started_with_state
-            else self.full_data_retriever
+            self.incremental_data_retriever if self.started_with_state else self.full_data_retriever
         )
 
     @property
