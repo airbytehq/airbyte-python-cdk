@@ -178,11 +178,11 @@ def test_stream_partition_read_airbyte_message(transformer, expected_records):
         a_log_message,
         AirbyteMessage(
             type=MessageType.RECORD,
-            record=AirbyteRecordMessage(stream=stream.name, data={"data": "1"}),
+            record=AirbyteRecordMessage(stream=stream.name, data={"data": "1"}, emitted_at=1),
         ),
         AirbyteMessage(
             type=MessageType.RECORD,
-            record=AirbyteRecordMessage(stream=stream.name, data={"data": "2"}),
+            record=AirbyteRecordMessage(stream=stream.name, data={"data": "2"}, emitted_at=2),
         ),
     ]
     stream.read_records.return_value = stream_data
