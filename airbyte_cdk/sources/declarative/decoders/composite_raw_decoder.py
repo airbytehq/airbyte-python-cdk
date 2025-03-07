@@ -176,16 +176,7 @@ class CompositeRawDecoder(Decoder):
                 parsers_by_header[header] = {header_value: parser for header_value in header_values}
         return cls(fallback_parser, stream_response, parsers_by_header)
 
-    @classmethod
-    def from_parser(cls, parser: Parser, stream_response: bool) -> "CompositeRawDecoder":
-        return cls(parser, stream_response, {})
-
-    def __init__(
-        self,
-        parser: Parser,
-        stream_response: bool = True,
-        parsers_by_header: Optional[Dict[_HEADER, Dict[_HEADER_VALUE, Parser]]] = None,
-    ) -> None:
+    def __init__(self, parser: Parser, stream_response: bool = True, parsers_by_header: Optional[Dict[_HEADER, Dict[_HEADER_VALUE, Parser]]] = None) -> None:
         self._parsers_by_header = parsers_by_header if parsers_by_header else {}
         self._fallback_parser = parser
         self._stream_response = stream_response
