@@ -135,6 +135,8 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         catalog: ConfiguredAirbyteCatalog,
         state: Optional[List[AirbyteStateMessage]] = None,
     ) -> Iterator[AirbyteMessage]:
+        if state:
+            self._connector_state_manager = ConnectorStateManager(state=state)
         concurrent_streams, _ = self._group_streams(config=config)
 
         # ConcurrentReadProcessor pops streams that are finished being read so before syncing, the names of
@@ -267,6 +269,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                                 component_definition=incremental_sync_component_definition,  # type: ignore  # Not None because of the if condition above
                                 stream_name=declarative_stream.name,
                                 stream_namespace=declarative_stream.namespace,
+                                stream_state=stream_state,
                                 config=config or {},
                             )
                         else:
@@ -275,6 +278,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                                 component_definition=incremental_sync_component_definition,  # type: ignore  # Not None because of the if condition above
                                 stream_name=declarative_stream.name,
                                 stream_namespace=declarative_stream.namespace,
+                                stream_state=stream_state,
                                 config=config or {},
                             )
                         partition_generator = StreamSlicerPartitionGenerator(

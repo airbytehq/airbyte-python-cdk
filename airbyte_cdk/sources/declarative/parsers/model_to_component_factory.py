@@ -983,7 +983,8 @@ class ModelToComponentFactory:
     ) -> ConcurrentCursor:
         # Per-partition incremental streams can dynamically create child cursors which will pass their current
         # state via the stream_state keyword argument. Incremental syncs without parent streams use the
-        # incoming state and connector_state_manager that is initialized when the component factory is created
+        # incoming state and connector_state_manager that is initialized when the component factory is created.
+        # stream_state is also used in low code connector where the state is passed via the read() method.
         stream_state = (
             self._connector_state_manager.get_stream_state(stream_name, stream_namespace)
             if "stream_state" not in kwargs
@@ -1209,6 +1210,7 @@ class ModelToComponentFactory:
         # Per-partition incremental streams can dynamically create child cursors which will pass their current
         # state via the stream_state keyword argument. Incremental syncs without parent streams use the
         # incoming state and connector_state_manager that is initialized when the component factory is created
+        # stream_state is also used in low code connector where the state is passed via the read() method.
         stream_state = (
             self._connector_state_manager.get_stream_state(stream_name, stream_namespace)
             if "stream_state" not in kwargs
