@@ -1820,6 +1820,11 @@ class ModelToComponentFactory:
                 model.incremental_sync.cursor_granularity = None
                 model.incremental_sync.start_time_option = None
                 model.incremental_sync.end_time_option = None
+            elif model.retriever.full_refresh_ignore_min_max_datetime:
+                model.incremental_sync.start_datetime.max_datetime = None
+                model.incremental_sync.start_datetime.min_datetime = None
+                model.incremental_sync.end_datetime.max_datetime = None
+                model.incremental_sync.end_datetime.min_datetime = None
 
         if model.incremental_sync and stream_slicer:
             if model.retriever.type == "AsyncRetriever":

@@ -228,6 +228,17 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     incremental_sync_component_definition["start_time_option"] = None
                     incremental_sync_component_definition["end_time_option"] = None
 
+                if (
+                    name_to_stream_mapping[declarative_stream.name]
+                    .get("retriever", {})
+                    .get("full_refresh_ignore_min_max_datetime", False)
+                    and incremental_sync_component_definition
+                ):
+                    incremental_sync_component_definition["start_datetime"]["max_datetime"] = None
+                    incremental_sync_component_definition["start_datetime"]["min_datetime"] = None
+                    incremental_sync_component_definition["end_datetime"]["max_datetime"] = None
+                    incremental_sync_component_definition["end_datetime"]["min_datetime"] = None
+
                 partition_router_component_definition = (
                     name_to_stream_mapping[declarative_stream.name]
                     .get("retriever", {})
