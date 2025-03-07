@@ -441,6 +441,7 @@ from airbyte_cdk.sources.declarative.retrievers import (
     AsyncRetriever,
     SimpleRetriever,
     SimpleRetrieverTestReadDecorator,
+    StateDelegatingRetriever,
 )
 from airbyte_cdk.sources.declarative.schema import (
     ComplexFieldType,
@@ -2759,15 +2760,12 @@ class ModelToComponentFactory:
         stop_condition_on_cursor: bool = False,
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
         transformations: List[RecordTransformation],
-    ) -> Optional[SimpleRetriever]:
-        retriever_model = (
-            model.incremental_retriever
-            if self._connector_state_manager.get_stream_state(name, None)
-            else model.full_refresh_retriever
-        )
+    ) -> Optional[StateDelegatingRetriever]:
+        if not isinstance(stream_slicer, DatetimeBasedCursor) and not isinstance(stream_slicer, PerPartitionCursor):
+            raise ValueError("StateDelegatingRetriever requires a DatetimeBasedCursor")
 
-        return self._create_component_from_model(  # type: ignore[no-any-return] # Will be created SimpleRetriever
-            model=retriever_model,
+        full_refresh_retriever = self._create_component_from_model(
+            model=model.full_refresh_retriever,
             config=config,
             name=name,
             primary_key=primary_key,
@@ -2776,6 +2774,25 @@ class ModelToComponentFactory:
             stop_condition_on_cursor=stop_condition_on_cursor,
             client_side_incremental_sync=client_side_incremental_sync,
             transformations=transformations,
+        )
+
+        incremental_retriever = self._create_component_from_model(
+            model=model.incremental_retriever,
+            config=config,
+            name=name,
+            primary_key=primary_key,
+            stream_slicer=stream_slicer,
+            request_options_provider=request_options_provider,
+            stop_condition_on_cursor=stop_condition_on_cursor,
+            client_side_incremental_sync=client_side_incremental_sync,
+            transformations=transformations,
+        )
+
+        return StateDelegatingRetriever(
+            full_data_retriever=full_refresh_retriever,
+            incremental_data_retriever=incremental_retriever,
+            cursor=stream_slicer,
+            started_with_state=bool(self._connector_state_manager.get_stream_state(name, None))
         )
 
     def _create_async_job_status_mapping(
