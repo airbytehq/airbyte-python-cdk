@@ -6,6 +6,8 @@ from datetime import datetime, timedelta, timezone
 
 import freezegun
 import pytest
+from dateutil import parser
+from whenever import Instant
 
 from airbyte_cdk.utils.datetime_helpers import (
     AirbyteDateTime,
@@ -262,3 +264,111 @@ def test_epoch_millis():
     # Test roundtrip conversion
     dt3 = AirbyteDateTime.from_epoch_millis(dt.to_epoch_millis())
     assert dt3 == dt
+
+
+@pytest.mark.parametrize(
+    "input_value,expected_parser",
+    [
+        # Formats that use the whenever parser
+        ("2023-03-14", "whenever"),  # Date-only format
+        (1678806566, "whenever"),  # Unix timestamp
+        ("2023-03-14T15:09:26Z", "whenever"),  # ISO format with T delimiter
+        ("2023-03-14T15:09:26+00:00", "whenever"),  # ISO format with timezone
+        ("2023-03-14T15:09:26.123456Z", "whenever"),  # ISO format with microseconds
+        ("2023-03-14T15:09:26-04:00", "whenever"),  # ISO format with non-UTC timezone
+        ("2023-03-14 15:09:26Z", "whenever"),  # Missing T delimiter but with Z
+        # Formats that still use the dateutil parser
+        ("2023-03-14 15:09:26", "dateutil"),  # Missing T delimiter and timezone
+        ("14/03/2023 15:09:26", "dateutil"),  # Different date format
+        ("2023/03/14T15:09:26Z", "dateutil"),  # Non-standard date separator
+    ],
+)
+def test_datetime_parser_selection(input_value, expected_parser, monkeypatch):
+    """Test that the correct parser is used based on the input format."""
+    # Create tracking variables
+    whenever_called = False
+    dateutil_called = False
+
+    # Store original functions
+    original_instant = __import__("whenever").Instant
+    original_offset_dt = __import__("whenever").OffsetDateTime
+    original_parser_parse = parser.parse
+
+    # Create spies for whenever methods
+    def spy_from_timestamp(*args, **kwargs):
+        nonlocal whenever_called
+        whenever_called = True
+        return original_instant.from_timestamp(*args, **kwargs)
+
+    def spy_from_utc(*args, **kwargs):
+        nonlocal whenever_called
+        whenever_called = True
+        return original_instant.from_utc(*args, **kwargs)
+
+    def spy_parse_common_iso(*args, **kwargs):
+        nonlocal whenever_called
+        whenever_called = True
+        return original_instant.parse_common_iso(*args, **kwargs)
+
+    def spy_parse_rfc3339(*args, **kwargs):
+        nonlocal whenever_called
+        whenever_called = True
+        return original_instant.parse_rfc3339(*args, **kwargs)
+
+    def spy_offset_parse_common_iso(*args, **kwargs):
+        nonlocal whenever_called
+        whenever_called = True
+        return original_offset_dt.parse_common_iso(*args, **kwargs)
+
+    # Create a spy for parser.parse
+    def spy_parser_parse(*args, **kwargs):
+        nonlocal dateutil_called
+        dateutil_called = True
+        return original_parser_parse(*args, **kwargs)
+
+    # Create mock classes with our spy methods
+    class MockInstant:
+        @staticmethod
+        def from_timestamp(*args, **kwargs):
+            return spy_from_timestamp(*args, **kwargs)
+
+        @staticmethod
+        def from_utc(*args, **kwargs):
+            return spy_from_utc(*args, **kwargs)
+
+        @staticmethod
+        def parse_common_iso(*args, **kwargs):
+            return spy_parse_common_iso(*args, **kwargs)
+
+        @staticmethod
+        def parse_rfc3339(*args, **kwargs):
+            return spy_parse_rfc3339(*args, **kwargs)
+
+        @staticmethod
+        def py_datetime():
+            return original_instant.py_datetime()
+
+    class MockOffsetDateTime:
+        @staticmethod
+        def parse_common_iso(*args, **kwargs):
+            return spy_offset_parse_common_iso(*args, **kwargs)
+
+        @staticmethod
+        def py_datetime():
+            return original_offset_dt.py_datetime()
+
+    # Apply the mocks at the module level
+    monkeypatch.setattr("airbyte_cdk.utils.datetime_helpers.Instant", MockInstant)
+    monkeypatch.setattr("airbyte_cdk.utils.datetime_helpers.OffsetDateTime", MockOffsetDateTime)
+    monkeypatch.setattr("airbyte_cdk.utils.datetime_helpers.parser.parse", spy_parser_parse)
+
+    # Parse the datetime
+    ab_datetime_parse(input_value)
+
+    # Check which parser was used
+    if expected_parser == "whenever":
+        assert whenever_called, f"Expected whenever parser to be used for {input_value}"
+        assert not dateutil_called, f"Did not expect dateutil parser to be used for {input_value}"
+    else:
+        assert dateutil_called, f"Expected dateutil parser to be used for {input_value}"
+        assert not whenever_called, f"Did not expect whenever parser to be used for {input_value}"
