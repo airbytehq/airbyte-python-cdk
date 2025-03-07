@@ -307,7 +307,7 @@ class StreamPartition(Partition):
                     and record_data.record is not None
                 ):
                     yield Record(
-                        data=record_data.record.data,
+                        data=record_data.record.data or {},
                         stream_name=self.stream_name(),
                         associated_slice=self._slice,  # type: ignore [arg-type]
                     )
