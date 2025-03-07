@@ -151,6 +151,10 @@ class CompositeRawDecoder(Decoder):
         self, response: requests.Response
     ) -> Generator[MutableMapping[str, Any], None, None]:
         if self.is_stream_response():
+            # urllib mentions that some interfaces don't play nice with auto_close [here](https://urllib3.readthedocs.io/en/stable/user-guide.html#using-io-wrappers-with-response-content)
+            # We have indeed observed some issues with CSV parsing. Hence, we will manage the closing of the file ourselves until we find a better solution.
+            response.raw.auto_close = False
             yield from self.parser.parse(data=response.raw)  # type: ignore[arg-type]
+            response.raw.close()
         else:
             yield from self.parser.parse(data=io.BytesIO(response.content))
