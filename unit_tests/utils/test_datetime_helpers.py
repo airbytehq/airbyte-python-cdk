@@ -329,11 +329,6 @@ def test_datetime_parser_selection(input_value, expected_parser, monkeypatch):
     monkeypatch.setattr("airbyte_cdk.utils.datetime_helpers.Instant", MockInstant)
     monkeypatch.setattr("airbyte_cdk.utils.datetime_helpers.parser.parse", spy_parser_parse)
 
-    # Skip formats that would be rejected by validation checks
-    if isinstance(input_value, str) and "March" in input_value:
-        # Skip this test case as it would be rejected by validation
-        return
-
     # Parse the datetime
     ab_datetime_parse(input_value)
 
@@ -344,80 +339,3 @@ def test_datetime_parser_selection(input_value, expected_parser, monkeypatch):
     else:
         assert dateutil_called, f"Expected dateutil parser to be used for {input_value}"
         assert not whenever_called, f"Did not expect whenever parser to be used for {input_value}"
-
-
-def test_whenever_parser_for_iso_formats(monkeypatch):
-    """Test that the whenever parser is used for certain formats even when dateutil is unavailable."""
-
-    # Create a mock dateutil.parser.parse that always raises an exception
-    def mock_parser_parse(dt_str, **kwargs):
-        raise ValueError("dateutil parser is unavailable")
-
-    # Apply the mock at the module level
-    monkeypatch.setattr("airbyte_cdk.utils.datetime_helpers.parser.parse", mock_parser_parse)
-
-    # These formats should still parse correctly using the whenever parser
-    whenever_formats = [
-        "2023-03-14",  # Date-only format
-        1678806566,  # Unix timestamp
-    ]
-
-    for dt_str in whenever_formats:
-        # This should not raise an exception because the whenever parser should be used
-        result = ab_datetime_parse(dt_str)
-        assert isinstance(result, AirbyteDateTime)
-
-
-def test_dateutil_fallback_for_non_iso_formats(monkeypatch):
-    """Test that the dateutil parser is used as a fallback for non-ISO/RFC compliant formats."""
-    # Create tracking variables
-    whenever_called = False
-    dateutil_called = False
-
-    # Store original functions
-    original_instant_module = __import__("whenever").Instant
-    original_parser_parse = parser.parse
-
-    # Create a mock Instant class with methods that always raise exceptions
-    class MockInstant:
-        @staticmethod
-        def from_timestamp(*args, **kwargs):
-            nonlocal whenever_called
-            whenever_called = True
-            raise ValueError("whenever parser is unavailable")
-
-        @staticmethod
-        def from_utc(*args, **kwargs):
-            nonlocal whenever_called
-            whenever_called = True
-            raise ValueError("whenever parser is unavailable")
-
-    # Create a spy for parser.parse
-    def spy_parser_parse(*args, **kwargs):
-        nonlocal dateutil_called
-        dateutil_called = True
-        return original_parser_parse(*args, **kwargs)
-
-    # Apply the mocks at the module level
-    monkeypatch.setattr("airbyte_cdk.utils.datetime_helpers.Instant", MockInstant)
-    monkeypatch.setattr("airbyte_cdk.utils.datetime_helpers.parser.parse", spy_parser_parse)
-
-    # These non-ISO/RFC formats should use the dateutil parser
-    non_iso_formats = [
-        "2023-03-14T15:09:26Z",  # ISO format with T delimiter
-        "2023-03-14T15:09:26+00:00",  # ISO format with timezone
-        "2023-03-14 15:09:26",  # Missing T delimiter
-        "14/03/2023 15:09:26",  # Different date format
-    ]
-
-    for dt_str in non_iso_formats:
-        # Skip formats that would be rejected by validation checks
-        if "March" in dt_str:
-            continue
-
-        # This should not raise an exception because the dateutil parser should be used
-        result = ab_datetime_parse(dt_str)
-        assert isinstance(result, AirbyteDateTime)
-        assert dateutil_called, f"Expected dateutil parser to be used for {dt_str}"
-        # Reset the flag for the next iteration
-        dateutil_called = False
