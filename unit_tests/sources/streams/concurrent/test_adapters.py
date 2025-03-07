@@ -10,10 +10,10 @@ import pytest
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
+    AirbyteRecordMessage,
     AirbyteStream,
     Level,
     SyncMode,
-    AirbyteRecordMessage,
 )
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.message import InMemoryMessageRepository
