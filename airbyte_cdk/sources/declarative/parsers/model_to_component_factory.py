@@ -1822,10 +1822,15 @@ class ModelToComponentFactory:
                 model.incremental_sync.start_time_option = None
                 model.incremental_sync.end_time_option = None
             elif model.retriever.full_refresh_ignore_min_max_datetime:
-                model.incremental_sync.start_datetime.max_datetime = None
-                model.incremental_sync.start_datetime.min_datetime = None
-                model.incremental_sync.end_datetime.max_datetime = None
-                model.incremental_sync.end_datetime.min_datetime = None
+                start_datetime = model.incremental_sync.start_datetime
+                end_datetime = model.incremental_sync.end_datetime
+
+                if isinstance(start_datetime, MinMaxDatetimeModel):
+                    start_datetime.max_datetime = ""
+                    start_datetime.min_datetime = ""
+                if isinstance(end_datetime, MinMaxDatetimeModel):
+                    end_datetime.max_datetime = ""
+                    end_datetime.min_datetime = ""
 
         if model.incremental_sync and stream_slicer:
             if model.retriever.type == "AsyncRetriever":
