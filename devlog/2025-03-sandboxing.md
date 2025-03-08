@@ -73,6 +73,8 @@ During implementation, the following challenges were encountered:
 
 1. **gVisor runsc Command Syntax**: The initial implementation of the gVisor wrapper script had issues with the flag format. The `--network=host` flag needed to be changed to `--network host`. For simplicity, the current implementation uses a direct Python wrapper without runsc.
 
+   Further investigation is needed to properly configure runsc for this use case. According to the [runsc documentation](https://gvisor.dev/docs/user_guide/quick_start/docker/), the correct way to use runsc with Docker might involve configuring Docker's runtime rather than directly invoking runsc in a wrapper script.
+
 2. **Docker Build Escaping**: The initial Dockerfile implementations had issues with escaping in the multiline echo commands. This was fixed by using multiple echo commands with redirection.
 
 ## Considerations for Production Use
