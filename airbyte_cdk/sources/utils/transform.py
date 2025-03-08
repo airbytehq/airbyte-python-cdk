@@ -1,12 +1,19 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-
+import importlib
 import logging
+import sys
+from dataclasses import dataclass
 from enum import Flag, auto
+from functools import lru_cache
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import Any, Callable, Dict, Generator, Mapping, Optional, cast
 
+from datamodel_code_generator import DataModelType, InputFileType, generate
 from jsonschema import Draft7Validator, RefResolver, ValidationError, Validator, validators
+from pydantic import BaseModel
 
 MAX_NESTING_DEPTH = 3
 json_to_python_simple = {
@@ -275,3 +282,33 @@ class TypeTransformer:
 
         else:
             return python_to_json[type(input_data)]
+
+
+@dataclass(frozen=True)
+class PydanticTypeTransformer:
+    @lru_cache
+    def stream_model(self, json_schema: str) -> BaseModel:
+        with TemporaryDirectory() as temporary_directory_name:
+            temporary_directory = Path(temporary_directory_name)
+            output = Path(temporary_directory / "models.py")
+            generate(
+                str(json_schema),
+                input_file_type=InputFileType.Auto,
+                input_filename="example.json",
+                output=output,
+                class_name="NormalizationModel",
+                output_model_type=DataModelType.PydanticV2BaseModel,
+            )
+
+            # Load the generated models.py dynamically
+            spec = importlib.util.spec_from_file_location("models", output)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules["models"] = module
+            spec.loader.exec_module(module)
+
+            normalization_model = getattr(module, "NormalizationModel")
+        return normalization_model
+
+    def transform(self, record: Dict[str, Any], schema: Mapping[str, Any]) -> None:
+        model: BaseModel = self.stream_model(str(schema))
+        record.update(model(**record).model_dump())
