@@ -17,48 +17,9 @@ RUN curl -fsSL https://gvisor.dev/archive.key | apt-key add - && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Create a wrapper script for the entry point
-RUN echo '#!/bin/bash' > /usr/local/bin/gvisor-wrapper.sh && \
-    echo '# gVisor wrapper for source-declarative-manifest' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo 'COMMAND="$1"' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo 'shift' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '# Create a temporary OCI bundle directory' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo 'BUNDLE_DIR=$(mktemp -d)' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo 'mkdir -p $BUNDLE_DIR/rootfs' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '# Create a simple config.json for the OCI bundle' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo 'cat > $BUNDLE_DIR/config.json << EOF' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '{' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '  "ociVersion": "1.0.0",' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '  "process": {' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '    "terminal": false,' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '    "user": {' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '      "uid": 0,' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '      "gid": 0' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '    },' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '    "args": [' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '      "python", "/airbyte/integration_code/main.py", "'$COMMAND'", "'$@'"' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '    ],' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '    "env": [' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '      "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '      "TERM=xterm"' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '    ],' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '    "cwd": "/"' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '  },' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '  "root": {' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '    "path": "rootfs"' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '  },' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '  "linux": {}' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '}' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo 'EOF' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '# Run the command with runsc' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo 'cd $BUNDLE_DIR' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo 'runsc -TESTONLY-unsafe-nonroot run --bundle=$BUNDLE_DIR container1 || python /airbyte/integration_code/main.py "$COMMAND" "$@"' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo '# Clean up' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo 'rm -rf $BUNDLE_DIR' >> /usr/local/bin/gvisor-wrapper.sh && \
-    chmod +x /usr/local/bin/gvisor-wrapper.sh
+# Copy the wrapper script
+COPY scripts/gvisor-wrapper.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/gvisor-wrapper.sh
 
 # Set the new entry point
 ENTRYPOINT ["/usr/local/bin/gvisor-wrapper.sh"]
