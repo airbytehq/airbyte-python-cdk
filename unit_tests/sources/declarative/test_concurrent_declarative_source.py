@@ -349,6 +349,7 @@ _MANIFEST = {
                     "path": "{{stream_slice['url']}}",
                     "http_method": "GET",
                 },
+                "max_concurrent_jobs": 1,
             },
             "incremental_sync": {"$ref": "#/definitions/incremental_cursor"},
             "schema_loader": {
