@@ -1,0 +1,28 @@
+# Dockerfile for gVisor POC
+FROM airbyte/source-declarative-manifest:latest
+
+USER root
+
+# Install dependencies
+RUN apt-get update && \
+    apt-get install -y curl gnupg apt-transport-https ca-certificates && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Add gVisor repo and install runsc
+RUN curl -fsSL https://gvisor.dev/archive.key | apt-key add - && \
+    echo 'deb https://storage.googleapis.com/gvisor/releases release main' > /etc/apt/sources.list.d/gvisor.list && \
+    apt-get update && \
+    apt-get install -y runsc && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create a wrapper script for the entry point
+RUN echo '#!/bin/bash' > /usr/local/bin/gvisor-wrapper.sh && \
+    echo '# gVisor wrapper for source-declarative-manifest' >> /usr/local/bin/gvisor-wrapper.sh && \
+    echo 'runsc run --network=host --TESTONLY-unsafe-nonroot=true --rootless -- python /airbyte/integration_code/main.py "$@"' >> /usr/local/bin/gvisor-wrapper.sh && \
+    chmod +x /usr/local/bin/gvisor-wrapper.sh
+
+# Set the new entry point
+ENTRYPOINT ["/usr/local/bin/gvisor-wrapper.sh"]
+USER airbyte
