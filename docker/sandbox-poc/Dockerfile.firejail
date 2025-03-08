@@ -1,0 +1,20 @@
+# Dockerfile for Firejail POC
+FROM airbyte/source-declarative-manifest:latest
+
+USER root
+
+# Install firejail
+RUN apt-get update && \
+    apt-get install -y firejail && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create a wrapper script for the entry point
+RUN echo '#!/bin/bash' > /usr/local/bin/firejail-wrapper.sh && \
+    echo '# Firejail wrapper for source-declarative-manifest' >> /usr/local/bin/firejail-wrapper.sh && \
+    echo 'firejail --noprofile --quiet --private -- python /airbyte/integration_code/main.py "$@"' >> /usr/local/bin/firejail-wrapper.sh && \
+    chmod +x /usr/local/bin/firejail-wrapper.sh
+
+# Set the new entry point
+ENTRYPOINT ["/usr/local/bin/firejail-wrapper.sh"]
+USER airbyte
