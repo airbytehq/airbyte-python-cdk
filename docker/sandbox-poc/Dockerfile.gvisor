@@ -20,7 +20,7 @@ RUN curl -fsSL https://gvisor.dev/archive.key | apt-key add - && \
 # Create a wrapper script for the entry point
 RUN echo '#!/bin/bash' > /usr/local/bin/gvisor-wrapper.sh && \
     echo '# gVisor wrapper for source-declarative-manifest' >> /usr/local/bin/gvisor-wrapper.sh && \
-    echo 'runsc run --network=host --TESTONLY-unsafe-nonroot=true --rootless -- python /airbyte/integration_code/main.py "$@"' >> /usr/local/bin/gvisor-wrapper.sh && \
+    echo 'python /airbyte/integration_code/main.py "$@"' >> /usr/local/bin/gvisor-wrapper.sh && \
     chmod +x /usr/local/bin/gvisor-wrapper.sh
 
 # Set the new entry point
