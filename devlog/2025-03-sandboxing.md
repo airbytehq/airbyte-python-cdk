@@ -96,10 +96,14 @@ For production use, consider:
    - Running containers with the necessary privileges for runsc
    - Using a more complete OCI bundle configuration
 
-2. **Firejail Profiles**: For a production implementation of Firejail, consider:
+2. **Firejail Enhancements**: For a production implementation of Firejail, consider:
    - Creating custom Firejail profiles for specific connector needs
    - Adding more restrictive seccomp filters
-   - Configuring network and filesystem isolation more precisely
+   - Configuring network isolation with `--net=none` or `--netfilter`
+   - Restricting filesystem access with `--blacklist` and `--whitelist`
+   - Limiting system calls with `--seccomp`
+   - Adding memory/CPU limits with `--rlimit-as` and `--rlimit-cpu`
+   - Disabling specific capabilities with `--caps.drop=all`
 
 3. **Performance Impact**: Both sandboxing solutions add overhead:
    - Firejail has minimal overhead but less isolation
