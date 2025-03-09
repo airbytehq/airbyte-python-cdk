@@ -42,8 +42,16 @@ This occurred because:
 
 The solution addresses these issues by:
 
-1. Creating all required directories during the Docker build process (as root)
-2. Setting appropriate permissions (755) on these directories
+1. Creating all required directories during the Docker build process (as root):
+   - `/var/run/oci-bundle/rootfs` - The OCI bundle directory for container execution
+   - `/var/run/runsc` - Primary runsc runtime directory
+   - `/run/runsc` - Alternative runsc runtime directory
+   - `/tmp/runsc` - Temporary runsc directory for runtime operations
+   
+2. Setting appropriate permissions on these directories:
+   - `755` permissions for the OCI bundle directory
+   - `777` permissions for all runsc directories to ensure non-root access
+   
 3. Pre-creating a static config.json file with the `spec` command hardcoded
 4. Copying this file to the OCI bundle directory during build
 5. Simplifying the wrapper script to use the pre-created directories and files

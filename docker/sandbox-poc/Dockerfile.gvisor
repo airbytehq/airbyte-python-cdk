@@ -17,9 +17,15 @@ RUN curl -fsSL https://gvisor.dev/archive.key | apt-key add - && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Create OCI bundle directory and set permissions
+# Create OCI bundle directory and runsc directories with appropriate permissions
 RUN mkdir -p /var/run/oci-bundle/rootfs && \
-    chmod -R 755 /var/run/oci-bundle
+    mkdir -p /var/run/runsc && \
+    mkdir -p /run/runsc && \
+    mkdir -p /tmp/runsc && \
+    chmod -R 755 /var/run/oci-bundle && \
+    chmod -R 777 /var/run/runsc && \
+    chmod -R 777 /run/runsc && \
+    chmod -R 777 /tmp/runsc
 
 # Copy the OCI config
 COPY scripts/oci-config.json /var/run/oci-bundle/config.json
