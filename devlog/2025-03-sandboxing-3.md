@@ -85,6 +85,20 @@ For gVisor to work properly in production environments:
    docker run --security-opt seccomp=unconfined --security-opt apparmor=unconfined --userns=host
    ```
 
+## Testing Limitations
+
+During testing, we encountered several limitations related to user namespace support:
+
+1. **Kernel Support**: Some environments may not have the `kernel.unprivileged_userns_clone` parameter available, which is required for unprivileged user namespace support.
+
+2. **Docker Environment**: Even with the `--userns=host` and `--privileged` flags, some Docker environments may still encounter the error:
+   ```
+   running container: creating container: cannot create gofer process: newuidmap failed: exit status 1
+   ```
+   This indicates that the host environment does not have the necessary user namespace support configured.
+
+3. **Production Deployment**: For production deployment, it's essential to ensure that the host system has proper user namespace support enabled at both the kernel and Docker daemon levels.
+
 ## Conclusion
 
 This implementation addresses the user namespace issue in the gVisor sandboxing implementation by properly configuring the OCI bundle and adding necessary kernel parameters. The removal of the fallback mechanism ensures that the connector will only run with proper sandboxing, which is essential for production use.
