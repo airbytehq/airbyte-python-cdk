@@ -19,5 +19,14 @@
   "root": {
     "path": "rootfs"
   },
-  "linux": {}
+  "linux": {
+    "namespaces": [
+      {"type": "mount"},
+      {"type": "network"},
+      {"type": "uts"},
+      {"type": "pid"},
+      {"type": "ipc"},
+      {"type": "user"}
+    ]
+  }
 }

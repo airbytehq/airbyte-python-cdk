@@ -16,16 +16,16 @@ This error occurs because gVisor requires user namespace support for rootless co
 The key changes in this implementation:
 
 1. **Update OCI Configuration**:
-   - Add `umask` setting to the user configuration
-   - Ensure proper user namespace mapping
+   - Add proper user namespace configuration to the Linux namespaces section
+   - Ensure proper user configuration
 
-2. **Modify gVisor Wrapper Script**:
-   - Add `--network=host` flag to the runsc command
-   - Maintain the fallback mechanism to direct execution if runsc fails
+2. **Remove Fallback Mechanism**:
+   - Remove the fallback to direct execution to ensure proper sandboxing
+   - Focus on making gVisor work properly in production environments
 
 3. **Update Dockerfile**:
    - Configure kernel parameters to allow unprivileged user namespace cloning
-   - Maintain existing directory permissions
+   - Set appropriate permissions for directories
 
 ## Technical Approach
 
@@ -38,8 +38,8 @@ gVisor requires user namespace support for rootless containers. This is a fundam
 The solution addresses these issues by:
 
 1. Configuring the OCI bundle with proper user namespace settings
-2. Adding network host mode to the runsc command
-3. Setting kernel parameters to allow unprivileged user namespace cloning
+2. Setting kernel parameters to allow unprivileged user namespace cloning
+3. Removing the fallback mechanism to ensure proper sandboxing
 
 ## Testing Results
 
@@ -61,14 +61,30 @@ docker run --rm --privileged airbyte/source-declarative-manifest-gvisor spec
 docker run --rm --userns=host airbyte/source-declarative-manifest-gvisor spec
 ```
 
-While the user namespace error may still occur in some environments due to host-level restrictions, the fallback mechanism ensures the connector still functions by executing the command directly.
+The implementation now requires proper user namespace support to function, as the fallback mechanism has been removed to ensure proper sandboxing.
 
-## Considerations for Future Work
+## Production Deployment Requirements
 
-1. **Docker Runtime Configuration**: For production use, consider configuring the Docker daemon with user namespace remapping using the `userns-remap` option.
-2. **Host-Level Configuration**: Some environments may require additional host-level configuration to enable user namespaces.
-3. **Alternative Sandboxing Approaches**: If user namespace support cannot be enabled in the target environment, consider alternative sandboxing approaches like Firejail.
+For gVisor to work properly in production environments:
+
+1. **Docker Runtime Configuration**: Configure the Docker daemon with user namespace remapping using the `userns-remap` option in `/etc/docker/daemon.json`:
+   ```json
+   {
+     "userns-remap": "default"
+   }
+   ```
+
+2. **Host-Level Configuration**: Enable user namespaces at the host level:
+   ```bash
+   echo 'kernel.unprivileged_userns_clone=1' > /etc/sysctl.d/userns.conf
+   sysctl -w kernel.unprivileged_userns_clone=1
+   ```
+
+3. **Container Runtime Flags**: Run containers with the appropriate flags:
+   ```bash
+   docker run --security-opt seccomp=unconfined --security-opt apparmor=unconfined --userns=host
+   ```
 
 ## Conclusion
 
-This implementation addresses the user namespace issue in the gVisor sandboxing implementation by properly configuring the OCI bundle and adding necessary flags to the runsc command. The fallback mechanism ensures the connector still functions in environments without proper user namespace support.
+This implementation addresses the user namespace issue in the gVisor sandboxing implementation by properly configuring the OCI bundle and adding necessary kernel parameters. The removal of the fallback mechanism ensures that the connector will only run with proper sandboxing, which is essential for production use.

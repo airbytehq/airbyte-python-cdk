@@ -5,7 +5,7 @@ USER root
 
 # Install dependencies
 RUN apt-get update && \
-    apt-get install -y curl gnupg apt-transport-https ca-certificates && \
+    apt-get install -y curl gnupg apt-transport-https ca-certificates procps uidmap && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
