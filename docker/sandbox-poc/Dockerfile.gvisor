@@ -22,10 +22,12 @@ RUN mkdir -p /var/run/oci-bundle/rootfs && \
     mkdir -p /var/run/runsc && \
     mkdir -p /run/runsc && \
     mkdir -p /tmp/runsc && \
+    mkdir -p /etc/sysctl.d && \
     chmod -R 755 /var/run/oci-bundle && \
     chmod -R 777 /var/run/runsc && \
     chmod -R 777 /run/runsc && \
-    chmod -R 777 /tmp/runsc
+    chmod -R 777 /tmp/runsc && \
+    echo "kernel.unprivileged_userns_clone=1" > /etc/sysctl.d/userns.conf
 
 # Run runsc once as root during build to create any additional required directories
 RUN cd /var/run/oci-bundle && \
