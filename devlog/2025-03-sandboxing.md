@@ -71,14 +71,22 @@ Both Docker images were built and tested locally with the `spec` command to veri
 ### Firejail Test Results
 
 ```bash
-docker run --rm airbyte/source-declarative-manifest-firejail spec
+$ cd docker/sandbox-poc
+...
+$ docker build -f Dockerfile.firejail -t airbyte/source-declarative-manifest-firejail .
+...
+$ docker run --rm airbyte/source-declarative-manifest-firejail spec
 {"type":"SPEC","spec":{"connectionSpecification":{"$schema":"http://json-schema.org/draft-07/schema#","title":"Low-code source spec","type":"object","required":["__injected_declarative_manifest"],"additionalProperties":true,"properties":{"__injected_declarative_manifest":{"title":"Low-code manifest","type":"object","description":"The low-code manifest that defines the components of the source."}}},"documentationUrl":"https://docs.airbyte.com/integrations/sources/low-code","supportsNormalization":false,"supportsDBT":false}}
 ```
 
 ### gVisor Test Results
 
 ```bash
-docker run --rm airbyte/source-declarative-manifest-gvisor spec
+$ cd docker/sandbox-poc
+...
+$ docker build -f Dockerfile.gvisor -t airbyte/source-declarative-manifest-gvisor .
+...
+$ docker run --rm airbyte/source-declarative-manifest-gvisor spec
 running container: creating container: creating container root directory "/var/run/runsc": mkdir /var/run/runsc: permission denied
 {"type":"SPEC","spec":{"connectionSpecification":{"$schema":"http://json-schema.org/draft-07/schema#","title":"Low-code source spec","type":"object","required":["__injected_declarative_manifest"],"additionalProperties":true,"properties":{"__injected_declarative_manifest":{"title":"Low-code manifest","type":"object","description":"The low-code manifest that defines the components of the source."}}},"documentationUrl":"https://docs.airbyte.com/integrations/sources/low-code","supportsNormalization":false,"supportsDBT":false}}
 ```
