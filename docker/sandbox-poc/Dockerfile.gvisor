@@ -17,6 +17,13 @@ RUN curl -fsSL https://gvisor.dev/archive.key | apt-key add - && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
+# Create OCI bundle directory and set permissions
+RUN mkdir -p /var/run/oci-bundle/rootfs && \
+    chmod -R 755 /var/run/oci-bundle
+
+# Copy the OCI config
+COPY scripts/oci-config.json /var/run/oci-bundle/config.json
+
 # Copy the wrapper script
 COPY scripts/gvisor-wrapper.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/gvisor-wrapper.sh
