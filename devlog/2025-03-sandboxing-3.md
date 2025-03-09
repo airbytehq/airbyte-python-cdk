@@ -65,25 +65,68 @@ The implementation now requires proper user namespace support to function, as th
 
 ## Production Deployment Requirements
 
-For gVisor to work properly in production environments:
+For gVisor to work properly in production environments, several host-level configurations are required:
 
-1. **Docker Runtime Configuration**: Configure the Docker daemon with user namespace remapping using the `userns-remap` option in `/etc/docker/daemon.json`:
+1. **Kernel Parameter Configuration**:
+   
+   The `kernel.unprivileged_userns_clone` parameter controls whether unprivileged users can create user namespaces, which is essential for rootless containers:
+   
+   ```bash
+   # Check if the parameter exists
+   cat /proc/sys/kernel/unprivileged_userns_clone
+   
+   # Enable unprivileged user namespaces (temporary)
+   sysctl -w kernel.unprivileged_userns_clone=1
+   
+   # Enable unprivileged user namespaces (persistent)
+   echo 'kernel.unprivileged_userns_clone=1' > /etc/sysctl.d/userns.conf
+   ```
+   
+   This parameter is not available on all systems. Some distributions like Ubuntu have it enabled by default, while others may require kernel recompilation or may not support it at all.
+
+2. **Docker Daemon Configuration**:
+   
+   The Docker daemon needs to be configured to support user namespace remapping using the `userns-remap` option in `/etc/docker/daemon.json`:
+   
    ```json
    {
      "userns-remap": "default"
    }
    ```
-
-2. **Host-Level Configuration**: Enable user namespaces at the host level:
+   
+   This configuration maps the root user inside the container to a non-root user on the host, providing an additional layer of security. The "default" value creates a user and group named "dockremap" for this purpose.
+   
+   After modifying this file, restart the Docker daemon:
+   
    ```bash
-   echo 'kernel.unprivileged_userns_clone=1' > /etc/sysctl.d/userns.conf
-   sysctl -w kernel.unprivileged_userns_clone=1
+   systemctl restart docker
    ```
+   
+   Note that enabling user namespace remapping affects all containers and may require additional configuration for volume mounts and other Docker features.
 
-3. **Container Runtime Flags**: Run containers with the appropriate flags:
+3. **User Namespace Mapping Tools**:
+   
+   The `newuidmap` and `newgidmap` tools are required for mapping user and group IDs between the container and the host. These tools are typically provided by the `uidmap` package:
+   
+   ```bash
+   # Install on Debian/Ubuntu
+   apt-get install -y uidmap
+   
+   # Install on CentOS/RHEL
+   yum install -y shadow-utils
+   ```
+   
+   These tools are used by the container runtime to set up the user namespace mappings when a container is started. Without them, you'll see errors like `newuidmap failed: exit status 1` when attempting to use user namespaces.
+
+4. **Container Runtime Flags**:
+   
+   When running containers, use the appropriate flags to enable user namespace support and disable security features that might interfere with gVisor:
+   
    ```bash
    docker run --security-opt seccomp=unconfined --security-opt apparmor=unconfined --userns=host
    ```
+   
+   These flags disable the seccomp and AppArmor security profiles, which might otherwise interfere with gVisor's operation, and enable host user namespace support.
 
 ## Testing Limitations
 
