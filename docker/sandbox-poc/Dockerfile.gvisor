@@ -27,6 +27,10 @@ RUN mkdir -p /var/run/oci-bundle/rootfs && \
     chmod -R 777 /run/runsc && \
     chmod -R 777 /tmp/runsc
 
+# Run runsc once as root during build to create any additional required directories
+RUN cd /var/run/oci-bundle && \
+    runsc -TESTONLY-unsafe-nonroot run --bundle=/var/run/oci-bundle container-init || true
+
 # Copy the OCI config
 COPY scripts/oci-config.json /var/run/oci-bundle/config.json
 

@@ -54,7 +54,8 @@ The solution addresses these issues by:
    
 3. Pre-creating a static config.json file with the `spec` command hardcoded
 4. Copying this file to the OCI bundle directory during build
-5. Simplifying the wrapper script to use the pre-created directories and files
+5. Executing runsc once during build time as root to create any additional required directories
+6. Simplifying the wrapper script to use the pre-created directories and files
 
 ## Testing Results
 
