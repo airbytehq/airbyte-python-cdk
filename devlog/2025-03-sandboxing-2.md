@@ -59,15 +59,43 @@ The solution addresses these issues by:
 
 ## Testing Results
 
-The implementation was tested by building and running the Docker image:
+The implementation was tested by building and running the Docker image with various configurations:
 
+### Basic Run
 ```bash
 cd docker/sandbox-poc
 docker build -f Dockerfile.gvisor -t airbyte/source-declarative-manifest-gvisor .
 docker run --rm airbyte/source-declarative-manifest-gvisor spec
 ```
 
-The image successfully runs the `spec` command without permission errors.
+The error changed from the original permission denied error to:
+```
+running container: creating container: cannot create gofer process: unable to run a rootless container without userns
+```
+
+The container successfully falls back to direct execution and completes the spec command.
+
+### Privileged Mode
+```bash
+docker run --rm --privileged airbyte/source-declarative-manifest-gvisor spec
+```
+
+Even with privileged mode, the same error occurs:
+```
+running container: creating container: cannot create gofer process: unable to run a rootless container without userns
+```
+
+### User Namespace Support
+```bash
+docker run --rm --userns=host airbyte/source-declarative-manifest-gvisor spec
+```
+
+The user namespace flag also results in the same error:
+```
+running container: creating container: cannot create gofer process: unable to run a rootless container without userns
+```
+
+These tests indicate that while we've resolved the directory permission issues, running gVisor within a container requires additional Docker runtime configuration beyond what can be achieved from within the container itself.
 
 ## Considerations for Future Work
 
