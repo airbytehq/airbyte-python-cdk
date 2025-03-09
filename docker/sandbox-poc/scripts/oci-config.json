@@ -5,8 +5,7 @@
     "user": {
       "uid": 0,
       "gid": 0,
-      "additionalGids": [0],
-      "umask": 0022
+      "additionalGids": [0]
     },
     "args": [
       "python", "/airbyte/integration_code/main.py", "spec"
