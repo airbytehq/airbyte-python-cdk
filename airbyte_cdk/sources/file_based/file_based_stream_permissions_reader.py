@@ -31,7 +31,7 @@ class AbstractFileBasedStreamPermissionsReader(ABC):
         Note: FileBasedSource only requires the keys defined in the abstract config, whereas concrete implementations of StreamReader
         will require keys that (for example) allow it to authenticate with the 3rd party.
 
-        Therefore, concrete implementations of AbstractFileBasedStreamReader's config setter should assert that `value` is of the correct
+        Therefore, concrete implementations of AbstractFileBasedStreamPermissionsReader's's config setter should assert that `value` is of the correct
         config type for that type of StreamReader.
         """
         ...
@@ -61,7 +61,7 @@ class AbstractFileBasedStreamPermissionsReader(ABC):
         This function should return the Identities in a determined "space" or "domain" where the file metadata (ACLs) are fetched and ACLs items (Identities) exists.
 
         e.g.
-        def load_identity_groups(self, logger: logging.Logger) -> Dict[str, Any]:
+        def load_identity_groups(self, logger: logging.Logger) -> Iterable[Dict[str, Any]]:
             api_conn = some_api.conn(credentials=SOME_CREDENTIALS)
             users_api = api_conn.users()
             groups_api = api_conn.groups()
@@ -87,7 +87,7 @@ class AbstractFileBasedStreamPermissionsReader(ABC):
 
         e.g.
         def file_permissions_schema(self) -> Dict[str, Any]:
-            # you can also follow the patter we have for python connectors and have a json file and read from there e.g. schemas/identities.json
+            # you can also follow the pattern we have for python connectors and have a json file and read from there e.g. schemas/identities.json
             return {
                   "type": "object",
                   "properties": {
@@ -113,7 +113,7 @@ class AbstractFileBasedStreamPermissionsReader(ABC):
 
         e.g.
         def identities_schema(self) -> Dict[str, Any]:
-            # you can also follow the patter we have for python connectors and have a json file and read from there e.g. schemas/identities.json
+            # you can also follow the pattern we have for python connectors and have a json file and read from there e.g. schemas/identities.json
             return {
               "type": "object",
               "properties": {
