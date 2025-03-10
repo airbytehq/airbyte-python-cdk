@@ -25,6 +25,7 @@ def _wrap_in_sandbox(cmd: list[str]) -> list[str]:
 
     # Try Firejail
     try:
+        print("Checking for Firejail...")
         subprocess.run(["firejail", "--version"], check=True, stdout=subprocess.PIPE)
     except FileNotFoundError:
         if sb_mode == ENV_SANDBOX_MODE_FIREJAIL:
@@ -35,6 +36,7 @@ def _wrap_in_sandbox(cmd: list[str]) -> list[str]:
         return cmd
 
     # Firejail is available
+    print("Firejail found. Running with Firejail sandboxing.")
     return ["firejail", "--private", "--net=none"] + cmd
 
 
