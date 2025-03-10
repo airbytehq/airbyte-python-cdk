@@ -239,6 +239,8 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         try:
             parsed_config = self._get_parsed_config(config)
             self.stream_reader.config = parsed_config
+            if self.stream_permissions_reader:
+                self.stream_permissions_reader.config = parsed_config
             streams: List[Stream] = []
             for stream_config in parsed_config.streams:
                 # Like state_manager, `catalog_stream` may be None during `check`

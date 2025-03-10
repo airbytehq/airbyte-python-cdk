@@ -4,8 +4,9 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Iterable
+from typing import Any, Dict, Iterable, Optional
 
+from airbyte_cdk.sources.file_based import AbstractFileBasedSpec
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 
 
@@ -13,6 +14,27 @@ class AbstractFileBasedStreamPermissionsReader(ABC):
     """
     This class is responsible for reading file permissions and Identities from a source.
     """
+
+    def __init__(self) -> None:
+        self._config = None
+
+    @property
+    def config(self) -> Optional[AbstractFileBasedSpec]:
+        return self._config
+
+    @config.setter
+    @abstractmethod
+    def config(self, value: AbstractFileBasedSpec) -> None:
+        """
+        FileBasedSource reads the config from disk and parses it, and once parsed, the source sets the config on its StreamReader.
+
+        Note: FileBasedSource only requires the keys defined in the abstract config, whereas concrete implementations of StreamReader
+        will require keys that (for example) allow it to authenticate with the 3rd party.
+
+        Therefore, concrete implementations of AbstractFileBasedStreamReader's config setter should assert that `value` is of the correct
+        config type for that type of StreamReader.
+        """
+        ...
 
     @abstractmethod
     def get_file_acl_permissions(self, file: RemoteFile, logger: logging.Logger) -> Dict[str, Any]:
