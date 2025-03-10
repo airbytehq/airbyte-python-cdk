@@ -39,6 +39,22 @@ Options:
 """
 
 
+def _get_default_gateway() -> str | None:
+    """Returns the system's default gateway IP, or None if not found."""
+    try:
+        result = subprocess.run(
+            ["ip", "route"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+        for line in result.stdout.split("\n"):
+            if line.startswith("default via"):
+                return line.split()[2]  # Extract the gateway IP
+
+    except Exception as e:
+        print(f"❌ Error detecting gateway: {e}")
+
+    return None
+
+
 def _wrap_in_sandbox(cmd: list[str]) -> list[str]:
     """Wrap the given command in Firejail.
     This function modifies the command to include Firejail options
@@ -66,8 +82,50 @@ def _wrap_in_sandbox(cmd: list[str]) -> list[str]:
         return cmd
 
     # Firejail is available
+    gateway_ip: str | None = _get_default_gateway()
+    if not gateway_ip:
+        print("❌ No gateway detected. Blocking all egress traffic.")
+        netfilter_rules = [
+            "--netfilter=reject 0.0.0.0/0"  # Block all traffic if no gateway is detected
+        ]
+    else:
+        print(f"🔥 Allowing egress only via gateway: {gateway_ip}")
+        netfilter_rules = [
+            # Allow traffic only via the detected gateway:
+            f"--netfilter=accept {gateway_ip}",
+            # Block all private networks and localhost:
+            "--netfilter=reject 10.0.0.0/8",
+            "--netfilter=reject 172.16.0.0/12",
+            "--netfilter=reject 192.168.0.0/16",
+            "--netfilter=reject 127.0.0.0/8",
+            "--netfilter=reject 169.254.0.0/16",
+            "--netfilter=reject ::1/128",
+            "--netfilter=reject fc00::/7",
+            "--netfilter=reject fe80::/10",
+        ]
+
+    # Use Google DNS resolution. It is fine to use others but we just don't want to block DNS.
+    dns_args = [
+        "--dns=8.8.8.8",
+        "--dns=8.8.4.4",
+    ]
+    # Firejail Command with DNS resolution allowed
+    firejail_args = (
+        [
+            "--private",  # Isolates the filesystem (prevents access to user files)
+            "--net=none",  # Ensures restricted networking
+            "--seccomp",  # Enable seccomp-bpf syscall filtering
+            "--blacklist=/var/run/"  # Block system sockets
+            "--private-tmp"  # Creates an isolated temp directory for each process
+            "--rlimit-cpu=120",  # Limits CPU time to 1 second (prevents runaway processes)
+            "--rlimit-fsize=10000000",  # Limits max file size to 10 MB (prevents excessive disk writes)
+        ]
+        + netfilter_rules
+        + dns_args
+    )
+
     print("Firejail found. Running with Firejail sandboxing.")
-    return ["firejail", "--private", "--net=none"] + cmd
+    return ["firejail"] + firejail_args + cmd
 
 
 def sandboxed_run():
