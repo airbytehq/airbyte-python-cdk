@@ -369,9 +369,9 @@ class PydanticTypeTransformer:
 
             # Load the generated models.py dynamically
             spec = importlib.util.spec_from_file_location("models", output)
-            module = importlib.util.module_from_spec(spec)
+            module = importlib.util.module_from_spec(spec) # type: ignore
             sys.modules["models"] = module
-            spec.loader.exec_module(module)
+            spec.loader.exec_module(module) # type: ignore
 
             normalization_model: Type[BaseModel] = getattr(module, "NormalizationModel")
 
