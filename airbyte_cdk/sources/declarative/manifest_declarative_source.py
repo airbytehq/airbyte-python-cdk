@@ -143,10 +143,6 @@ class ManifestDeclarativeSource(DeclarativeSource):
         if api_budget_model:
             self._constructor.set_api_budget(api_budget_model, config)
 
-        max_concurrent_async_jobs_model = self._source_config.get("max_concurrent_async_jobs")
-        if max_concurrent_async_jobs_model:
-            self._constructor.set_max_concurrent_async_jobs(max_concurrent_async_jobs_model, config)
-
         source_streams = [
             self._constructor.create_component(
                 DeclarativeStreamModel,

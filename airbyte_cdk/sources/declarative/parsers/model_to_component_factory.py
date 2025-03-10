@@ -541,8 +541,10 @@ class ModelToComponentFactory:
         )
         self._connector_state_manager = connector_state_manager or ConnectorStateManager()
         self._api_budget: Optional[Union[APIBudget, HttpAPIBudget]] = None
-        self._job_tracker: Optional[JobTracker] = self._create_async_job_tracker(
-            source_config=source_config
+        self._job_tracker: Optional[JobTracker] = (
+            self._create_async_job_tracker(source_config=source_config)
+            if source_config
+            else None
         )
 
     def _init_mappings(self) -> None:
@@ -2928,8 +2930,7 @@ class ModelToComponentFactory:
             download_target_extractor=download_target_extractor,
         )
 
-        if not self._job_tracker:
-            self._job_tracker = JobTracker(1)
+        self._job_tracker = JobTracker(1) if not self._job_tracker else self._job_tracker
 
         async_job_partition_router = AsyncJobPartitionRouter(
             job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
