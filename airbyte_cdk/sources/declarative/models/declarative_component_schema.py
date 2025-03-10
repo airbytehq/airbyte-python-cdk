@@ -929,14 +929,6 @@ class CustomDecoder(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class MaxConcurrentAsyncJobs(BaseModel):
-    max_concurrent_job_count: int = Field(
-        ...,
-        description="Maximum number of concurrent jobs to run. This is often set by the API's maximum number of concurrent jobs on the account level.",
-        title="Maximum Concurrent Job Count",
-    )
-
-
 class MinMaxDatetime(BaseModel):
     type: Literal["MinMaxDatetime"]
     datetime: str = Field(
@@ -1879,7 +1871,11 @@ class DeclarativeSource1(BaseModel):
     spec: Optional[Spec] = None
     concurrency_level: Optional[ConcurrencyLevel] = None
     api_budget: Optional[HTTPAPIBudget] = None
-    max_concurrent_async_jobs: Optional[MaxConcurrentAsyncJobs] = None
+    max_concurrent_job_count: Optional[int] = Field(
+        None,
+        description="Maximum number of concurrent async jobs to run. This is often set by the API's maximum number of concurrent jobs on the account level.",
+        title="Maximum Concurrent Async Jobs",
+    )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
         description="For internal Airbyte use only - DO NOT modify manually. Used by consumers of declarative manifests for storing related metadata.",
@@ -1907,7 +1903,11 @@ class DeclarativeSource2(BaseModel):
     spec: Optional[Spec] = None
     concurrency_level: Optional[ConcurrencyLevel] = None
     api_budget: Optional[HTTPAPIBudget] = None
-    max_concurrent_async_jobs: Optional[MaxConcurrentAsyncJobs] = None
+    max_concurrent_job_count: Optional[int] = Field(
+        None,
+        description="Maximum number of concurrent async jobs to run. This is often set by the API's maximum number of concurrent jobs on the account level.",
+        title="Maximum Concurrent Async Jobs",
+    )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
         description="For internal Airbyte use only - DO NOT modify manually. Used by consumers of declarative manifests for storing related metadata.",
