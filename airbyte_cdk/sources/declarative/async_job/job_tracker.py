@@ -3,7 +3,7 @@
 import logging
 import threading
 import uuid
-from typing import Optional, Set
+from typing import Set
 
 from airbyte_cdk.logger import lazy_log
 
