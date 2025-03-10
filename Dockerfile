@@ -21,7 +21,7 @@ COPY dist/*.whl ./dist/
 
 # Install dependencies - ignore keyring warnings
 RUN poetry config virtualenvs.create false \
-    && poetry install --only main --no-interaction --no-ansi || true
+    && poetry install --only main --no-interaction --no-ansi
 
 # Build and install the package
 RUN pip install dist/*.whl
@@ -40,6 +40,6 @@ RUN rm -rf dist/ pyproject.toml poetry.lock README.md
 RUN chown -R 1000:1000 /airbyte
 
 # Set the entrypoint
-ENV AIRBYTE_ENTRYPOINT="python /airbyte/integration_code/main.py"
-ENTRYPOINT ["python", "/airbyte/integration_code/main.py"]
+ENV AIRBYTE_ENTRYPOINT="source-declarative-manifest-sandboxed"
+ENTRYPOINT ["source-declarative-manifest-sandboxed"]
 USER airbyte
