@@ -9,6 +9,12 @@ FROM docker.io/airbyte/python-connector-base:4.0.0@sha256:d9894b6895923b379f3006
 
 WORKDIR /airbyte/integration_code
 
+# Install Firejail
+RUN apt-get update && \
+    apt-get install -y firejail && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 # Copy project files needed for build
 COPY pyproject.toml poetry.lock README.md ./
 COPY dist/*.whl ./dist/
