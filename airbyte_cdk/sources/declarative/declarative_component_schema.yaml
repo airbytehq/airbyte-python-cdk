@@ -42,6 +42,26 @@ properties:
     "$ref": "#/definitions/ConcurrencyLevel"
   api_budget:
     "$ref": "#/definitions/HTTPAPIBudget"
+  max_concurrent_async_jobs:
+    title: Maximum Concurrent Async Jobs
+    description: Maximum number of concurrent async jobs to run.
+    type: object
+    required:
+      - max_concurrent_jobs
+    properties:
+      max_concurrent_jobs:
+        title: Maximum Concurrent Jobs
+        description: Maximum number of concurrent jobs to run. This value should be based on the API's maximum number of concurrent jobs per endpoint or overall on the account.
+        type: integer
+        default: 1
+      scope:
+        title: Scope
+        description: Specifies whether the maximum number of concurrent jobs is applied per stream or per source. This value should based on whether the API sets a maximum number of concurrent jobs per endpoint or overall on the account.
+        type: string
+        enum:
+          - stream
+          - source
+        default: source
   metadata:
     type: object
     description: For internal Airbyte use only - DO NOT modify manually. Used by consumers of declarative manifests for storing related metadata.

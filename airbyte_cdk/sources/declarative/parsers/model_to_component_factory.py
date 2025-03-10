@@ -2924,12 +2924,15 @@ class ModelToComponentFactory:
             download_target_extractor=download_target_extractor,
         )
 
+
+        if self._job_tracker is None:
+            job_tracker = JobTracker(self._max_concurrent_async_jobs.get("max_concurrent_job_count"))
+
         async_job_partition_router = AsyncJobPartitionRouter(
             job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
                 job_repository,
                 stream_slices,
-                JobTracker(1),
-                # FIXME eventually make the number of concurrent jobs in the API configurable. Until then, we limit to 1
+                job_tracker,
                 self._message_repository,
                 has_bulk_parent=False,
                 # FIXME work would need to be done here in order to detect if a stream as a parent stream that is bulk
@@ -3218,3 +3221,15 @@ class ModelToComponentFactory:
         self._api_budget = self.create_component(
             model_type=HTTPAPIBudgetModel, component_definition=component_definition, config=config
         )
+
+    def set_max_concurrent_async_jobs(self, config: Config) -> None:
+        """
+        Sets up job tracking based on concurrent job limits specified in config.
+        If concurrent job limiting is scoped to 'source', creates a global JobTracker to enforce the limit
+        Otherwise, a JobTracker will be instantiated within each AsyncRetriever
+        """
+        self._job_tracker: Optional[JobTracker] = None
+        self._max_concurrent_async_jobs = config.get("max_concurrent_async_jobs")
+
+        if self._max_concurrent_async_jobs and self._max_concurrent_async_jobs.get("scope") == "source":
+            self._job_tracker = JobTracker(self._max_concurrent_async_jobs.get("max_concurrent_job_count", 1))
