@@ -2419,7 +2419,6 @@ definitions:
         title: Maximum Concurrent Job Count
         description: Maximum number of concurrent jobs to run. This is often set by the API's maximum number of concurrent jobs on the account level.
         type: integer
-        default: 1
   MinMaxDatetime:
     title: Min-Max Datetime
     description: Compares the provided date against optional minimum or maximum times. The max_datetime serves as the ceiling and will be returned when datetime exceeds it. The min_datetime serves as the floor.

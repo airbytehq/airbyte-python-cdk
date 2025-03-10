@@ -541,7 +541,7 @@ class ModelToComponentFactory:
         )
         self._connector_state_manager = connector_state_manager or ConnectorStateManager()
         self._api_budget: Optional[Union[APIBudget, HttpAPIBudget]] = None
-        self._job_tracker: Optional[JobTracker] = self._set_max_concurrent_async_job_count(
+        self._job_tracker: Optional[JobTracker] = self._create_async_job_tracker(
             source_config=source_config
         )
 
@@ -3225,7 +3225,7 @@ class ModelToComponentFactory:
             model_type=HTTPAPIBudgetModel, component_definition=component_definition, config=config
         )
 
-    def _set_max_concurrent_async_job_count(
+    def _create_async_job_tracker(
         self, source_config: ConnectionDefinition
     ) -> Optional[JobTracker]:
         """
