@@ -48,6 +48,9 @@ from airbyte_cdk.sources.file_based.exceptions import (
     FileBasedErrorsCollector,
     FileBasedSourceError,
 )
+from airbyte_cdk.sources.file_based.file_based_stream_permissions_reader import (
+    AbstractFileBasedStreamPermissionsReader,
+)
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
 from airbyte_cdk.sources.file_based.file_types import default_parsers
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
@@ -100,8 +103,10 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         cursor_cls: Type[
             Union[AbstractConcurrentFileBasedCursor, AbstractFileBasedCursor]
         ] = FileBasedConcurrentCursor,
+        stream_permissions_reader: AbstractFileBasedStreamPermissionsReader = None,
     ):
         self.stream_reader = stream_reader
+        self.stream_permissions_reader = stream_permissions_reader
         self.spec_class = spec_class
         self.config = config
         self.catalog = catalog
@@ -340,6 +345,9 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
     def _make_permissions_stream(
         self, stream_config: FileBasedStreamConfig, cursor: Optional[AbstractFileBasedCursor]
     ) -> AbstractFileBasedStream:
+        """
+        Creates a stream that reads permissions from files.
+        """
         return PermissionsFileBasedStream(
             config=stream_config,
             catalog_schema=self.stream_schemas.get(stream_config.name),
@@ -350,6 +358,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
             validation_policy=self._validate_and_get_validation_policy(stream_config),
             errors_collector=self.errors_collector,
             cursor=cursor,
+            stream_permissions_reader=self.stream_permissions_reader,
         )
 
     def _make_file_based_stream(
@@ -372,7 +381,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
     ) -> Stream:
         return FileIdentitiesStream(
             catalog_schema=self.stream_schemas.get(FileIdentitiesStream.IDENTITIES_STREAM_NAME),
-            stream_reader=self.stream_reader,
+            stream_permissions_reader=self.stream_permissions_reader,
             discovery_policy=self.discovery_policy,
             errors_collector=self.errors_collector,
         )
