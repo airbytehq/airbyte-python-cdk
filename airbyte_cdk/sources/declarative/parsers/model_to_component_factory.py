@@ -503,7 +503,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.incrementing_count_
     IncrementingCountStreamStateConverter,
 )
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
-from airbyte_cdk.sources.types import Config
+from airbyte_cdk.sources.types import Config, ConnectionDefinition
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 
 ComponentDefinition = Mapping[str, Any]
@@ -527,6 +527,7 @@ class ModelToComponentFactory:
         disable_resumable_full_refresh: bool = False,
         message_repository: Optional[MessageRepository] = None,
         connector_state_manager: Optional[ConnectorStateManager] = None,
+        source_config: Optional[ConnectionDefinition] = None,
     ):
         self._init_mappings()
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
@@ -540,6 +541,9 @@ class ModelToComponentFactory:
         )
         self._connector_state_manager = connector_state_manager or ConnectorStateManager()
         self._api_budget: Optional[Union[APIBudget, HttpAPIBudget]] = None
+        self._job_tracker: Optional[JobTracker] = self._set_max_concurrent_async_job_count(
+            source_config=source_config
+        )
 
     def _init_mappings(self) -> None:
         self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Mapping[Type[BaseModel], Callable[..., Any]] = {
@@ -2924,15 +2928,14 @@ class ModelToComponentFactory:
             download_target_extractor=download_target_extractor,
         )
 
-
-        if self._job_tracker is None:
-            job_tracker = JobTracker(self._max_concurrent_async_jobs.get("max_concurrent_job_count"))
+        if not self._job_tracker:
+            self._job_tracker = JobTracker(1)
 
         async_job_partition_router = AsyncJobPartitionRouter(
             job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
                 job_repository,
                 stream_slices,
-                job_tracker,
+                self._job_tracker,
                 self._message_repository,
                 has_bulk_parent=False,
                 # FIXME work would need to be done here in order to detect if a stream as a parent stream that is bulk
@@ -3222,14 +3225,12 @@ class ModelToComponentFactory:
             model_type=HTTPAPIBudgetModel, component_definition=component_definition, config=config
         )
 
-    def set_max_concurrent_async_jobs(self, config: Config) -> None:
+    def _set_max_concurrent_async_job_count(
+        self, source_config: ConnectionDefinition
+    ) -> Optional[JobTracker]:
         """
-        Sets up job tracking based on concurrent job limits specified in config.
-        If concurrent job limiting is scoped to 'source', creates a global JobTracker to enforce the limit
-        Otherwise, a JobTracker will be instantiated within each AsyncRetriever
+        Sets up job tracking for async jobs based on limit specified in the source config.
         """
-        self._job_tracker: Optional[JobTracker] = None
-        self._max_concurrent_async_jobs = config.get("max_concurrent_async_jobs")
-
-        if self._max_concurrent_async_jobs and self._max_concurrent_async_jobs.get("scope") == "source":
-            self._job_tracker = JobTracker(self._max_concurrent_async_jobs.get("max_concurrent_job_count", 1))
+        if job_count := source_config.get("max_concurrent_job_count"):
+            return JobTracker(job_count)
+        return None

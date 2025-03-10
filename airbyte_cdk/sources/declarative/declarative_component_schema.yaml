@@ -43,25 +43,7 @@ properties:
   api_budget:
     "$ref": "#/definitions/HTTPAPIBudget"
   max_concurrent_async_jobs:
-    title: Maximum Concurrent Async Jobs
-    description: Maximum number of concurrent async jobs to run.
-    type: object
-    required:
-      - max_concurrent_jobs
-    properties:
-      max_concurrent_jobs:
-        title: Maximum Concurrent Jobs
-        description: Maximum number of concurrent jobs to run. This value should be based on the API's maximum number of concurrent jobs per endpoint or overall on the account.
-        type: integer
-        default: 1
-      scope:
-        title: Scope
-        description: Specifies whether the maximum number of concurrent jobs is applied per stream or per source. This value should based on whether the API sets a maximum number of concurrent jobs per endpoint or overall on the account.
-        type: string
-        enum:
-          - stream
-          - source
-        default: source
+    "$ref": "#/definitions/MaxConcurrentAsyncJobs"
   metadata:
     type: object
     description: For internal Airbyte use only - DO NOT modify manually. Used by consumers of declarative manifests for storing related metadata.
@@ -2426,6 +2408,18 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  MaxConcurrentAsyncJobs:
+    title: Maximum Concurrent Async Jobs
+    description: Maximum number of concurrent async jobs to run. This is often set by the API's maximum number of concurrent jobs on the account level.
+    type: object
+    required:
+      - max_concurrent_job_count
+    properties:
+      max_concurrent_job_count:
+        title: Maximum Concurrent Job Count
+        description: Maximum number of concurrent jobs to run. This is often set by the API's maximum number of concurrent jobs on the account level.
+        type: integer
+        default: 1
   MinMaxDatetime:
     title: Min-Max Datetime
     description: Compares the provided date against optional minimum or maximum times. The max_datetime serves as the ceiling and will be returned when datetime exceeds it. The min_datetime serves as the floor.

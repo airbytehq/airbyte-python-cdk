@@ -3,7 +3,7 @@
 import logging
 import threading
 import uuid
-from typing import Set
+from typing import Optional, Set
 
 from airbyte_cdk.logger import lazy_log
 
@@ -15,9 +15,9 @@ class ConcurrentJobLimitReached(Exception):
 
 
 class JobTracker:
-    def __init__(self, limit: int):
+    def __init__(self, limit: Optional[int]):
         self._jobs: Set[str] = set()
-        self._limit = limit
+        self._limit = limit if isinstance(limit, int) and limit >= 1 else 1
         self._lock = threading.Lock()
 
     def try_to_get_intent(self) -> str:
