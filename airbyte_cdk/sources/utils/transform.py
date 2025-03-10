@@ -313,7 +313,7 @@ class PydanticTypeTransformer:
             Transforms a given record using a dynamically generated Pydantic model.
     """
 
-    _custom_model_normalizer: Callable[[Type[BaseModel]], Type[BaseModel]] = None
+    _custom_model_normalizer: Optional[Callable[[Type[BaseModel]], Type[BaseModel]]] = None
 
     def register_custom_model(
         self, custom_model_callback: Callable[[Type[BaseModel]], Type[BaseModel]]
@@ -339,8 +339,8 @@ class PydanticTypeTransformer:
     def stream_model(
         self,
         json_schema: str,
-        model_modifier: Optional[Callable[[BaseModel], BaseModel]] = None,
-    ) -> BaseModel:
+        model_modifier: Optional[Callable[[Type[BaseModel]], Type[BaseModel]]] = None,
+    ) -> Type[BaseModel]:
         """
         Generates a Pydantic model from a given JSON schema.
 
@@ -373,7 +373,7 @@ class PydanticTypeTransformer:
             sys.modules["models"] = module
             spec.loader.exec_module(module)
 
-            normalization_model = getattr(module, "NormalizationModel")
+            normalization_model: Type[BaseModel] = getattr(module, "NormalizationModel")
 
             # Apply the user-provided modifier
             if model_modifier:
@@ -397,5 +397,5 @@ class PydanticTypeTransformer:
         Returns:
             None: The function updates the `record` in place.
         """
-        model: BaseModel = self.stream_model(str(schema))
+        model: Type[BaseModel] = self.stream_model(str(schema))
         record.update(model(**record).model_dump())
