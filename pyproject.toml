@@ -111,7 +111,7 @@ sql = ["sqlalchemy"]
 [tool.poetry.scripts]
 
 source-declarative-manifest = "airbyte_cdk.cli.source_declarative_manifest:run"
-sandboxed-source-declarative-manifest = "airbyte_cdk.cli.source_declarative_manifest:sandboxed_run"
+source-declarative-manifest-sandboxed = "airbyte_cdk.cli.source_declarative_manifest:sandboxed_run"
 
 [tool.isort]
 skip = ["__init__.py"]  # TODO: Remove after this is fixed: https://github.com/airbytehq/airbyte-python-cdk/issues/12
