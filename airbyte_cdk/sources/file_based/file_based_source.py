@@ -103,7 +103,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         cursor_cls: Type[
             Union[AbstractConcurrentFileBasedCursor, AbstractFileBasedCursor]
         ] = FileBasedConcurrentCursor,
-        stream_permissions_reader: AbstractFileBasedStreamPermissionsReader = None,
+        stream_permissions_reader: Optional[AbstractFileBasedStreamPermissionsReader] = None,
     ):
         self.stream_reader = stream_reader
         self.stream_permissions_reader = stream_permissions_reader
@@ -348,6 +348,10 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
         """
         Creates a stream that reads permissions from files.
         """
+        if not self.stream_permissions_reader:
+            raise ValueError(
+                "Stream permissions reader is required for streams that use permissions transfer mode."
+            )
         return PermissionsFileBasedStream(
             config=stream_config,
             catalog_schema=self.stream_schemas.get(stream_config.name),
@@ -379,6 +383,10 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
     def _make_identities_stream(
         self,
     ) -> Stream:
+        if not self.stream_permissions_reader:
+            raise ValueError(
+                "Stream permissions reader is required for streams that use permissions transfer mode."
+            )
         return FileIdentitiesStream(
             catalog_schema=self.stream_schemas.get(FileIdentitiesStream.IDENTITIES_STREAM_NAME),
             stream_permissions_reader=self.stream_permissions_reader,
