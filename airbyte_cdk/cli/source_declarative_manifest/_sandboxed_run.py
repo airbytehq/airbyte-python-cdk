@@ -10,20 +10,34 @@ ENV_SANDBOX_MODE_AUTO = "AUTO"  # Use Firejail if available, otherwise None
 ENV_SANDBOX_MODE_NONE = "NONE"
 
 USAGE = f"""
-Sandboxed execution of the source-declarative-manifest connector.
+-------------------------------------------
+-- source-declarative-manifest-sandboxed --
+-------------------------------------------
+
+Sandboxed execution of the source-declarative-manifest connector. By default, this script
+wraps the source-declarative-manifest command in Firejail to run the connector in a sandboxed
+environment. If Firejail is not available, the connector will run without sandboxing.
+
+Environment variable '{ENV_SANDBOX_MODE}' controls the sandboxing behavior. The following values
+are supported:
+    - '{ENV_SANDBOX_MODE_FIREJAIL}': Use Firejail to run the connector in a sandboxed environment.
+    - '{ENV_SANDBOX_MODE_AUTO}': Use Firejail if available, otherwise run without sandboxing.
+    - '{ENV_SANDBOX_MODE_NONE}': Disable sandboxing and run the connector without Firejail.
 
 Usage: source-declarative-manifest-sandboxed [OPTIONS] [CMD]
-
-Options:
-  --help           Show this help message and exit.
-  --check-sandbox  Check Firejail availability and exit.
 
 CMD:
   The command to run in the sandboxed environment. This should be the command
   that would normally be run to start the connector. E.g. "check", "read", etc.
+  The command is passed to the source-declarative-manifest entrypoint.
 
-  The command is ignored if specifying --check-sandbox or --help.
+  The command is ignored if specifying any of the below options.
+
+Options:
+  --help           Show this help message and exit.
+  --check-sandbox  Check Firejail availability and exit.
 """
+
 
 def _wrap_in_sandbox(cmd: list[str]) -> list[str]:
     """Wrap the given command in Firejail.
