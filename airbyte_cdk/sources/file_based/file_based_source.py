@@ -342,16 +342,23 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
             preserve_directory_structure=preserve_directory_structure(parsed_config),
         )
 
+    def _ensure_permissions_reader_available(self) -> None:
+        """
+        Validates that a stream permissions reader is available.
+        Raises a ValueError if the reader is not provided.
+        """
+        if not self.stream_permissions_reader:
+            raise ValueError(
+                "Stream permissions reader is required for streams that use permissions transfer mode."
+            )
+
     def _make_permissions_stream(
         self, stream_config: FileBasedStreamConfig, cursor: Optional[AbstractFileBasedCursor]
     ) -> AbstractFileBasedStream:
         """
         Creates a stream that reads permissions from files.
         """
-        if not self.stream_permissions_reader:
-            raise ValueError(
-                "Stream permissions reader is required for streams that use permissions transfer mode."
-            )
+        self._ensure_permissions_reader_available()
         return PermissionsFileBasedStream(
             config=stream_config,
             catalog_schema=self.stream_schemas.get(stream_config.name),
@@ -362,7 +369,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
             validation_policy=self._validate_and_get_validation_policy(stream_config),
             errors_collector=self.errors_collector,
             cursor=cursor,
-            stream_permissions_reader=self.stream_permissions_reader,
+            stream_permissions_reader=self.stream_permissions_reader,  # type: ignore
         )
 
     def _make_file_based_stream(
@@ -383,13 +390,10 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
     def _make_identities_stream(
         self,
     ) -> Stream:
-        if not self.stream_permissions_reader:
-            raise ValueError(
-                "Stream permissions reader is required for streams that use permissions transfer mode."
-            )
+        self._ensure_permissions_reader_available()
         return FileIdentitiesStream(
             catalog_schema=self.stream_schemas.get(FileIdentitiesStream.IDENTITIES_STREAM_NAME),
-            stream_permissions_reader=self.stream_permissions_reader,
+            stream_permissions_reader=self.stream_permissions_reader,  # type: ignore
             discovery_policy=self.discovery_policy,
             errors_collector=self.errors_collector,
         )
