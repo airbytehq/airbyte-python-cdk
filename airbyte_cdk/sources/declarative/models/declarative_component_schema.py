@@ -1871,7 +1871,7 @@ class DeclarativeSource1(BaseModel):
     spec: Optional[Spec] = None
     concurrency_level: Optional[ConcurrencyLevel] = None
     api_budget: Optional[HTTPAPIBudget] = None
-    max_concurrent_job_count: Optional[int] = Field(
+    max_concurrent_async_job_count: Optional[int] = Field(
         None,
         description="Maximum number of concurrent async jobs to run. This property is only relevant for sources/streams that support asynchronous job execution (e.g. a Report stream that requires that initiates a job, polls the job status, and then fetches the job results). This is often set by the API's maximum number of concurrent jobs on the account level.",
         title="Maximum Concurrent Async Jobs",
@@ -1903,7 +1903,7 @@ class DeclarativeSource2(BaseModel):
     spec: Optional[Spec] = None
     concurrency_level: Optional[ConcurrencyLevel] = None
     api_budget: Optional[HTTPAPIBudget] = None
-    max_concurrent_job_count: Optional[int] = Field(
+    max_concurrent_async_job_count: Optional[int] = Field(
         None,
         description="Maximum number of concurrent async jobs to run. This property is only relevant for sources/streams that support asynchronous job execution (e.g. a Report stream that requires that initiates a job, polls the job status, and then fetches the job results). This is often set by the API's maximum number of concurrent jobs on the account level.",
         title="Maximum Concurrent Async Jobs",
