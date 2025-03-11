@@ -109,7 +109,7 @@ definitions:
         description: List of transformations (path and corresponding value) that will be added to the record.
         type: array
         items:
-          - "$ref": "#/definitions/AddedFieldDefinition"
+          "$ref": "#/definitions/AddedFieldDefinition"
       $parameters:
         type: object
         additionalProperties: true
@@ -1657,7 +1657,7 @@ definitions:
         description: List of potentially nested fields describing the full path of the field to extract. Use "*" to extract all values from an array. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/record-selector).
         type: array
         items:
-          - type: string
+          type: string
         interpolation_context:
           - config
         examples:
@@ -2073,7 +2073,7 @@ definitions:
         type: array
         default: []
         items:
-          - type: string
+          type: string
         interpolation_context:
           - config
       key_pointer:
@@ -2081,7 +2081,7 @@ definitions:
         description: List of potentially nested fields describing the full path of the field key to extract.
         type: array
         items:
-          - type: string
+          type: string
         interpolation_context:
           - config
       type_pointer:
@@ -2089,13 +2089,13 @@ definitions:
         description: List of potentially nested fields describing the full path of the field type to extract.
         type: array
         items:
-          - type: string
+          type: string
         interpolation_context:
           - config
       types_mapping:
         type: array
         items:
-          - "$ref": "#/definitions/TypesMap"
+          "$ref": "#/definitions/TypesMap"
       $parameters:
         type: object
         additionalProperties: true
@@ -2251,7 +2251,7 @@ definitions:
         description: A path to field that needs to be flattened.
         type: array
         items:
-          - type: string
+          type: string
         examples:
           - ["data"]
           - ["data", "*", "field"]
@@ -3526,7 +3526,7 @@ definitions:
         description: A list of potentially nested fields indicating the full path where value will be added or updated.
         type: array
         items:
-          - type: string
+          type: string
         interpolation_context:
           - config
           - components_values
@@ -3602,7 +3602,7 @@ definitions:
         description: A list of potentially nested fields indicating the full path in source config file where streams configs located.
         type: array
         items:
-          - type: string
+          type: string
         interpolation_context:
           - parameters
         examples:
