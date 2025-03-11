@@ -541,11 +541,7 @@ class ModelToComponentFactory:
         )
         self._connector_state_manager = connector_state_manager or ConnectorStateManager()
         self._api_budget: Optional[Union[APIBudget, HttpAPIBudget]] = None
-        self._job_tracker: Optional[JobTracker] = (
-            self._create_async_job_tracker(source_config=source_config)
-            if source_config
-            else None
-        )
+        self._job_tracker: JobTracker = self._create_async_job_tracker(source_config=source_config)
 
     def _init_mappings(self) -> None:
         self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Mapping[Type[BaseModel], Callable[..., Any]] = {
@@ -2930,8 +2926,6 @@ class ModelToComponentFactory:
             download_target_extractor=download_target_extractor,
         )
 
-        self._job_tracker = JobTracker(1) if not self._job_tracker else self._job_tracker
-
         async_job_partition_router = AsyncJobPartitionRouter(
             job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
                 job_repository,
@@ -3227,11 +3221,11 @@ class ModelToComponentFactory:
         )
 
     def _create_async_job_tracker(
-        self, source_config: ConnectionDefinition
-    ) -> Optional[JobTracker]:
+        self, source_config: Optional[ConnectionDefinition]
+    ) -> JobTracker:
         """
         Sets up job tracking for async jobs based on limit specified in the source config.
         """
-        if job_count := source_config.get("max_concurrent_job_count"):
-            return JobTracker(job_count)
-        return None
+        if source_config:
+            return JobTracker(source_config.get("max_concurrent_job_count", 1))
+        return JobTracker(1)
