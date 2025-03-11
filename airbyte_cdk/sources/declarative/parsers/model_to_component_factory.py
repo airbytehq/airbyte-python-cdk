@@ -527,7 +527,7 @@ class ModelToComponentFactory:
         disable_resumable_full_refresh: bool = False,
         message_repository: Optional[MessageRepository] = None,
         connector_state_manager: Optional[ConnectorStateManager] = None,
-        source_config: Optional[ConnectionDefinition] = None,
+        max_concurrent_async_job_count: Optional[int] = None,
     ):
         self._init_mappings()
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
@@ -541,7 +541,7 @@ class ModelToComponentFactory:
         )
         self._connector_state_manager = connector_state_manager or ConnectorStateManager()
         self._api_budget: Optional[Union[APIBudget, HttpAPIBudget]] = None
-        self._job_tracker: JobTracker = self._create_async_job_tracker(source_config=source_config)
+        self._job_tracker = JobTracker(max_concurrent_async_job_count or 1)
 
     def _init_mappings(self) -> None:
         self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Mapping[Type[BaseModel], Callable[..., Any]] = {
@@ -3219,13 +3219,3 @@ class ModelToComponentFactory:
         self._api_budget = self.create_component(
             model_type=HTTPAPIBudgetModel, component_definition=component_definition, config=config
         )
-
-    def _create_async_job_tracker(
-        self, source_config: Optional[ConnectionDefinition]
-    ) -> JobTracker:
-        """
-        Sets up job tracking for async jobs based on limit specified in the source config.
-        """
-        if source_config:
-            return JobTracker(source_config.get("max_concurrent_job_count", 1))
-        return JobTracker(1)
