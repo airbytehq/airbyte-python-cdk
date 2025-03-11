@@ -1873,7 +1873,7 @@ class DeclarativeSource1(BaseModel):
     api_budget: Optional[HTTPAPIBudget] = None
     max_concurrent_job_count: Optional[int] = Field(
         None,
-        description="Maximum number of concurrent async jobs to run. This is often set by the API's maximum number of concurrent jobs on the account level.",
+        description="Maximum number of concurrent async jobs to run. This property is only relevant for sources/streams that support asynchronous job execution (e.g. a Report stream that requires that initiates a job, polls the job status, and then fetches the job results). This is often set by the API's maximum number of concurrent jobs on the account level.",
         title="Maximum Concurrent Async Jobs",
     )
     metadata: Optional[Dict[str, Any]] = Field(
@@ -1905,7 +1905,7 @@ class DeclarativeSource2(BaseModel):
     api_budget: Optional[HTTPAPIBudget] = None
     max_concurrent_job_count: Optional[int] = Field(
         None,
-        description="Maximum number of concurrent async jobs to run. This is often set by the API's maximum number of concurrent jobs on the account level.",
+        description="Maximum number of concurrent async jobs to run. This property is only relevant for sources/streams that support asynchronous job execution (e.g. a Report stream that requires that initiates a job, polls the job status, and then fetches the job results). This is often set by the API's maximum number of concurrent jobs on the account level.",
         title="Maximum Concurrent Async Jobs",
     )
     metadata: Optional[Dict[str, Any]] = Field(
