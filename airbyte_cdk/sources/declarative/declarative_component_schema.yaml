@@ -1657,7 +1657,7 @@ definitions:
         description: List of potentially nested fields describing the full path of the field to extract. Use "*" to extract all values from an array. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/record-selector).
         type: array
         items:
-          - type: string
+          type: string
         interpolation_context:
           - config
         examples:
