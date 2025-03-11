@@ -1,0 +1,5 @@
+# Ignore all resource files
+resources/*
+
+# But do not ignore .gitkeep files, to keep an empty `resources` directory
+!resources/.gitkeep
