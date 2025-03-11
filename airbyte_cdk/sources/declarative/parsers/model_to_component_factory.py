@@ -541,7 +541,7 @@ class ModelToComponentFactory:
         )
         self._connector_state_manager = connector_state_manager or ConnectorStateManager()
         self._api_budget: Optional[Union[APIBudget, HttpAPIBudget]] = None
-        self._job_tracker = JobTracker(max_concurrent_async_job_count or 1)
+        self._job_tracker: JobTracker = JobTracker(max_concurrent_async_job_count or 1)
 
     def _init_mappings(self) -> None:
         self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Mapping[Type[BaseModel], Callable[..., Any]] = {
