@@ -225,6 +225,9 @@ DEP002 = [
   "cryptography",  # Constrained as transitive dependency due to a bug in newer versions
 
   # TODO: Remove these dependencies if not needed:
+  "anyio",
+  "avro",
+  "psutil",
   "rapidfuzz",
   "cohere",
   "markdown",
