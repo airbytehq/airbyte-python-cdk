@@ -200,19 +200,17 @@ mount_docker_socket = true
 
 [tool.deptry.per_rule_ignores]
 # This is a mapping of rules and package names to be ignored for that rule.
+
+# DEP001: Unused direct dependencies - packages that are declared as dependencies but not imported
+# https://deptry.com/rules/dep001/
 DEP001 = [
   # Optional dependencies that might be imported conditionally
   "dagger",  # Used in bin scripts but not a core dependency
   "source_declarative_manifest"  # Used in tests but not a core dependency
 ]
-DEP004 = [
-  "pdoc",  # Only used for generating documentation. Not a runtime dependency.
-  "pytest",  # Test dependencies
-  "freezegun",  # Test dependencies
-  "requests_mock",  # Test dependencies
-  "_pytest",  # Test dependencies
-  "pympler"  # Test dependencies
-]
+
+# DEP002: Missing dependencies - packages that are imported but not declared as dependencies
+# https://deptry.com/rules/dep002/
 DEP002 = [
   # Dependencies that are imported indirectly through other packages
   "sqlalchemy",  # Used through extras
@@ -231,10 +229,24 @@ DEP002 = [
   "unstructured.pytesseract",
   "cryptography"
 ]
+
+# DEP003: Transitive dependencies - packages that are imported directly
+# https://deptry.com/rules/dep003/
 DEP003 = [
   # Transitive dependencies that are imported directly
-  "typing_extensions",  # Common transitive dependency
-  "packaging",  # Common transitive dependency
+  "typing_extensions",  # Common transitive dependency - "*"
+  "packaging",  # Common transitive dependency - "*"
   "pydantic_core",  # Pydantic internals
-  "anyio"  # Async dependency
+  "anyio"  # Async dependency - "*"
+]
+
+# DEP004: Dev dependencies imported in main code - packages that are imported in non-test code but declared as dev dependencies
+# https://deptry.com/rules/dep004/
+DEP004 = [
+  "pdoc",  # Only used for generating documentation. Not a runtime dependency.
+  "pytest",  # Test dependencies
+  "freezegun",  # Test dependencies
+  "requests_mock",  # Test dependencies
+  "_pytest",  # Test dependencies
+  "pympler"  # Test dependencies
 ]
