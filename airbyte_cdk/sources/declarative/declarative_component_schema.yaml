@@ -109,7 +109,7 @@ definitions:
         description: List of transformations (path and corresponding value) that will be added to the record.
         type: array
         items:
-          - "$ref": "#/definitions/AddedFieldDefinition"
+          "$ref": "#/definitions/AddedFieldDefinition"
       $parameters:
         type: object
         additionalProperties: true
@@ -2095,7 +2095,7 @@ definitions:
       types_mapping:
         type: array
         items:
-          - "$ref": "#/definitions/TypesMap"
+          "$ref": "#/definitions/TypesMap"
       $parameters:
         type: object
         additionalProperties: true
