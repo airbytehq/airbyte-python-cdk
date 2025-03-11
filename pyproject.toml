@@ -102,6 +102,7 @@ types-requests = "^2.32.0.20241016"
 types-python-dateutil = "^2.9.0.20241003"
 types-pyyaml = "^6.0.12.20240917"
 types-cachetools = "^5.5.0.20240820"
+deptry = "^0.23.0"
 
 [tool.poetry.extras]
 file-based = ["avro", "fastavro", "pyarrow", "unstructured", "pdf2image", "pdfminer.six", "unstructured.pytesseract", "pytesseract", "markdown", "python-calamine", "python-snappy"]
@@ -196,3 +197,44 @@ optional_poetry_groups = ["dev"]
 poetry_extras = ["file-based", "vector-db-based"]
 poe_tasks = ["check-ci"]
 mount_docker_socket = true
+
+[tool.deptry.per_rule_ignores]
+# This is a mapping of rules and package names to be ignored for that rule.
+DEP001 = [
+  # Optional dependencies that might be imported conditionally
+  "dagger",  # Used in bin scripts but not a core dependency
+  "source_declarative_manifest"  # Used in tests but not a core dependency
+]
+DEP004 = [
+  "pdoc",  # Only used for generating documentation. Not a runtime dependency.
+  "pytest",  # Test dependencies
+  "freezegun",  # Test dependencies
+  "requests_mock",  # Test dependencies
+  "_pytest",  # Test dependencies
+  "pympler"  # Test dependencies
+]
+DEP002 = [
+  # Dependencies that are imported indirectly through other packages
+  "sqlalchemy",  # Used through extras
+  # Optional dependencies in extras
+  "psutil",
+  "rapidfuzz",
+  "cohere",
+  "markdown",
+  "openai",
+  "pdf2image",
+  "pdfminer.six",
+  "pytesseract",
+  "python-calamine",
+  "python-snappy",
+  "tiktoken",
+  "unstructured.pytesseract",
+  "cryptography"
+]
+DEP003 = [
+  # Transitive dependencies that are imported directly
+  "typing_extensions",  # Common transitive dependency
+  "packaging",  # Common transitive dependency
+  "pydantic_core",  # Pydantic internals
+  "anyio"  # Async dependency
+]
