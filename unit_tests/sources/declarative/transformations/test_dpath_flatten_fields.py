@@ -134,7 +134,11 @@ def test_dpath_flatten_lists(
     input_record, config, field_path, delete_origin_value, replace_record, expected_record
 ):
     flattener = DpathFlattenFields(
-        field_path=field_path, parameters={}, config=config, delete_origin_value=delete_origin_value, replace_record=replace_record
+        field_path=field_path,
+        parameters={},
+        config=config,
+        delete_origin_value=delete_origin_value,
+        replace_record=replace_record,
     )
     flattener.transform(input_record)
     assert input_record == expected_record
