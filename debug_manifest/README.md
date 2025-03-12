@@ -50,8 +50,7 @@ To configure the debugger in VSCode to run the `debug_manifest`, follow these st
 7. Install `CDK dependencies` by running `poetry install --all-extras`
 8. Replace the `"python": "<PATH_TO_CDK_ENV>/bin/python"` with the correct interpreter `PATH` pointing to the `CDK env` installed from Step `7` (use `which python` to have the complete python path), to wire the CDK env to the debugger. Alternatively you can switch the default interpreter you use in your IDE.
 ### Set up the necessary resources to use within the manifest-only connector
-* These resources are ignorred by `git`, in the `.gitignore`, thus should not be commited
-
+* These resources are ignored by `git`, in the `.gitignore`, thus should not be committed
 1. Put the `config.json` inside the `/airbyte_cdk/debug_manifest/resources` (this will hold the `source input configuration`).
 2. Put the `catalog.json` inside the `/airbyte_cdk/debug_manifest/resources` (this will hold the `configured catalog` for the target source).
 3. Put the `manifest.yaml` inside the `/airbyte_cdk/debug_manifest/resources`
