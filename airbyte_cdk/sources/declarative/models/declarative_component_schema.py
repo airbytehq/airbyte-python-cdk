@@ -1465,16 +1465,6 @@ class AddFields(BaseModel):
         description="List of transformations (path and corresponding value) that will be added to the record.",
         title="Fields",
     )
-    condition: Optional[str] = Field(
-        "",
-        description="Fields will be added if expression is evaluated to True.,",
-        examples=[
-            "{{ property|string == '' }}",
-            "{{ property is integer }}",
-            "{{ property|length > 5 }}",
-            "{{ property == 'some_string_to_match' }}",
-        ],
-    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 

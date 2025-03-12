@@ -708,7 +708,6 @@ class ModelToComponentFactory:
         ]
         return AddFields(
             fields=added_field_definitions,
-            condition=model.condition,
             parameters=model.parameters or {},
         )
 
