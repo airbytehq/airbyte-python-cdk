@@ -381,7 +381,7 @@ class HttpRequester(Requester):
             # since we didn't provide a full-url, the url_base might not have a trailing slash
             # so we join the url_base and path correctly
             if not url_base.endswith("/"):
-                url_base = os.path.join(url_base, EmptyString)
+                url_base += "/"
 
         return urljoin(url_base, path)
 
