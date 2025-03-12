@@ -110,6 +110,19 @@ definitions:
         type: array
         items:
           "$ref": "#/definitions/AddedFieldDefinition"
+      condition:
+        description: Fields will be added if expression is evaluated to True.,
+        type: string
+        default: ""
+        interpolation_context:
+          - config
+          - property
+          - parameters
+        examples:
+          - "{{ property|string == '' }}"
+          - "{{ property is integer }}"
+          - "{{ property|length > 5 }}"
+          - "{{ property == 'some_string_to_match' }}"
       $parameters:
         type: object
         additionalProperties: true
