@@ -2983,6 +2983,10 @@ definitions:
           - "$ref": "#/definitions/SchemaNormalization"
           - "$ref": "#/definitions/CustomSchemaNormalization"
         default: None
+      transform_before_filtering:
+        description: If true, transformation will be applied before record filtering.
+        type: boolean
+        default: false
       $parameters:
         type: object
         additionalProperties: true
