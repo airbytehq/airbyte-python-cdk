@@ -29,10 +29,10 @@ from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DeclarativeStream as DeclarativeStreamModel,
 )
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import Spec as SpecModel
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     StateDelegatingStream as StateDelegatingStreamModel,
 )
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import Spec as SpecModel
 from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     get_registered_components_module,
 )
@@ -146,7 +146,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
         source_streams = [
             self._constructor.create_component(
-                StateDelegatingStreamModel if stream_config.get("type") == StateDelegatingStreamModel.__name__ else DeclarativeStreamModel,
+                StateDelegatingStreamModel
+                if stream_config.get("type") == StateDelegatingStreamModel.__name__
+                else DeclarativeStreamModel,
                 stream_config,
                 config,
                 emit_connector_builder_messages=self._emit_connector_builder_messages,
@@ -197,12 +199,12 @@ class ManifestDeclarativeSource(DeclarativeSource):
         for stream_config in stream_configs:
             if stream_config["name"] in parent_streams:
                 if stream_config["type"] == "StateDelegatingStream":
-                    stream_config["full_refresh_stream"]["retriever"]["requester"][
-                        "use_cache"
-                    ] = True
-                    stream_config["incremental_stream"]["retriever"]["requester"][
-                        "use_cache"
-                    ] = True
+                    stream_config["full_refresh_stream"]["retriever"]["requester"]["use_cache"] = (
+                        True
+                    )
+                    stream_config["incremental_stream"]["retriever"]["requester"]["use_cache"] = (
+                        True
+                    )
                 else:
                     stream_config["retriever"]["requester"]["use_cache"] = True
 

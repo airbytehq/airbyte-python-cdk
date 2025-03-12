@@ -205,9 +205,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     DeclarativeStream as DeclarativeStreamModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    StateDelegatingStream as StateDelegatingStreamModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DefaultErrorHandler as DefaultErrorHandlerModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -355,6 +352,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     SimpleRetriever as SimpleRetrieverModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import Spec as SpecModel
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    StateDelegatingStream as StateDelegatingStreamModel,
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     StreamConfig as StreamConfigModel,
 )
@@ -1793,13 +1793,17 @@ class ModelToComponentFactory:
             if isinstance(stream_slicer_model, list):
                 return CartesianProductStreamSlicer(
                     [
-                        self._create_component_from_model(model=slicer, config=config, stream_name=stream_name or "")
+                        self._create_component_from_model(
+                            model=slicer, config=config, stream_name=stream_name or ""
+                        )
                         for slicer in stream_slicer_model
                     ],
                     parameters={},
                 )
             else:
-                return self._create_component_from_model(model=stream_slicer_model, config=config, stream_name=stream_name or "")  # type: ignore[no-any-return] # Will be created PartitionRouter as stream_slicer_model is model.partition_router
+                return self._create_component_from_model(
+                    model=stream_slicer_model, config=config, stream_name=stream_name or ""
+                )  # type: ignore[no-any-return] # Will be created PartitionRouter as stream_slicer_model is model.partition_router
         return None
 
     def _build_incremental_cursor(
@@ -2478,7 +2482,9 @@ class ModelToComponentFactory:
     def create_parent_stream_config(
         self, model: ParentStreamConfigModel, config: Config, **kwargs: Any
     ) -> ParentStreamConfig:
-        declarative_stream = self._create_component_from_model(model.stream, config=config, **kwargs)
+        declarative_stream = self._create_component_from_model(
+            model.stream, config=config, **kwargs
+        )
         request_option = (
             self._create_component_from_model(model.request_option, config=config)
             if model.request_option
@@ -2719,12 +2725,26 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
-    def create_state_delegating_stream(self, model: StateDelegatingStreamModel, config: Config, child_state: Optional[MutableMapping[str, Any]] = None, **kwargs: Any
+    def create_state_delegating_stream(
+        self,
+        model: StateDelegatingStreamModel,
+        config: Config,
+        child_state: Optional[MutableMapping[str, Any]] = None,
+        **kwargs: Any,
     ) -> DeclarativeStream:
-        if model.full_refresh_stream.name != model.name or model.name != model.incremental_stream.name:
-            raise ValueError(f"state_delegating_stream, full_refresh_stream name and incremental_stream must have equal names. Instead has {model.name}, {model.full_refresh_stream.name} and {model.incremental_stream.name}.")
+        if (
+            model.full_refresh_stream.name != model.name
+            or model.name != model.incremental_stream.name
+        ):
+            raise ValueError(
+                f"state_delegating_stream, full_refresh_stream name and incremental_stream must have equal names. Instead has {model.name}, {model.full_refresh_stream.name} and {model.incremental_stream.name}."
+            )
 
-        stream_model = model.incremental_stream if self._connector_state_manager.get_stream_state(model.name, None) or child_state else model.full_refresh_stream
+        stream_model = (
+            model.incremental_stream
+            if self._connector_state_manager.get_stream_state(model.name, None) or child_state
+            else model.full_refresh_stream
+        )
 
         return self._create_component_from_model(stream_model, config=config, **kwargs)  # type: ignore[no-any-return]  # Will be created DeclarativeStream as stream_model is stream description
 
@@ -2981,8 +3001,14 @@ class ModelToComponentFactory:
                 self._evaluate_log_level(self._emit_connector_builder_messages),
             ),
         )
-        child_state = self._connector_state_manager.get_stream_state(kwargs.get("stream_name", ""), None) if model.incremental_dependency or False else None
-        return substream_factory._create_component_from_model(model=model, config=config, child_state=child_state, **kwargs)
+        child_state = (
+            self._connector_state_manager.get_stream_state(kwargs.get("stream_name", ""), None)
+            if model.incremental_dependency or False
+            else None
+        )
+        return substream_factory._create_component_from_model(
+            model=model, config=config, child_state=child_state, **kwargs
+        )
 
     @staticmethod
     def create_wait_time_from_header(
