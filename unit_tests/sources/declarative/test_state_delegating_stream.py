@@ -187,7 +187,7 @@ def get_records(
 
 
 @freezegun.freeze_time("2024-07-15")
-def test_state_retriever():
+def test_full_refresh_retriever():
     with HttpMocker() as http_mocker:
         http_mocker.get(
             HttpRequest(url="https://api.test.com/items"),
@@ -196,19 +196,6 @@ def test_state_retriever():
                     [
                         {"id": 1, "name": "item_1", "updated_at": "2024-07-13"},
                         {"id": 2, "name": "item_2", "updated_at": "2024-07-13"},
-                    ]
-                )
-            ),
-        )
-        http_mocker.get(
-            HttpRequest(
-                url="https://api.test.com/items_with_filtration?start=2024-07-13&end=2024-07-15"
-            ),
-            HttpResponse(
-                body=json.dumps(
-                    [
-                        {"id": 3, "name": "item_3", "updated_at": "2024-02-01"},
-                        {"id": 4, "name": "item_4", "updated_at": "2024-02-01"},
                     ]
                 )
             ),
@@ -227,7 +214,24 @@ def test_state_retriever():
         ]
         assert expected_full == full_records
 
-        # Test incremental data retrieval (with state)
+
+@freezegun.freeze_time("2024-07-15")
+def test_incremental_retriever():
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(
+                url="https://api.test.com/items_with_filtration?start=2024-07-13&end=2024-07-15"
+            ),
+            HttpResponse(
+                body=json.dumps(
+                    [
+                        {"id": 3, "name": "item_3", "updated_at": "2024-02-01"},
+                        {"id": 4, "name": "item_4", "updated_at": "2024-02-01"},
+                    ]
+                )
+            ),
+        )
+
         state = [
             AirbyteStateMessage(
                 type=AirbyteStateType.STREAM,
@@ -240,6 +244,9 @@ def test_state_retriever():
         source = ConcurrentDeclarativeSource(
             source_config=_MANIFEST, config=_CONFIG, catalog=None, state=state
         )
+        configured_catalog = create_configured_catalog(source, _CONFIG)
+
+        # Test incremental data retrieval (with state)
         incremental_records = get_records(source, _CONFIG, configured_catalog, state)
         expected_incremental = [
             {"id": 3, "name": "item_3", "updated_at": "2024-02-01"},
