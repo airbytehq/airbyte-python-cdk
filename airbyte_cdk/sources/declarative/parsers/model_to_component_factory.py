@@ -742,6 +742,9 @@ class ModelToComponentFactory:
             delete_origin_value=model.delete_origin_value
             if model.delete_origin_value is not None
             else False,
+            replace_record=model.replace_record
+            if model.replace_record is not None
+            else False,
             parameters=model.parameters or {},
         )
 
