@@ -2728,7 +2728,7 @@ class ModelToComponentFactory:
         self,
         model: StateDelegatingStreamModel,
         config: Config,
-        child_state: Optional[MutableMapping[str, Any]] = None,
+        has_parent_state: Optional[bool] = None,
         **kwargs: Any,
     ) -> DeclarativeStream:
         if (
@@ -2741,7 +2741,7 @@ class ModelToComponentFactory:
 
         stream_model = (
             model.incremental_stream
-            if self._connector_state_manager.get_stream_state(model.name, None) or child_state
+            if self._connector_state_manager.get_stream_state(model.name, None) or has_parent_state
             else model.full_refresh_stream
         )
 
@@ -3000,13 +3000,15 @@ class ModelToComponentFactory:
                 self._evaluate_log_level(self._emit_connector_builder_messages),
             ),
         )
-        child_state = (
+
+        # This flag will be used exclusively for StateDelegatingStream when a parent stream is created
+        has_parent_state = bool(
             self._connector_state_manager.get_stream_state(kwargs.get("stream_name", ""), None)
-            if model.incremental_dependency or False
-            else None
+            if model.incremental_dependency
+            else False
         )
         return substream_factory._create_component_from_model(
-            model=model, config=config, child_state=child_state, **kwargs
+            model=model, config=config, has_parent_state=has_parent_state, **kwargs
         )
 
     @staticmethod
