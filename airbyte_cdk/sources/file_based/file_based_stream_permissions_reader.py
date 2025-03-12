@@ -51,9 +51,7 @@ class AbstractFileBasedStreamPermissionsReader(ABC):
                 is_public = result["is_public"],
                 ).dict()
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not implement get_file_acl_permissions(). To support ACL permissions, implement this method and update file_permissions_schema."
-        )
+        ...
 
     @abstractmethod
     def load_identity_groups(self, logger: logging.Logger) -> Iterable[Dict[str, Any]]:
@@ -75,9 +73,7 @@ class AbstractFileBasedStreamPermissionsReader(ABC):
                     group_obj.member_email_addresses.append(member.email)
                 yield group_obj.dict()
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not implement load_identity_groups(). To support identities, implement this method and update identities_schema."
-        )
+        ...
 
     @property
     @abstractmethod
@@ -101,9 +97,7 @@ class AbstractFileBasedStreamPermissionsReader(ABC):
                   }
                 }
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not implement file_permissions_schema, please return json schema for your permissions streams."
-        )
+        ...
 
     @property
     @abstractmethod
@@ -126,6 +120,4 @@ class AbstractFileBasedStreamPermissionsReader(ABC):
               }
             }
         """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not implement identities_schema, please return json schema for your identities stream."
-        )
+        ...
