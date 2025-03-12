@@ -56,8 +56,7 @@ To configure the debugger in VSCode to run the `debug_manifest`, follow these st
 3. Put the `manifest.yaml` inside the `/airbyte_cdk/debug_manifest/resources`
 4. (Optional) Put the `state.json` inside the `/airbyte_cdk/debug_manifest/resources`
 
-## Debuging Steps
-
+## Debugging Steps
 1. Set any necessary breakpoints in your code, or `CDK` components code.
 2. Press `F5` / `Shift + CMD + D` / click the green play button in the `Run and Debug` view to start debugging.
 3. Iterate over the `2` and `3`, to debug your `manifest-only` source.
