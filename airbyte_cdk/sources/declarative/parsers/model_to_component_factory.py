@@ -356,9 +356,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import Spec as SpecModel
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    StateDelegatingRetriever as StateDelegatingRetrieverModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     StreamConfig as StreamConfigModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -444,7 +441,6 @@ from airbyte_cdk.sources.declarative.retrievers import (
     AsyncRetriever,
     SimpleRetriever,
     SimpleRetrieverTestReadDecorator,
-    StateDelegatingRetriever,
 )
 from airbyte_cdk.sources.declarative.schema import (
     ComplexFieldType,
@@ -624,7 +620,6 @@ class ModelToComponentFactory:
             SelectiveAuthenticatorModel: self.create_selective_authenticator,
             SimpleRetrieverModel: self.create_simple_retriever,
             StateDelegatingStreamModel: self.create_state_delegating_stream,
-            StateDelegatingRetrieverModel: self.create_state_delegating_retriever,
             SpecModel: self.create_spec,
             SubstreamPartitionRouterModel: self.create_substream_partition_router,
             WaitTimeFromHeaderModel: self.create_wait_time_from_header,
@@ -1785,7 +1780,6 @@ class ModelToComponentFactory:
             AsyncRetrieverModel,
             CustomRetrieverModel,
             SimpleRetrieverModel,
-            StateDelegatingRetrieverModel,
         ],
         config: Config,
         stream_name: Optional[str] = None,
@@ -1814,29 +1808,6 @@ class ModelToComponentFactory:
         stream_slicer: Optional[PartitionRouter],
         config: Config,
     ) -> Optional[StreamSlicer]:
-        if model.retriever.type == "StateDelegatingRetriever":
-            if not model.incremental_sync:
-                raise ValueError(
-                    "StateDelegatingRetriever requires 'incremental_sync' to be enabled."
-                )
-            elif model.incremental_sync.type != "DatetimeBasedCursor":
-                raise ValueError("StateDelegatingRetriever support only DatetimeBasedCursor.")
-            elif model.retriever.full_refresh_no_slice_in_params:
-                model.incremental_sync.step = None
-                model.incremental_sync.cursor_granularity = None
-                model.incremental_sync.start_time_option = None
-                model.incremental_sync.end_time_option = None
-            elif model.retriever.full_refresh_ignore_min_max_datetime:
-                start_datetime = model.incremental_sync.start_datetime
-                end_datetime = model.incremental_sync.end_datetime
-
-                if isinstance(start_datetime, MinMaxDatetimeModel):
-                    start_datetime.max_datetime = ""
-                    start_datetime.min_datetime = ""
-                if isinstance(end_datetime, MinMaxDatetimeModel):
-                    end_datetime.max_datetime = ""
-                    end_datetime.min_datetime = ""
-
         if model.incremental_sync and stream_slicer:
             if model.retriever.type == "AsyncRetriever":
                 return self.create_concurrent_cursor_from_perpartition_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
@@ -1891,7 +1862,6 @@ class ModelToComponentFactory:
             AsyncRetrieverModel,
             CustomRetrieverModel,
             SimpleRetrieverModel,
-            StateDelegatingRetrieverModel,
         ],
         stream_slicer: Optional[PartitionRouter],
     ) -> Optional[StreamSlicer]:
@@ -1936,14 +1906,6 @@ class ModelToComponentFactory:
                 # Note that this development is also done in parallel to the per partition development which once merged
                 # we could support here by calling create_concurrent_cursor_from_perpartition_cursor
                 raise ValueError("Per partition state is not supported yet for AsyncRetriever.")
-
-        if retriever_model.type == "StateDelegatingRetriever":
-            stream_name = model.name or ""
-            retriever_model = (
-                retriever_model.incremental_retriever
-                if self._connector_state_manager.get_stream_state(stream_name, None)
-                else retriever_model.full_refresh_retriever
-            )
 
         stream_slicer = self._build_stream_slicer_from_partition_router(retriever_model, config)
 
@@ -2759,11 +2721,10 @@ class ModelToComponentFactory:
 
     def create_state_delegating_stream(self, model: StateDelegatingStreamModel, config: Config, child_state: Optional[MutableMapping[str, Any]] = None, **kwargs: Any
     ) -> DeclarativeStream:
-        if model.full_refresh_stream.name != model.incremental_stream.name:
-            raise ValueError(f"full_refresh_stream name and incremental_stream must have equal names. Instead has {model.full_refresh_stream.name}, {model.incremental_stream.name}.")
+        if model.full_refresh_stream.name != model.name or model.name != model.incremental_stream.name:
+            raise ValueError(f"state_delegating_stream, full_refresh_stream name and incremental_stream must have equal names. Instead has {model.name}, {model.full_refresh_stream.name} and {model.incremental_stream.name}.")
 
-        stream_name = model.full_refresh_stream.name
-        stream_model = model.incremental_stream if self._connector_state_manager.get_stream_state(stream_name, None) or child_state else model.full_refresh_stream
+        stream_model = model.incremental_stream if self._connector_state_manager.get_stream_state(model.name, None) or child_state else model.full_refresh_stream
 
         return self._create_component_from_model(stream_model, config=config, **kwargs)
 

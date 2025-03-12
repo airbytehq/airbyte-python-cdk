@@ -30,20 +30,21 @@ _MANIFEST = {
     "check": {"type": "CheckStream", "stream_names": ["TestStream"]},
     "definitions": {
         "TestStream": {
-            "type": "DeclarativeStream",
+            "type": "StateDelegatingStream",
             "name": "TestStream",
-            "primary_key": [],
-            "schema_loader": {
-                "type": "InlineSchemaLoader",
-                "schema": {
-                    "$schema": "http://json-schema.org/schema#",
-                    "properties": {},
-                    "type": "object",
+            "full_refresh_stream": {
+                "type": "DeclarativeStream",
+                "name": "TestStream",
+                "primary_key": [],
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "http://json-schema.org/schema#",
+                        "properties": {},
+                        "type": "object",
+                    },
                 },
-            },
-            "retriever": {
-                "type": "StateDelegatingRetriever",
-                "full_refresh_retriever": {
+                "retriever": {
                     "type": "SimpleRetriever",
                     "requester": {
                         "type": "HttpRequester",
@@ -56,7 +57,30 @@ _MANIFEST = {
                         "extractor": {"type": "DpathExtractor", "field_path": []},
                     },
                 },
-                "incremental_retriever": {
+                "incremental_sync": {
+                    "type": "DatetimeBasedCursor",
+                    "start_datetime": {
+                        "datetime": "{{ format_datetime(config['start_date'], '%Y-%m-%d') }}"
+                    },
+                    "end_datetime": {"datetime": "{{ now_utc().strftime('%Y-%m-%d') }}"},
+                    "datetime_format": "%Y-%m-%d",
+                    "cursor_datetime_formats": ["%Y-%m-%d", "%Y-%m-%dT%H:%M:%S"],
+                    "cursor_field": "updated_at",
+                },
+            },
+            "incremental_stream": {
+                "type": "DeclarativeStream",
+                "name": "TestStream",
+                "primary_key": [],
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "http://json-schema.org/schema#",
+                        "properties": {},
+                        "type": "object",
+                    },
+                },
+                "retriever": {
                     "type": "SimpleRetriever",
                     "requester": {
                         "type": "HttpRequester",
@@ -69,29 +93,29 @@ _MANIFEST = {
                         "extractor": {"type": "DpathExtractor", "field_path": []},
                     },
                 },
-            },
-            "incremental_sync": {
-                "type": "DatetimeBasedCursor",
-                "start_datetime": {
-                    "datetime": "{{ format_datetime(config['start_date'], '%Y-%m-%d') }}"
+                "incremental_sync": {
+                    "type": "DatetimeBasedCursor",
+                    "start_datetime": {
+                        "datetime": "{{ format_datetime(config['start_date'], '%Y-%m-%d') }}"
+                    },
+                    "end_datetime": {"datetime": "{{ now_utc().strftime('%Y-%m-%d') }}"},
+                    "datetime_format": "%Y-%m-%d",
+                    "cursor_datetime_formats": ["%Y-%m-%d", "%Y-%m-%dT%H:%M:%S"],
+                    "cursor_granularity": "P1D",
+                    "step": "P15D",
+                    "cursor_field": "updated_at",
+                    "start_time_option": {
+                        "type": "RequestOption",
+                        "field_name": "start",
+                        "inject_into": "request_parameter",
+                    },
+                    "end_time_option": {
+                        "type": "RequestOption",
+                        "field_name": "end",
+                        "inject_into": "request_parameter",
+                    },
                 },
-                "end_datetime": {"datetime": "{{ now_utc().strftime('%Y-%m-%d') }}"},
-                "datetime_format": "%Y-%m-%d",
-                "cursor_datetime_formats": ["%Y-%m-%d", "%Y-%m-%dT%H:%M:%S"],
-                "cursor_granularity": "P1D",
-                "step": "P15D",
-                "cursor_field": "updated_at",
-                "start_time_option": {
-                    "type": "RequestOption",
-                    "field_name": "start",
-                    "inject_into": "request_parameter",
-                },
-                "end_time_option": {
-                    "type": "RequestOption",
-                    "field_name": "end",
-                    "inject_into": "request_parameter",
-                },
-            },
+            }
         },
     },
     "streams": [{"$ref": "#/definitions/TestStream"}],
@@ -166,7 +190,7 @@ def get_records(
 def test_state_retriever():
     with HttpMocker() as http_mocker:
         http_mocker.get(
-            HttpRequest(url="https://api.test.com/items?start=2024-07-01&end=2024-07-15"),
+            HttpRequest(url="https://api.test.com/items"),
             HttpResponse(
                 body=json.dumps(
                     [

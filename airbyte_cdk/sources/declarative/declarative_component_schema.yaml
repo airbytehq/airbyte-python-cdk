@@ -3160,12 +3160,20 @@ definitions:
     type: object
     required:
       - type
+      - name
       - full_refresh_stream
       - incremental_stream
     properties:
       type:
         type: string
         enum: [ StateDelegatingStream ]
+      name:
+        title: Name
+        description: The stream name.
+        type: string
+        default: ""
+        example:
+          - "Users"
       full_refresh_stream:
         title: Retriever
         description: Component used to coordinate how records are extracted across stream slices and request pages when the state is empty or not provided.

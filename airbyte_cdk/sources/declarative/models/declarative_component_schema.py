@@ -2248,6 +2248,9 @@ class ParentStreamConfig(BaseModel):
 
 class StateDelegatingStream(BaseModel):
     type: Literal["StateDelegatingStream"]
+    name: str = Field(
+        ..., description="The stream name.", example=["Users"], title="Name"
+    )
     full_refresh_stream: DeclarativeStream = Field(
         ...,
         description="Component used to coordinate how records are extracted across stream slices and request pages when the state is empty or not provided.",
