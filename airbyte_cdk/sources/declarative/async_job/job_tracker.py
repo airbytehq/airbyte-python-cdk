@@ -17,10 +17,6 @@ class ConcurrentJobLimitReached(Exception):
 class JobTracker:
     def __init__(self, limit: int):
         self._jobs: Set[str] = set()
-        if limit < 1:
-            LOGGER.warning(
-                f"The `max_concurrent_async_job_count` property is less than 1: {limit}. Setting to 1. Please update the source manifest to set a valid value."
-            )
         self._limit = 1 if limit < 1 else limit
         self._lock = threading.Lock()
 
