@@ -1801,9 +1801,9 @@ class ModelToComponentFactory:
                     parameters={},
                 )
             else:
-                return self._create_component_from_model(
+                return self._create_component_from_model(  # type: ignore[no-any-return] # Will be created PartitionRouter as stream_slicer_model is model.partition_router
                     model=stream_slicer_model, config=config, stream_name=stream_name or ""
-                )  # type: ignore[no-any-return] # Will be created PartitionRouter as stream_slicer_model is model.partition_router
+                )
         return None
 
     def _build_incremental_cursor(
