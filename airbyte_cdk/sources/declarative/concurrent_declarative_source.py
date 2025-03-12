@@ -211,8 +211,11 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     stream_name=declarative_stream.name, namespace=declarative_stream.namespace
                 )
 
-                name_to_stream_mapping[declarative_stream.name] = name_to_stream_mapping[declarative_stream.name]["incremental_stream"] \
-                    if stream_state else name_to_stream_mapping[declarative_stream.name]["full_refresh_stream"]
+                name_to_stream_mapping[declarative_stream.name] = (
+                    name_to_stream_mapping[declarative_stream.name]["incremental_stream"]
+                    if stream_state
+                    else name_to_stream_mapping[declarative_stream.name]["full_refresh_stream"]
+                )
 
             if isinstance(declarative_stream, DeclarativeStream) and (
                 name_to_stream_mapping[declarative_stream.name]["retriever"]["type"]

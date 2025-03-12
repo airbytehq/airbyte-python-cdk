@@ -115,7 +115,7 @@ _MANIFEST = {
                         "inject_into": "request_parameter",
                     },
                 },
-            }
+            },
         },
     },
     "streams": [{"$ref": "#/definitions/TestStream"}],
