@@ -2564,7 +2564,9 @@ class ModelToComponentFactory:
             else None
         )
 
-        transform_before_filtering = False
+        assert model.transform_before_filtering is not None  # for mypy
+
+        transform_before_filtering = model.transform_before_filtering
         if client_side_incremental_sync:
             record_filter = ClientSideIncrementalRecordFilterDecorator(
                 config=config,
