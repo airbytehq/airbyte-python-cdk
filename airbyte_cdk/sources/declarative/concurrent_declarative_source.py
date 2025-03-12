@@ -222,7 +222,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             ):
                 incremental_sync_component_definition = name_to_stream_mapping[
                     declarative_stream.name
-                ].get("incremental_sync", {})
+                ].get("incremental_sync")
 
                 partition_router_component_definition = (
                     name_to_stream_mapping[declarative_stream.name]
