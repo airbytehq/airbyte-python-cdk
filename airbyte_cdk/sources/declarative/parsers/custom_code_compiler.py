@@ -19,7 +19,7 @@ SDM_COMPONENTS_MODULE_NAME = "source_declarative_manifest.components"
 INJECTED_MANIFEST = "__injected_declarative_manifest"
 INJECTED_COMPONENTS_PY = "__injected_components_py"
 INJECTED_COMPONENTS_PY_CHECKSUMS = "__injected_components_py_checksums"
-ENV_VAR_ALLOW_CUSTOM_CODE = "AIRBYTE_ALLOW_CUSTOM_CODE"
+ENV_VAR_ALLOW_CUSTOM_CODE = "AIRBYTE_ENABLE_UNSAFE_CODE"
 
 
 class AirbyteCodeTamperedError(Exception):
@@ -35,7 +35,7 @@ class AirbyteCustomCodeNotPermittedError(Exception):
     def __init__(self) -> None:
         super().__init__(
             "Custom connector code is not permitted in this environment. "
-            "If you need to run custom code, please ask your administrator to set the `AIRBYTE_ALLOW_CUSTOM_CODE` "
+            "If you need to run custom code, please ask your administrator to set the `AIRBYTE_ENABLE_UNSAFE_CODE` "
             "environment variable to 'true' in your Airbyte environment. "
             "If you see this message in Airbyte Cloud, your workspace does not allow executing "
             "custom connector code."
@@ -55,7 +55,7 @@ def _hash_text(input_text: str, hash_type: str = "md5") -> str:
 def custom_code_execution_permitted() -> bool:
     """Return `True` if custom code execution is permitted, otherwise `False`.
 
-    Custom code execution is permitted if the `AIRBYTE_ALLOW_CUSTOM_CODE` environment variable is set to 'true'.
+    Custom code execution is permitted if the `AIRBYTE_ENABLE_UNSAFE_CODE` environment variable is set to 'true'.
     """
     return os.environ.get(ENV_VAR_ALLOW_CUSTOM_CODE, "").lower() == "true"
 
