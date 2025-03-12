@@ -24,7 +24,9 @@ properties:
   streams:
     type: array
     items:
-      "$ref": "#/definitions/DeclarativeStream"
+      anyOf:
+        - "$ref": "#/definitions/DeclarativeStream"
+        - "$ref": "#/definitions/StateDelegatingStream"
   dynamic_streams:
     type: array
     items:
@@ -2878,7 +2880,9 @@ definitions:
       stream:
         title: Parent Stream
         description: Reference to the parent stream.
-        "$ref": "#/definitions/DeclarativeStream"
+        anyOf:
+          - "$ref": "#/definitions/DeclarativeStream"
+          - "$ref": "#/definitions/StateDelegatingStream"
       partition_field:
         title: Current Parent Key Value Identifier
         description: While iterating over parent records during a sync, the parent_key value can be referenced by using this field.
@@ -3151,39 +3155,25 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
-  StateDelegatingRetriever:
+  StateDelegatingStream:
     description: (This component is experimental. Use at your own risk.) Orchestrate the retriever's usage based on the state value.
     type: object
     required:
       - type
-      - full_refresh_retriever
-      - incremental_retriever
+      - full_refresh_stream
+      - incremental_stream
     properties:
       type:
         type: string
-        enum: [ StateDelegatingRetriever ]
-      full_refresh_no_slice_in_params:
-        description: If set to true, a single slice will be used and its request options will be ignored when sending requests.
-        type: boolean
-        default: false
-      full_refresh_ignore_min_max_datetime:
-        description: If set to true, a min and max limitation for start and end datetime will be ignored for full refresh retriever.
-        type: boolean
-        default: false
-      full_refresh_retriever:
+        enum: [ StateDelegatingStream ]
+      full_refresh_stream:
         title: Retriever
         description: Component used to coordinate how records are extracted across stream slices and request pages when the state is empty or not provided.
-        anyOf:
-          - "$ref": "#/definitions/AsyncRetriever"
-          - "$ref": "#/definitions/CustomRetriever"
-          - "$ref": "#/definitions/SimpleRetriever"
-      incremental_retriever:
+        "$ref": "#/definitions/DeclarativeStream"
+      incremental_stream:
         title: Retriever
         description: Component used to coordinate how records are extracted across stream slices and request pages when the state provided.
-        anyOf:
-          - "$ref": "#/definitions/AsyncRetriever"
-          - "$ref": "#/definitions/CustomRetriever"
-          - "$ref": "#/definitions/SimpleRetriever"
+        "$ref": "#/definitions/DeclarativeStream"
       $parameters:
         type: object
         additionalProperties: true
