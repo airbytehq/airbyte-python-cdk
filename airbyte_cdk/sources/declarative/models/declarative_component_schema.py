@@ -879,6 +879,11 @@ class DpathFlattenFields(BaseModel):
         description="Whether to delete the origin value or keep it. Default is False.",
         title="Delete Origin Value",
     )
+    replace_record: Optional[bool] = Field(
+        None,
+        description="Whether to replace the origin record or not. Default is False.",
+        title="Replace Origin Record",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
