@@ -282,7 +282,10 @@ class SubstreamPartitionRouter(PartitionRouter):
 
         # Set state for each parent stream with an incremental dependency
         for parent_config in self.parent_stream_configs:
-            if not parent_state.get(parent_config.stream.name, {}) and parent_config.incremental_dependency:
+            if (
+                not parent_state.get(parent_config.stream.name, {})
+                and parent_config.incremental_dependency
+            ):
                 # Migrate child state to parent state format
                 parent_state = self._migrate_child_state_to_parent_state(stream_state)
 
