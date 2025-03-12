@@ -2726,7 +2726,7 @@ class ModelToComponentFactory:
 
         stream_model = model.incremental_stream if self._connector_state_manager.get_stream_state(model.name, None) or child_state else model.full_refresh_stream
 
-        return self._create_component_from_model(stream_model, config=config, **kwargs)
+        return self._create_component_from_model(stream_model, config=config, **kwargs)  # type: ignore[no-any-return]  # Will be created DeclarativeStream as stream_model is stream description
 
     def _create_async_job_status_mapping(
         self, model: AsyncJobStatusMapModel, config: Config, **kwargs: Any

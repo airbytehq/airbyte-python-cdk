@@ -1435,10 +1435,6 @@ class ConfigComponentsResolver(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class StateDelegatingRetriever(BaseModel):
-    __root__: Any
-
-
 class AddedFieldDefinition(BaseModel):
     type: Literal["AddedFieldDefinition"]
     path: List[str] = Field(
@@ -1979,9 +1975,7 @@ class DeclarativeStream(BaseModel):
         extra = Extra.allow
 
     type: Literal["DeclarativeStream"]
-    retriever: Union[
-        AsyncRetriever, CustomRetriever, SimpleRetriever, StateDelegatingRetriever
-    ] = Field(
+    retriever: Union[AsyncRetriever, CustomRetriever, SimpleRetriever] = Field(
         ...,
         description="Component used to coordinate how records are extracted across stream slices and request pages.",
         title="Retriever",
