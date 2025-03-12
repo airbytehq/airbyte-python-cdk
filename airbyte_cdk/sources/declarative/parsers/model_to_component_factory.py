@@ -205,6 +205,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     DeclarativeStream as DeclarativeStreamModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    StateDelegatingStream as StateDelegatingStreamModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DefaultErrorHandler as DefaultErrorHandlerModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -620,6 +623,7 @@ class ModelToComponentFactory:
             LegacySessionTokenAuthenticatorModel: self.create_legacy_session_token_authenticator,
             SelectiveAuthenticatorModel: self.create_selective_authenticator,
             SimpleRetrieverModel: self.create_simple_retriever,
+            StateDelegatingStreamModel: self.create_state_delegating_stream,
             StateDelegatingRetrieverModel: self.create_state_delegating_retriever,
             SpecModel: self.create_spec,
             SubstreamPartitionRouterModel: self.create_substream_partition_router,
@@ -1784,6 +1788,7 @@ class ModelToComponentFactory:
             StateDelegatingRetrieverModel,
         ],
         config: Config,
+        stream_name: Optional[str] = None,
     ) -> Optional[PartitionRouter]:
         if (
             hasattr(model, "partition_router")
@@ -1794,13 +1799,13 @@ class ModelToComponentFactory:
             if isinstance(stream_slicer_model, list):
                 return CartesianProductStreamSlicer(
                     [
-                        self._create_component_from_model(model=slicer, config=config)
+                        self._create_component_from_model(model=slicer, config=config, stream_name=stream_name or "")
                         for slicer in stream_slicer_model
                     ],
                     parameters={},
                 )
             else:
-                return self._create_component_from_model(model=stream_slicer_model, config=config)  # type: ignore[no-any-return] # Will be created PartitionRouter as stream_slicer_model is model.partition_router
+                return self._create_component_from_model(model=stream_slicer_model, config=config, stream_name=stream_name or "")  # type: ignore[no-any-return] # Will be created PartitionRouter as stream_slicer_model is model.partition_router
         return None
 
     def _build_incremental_cursor(
@@ -2511,7 +2516,7 @@ class ModelToComponentFactory:
     def create_parent_stream_config(
         self, model: ParentStreamConfigModel, config: Config, **kwargs: Any
     ) -> ParentStreamConfig:
-        declarative_stream = self._create_component_from_model(model.stream, config=config)
+        declarative_stream = self._create_component_from_model(model.stream, config=config, **kwargs)
         request_option = (
             self._create_component_from_model(model.request_option, config=config)
             if model.request_option
@@ -2665,7 +2670,6 @@ class ModelToComponentFactory:
         request_options_provider: Optional[RequestOptionsProvider] = None,
         stop_condition_on_cursor: bool = False,
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
-        cursor: Optional[DeclarativeCursor] = None,
         transformations: List[RecordTransformation],
     ) -> SimpleRetriever:
         decoder = (
@@ -2753,54 +2757,15 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
-    def create_state_delegating_retriever(
-        self,
-        model: StateDelegatingRetrieverModel,
-        config: Config,
-        *,
-        name: str,
-        primary_key: Optional[Union[str, List[str], List[List[str]]]],
-        stream_slicer: Optional[StreamSlicer],
-        request_options_provider: Optional[RequestOptionsProvider] = None,
-        stop_condition_on_cursor: bool = False,
-        client_side_incremental_sync: Optional[Dict[str, Any]] = None,
-        transformations: List[RecordTransformation],
-    ) -> Optional[StateDelegatingRetriever]:
-        if not isinstance(stream_slicer, DatetimeBasedCursor) and not isinstance(
-            stream_slicer, PerPartitionCursor
-        ):
-            raise ValueError("StateDelegatingRetriever requires a DatetimeBasedCursor")
+    def create_state_delegating_stream(self, model: StateDelegatingStreamModel, config: Config, child_state: Optional[MutableMapping[str, Any]] = None, **kwargs: Any
+    ) -> DeclarativeStream:
+        if model.full_refresh_stream.name != model.incremental_stream.name:
+            raise ValueError(f"full_refresh_stream name and incremental_stream must have equal names. Instead has {model.full_refresh_stream.name}, {model.incremental_stream.name}.")
 
-        full_refresh_retriever = self._create_component_from_model(
-            model=model.full_refresh_retriever,
-            config=config,
-            name=name,
-            primary_key=primary_key,
-            stream_slicer=stream_slicer,
-            request_options_provider=request_options_provider,
-            stop_condition_on_cursor=stop_condition_on_cursor,
-            client_side_incremental_sync=client_side_incremental_sync,
-            transformations=transformations,
-        )
+        stream_name = model.full_refresh_stream.name
+        stream_model = model.incremental_stream if self._connector_state_manager.get_stream_state(stream_name, None) or child_state else model.full_refresh_stream
 
-        incremental_retriever = self._create_component_from_model(
-            model=model.incremental_retriever,
-            config=config,
-            name=name,
-            primary_key=primary_key,
-            stream_slicer=stream_slicer,
-            request_options_provider=request_options_provider,
-            stop_condition_on_cursor=stop_condition_on_cursor,
-            client_side_incremental_sync=client_side_incremental_sync,
-            transformations=transformations,
-        )
-
-        return StateDelegatingRetriever(
-            full_data_retriever=full_refresh_retriever,
-            incremental_data_retriever=incremental_retriever,
-            cursor=stream_slicer,
-            started_with_state=bool(self._connector_state_manager.get_stream_state(name, None)),
-        )
+        return self._create_component_from_model(stream_model, config=config, **kwargs)
 
     def _create_async_job_status_mapping(
         self, model: AsyncJobStatusMapModel, config: Config, **kwargs: Any
@@ -3028,7 +2993,7 @@ class ModelToComponentFactory:
             parent_stream_configs.extend(
                 [
                     self._create_message_repository_substream_wrapper(
-                        model=parent_stream_config, config=config
+                        model=parent_stream_config, config=config, **kwargs
                     )
                     for parent_stream_config in model.parent_stream_configs
                 ]
@@ -3041,7 +3006,7 @@ class ModelToComponentFactory:
         )
 
     def _create_message_repository_substream_wrapper(
-        self, model: ParentStreamConfigModel, config: Config
+        self, model: ParentStreamConfigModel, config: Config, **kwargs: Any
     ) -> Any:
         substream_factory = ModelToComponentFactory(
             limit_pages_fetched_per_slice=self._limit_pages_fetched_per_slice,
@@ -3055,7 +3020,8 @@ class ModelToComponentFactory:
                 self._evaluate_log_level(self._emit_connector_builder_messages),
             ),
         )
-        return substream_factory._create_component_from_model(model=model, config=config)
+        child_state = self._connector_state_manager.get_stream_state(kwargs.get("stream_name", ""), None) if model.incremental_dependency or False else None
+        return substream_factory._create_component_from_model(model=model, config=config, child_state=child_state, **kwargs)
 
     @staticmethod
     def create_wait_time_from_header(
