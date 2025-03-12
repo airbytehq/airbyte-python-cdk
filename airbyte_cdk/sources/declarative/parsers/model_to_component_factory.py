@@ -503,7 +503,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.incrementing_count_
     IncrementingCountStreamStateConverter,
 )
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
-from airbyte_cdk.sources.types import Config
+from airbyte_cdk.sources.types import Config, ConnectionDefinition
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 
 ComponentDefinition = Mapping[str, Any]
@@ -527,6 +527,7 @@ class ModelToComponentFactory:
         disable_resumable_full_refresh: bool = False,
         message_repository: Optional[MessageRepository] = None,
         connector_state_manager: Optional[ConnectorStateManager] = None,
+        max_concurrent_async_job_count: Optional[int] = None,
     ):
         self._init_mappings()
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
@@ -540,6 +541,7 @@ class ModelToComponentFactory:
         )
         self._connector_state_manager = connector_state_manager or ConnectorStateManager()
         self._api_budget: Optional[Union[APIBudget, HttpAPIBudget]] = None
+        self._job_tracker: JobTracker = JobTracker(max_concurrent_async_job_count or 1)
 
     def _init_mappings(self) -> None:
         self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Mapping[Type[BaseModel], Callable[..., Any]] = {
@@ -2928,8 +2930,7 @@ class ModelToComponentFactory:
             job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
                 job_repository,
                 stream_slices,
-                JobTracker(1),
-                # FIXME eventually make the number of concurrent jobs in the API configurable. Until then, we limit to 1
+                self._job_tracker,
                 self._message_repository,
                 has_bulk_parent=False,
                 # FIXME work would need to be done here in order to detect if a stream as a parent stream that is bulk

@@ -42,6 +42,10 @@ properties:
     "$ref": "#/definitions/ConcurrencyLevel"
   api_budget:
     "$ref": "#/definitions/HTTPAPIBudget"
+  max_concurrent_async_job_count:
+    title: Maximum Concurrent Asynchronous Jobs
+    description: Maximum number of concurrent asynchronous jobs to run. This property is only relevant for sources/streams that support asynchronous job execution through the AsyncRetriever (e.g. a report-based stream that initiates a job, polls the job status, and then fetches the job results). This is often set by the API's maximum number of concurrent jobs on the account level. Refer to the API's documentation for this information.
+    type: integer
   metadata:
     type: object
     description: For internal Airbyte use only - DO NOT modify manually. Used by consumers of declarative manifests for storing related metadata.
@@ -109,7 +113,7 @@ definitions:
         description: List of transformations (path and corresponding value) that will be added to the record.
         type: array
         items:
-          - "$ref": "#/definitions/AddedFieldDefinition"
+          "$ref": "#/definitions/AddedFieldDefinition"
       $parameters:
         type: object
         additionalProperties: true
@@ -1657,7 +1661,7 @@ definitions:
         description: List of potentially nested fields describing the full path of the field to extract. Use "*" to extract all values from an array. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/record-selector).
         type: array
         items:
-          - type: string
+          type: string
         interpolation_context:
           - config
         examples:
@@ -2073,7 +2077,7 @@ definitions:
         type: array
         default: []
         items:
-          - type: string
+          type: string
         interpolation_context:
           - config
       key_pointer:
@@ -2081,7 +2085,7 @@ definitions:
         description: List of potentially nested fields describing the full path of the field key to extract.
         type: array
         items:
-          - type: string
+          type: string
         interpolation_context:
           - config
       type_pointer:
@@ -2089,13 +2093,13 @@ definitions:
         description: List of potentially nested fields describing the full path of the field type to extract.
         type: array
         items:
-          - type: string
+          type: string
         interpolation_context:
           - config
       types_mapping:
         type: array
         items:
-          - "$ref": "#/definitions/TypesMap"
+          "$ref": "#/definitions/TypesMap"
       $parameters:
         type: object
         additionalProperties: true
@@ -2251,7 +2255,7 @@ definitions:
         description: A path to field that needs to be flattened.
         type: array
         items:
-          - type: string
+          type: string
         examples:
           - ["data"]
           - ["data", "*", "field"]
@@ -3526,7 +3530,7 @@ definitions:
         description: A list of potentially nested fields indicating the full path where value will be added or updated.
         type: array
         items:
-          - type: string
+          type: string
         interpolation_context:
           - config
           - components_values
@@ -3602,7 +3606,7 @@ definitions:
         description: A list of potentially nested fields indicating the full path in source config file where streams configs located.
         type: array
         items:
-          - type: string
+          type: string
         interpolation_context:
           - parameters
         examples:

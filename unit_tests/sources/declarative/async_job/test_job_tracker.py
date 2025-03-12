@@ -39,3 +39,9 @@ class JobTrackerTest(TestCase):
 
     def _reach_limit(self) -> List[str]:
         return [self._tracker.try_to_get_intent() for i in range(_LIMIT)]
+
+
+@pytest.mark.parametrize("limit", [-1, 0])
+def test_given_limit_is_less_than_1_when_init_then_set_to_1(limit: int):
+    tracker = JobTracker(limit)
+    assert tracker._limit == 1
