@@ -205,39 +205,24 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             # Some low-code sources use a combination of DeclarativeStream and regular Python streams. We can't inspect
             # these legacy Python streams the way we do low-code streams to determine if they are concurrent compatible,
             # so we need to treat them as synchronous
+
+            if name_to_stream_mapping[declarative_stream.name]["type"] == "StateDelegatingStream":
+                stream_state = self._connector_state_manager.get_stream_state(
+                    stream_name=declarative_stream.name, namespace=declarative_stream.namespace
+                )
+
+                name_to_stream_mapping[declarative_stream.name] = name_to_stream_mapping[declarative_stream.name]["incremental_stream"] \
+                    if stream_state else name_to_stream_mapping[declarative_stream.name]["full_refresh_stream"]
+
             if isinstance(declarative_stream, DeclarativeStream) and (
                 name_to_stream_mapping[declarative_stream.name]["retriever"]["type"]
                 == "SimpleRetriever"
                 or name_to_stream_mapping[declarative_stream.name]["retriever"]["type"]
                 == "AsyncRetriever"
-                or name_to_stream_mapping[declarative_stream.name]["retriever"]["type"]
-                == "StateDelegatingRetriever"
             ):
                 incremental_sync_component_definition = name_to_stream_mapping[
                     declarative_stream.name
                 ].get("incremental_sync", {})
-
-                if (
-                    name_to_stream_mapping[declarative_stream.name]
-                    .get("retriever", {})
-                    .get("full_refresh_no_slice_in_params", False)
-                    and incremental_sync_component_definition
-                ):
-                    incremental_sync_component_definition["step"] = None
-                    incremental_sync_component_definition["cursor_granularity"] = None
-                    incremental_sync_component_definition["start_time_option"] = None
-                    incremental_sync_component_definition["end_time_option"] = None
-
-                if (
-                    name_to_stream_mapping[declarative_stream.name]
-                    .get("retriever", {})
-                    .get("full_refresh_ignore_min_max_datetime", False)
-                    and incremental_sync_component_definition
-                ):
-                    incremental_sync_component_definition["start_datetime"]["max_datetime"] = None
-                    incremental_sync_component_definition["start_datetime"]["min_datetime"] = None
-                    incremental_sync_component_definition["end_datetime"]["max_datetime"] = None
-                    incremental_sync_component_definition["end_datetime"]["min_datetime"] = None
 
                 partition_router_component_definition = (
                     name_to_stream_mapping[declarative_stream.name]
