@@ -2731,7 +2731,7 @@ class ModelToComponentFactory:
                 for path in model.lazy_read_pointer
             ]
             partition_router = self._create_component_from_model(
-                model=model.partition_router,
+                model=model.partition_router,  # type: ignore[arg-type] # model.partition_router has BaseModel type
                 config=config,  # type: ignore[arg-type]
             )
             stream_slicer = (
