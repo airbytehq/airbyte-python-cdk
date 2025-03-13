@@ -144,7 +144,9 @@ class SubstreamPartitionRouter(PartitionRouter):
         return params
 
     def process_parent_record(
-        self, parent_record: Union[AirbyteMessage, Record, Mapping[str, Any]], parent_stream_name: str
+        self,
+        parent_record: Union[AirbyteMessage, Record, Mapping[str, Any]],
+        parent_stream_name: str,
     ) -> Tuple[Optional[MutableMapping[str, Any]], Optional[MutableMapping[str, Any]]]:
         """
         Processes and extracts data from a parent record, handling different record types

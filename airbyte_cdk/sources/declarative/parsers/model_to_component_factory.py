@@ -2718,7 +2718,7 @@ class ModelToComponentFactory:
             )
 
         if model.lazy_read_pointer and not bool(
-                self._connector_state_manager.get_stream_state(name, None)
+            self._connector_state_manager.get_stream_state(name, None)
         ):
             if model.partition_router.type != "SubstreamPartitionRouterModel":  # type: ignore[union-attr] # model.partition_router has BaseModel type
                 raise ValueError(
@@ -2731,7 +2731,8 @@ class ModelToComponentFactory:
                 for path in model.lazy_read_pointer
             ]
             partition_router = self._create_component_from_model(
-                model=model.partition_router, config=config  # type: ignore[arg-type]
+                model=model.partition_router,
+                config=config,  # type: ignore[arg-type]
             )
             stream_slicer = (
                 self._create_component_from_model(model=incremental_sync, config=config)

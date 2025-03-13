@@ -6,7 +6,18 @@ import json
 from dataclasses import InitVar, dataclass, field
 from functools import partial
 from itertools import islice
-from typing import Any, Callable, Iterable, List, Mapping, Optional, Set, Tuple, Union, MutableMapping
+from typing import (
+    Any,
+    Callable,
+    Iterable,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+)
 
 import dpath
 import requests
@@ -33,10 +44,10 @@ from airbyte_cdk.sources.declarative.requesters.requester import Requester
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
 from airbyte_cdk.sources.http_logger import format_http_message
+from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from airbyte_cdk.utils.mapping_helpers import combine_mappings
-from airbyte_cdk.sources.source import ExperimentalClassWarning
 
 FULL_REFRESH_SYNC_COMPLETE_KEY = "__ab_full_refresh_sync_complete"
 
@@ -682,7 +693,9 @@ class LazySimpleRetriever(SimpleRetriever):
 
         yield from []
 
-    def _extract_child_records(self, parent_record: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
+    def _extract_child_records(
+        self, parent_record: MutableMapping[str, Any]
+    ) -> MutableMapping[str, Any]:
         """Extract child records from a parent record based on lazy pointers."""
         if not self.lazy_read_pointer:
             return parent_record

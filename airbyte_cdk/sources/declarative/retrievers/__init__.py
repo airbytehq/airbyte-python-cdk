@@ -10,4 +10,10 @@ from airbyte_cdk.sources.declarative.retrievers.simple_retriever import (
     SimpleRetrieverTestReadDecorator,
 )
 
-__all__ = ["Retriever", "SimpleRetriever", "SimpleRetrieverTestReadDecorator", "AsyncRetriever", "LazySimpleRetriever"]
+__all__ = [
+    "Retriever",
+    "SimpleRetriever",
+    "SimpleRetrieverTestReadDecorator",
+    "AsyncRetriever",
+    "LazySimpleRetriever",
+]
