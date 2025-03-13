@@ -435,6 +435,7 @@ from airbyte_cdk.sources.declarative.resolvers import (
 )
 from airbyte_cdk.sources.declarative.retrievers import (
     AsyncRetriever,
+    LazySimpleRetriever,
     SimpleRetriever,
     SimpleRetrieverTestReadDecorator,
 )
@@ -2647,6 +2648,8 @@ class ModelToComponentFactory:
         stop_condition_on_cursor: bool = False,
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
         transformations: List[RecordTransformation],
+        incremental_sync: Optional[Union[IncrementingCountCursorModel, DatetimeBasedCursorModel, CustomIncrementalSyncModel]] = None,
+        **kwargs: Any,
     ) -> SimpleRetriever:
         decoder = (
             self._create_component_from_model(model=model.decoder, config=config)
