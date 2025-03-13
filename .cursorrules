@@ -1,0 +1,57 @@
+Here are some notes for Python CDK development.
+
+## Development Setup
+
+* Use Poetry for dependency management
+  - Install dependencies with `poetry install --all-extras`
+  - Run commands with `poetry run` or activate the virtual environment
+  - Use Poe tasks for common operations: `poetry run poe list`
+
+## Testing
+
+* Write unit tests in the `unit_tests` directory
+  - Tests should follow the same directory structure as the code they test
+  - Use pytest fixtures for common test setup
+  - Run tests with `poetry run poe pytest` or `poetry run poe pytest-fast` for faster tests
+
+## Linting and Formatting
+
+* Use Ruff for linting and formatting
+  - Run `poetry run poe format-fix` to auto-fix formatting issues
+  - Run `poetry run poe lint` to check for linting issues
+  - Run `poetry run poe check-all` to run all checks
+
+## Code Organization
+
+* Follow the existing module structure
+  - Place new code in the appropriate module based on functionality
+  - Use relative imports within modules
+  - Avoid circular dependencies by careful import ordering
+
+## Import Conventions
+
+* Avoid circular dependencies by following these guidelines:
+  - Submodules should import from lower-level modules, not from the top-level `airbyte_cdk` package
+  - Use `if TYPE_CHECKING:` blocks for imports that are only used as type hints
+  - For modules with circular dependency risks, use explicit relative imports
+
+* Special handling for `__init__.py` files:
+  - Do not auto-sort imports in `__init__.py` files with isort
+  - When a module depends on classes defined within the same module, use the isort split directive:
+    ```python
+    # Import the base class first
+    from .transformation import RecordTransformation
+
+    # isort: split
+    # Then import the implementations
+    from .add_fields import AddFields
+    from .remove_fields import RemoveFields
+    ```
+
+## Docstring Standards
+
+* Use Google-style docstrings
+  - First sentence must be a one-liner on the same line as opening `"""` and end with a period
+  - Multi-line docstrings require a blank line after the one-liner
+  - Args section is optional, but if "args:" is specified, all arguments must be documented
+  - Argument types should not be documented in docstrings as they are already in function signatures
