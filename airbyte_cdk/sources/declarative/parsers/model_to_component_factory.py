@@ -2704,6 +2704,27 @@ class ModelToComponentFactory:
             model.ignore_stream_slicer_parameters_on_paginated_requests or False
         )
 
+        if model.lazy_read_pointer and not bool(self._connector_state_manager.get_stream_state(name, None)):
+            lazy_read_pointer = [InterpolatedString.create(path, parameters=model.parameters or {}) for path in model.lazy_read_pointer]
+            partition_router = self._create_component_from_model(model=model.partition_router, config=config)
+            stream_slicer = self._create_component_from_model(model=incremental_sync, config=config) if incremental_sync else SinglePartitionRouter(parameters={})
+
+            return LazySimpleRetriever(
+                name=name,
+                paginator=paginator,
+                primary_key=primary_key,
+                requester=requester,
+                record_selector=record_selector,
+                stream_slicer=stream_slicer,
+                request_option_provider=request_options_provider,
+                cursor=cursor,
+                config=config,
+                ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
+                parameters=model.parameters or {},
+                partition_router=partition_router,
+                lazy_read_pointer=lazy_read_pointer,
+            )
+
         if self._limit_slices_fetched or self._emit_connector_builder_messages:
             return SimpleRetrieverTestReadDecorator(
                 name=name,
