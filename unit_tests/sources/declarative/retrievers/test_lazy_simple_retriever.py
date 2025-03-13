@@ -220,13 +220,25 @@ def test_retriever_with_lazy_reading():
                                 "id": 1,
                                 "name": "parent_1",
                                 "updated_at": "2024-07-13",
-                                "items": {"data": [{"id": 1, "updated_at": "2024-07-13"}, {"id": 2, "updated_at": "2024-07-13"}], "has_more": True},
+                                "items": {
+                                    "data": [
+                                        {"id": 1, "updated_at": "2024-07-13"},
+                                        {"id": 2, "updated_at": "2024-07-13"},
+                                    ],
+                                    "has_more": True,
+                                },
                             },
                             {
                                 "id": 2,
                                 "name": "parent_2",
                                 "updated_at": "2024-07-13",
-                                "items": {"data": [{"id": 3, "updated_at": "2024-07-13"}, {"id": 4, "updated_at": "2024-07-13"}], "has_more": False},
+                                "items": {
+                                    "data": [
+                                        {"id": 3, "updated_at": "2024-07-13"},
+                                        {"id": 4, "updated_at": "2024-07-13"},
+                                    ],
+                                    "has_more": False,
+                                },
                             },
                         ],
                         "has_more": False,
@@ -239,14 +251,28 @@ def test_retriever_with_lazy_reading():
             HttpRequest(
                 url="https://api.test.com/parent/1/items?starting_after=2&start=2024-07-01&end=2024-07-15"
             ),
-            HttpResponse(body=json.dumps({"data": [{"id": 5, "updated_at": "2024-07-13"}, {"id": 6, "updated_at": "2024-07-13"}], "has_more": True})),
+            HttpResponse(
+                body=json.dumps(
+                    {
+                        "data": [
+                            {"id": 5, "updated_at": "2024-07-13"},
+                            {"id": 6, "updated_at": "2024-07-13"},
+                        ],
+                        "has_more": True,
+                    }
+                )
+            ),
         )
 
         http_mocker.get(
             HttpRequest(
                 url="https://api.test.com/parent/1/items?starting_after=6&start=2024-07-01&end=2024-07-15"
             ),
-            HttpResponse(body=json.dumps({"data": [{"id": 7, "updated_at": "2024-07-13"}], "has_more": False})),
+            HttpResponse(
+                body=json.dumps(
+                    {"data": [{"id": 7, "updated_at": "2024-07-13"}], "has_more": False}
+                )
+            ),
         )
 
         source = ConcurrentDeclarativeSource(
@@ -283,13 +309,25 @@ def test_incremental_sync_with_state():
                                 "id": 1,
                                 "name": "parent_1",
                                 "updated_at": "2024-07-13",
-                                "items": {"data": [{"id": 1, "updated_at": "2024-07-13"}, {"id": 2, "updated_at": "2024-07-13"}], "has_more": False},
+                                "items": {
+                                    "data": [
+                                        {"id": 1, "updated_at": "2024-07-13"},
+                                        {"id": 2, "updated_at": "2024-07-13"},
+                                    ],
+                                    "has_more": False,
+                                },
                             },
                             {
                                 "id": 2,
                                 "name": "parent_2",
                                 "updated_at": "2024-07-13",
-                                "items": {"data": [{"id": 3, "updated_at": "2024-07-13"}, {"id": 4, "updated_at": "2024-07-13"}], "has_more": False},
+                                "items": {
+                                    "data": [
+                                        {"id": 3, "updated_at": "2024-07-13"},
+                                        {"id": 4, "updated_at": "2024-07-13"},
+                                    ],
+                                    "has_more": False,
+                                },
                             },
                         ],
                         "has_more": False,

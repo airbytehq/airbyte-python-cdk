@@ -2530,7 +2530,9 @@ class ModelToComponentFactory:
         )
 
         if "*" in model.lazy_read_pointer:
-            raise ValueError("The '*' wildcard in 'lazy_read_pointer' is not supported — only direct paths are allowed.")
+            raise ValueError(
+                "The '*' wildcard in 'lazy_read_pointer' is not supported — only direct paths are allowed."
+            )
 
         return ParentStreamConfig(
             parent_key=model.parent_key,
@@ -2541,7 +2543,7 @@ class ModelToComponentFactory:
             incremental_dependency=model.incremental_dependency or False,
             parameters=model.parameters or {},
             extra_fields=model.extra_fields,
-            lazy_read_pointer=model.lazy_read_pointer
+            lazy_read_pointer=model.lazy_read_pointer,
         )
 
     @staticmethod
@@ -2745,9 +2747,16 @@ class ModelToComponentFactory:
             model.ignore_stream_slicer_parameters_on_paginated_requests or False
         )
 
-        if hasattr(model, "partition_router") and model.partition_router and model.partition_router.type == "SubstreamPartitionRouter" and not bool(
-            self._connector_state_manager.get_stream_state(name, None)) and any(parent_stream_config.lazy_read_pointer for parent_stream_config in model.partition_router.parent_stream_configs):
-
+        if (
+            hasattr(model, "partition_router")
+            and model.partition_router
+            and model.partition_router.type == "SubstreamPartitionRouter"
+            and not bool(self._connector_state_manager.get_stream_state(name, None))
+            and any(
+                parent_stream_config.lazy_read_pointer
+                for parent_stream_config in model.partition_router.parent_stream_configs
+            )
+        ):
             if incremental_sync.step or incremental_sync.cursor_granularity:
                 raise ValueError(
                     f"Found more that one slice per parent. LazySimpleRetriever only supports single slice read for stream - {name}."

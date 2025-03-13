@@ -3,8 +3,8 @@
 #
 
 
-import json
 import copy
+import json
 import logging
 from dataclasses import InitVar, dataclass
 from typing import TYPE_CHECKING, Any, Iterable, List, Mapping, MutableMapping, Optional, Union
@@ -64,11 +64,16 @@ class ParentStreamConfig:
                 for key_path in self.extra_fields
             ]
 
-        self.lazy_read_pointer = [
-            InterpolatedString.create(path, parameters=parameters)
-            if isinstance(path, str)
-            else path for path in self.lazy_read_pointer
-        ] if self.lazy_read_pointer else None
+        self.lazy_read_pointer = (
+            [
+                InterpolatedString.create(path, parameters=parameters)
+                if isinstance(path, str)
+                else path
+                for path in self.lazy_read_pointer
+            ]
+            if self.lazy_read_pointer
+            else None
+        )
 
 
 @dataclass
@@ -208,7 +213,12 @@ class SubstreamPartitionRouter(PartitionRouter):
                     extracted_extra_fields = self._extract_extra_fields(parent_record, extra_fields)
 
                     if parent_stream_config.lazy_read_pointer:
-                        extracted_extra_fields = {"child_response": self._extract_child_response(parent_record, parent_stream_config.lazy_read_pointer), **extracted_extra_fields}
+                        extracted_extra_fields = {
+                            "child_response": self._extract_child_response(
+                                parent_record, parent_stream_config.lazy_read_pointer
+                            ),
+                            **extracted_extra_fields,
+                        }
 
                     yield StreamSlice(
                         partition={
@@ -220,7 +230,7 @@ class SubstreamPartitionRouter(PartitionRouter):
                     )
 
     def _extract_child_response(
-            self, parent_record: MutableMapping[str, Any], pointer
+        self, parent_record: MutableMapping[str, Any], pointer
     ) -> requests.Response:
         """Extract child records from a parent record based on lazy pointers."""
 
