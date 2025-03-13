@@ -30,6 +30,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     DeclarativeStream as DeclarativeStreamModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import Spec as SpecModel
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    StateDelegatingStream as StateDelegatingStreamModel,
+)
 from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     get_registered_components_module,
 )
@@ -146,7 +149,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
         source_streams = [
             self._constructor.create_component(
-                DeclarativeStreamModel,
+                StateDelegatingStreamModel
+                if stream_config.get("type") == StateDelegatingStreamModel.__name__
+                else DeclarativeStreamModel,
                 stream_config,
                 config,
                 emit_connector_builder_messages=self._emit_connector_builder_messages,
@@ -165,7 +170,15 @@ class ManifestDeclarativeSource(DeclarativeSource):
         def update_with_cache_parent_configs(parent_configs: list[dict[str, Any]]) -> None:
             for parent_config in parent_configs:
                 parent_streams.add(parent_config["stream"]["name"])
-                parent_config["stream"]["retriever"]["requester"]["use_cache"] = True
+                if parent_config["stream"]["type"] == "StateDelegatingStream":
+                    parent_config["stream"]["full_refresh_stream"]["retriever"]["requester"][
+                        "use_cache"
+                    ] = True
+                    parent_config["stream"]["incremental_stream"]["retriever"]["requester"][
+                        "use_cache"
+                    ] = True
+                else:
+                    parent_config["stream"]["retriever"]["requester"]["use_cache"] = True
 
         for stream_config in stream_configs:
             if stream_config.get("incremental_sync", {}).get("parent_stream"):
@@ -188,7 +201,15 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
         for stream_config in stream_configs:
             if stream_config["name"] in parent_streams:
-                stream_config["retriever"]["requester"]["use_cache"] = True
+                if stream_config["type"] == "StateDelegatingStream":
+                    stream_config["full_refresh_stream"]["retriever"]["requester"]["use_cache"] = (
+                        True
+                    )
+                    stream_config["incremental_stream"]["retriever"]["requester"]["use_cache"] = (
+                        True
+                    )
+                else:
+                    stream_config["retriever"]["requester"]["use_cache"] = True
 
         return stream_configs
 

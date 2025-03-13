@@ -24,7 +24,9 @@ properties:
   streams:
     type: array
     items:
-      "$ref": "#/definitions/DeclarativeStream"
+      anyOf:
+        - "$ref": "#/definitions/DeclarativeStream"
+        - "$ref": "#/definitions/StateDelegatingStream"
   dynamic_streams:
     type: array
     items:
@@ -2881,7 +2883,9 @@ definitions:
       stream:
         title: Parent Stream
         description: Reference to the parent stream.
-        "$ref": "#/definitions/DeclarativeStream"
+        anyOf:
+          - "$ref": "#/definitions/DeclarativeStream"
+          - "$ref": "#/definitions/StateDelegatingStream"
       partition_field:
         title: Current Parent Key Value Identifier
         description: While iterating over parent records during a sync, the parent_key value can be referenced by using this field.
@@ -3151,6 +3155,36 @@ definitions:
         type: string
         examples:
           - "user/current"
+      $parameters:
+        type: object
+        additionalProperties: true
+  StateDelegatingStream:
+    description: (This component is experimental. Use at your own risk.) Orchestrate the retriever's usage based on the state value.
+    type: object
+    required:
+      - type
+      - name
+      - full_refresh_stream
+      - incremental_stream
+    properties:
+      type:
+        type: string
+        enum: [ StateDelegatingStream ]
+      name:
+        title: Name
+        description: The stream name.
+        type: string
+        default: ""
+        example:
+          - "Users"
+      full_refresh_stream:
+        title: Retriever
+        description: Component used to coordinate how records are extracted across stream slices and request pages when the state is empty or not provided.
+        "$ref": "#/definitions/DeclarativeStream"
+      incremental_stream:
+        title: Retriever
+        description: Component used to coordinate how records are extracted across stream slices and request pages when the state provided.
+        "$ref": "#/definitions/DeclarativeStream"
       $parameters:
         type: object
         additionalProperties: true

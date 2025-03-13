@@ -1860,7 +1860,7 @@ class DeclarativeSource1(BaseModel):
 
     type: Literal["DeclarativeSource"]
     check: Union[CheckStream, CheckDynamicStream]
-    streams: List[DeclarativeStream]
+    streams: List[Union[DeclarativeStream, StateDelegatingStream]]
     dynamic_streams: Optional[List[DynamicDeclarativeStream]] = None
     version: str = Field(
         ...,
@@ -1892,7 +1892,7 @@ class DeclarativeSource2(BaseModel):
 
     type: Literal["DeclarativeSource"]
     check: Union[CheckStream, CheckDynamicStream]
-    streams: Optional[List[DeclarativeStream]] = None
+    streams: Optional[List[Union[DeclarativeStream, StateDelegatingStream]]] = None
     dynamic_streams: List[DynamicDeclarativeStream]
     version: str = Field(
         ...,
@@ -2211,7 +2211,7 @@ class ParentStreamConfig(BaseModel):
         examples=["id", "{{ config['parent_record_id'] }}"],
         title="Parent Key",
     )
-    stream: DeclarativeStream = Field(
+    stream: Union[DeclarativeStream, StateDelegatingStream] = Field(
         ..., description="Reference to the parent stream.", title="Parent Stream"
     )
     partition_field: str = Field(
@@ -2234,6 +2234,22 @@ class ParentStreamConfig(BaseModel):
         None,
         description="Array of field paths to include as additional fields in the stream slice. Each path is an array of strings representing keys to access fields in the respective parent record. Accessible via `stream_slice.extra_fields`. Missing fields are set to `None`.",
         title="Extra Fields",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class StateDelegatingStream(BaseModel):
+    type: Literal["StateDelegatingStream"]
+    name: str = Field(..., description="The stream name.", example=["Users"], title="Name")
+    full_refresh_stream: DeclarativeStream = Field(
+        ...,
+        description="Component used to coordinate how records are extracted across stream slices and request pages when the state is empty or not provided.",
+        title="Retriever",
+    )
+    incremental_stream: DeclarativeStream = Field(
+        ...,
+        description="Component used to coordinate how records are extracted across stream slices and request pages when the state provided.",
+        title="Retriever",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -2428,5 +2444,6 @@ SelectiveAuthenticator.update_forward_refs()
 DeclarativeStream.update_forward_refs()
 SessionTokenAuthenticator.update_forward_refs()
 DynamicSchemaLoader.update_forward_refs()
+ParentStreamConfig.update_forward_refs()
 SimpleRetriever.update_forward_refs()
 AsyncRetriever.update_forward_refs()
