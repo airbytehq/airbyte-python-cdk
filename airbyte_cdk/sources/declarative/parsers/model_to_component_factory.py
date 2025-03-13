@@ -2529,7 +2529,7 @@ class ModelToComponentFactory:
             else None
         )
 
-        if "*" in model.lazy_read_pointer:
+        if model.lazy_read_pointer and any("*" in pointer for pointer in model.lazy_read_pointer):
             raise ValueError(
                 "The '*' wildcard in 'lazy_read_pointer' is not supported — only direct paths are allowed."
             )
@@ -2757,7 +2757,7 @@ class ModelToComponentFactory:
                 for parent_stream_config in model.partition_router.parent_stream_configs
             )
         ):
-            if incremental_sync.step or incremental_sync.cursor_granularity:
+            if incremental_sync and (incremental_sync.step or incremental_sync.cursor_granularity):
                 raise ValueError(
                     f"Found more that one slice per parent. LazySimpleRetriever only supports single slice read for stream - {name}."
                 )
