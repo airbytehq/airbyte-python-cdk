@@ -668,8 +668,8 @@ class LazySimpleRetriever(SimpleRetriever):
             if parent_record is None:
                 continue
 
-            childs = self._extract_child_records(parent_record)
-            response = self._create_response(childs)
+            child_records = self._extract_child_records(parent_record)
+            response = self._create_response(child_records)
 
             yield from self._yield_records_with_pagination(
                 response,
