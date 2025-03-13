@@ -64,13 +64,13 @@ _MANIFEST = {
                     "page_token_option": {
                         "type": "RequestOption",
                         "inject_into": "request_parameter",
-                        "field_name": "starting_after"
+                        "field_name": "starting_after",
                     },
                     "pagination_strategy": {
                         "type": "CursorPagination",
                         "cursor_value": '{{ response["data"][-1]["id"] }}',
-                        "stop_condition": '{{ not response.get("has_more", False) }}'
-                    }
+                        "stop_condition": '{{ not response.get("has_more", False) }}',
+                    },
                 },
                 "partition_router": {
                     "type": "SubstreamPartitionRouter",
@@ -218,37 +218,37 @@ def test_retriever_with_lazy_reading():
                 body=json.dumps(
                     {
                         "data": [
-                            {"id": 1, "name": "parent_1", "updated_at": "2024-07-13", "items": {"data": [{"id": 1}, {"id": 2}], "has_more": True}},
-                            {"id": 2, "name": "parent_2", "updated_at": "2024-07-13", "items": {"data": [{"id": 3}, {"id": 4}], "has_more": False}},
+                            {
+                                "id": 1,
+                                "name": "parent_1",
+                                "updated_at": "2024-07-13",
+                                "items": {"data": [{"id": 1}, {"id": 2}], "has_more": True},
+                            },
+                            {
+                                "id": 2,
+                                "name": "parent_2",
+                                "updated_at": "2024-07-13",
+                                "items": {"data": [{"id": 3}, {"id": 4}], "has_more": False},
+                            },
                         ],
-                        "has_more": False
+                        "has_more": False,
                     }
                 )
             ),
         )
 
         http_mocker.get(
-            HttpRequest(url="https://api.test.com/parent/1/items?starting_after=2&start=2024-07-01&end=2024-07-15"),
-            HttpResponse(
-                body=json.dumps(
-                    {
-                        "data": [{"id": 5}, {"id": 6}],
-                        "has_more": True
-                    }
-                )
+            HttpRequest(
+                url="https://api.test.com/parent/1/items?starting_after=2&start=2024-07-01&end=2024-07-15"
             ),
+            HttpResponse(body=json.dumps({"data": [{"id": 5}, {"id": 6}], "has_more": True})),
         )
 
         http_mocker.get(
-            HttpRequest(url="https://api.test.com/parent/1/items?starting_after=6&start=2024-07-01&end=2024-07-15"),
-            HttpResponse(
-                body=json.dumps(
-                    {
-                        "data": [{"id": 7}],
-                        "has_more": False
-                    }
-                )
+            HttpRequest(
+                url="https://api.test.com/parent/1/items?starting_after=6&start=2024-07-01&end=2024-07-15"
             ),
+            HttpResponse(body=json.dumps({"data": [{"id": 7}], "has_more": False})),
         )
 
         source = ConcurrentDeclarativeSource(
@@ -280,12 +280,20 @@ def test_incremental_sync_with_state():
                 body=json.dumps(
                     {
                         "data": [
-                            {"id": 1, "name": "parent_1", "updated_at": "2024-07-13",
-                             "items": {"data": [{"id": 1}, {"id": 2}], "has_more": False}},
-                            {"id": 2, "name": "parent_2", "updated_at": "2024-07-13",
-                             "items": {"data": [{"id": 3}, {"id": 4}], "has_more": False}},
+                            {
+                                "id": 1,
+                                "name": "parent_1",
+                                "updated_at": "2024-07-13",
+                                "items": {"data": [{"id": 1}, {"id": 2}], "has_more": False},
+                            },
+                            {
+                                "id": 2,
+                                "name": "parent_2",
+                                "updated_at": "2024-07-13",
+                                "items": {"data": [{"id": 3}, {"id": 4}], "has_more": False},
+                            },
                         ],
-                        "has_more": False
+                        "has_more": False,
                     }
                 )
             ),
@@ -295,10 +303,7 @@ def test_incremental_sync_with_state():
             HttpRequest(url="https://api.test.com/parent/1/items?start=2024-07-13&end=2024-07-15"),
             HttpResponse(
                 body=json.dumps(
-                    {
-                        "data": [{"id": 10, "updated_at": "2024-07-13"}],
-                        "has_more": False
-                    }
+                    {"data": [{"id": 10, "updated_at": "2024-07-13"}], "has_more": False}
                 )
             ),
         )
@@ -306,10 +311,7 @@ def test_incremental_sync_with_state():
             HttpRequest(url="https://api.test.com/parent/2/items?start=2024-07-13&end=2024-07-15"),
             HttpResponse(
                 body=json.dumps(
-                    {
-                        "data": [{"id": 11, "updated_at": "2024-07-13"}],
-                        "has_more": False
-                    }
+                    {"data": [{"id": 11, "updated_at": "2024-07-13"}], "has_more": False}
                 )
             ),
         )
@@ -335,4 +337,3 @@ def test_incremental_sync_with_state():
             {"id": 11, "updated_at": "2024-07-13"},
         ]
         assert expected_incremental == incremental_records
-
