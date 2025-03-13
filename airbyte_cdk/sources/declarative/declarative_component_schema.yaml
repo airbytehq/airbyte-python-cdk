@@ -111,7 +111,7 @@ definitions:
         items:
           "$ref": "#/definitions/AddedFieldDefinition"
       condition:
-        description: Fields will be added if expression is evaluated to True.,
+        description: Fields will be added if expression is evaluated to True.
         type: string
         default: ""
         interpolation_context:
