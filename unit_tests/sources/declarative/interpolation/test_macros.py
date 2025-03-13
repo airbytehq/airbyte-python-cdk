@@ -75,13 +75,13 @@ def test_macros_export(test_name, fn_name, found_in_macros):
             "2022-01-01T01:01:01Z",
             "%s",
             "%Y-%m-%dT%H:%M:%SZ",
-            "1640998861",
+            "1640998861",  # Fails when run outside the GMT time zone
         ),
         (
             "2022-01-01T01:01:01Z",
             "%epoch_microseconds",
             "%Y-%m-%dT%H:%M:%SZ",
-            "1640998861000000",
+            "1640998861000000",   # Fails when run outside the GMT time zone
         ),
     ],
     ids=[

@@ -5,6 +5,7 @@
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
+from airbyte_cdk.sources.declarative.extractors.record_extractor import is_service_key
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 
@@ -34,12 +35,15 @@ class FlattenFields(RecordTransformation):
 
             if isinstance(current_record, dict):
                 for current_key, value in current_record.items():
-                    new_key = (
-                        f"{parent_key}.{current_key}"
-                        if (current_key in transformed_record or force_with_parent_name)
-                        else current_key
-                    )
-                    stack.append((value, new_key))
+                    if is_service_key(current_key):
+                        transformed_record[current_key] = value
+                    else:
+                        new_key = (
+                            f"{parent_key}.{current_key}"
+                            if (current_key in transformed_record or force_with_parent_name)
+                            else current_key
+                        )
+                        stack.append((value, new_key))
 
             elif isinstance(current_record, list) and self.flatten_lists:
                 for i, item in enumerate(current_record):

@@ -4,6 +4,7 @@
 
 import pytest
 
+from airbyte_cdk.sources.declarative.extractors.record_extractor import SERVICE_KEY_PREFIX
 from airbyte_cdk.sources.declarative.transformations.flatten_fields import (
     FlattenFields,
 )
@@ -100,6 +101,28 @@ _DO_NOT_FLATTEN_LISTS = False
                 "SimpleKey": "SimpleValue",
             },
             id="flatten record with dict of list values and simple key with duplicated keys, flatten_lists=False",
+        ),
+        pytest.param(
+            _FLATTEN_LISTS,
+            {SERVICE_KEY_PREFIX + "name": "xyz", "List": ["Item1", "Item2", "Item3"]},
+            {
+                SERVICE_KEY_PREFIX + "name": "xyz",
+                "List.0": "Item1",
+                "List.1": "Item2",
+                "List.2": "Item3",
+            },
+            id="flatten record bypasses the service fields",
+        ),
+        pytest.param(
+            _FLATTEN_LISTS,
+            {SERVICE_KEY_PREFIX + "name": {"k", "xyz"}, "List": ["Item1", "Item2", "Item3"]},
+            {
+                SERVICE_KEY_PREFIX + "name": {"k", "xyz"},
+                "List.0": "Item1",
+                "List.1": "Item2",
+                "List.2": "Item3",
+            },
+            id="flatten record with nested records bypasses the service fields",
         ),
     ],
 )

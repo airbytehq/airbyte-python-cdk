@@ -254,6 +254,7 @@ def test_simple_retriever_resumable_full_refresh_cursor_page_increment(
     actual_records = [
         r for r in retriever.read_records(records_schema={}, stream_slice=stream_slice)
     ]
+
     assert len(actual_records) == 3
     assert actual_records == expected_records[5:]
     assert retriever.state == {"__ab_full_refresh_sync_complete": True}
@@ -368,6 +369,7 @@ primary_key: []
     actual_records = [
         r for r in stream.retriever.read_records(records_schema={}, stream_slice=stream_slice)
     ]
+
     assert len(actual_records) == 3
     assert actual_records == expected_records[5:]
     assert stream.retriever.state == {"__ab_full_refresh_sync_complete": True}

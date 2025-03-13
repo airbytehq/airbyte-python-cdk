@@ -1,13 +1,11 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-import codecs
+# import codecs
 import logging
 from dataclasses import InitVar, dataclass
-from gzip import decompress
 from typing import Any, Generator, List, Mapping, MutableMapping, Optional
 
-import orjson
 import requests
 
 from airbyte_cdk.sources.declarative.decoders import CompositeRawDecoder, JsonParser
@@ -35,15 +33,12 @@ class JsonDecoder(Decoder):
         """
         Given the response is an empty string or an emtpy list, the function will return a generator with an empty mapping.
         """
-        has_yielded = False
         try:
-            for element in self._decoder.decode(response):
-                yield element
-                has_yielded = True
-        except Exception:
-            yield {}
-
-        if not has_yielded:
+            yield from self._decoder.decode(response)
+        except requests.exceptions.JSONDecodeError:
+            logger.warning(
+                f"Response cannot be parsed into json: {response.status_code=}, {response.text=}"
+            )
             yield {}
 
 

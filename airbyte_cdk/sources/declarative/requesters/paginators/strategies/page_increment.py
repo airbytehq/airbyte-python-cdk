@@ -31,13 +31,15 @@ class PageIncrement(PaginationStrategy):
     inject_on_first_request: bool = False
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        if isinstance(self.page_size, int) or (self.page_size is None):
-            self._page_size = self.page_size
-        else:
-            page_size = InterpolatedString(self.page_size, parameters=parameters).eval(self.config)
-            if not isinstance(page_size, int):
-                raise Exception(f"{page_size} is of type {type(page_size)}. Expected {int}")
-            self._page_size = page_size
+        if not isinstance(self.page_size, int) and not (self.page_size is None):
+            self.page_size = InterpolatedString(self.page_size, parameters=parameters).eval(
+                self.config
+            )
+            if not isinstance(self.page_size, int):
+                raise Exception(
+                    f"{self.page_size} is of type {type(self.page_size)}. Expected {int}"
+                )
+        self._page_size = self.page_size
 
     @property
     def initial_token(self) -> Optional[Any]:

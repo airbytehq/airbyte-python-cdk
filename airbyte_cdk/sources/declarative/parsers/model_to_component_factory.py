@@ -75,6 +75,7 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     Parser,
 )
 from airbyte_cdk.sources.declarative.extractors import (
+    DpathEnhancingExtractor,
     DpathExtractor,
     RecordFilter,
     RecordSelector,
@@ -208,6 +209,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DefaultPaginator as DefaultPaginatorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    DpathEnhancingExtractor as DpathEnhancingExtractorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DpathExtractor as DpathExtractorModel,
@@ -580,6 +584,7 @@ class ModelToComponentFactory:
             DefaultErrorHandlerModel: self.create_default_error_handler,
             DefaultPaginatorModel: self.create_default_paginator,
             DpathExtractorModel: self.create_dpath_extractor,
+            DpathEnhancingExtractorModel: self.create_dpath_enhancing_extractor,
             ResponseToFileExtractorModel: self.create_response_to_file_extractor,
             ExponentialBackoffStrategyModel: self.create_exponential_backoff_strategy,
             SessionTokenAuthenticatorModel: self.create_session_token_authenticator,
@@ -2027,6 +2032,25 @@ class ModelToComponentFactory:
             decoder_to_use = JsonDecoder(parameters={})
         model_field_path: List[Union[InterpolatedString, str]] = [x for x in model.field_path]
         return DpathExtractor(
+            decoder=decoder_to_use,
+            field_path=model_field_path,
+            config=config,
+            parameters=model.parameters or {},
+        )
+
+    def create_dpath_enhancing_extractor(
+        self,
+        model: DpathEnhancingExtractorModel,
+        config: Config,
+        decoder: Optional[Decoder] = None,
+        **kwargs: Any,
+    ) -> DpathEnhancingExtractor:
+        if decoder:
+            decoder_to_use = decoder
+        else:
+            decoder_to_use = JsonDecoder(parameters={})
+        model_field_path: List[Union[InterpolatedString, str]] = [x for x in model.field_path]
+        return DpathEnhancingExtractor(
             decoder=decoder_to_use,
             field_path=model_field_path,
             config=config,
