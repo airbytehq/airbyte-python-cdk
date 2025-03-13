@@ -2534,6 +2534,10 @@ class ModelToComponentFactory:
                 "The '*' wildcard in 'lazy_read_pointer' is not supported — only direct paths are allowed."
             )
 
+        model_lazy_read_pointer: List[Union[InterpolatedString, str]] = (
+            [x for x in model.lazy_read_pointer] if model.lazy_read_pointer else []
+        )
+
         return ParentStreamConfig(
             parent_key=model.parent_key,
             request_option=request_option,
@@ -2543,7 +2547,7 @@ class ModelToComponentFactory:
             incremental_dependency=model.incremental_dependency or False,
             parameters=model.parameters or {},
             extra_fields=model.extra_fields,
-            lazy_read_pointer=model.lazy_read_pointer,
+            lazy_read_pointer=model_lazy_read_pointer,
         )
 
     @staticmethod
@@ -2748,18 +2752,28 @@ class ModelToComponentFactory:
         )
 
         if (
-            hasattr(model, "partition_router")
-            and model.partition_router
-            and model.partition_router.type == "SubstreamPartitionRouter"
+            model.partition_router
+            and model.partition_router.type == "SubstreamPartitionRouter"  # type: ignore[union-attr]  # 'model' is SimpleRetrieverModel
             and not bool(self._connector_state_manager.get_stream_state(name, None))
             and any(
                 parent_stream_config.lazy_read_pointer
-                for parent_stream_config in model.partition_router.parent_stream_configs
+                for parent_stream_config in model.partition_router.parent_stream_configs  # type: ignore[union-attr]  # partition_router type guaranteed by a condition earlier
             )
         ):
-            if incremental_sync and (incremental_sync.step or incremental_sync.cursor_granularity):
+            if incremental_sync:
+                if incremental_sync.type != "DatetimeBasedCursor":
+                    raise ValueError(
+                        f"LazySimpleRetriever only supports DatetimeBasedCursor. Found: {incremental_sync.type}."
+                    )
+
+                elif incremental_sync.step or incremental_sync.cursor_granularity:
+                    raise ValueError(
+                        f"Found more that one slice per parent. LazySimpleRetriever only supports single slice read for stream - {name}."
+                    )
+
+            if model.decoder and model.decoder.type != "JsonDecoder":
                 raise ValueError(
-                    f"Found more that one slice per parent. LazySimpleRetriever only supports single slice read for stream - {name}."
+                    f"LazySimpleRetriever only supports JsonDecoder. Found: {model.decoder.type}."
                 )
 
             return LazySimpleRetriever(

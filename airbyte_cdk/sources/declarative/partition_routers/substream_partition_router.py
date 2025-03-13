@@ -215,7 +215,7 @@ class SubstreamPartitionRouter(PartitionRouter):
                     if parent_stream_config.lazy_read_pointer:
                         extracted_extra_fields = {
                             "child_response": self._extract_child_response(
-                                parent_record, parent_stream_config.lazy_read_pointer
+                                parent_record, parent_stream_config.lazy_read_pointer  # type: ignore[arg-type]  # lazy_read_pointer type handeled in __post_init__ of parent_stream_config
                             ),
                             **extracted_extra_fields,
                         }
@@ -230,11 +230,11 @@ class SubstreamPartitionRouter(PartitionRouter):
                     )
 
     def _extract_child_response(
-        self, parent_record: MutableMapping[str, Any], pointer
+        self, parent_record: Mapping[str, Any] | AirbyteMessage, pointer: List[InterpolatedString]
     ) -> requests.Response:
         """Extract child records from a parent record based on lazy pointers."""
 
-        def _create_response(data: Mapping[str, Any]) -> SafeResponse:
+        def _create_response(data: MutableMapping[str, Any]) -> SafeResponse:
             """Create a SafeResponse with the given data."""
             response = SafeResponse()
             response.content = json.dumps(data).encode("utf-8")
@@ -242,7 +242,7 @@ class SubstreamPartitionRouter(PartitionRouter):
             return response
 
         path = [path.eval(self.config) for path in pointer]
-        return _create_response(dpath.get(parent_record, path, default=[]))
+        return _create_response(dpath.get(parent_record, path, default=[]))  # type: ignore # argunet will be a MutableMapping, given input data structure
 
     def _extract_extra_fields(
         self,
