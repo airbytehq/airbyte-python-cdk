@@ -39,16 +39,7 @@ For comprehensive development guidelines, please also refer to the [CONTRIBUTING
 
 * Special handling for `__init__.py` files:
   - Do not auto-sort imports in `__init__.py` files with isort
-  - When a module depends on classes defined within the same module, use the isort split directive:
-    ```python
-    # Import the base class first
-    from .transformation import RecordTransformation
-
-    # isort: split
-    # Then import the implementations
-    from .add_fields import AddFields
-    from .remove_fields import RemoveFields
-    ```
+  - Pay special attention to import order in `__init__.py` files to prevent circular dependencies
 
 ## Docstring Standards
 
