@@ -1746,6 +1746,7 @@ class ModelToComponentFactory:
                 transformations.append(
                     self._create_component_from_model(model=transformation_model, config=config)
                 )
+
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
@@ -1756,6 +1757,7 @@ class ModelToComponentFactory:
             stop_condition_on_cursor=stop_condition_on_cursor,
             client_side_incremental_sync=client_side_incremental_sync,
             transformations=transformations,
+            incremental_sync=model.incremental_sync,
         )
         cursor_field = model.incremental_sync.cursor_field if model.incremental_sync else None
 
@@ -2747,7 +2749,7 @@ class ModelToComponentFactory:
         if model.lazy_read_pointer and not bool(
             self._connector_state_manager.get_stream_state(name, None)
         ):
-            if model.partition_router.type != "SubstreamPartitionRouterModel":  # type: ignore[union-attr] # model.partition_router has BaseModel type
+            if model.partition_router.type != "SubstreamPartitionRouter":  # type: ignore[union-attr] # model.partition_router has BaseModel type
                 raise ValueError(
                     "LazySimpleRetriever only supports 'SubstreamPartitionRouterModel' as the 'partition_router' type. "  # type: ignore[union-attr] # model.partition_router has BaseModel type
                     f"Found: '{model.partition_router.type}'."
