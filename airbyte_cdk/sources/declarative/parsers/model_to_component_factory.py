@@ -2753,11 +2753,11 @@ class ModelToComponentFactory:
 
         if (
             model.partition_router
-            and model.partition_router.type == "SubstreamPartitionRouter"  # type: ignore[union-attr]  # 'model' is SimpleRetrieverModel
+            and isinstance(model.partition_router, SubstreamPartitionRouterModel)
             and not bool(self._connector_state_manager.get_stream_state(name, None))
             and any(
                 parent_stream_config.lazy_read_pointer
-                for parent_stream_config in model.partition_router.parent_stream_configs  # type: ignore[union-attr]  # partition_router type guaranteed by a condition earlier
+                for parent_stream_config in model.partition_router.parent_stream_configs
             )
         ):
             if incremental_sync:
