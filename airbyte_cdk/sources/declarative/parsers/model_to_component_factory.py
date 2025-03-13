@@ -1927,7 +1927,7 @@ class ModelToComponentFactory:
                 # we could support here by calling create_concurrent_cursor_from_perpartition_cursor
                 raise ValueError("Per partition state is not supported yet for AsyncRetriever.")
 
-        stream_slicer = self._build_stream_slicer_from_partition_router(retriever_model, config)
+        stream_slicer = self._build_stream_slicer_from_partition_router(retriever_model, config, stream_name=model.name)
 
         if model.incremental_sync:
             return self._build_incremental_cursor(model, stream_slicer, config)

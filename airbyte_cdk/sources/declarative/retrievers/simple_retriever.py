@@ -649,7 +649,6 @@ class LazySimpleRetriever(SimpleRetriever):
         stream_slice: StreamSlice,
     ) -> Iterable[Record]:
         response = stream_slice.extra_fields["child_response"]
-        print(f"LOL, {response.json()}")
         if response:
             last_page_size, last_record = 0, None
             for record in records_generator_fn(response):  # type: ignore[call-arg] # only _parse_records expected as a func
