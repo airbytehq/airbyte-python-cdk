@@ -2754,6 +2754,14 @@ class ModelToComponentFactory:
                     "LazySimpleRetriever only supports 'SubstreamPartitionRouterModel' as the 'partition_router' type. "  # type: ignore[union-attr] # model.partition_router has BaseModel type
                     f"Found: '{model.partition_router.type}'."
                 )
+            lazy_read_pointer = []
+            for i, path in enumerate(model.lazy_read_pointer):
+                if path == "*":
+                    raise ValueError(
+                        f"'lazy_read_pointer' support only direct pointing. Found: '* as a {i} element in the pointer.'"
+                    )
+
+                lazy_read_pointer.append(InterpolatedString.create(path, parameters=model.parameters or {}))
 
             lazy_read_pointer = [
                 InterpolatedString.create(path, parameters=model.parameters or {})

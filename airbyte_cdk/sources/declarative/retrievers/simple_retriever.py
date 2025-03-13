@@ -714,11 +714,7 @@ class LazySimpleRetriever(SimpleRetriever):
             return parent_record
 
         path = [path.eval(self.config) for path in self.lazy_read_pointer]
-        return (
-            dpath.values(parent_record, path)  # type: ignore # return value will be a MutableMapping, given input data structure
-            if "*" in path
-            else dpath.get(parent_record, path, default=[])
-        )
+        return dpath.get(parent_record, path, default=[])
 
     def _create_response(self, data: Mapping[str, Any]) -> SafeResponse:
         """Create a SafeResponse with the given data."""
