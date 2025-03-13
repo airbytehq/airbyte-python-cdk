@@ -215,7 +215,8 @@ class SubstreamPartitionRouter(PartitionRouter):
                     if parent_stream_config.lazy_read_pointer:
                         extracted_extra_fields = {
                             "child_response": self._extract_child_response(
-                                parent_record, parent_stream_config.lazy_read_pointer  # type: ignore[arg-type]  # lazy_read_pointer type handeled in __post_init__ of parent_stream_config
+                                parent_record,
+                                parent_stream_config.lazy_read_pointer,  # type: ignore[arg-type]  # lazy_read_pointer type handeled in __post_init__ of parent_stream_config
                             ),
                             **extracted_extra_fields,
                         }
