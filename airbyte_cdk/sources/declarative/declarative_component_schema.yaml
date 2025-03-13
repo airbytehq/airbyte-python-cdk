@@ -3208,6 +3208,15 @@ definitions:
           - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
           - "$ref": "#/definitions/ZipfileDecoder"
+      lazy_read_pointer:
+        title: Lazy Read Pointer
+        description: If set, this will enable lazy reading, using the initial read of parent records to extract child records.
+        type: array
+        default: [ ]
+        items:
+          - type: string
+        interpolation_context:
+          - config
       $parameters:
         type: object
         additionalProperties: true
