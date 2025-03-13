@@ -6,10 +6,11 @@ import json
 from dataclasses import InitVar, dataclass, field
 from functools import partial
 from itertools import islice
-from typing import Any, Callable, Iterable, List, Mapping, Optional, Set, Tuple, Union
+from typing import Any, Callable, Iterable, List, Mapping, Optional, Set, Tuple, Union, MutableMapping
 
 import dpath
 import requests
+from typing_extensions import deprecated
 
 from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
@@ -35,6 +36,7 @@ from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from airbyte_cdk.utils.mapping_helpers import combine_mappings
+from airbyte_cdk.sources.source import ExperimentalClassWarning
 
 FULL_REFRESH_SYNC_COMPLETE_KEY = "__ab_full_refresh_sync_complete"
 
@@ -625,25 +627,29 @@ class SimpleRetrieverTestReadDecorator(SimpleRetriever):
 
 
 class SafeResponse(requests.Response):
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         return getattr(requests.Response, name, None)
 
     @property
-    def content(self):
+    def content(self) -> Optional[bytes]:
         return super().content
 
     @content.setter
-    def content(self, value):
+    def content(self, value: Union[str, bytes]) -> None:
         self._content = value.encode() if isinstance(value, str) else value
 
 
+@deprecated(
+    "This class is experimental. Use at your own risk.",
+    category=ExperimentalClassWarning,
+)
 @dataclass
 class LazySimpleRetriever(SimpleRetriever):
     """
     A retriever that supports lazy loading from parent streams.
     """
 
-    partition_router: SubstreamPartitionRouter = field(init=True, repr=False, default=None)
+    partition_router: SubstreamPartitionRouter = field(init=True, repr=False, default=None)  # type: ignore[assignment]  # 'partition_router' is required for LazySimpleRetriever and is validated in the constructor
     lazy_read_pointer: Optional[List[InterpolatedString]] = None
 
     def _read_pages(
@@ -655,9 +661,9 @@ class LazySimpleRetriever(SimpleRetriever):
         parent_stream_config = self.partition_router.parent_stream_configs[-1]
         parent_stream = parent_stream_config.stream
 
-        for parent_record in parent_stream.read_only_records():
+        for raw_parent_record in parent_stream.read_only_records():
             parent_record, parent_partition = self.partition_router.process_parent_record(
-                parent_record, parent_stream.name
+                raw_parent_record, parent_stream.name
             )
             if parent_record is None:
                 continue
@@ -676,19 +682,19 @@ class LazySimpleRetriever(SimpleRetriever):
 
         yield from []
 
-    def _extract_child_records(self, parent_record: Mapping) -> Mapping:
+    def _extract_child_records(self, parent_record: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
         """Extract child records from a parent record based on lazy pointers."""
         if not self.lazy_read_pointer:
             return parent_record
 
         path = [path.eval(self.config) for path in self.lazy_read_pointer]
         return (
-            dpath.values(parent_record, path)
+            dpath.values(parent_record, path)  # type: ignore # return value will be a MutableMapping, given input data structure
             if "*" in path
             else dpath.get(parent_record, path, default=[])
         )
 
-    def _create_response(self, data: Mapping) -> SafeResponse:
+    def _create_response(self, data: Mapping[str, Any]) -> SafeResponse:
         """Create a SafeResponse with the given data."""
         response = SafeResponse()
         response.content = json.dumps(data).encode("utf-8")
@@ -701,7 +707,7 @@ class LazySimpleRetriever(SimpleRetriever):
         records_generator_fn: Callable[[Optional[requests.Response]], Iterable[Record]],
         stream_state: Mapping[str, Any],
         stream_slice: StreamSlice,
-        parent_record: Record,
+        parent_record: MutableMapping[str, Any],
         parent_stream_config: Any,
     ) -> Iterable[Record]:
         """Yield records, handling pagination if needed."""
@@ -729,7 +735,7 @@ class LazySimpleRetriever(SimpleRetriever):
         records_generator_fn: Callable[[Optional[requests.Response]], Iterable[Record]],
         stream_state: Mapping[str, Any],
         stream_slice: StreamSlice,
-        parent_record: Record,
+        parent_record: MutableMapping[str, Any],
         parent_stream_config: Any,
     ) -> Iterable[Record]:
         """Handle pagination by fetching subsequent pages."""
@@ -742,7 +748,9 @@ class LazySimpleRetriever(SimpleRetriever):
             cursor_slice=stream_slice.cursor_slice,
         )
 
-        while next_page_token:
+        pagination_complete = False
+
+        while not pagination_complete:
             response = self._fetch_next_page(stream_state, stream_slice, next_page_token)
             last_page_size, last_record = 0, None
 
@@ -751,9 +759,15 @@ class LazySimpleRetriever(SimpleRetriever):
                 last_record = record
                 yield record
 
-            last_page_token_value = (
-                next_page_token.get("next_page_token") if next_page_token else None
-            )
-            next_page_token = self._next_page_token(
-                response, last_page_size, last_record, last_page_token_value
-            )
+            if not response:
+                pagination_complete = True
+            else:
+                last_page_token_value = (
+                    next_page_token.get("next_page_token") if next_page_token else None
+                )
+                next_page_token = self._next_page_token(
+                    response, last_page_size, last_record, last_page_token_value
+                )
+
+                if not next_page_token:
+                    pagination_complete = True

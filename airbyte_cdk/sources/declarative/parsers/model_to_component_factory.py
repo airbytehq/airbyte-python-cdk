@@ -2711,15 +2711,27 @@ class ModelToComponentFactory:
             model.ignore_stream_slicer_parameters_on_paginated_requests or False
         )
 
+        if model.lazy_read_pointer and not hasattr(model, "partition_router"):
+            raise ValueError(
+                "LazySimpleRetriever requires a 'partition_router' when 'lazy_read_pointer' is set. "
+                "Please either define 'partition_router' or remove 'lazy_read_pointer' from the model."
+            )
+
         if model.lazy_read_pointer and not bool(
-            self._connector_state_manager.get_stream_state(name, None)
+                self._connector_state_manager.get_stream_state(name, None)
         ):
+            if model.partition_router.type != "SubstreamPartitionRouterModel":  # type: ignore[union-attr] # model.partition_router has BaseModel type
+                raise ValueError(
+                    "LazySimpleRetriever only supports 'SubstreamPartitionRouterModel' as the 'partition_router' type. "  # type: ignore[union-attr] # model.partition_router has BaseModel type
+                    f"Found: '{model.partition_router.type}'."
+                )
+
             lazy_read_pointer = [
                 InterpolatedString.create(path, parameters=model.parameters or {})
                 for path in model.lazy_read_pointer
             ]
             partition_router = self._create_component_from_model(
-                model=model.partition_router, config=config
+                model=model.partition_router, config=config  # type: ignore[arg-type]
             )
             stream_slicer = (
                 self._create_component_from_model(model=incremental_sync, config=config)

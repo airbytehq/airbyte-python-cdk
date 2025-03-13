@@ -144,8 +144,8 @@ class SubstreamPartitionRouter(PartitionRouter):
         return params
 
     def process_parent_record(
-        self, parent_record: Union[AirbyteMessage, Record, Mapping], parent_stream_name: str
-    ) -> Tuple[Optional[Mapping], Optional[Mapping]]:
+        self, parent_record: Union[AirbyteMessage, Record, Mapping[str, Any]], parent_stream_name: str
+    ) -> Tuple[Optional[MutableMapping[str, Any]], Optional[MutableMapping[str, Any]]]:
         """
         Processes and extracts data from a parent record, handling different record types
         and ensuring only valid types proceed.
@@ -161,23 +161,21 @@ class SubstreamPartitionRouter(PartitionRouter):
                 f"This SubstreamPartitionRouter is not able to checkpoint incremental parent state."
             )
             if parent_record.type == MessageType.RECORD:
-                return parent_record.record.data, {}
+                return parent_record.record.data, {}  # type: ignore[union-attr] # parent_record.record is always AirbyteRecordMessage
             return None, None  # Skip invalid or non-record data
 
-        # Handle Record type
         if isinstance(parent_record, Record):
             parent_partition = (
                 parent_record.associated_slice.partition if parent_record.associated_slice else {}
             )
-            return parent_record.data, parent_partition
+            return {**parent_record.data}, {**parent_partition}
 
-        # Validate the record type
-        if not isinstance(parent_record, Mapping):
-            raise AirbyteTracedException(
-                message=f"Parent stream returned records as invalid type {type(parent_record)}"
-            )
+        if isinstance(parent_record, Mapping):
+            return {**parent_record}, {}
 
-        return parent_record, {}
+        raise AirbyteTracedException(
+            message=f"Parent stream returned records as invalid type {type(parent_record)}"
+        )
 
     def stream_slices(self) -> Iterable[StreamSlice]:
         """
@@ -210,10 +208,10 @@ class SubstreamPartitionRouter(PartitionRouter):
 
                 # read_stateless() assumes the parent is not concurrent. This is currently okay since the concurrent CDK does
                 # not support either substreams or RFR, but something that needs to be considered once we do
-                for parent_record in parent_stream.read_only_records():
+                for raw_parent_record in parent_stream.read_only_records():
                     # Process the parent record
                     parent_record, parent_partition = self.process_parent_record(
-                        parent_record, parent_stream.name
+                        raw_parent_record, parent_stream.name
                     )
 
                     # Skip invalid or non-record data
