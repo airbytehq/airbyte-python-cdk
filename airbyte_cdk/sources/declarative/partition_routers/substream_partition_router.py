@@ -424,6 +424,7 @@ class SafeResponse(requests.Response):
     into a response object. This allows seamless interaction with child records as if they
     were original response, ensuring compatibility with methods that expect requests.Response data type.
     """
+
     def __getattr__(self, name: str) -> Any:
         return getattr(requests.Response, name, None)
 
