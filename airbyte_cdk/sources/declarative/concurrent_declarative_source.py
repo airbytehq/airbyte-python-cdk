@@ -162,6 +162,10 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         else:
             filtered_catalog = catalog
 
+        # It is no need run read for synchronous streams if they are not exists.
+        if not filtered_catalog.streams:
+            return
+
         yield from super().read(logger, config, filtered_catalog, state)
 
     def discover(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteCatalog:
@@ -201,6 +205,18 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             # Some low-code sources use a combination of DeclarativeStream and regular Python streams. We can't inspect
             # these legacy Python streams the way we do low-code streams to determine if they are concurrent compatible,
             # so we need to treat them as synchronous
+
+            if name_to_stream_mapping[declarative_stream.name]["type"] == "StateDelegatingStream":
+                stream_state = self._connector_state_manager.get_stream_state(
+                    stream_name=declarative_stream.name, namespace=declarative_stream.namespace
+                )
+
+                name_to_stream_mapping[declarative_stream.name] = (
+                    name_to_stream_mapping[declarative_stream.name]["incremental_stream"]
+                    if stream_state
+                    else name_to_stream_mapping[declarative_stream.name]["full_refresh_stream"]
+                )
+
             if isinstance(declarative_stream, DeclarativeStream) and (
                 name_to_stream_mapping[declarative_stream.name]["retriever"]["type"]
                 == "SimpleRetriever"

@@ -132,7 +132,7 @@ class HttpRequester(Requester):
             stream_slice=stream_slice,
             next_page_token=next_page_token,
         )
-        return os.path.join(self._url_base.eval(self.config, **interpolation_context), EmptyString)
+        return str(self._url_base.eval(self.config, **interpolation_context))
 
     def get_path(
         self,
@@ -370,13 +370,18 @@ class HttpRequester(Requester):
         Example:
             1) _join_url("https://example.com/api/", "endpoint") >> 'https://example.com/api/endpoint'
             2) _join_url("https://example.com/api", "/endpoint") >> 'https://example.com/api/endpoint'
-            3) _join_url("https://example.com/api/", "") >> 'https://example.com/api'
+            3) _join_url("https://example.com/api/", "") >> 'https://example.com/api/'
             4) _join_url("https://example.com/api", None) >> 'https://example.com/api'
         """
 
         # return a full-url if provided directly from interpolation context
         if path == EmptyString or path is None:
-            return url_base.rstrip("/")
+            return url_base
+        else:
+            # since we didn't provide a full-url, the url_base might not have a trailing slash
+            # so we join the url_base and path correctly
+            if not url_base.endswith("/"):
+                url_base += "/"
 
         return urljoin(url_base, path)
 

@@ -14,6 +14,9 @@ from airbyte_cdk.sources.file_based.discovery_policy import AbstractDiscoveryPol
 from airbyte_cdk.sources.file_based.exceptions import (
     FileBasedErrorsCollector,
 )
+from airbyte_cdk.sources.file_based.file_based_stream_permissions_reader import (
+    AbstractFileBasedStreamPermissionsReader,
+)
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
@@ -53,6 +56,7 @@ class PermissionsFileBasedStreamTest(unittest.TestCase):
         self._stream_config.name = "a stream name"
         self._catalog_schema = Mock()
         self._stream_reader = Mock(spec=AbstractFileBasedStreamReader)
+        self._stream_permissions_reader = Mock(spec=AbstractFileBasedStreamPermissionsReader)
         self._availability_strategy = Mock(spec=AbstractFileBasedAvailabilityStrategy)
         self._discovery_policy = Mock(spec=AbstractDiscoveryPolicy)
         self._parser = Mock(spec=FileTypeParser)
@@ -60,7 +64,7 @@ class PermissionsFileBasedStreamTest(unittest.TestCase):
         self._validation_policy.name = "validation policy name"
         self._cursor = Mock(spec=AbstractFileBasedCursor)
 
-        self._stream_reader.file_permissions_schema = self._A_PERMISSIONS_SCHEMA
+        self._stream_permissions_reader.file_permissions_schema = self._A_PERMISSIONS_SCHEMA
 
         self._stream = PermissionsFileBasedStream(
             config=self._stream_config,
@@ -72,10 +76,11 @@ class PermissionsFileBasedStreamTest(unittest.TestCase):
             validation_policy=self._validation_policy,
             cursor=self._cursor,
             errors_collector=FileBasedErrorsCollector(),
+            stream_permissions_reader=self._stream_permissions_reader,
         )
 
     def test_when_read_records_from_slice_then_return_records(self) -> None:
-        self._stream_reader.get_file_acl_permissions.return_value = self._A_RECORD
+        self._stream_permissions_reader.get_file_acl_permissions.return_value = self._A_RECORD
         messages = list(
             self._stream.read_records_from_slice(
                 {"files": [RemoteFile(uri="uri", last_modified=self._NOW)]}
@@ -102,7 +107,7 @@ class PermissionsFileBasedStreamTest(unittest.TestCase):
         assert returned_schema == expected_schema
 
     def test_when_read_records_from_slice_and_raise_exception(self) -> None:
-        self._stream_reader.get_file_acl_permissions.side_effect = Exception(
+        self._stream_permissions_reader.get_file_acl_permissions.side_effect = Exception(
             "ACL permissions retrieval failed"
         )
 
@@ -117,7 +122,7 @@ class PermissionsFileBasedStreamTest(unittest.TestCase):
         )
 
     def test_when_read_records_from_slice_with_empty_permissions_then_return_empty(self) -> None:
-        self._stream_reader.get_file_acl_permissions.return_value = {}
+        self._stream_permissions_reader.get_file_acl_permissions.return_value = {}
         messages = list(
             self._stream.read_records_from_slice(
                 {"files": [RemoteFile(uri="uri", last_modified=self._NOW)]}
