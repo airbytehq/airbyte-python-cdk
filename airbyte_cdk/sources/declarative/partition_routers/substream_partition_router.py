@@ -424,6 +424,11 @@ class SubstreamPartitionRouter(PartitionRouter):
 
 
 class SafeResponse(requests.Response):
+    """
+    A subclass of requests.Response that acts as an interface to migrate parsed child records
+    into a response object. This allows seamless interaction with child records as if they
+    were original response, ensuring compatibility with methods that expect requests.Response data type.
+    """
     def __getattr__(self, name: str) -> Any:
         return getattr(requests.Response, name, None)
 
