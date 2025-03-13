@@ -12,14 +12,12 @@ from typing import (
     Iterable,
     List,
     Mapping,
-    MutableMapping,
     Optional,
     Set,
     Tuple,
     Union,
 )
 
-import dpath
 import requests
 from typing_extensions import deprecated
 
@@ -30,9 +28,6 @@ from airbyte_cdk.sources.declarative.incremental.declarative_cursor import Decla
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.partition_routers.single_partition_router import (
     SinglePartitionRouter,
-)
-from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
-    SubstreamPartitionRouter,
 )
 from airbyte_cdk.sources.declarative.requesters.paginators.no_pagination import NoPagination
 from airbyte_cdk.sources.declarative.requesters.paginators.paginator import Paginator
@@ -358,7 +353,7 @@ class SimpleRetriever(Retriever):
     # This logic is similar to _read_pages in the HttpStream class. When making changes here, consider making changes there as well.
     def _read_pages(
         self,
-        records_generator_fn: Callable[[Optional[requests.Response], Optional[StreamSlice]], Iterable[Record]],
+        records_generator_fn: Callable[[Optional[requests.Response]], Iterable[Record]],
         stream_state: Mapping[str, Any],
         stream_slice: StreamSlice,
     ) -> Iterable[Record]:
@@ -372,7 +367,7 @@ class SimpleRetriever(Retriever):
 
             last_page_size = 0
             last_record: Optional[Record] = None
-            for record in records_generator_fn(response, stream_slice=stream_slice):  # type: ignore[call-arg] # only _parse_records expected as a func
+            for record in records_generator_fn(response):
                 last_page_size += 1
                 last_record = record
                 yield record
@@ -397,7 +392,7 @@ class SimpleRetriever(Retriever):
 
     def _read_single_page(
         self,
-        records_generator_fn: Callable[[Optional[requests.Response], Optional[StreamSlice]], Iterable[Record]],
+        records_generator_fn: Callable[[Optional[requests.Response]], Iterable[Record]],
         stream_state: Mapping[str, Any],
         stream_slice: StreamSlice,
     ) -> Iterable[StreamData]:
@@ -412,7 +407,7 @@ class SimpleRetriever(Retriever):
 
         last_page_size = 0
         last_record: Optional[Record] = None
-        for record in records_generator_fn(response, stream_slice=stream_slice):  # type: ignore[call-arg] # only _parse_records expected as a func
+        for record in records_generator_fn(response):
             last_page_size += 1
             last_record = record
             yield record
@@ -455,6 +450,7 @@ class SimpleRetriever(Retriever):
         most_recent_record_from_slice = None
         record_generator = partial(
             self._parse_records,
+            stream_slice=stream_slice,
             stream_state=self.state or {},
             records_schema=records_schema,
         )
@@ -636,19 +632,6 @@ class SimpleRetrieverTestReadDecorator(SimpleRetriever):
         )
 
 
-class SafeResponse(requests.Response):
-    def __getattr__(self, name: str) -> Any:
-        return getattr(requests.Response, name, None)
-
-    @property
-    def content(self) -> Optional[bytes]:
-        return super().content
-
-    @content.setter
-    def content(self, value: Union[str, bytes]) -> None:
-        self._content = value.encode() if isinstance(value, str) else value
-
-
 @deprecated(
     "This class is experimental. Use at your own risk.",
     category=ExperimentalClassWarning,
@@ -659,124 +642,49 @@ class LazySimpleRetriever(SimpleRetriever):
     A retriever that supports lazy loading from parent streams.
     """
 
-    partition_router: SubstreamPartitionRouter = field(init=True, repr=False, default=None)  # type: ignore[assignment]  # 'partition_router' is required for LazySimpleRetriever and is validated in the constructor
-    lazy_read_pointer: Optional[List[InterpolatedString]] = None
-
     def _read_pages(
         self,
-        records_generator_fn: Callable[[Optional[requests.Response], Optional[StreamSlice]], Iterable[Record]],
+        records_generator_fn: Callable[[Optional[requests.Response]], Iterable[Record]],
         stream_state: Mapping[str, Any],
         stream_slice: StreamSlice,
     ) -> Iterable[Record]:
-        parent_stream_config = self.partition_router.parent_stream_configs[-1]
-        parent_stream = parent_stream_config.stream
+        response = stream_slice.extra_fields["child_response"]
+        print(f"LOL, {response.json()}")
+        if response:
+            last_page_size, last_record = 0, None
+            for record in records_generator_fn(response):  # type: ignore[call-arg] # only _parse_records expected as a func
+                last_page_size += 1
+                last_record = record
+                yield record
 
-        for raw_parent_record in parent_stream.read_only_records():
-            parent_record, parent_partition = self.partition_router.process_parent_record(
-                raw_parent_record, parent_stream.name
-            )
-            if parent_record is None:
-                continue
-
-            child_records = self._extract_child_records(parent_record)
-            response = self._create_response(child_records)
-
-            if parent_stream_config.extra_fields:
-                extra_fields = [
-                    [field_path_part.eval(self.config) for field_path_part in field_path]  # type: ignore [union-attr]
-                    for field_path in parent_stream_config.extra_fields
-                ]
-
-                extracted_extra_fields = self.partition_router._extract_extra_fields(parent_record, extra_fields)
-
-                stream_slice = StreamSlice(
-                    partition=stream_slice.partition,
-                    cursor_slice=stream_slice.cursor_slice,
-                    extra_fields=extracted_extra_fields
+            next_page_token = self._next_page_token(response, last_page_size, last_record, None)
+            if next_page_token:
+                yield from self._paginate(
+                    next_page_token,
+                    records_generator_fn,
+                    stream_state,
+                    stream_slice,
                 )
 
-            yield from self._yield_records_with_pagination(
-                response,
-                records_generator_fn,
-                stream_state,
-                stream_slice,
-                parent_record,
-                parent_stream_config,
-            )
-
-        yield from []
-
-    def _extract_child_records(
-        self, parent_record: MutableMapping[str, Any]
-    ) -> MutableMapping[str, Any]:
-        """Extract child records from a parent record based on lazy pointers."""
-        if not self.lazy_read_pointer:
-            return parent_record
-
-        path = [path.eval(self.config) for path in self.lazy_read_pointer]
-        return dpath.get(parent_record, path, default=[])
-
-    def _create_response(self, data: Mapping[str, Any]) -> SafeResponse:
-        """Create a SafeResponse with the given data."""
-        response = SafeResponse()
-        response.content = json.dumps(data).encode("utf-8")
-        response.status_code = 200
-        return response
-
-    def _yield_records_with_pagination(
-        self,
-        response: requests.Response,
-        records_generator_fn: Callable[[Optional[requests.Response], Optional[StreamSlice]], Iterable[Record]],
-        stream_state: Mapping[str, Any],
-        stream_slice: StreamSlice,
-        parent_record: MutableMapping[str, Any],
-        parent_stream_config: Any,
-    ) -> Iterable[Record]:
-        """Yield records, handling pagination if needed."""
-        last_page_size, last_record = 0, None
-
-        for record in records_generator_fn(response, stream_slice=stream_slice):  # type: ignore[call-arg] # only _parse_records expected as a func
-            last_page_size += 1
-            last_record = record
-            yield record
-
-        next_page_token = self._next_page_token(response, last_page_size, last_record, None)
-        if next_page_token:
-            yield from self._paginate(
-                next_page_token,
-                records_generator_fn,
-                stream_state,
-                stream_slice,
-                parent_record,
-                parent_stream_config,
-            )
+            yield from []
+        else:
+            yield from self._read_pages(records_generator_fn, stream_state, stream_slice)
 
     def _paginate(
         self,
         next_page_token: Any,
-        records_generator_fn: Callable[[Optional[requests.Response], Optional[StreamSlice]], Iterable[Record]],
+        records_generator_fn: Callable[[Optional[requests.Response]], Iterable[Record]],
         stream_state: Mapping[str, Any],
         stream_slice: StreamSlice,
-        parent_record: MutableMapping[str, Any],
-        parent_stream_config: Any,
     ) -> Iterable[Record]:
         """Handle pagination by fetching subsequent pages."""
-        partition_field = parent_stream_config.partition_field.eval(self.config)
-        partition_value = dpath.get(
-            parent_record, parent_stream_config.parent_key.eval(self.config)
-        )
-        stream_slice = StreamSlice(
-            partition={partition_field: partition_value, "parent_slice": {}},
-            cursor_slice=stream_slice.cursor_slice,
-        )
-
         pagination_complete = False
 
         while not pagination_complete:
             response = self._fetch_next_page(stream_state, stream_slice, next_page_token)
             last_page_size, last_record = 0, None
 
-            for record in records_generator_fn(response, stream_slice=stream_slice):  # type: ignore[call-arg] # only _parse_records expected as a func
+            for record in records_generator_fn(response):  # type: ignore[call-arg] # only _parse_records expected as a func
                 last_page_size += 1
                 last_record = record
                 yield record

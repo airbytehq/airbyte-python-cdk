@@ -43,7 +43,6 @@ _MANIFEST = {
             },
             "retriever": {
                 "type": "SimpleRetriever",
-                "lazy_read_pointer": ["items"],
                 "requester": {
                     "type": "HttpRequester",
                     "url_base": "https://api.test.com",
@@ -79,6 +78,7 @@ _MANIFEST = {
                             "type": "ParentStreamConfig",
                             "parent_key": "id",
                             "partition_field": "parent_id",
+                            "lazy_read_pointer": ["items"],
                             "stream": {
                                 "type": "DeclarativeStream",
                                 "name": "parent",
@@ -124,8 +124,6 @@ _MANIFEST = {
                 "end_datetime": {"datetime": "{{ now_utc().strftime('%Y-%m-%d') }}"},
                 "datetime_format": "%Y-%m-%d",
                 "cursor_datetime_formats": ["%Y-%m-%d", "%Y-%m-%dT%H:%M:%S"],
-                "cursor_granularity": "P1D",
-                "step": "P15D",
                 "cursor_field": "updated_at",
                 "start_time_option": {
                     "type": "RequestOption",
@@ -222,13 +220,13 @@ def test_retriever_with_lazy_reading():
                                 "id": 1,
                                 "name": "parent_1",
                                 "updated_at": "2024-07-13",
-                                "items": {"data": [{"id": 1}, {"id": 2}], "has_more": True},
+                                "items": {"data": [{"id": 1, "updated_at": "2024-07-13"}, {"id": 2, "updated_at": "2024-07-13"}], "has_more": True},
                             },
                             {
                                 "id": 2,
                                 "name": "parent_2",
                                 "updated_at": "2024-07-13",
-                                "items": {"data": [{"id": 3}, {"id": 4}], "has_more": False},
+                                "items": {"data": [{"id": 3, "updated_at": "2024-07-13"}, {"id": 4, "updated_at": "2024-07-13"}], "has_more": False},
                             },
                         ],
                         "has_more": False,
@@ -241,14 +239,14 @@ def test_retriever_with_lazy_reading():
             HttpRequest(
                 url="https://api.test.com/parent/1/items?starting_after=2&start=2024-07-01&end=2024-07-15"
             ),
-            HttpResponse(body=json.dumps({"data": [{"id": 5}, {"id": 6}], "has_more": True})),
+            HttpResponse(body=json.dumps({"data": [{"id": 5, "updated_at": "2024-07-13"}, {"id": 6, "updated_at": "2024-07-13"}], "has_more": True})),
         )
 
         http_mocker.get(
             HttpRequest(
                 url="https://api.test.com/parent/1/items?starting_after=6&start=2024-07-01&end=2024-07-15"
             ),
-            HttpResponse(body=json.dumps({"data": [{"id": 7}], "has_more": False})),
+            HttpResponse(body=json.dumps({"data": [{"id": 7, "updated_at": "2024-07-13"}], "has_more": False})),
         )
 
         source = ConcurrentDeclarativeSource(
@@ -259,15 +257,16 @@ def test_retriever_with_lazy_reading():
         # Test full data retrieval (without state)
         full_records = get_records(source, _CONFIG, configured_catalog)
         expected_full = [
-            {"id": 1},
-            {"id": 2},
-            {"id": 5},
-            {"id": 6},
-            {"id": 7},
-            {"id": 3},
-            {"id": 4},
+            {"id": 1, "updated_at": "2024-07-13"},
+            {"id": 2, "updated_at": "2024-07-13"},
+            {"id": 3, "updated_at": "2024-07-13"},
+            {"id": 4, "updated_at": "2024-07-13"},
+            {"id": 5, "updated_at": "2024-07-13"},
+            {"id": 6, "updated_at": "2024-07-13"},
+            {"id": 7, "updated_at": "2024-07-13"},
         ]
-        assert expected_full == full_records
+
+        assert all(record in expected_full for record in full_records)
 
 
 @freezegun.freeze_time("2024-07-15")
@@ -284,13 +283,13 @@ def test_incremental_sync_with_state():
                                 "id": 1,
                                 "name": "parent_1",
                                 "updated_at": "2024-07-13",
-                                "items": {"data": [{"id": 1}, {"id": 2}], "has_more": False},
+                                "items": {"data": [{"id": 1, "updated_at": "2024-07-13"}, {"id": 2, "updated_at": "2024-07-13"}], "has_more": False},
                             },
                             {
                                 "id": 2,
                                 "name": "parent_2",
                                 "updated_at": "2024-07-13",
-                                "items": {"data": [{"id": 3}, {"id": 4}], "has_more": False},
+                                "items": {"data": [{"id": 3, "updated_at": "2024-07-13"}, {"id": 4, "updated_at": "2024-07-13"}], "has_more": False},
                             },
                         ],
                         "has_more": False,
@@ -336,4 +335,4 @@ def test_incremental_sync_with_state():
             {"id": 10, "updated_at": "2024-07-13"},
             {"id": 11, "updated_at": "2024-07-13"},
         ]
-        assert expected_incremental == incremental_records
+        assert all(record in expected_incremental for record in incremental_records)

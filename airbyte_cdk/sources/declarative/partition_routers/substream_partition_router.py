@@ -3,22 +3,14 @@
 #
 
 
+import json
 import copy
 import logging
 from dataclasses import InitVar, dataclass
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Iterable,
-    List,
-    Mapping,
-    MutableMapping,
-    Optional,
-    Tuple,
-    Union,
-)
+from typing import TYPE_CHECKING, Any, Iterable, List, Mapping, MutableMapping, Optional, Union
 
 import dpath
+import requests
 
 from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.models import Type as MessageType
@@ -58,6 +50,7 @@ class ParentStreamConfig:
     )
     request_option: Optional[RequestOption] = None
     incremental_dependency: bool = False
+    lazy_read_pointer: Optional[List[Union[InterpolatedString, str]]] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.parent_key = InterpolatedString.create(self.parent_key, parameters=parameters)
@@ -70,6 +63,12 @@ class ParentStreamConfig:
                 [InterpolatedString.create(path, parameters=parameters) for path in key_path]
                 for key_path in self.extra_fields
             ]
+
+        self.lazy_read_pointer = [
+            InterpolatedString.create(path, parameters=parameters)
+            if isinstance(path, str)
+            else path for path in self.lazy_read_pointer
+        ] if self.lazy_read_pointer else None
 
 
 @dataclass
@@ -143,42 +142,6 @@ class SubstreamPartitionRouter(PartitionRouter):
                         parent_config.request_option.inject_into_request(params, value, self.config)
         return params
 
-    def process_parent_record(
-        self,
-        parent_record: Union[AirbyteMessage, Record, Mapping[str, Any]],
-        parent_stream_name: str,
-    ) -> Tuple[Optional[MutableMapping[str, Any]], Optional[MutableMapping[str, Any]]]:
-        """
-        Processes and extracts data from a parent record, handling different record types
-        and ensuring only valid types proceed.
-
-        :param parent_record: The parent record to process.
-        :param parent_stream_name: The parent stream name associated with the record.
-        :return: Extracted record data and partition (if applicable).
-        :raises AirbyteTracedException: If the record type is invalid.
-        """
-        if isinstance(parent_record, AirbyteMessage):
-            self.logger.warning(
-                f"Parent stream {parent_stream_name} returns records of type AirbyteMessage. "
-                f"This SubstreamPartitionRouter is not able to checkpoint incremental parent state."
-            )
-            if parent_record.type == MessageType.RECORD:
-                return parent_record.record.data, {}  # type: ignore[union-attr] # parent_record.record is always AirbyteRecordMessage
-            return None, None  # Skip invalid or non-record data
-
-        if isinstance(parent_record, Record):
-            parent_partition = (
-                parent_record.associated_slice.partition if parent_record.associated_slice else {}
-            )
-            return {**parent_record.data}, {**parent_partition}
-
-        if isinstance(parent_record, Mapping):
-            return {**parent_record}, {}
-
-        raise AirbyteTracedException(
-            message=f"Parent stream returned records as invalid type {type(parent_record)}"
-        )
-
     def stream_slices(self) -> Iterable[StreamSlice]:
         """
         Iterate over each parent stream's record and create a StreamSlice for each record.
@@ -210,16 +173,29 @@ class SubstreamPartitionRouter(PartitionRouter):
 
                 # read_stateless() assumes the parent is not concurrent. This is currently okay since the concurrent CDK does
                 # not support either substreams or RFR, but something that needs to be considered once we do
-                for raw_parent_record in parent_stream.read_only_records():
-                    # Process the parent record
-                    parent_record, parent_partition = self.process_parent_record(
-                        raw_parent_record, parent_stream.name
-                    )
-
-                    # Skip invalid or non-record data
-                    if parent_record is None:
-                        continue
-
+                for parent_record in parent_stream.read_only_records():
+                    parent_partition = None
+                    # Skip non-records (eg AirbyteLogMessage)
+                    if isinstance(parent_record, AirbyteMessage):
+                        self.logger.warning(
+                            f"Parent stream {parent_stream.name} returns records of type AirbyteMessage. This SubstreamPartitionRouter is not able to checkpoint incremental parent state."
+                        )
+                        if parent_record.type == MessageType.RECORD:
+                            parent_record = parent_record.record.data  # type: ignore[union-attr, assignment]  # record is always a Record
+                        else:
+                            continue
+                    elif isinstance(parent_record, Record):
+                        parent_partition = (
+                            parent_record.associated_slice.partition
+                            if parent_record.associated_slice
+                            else {}
+                        )
+                        parent_record = parent_record.data
+                    elif not isinstance(parent_record, Mapping):
+                        # The parent_record should only take the form of a Record, AirbyteMessage, or Mapping. Anything else is invalid
+                        raise AirbyteTracedException(
+                            message=f"Parent stream returned records as invalid type {type(parent_record)}"
+                        )
                     try:
                         partition_value = dpath.get(
                             parent_record,  # type: ignore [arg-type]
@@ -231,6 +207,9 @@ class SubstreamPartitionRouter(PartitionRouter):
                     # Add extra fields
                     extracted_extra_fields = self._extract_extra_fields(parent_record, extra_fields)
 
+                    if parent_stream_config.lazy_read_pointer:
+                        extracted_extra_fields = {"child_response": self._extract_child_response(parent_record, parent_stream_config.lazy_read_pointer), **extracted_extra_fields}
+
                     yield StreamSlice(
                         partition={
                             partition_field: partition_value,
@@ -239,6 +218,21 @@ class SubstreamPartitionRouter(PartitionRouter):
                         cursor_slice={},
                         extra_fields=extracted_extra_fields,
                     )
+
+    def _extract_child_response(
+            self, parent_record: MutableMapping[str, Any], pointer
+    ) -> requests.Response:
+        """Extract child records from a parent record based on lazy pointers."""
+
+        def _create_response(data: Mapping[str, Any]) -> SafeResponse:
+            """Create a SafeResponse with the given data."""
+            response = SafeResponse()
+            response.content = json.dumps(data).encode("utf-8")
+            response.status_code = 200
+            return response
+
+        path = [path.eval(self.config) for path in pointer]
+        return _create_response(dpath.get(parent_record, path, default=[]))
 
     def _extract_extra_fields(
         self,
@@ -416,3 +410,16 @@ class SubstreamPartitionRouter(PartitionRouter):
     @property
     def logger(self) -> logging.Logger:
         return logging.getLogger("airbyte.SubstreamPartitionRouter")
+
+
+class SafeResponse(requests.Response):
+    def __getattr__(self, name: str) -> Any:
+        return getattr(requests.Response, name, None)
+
+    @property
+    def content(self) -> Optional[bytes]:
+        return super().content
+
+    @content.setter
+    def content(self, value: Union[str, bytes]) -> None:
+        self._content = value.encode() if isinstance(value, str) else value

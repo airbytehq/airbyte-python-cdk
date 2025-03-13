@@ -2528,6 +2528,10 @@ class ModelToComponentFactory:
             if model.request_option
             else None
         )
+
+        if "*" in model.lazy_read_pointer:
+            raise ValueError("The '*' wildcard in 'lazy_read_pointer' is not supported — only direct paths are allowed.")
+
         return ParentStreamConfig(
             parent_key=model.parent_key,
             request_option=request_option,
@@ -2537,6 +2541,7 @@ class ModelToComponentFactory:
             incremental_dependency=model.incremental_dependency or False,
             parameters=model.parameters or {},
             extra_fields=model.extra_fields,
+            lazy_read_pointer=model.lazy_read_pointer
         )
 
     @staticmethod
@@ -2740,42 +2745,13 @@ class ModelToComponentFactory:
             model.ignore_stream_slicer_parameters_on_paginated_requests or False
         )
 
-        if model.lazy_read_pointer and not hasattr(model, "partition_router"):
-            raise ValueError(
-                "LazySimpleRetriever requires a 'partition_router' when 'lazy_read_pointer' is set. "
-                "Please either define 'partition_router' or remove 'lazy_read_pointer' from the model."
-            )
+        if hasattr(model, "partition_router") and model.partition_router and model.partition_router.type == "SubstreamPartitionRouter" and not bool(
+            self._connector_state_manager.get_stream_state(name, None)) and any(parent_stream_config.lazy_read_pointer for parent_stream_config in model.partition_router.parent_stream_configs):
 
-        if model.lazy_read_pointer and not bool(
-            self._connector_state_manager.get_stream_state(name, None)
-        ):
-            if model.partition_router.type != "SubstreamPartitionRouter":  # type: ignore[union-attr] # model.partition_router has BaseModel type
+            if incremental_sync.step or incremental_sync.cursor_granularity:
                 raise ValueError(
-                    "LazySimpleRetriever only supports 'SubstreamPartitionRouterModel' as the 'partition_router' type. "  # type: ignore[union-attr] # model.partition_router has BaseModel type
-                    f"Found: '{model.partition_router.type}'."
+                    f"Found more that one slice per parent. LazySimpleRetriever only supports single slice read for stream - {name}."
                 )
-            lazy_read_pointer = []
-            for i, path in enumerate(model.lazy_read_pointer):
-                if path == "*":
-                    raise ValueError(
-                        f"'lazy_read_pointer' support only direct pointing. Found: '* as a {i} element in the pointer.'"
-                    )
-
-                lazy_read_pointer.append(InterpolatedString.create(path, parameters=model.parameters or {}))
-
-            lazy_read_pointer = [
-                InterpolatedString.create(path, parameters=model.parameters or {})
-                for path in model.lazy_read_pointer
-            ]
-            partition_router = self._create_component_from_model(
-                model=model.partition_router,  # type: ignore[arg-type] # model.partition_router has BaseModel type
-                config=config,  # type: ignore[arg-type]
-            )
-            stream_slicer = (
-                self._create_component_from_model(model=incremental_sync, config=config)
-                if incremental_sync
-                else SinglePartitionRouter(parameters={})
-            )
 
             return LazySimpleRetriever(
                 name=name,
@@ -2789,8 +2765,6 @@ class ModelToComponentFactory:
                 config=config,
                 ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
                 parameters=model.parameters or {},
-                partition_router=partition_router,
-                lazy_read_pointer=lazy_read_pointer,
             )
 
         if self._limit_slices_fetched or self._emit_connector_builder_messages:
