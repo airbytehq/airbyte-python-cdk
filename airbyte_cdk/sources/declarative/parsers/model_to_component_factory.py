@@ -1908,7 +1908,9 @@ class ModelToComponentFactory:
     ) -> Optional[StreamSlicer]:
         retriever_model = model.retriever
 
-        stream_slicer = self._build_stream_slicer_from_partition_router(retriever_model, config, stream_name=model.name)
+        stream_slicer = self._build_stream_slicer_from_partition_router(
+            retriever_model, config, stream_name=model.name
+        )
 
         if retriever_model.type == "AsyncRetriever":
             is_not_datetime_cursor = (
