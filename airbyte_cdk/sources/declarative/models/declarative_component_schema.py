@@ -877,6 +877,11 @@ class DpathFlattenFields(BaseModel):
         description="Whether to delete the origin value or keep it. Default is False.",
         title="Delete Origin Value",
     )
+    replace_record: Optional[bool] = Field(
+        None,
+        description="Whether to replace the origin record or not. Default is False.",
+        title="Replace Origin Record",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -1460,6 +1465,16 @@ class AddFields(BaseModel):
         description="List of transformations (path and corresponding value) that will be added to the record.",
         title="Fields",
     )
+    condition: Optional[str] = Field(
+        "",
+        description="Fields will be added if expression is evaluated to True.,",
+        examples=[
+            "{{ property|string == '' }}",
+            "{{ property is integer }}",
+            "{{ property|length > 5 }}",
+            "{{ property == 'some_string_to_match' }}",
+        ],
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -1770,6 +1785,10 @@ class RecordSelector(BaseModel):
         SchemaNormalization.None_,
         description="Responsible for normalization according to the schema.",
         title="Schema Normalization",
+    )
+    transform_before_filtering: Optional[bool] = Field(
+        False,
+        description="If true, transformation will be applied before record filtering.",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 

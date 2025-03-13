@@ -713,7 +713,11 @@ class ModelToComponentFactory:
             )
             for added_field_definition_model in model.fields
         ]
-        return AddFields(fields=added_field_definitions, parameters=model.parameters or {})
+        return AddFields(
+            fields=added_field_definitions,
+            condition=model.condition or "",
+            parameters=model.parameters or {},
+        )
 
     def create_keys_to_lower_transformation(
         self, model: KeysToLowerModel, config: Config, **kwargs: Any
@@ -749,6 +753,7 @@ class ModelToComponentFactory:
             delete_origin_value=model.delete_origin_value
             if model.delete_origin_value is not None
             else False,
+            replace_record=model.replace_record if model.replace_record is not None else False,
             parameters=model.parameters or {},
         )
 
@@ -1903,6 +1908,10 @@ class ModelToComponentFactory:
     ) -> Optional[StreamSlicer]:
         retriever_model = model.retriever
 
+        stream_slicer = self._build_stream_slicer_from_partition_router(
+            retriever_model, config, stream_name=model.name
+        )
+
         if retriever_model.type == "AsyncRetriever":
             is_not_datetime_cursor = (
                 model.incremental_sync.type != "DatetimeBasedCursor"
@@ -1922,12 +1931,10 @@ class ModelToComponentFactory:
                     "AsyncRetriever with cursor other than DatetimeBasedCursor is not supported yet."
                 )
 
-            if is_partition_router:
+            if is_partition_router and not stream_slicer:
                 # Note that this development is also done in parallel to the per partition development which once merged
                 # we could support here by calling create_concurrent_cursor_from_perpartition_cursor
                 raise ValueError("Per partition state is not supported yet for AsyncRetriever.")
-
-        stream_slicer = self._build_stream_slicer_from_partition_router(retriever_model, config, stream_name=model.name)
 
         if model.incremental_sync:
             return self._build_incremental_cursor(model, stream_slicer, config)
@@ -2607,7 +2614,9 @@ class ModelToComponentFactory:
             else None
         )
 
-        transform_before_filtering = False
+        assert model.transform_before_filtering is not None  # for mypy
+
+        transform_before_filtering = model.transform_before_filtering
         if client_side_incremental_sync:
             record_filter = ClientSideIncrementalRecordFilterDecorator(
                 config=config,

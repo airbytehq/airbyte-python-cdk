@@ -116,6 +116,19 @@ definitions:
         type: array
         items:
           "$ref": "#/definitions/AddedFieldDefinition"
+      condition:
+        description: Fields will be added if expression is evaluated to True.
+        type: string
+        default: ""
+        interpolation_context:
+          - config
+          - property
+          - parameters
+        examples:
+          - "{{ property|string == '' }}"
+          - "{{ property is integer }}"
+          - "{{ property|length > 5 }}"
+          - "{{ property == 'some_string_to_match' }}"
       $parameters:
         type: object
         additionalProperties: true
@@ -2265,6 +2278,10 @@ definitions:
         title: Delete Origin Value
         description: Whether to delete the origin value or keep it. Default is False.
         type: boolean
+      replace_record:
+        title: Replace Origin Record
+        description: Whether to replace the origin record or not. Default is False.
+        type: boolean
       $parameters:
         type: object
         additionalProperties: true
@@ -3000,6 +3017,10 @@ definitions:
           - "$ref": "#/definitions/SchemaNormalization"
           - "$ref": "#/definitions/CustomSchemaNormalization"
         default: None
+      transform_before_filtering:
+        description: If true, transformation will be applied before record filtering.
+        type: boolean
+        default: false
       $parameters:
         type: object
         additionalProperties: true

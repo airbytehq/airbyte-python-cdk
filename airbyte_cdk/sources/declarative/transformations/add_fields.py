@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
 from dataclasses import InitVar, dataclass, field
@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Mapping, Optional, Type, Union
 
 import dpath
 
+from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.types import Config, FieldPointer, StreamSlice, StreamState
@@ -86,11 +87,16 @@ class AddFields(RecordTransformation):
 
     fields: List[AddedFieldDefinition]
     parameters: InitVar[Mapping[str, Any]]
+    condition: str = ""
     _parsed_fields: List[ParsedAddFieldDefinition] = field(
         init=False, repr=False, default_factory=list
     )
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
+        self._filter_interpolator = InterpolatedBoolean(
+            condition=self.condition, parameters=parameters
+        )
+
         for add_field in self.fields:
             if len(add_field.path) < 1:
                 raise ValueError(
@@ -132,7 +138,9 @@ class AddFields(RecordTransformation):
         for parsed_field in self._parsed_fields:
             valid_types = (parsed_field.value_type,) if parsed_field.value_type else None
             value = parsed_field.value.eval(config, valid_types=valid_types, **kwargs)
-            dpath.new(record, parsed_field.path, value)
+            is_empty_condition = not self.condition
+            if is_empty_condition or self._filter_interpolator.eval(config, value=value, **kwargs):
+                dpath.new(record, parsed_field.path, value)
 
     def __eq__(self, other: Any) -> bool:
         return bool(self.__dict__ == other.__dict__)
