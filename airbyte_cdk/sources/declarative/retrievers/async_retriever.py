@@ -37,6 +37,30 @@ class AsyncRetriever(Retriever):
         self._parameters = parameters
 
     @property
+    def exit_on_rate_limit(self) -> bool:
+        """
+        Whether to exit on rate limit. This is a property of the job repository
+        and not the stream slicer. The stream slicer is responsible for creating
+        the jobs, but the job repository is responsible for managing the rate
+        limits and other job-related properties.
+
+        Note:
+         - If the `creation_requester` cannot place / create the job - it might be the case of the RateLimits
+         - If the `creation_requester` can place / create the job - it means all other requesters should successfully manage
+           to complete the results.
+        """
+        return self.stream_slicer._job_orchestrator._job_repository.creation_requester.exit_on_rate_limit  # type: ignore[return-value]
+
+    @exit_on_rate_limit.setter
+    def exit_on_rate_limit(self, value: bool) -> None:
+        """
+        Sets the `exit_on_rate_limit` property of the job repository > creation_requester,
+        meaning that the Job cannot be placed / created if the rate limit is reached.
+        Thus no futher work on managing jobs is expected to be done.
+        """
+        self.stream_slicer._job_orchestrator._job_repository.creation_requester.exit_on_rate_limit = value  # type: ignore[assignment]
+
+    @property
     def state(self) -> StreamState:
         """
         As a first iteration for sendgrid, there is no state to be managed
