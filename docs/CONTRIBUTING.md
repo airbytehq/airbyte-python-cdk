@@ -90,11 +90,9 @@ Only Airbyte CDK maintainers can run slash commands. The most common slash comma
 The full list of available slash commands can be found in the [slash command dispatch file](https://github.com/airbytehq/airbyte-python-cdk/blob/main/.github/workflows/slash_command_dispatch.yml#L21-L25).
 
 # Appendix: Advanced Topics
-## Development Guidelines and Cursor Rules
+## Development Guidelines for AI Agents
 
-The Airbyte Python CDK uses specific development guidelines to maintain consistent code organization and avoid common issues. These guidelines are documented in the [.cursorrules](./../.cursorrules) file at the root of the repository.
-
-When working with the CDK codebase, please review the cursor rules to ensure your changes follow the project's development practices, especially regarding import conventions, docstring standards, and code organization.
+This repo houses a [`.cursorrules`](./../.cursorrules) file at the root of the repository. This is used to guide AI agents working within the repo. It may also have helpful info for new developers onboarding to the repo.
 
 
 ## Using MockServer in Place of Direct API Access

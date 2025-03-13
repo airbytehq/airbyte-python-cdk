@@ -1,5 +1,7 @@
 Here are some notes for Python CDK development.
 
+For comprehensive development guidelines, please also refer to the [CONTRIBUTING.md](./docs/CONTRIBUTING.md) file which contains important information for human developers.
+
 ## Development Setup
 
 * Use Poetry for dependency management
