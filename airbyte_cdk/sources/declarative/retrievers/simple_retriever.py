@@ -19,7 +19,9 @@ from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.partition_routers.single_partition_router import (
     SinglePartitionRouter,
 )
-from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import SubstreamPartitionRouter
+from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
+    SubstreamPartitionRouter,
+)
 from airbyte_cdk.sources.declarative.requesters.paginators.no_pagination import NoPagination
 from airbyte_cdk.sources.declarative.requesters.paginators.paginator import Paginator
 from airbyte_cdk.sources.declarative.requesters.request_options import (
@@ -640,6 +642,7 @@ class LazySimpleRetriever(SimpleRetriever):
     """
     A retriever that supports lazy loading from parent streams.
     """
+
     partition_router: SubstreamPartitionRouter = field(init=True, repr=False, default=None)
     lazy_read_pointer: Optional[List[InterpolatedString]] = None
 
@@ -653,7 +656,9 @@ class LazySimpleRetriever(SimpleRetriever):
         parent_stream = parent_stream_config.stream
 
         for parent_record in parent_stream.read_only_records():
-            parent_record, parent_partition = self.partition_router.process_parent_record(parent_record, parent_stream.name)
+            parent_record, parent_partition = self.partition_router.process_parent_record(
+                parent_record, parent_stream.name
+            )
             if parent_record is None:
                 continue
 
@@ -661,7 +666,12 @@ class LazySimpleRetriever(SimpleRetriever):
             response = self._create_response(childs)
 
             yield from self._yield_records_with_pagination(
-                response, records_generator_fn, stream_state, stream_slice, parent_record, parent_stream_config
+                response,
+                records_generator_fn,
+                stream_state,
+                stream_slice,
+                parent_record,
+                parent_stream_config,
             )
 
         yield from []
@@ -672,7 +682,11 @@ class LazySimpleRetriever(SimpleRetriever):
             return parent_record
 
         path = [path.eval(self.config) for path in self.lazy_read_pointer]
-        return dpath.values(parent_record, path) if "*" in path else dpath.get(parent_record, path, default=[])
+        return (
+            dpath.values(parent_record, path)
+            if "*" in path
+            else dpath.get(parent_record, path, default=[])
+        )
 
     def _create_response(self, data: Mapping) -> SafeResponse:
         """Create a SafeResponse with the given data."""
@@ -700,7 +714,14 @@ class LazySimpleRetriever(SimpleRetriever):
 
         next_page_token = self._next_page_token(response, last_page_size, last_record, None)
         if next_page_token:
-            yield from self._paginate(next_page_token, records_generator_fn, stream_state, stream_slice, parent_record, parent_stream_config)
+            yield from self._paginate(
+                next_page_token,
+                records_generator_fn,
+                stream_state,
+                stream_slice,
+                parent_record,
+                parent_stream_config,
+            )
 
     def _paginate(
         self,
@@ -713,8 +734,13 @@ class LazySimpleRetriever(SimpleRetriever):
     ) -> Iterable[Record]:
         """Handle pagination by fetching subsequent pages."""
         partition_field = parent_stream_config.partition_field.eval(self.config)
-        partition_value = dpath.get(parent_record, parent_stream_config.parent_key.eval(self.config))
-        stream_slice = StreamSlice(partition={partition_field: partition_value, "parent_slice": {}}, cursor_slice=stream_slice.cursor_slice)
+        partition_value = dpath.get(
+            parent_record, parent_stream_config.parent_key.eval(self.config)
+        )
+        stream_slice = StreamSlice(
+            partition={partition_field: partition_value, "parent_slice": {}},
+            cursor_slice=stream_slice.cursor_slice,
+        )
 
         while next_page_token:
             response = self._fetch_next_page(stream_state, stream_slice, next_page_token)
@@ -725,6 +751,9 @@ class LazySimpleRetriever(SimpleRetriever):
                 last_record = record
                 yield record
 
-            last_page_token_value = next_page_token.get("next_page_token") if next_page_token else None
-            next_page_token = self._next_page_token(response, last_page_size, last_record, last_page_token_value)
-
+            last_page_token_value = (
+                next_page_token.get("next_page_token") if next_page_token else None
+            )
+            next_page_token = self._next_page_token(
+                response, last_page_size, last_record, last_page_token_value
+            )

@@ -2648,7 +2648,11 @@ class ModelToComponentFactory:
         stop_condition_on_cursor: bool = False,
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
         transformations: List[RecordTransformation],
-        incremental_sync: Optional[Union[IncrementingCountCursorModel, DatetimeBasedCursorModel, CustomIncrementalSyncModel]] = None,
+        incremental_sync: Optional[
+            Union[
+                IncrementingCountCursorModel, DatetimeBasedCursorModel, CustomIncrementalSyncModel
+            ]
+        ] = None,
         **kwargs: Any,
     ) -> SimpleRetriever:
         decoder = (
@@ -2707,10 +2711,21 @@ class ModelToComponentFactory:
             model.ignore_stream_slicer_parameters_on_paginated_requests or False
         )
 
-        if model.lazy_read_pointer and not bool(self._connector_state_manager.get_stream_state(name, None)):
-            lazy_read_pointer = [InterpolatedString.create(path, parameters=model.parameters or {}) for path in model.lazy_read_pointer]
-            partition_router = self._create_component_from_model(model=model.partition_router, config=config)
-            stream_slicer = self._create_component_from_model(model=incremental_sync, config=config) if incremental_sync else SinglePartitionRouter(parameters={})
+        if model.lazy_read_pointer and not bool(
+            self._connector_state_manager.get_stream_state(name, None)
+        ):
+            lazy_read_pointer = [
+                InterpolatedString.create(path, parameters=model.parameters or {})
+                for path in model.lazy_read_pointer
+            ]
+            partition_router = self._create_component_from_model(
+                model=model.partition_router, config=config
+            )
+            stream_slicer = (
+                self._create_component_from_model(model=incremental_sync, config=config)
+                if incremental_sync
+                else SinglePartitionRouter(parameters={})
+            )
 
             return LazySimpleRetriever(
                 name=name,

@@ -6,7 +6,17 @@
 import copy
 import logging
 from dataclasses import InitVar, dataclass
-from typing import TYPE_CHECKING, Any, Iterable, Tuple, List, Mapping, MutableMapping, Optional, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Iterable,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Tuple,
+    Union,
+)
 
 import dpath
 
@@ -133,7 +143,9 @@ class SubstreamPartitionRouter(PartitionRouter):
                         parent_config.request_option.inject_into_request(params, value, self.config)
         return params
 
-    def process_parent_record(self, parent_record: Union[AirbyteMessage, Record, Mapping], parent_stream_name: str) -> Tuple[Optional[Mapping], Optional[Mapping]]:
+    def process_parent_record(
+        self, parent_record: Union[AirbyteMessage, Record, Mapping], parent_stream_name: str
+    ) -> Tuple[Optional[Mapping], Optional[Mapping]]:
         """
         Processes and extracts data from a parent record, handling different record types
         and ensuring only valid types proceed.
@@ -150,7 +162,7 @@ class SubstreamPartitionRouter(PartitionRouter):
             )
             if parent_record.type == MessageType.RECORD:
                 return parent_record.record.data, {}
-            return None, None   # Skip invalid or non-record data
+            return None, None  # Skip invalid or non-record data
 
         # Handle Record type
         if isinstance(parent_record, Record):
@@ -200,7 +212,9 @@ class SubstreamPartitionRouter(PartitionRouter):
                 # not support either substreams or RFR, but something that needs to be considered once we do
                 for parent_record in parent_stream.read_only_records():
                     # Process the parent record
-                    parent_record, parent_partition = self.process_parent_record(parent_record, parent_stream.name)
+                    parent_record, parent_partition = self.process_parent_record(
+                        parent_record, parent_stream.name
+                    )
 
                     # Skip invalid or non-record data
                     if parent_record is None:
