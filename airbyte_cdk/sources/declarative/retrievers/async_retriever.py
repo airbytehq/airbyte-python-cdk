@@ -49,16 +49,22 @@ class AsyncRetriever(Retriever):
          - If the `creation_requester` can place / create the job - it means all other requesters should successfully manage
            to complete the results.
         """
-        return self.stream_slicer._job_orchestrator._job_repository.creation_requester.exit_on_rate_limit  # type: ignore[return-value]
+        job_orchestrator = self.stream_slicer._job_orchestrator
+        if job_orchestrator is None:
+            # Default value when orchestrator is not available
+            return False
+        return job_orchestrator._job_repository.creation_requester.exit_on_rate_limit  # type: ignore
 
     @exit_on_rate_limit.setter
     def exit_on_rate_limit(self, value: bool) -> None:
         """
         Sets the `exit_on_rate_limit` property of the job repository > creation_requester,
         meaning that the Job cannot be placed / created if the rate limit is reached.
-        Thus no futher work on managing jobs is expected to be done.
+        Thus no further work on managing jobs is expected to be done.
         """
-        self.stream_slicer._job_orchestrator._job_repository.creation_requester.exit_on_rate_limit = value  # type: ignore[assignment]
+        job_orchestrator = self.stream_slicer._job_orchestrator
+        if job_orchestrator is not None:
+            job_orchestrator._job_repository.creation_requester.exit_on_rate_limit = value  # type: ignore[attr-defined, assignment]
 
     @property
     def state(self) -> StreamState:
