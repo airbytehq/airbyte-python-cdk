@@ -90,6 +90,10 @@ Only Airbyte CDK maintainers can run slash commands. The most common slash comma
 The full list of available slash commands can be found in the [slash command dispatch file](https://github.com/airbytehq/airbyte-python-cdk/blob/main/.github/workflows/slash_command_dispatch.yml#L21-L25).
 
 # Appendix: Advanced Topics
+## Development Guidelines for AI Agents
+
+This repo houses a [`.cursorrules`](./../.cursorrules) file at the root of the repository. This is used to guide AI agents working within the repo. It may also have helpful info for new developers onboarding to the repo.
+
 
 ## Using MockServer in Place of Direct API Access
 
