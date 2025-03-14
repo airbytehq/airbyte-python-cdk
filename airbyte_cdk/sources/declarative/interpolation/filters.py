@@ -95,7 +95,7 @@ def base64decode(value: str) -> str:
 
 def base64binascii_decode(value: str) -> str:
     """
-    Implementation of a custom Jinja2 base64decode filter
+    Implementation of a custom Jinja2 filter to decode base64 strings using ASCII encoding
 
     For example:
 
@@ -103,7 +103,7 @@ def base64binascii_decode(value: str) -> str:
         $ref: "#/definitions/OAuthAuthenticator"
         $parameters:
           name: "client_id"
-          value: "{{ config['client_id'] | base64decode }}"
+          value: "{{ config['client_id'] | base64binascii_decode }}"
 
     :param value: value to be decoded from base64 using ascii
     :return: base64 decoded string ascii
