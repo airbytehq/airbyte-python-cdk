@@ -9,13 +9,19 @@ FROM docker.io/airbyte/python-connector-base:4.0.0@sha256:d9894b6895923b379f3006
 
 WORKDIR /airbyte/integration_code
 
+# Install Firejail
+RUN apt-get update && \
+    apt-get install -y firejail && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
 # Copy project files needed for build
 COPY pyproject.toml poetry.lock README.md ./
 COPY dist/*.whl ./dist/
 
 # Install dependencies - ignore keyring warnings
 RUN poetry config virtualenvs.create false \
-    && poetry install --only main --no-interaction --no-ansi || true
+    && poetry install --only main --no-interaction --no-ansi
 
 # Build and install the package
 RUN pip install dist/*.whl
@@ -34,6 +40,6 @@ RUN rm -rf dist/ pyproject.toml poetry.lock README.md
 RUN chown -R 1000:1000 /airbyte
 
 # Set the entrypoint
-ENV AIRBYTE_ENTRYPOINT="python /airbyte/integration_code/main.py"
-ENTRYPOINT ["python", "/airbyte/integration_code/main.py"]
+ENV AIRBYTE_ENTRYPOINT="source-declarative-manifest-sandboxed"
+ENTRYPOINT ["source-declarative-manifest-sandboxed"]
 USER airbyte
