@@ -342,10 +342,13 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         )
 
     def infer_schema(self, files: List[RemoteFile]) -> Mapping[str, Any]:
+        self.logger.info(f"Starting schema inference for stream {self.name} with {len(files)} files")
         loop = asyncio.get_event_loop()
         schema = loop.run_until_complete(self._infer_schema(files))
         # as infer schema returns a Mapping that is assumed to be immutable, we need to create a deepcopy to avoid modifying the reference
-        return self._fill_nulls(deepcopy(schema))
+        result = self._fill_nulls(deepcopy(schema))
+        self.logger.info(f"Completed schema inference for stream {self.name}")
+        return result
 
     @staticmethod
     def _fill_nulls(schema: Mapping[str, Any]) -> Mapping[str, Any]:
@@ -374,6 +377,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         Each file type has a corresponding `infer_schema` handler.
         Dispatch on file type.
         """
+        self.logger.info(f"Starting concurrent schema inference for {len(files)} files with {self._discovery_policy.n_concurrent_requests} concurrent requests")
         base_schema: SchemaType = {}
         pending_tasks: Set[asyncio.tasks.Task[SchemaType]] = set()
 
@@ -383,6 +387,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
             while len(pending_tasks) <= self._discovery_policy.n_concurrent_requests and (
                 file := next(files_iterator, None)
             ):
+                self.logger.debug(f"Starting schema inference for file: {file.uri}")
                 pending_tasks.add(asyncio.create_task(self._infer_file_schema(file)))
                 n_started += 1
             # Return when the first task is completed so that we can enqueue a new task as soon as the
@@ -392,6 +397,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
             )
             for task in done:
                 try:
+                    self.logger.debug(f"Completed schema inference for a file, {len(pending_tasks)} files remaining")
                     base_schema = merge_schemas(base_schema, task.result())
                 except AirbyteTracedException as ate:
                     raise ate
@@ -401,6 +407,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
                         exc_info=exc,
                     )
 
+        self.logger.info(f"Completed concurrent schema inference for stream {self.name}")
         return base_schema
 
     async def _infer_file_schema(self, file: RemoteFile) -> SchemaType:

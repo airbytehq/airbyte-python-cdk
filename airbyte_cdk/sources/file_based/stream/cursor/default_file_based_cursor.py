@@ -113,15 +113,16 @@ class DefaultFileBasedCursor(AbstractFileBasedCursor):
     def get_files_to_sync(
         self, all_files: Iterable[RemoteFile], logger: logging.Logger
     ) -> Iterable[RemoteFile]:
+        logger.info("Starting to determine files to sync based on cursor")
         if self._is_history_full():
             logger.warning(
                 f"The state history is full. "
                 f"This sync and future syncs won't be able to use the history to filter out duplicate files. "
                 f"It will instead use the time window of {self._time_window_if_history_is_full} to filter out files."
             )
-        for f in all_files:
-            if self._should_sync_file(f, logger):
-                yield f
+        files_to_sync = [f for f in all_files if self._should_sync_file(f, logger)]
+        logger.info(f"Determined {len(files_to_sync)} files to sync out of {len(list(all_files))} total files")
+        return files_to_sync
 
     def get_start_time(self) -> datetime:
         return self._start_time

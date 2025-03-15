@@ -154,6 +154,7 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
 
         Otherwise, the "error" object should describe what went wrong.
         """
+        logger.info("Starting check connection for file-based source")
         try:
             streams = self.streams(config)
         except Exception as config_exception:
@@ -222,7 +223,9 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                 failure_type=FailureType.config_error,
             )
 
-        return not bool(errors), (errors or None)
+        success = not bool(errors)
+        logger.info(f"Completed check connection for file-based source. Result: {success}")
+        return success, (errors or None)
 
     def streams(self, config: Mapping[str, Any]) -> List[Stream]:
         """

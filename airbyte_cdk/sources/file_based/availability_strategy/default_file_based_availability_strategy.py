@@ -96,8 +96,14 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
 
         Returns the first file if successful, otherwise raises a CheckAvailabilityError.
         """
+        stream.logger.info(f"Starting to list files for stream: {stream.name}")
         try:
-            file = next(iter(stream.get_files()))
+            files = list(stream.get_files())
+            file_count = len(files)
+            stream.logger.info(f"Found {file_count} files for stream: {stream.name}")
+            if file_count == 0:
+                raise CheckAvailabilityError(FileBasedSourceError.EMPTY_STREAM, stream=stream.name)
+            file = files[0]
         except StopIteration:
             raise CheckAvailabilityError(FileBasedSourceError.EMPTY_STREAM, stream=stream.name)
         except CustomFileBasedException as exc:
@@ -107,6 +113,7 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
                 FileBasedSourceError.ERROR_LISTING_FILES, stream=stream.name
             ) from exc
 
+        stream.logger.info(f"Successfully verified file access for stream: {stream.name}")
         return file
 
     def _check_parse_record(
