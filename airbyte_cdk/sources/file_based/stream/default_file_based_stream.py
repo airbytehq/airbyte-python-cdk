@@ -342,7 +342,9 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         )
 
     def infer_schema(self, files: List[RemoteFile]) -> Mapping[str, Any]:
-        self.logger.info(f"Starting schema inference for stream {self.name} with {len(files)} files")
+        self.logger.info(
+            f"Starting schema inference for stream {self.name} with {len(files)} files"
+        )
         loop = asyncio.get_event_loop()
         schema = loop.run_until_complete(self._infer_schema(files))
         # as infer schema returns a Mapping that is assumed to be immutable, we need to create a deepcopy to avoid modifying the reference
@@ -377,7 +379,9 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         Each file type has a corresponding `infer_schema` handler.
         Dispatch on file type.
         """
-        self.logger.info(f"Starting concurrent schema inference for {len(files)} files with {self._discovery_policy.n_concurrent_requests} concurrent requests")
+        self.logger.info(
+            f"Starting concurrent schema inference for {len(files)} files with {self._discovery_policy.n_concurrent_requests} concurrent requests"
+        )
         base_schema: SchemaType = {}
         pending_tasks: Set[asyncio.tasks.Task[SchemaType]] = set()
 
@@ -397,7 +401,9 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
             )
             for task in done:
                 try:
-                    self.logger.debug(f"Completed schema inference for a file, {len(pending_tasks)} files remaining")
+                    self.logger.debug(
+                        f"Completed schema inference for a file, {len(pending_tasks)} files remaining"
+                    )
                     base_schema = merge_schemas(base_schema, task.result())
                 except AirbyteTracedException as ate:
                     raise ate

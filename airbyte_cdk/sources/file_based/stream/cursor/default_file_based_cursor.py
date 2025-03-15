@@ -121,7 +121,9 @@ class DefaultFileBasedCursor(AbstractFileBasedCursor):
                 f"It will instead use the time window of {self._time_window_if_history_is_full} to filter out files."
             )
         files_to_sync = [f for f in all_files if self._should_sync_file(f, logger)]
-        logger.info(f"Determined {len(files_to_sync)} files to sync out of {len(list(all_files))} total files")
+        logger.info(
+            f"Determined {len(files_to_sync)} files to sync out of {len(list(all_files))} total files"
+        )
         return files_to_sync
 
     def get_start_time(self) -> datetime:

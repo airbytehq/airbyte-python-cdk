@@ -85,7 +85,7 @@ class AbstractFileBasedStreamReader(ABC):
 
         Utility method `self.filter_files_by_globs` and `self.get_prefixes_from_globs`
         are available, which may be helpful when implementing this method.
-        
+
         Implementation should include logging:
         - At the beginning: logger.info(f"Starting to match files with glob patterns: {globs}")
         - After filtering files: logger.info(f"Completed matching files with glob patterns: {globs}")
