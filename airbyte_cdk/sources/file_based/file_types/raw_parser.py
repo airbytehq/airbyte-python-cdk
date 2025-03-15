@@ -37,10 +37,20 @@ class RawParser(FileTypeParser):
 
     def check_config(self, config: FileBasedStreamConfig) -> Tuple[bool, Optional[str]]:
         """
-        Verify that this parser is only used with the "Raw Files" format.
-        The validation that this format is only used with "Copy Raw Files" delivery method
-        will be handled at a higher level in the availability strategy.
+        Verify that this parser is only used with the "Copy Raw Files" delivery method.
         """
+        from airbyte_cdk.sources.file_based.config.abstract_file_based_spec import AbstractFileBasedSpec
+        from airbyte_cdk.sources.file_based.config.validate_config_transfer_modes import use_file_transfer
+
+        # Create a mock config to check if the delivery method is set to use file transfer
+        mock_config = type('MockConfig', (AbstractFileBasedSpec,), {
+            'delivery_method': config.source_config.delivery_method,
+            'documentation_url': staticmethod(lambda: ""),
+        })()
+
+        if not use_file_transfer(mock_config):
+            return False, "The 'Raw Files' parser can only be used with the 'Copy Raw Files' delivery method."
+        
         return True, None
 
     async def infer_schema(
