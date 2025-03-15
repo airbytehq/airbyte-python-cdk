@@ -12,6 +12,7 @@ from airbyte_cdk.sources.file_based.config.csv_format import CsvFormat
 from airbyte_cdk.sources.file_based.config.excel_format import ExcelFormat
 from airbyte_cdk.sources.file_based.config.jsonl_format import JsonlFormat
 from airbyte_cdk.sources.file_based.config.parquet_format import ParquetFormat
+from airbyte_cdk.sources.file_based.config.raw_format import RawFormat
 from airbyte_cdk.sources.file_based.config.unstructured_format import UnstructuredFormat
 from airbyte_cdk.sources.file_based.exceptions import ConfigValidationError, FileBasedSourceError
 from airbyte_cdk.sources.file_based.schema_helpers import type_mapping_to_jsonschema
@@ -58,7 +59,13 @@ class FileBasedStreamConfig(BaseModel):
         default=3,
     )
     format: Union[
-        AvroFormat, CsvFormat, JsonlFormat, ParquetFormat, UnstructuredFormat, ExcelFormat
+        AvroFormat,
+        CsvFormat,
+        JsonlFormat,
+        ParquetFormat,
+        RawFormat,
+        UnstructuredFormat,
+        ExcelFormat,
     ] = Field(
         title="Format",
         description="The configuration options that are used to alter how to read incoming files that deviate from the standard formatting.",
