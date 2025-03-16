@@ -19,7 +19,12 @@ class NoPagination(Paginator):
 
     parameters: InitVar[Mapping[str, Any]]
 
-    def path(self, next_page_token: Optional[Mapping[str, Any]]) -> Optional[str]:
+    def path(
+        self,
+        next_page_token: Optional[Mapping[str, Any]],
+        stream_state: Optional[Mapping[str, Any]] = None,
+        stream_slice: Optional[StreamSlice] = None,
+    ) -> Optional[str]:
         return None
 
     def get_request_params(

@@ -646,7 +646,7 @@ class Rate(BaseModel):
     class Config:
         extra = Extra.allow
 
-    limit: int = Field(
+    limit: Union[int, str] = Field(
         ...,
         description="The maximum number of calls allowed within the interval.",
         title="Limit",
@@ -877,6 +877,11 @@ class DpathFlattenFields(BaseModel):
         description="Whether to delete the origin value or keep it. Default is False.",
         title="Delete Origin Value",
     )
+    replace_record: Optional[bool] = Field(
+        None,
+        description="Whether to replace the origin record or not. Default is False.",
+        title="Replace Origin Record",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -939,7 +944,7 @@ class MinMaxDatetime(BaseModel):
     )
     datetime_format: Optional[str] = Field(
         "",
-        description='Format of the datetime value. Defaults to "%Y-%m-%dT%H:%M:%S.%f%z" if left empty. Use placeholders starting with "%" to describe the format the API is using. The following placeholders are available:\n  * **%s**: Epoch unix timestamp - `1686218963`\n  * **%s_as_float**: Epoch unix timestamp in seconds as float with microsecond precision - `1686218963.123456`\n  * **%ms**: Epoch unix timestamp - `1686218963123`\n  * **%a**: Weekday (abbreviated) - `Sun`\n  * **%A**: Weekday (full) - `Sunday`\n  * **%w**: Weekday (decimal) - `0` (Sunday), `6` (Saturday)\n  * **%d**: Day of the month (zero-padded) - `01`, `02`, ..., `31`\n  * **%b**: Month (abbreviated) - `Jan`\n  * **%B**: Month (full) - `January`\n  * **%m**: Month (zero-padded) - `01`, `02`, ..., `12`\n  * **%y**: Year (without century, zero-padded) - `00`, `01`, ..., `99`\n  * **%Y**: Year (with century) - `0001`, `0002`, ..., `9999`\n  * **%H**: Hour (24-hour, zero-padded) - `00`, `01`, ..., `23`\n  * **%I**: Hour (12-hour, zero-padded) - `01`, `02`, ..., `12`\n  * **%p**: AM/PM indicator\n  * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`\n  * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`\n  * **%f**: Microsecond (zero-padded to 6 digits) - `000000`, `000001`, ..., `999999`\n  * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`\n  * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`\n  * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`\n  * **%U**: Week number of the year (Sunday as first day) - `00`, `01`, ..., `53`\n  * **%W**: Week number of the year (Monday as first day) - `00`, `01`, ..., `53`\n  * **%c**: Date and time representation - `Tue Aug 16 21:30:00 1988`\n  * **%x**: Date representation - `08/16/1988`\n  * **%X**: Time representation - `21:30:00`\n  * **%%**: Literal \'%\' character\n\n  Some placeholders depend on the locale of the underlying system - in most cases this locale is configured as en/US. For more information see the [Python documentation](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes).\n',
+        description='Format of the datetime value. Defaults to "%Y-%m-%dT%H:%M:%S.%f%z" if left empty. Use placeholders starting with "%" to describe the format the API is using. The following placeholders are available:\n  * **%s**: Epoch unix timestamp - `1686218963`\n  * **%s_as_float**: Epoch unix timestamp in seconds as float with microsecond precision - `1686218963.123456`\n  * **%ms**: Epoch unix timestamp - `1686218963123`\n  * **%a**: Weekday (abbreviated) - `Sun`\n  * **%A**: Weekday (full) - `Sunday`\n  * **%w**: Weekday (decimal) - `0` (Sunday), `6` (Saturday)\n  * **%d**: Day of the month (zero-padded) - `01`, `02`, ..., `31`\n  * **%b**: Month (abbreviated) - `Jan`\n  * **%B**: Month (full) - `January`\n  * **%m**: Month (zero-padded) - `01`, `02`, ..., `12`\n  * **%y**: Year (without century, zero-padded) - `00`, `01`, ..., `99`\n  * **%Y**: Year (with century) - `0001`, `0002`, ..., `9999`\n  * **%H**: Hour (24-hour, zero-padded) - `00`, `01`, ..., `23`\n  * **%I**: Hour (12-hour, zero-padded) - `01`, `02`, ..., `12`\n  * **%p**: AM/PM indicator\n  * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`\n  * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`\n  * **%f**: Microsecond (zero-padded to 6 digits) - `000000`, `000001`, ..., `999999`\n  * **%_ms**: Millisecond (zero-padded to 3 digits) - `000`, `001`, ..., `999`\n  * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`\n  * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`\n  * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`\n  * **%U**: Week number of the year (Sunday as first day) - `00`, `01`, ..., `53`\n  * **%W**: Week number of the year (Monday as first day) - `00`, `01`, ..., `53`\n  * **%c**: Date and time representation - `Tue Aug 16 21:30:00 1988`\n  * **%x**: Date representation - `08/16/1988`\n  * **%X**: Time representation - `21:30:00`\n  * **%%**: Literal \'%\' character\n\n  Some placeholders depend on the locale of the underlying system - in most cases this locale is configured as en/US. For more information see the [Python documentation](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes).\n',
         examples=["%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%d", "%s"],
         title="Datetime Format",
     )
@@ -1460,6 +1465,16 @@ class AddFields(BaseModel):
         description="List of transformations (path and corresponding value) that will be added to the record.",
         title="Fields",
     )
+    condition: Optional[str] = Field(
+        "",
+        description="Fields will be added if expression is evaluated to True.,",
+        examples=[
+            "{{ property|string == '' }}",
+            "{{ property is integer }}",
+            "{{ property|length > 5 }}",
+            "{{ property == 'some_string_to_match' }}",
+        ],
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -1508,6 +1523,28 @@ class AuthFlow(BaseModel):
     oauth_config_specification: Optional[OAuthConfigSpecification] = None
 
 
+class IncrementingCountCursor(BaseModel):
+    type: Literal["IncrementingCountCursor"]
+    cursor_field: str = Field(
+        ...,
+        description="The location of the value on a record that will be used as a bookmark during sync. To ensure no data loss, the API must return records in ascending order based on the cursor field. Nested fields are not supported, so the field must be at the top level of the record. You can use a combination of Add Field and Remove Field transformations to move the nested field to the top.",
+        examples=["created_at", "{{ config['record_cursor'] }}"],
+        title="Cursor Field",
+    )
+    start_value: Optional[Union[str, int]] = Field(
+        None,
+        description="The value that determines the earliest record that should be synced.",
+        examples=[0, "{{ config['start_value'] }}"],
+        title="Start Value",
+    )
+    start_value_option: Optional[RequestOption] = Field(
+        None,
+        description="Optionally configures how the start value will be sent in requests to the source API.",
+        title="Inject Start Value Into Outgoing HTTP Request",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class DatetimeBasedCursor(BaseModel):
     type: Literal["DatetimeBasedCursor"]
     clamping: Optional[Clamping] = Field(
@@ -1523,7 +1560,7 @@ class DatetimeBasedCursor(BaseModel):
     )
     datetime_format: str = Field(
         ...,
-        description="The datetime format used to format the datetime values that are sent in outgoing requests to the API. Use placeholders starting with \"%\" to describe the format the API is using. The following placeholders are available:\n  * **%s**: Epoch unix timestamp - `1686218963`\n  * **%s_as_float**: Epoch unix timestamp in seconds as float with microsecond precision - `1686218963.123456`\n  * **%ms**: Epoch unix timestamp (milliseconds) - `1686218963123`\n  * **%a**: Weekday (abbreviated) - `Sun`\n  * **%A**: Weekday (full) - `Sunday`\n  * **%w**: Weekday (decimal) - `0` (Sunday), `6` (Saturday)\n  * **%d**: Day of the month (zero-padded) - `01`, `02`, ..., `31`\n  * **%b**: Month (abbreviated) - `Jan`\n  * **%B**: Month (full) - `January`\n  * **%m**: Month (zero-padded) - `01`, `02`, ..., `12`\n  * **%y**: Year (without century, zero-padded) - `00`, `01`, ..., `99`\n  * **%Y**: Year (with century) - `0001`, `0002`, ..., `9999`\n  * **%H**: Hour (24-hour, zero-padded) - `00`, `01`, ..., `23`\n  * **%I**: Hour (12-hour, zero-padded) - `01`, `02`, ..., `12`\n  * **%p**: AM/PM indicator\n  * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`\n  * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`\n  * **%f**: Microsecond (zero-padded to 6 digits) - `000000`\n  * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`\n  * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`\n  * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`\n  * **%U**: Week number of the year (starting Sunday) - `00`, ..., `53`\n  * **%W**: Week number of the year (starting Monday) - `00`, ..., `53`\n  * **%c**: Date and time - `Tue Aug 16 21:30:00 1988`\n  * **%x**: Date standard format - `08/16/1988`\n  * **%X**: Time standard format - `21:30:00`\n  * **%%**: Literal '%' character\n\n  Some placeholders depend on the locale of the underlying system - in most cases this locale is configured as en/US. For more information see the [Python documentation](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes).\n",
+        description="The datetime format used to format the datetime values that are sent in outgoing requests to the API. Use placeholders starting with \"%\" to describe the format the API is using. The following placeholders are available:\n  * **%s**: Epoch unix timestamp - `1686218963`\n  * **%s_as_float**: Epoch unix timestamp in seconds as float with microsecond precision - `1686218963.123456`\n  * **%ms**: Epoch unix timestamp (milliseconds) - `1686218963123`\n  * **%a**: Weekday (abbreviated) - `Sun`\n  * **%A**: Weekday (full) - `Sunday`\n  * **%w**: Weekday (decimal) - `0` (Sunday), `6` (Saturday)\n  * **%d**: Day of the month (zero-padded) - `01`, `02`, ..., `31`\n  * **%b**: Month (abbreviated) - `Jan`\n  * **%B**: Month (full) - `January`\n  * **%m**: Month (zero-padded) - `01`, `02`, ..., `12`\n  * **%y**: Year (without century, zero-padded) - `00`, `01`, ..., `99`\n  * **%Y**: Year (with century) - `0001`, `0002`, ..., `9999`\n  * **%H**: Hour (24-hour, zero-padded) - `00`, `01`, ..., `23`\n  * **%I**: Hour (12-hour, zero-padded) - `01`, `02`, ..., `12`\n  * **%p**: AM/PM indicator\n  * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`\n  * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`\n  * **%f**: Microsecond (zero-padded to 6 digits) - `000000`\n  * **%_ms**: Millisecond (zero-padded to 3 digits) - `000`\n  * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`\n  * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`\n  * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`\n  * **%U**: Week number of the year (starting Sunday) - `00`, ..., `53`\n  * **%W**: Week number of the year (starting Monday) - `00`, ..., `53`\n  * **%c**: Date and time - `Tue Aug 16 21:30:00 1988`\n  * **%x**: Date standard format - `08/16/1988`\n  * **%X**: Time standard format - `21:30:00`\n  * **%%**: Literal '%' character\n\n  Some placeholders depend on the locale of the underlying system - in most cases this locale is configured as en/US. For more information see the [Python documentation](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes).\n",
         examples=["%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%d", "%s", "%ms", "%s_as_float"],
         title="Outgoing Datetime Format",
     )
@@ -1749,6 +1786,10 @@ class RecordSelector(BaseModel):
         description="Responsible for normalization according to the schema.",
         title="Schema Normalization",
     )
+    transform_before_filtering: Optional[bool] = Field(
+        False,
+        description="If true, transformation will be applied before record filtering.",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -1838,7 +1879,7 @@ class DeclarativeSource1(BaseModel):
 
     type: Literal["DeclarativeSource"]
     check: Union[CheckStream, CheckDynamicStream]
-    streams: List[DeclarativeStream]
+    streams: List[Union[DeclarativeStream, StateDelegatingStream]]
     dynamic_streams: Optional[List[DynamicDeclarativeStream]] = None
     version: str = Field(
         ...,
@@ -1849,6 +1890,11 @@ class DeclarativeSource1(BaseModel):
     spec: Optional[Spec] = None
     concurrency_level: Optional[ConcurrencyLevel] = None
     api_budget: Optional[HTTPAPIBudget] = None
+    max_concurrent_async_job_count: Optional[int] = Field(
+        None,
+        description="Maximum number of concurrent asynchronous jobs to run. This property is only relevant for sources/streams that support asynchronous job execution through the AsyncRetriever (e.g. a report-based stream that initiates a job, polls the job status, and then fetches the job results). This is often set by the API's maximum number of concurrent jobs on the account level. Refer to the API's documentation for this information.",
+        title="Maximum Concurrent Asynchronous Jobs",
+    )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
         description="For internal Airbyte use only - DO NOT modify manually. Used by consumers of declarative manifests for storing related metadata.",
@@ -1865,7 +1911,7 @@ class DeclarativeSource2(BaseModel):
 
     type: Literal["DeclarativeSource"]
     check: Union[CheckStream, CheckDynamicStream]
-    streams: Optional[List[DeclarativeStream]] = None
+    streams: Optional[List[Union[DeclarativeStream, StateDelegatingStream]]] = None
     dynamic_streams: List[DynamicDeclarativeStream]
     version: str = Field(
         ...,
@@ -1876,6 +1922,11 @@ class DeclarativeSource2(BaseModel):
     spec: Optional[Spec] = None
     concurrency_level: Optional[ConcurrencyLevel] = None
     api_budget: Optional[HTTPAPIBudget] = None
+    max_concurrent_async_job_count: Optional[int] = Field(
+        None,
+        description="Maximum number of concurrent asynchronous jobs to run. This property is only relevant for sources/streams that support asynchronous job execution through the AsyncRetriever (e.g. a report-based stream that initiates a job, polls the job status, and then fetches the job results). This is often set by the API's maximum number of concurrent jobs on the account level. Refer to the API's documentation for this information.",
+        title="Maximum Concurrent Asynchronous Jobs",
+    )
     metadata: Optional[Dict[str, Any]] = Field(
         None,
         description="For internal Airbyte use only - DO NOT modify manually. Used by consumers of declarative manifests for storing related metadata.",
@@ -1948,7 +1999,9 @@ class DeclarativeStream(BaseModel):
         description="Component used to coordinate how records are extracted across stream slices and request pages.",
         title="Retriever",
     )
-    incremental_sync: Optional[Union[CustomIncrementalSync, DatetimeBasedCursor]] = Field(
+    incremental_sync: Optional[
+        Union[CustomIncrementalSync, DatetimeBasedCursor, IncrementingCountCursor]
+    ] = Field(
         None,
         description="Component used to fetch data incrementally based on a time field in the data.",
         title="Incremental Sync",
@@ -2048,12 +2101,14 @@ class HttpRequester(BaseModel):
         description="Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.",
         examples=[
             "https://connect.squareup.com/v2",
-            "{{ config['base_url'] or 'https://app.posthog.com'}}/api/",
+            "{{ config['base_url'] or 'https://app.posthog.com'}}/api",
+            "https://connect.squareup.com/v2/quotes/{{ stream_partition['id'] }}/quote_line_groups",
+            "https://example.com/api/v1/resource/{{ next_page_token['id'] }}",
         ],
         title="API Base URL",
     )
-    path: str = Field(
-        ...,
+    path: Optional[str] = Field(
+        None,
         description="Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.",
         examples=[
             "/products",
@@ -2169,13 +2224,18 @@ class DynamicSchemaLoader(BaseModel):
 
 class ParentStreamConfig(BaseModel):
     type: Literal["ParentStreamConfig"]
+    lazy_read_pointer: Optional[List[str]] = Field(
+        [],
+        description="If set, this will enable lazy reading, using the initial read of parent records to extract child records.",
+        title="Lazy Read Pointer",
+    )
     parent_key: str = Field(
         ...,
         description="The primary key of records from the parent stream that will be used during the retrieval of records for the current substream. This parent identifier field is typically a characteristic of the child records being extracted from the source API.",
         examples=["id", "{{ config['parent_record_id'] }}"],
         title="Parent Key",
     )
-    stream: DeclarativeStream = Field(
+    stream: Union[DeclarativeStream, StateDelegatingStream] = Field(
         ..., description="Reference to the parent stream.", title="Parent Stream"
     )
     partition_field: str = Field(
@@ -2198,6 +2258,22 @@ class ParentStreamConfig(BaseModel):
         None,
         description="Array of field paths to include as additional fields in the stream slice. Each path is an array of strings representing keys to access fields in the respective parent record. Accessible via `stream_slice.extra_fields`. Missing fields are set to `None`.",
         title="Extra Fields",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class StateDelegatingStream(BaseModel):
+    type: Literal["StateDelegatingStream"]
+    name: str = Field(..., description="The stream name.", example=["Users"], title="Name")
+    full_refresh_stream: DeclarativeStream = Field(
+        ...,
+        description="Component used to coordinate how records are extracted across stream slices and request pages when the state is empty or not provided.",
+        title="Retriever",
+    )
+    incremental_stream: DeclarativeStream = Field(
+        ...,
+        description="Component used to coordinate how records are extracted across stream slices and request pages when the state provided.",
+        title="Retriever",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -2271,7 +2347,7 @@ class AsyncRetriever(BaseModel):
     status_extractor: Union[CustomRecordExtractor, DpathExtractor] = Field(
         ..., description="Responsible for fetching the actual status of the async job."
     )
-    urls_extractor: Union[CustomRecordExtractor, DpathExtractor] = Field(
+    download_target_extractor: Union[CustomRecordExtractor, DpathExtractor] = Field(
         ...,
         description="Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.",
     )
@@ -2286,7 +2362,7 @@ class AsyncRetriever(BaseModel):
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to fetch the status of the running async job.",
     )
-    url_requester: Optional[Union[CustomRequester, HttpRequester]] = Field(
+    download_target_requester: Optional[Union[CustomRequester, HttpRequester]] = Field(
         None,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to extract the url from polling response by the completed async job.",
     )
@@ -2426,5 +2502,6 @@ SelectiveAuthenticator.update_forward_refs()
 DeclarativeStream.update_forward_refs()
 SessionTokenAuthenticator.update_forward_refs()
 DynamicSchemaLoader.update_forward_refs()
+ParentStreamConfig.update_forward_refs()
 SimpleRetriever.update_forward_refs()
 AsyncRetriever.update_forward_refs()

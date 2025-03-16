@@ -71,7 +71,6 @@ class CursorPaginationStrategy(PaginationStrategy):
         last_page_token_value: Optional[Any] = None,
     ) -> Optional[Any]:
         decoded_response = next(self.decoder.decode(response))
-
         # The default way that link is presented in requests.Response is a string of various links (last, next, etc). This
         # is not indexable or useful for parsing the cursor, so we replace it with the link dictionary from response.links
         headers: Dict[str, Any] = dict(response.headers)

@@ -32,7 +32,7 @@ from airbyte_cdk.sources.declarative.auth.token import (
 from airbyte_cdk.sources.declarative.auth.token_provider import SessionTokenProvider
 from airbyte_cdk.sources.declarative.checks import CheckStream
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
-from airbyte_cdk.sources.declarative.datetime import MinMaxDatetime
+from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder, PaginationDecoderDecorator
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordFilter, RecordSelector
@@ -3611,7 +3611,7 @@ def test_create_async_retriever():
             "timeout": ["timeout"],
             "completed": ["ready"],
         },
-        "urls_extractor": {"type": "DpathExtractor", "field_path": ["urls"]},
+        "download_target_extractor": {"type": "DpathExtractor", "field_path": ["urls"]},
         "record_selector": {
             "type": "RecordSelector",
             "extractor": {"type": "DpathExtractor", "field_path": ["data"]},
@@ -3619,7 +3619,7 @@ def test_create_async_retriever():
         "status_extractor": {"type": "DpathExtractor", "field_path": ["status"]},
         "polling_requester": {
             "type": "HttpRequester",
-            "path": "/v3/marketing/contacts/exports/{{stream_slice['create_job_response'].json()['id'] }}",
+            "path": "/v3/marketing/contacts/exports/{{creation_response['id'] }}",
             "url_base": "https://api.sendgrid.com",
             "http_method": "GET",
             "authenticator": {
@@ -3639,19 +3639,19 @@ def test_create_async_retriever():
         },
         "download_requester": {
             "type": "HttpRequester",
-            "path": "{{stream_slice['url']}}",
+            "path": "{{download_target}}",
             "url_base": "",
             "http_method": "GET",
         },
         "abort_requester": {
             "type": "HttpRequester",
-            "path": "{{stream_slice['url']}}/abort",
+            "path": "{{download_target}}/abort",
             "url_base": "",
             "http_method": "POST",
         },
         "delete_requester": {
             "type": "HttpRequester",
-            "path": "{{stream_slice['url']}}",
+            "path": "{{download_target}}",
             "url_base": "",
             "http_method": "POST",
         },
@@ -3685,7 +3685,7 @@ def test_create_async_retriever():
     assert job_repository.abort_requester
     assert job_repository.delete_requester
     assert job_repository.status_extractor
-    assert job_repository.urls_extractor
+    assert job_repository.download_target_extractor
 
     selector = component.record_selector
     extractor = selector.extractor

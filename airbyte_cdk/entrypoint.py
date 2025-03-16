@@ -22,7 +22,7 @@ from requests import PreparedRequest, Response, Session
 
 from airbyte_cdk.connector import TConfig
 from airbyte_cdk.exception_handler import init_uncaught_exception_handler
-from airbyte_cdk.logger import init_logger
+from airbyte_cdk.logger import PRINT_BUFFER, init_logger
 from airbyte_cdk.models import (
     AirbyteConnectionStatus,
     AirbyteMessage,
@@ -337,11 +337,11 @@ def launch(source: Source, args: List[str]) -> None:
     parsed_args = source_entrypoint.parse_args(args)
     # temporarily removes the PrintBuffer because we're seeing weird print behavior for concurrent syncs
     # Refer to: https://github.com/airbytehq/oncall/issues/6235
-    # with PrintBuffer():
-    for message in source_entrypoint.run(parsed_args):
-        # simply printing is creating issues for concurrent CDK as Python uses different two instructions to print: one for the message and
-        # the other for the break line. Adding `\n` to the message ensure that both are printed at the same time
-        print(f"{message}\n", end="", flush=True)
+    with PRINT_BUFFER:
+        for message in source_entrypoint.run(parsed_args):
+            # simply printing is creating issues for concurrent CDK as Python uses different two instructions to print: one for the message and
+            # the other for the break line. Adding `\n` to the message ensure that both are printed at the same time
+            print(f"{message}\n", end="")
 
 
 def _init_internal_request_filter() -> None:

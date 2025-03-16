@@ -19,9 +19,9 @@ DEFAULT_ERROR_MAPPING: Mapping[Union[int, str, Type[Exception]], ErrorResolution
         error_message="Invalid Protocol Schema: The endpoint that data is being requested from is using an invalid or insecure. Exception: requests.exceptions.InvalidSchema",
     ),
     InvalidURL: ErrorResolution(
-        response_action=ResponseAction.FAIL,
-        failure_type=FailureType.config_error,
-        error_message="Invalid URL specified: The endpoint that data is being requested from is not a valid URL. Exception: requests.exceptions.InvalidURL",
+        response_action=ResponseAction.RETRY,
+        failure_type=FailureType.transient_error,
+        error_message="Invalid URL specified or DNS error occurred: The endpoint that data is being requested from is not a valid URL. Exception: requests.exceptions.InvalidURL",
     ),
     RequestException: ErrorResolution(
         response_action=ResponseAction.RETRY,

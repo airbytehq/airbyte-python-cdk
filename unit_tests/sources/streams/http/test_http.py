@@ -10,6 +10,7 @@ from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 import requests
+from requests.exceptions import InvalidURL
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, SyncMode, Type
 from airbyte_cdk.sources.streams import CheckpointMixin
@@ -20,7 +21,10 @@ from airbyte_cdk.sources.streams.checkpoint.substream_resumable_full_refresh_cur
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.streams.http import HttpStream, HttpSubStream
 from airbyte_cdk.sources.streams.http.error_handlers import ErrorHandler, HttpStatusErrorHandler
-from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
+from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
+    FailureType,
+    ResponseAction,
+)
 from airbyte_cdk.sources.streams.http.exceptions import (
     DefaultBackoffException,
     RequestBodyException,
@@ -329,6 +333,20 @@ def test_raise_on_http_errors(mocker, error):
     with pytest.raises(DefaultBackoffException):
         list(stream.read_records(SyncMode.full_refresh))
     assert send_mock.call_count == stream.max_retries + 1
+
+
+class StubHttpStreamWithErrorHandler(StubBasicReadHttpStream):
+    def get_error_handler(self) -> Optional[ErrorHandler]:
+        return HttpStatusErrorHandler(logging.getLogger())
+
+
+def test_dns_resolution_error_retry():
+    """Test that DNS resolution errors are retried"""
+    stream = StubHttpStreamWithErrorHandler()
+    error_handler = stream.get_error_handler()
+    resolution = error_handler.interpret_response(InvalidURL())
+    assert resolution.response_action == ResponseAction.RETRY
+    assert resolution.failure_type == FailureType.transient_error
 
 
 class PostHttpStream(StubBasicReadHttpStream):

@@ -15,6 +15,7 @@ class DpathFlattenFields(RecordTransformation):
 
     field_path: List[Union[InterpolatedString, str]] path to the field to flatten.
     delete_origin_value: bool = False whether to delete origin field or keep it. Default is False.
+    replace_record: bool = False whether to replace origin record or not. Default is False.
 
     """
 
@@ -22,6 +23,7 @@ class DpathFlattenFields(RecordTransformation):
     field_path: List[Union[InterpolatedString, str]]
     parameters: InitVar[Mapping[str, Any]]
     delete_origin_value: bool = False
+    replace_record: bool = False
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._field_path = [
@@ -48,8 +50,12 @@ class DpathFlattenFields(RecordTransformation):
             extracted = dpath.get(record, path, default=[])
 
         if isinstance(extracted, dict):
-            conflicts = set(extracted.keys()) & set(record.keys())
-            if not conflicts:
-                if self.delete_origin_value:
-                    dpath.delete(record, path)
+            if self.replace_record and extracted:
+                dpath.delete(record, "**")
                 record.update(extracted)
+            else:
+                conflicts = set(extracted.keys()) & set(record.keys())
+                if not conflicts:
+                    if self.delete_origin_value:
+                        dpath.delete(record, path)
+                    record.update(extracted)

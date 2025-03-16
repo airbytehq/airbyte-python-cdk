@@ -19,7 +19,7 @@ SDM_COMPONENTS_MODULE_NAME = "source_declarative_manifest.components"
 INJECTED_MANIFEST = "__injected_declarative_manifest"
 INJECTED_COMPONENTS_PY = "__injected_components_py"
 INJECTED_COMPONENTS_PY_CHECKSUMS = "__injected_components_py_checksums"
-ENV_VAR_ALLOW_CUSTOM_CODE = "AIRBYTE_ALLOW_CUSTOM_CODE"
+ENV_VAR_ALLOW_CUSTOM_CODE = "AIRBYTE_ENABLE_UNSAFE_CODE"
 
 
 class AirbyteCodeTamperedError(Exception):
@@ -35,7 +35,7 @@ class AirbyteCustomCodeNotPermittedError(Exception):
     def __init__(self) -> None:
         super().__init__(
             "Custom connector code is not permitted in this environment. "
-            "If you need to run custom code, please ask your administrator to set the `AIRBYTE_ALLOW_CUSTOM_CODE` "
+            "If you need to run custom code, please ask your administrator to set the `AIRBYTE_ENABLE_UNSAFE_CODE` "
             "environment variable to 'true' in your Airbyte environment. "
             "If you see this message in Airbyte Cloud, your workspace does not allow executing "
             "custom connector code."
@@ -45,7 +45,7 @@ class AirbyteCustomCodeNotPermittedError(Exception):
 def _hash_text(input_text: str, hash_type: str = "md5") -> str:
     """Return the hash of the input text using the specified hash type."""
     if not input_text:
-        raise ValueError("Input text cannot be empty.")
+        raise ValueError("Hash input text cannot be empty.")
 
     hash_object = CHECKSUM_FUNCTIONS[hash_type]()
     hash_object.update(input_text.encode())
@@ -55,7 +55,7 @@ def _hash_text(input_text: str, hash_type: str = "md5") -> str:
 def custom_code_execution_permitted() -> bool:
     """Return `True` if custom code execution is permitted, otherwise `False`.
 
-    Custom code execution is permitted if the `AIRBYTE_ALLOW_CUSTOM_CODE` environment variable is set to 'true'.
+    Custom code execution is permitted if the `AIRBYTE_ENABLE_UNSAFE_CODE` environment variable is set to 'true'.
     """
     return os.environ.get(ENV_VAR_ALLOW_CUSTOM_CODE, "").lower() == "true"
 
@@ -68,6 +68,10 @@ def validate_python_code(
 
     Currently we fail if no checksums are provided, although this may change in the future.
     """
+    if not code_text:
+        # No code provided, nothing to validate.
+        return
+
     if not checksums:
         raise ValueError(f"A checksum is required to validate the code. Received: {checksums}")
 
@@ -77,8 +81,18 @@ def validate_python_code(
                 f"Unsupported checksum type: {checksum_type}. Supported checksum types are: {CHECKSUM_FUNCTIONS.keys()}"
             )
 
-        if _hash_text(code_text, checksum_type) != checksum:
-            raise AirbyteCodeTamperedError(f"{checksum_type} checksum does not match.")
+        calculated_checksum = _hash_text(code_text, checksum_type)
+        if calculated_checksum != checksum:
+            raise AirbyteCodeTamperedError(
+                f"{checksum_type} checksum does not match."
+                + str(
+                    {
+                        "expected_checksum": checksum,
+                        "actual_checksum": calculated_checksum,
+                        "code_text": code_text,
+                    }
+                ),
+            )
 
 
 def get_registered_components_module(
@@ -94,7 +108,7 @@ def get_registered_components_module(
 
     Returns `None` if no components is provided and the `components` module is not found.
     """
-    if config and INJECTED_COMPONENTS_PY in config:
+    if config and config.get(INJECTED_COMPONENTS_PY, None):
         if not custom_code_execution_permitted():
             raise AirbyteCustomCodeNotPermittedError
 

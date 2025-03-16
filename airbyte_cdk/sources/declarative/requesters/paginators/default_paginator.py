@@ -25,6 +25,7 @@ from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from airbyte_cdk.utils.mapping_helpers import (
     _validate_component_request_option_paths,
+    get_interpolation_context,
 )
 
 
@@ -150,11 +151,22 @@ class DefaultPaginator(Paginator):
         else:
             return None
 
-    def path(self, next_page_token: Optional[Mapping[str, Any]]) -> Optional[str]:
+    def path(
+        self,
+        next_page_token: Optional[Mapping[str, Any]],
+        stream_state: Optional[Mapping[str, Any]] = None,
+        stream_slice: Optional[StreamSlice] = None,
+    ) -> Optional[str]:
         token = next_page_token.get("next_page_token") if next_page_token else None
         if token and self.page_token_option and isinstance(self.page_token_option, RequestPath):
+            # make additional interpolation context
+            interpolation_context = get_interpolation_context(
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
+            )
             # Replace url base to only return the path
-            return str(token).replace(self.url_base.eval(self.config), "")  # type: ignore # url_base is casted to a InterpolatedString in __post_init__
+            return str(token).replace(self.url_base.eval(self.config, **interpolation_context), "")  # type: ignore # url_base is casted to a InterpolatedString in __post_init__
         else:
             return None
 
@@ -258,8 +270,17 @@ class PaginatorTestReadDecorator(Paginator):
             response, last_page_size, last_record, last_page_token_value
         )
 
-    def path(self, next_page_token: Optional[Mapping[str, Any]]) -> Optional[str]:
-        return self._decorated.path(next_page_token)
+    def path(
+        self,
+        next_page_token: Optional[Mapping[str, Any]],
+        stream_state: Optional[Mapping[str, Any]] = None,
+        stream_slice: Optional[StreamSlice] = None,
+    ) -> Optional[str]:
+        return self._decorated.path(
+            next_page_token=next_page_token,
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+        )
 
     def get_request_params(
         self,
