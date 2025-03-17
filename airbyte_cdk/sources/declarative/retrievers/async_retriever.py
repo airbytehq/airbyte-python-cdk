@@ -4,24 +4,17 @@
 from dataclasses import InitVar, dataclass, field
 from typing import Any, Iterable, Mapping, Optional
 
-from typing_extensions import deprecated
-
 from airbyte_cdk.sources.declarative.async_job.job import AsyncJob
 from airbyte_cdk.sources.declarative.extractors.record_selector import RecordSelector
 from airbyte_cdk.sources.declarative.partition_routers.async_job_partition_router import (
     AsyncJobPartitionRouter,
 )
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
-from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 from airbyte_cdk.sources.utils.slice_logger import AlwaysLogSliceLogger
 
 
-@deprecated(
-    "This class is experimental. Use at your own risk.",
-    category=ExperimentalClassWarning,
-)
 @dataclass
 class AsyncRetriever(Retriever):
     config: Config

@@ -45,7 +45,9 @@ class AsyncHttpJobRepository(AsyncJobRepository):
     status_mapping: Mapping[str, AsyncJobStatus]
     download_target_extractor: DpathExtractor
 
+    # timeout for the job to be completed, passed from `polling_timeout`
     job_timeout: Optional[timedelta] = None
+
     record_extractor: RecordExtractor = field(
         init=False, repr=False, default_factory=lambda: ResponseToFileExtractor({})
     )
@@ -131,7 +133,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
             log_formatter=lambda response: format_http_message(
                 response=response,
                 title="Async Job -- Create",
-                description="Create the server-side async job.",
+                description=f"Create the server-side async job. Timeout after: {self.job_timeout}",
                 stream_name=None,
                 is_auxiliary=True,
                 type="ASYNC_CREATE",

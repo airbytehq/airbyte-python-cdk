@@ -507,7 +507,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.incrementing_count_
     IncrementingCountStreamStateConverter,
 )
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
-from airbyte_cdk.sources.types import Config, ConnectionDefinition
+from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 
 ComponentDefinition = Mapping[str, Any]
@@ -2939,6 +2939,27 @@ class ModelToComponentFactory:
                 parameters={},
             )
 
+        def _get_job_timeout() -> datetime.timedelta:
+            user_defined_timeout: Optional[int] = (
+                int(
+                    InterpolatedString.create(
+                        str(model.polling_timeout),
+                        parameters={},
+                    ).eval(config)
+                )
+                if model.polling_timeout
+                else None
+            )
+
+            # check for user defined timeout during the test read or 15 minutes
+            test_read_timeout = datetime.timedelta(minutes=user_defined_timeout or 15)
+            # default value for non-connector builder is 60 minutes.
+            default_sync_timeout = datetime.timedelta(minutes=user_defined_timeout or 60)
+
+            return (
+                test_read_timeout if self._emit_connector_builder_messages else default_sync_timeout
+            )
+
         decoder = (
             self._create_component_from_model(model=model.decoder, config=config)
             if model.decoder
@@ -3032,6 +3053,7 @@ class ModelToComponentFactory:
             config=config,
             name=name,
         )
+
         job_repository: AsyncJobRepository = AsyncHttpJobRepository(
             creation_requester=creation_requester,
             polling_requester=polling_requester,
@@ -3042,6 +3064,7 @@ class ModelToComponentFactory:
             status_extractor=status_extractor,
             status_mapping=self._create_async_job_status_mapping(model.status_mapping, config),
             download_target_extractor=download_target_extractor,
+            job_timeout=_get_job_timeout(),
         )
 
         async_job_partition_router = AsyncJobPartitionRouter(

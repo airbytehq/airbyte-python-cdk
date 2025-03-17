@@ -1467,7 +1467,7 @@ class AddFields(BaseModel):
     )
     condition: Optional[str] = Field(
         "",
-        description="Fields will be added if expression is evaluated to True.,",
+        description="Fields will be added if expression is evaluated to True.",
         examples=[
             "{{ property|string == '' }}",
             "{{ property is integer }}",
@@ -2353,6 +2353,10 @@ class AsyncRetriever(BaseModel):
     polling_requester: Union[CustomRequester, HttpRequester] = Field(
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to fetch the status of the running async job.",
+    )
+    polling_timeout: Optional[Union[int, str]] = Field(
+        None,
+        description="The time in minutes after which the single Async Job should be considered as Timed Out.",
     )
     download_target_requester: Optional[Union[CustomRequester, HttpRequester]] = Field(
         None,
