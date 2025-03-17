@@ -3381,7 +3381,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/CustomRequester"
           - "$ref": "#/definitions/HttpRequester"
-      polling_timeout:
+      polling_job_timeout:
         description: The time in minutes after which the single Async Job should be considered as Timed Out.
         anyOf:
           - type: integer

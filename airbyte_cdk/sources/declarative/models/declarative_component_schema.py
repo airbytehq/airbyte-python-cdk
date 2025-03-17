@@ -2354,7 +2354,7 @@ class AsyncRetriever(BaseModel):
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to fetch the status of the running async job.",
     )
-    polling_timeout: Optional[Union[int, str]] = Field(
+    polling_job_timeout: Optional[Union[int, str]] = Field(
         None,
         description="The time in minutes after which the single Async Job should be considered as Timed Out.",
     )

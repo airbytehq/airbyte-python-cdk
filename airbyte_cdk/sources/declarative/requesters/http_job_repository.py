@@ -45,7 +45,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
     status_mapping: Mapping[str, AsyncJobStatus]
     download_target_extractor: DpathExtractor
 
-    # timeout for the job to be completed, passed from `polling_timeout`
+    # timeout for the job to be completed, passed from `polling_job_timeout`
     job_timeout: Optional[timedelta] = None
 
     record_extractor: RecordExtractor = field(

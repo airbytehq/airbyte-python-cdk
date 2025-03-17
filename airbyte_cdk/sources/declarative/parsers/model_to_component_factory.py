@@ -2943,11 +2943,11 @@ class ModelToComponentFactory:
             user_defined_timeout: Optional[int] = (
                 int(
                     InterpolatedString.create(
-                        str(model.polling_timeout),
+                        str(model.polling_job_timeout),
                         parameters={},
                     ).eval(config)
                 )
-                if model.polling_timeout
+                if model.polling_job_timeout
                 else None
             )
 
