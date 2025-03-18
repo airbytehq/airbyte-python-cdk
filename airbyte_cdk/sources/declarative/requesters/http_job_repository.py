@@ -283,6 +283,8 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         Returns:
             Dict[str, Any]: The interpolation context as a dictionary.
         """
+        # TODO: currently we support only JsonDecoder to decode the response to track the ids or the status
+        # of the Jobs. We should consider to add the support of other decoders like XMLDecoder, in the future
         creation_response_context = dict(self._create_job_response_by_id[job.api_job_id()].json())
         if not "headers" in creation_response_context:
             creation_response_context["headers"] = self._create_job_response_by_id[
@@ -304,6 +306,8 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         Returns:
             Dict[str, Any]: The interpolation context as a dictionary.
         """
+        # TODO: currently we support only JsonDecoder to decode the response to track the ids or the status
+        # of the Jobs. We should consider to add the support of other decoders like XMLDecoder, in the future
         polling_response_context = dict(self._polling_job_response_by_id[job.api_job_id()].json())
         if not "headers" in polling_response_context:
             polling_response_context["headers"] = self._polling_job_response_by_id[
