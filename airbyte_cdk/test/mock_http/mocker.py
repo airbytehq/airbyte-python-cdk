@@ -2,9 +2,10 @@
 
 import contextlib
 import functools
+from collections import defaultdict
 from enum import Enum
 from types import TracebackType
-from typing import Callable, List, Optional, Union
+from typing import Callable, Dict, Iterable, List, Optional, Union
 
 import requests_mock
 
@@ -40,7 +41,7 @@ class HttpMocker(contextlib.ContextDecorator):
 
     def __init__(self) -> None:
         self._mocker = requests_mock.Mocker()
-        self._matchers: List[HttpRequestMatcher] = []
+        self._matchers: Dict[SupportedHttpMethods, List[HttpRequestMatcher]] = defaultdict(list)
 
     def __enter__(self) -> "HttpMocker":
         self._mocker.__enter__()
@@ -55,7 +56,7 @@ class HttpMocker(contextlib.ContextDecorator):
         self._mocker.__exit__(exc_type, exc_val, exc_tb)
 
     def _validate_all_matchers_called(self) -> None:
-        for matcher in self._matchers:
+        for matcher in self._get_matchers():
             if not matcher.has_expected_match_count():
                 raise ValueError(f"Invalid number of matches for `{matcher}`")
 
@@ -69,9 +70,9 @@ class HttpMocker(contextlib.ContextDecorator):
             responses = [responses]
 
         matcher = HttpRequestMatcher(request, len(responses))
-        if matcher in self._matchers:
+        if matcher in self._matchers[method]:
             raise ValueError(f"Request {matcher.request} already mocked")
-        self._matchers.append(matcher)
+        self._matchers[method].append(matcher)
 
         getattr(self._mocker, method)(
             requests_mock.ANY,
@@ -129,7 +130,7 @@ class HttpMocker(contextlib.ContextDecorator):
 
     def assert_number_of_calls(self, request: HttpRequest, number_of_calls: int) -> None:
         corresponding_matchers = list(
-            filter(lambda matcher: matcher.request == request, self._matchers)
+            filter(lambda matcher: matcher.request is request, self._get_matchers())
         )
         if len(corresponding_matchers) != 1:
             raise ValueError(
@@ -150,7 +151,7 @@ class HttpMocker(contextlib.ContextDecorator):
                     result = f(*args, **kwargs)
                 except requests_mock.NoMockAddress as no_mock_exception:
                     matchers_as_string = "\n\t".join(
-                        map(lambda matcher: str(matcher.request), self._matchers)
+                        map(lambda matcher: str(matcher.request), self._get_matchers())
                     )
                     raise ValueError(
                         f"No matcher matches {no_mock_exception.args[0]} with headers `{no_mock_exception.request.headers}` "
@@ -175,6 +176,10 @@ class HttpMocker(contextlib.ContextDecorator):
 
         return wrapper
 
+    def _get_matchers(self) -> Iterable[HttpRequestMatcher]:
+        for matchers in self._matchers.values():
+            yield from matchers
+
     def clear_all_matchers(self) -> None:
         """Clears all stored matchers by resetting the _matchers list to an empty state."""
-        self._matchers = []
+        self._matchers = defaultdict(list)
