@@ -48,11 +48,15 @@ class GroupingPartitionRouter(PartitionRouter):
         # Iterate over partitions lazily from the underlying router
         for partition in self.underlying_partition_router.stream_slices():
             # Extract the partition key (assuming single key-value pair, e.g., {"board_ids": value})
-            if len(partition.partition.values()) != 1:
+            partition_keys = list(partition.partition.keys())
+            # skip parent_slice as it is part of SubstreamPartitionRouter partition
+            if "parent_slice" in partition_keys:
+                partition_keys.remove("parent_slice")
+            if len(partition_keys) != 1:
                 raise ValueError(
                     f"GroupingPartitionRouter expects a single partition key-value pair. Got {partition.partition}"
                 )
-            key = next(iter(partition.partition.values()), None)
+            key = partition.partition[partition_keys[0]]
 
             # Skip duplicates if deduplication is enabled
             if self.deduplicate and key in seen_keys:
