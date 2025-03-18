@@ -283,14 +283,14 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         Returns:
             Dict[str, Any]: The interpolation context as a dictionary.
         """
-        creation_response_context = self._create_job_response_by_id[job.api_job_id()].json()
+        creation_response_context = dict(self._create_job_response_by_id[job.api_job_id()].json())
         creation_response_context["headers"] = self._create_job_response_by_id[
             job.api_job_id()
         ].headers
         creation_response_context["request"] = self._create_job_response_by_id[
             job.api_job_id()
         ].request
-        return dict(creation_response_context)
+        return creation_response_context
 
     def _get_polling_response_interpolation_context(self, job: AsyncJob) -> Dict[str, Any]:
         """
@@ -302,14 +302,14 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         Returns:
             Dict[str, Any]: The interpolation context as a dictionary.
         """
-        polling_response_context = self._polling_job_response_by_id[job.api_job_id()].json()
+        polling_response_context = dict(self._polling_job_response_by_id[job.api_job_id()].json())
         polling_response_context["headers"] = self._polling_job_response_by_id[
             job.api_job_id()
         ].headers
         polling_response_context["request"] = self._polling_job_response_by_id[
             job.api_job_id()
         ].request
-        return dict(polling_response_context)
+        return polling_response_context
 
     def _get_create_job_stream_slice(self, job: AsyncJob) -> StreamSlice:
         stream_slice = StreamSlice(
