@@ -28,6 +28,9 @@ class GroupingPartitionRouter(PartitionRouter):
     config: Config
     deduplicate: bool = True
 
+    def __post_init__(self) -> None:
+        self._state: Optional[Mapping[str, StreamState]] = {}
+
     def stream_slices(self) -> Iterable[StreamSlice]:
         """
         Lazily groups partitions from the underlying partition router into batches of size `group_size`.
@@ -58,9 +61,11 @@ class GroupingPartitionRouter(PartitionRouter):
 
             # Yield the batch when it reaches the group_size
             if len(batch) == self.group_size:
+                self._state = self.underlying_partition_router.get_stream_state()
                 yield self._create_grouped_slice(batch)
                 batch = []  # Reset the batch
 
+        self._state = self.underlying_partition_router.get_stream_state()
         # Yield any remaining partitions if the batch isn't empty
         if batch:
             yield self._create_grouped_slice(batch)
@@ -130,7 +135,8 @@ class GroupingPartitionRouter(PartitionRouter):
     def set_initial_state(self, stream_state: StreamState) -> None:
         """Delegate state initialization to the underlying partition router."""
         self.underlying_partition_router.set_initial_state(stream_state)
+        self._state = self.underlying_partition_router.get_stream_state()
 
     def get_stream_state(self) -> Optional[Mapping[str, StreamState]]:
         """Delegate state retrieval to the underlying partition router."""
-        return self.underlying_partition_router.get_stream_state()
+        return self._state
