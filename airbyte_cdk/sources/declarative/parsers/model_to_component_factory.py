@@ -1360,6 +1360,9 @@ class ModelToComponentFactory:
         )
         stream_state = self.apply_stream_state_migrations(stream_state_migrations, stream_state)
 
+        # Per-partition state doesn't make sense for GroupingPartitionRouter, so force the global state
+        use_global_cursor = isinstance(partition_router, GroupingPartitionRouter)
+
         # Return the concurrent cursor and state converter
         return ConcurrentPerPartitionCursor(
             cursor_factory=cursor_factory,
@@ -1371,6 +1374,7 @@ class ModelToComponentFactory:
             connector_state_manager=state_manager,
             connector_state_converter=connector_state_converter,
             cursor_field=cursor_field,
+            use_global_cursor=use_global_cursor,
         )
 
     @staticmethod
