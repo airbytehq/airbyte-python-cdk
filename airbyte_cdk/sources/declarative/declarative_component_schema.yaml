@@ -2193,7 +2193,7 @@ definitions:
         additionalProperties: true
   JsonDecoder:
     title: Json Decoder
-    description: Select 'JSON' as the decoder to parse the response as JSON.
+    description: Select 'JSON' if the response is formatted as a JSON object.
     type: object
     required:
       - type
