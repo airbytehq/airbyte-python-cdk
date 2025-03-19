@@ -209,11 +209,17 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
             file_uploader = None
             if isinstance(declarative_stream, DeclarativeStream):
-                file_uploader = self._constructor.create_component(
-                    model_type=FileUploader,
-                    component_definition=name_to_stream_mapping[declarative_stream.name]["file_uploader"],
-                    config=config,
-                ) if "file_uploader" in name_to_stream_mapping[declarative_stream.name] else None
+                file_uploader = (
+                    self._constructor.create_component(
+                        model_type=FileUploader,
+                        component_definition=name_to_stream_mapping[declarative_stream.name][
+                            "file_uploader"
+                        ],
+                        config=config,
+                    )
+                    if "file_uploader" in name_to_stream_mapping[declarative_stream.name]
+                    else None
+                )
 
             if (
                 isinstance(declarative_stream, DeclarativeStream)

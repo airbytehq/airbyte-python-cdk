@@ -3322,13 +3322,21 @@ class ModelToComponentFactory:
             matchers=matchers,
         )
 
-    def create_file_uploader(self, model: FileUploaderModel, config: Config, **kwargs: Any) -> FileUploader:
+    def create_file_uploader(
+        self, model: FileUploaderModel, config: Config, **kwargs: Any
+    ) -> FileUploader:
         name = "File Uploader"
         requester = self._create_component_from_model(
-            model=model.requester, config=config, name=name, **kwargs,
+            model=model.requester,
+            config=config,
+            name=name,
+            **kwargs,
         )
         download_target_extractor = self._create_component_from_model(
-            model=model.download_target_extractor, config=config, name=name, **kwargs,
+            model=model.download_target_extractor,
+            config=config,
+            name=name,
+            **kwargs,
         )
         return FileUploader(requester, download_target_extractor)
 
