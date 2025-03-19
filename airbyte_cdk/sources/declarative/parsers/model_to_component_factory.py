@@ -3073,8 +3073,11 @@ class ModelToComponentFactory:
                 stream_slices,
                 self._job_tracker,
                 self._message_repository,
-                has_bulk_parent=False,
                 # FIXME work would need to be done here in order to detect if a stream as a parent stream that is bulk
+                has_bulk_parent=False,
+                # set the `job_max_retry` to 1 for the `Connector Builder`` use-case.
+                # `None` == default retry is set to 3 attempts, under the hood.
+                job_max_retry=1 if self._emit_connector_builder_messages else None,
             ),
             stream_slicer=stream_slicer,
             config=config,
