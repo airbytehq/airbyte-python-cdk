@@ -370,7 +370,7 @@ class AsyncJobOrchestrator:
                     self._reallocate_partition(current_running_partitions, partition)
 
             # We only remove completed / timeout jobs jobs as we want failed jobs to be re-allocated in priority
-            self._remove_completed_or_timed_out_jobs(partition)
+            self._remove_completed_jobs(partition)
 
         # update the referenced list with running partitions
         self._running_partitions = current_running_partitions
@@ -395,7 +395,7 @@ class AsyncJobOrchestrator:
         except Exception as exception:
             LOGGER.warning(f"Could not free budget for job {job.api_job_id()}: {exception}")
 
-    def _remove_completed_or_timed_out_jobs(self, partition: AsyncPartition) -> None:
+    def _remove_completed_jobs(self, partition: AsyncPartition) -> None:
         """
         Remove completed or timed out jobs from the partition.
 
