@@ -25,6 +25,7 @@ from airbyte_cdk.sources.declarative.incremental.per_partition_with_global impor
     PerPartitionWithGlobalCursor,
 )
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
+from airbyte_cdk.sources.declarative.models import FileUploader
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConcurrencyLevel as ConcurrencyLevelModel,
 )
@@ -206,6 +207,14 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             # these legacy Python streams the way we do low-code streams to determine if they are concurrent compatible,
             # so we need to treat them as synchronous
 
+            file_uploader = None
+            if isinstance(declarative_stream, DeclarativeStream):
+                file_uploader = self._constructor.create_component(
+                    model_type=FileUploader,
+                    component_definition=name_to_stream_mapping[declarative_stream.name]["file_uploader"],
+                    config=config,
+                ) if "file_uploader" in name_to_stream_mapping[declarative_stream.name] else None
+
             if (
                 isinstance(declarative_stream, DeclarativeStream)
                 and name_to_stream_mapping[declarative_stream.name]["type"]
@@ -273,6 +282,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                                 declarative_stream.get_json_schema(),
                                 retriever,
                                 self.message_repository,
+                                file_uploader,
                             ),
                             stream_slicer=declarative_stream.retriever.stream_slicer,
                         )
@@ -303,6 +313,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                                 declarative_stream.get_json_schema(),
                                 retriever,
                                 self.message_repository,
+                                file_uploader,
                             ),
                             stream_slicer=cursor,
                         )
@@ -333,6 +344,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             declarative_stream.get_json_schema(),
                             declarative_stream.retriever,
                             self.message_repository,
+                            file_uploader,
                         ),
                         declarative_stream.retriever.stream_slicer,
                     )
@@ -392,6 +404,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             declarative_stream.get_json_schema(),
                             retriever,
                             self.message_repository,
+                            file_uploader,
                         ),
                         perpartition_cursor,
                     )

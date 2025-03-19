@@ -102,7 +102,6 @@ from airbyte_cdk.sources.declarative.migrations.legacy_to_per_partition_state_mi
 )
 from airbyte_cdk.sources.declarative.models import (
     CustomStateMigration,
-    GzipDecoder,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     AddedFieldDefinition as AddedFieldDefinitionModel,
@@ -220,6 +219,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ExponentialBackoffStrategy as ExponentialBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    FileUploader as FileUploaderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     FixedWindowCallRatePolicy as FixedWindowCallRatePolicyModel,
@@ -442,6 +444,7 @@ from airbyte_cdk.sources.declarative.retrievers import (
     SimpleRetriever,
     SimpleRetrieverTestReadDecorator,
 )
+from airbyte_cdk.sources.declarative.retrievers.file_uploader import FileUploader
 from airbyte_cdk.sources.declarative.schema import (
     ComplexFieldType,
     DefaultSchemaLoader,
@@ -633,6 +636,7 @@ class ModelToComponentFactory:
             ComponentMappingDefinitionModel: self.create_components_mapping_definition,
             ZipfileDecoderModel: self.create_zipfile_decoder,
             HTTPAPIBudgetModel: self.create_http_api_budget,
+            FileUploaderModel: self.create_file_uploader,
             FixedWindowCallRatePolicyModel: self.create_fixed_window_call_rate_policy,
             MovingWindowCallRatePolicyModel: self.create_moving_window_call_rate_policy,
             UnlimitedCallRatePolicyModel: self.create_unlimited_call_rate_policy,
@@ -3317,6 +3321,16 @@ class ModelToComponentFactory:
             call_limit=model.call_limit,
             matchers=matchers,
         )
+
+    def create_file_uploader(self, model: FileUploaderModel, config: Config, **kwargs: Any) -> FileUploader:
+        name = "File Uploader"
+        requester = self._create_component_from_model(
+            model=model.requester, config=config, name=name, **kwargs,
+        )
+        download_target_extractor = self._create_component_from_model(
+            model=model.download_target_extractor, config=config, name=name, **kwargs,
+        )
+        return FileUploader(requester, download_target_extractor)
 
     def create_moving_window_call_rate_policy(
         self, model: MovingWindowCallRatePolicyModel, config: Config, **kwargs: Any
