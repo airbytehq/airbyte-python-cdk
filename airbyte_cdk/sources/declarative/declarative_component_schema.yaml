@@ -2192,7 +2192,7 @@ definitions:
         type: object
         additionalProperties: true
   JsonDecoder:
-    title: Json Decoder
+    title: JSON
     description: Select 'JSON' if the response is formatted as a JSON object.
     type: object
     required:
@@ -2202,7 +2202,7 @@ definitions:
         type: string
         enum: [JsonDecoder]
   JsonlDecoder:
-    title: JSONL Decoder
+    title: JSON Lines
     description: Select 'JSONL' if the response consists of JSON objects separated by new lines ('\n') in JSONL format.
     type: object
     required:
@@ -2328,7 +2328,7 @@ definitions:
         type: object
         additionalProperties: true
   IterableDecoder:
-    title: Iterable Decoder
+    title: Iterable
     description: Select 'Iterable' if the response consists of strings separated by new lines (`\n`). The string will then be wrapped into a JSON object with the `record` key.
     type: object
     required:
@@ -2338,7 +2338,7 @@ definitions:
         type: string
         enum: [IterableDecoder]
   XmlDecoder:
-    title: XML Decoder
+    title: XML
     description: Select 'XML' if the response consists of XML-formatted data.
     type: object
     required:
@@ -2370,7 +2370,7 @@ definitions:
         type: object
         additionalProperties: true
   ZipfileDecoder:
-    title: Zipfile Decoder
+    title: ZIP File
     description: Select 'ZIP'file" for response data that is returned as a zipfile. Requires specifying an inner data type/decoder to parse the unzipped data.
     type: object
     additionalProperties: true
@@ -2895,7 +2895,7 @@ definitions:
         title: Lazy Read Pointer
         description: If set, this will enable lazy reading, using the initial read of parent records to extract child records.
         type: array
-        default: [ ]
+        default: []
         items:
           - type: string
         interpolation_context:
@@ -3200,7 +3200,7 @@ definitions:
     properties:
       type:
         type: string
-        enum: [ StateDelegatingStream ]
+        enum: [StateDelegatingStream]
       name:
         title: Name
         description: The stream name.
@@ -3277,7 +3277,7 @@ definitions:
         type: object
         additionalProperties: true
   GzipDecoder:
-    title: Gzip Decoder
+    title: gzip
     description: Select 'gzip' for response data that is compressed with gzip. Requires specifying an inner data type/decoder to parse the decompressed data.
     type: object
     required:
@@ -3294,7 +3294,7 @@ definitions:
           - "$ref": "#/definitions/JsonDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
   CsvDecoder:
-    title: CSV Decoder
+    title: CSV
     description: "Select 'CSV' for response data that is formatted as CSV (comma-separated values). Can specify an encoding (default: 'utf-8') and a delimiter (default: ',')."
     type: object
     required:
