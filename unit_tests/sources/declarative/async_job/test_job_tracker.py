@@ -51,7 +51,11 @@ def test_given_limit_is_less_than_1_when_init_then_set_to_1(limit: int):
     ("limit", "config", "expected_limit"),
     [
         ("2", {}, 2),
-        ("{{ config['max_concurrent_async_job_count'] }}", {"max_concurrent_async_job_count": 2}, 2),
+        (
+            "{{ config['max_concurrent_async_job_count'] }}",
+            {"max_concurrent_async_job_count": 2},
+            2,
+        ),
     ],
 )
 def test_given_limit_as_string_when_init_then_interpolate_correctly(limit, config, expected_limit):
