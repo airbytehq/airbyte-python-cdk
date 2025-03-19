@@ -2203,7 +2203,7 @@ definitions:
         enum: [JsonDecoder]
   JsonlDecoder:
     title: JSON Lines
-    description: Select 'JSONL' if the response consists of JSON objects separated by new lines ('\n') in JSONL format.
+    description: Select 'JSON Lines' if the response consists of JSON objects separated by new lines ('\n') in JSONL format.
     type: object
     required:
       - type
@@ -2371,7 +2371,7 @@ definitions:
         additionalProperties: true
   ZipfileDecoder:
     title: ZIP File
-    description: Select 'ZIP'file" for response data that is returned as a zipfile. Requires specifying an inner data type/decoder to parse the unzipped data.
+    description: Select 'ZIP file' for response data that is returned as a zipfile. Requires specifying an inner data type/decoder to parse the unzipped data.
     type: object
     additionalProperties: true
     required:
