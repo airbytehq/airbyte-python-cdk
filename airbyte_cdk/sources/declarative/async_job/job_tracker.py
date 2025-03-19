@@ -4,7 +4,7 @@ import logging
 import threading
 import uuid
 from dataclasses import dataclass, field
-from typing import Set, Union, Mapping, Any
+from typing import Any, Mapping, Set, Union
 
 from airbyte_cdk.logger import lazy_log
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
@@ -18,10 +18,10 @@ class ConcurrentJobLimitReached(Exception):
 
 @dataclass
 class JobTracker:
-    limit: Union[int, InterpolatedString]
+    limit: Union[int, str]
     config: Mapping[str, Any] = field(default_factory=dict)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self._jobs: Set[str] = set()
         self._lock = threading.Lock()
         if isinstance(self.limit, str):
