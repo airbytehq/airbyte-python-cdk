@@ -382,15 +382,15 @@ class AsyncJobOrchestrator:
 
     def _stop_timed_out_jobs(self, partition: AsyncPartition) -> None:
         for job in partition.jobs:
-            if job.status() == AsyncJobStatus.TIMED_OUT:
-                # we don't free allocation here because it is expected to retry the job
-                self._abort_job(job, free_job_allocation=False)
-            elif job.status() == AsyncJobStatus.FORCED_TIME_OUT:
+            if job.status() == AsyncJobStatus.FORCED_TIME_OUT:
                 self._abort_job(job, free_job_allocation=True)
                 raise AirbyteTracedException(
                     internal_message=f"Job {job.api_job_id()} has timed out. Try increasing the `polling job timeout`.",
                     failure_type=FailureType.config_error,
                 )
+            # we don't free allocation here because it is expected to retry the job
+            if job.status() == AsyncJobStatus.TIMED_OUT:
+                self._abort_job(job, free_job_allocation=False)
 
     def _abort_job(self, job: AsyncJob, free_job_allocation: bool = True) -> None:
         try:
