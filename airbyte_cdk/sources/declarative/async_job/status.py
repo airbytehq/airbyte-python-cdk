@@ -11,6 +11,8 @@ class AsyncJobStatus(Enum):
     COMPLETED = ("COMPLETED", _TERMINAL)
     FAILED = ("FAILED", _TERMINAL)
     TIMED_OUT = ("TIMED_OUT", _TERMINAL)
+    # service status to force the job to be stopped by the system
+    FORCED_TIME_OUT = ("FORCED_TIME_OUT", _TERMINAL)
 
     def __init__(self, value: str, is_terminal: bool) -> None:
         self._value = value
@@ -19,6 +21,6 @@ class AsyncJobStatus(Enum):
     def is_terminal(self) -> bool:
         """
         A status is terminal when a job status can't be updated anymore. For example if a job is completed, it will stay completed but a
-        running job might because completed, failed or timed out.
+        running job might become completed, failed or timed out.
         """
         return self._is_terminal

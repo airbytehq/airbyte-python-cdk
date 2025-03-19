@@ -34,7 +34,7 @@ class AsyncJob:
 
     def status(self) -> AsyncJobStatus:
         if self._timer.has_timed_out():
-            return AsyncJobStatus.TIMED_OUT
+            return AsyncJobStatus.FORCED_TIME_OUT
         return self._status
 
     def job_parameters(self) -> StreamSlice:

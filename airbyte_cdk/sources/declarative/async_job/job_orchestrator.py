@@ -95,6 +95,9 @@ class AsyncPartition:
             return AsyncJobStatus.FAILED
         elif AsyncJobStatus.TIMED_OUT in statuses:
             return AsyncJobStatus.TIMED_OUT
+        # specific case when the job is forced to be stopped by the system
+        elif AsyncJobStatus.FORCED_TIME_OUT in statuses:
+            return AsyncJobStatus.FORCED_TIME_OUT
         else:
             return AsyncJobStatus.RUNNING
 
@@ -144,6 +147,8 @@ class AsyncJobOrchestrator:
         AsyncJobStatus.FAILED,
         AsyncJobStatus.RUNNING,
         AsyncJobStatus.TIMED_OUT,
+        # specific case when the job is forced to be stopped by the system
+        AsyncJobStatus.FORCED_TIME_OUT,
     }
     _RUNNING_ON_API_SIDE_STATUS = {AsyncJobStatus.RUNNING, AsyncJobStatus.TIMED_OUT}
 
@@ -179,7 +184,7 @@ class AsyncJobOrchestrator:
         self._non_breaking_exceptions: List[Exception] = []
 
     def _replace_failed_jobs(self, partition: AsyncPartition) -> None:
-        failed_status_jobs = (AsyncJobStatus.FAILED,)
+        failed_status_jobs = (AsyncJobStatus.FAILED, AsyncJobStatus.TIMED_OUT)
         jobs_to_replace = [job for job in partition.jobs if job.status() in failed_status_jobs]
         for job in jobs_to_replace:
             new_job = self._start_job(job.job_parameters(), job.api_job_id())
@@ -363,7 +368,7 @@ class AsyncJobOrchestrator:
                     self._reallocate_partition(current_running_partitions, partition)
 
             # We only remove completed / timeout jobs jobs as we want failed jobs to be re-allocated in priority
-            self._remove_completed_or_timed_out_jobs(partition)
+            self._remove_completed_or_forced_time_out_jobs(partition)
 
         # update the referenced list with running partitions
         self._running_partitions = current_running_partitions
@@ -378,6 +383,9 @@ class AsyncJobOrchestrator:
     def _stop_timed_out_jobs(self, partition: AsyncPartition) -> None:
         for job in partition.jobs:
             if job.status() == AsyncJobStatus.TIMED_OUT:
+                # we don't free allocation here because it is expected to retry the job
+                self._abort_job(job, free_job_allocation=False)
+            elif job.status() == AsyncJobStatus.FORCED_TIME_OUT:
                 self._abort_job(job, free_job_allocation=True)
                 raise AirbyteTracedException(
                     internal_message=f"Job {job.api_job_id()} has timed out. Try increasing the `polling job timeout`.",
@@ -392,7 +400,7 @@ class AsyncJobOrchestrator:
         except Exception as exception:
             LOGGER.warning(f"Could not free budget for job {job.api_job_id()}: {exception}")
 
-    def _remove_completed_or_timed_out_jobs(self, partition: AsyncPartition) -> None:
+    def _remove_completed_or_forced_time_out_jobs(self, partition: AsyncPartition) -> None:
         """
         Remove completed or timed out jobs from the partition.
 
@@ -400,7 +408,7 @@ class AsyncJobOrchestrator:
             partition (AsyncPartition): The partition to process.
         """
         for job in partition.jobs:
-            if job.status() in [AsyncJobStatus.COMPLETED, AsyncJobStatus.TIMED_OUT]:
+            if job.status() in [AsyncJobStatus.COMPLETED, AsyncJobStatus.FORCED_TIME_OUT]:
                 self._job_tracker.remove_job(job.api_job_id())
 
     def _reallocate_partition(
@@ -415,10 +423,8 @@ class AsyncJobOrchestrator:
             current_running_partitions (list): The list of currently running partitions.
             partition (AsyncPartition): The partition to reallocate.
         """
-        for job in partition.jobs:
-            if job.status() != AsyncJobStatus.TIMED_OUT:
-                # allow the FAILED jobs to be re-allocated for partition
-                current_running_partitions.insert(0, partition)
+        # allow the FAILED / TIMED_OUT jobs to be re-allocated for partition
+        current_running_partitions.insert(0, partition)
 
     def _process_partitions_with_errors(self, partition: AsyncPartition) -> None:
         """
