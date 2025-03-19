@@ -2193,6 +2193,7 @@ definitions:
         additionalProperties: true
   JsonDecoder:
     title: Json Decoder
+    description: Select 'JSON' as the decoder to parse the response as JSON.
     type: object
     required:
       - type
@@ -2202,7 +2203,7 @@ definitions:
         enum: [JsonDecoder]
   JsonlDecoder:
     title: JSONL Decoder
-    description: Use this if the response consists of JSON objects separated by new lines (`\n`) in JSONL format.
+    description: Select 'JSONL' if the response consists of JSON objects separated by new lines ('\n') in JSONL format.
     type: object
     required:
       - type
@@ -2328,7 +2329,7 @@ definitions:
         additionalProperties: true
   IterableDecoder:
     title: Iterable Decoder
-    description: Use this if the response consists of strings separated by new lines (`\n`). The Decoder will wrap each row into a JSON object with the `record` key.
+    description: Select 'Iterable' if the response consists of strings separated by new lines (`\n`). The string will then be wrapped into a JSON object with the `record` key.
     type: object
     required:
       - type
@@ -2338,7 +2339,7 @@ definitions:
         enum: [IterableDecoder]
   XmlDecoder:
     title: XML Decoder
-    description: Use this if the response is XML.
+    description: Select 'XML' if the response consists of XML-formatted data.
     type: object
     required:
       - type
@@ -2370,7 +2371,7 @@ definitions:
         additionalProperties: true
   ZipfileDecoder:
     title: Zipfile Decoder
-    description: Decoder for response data that is returned as zipfile(s).
+    description: Select 'ZIP'file" for response data that is returned as a zipfile. Requires specifying an inner data type/decoder to parse the unzipped data.
     type: object
     additionalProperties: true
     required:
@@ -3276,6 +3277,8 @@ definitions:
         type: object
         additionalProperties: true
   GzipDecoder:
+    title: Gzip Decoder
+    description: Select 'gzip' for response data that is compressed with gzip. Requires specifying an inner data type/decoder to parse the decompressed data.
     type: object
     required:
       - type
@@ -3291,6 +3294,8 @@ definitions:
           - "$ref": "#/definitions/JsonDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
   CsvDecoder:
+    title: CSV Decoder
+    description: "Select 'CSV' for response data that is formatted as CSV (comma-separated values). Can specify an encoding (default: 'utf-8') and a delimiter (default: ',')."
     type: object
     required:
       - type
