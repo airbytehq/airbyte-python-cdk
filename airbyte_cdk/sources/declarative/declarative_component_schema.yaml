@@ -47,7 +47,12 @@ properties:
   max_concurrent_async_job_count:
     title: Maximum Concurrent Asynchronous Jobs
     description: Maximum number of concurrent asynchronous jobs to run. This property is only relevant for sources/streams that support asynchronous job execution through the AsyncRetriever (e.g. a report-based stream that initiates a job, polls the job status, and then fetches the job results). This is often set by the API's maximum number of concurrent jobs on the account level. Refer to the API's documentation for this information.
-    type: integer
+    type:
+      - integer
+      - string
+    examples:
+      - 3
+      - "{{ config['max_concurrent_async_job_count'] }}"
   metadata:
     type: object
     description: For internal Airbyte use only - DO NOT modify manually. Used by consumers of declarative manifests for storing related metadata.
@@ -2894,7 +2899,7 @@ definitions:
         title: Lazy Read Pointer
         description: If set, this will enable lazy reading, using the initial read of parent records to extract child records.
         type: array
-        default: [ ]
+        default: []
         items:
           - type: string
         interpolation_context:
@@ -3199,7 +3204,7 @@ definitions:
     properties:
       type:
         type: string
-        enum: [ StateDelegatingStream ]
+        enum: [StateDelegatingStream]
       name:
         title: Name
         description: The stream name.
