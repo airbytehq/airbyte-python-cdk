@@ -977,16 +977,18 @@ class ConcurrentCursorStateTest(TestCase):
             _NO_LOOKBACK_WINDOW,
         )
 
-        cursor.close_partition(_partition(
-            StreamSlice(
-                partition={},
-                cursor_slice={
-                    _LOWER_SLICE_BOUNDARY_FIELD: 20,
-                    _UPPER_SLICE_BOUNDARY_FIELD: 50,
-                },
-            ),
-            _stream_name=_A_STREAM_NAME,
-        ))
+        cursor.close_partition(
+            _partition(
+                StreamSlice(
+                    partition={},
+                    cursor_slice={
+                        _LOWER_SLICE_BOUNDARY_FIELD: 20,
+                        _UPPER_SLICE_BOUNDARY_FIELD: 50,
+                    },
+                ),
+                _stream_name=_A_STREAM_NAME,
+            )
+        )
 
         expected_state = {
             "state_type": ConcurrencyCompatibleStateType.date_range.value,
@@ -998,8 +1000,9 @@ class ConcurrentCursorStateTest(TestCase):
                 },
             ],
         }
-        self._state_manager.update_state_for_stream.assert_called_once_with(_A_STREAM_NAME, _A_STREAM_NAMESPACE, expected_state)
-
+        self._state_manager.update_state_for_stream.assert_called_once_with(
+            _A_STREAM_NAME, _A_STREAM_NAMESPACE, expected_state
+        )
 
 
 class ClampingIntegrationTest(TestCase):
