@@ -343,6 +343,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         # This has a warning flag for static, but after we finish part 4 we'll replace manifest with self._source_config
         stream_configs: List[Dict[str, Any]] = manifest.get("streams", [])
         for s in stream_configs:
+            s["dynamic_stream_name"] = None
             if "type" not in s:
                 s["type"] = "DeclarativeStream"
         return stream_configs
@@ -354,7 +355,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         dynamic_stream_configs: List[Dict[str, Any]] = []
         seen_dynamic_streams: Set[str] = set()
 
-        for dynamic_definition in dynamic_stream_definitions:
+        for dynamic_definition_index, dynamic_definition in enumerate(dynamic_stream_definitions):
             components_resolver_config = dynamic_definition["components_resolver"]
 
             if not components_resolver_config:
@@ -392,6 +393,8 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
                 # Ensure that each stream is created with a unique name
                 name = dynamic_stream.get("name")
+
+                dynamic_stream["dynamic_stream_name"] = dynamic_definition.get("name", f"dynamic_stream_{dynamic_definition_index}")
 
                 if not isinstance(name, str):
                     raise ValueError(
