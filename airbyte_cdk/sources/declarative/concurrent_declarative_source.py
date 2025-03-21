@@ -206,7 +206,11 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             # these legacy Python streams the way we do low-code streams to determine if they are concurrent compatible,
             # so we need to treat them as synchronous
 
-            if name_to_stream_mapping[declarative_stream.name]["type"] == "StateDelegatingStream":
+            if (
+                isinstance(declarative_stream, DeclarativeStream)
+                and name_to_stream_mapping[declarative_stream.name]["type"]
+                == "StateDelegatingStream"
+            ):
                 stream_state = self._connector_state_manager.get_stream_state(
                     stream_name=declarative_stream.name, namespace=declarative_stream.namespace
                 )

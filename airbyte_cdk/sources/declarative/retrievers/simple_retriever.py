@@ -6,9 +6,20 @@ import json
 from dataclasses import InitVar, dataclass, field
 from functools import partial
 from itertools import islice
-from typing import Any, Callable, Iterable, List, Mapping, Optional, Set, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+)
 
 import requests
+from typing_extensions import deprecated
 
 from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
@@ -28,6 +39,7 @@ from airbyte_cdk.sources.declarative.requesters.requester import Requester
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
 from airbyte_cdk.sources.http_logger import format_http_message
+from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from airbyte_cdk.utils.mapping_helpers import combine_mappings
@@ -438,8 +450,8 @@ class SimpleRetriever(Retriever):
         most_recent_record_from_slice = None
         record_generator = partial(
             self._parse_records,
+            stream_slice=stream_slice,
             stream_state=self.state or {},
-            stream_slice=_slice,
             records_schema=records_schema,
         )
 
@@ -618,3 +630,73 @@ class SimpleRetrieverTestReadDecorator(SimpleRetriever):
                 self.name,
             ),
         )
+
+
+@deprecated(
+    "This class is experimental. Use at your own risk.",
+    category=ExperimentalClassWarning,
+)
+@dataclass
+class LazySimpleRetriever(SimpleRetriever):
+    """
+    A retriever that supports lazy loading from parent streams.
+    """
+
+    def _read_pages(
+        self,
+        records_generator_fn: Callable[[Optional[requests.Response]], Iterable[Record]],
+        stream_state: Mapping[str, Any],
+        stream_slice: StreamSlice,
+    ) -> Iterable[Record]:
+        response = stream_slice.extra_fields["child_response"]
+        if response:
+            last_page_size, last_record = 0, None
+            for record in records_generator_fn(response):  # type: ignore[call-arg] # only _parse_records expected as a func
+                last_page_size += 1
+                last_record = record
+                yield record
+
+            next_page_token = self._next_page_token(response, last_page_size, last_record, None)
+            if next_page_token:
+                yield from self._paginate(
+                    next_page_token,
+                    records_generator_fn,
+                    stream_state,
+                    stream_slice,
+                )
+
+            yield from []
+        else:
+            yield from self._read_pages(records_generator_fn, stream_state, stream_slice)
+
+    def _paginate(
+        self,
+        next_page_token: Any,
+        records_generator_fn: Callable[[Optional[requests.Response]], Iterable[Record]],
+        stream_state: Mapping[str, Any],
+        stream_slice: StreamSlice,
+    ) -> Iterable[Record]:
+        """Handle pagination by fetching subsequent pages."""
+        pagination_complete = False
+
+        while not pagination_complete:
+            response = self._fetch_next_page(stream_state, stream_slice, next_page_token)
+            last_page_size, last_record = 0, None
+
+            for record in records_generator_fn(response):  # type: ignore[call-arg] # only _parse_records expected as a func
+                last_page_size += 1
+                last_record = record
+                yield record
+
+            if not response:
+                pagination_complete = True
+            else:
+                last_page_token_value = (
+                    next_page_token.get("next_page_token") if next_page_token else None
+                )
+                next_page_token = self._next_page_token(
+                    response, last_page_size, last_record, last_page_token_value
+                )
+
+                if not next_page_token:
+                    pagination_complete = True

@@ -877,6 +877,11 @@ class DpathFlattenFields(BaseModel):
         description="Whether to delete the origin value or keep it. Default is False.",
         title="Delete Origin Value",
     )
+    replace_record: Optional[bool] = Field(
+        None,
+        description="Whether to replace the origin record or not. Default is False.",
+        title="Replace Origin Record",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -1460,6 +1465,16 @@ class AddFields(BaseModel):
         description="List of transformations (path and corresponding value) that will be added to the record.",
         title="Fields",
     )
+    condition: Optional[str] = Field(
+        "",
+        description="Fields will be added if expression is evaluated to True.",
+        examples=[
+            "{{ property|string == '' }}",
+            "{{ property is integer }}",
+            "{{ property|length > 5 }}",
+            "{{ property == 'some_string_to_match' }}",
+        ],
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -1771,6 +1786,10 @@ class RecordSelector(BaseModel):
         description="Responsible for normalization according to the schema.",
         title="Schema Normalization",
     )
+    transform_before_filtering: Optional[bool] = Field(
+        False,
+        description="If true, transformation will be applied before record filtering.",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -1871,9 +1890,10 @@ class DeclarativeSource1(BaseModel):
     spec: Optional[Spec] = None
     concurrency_level: Optional[ConcurrencyLevel] = None
     api_budget: Optional[HTTPAPIBudget] = None
-    max_concurrent_async_job_count: Optional[int] = Field(
+    max_concurrent_async_job_count: Optional[Union[int, str]] = Field(
         None,
         description="Maximum number of concurrent asynchronous jobs to run. This property is only relevant for sources/streams that support asynchronous job execution through the AsyncRetriever (e.g. a report-based stream that initiates a job, polls the job status, and then fetches the job results). This is often set by the API's maximum number of concurrent jobs on the account level. Refer to the API's documentation for this information.",
+        examples=[3, "{{ config['max_concurrent_async_job_count'] }}"],
         title="Maximum Concurrent Asynchronous Jobs",
     )
     metadata: Optional[Dict[str, Any]] = Field(
@@ -1903,9 +1923,10 @@ class DeclarativeSource2(BaseModel):
     spec: Optional[Spec] = None
     concurrency_level: Optional[ConcurrencyLevel] = None
     api_budget: Optional[HTTPAPIBudget] = None
-    max_concurrent_async_job_count: Optional[int] = Field(
+    max_concurrent_async_job_count: Optional[Union[int, str]] = Field(
         None,
         description="Maximum number of concurrent asynchronous jobs to run. This property is only relevant for sources/streams that support asynchronous job execution through the AsyncRetriever (e.g. a report-based stream that initiates a job, polls the job status, and then fetches the job results). This is often set by the API's maximum number of concurrent jobs on the account level. Refer to the API's documentation for this information.",
+        examples=[3, "{{ config['max_concurrent_async_job_count'] }}"],
         title="Maximum Concurrent Asynchronous Jobs",
     )
     metadata: Optional[Dict[str, Any]] = Field(
@@ -2205,6 +2226,11 @@ class DynamicSchemaLoader(BaseModel):
 
 class ParentStreamConfig(BaseModel):
     type: Literal["ParentStreamConfig"]
+    lazy_read_pointer: Optional[List[str]] = Field(
+        [],
+        description="If set, this will enable lazy reading, using the initial read of parent records to extract child records.",
+        title="Lazy Read Pointer",
+    )
     parent_key: str = Field(
         ...,
         description="The primary key of records from the parent stream that will be used during the retrieval of records for the current substream. This parent identifier field is typically a characteristic of the child records being extracted from the source API.",
@@ -2277,7 +2303,15 @@ class SimpleRetriever(BaseModel):
             CustomPartitionRouter,
             ListPartitionRouter,
             SubstreamPartitionRouter,
-            List[Union[CustomPartitionRouter, ListPartitionRouter, SubstreamPartitionRouter]],
+            GroupingPartitionRouter,
+            List[
+                Union[
+                    CustomPartitionRouter,
+                    ListPartitionRouter,
+                    SubstreamPartitionRouter,
+                    GroupingPartitionRouter,
+                ]
+            ],
         ]
     ] = Field(
         [],
@@ -2330,6 +2364,10 @@ class AsyncRetriever(BaseModel):
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to fetch the status of the running async job.",
     )
+    polling_job_timeout: Optional[Union[int, str]] = Field(
+        None,
+        description="The time in minutes after which the single Async Job should be considered as Timed Out.",
+    )
     download_target_requester: Optional[Union[CustomRequester, HttpRequester]] = Field(
         None,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to extract the url from polling response by the completed async job.",
@@ -2355,7 +2393,15 @@ class AsyncRetriever(BaseModel):
             CustomPartitionRouter,
             ListPartitionRouter,
             SubstreamPartitionRouter,
-            List[Union[CustomPartitionRouter, ListPartitionRouter, SubstreamPartitionRouter]],
+            GroupingPartitionRouter,
+            List[
+                Union[
+                    CustomPartitionRouter,
+                    ListPartitionRouter,
+                    SubstreamPartitionRouter,
+                    GroupingPartitionRouter,
+                ]
+            ],
         ]
     ] = Field(
         [],
@@ -2403,6 +2449,29 @@ class SubstreamPartitionRouter(BaseModel):
         ...,
         description="Specifies which parent streams are being iterated over and how parent records should be used to partition the child stream data set.",
         title="Parent Stream Configs",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class GroupingPartitionRouter(BaseModel):
+    type: Literal["GroupingPartitionRouter"]
+    group_size: int = Field(
+        ...,
+        description="The number of partitions to include in each group. This determines how many partition values are batched together in a single slice.",
+        examples=[10, 50],
+        title="Group Size",
+    )
+    underlying_partition_router: Union[
+        CustomPartitionRouter, ListPartitionRouter, SubstreamPartitionRouter
+    ] = Field(
+        ...,
+        description="The partition router whose output will be grouped. This can be any valid partition router component.",
+        title="Underlying Partition Router",
+    )
+    deduplicate: Optional[bool] = Field(
+        True,
+        description="If true, ensures that partitions are unique within each group by removing duplicates based on the partition key.",
+        title="Deduplicate Partitions",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 

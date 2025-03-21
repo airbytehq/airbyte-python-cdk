@@ -228,6 +228,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     FlattenFields as FlattenFieldsModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    GroupingPartitionRouter as GroupingPartitionRouterModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     GzipDecoder as GzipDecoderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -385,6 +388,7 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
 )
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
+    GroupingPartitionRouter,
     ListPartitionRouter,
     PartitionRouter,
     SinglePartitionRouter,
@@ -438,6 +442,7 @@ from airbyte_cdk.sources.declarative.resolvers import (
 )
 from airbyte_cdk.sources.declarative.retrievers import (
     AsyncRetriever,
+    LazySimpleRetriever,
     SimpleRetriever,
     SimpleRetrieverTestReadDecorator,
 )
@@ -506,7 +511,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.incrementing_count_
     IncrementingCountStreamStateConverter,
 )
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
-from airbyte_cdk.sources.types import Config, ConnectionDefinition
+from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 
 ComponentDefinition = Mapping[str, Any]
@@ -637,6 +642,7 @@ class ModelToComponentFactory:
             UnlimitedCallRatePolicyModel: self.create_unlimited_call_rate_policy,
             RateModel: self.create_rate,
             HttpRequestRegexMatcherModel: self.create_http_request_matcher,
+            GroupingPartitionRouterModel: self.create_grouping_partition_router,
         }
 
         # Needed for the case where we need to perform a second parse on the fields of a custom component
@@ -712,7 +718,11 @@ class ModelToComponentFactory:
             )
             for added_field_definition_model in model.fields
         ]
-        return AddFields(fields=added_field_definitions, parameters=model.parameters or {})
+        return AddFields(
+            fields=added_field_definitions,
+            condition=model.condition or "",
+            parameters=model.parameters or {},
+        )
 
     def create_keys_to_lower_transformation(
         self, model: KeysToLowerModel, config: Config, **kwargs: Any
@@ -748,6 +758,7 @@ class ModelToComponentFactory:
             delete_origin_value=model.delete_origin_value
             if model.delete_origin_value is not None
             else False,
+            replace_record=model.replace_record if model.replace_record is not None else False,
             parameters=model.parameters or {},
         )
 
@@ -1349,6 +1360,9 @@ class ModelToComponentFactory:
         )
         stream_state = self.apply_stream_state_migrations(stream_state_migrations, stream_state)
 
+        # Per-partition state doesn't make sense for GroupingPartitionRouter, so force the global state
+        use_global_cursor = isinstance(partition_router, GroupingPartitionRouter)
+
         # Return the concurrent cursor and state converter
         return ConcurrentPerPartitionCursor(
             cursor_factory=cursor_factory,
@@ -1360,6 +1374,7 @@ class ModelToComponentFactory:
             connector_state_manager=state_manager,
             connector_state_converter=connector_state_converter,
             cursor_field=cursor_field,
+            use_global_cursor=use_global_cursor,
         )
 
     @staticmethod
@@ -1745,6 +1760,7 @@ class ModelToComponentFactory:
                 transformations.append(
                     self._create_component_from_model(model=transformation_model, config=config)
                 )
+
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
@@ -1755,6 +1771,7 @@ class ModelToComponentFactory:
             stop_condition_on_cursor=stop_condition_on_cursor,
             client_side_incremental_sync=client_side_incremental_sync,
             transformations=transformations,
+            incremental_sync=model.incremental_sync,
         )
         cursor_field = model.incremental_sync.cursor_field if model.incremental_sync else None
 
@@ -1900,6 +1917,10 @@ class ModelToComponentFactory:
     ) -> Optional[StreamSlicer]:
         retriever_model = model.retriever
 
+        stream_slicer = self._build_stream_slicer_from_partition_router(
+            retriever_model, config, stream_name=model.name
+        )
+
         if retriever_model.type == "AsyncRetriever":
             is_not_datetime_cursor = (
                 model.incremental_sync.type != "DatetimeBasedCursor"
@@ -1919,12 +1940,10 @@ class ModelToComponentFactory:
                     "AsyncRetriever with cursor other than DatetimeBasedCursor is not supported yet."
                 )
 
-            if is_partition_router:
+            if is_partition_router and not stream_slicer:
                 # Note that this development is also done in parallel to the per partition development which once merged
                 # we could support here by calling create_concurrent_cursor_from_perpartition_cursor
                 raise ValueError("Per partition state is not supported yet for AsyncRetriever.")
-
-        stream_slicer = self._build_stream_slicer_from_partition_router(retriever_model, config)
 
         if model.incremental_sync:
             return self._build_incremental_cursor(model, stream_slicer, config)
@@ -2525,6 +2544,16 @@ class ModelToComponentFactory:
             if model.request_option
             else None
         )
+
+        if model.lazy_read_pointer and any("*" in pointer for pointer in model.lazy_read_pointer):
+            raise ValueError(
+                "The '*' wildcard in 'lazy_read_pointer' is not supported — only direct paths are allowed."
+            )
+
+        model_lazy_read_pointer: List[Union[InterpolatedString, str]] = (
+            [x for x in model.lazy_read_pointer] if model.lazy_read_pointer else []
+        )
+
         return ParentStreamConfig(
             parent_key=model.parent_key,
             request_option=request_option,
@@ -2534,6 +2563,7 @@ class ModelToComponentFactory:
             incremental_dependency=model.incremental_dependency or False,
             parameters=model.parameters or {},
             extra_fields=model.extra_fields,
+            lazy_read_pointer=model_lazy_read_pointer,
         )
 
     @staticmethod
@@ -2593,7 +2623,9 @@ class ModelToComponentFactory:
             else None
         )
 
-        transform_before_filtering = False
+        assert model.transform_before_filtering is not None  # for mypy
+
+        transform_before_filtering = model.transform_before_filtering
         if client_side_incremental_sync:
             record_filter = ClientSideIncrementalRecordFilterDecorator(
                 config=config,
@@ -2674,6 +2706,12 @@ class ModelToComponentFactory:
         stop_condition_on_cursor: bool = False,
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
         transformations: List[RecordTransformation],
+        incremental_sync: Optional[
+            Union[
+                IncrementingCountCursorModel, DatetimeBasedCursorModel, CustomIncrementalSyncModel
+            ]
+        ] = None,
+        **kwargs: Any,
     ) -> SimpleRetriever:
         decoder = (
             self._create_component_from_model(model=model.decoder, config=config)
@@ -2730,6 +2768,45 @@ class ModelToComponentFactory:
         ignore_stream_slicer_parameters_on_paginated_requests = (
             model.ignore_stream_slicer_parameters_on_paginated_requests or False
         )
+
+        if (
+            model.partition_router
+            and isinstance(model.partition_router, SubstreamPartitionRouterModel)
+            and not bool(self._connector_state_manager.get_stream_state(name, None))
+            and any(
+                parent_stream_config.lazy_read_pointer
+                for parent_stream_config in model.partition_router.parent_stream_configs
+            )
+        ):
+            if incremental_sync:
+                if incremental_sync.type != "DatetimeBasedCursor":
+                    raise ValueError(
+                        f"LazySimpleRetriever only supports DatetimeBasedCursor. Found: {incremental_sync.type}."
+                    )
+
+                elif incremental_sync.step or incremental_sync.cursor_granularity:
+                    raise ValueError(
+                        f"Found more that one slice per parent. LazySimpleRetriever only supports single slice read for stream - {name}."
+                    )
+
+            if model.decoder and model.decoder.type != "JsonDecoder":
+                raise ValueError(
+                    f"LazySimpleRetriever only supports JsonDecoder. Found: {model.decoder.type}."
+                )
+
+            return LazySimpleRetriever(
+                name=name,
+                paginator=paginator,
+                primary_key=primary_key,
+                requester=requester,
+                record_selector=record_selector,
+                stream_slicer=stream_slicer,
+                request_option_provider=request_options_provider,
+                cursor=cursor,
+                config=config,
+                ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
+                parameters=model.parameters or {},
+            )
 
         if self._limit_slices_fetched or self._emit_connector_builder_messages:
             return SimpleRetrieverTestReadDecorator(
@@ -2871,6 +2948,27 @@ class ModelToComponentFactory:
                 parameters={},
             )
 
+        def _get_job_timeout() -> datetime.timedelta:
+            user_defined_timeout: Optional[int] = (
+                int(
+                    InterpolatedString.create(
+                        str(model.polling_job_timeout),
+                        parameters={},
+                    ).eval(config)
+                )
+                if model.polling_job_timeout
+                else None
+            )
+
+            # check for user defined timeout during the test read or 15 minutes
+            test_read_timeout = datetime.timedelta(minutes=user_defined_timeout or 15)
+            # default value for non-connector builder is 60 minutes.
+            default_sync_timeout = datetime.timedelta(minutes=user_defined_timeout or 60)
+
+            return (
+                test_read_timeout if self._emit_connector_builder_messages else default_sync_timeout
+            )
+
         decoder = (
             self._create_component_from_model(model=model.decoder, config=config)
             if model.decoder
@@ -2964,6 +3062,7 @@ class ModelToComponentFactory:
             config=config,
             name=name,
         )
+
         job_repository: AsyncJobRepository = AsyncHttpJobRepository(
             creation_requester=creation_requester,
             polling_requester=polling_requester,
@@ -2974,6 +3073,7 @@ class ModelToComponentFactory:
             status_extractor=status_extractor,
             status_mapping=self._create_async_job_status_mapping(model.status_mapping, config),
             download_target_extractor=download_target_extractor,
+            job_timeout=_get_job_timeout(),
         )
 
         async_job_partition_router = AsyncJobPartitionRouter(
@@ -2982,8 +3082,11 @@ class ModelToComponentFactory:
                 stream_slices,
                 self._job_tracker,
                 self._message_repository,
-                has_bulk_parent=False,
                 # FIXME work would need to be done here in order to detect if a stream as a parent stream that is bulk
+                has_bulk_parent=False,
+                # set the `job_max_retry` to 1 for the `Connector Builder`` use-case.
+                # `None` == default retry is set to 3 attempts, under the hood.
+                job_max_retry=1 if self._emit_connector_builder_messages else None,
             ),
             stream_slicer=stream_slicer,
             config=config,
@@ -3275,4 +3378,35 @@ class ModelToComponentFactory:
     def set_api_budget(self, component_definition: ComponentDefinition, config: Config) -> None:
         self._api_budget = self.create_component(
             model_type=HTTPAPIBudgetModel, component_definition=component_definition, config=config
+        )
+
+    def create_grouping_partition_router(
+        self, model: GroupingPartitionRouterModel, config: Config, **kwargs: Any
+    ) -> GroupingPartitionRouter:
+        underlying_router = self._create_component_from_model(
+            model=model.underlying_partition_router, config=config
+        )
+        if model.group_size < 1:
+            raise ValueError(f"Group size must be greater than 0, got {model.group_size}")
+
+        # Request options in underlying partition routers are not supported for GroupingPartitionRouter
+        # because they are specific to individual partitions and cannot be aggregated or handled
+        # when grouping, potentially leading to incorrect API calls. Any request customization
+        # should be managed at the stream level through the requester's configuration.
+        if isinstance(underlying_router, SubstreamPartitionRouter):
+            if any(
+                parent_config.request_option
+                for parent_config in underlying_router.parent_stream_configs
+            ):
+                raise ValueError("Request options are not supported for GroupingPartitionRouter.")
+
+        if isinstance(underlying_router, ListPartitionRouter):
+            if underlying_router.request_option:
+                raise ValueError("Request options are not supported for GroupingPartitionRouter.")
+
+        return GroupingPartitionRouter(
+            group_size=model.group_size,
+            underlying_partition_router=underlying_router,
+            deduplicate=model.deduplicate if model.deduplicate is not None else True,
+            config=config,
         )

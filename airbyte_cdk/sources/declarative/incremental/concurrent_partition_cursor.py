@@ -79,6 +79,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         connector_state_manager: ConnectorStateManager,
         connector_state_converter: AbstractStreamStateConverter,
         cursor_field: CursorField,
+        use_global_cursor: bool = False,
     ) -> None:
         self._global_cursor: Optional[StreamState] = {}
         self._stream_name = stream_name
@@ -106,7 +107,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         self._lookback_window: int = 0
         self._parent_state: Optional[StreamState] = None
         self._number_of_partitions: int = 0
-        self._use_global_cursor: bool = False
+        self._use_global_cursor: bool = use_global_cursor
         self._partition_serializer = PerPartitionKeySerializer()
         # Track the last time a state message was emitted
         self._last_emission_time: float = 0.0

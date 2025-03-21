@@ -45,7 +45,9 @@ class AsyncHttpJobRepository(AsyncJobRepository):
     status_mapping: Mapping[str, AsyncJobStatus]
     download_target_extractor: DpathExtractor
 
+    # timeout for the job to be completed, passed from `polling_job_timeout`
     job_timeout: Optional[timedelta] = None
+
     record_extractor: RecordExtractor = field(
         init=False, repr=False, default_factory=lambda: ResponseToFileExtractor({})
     )
@@ -131,7 +133,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
             log_formatter=lambda response: format_http_message(
                 response=response,
                 title="Async Job -- Create",
-                description="Create the server-side async job.",
+                description=f"Create the server-side async job. Timeout after: {self.job_timeout}",
                 stream_name=None,
                 is_auxiliary=True,
                 type="ASYNC_CREATE",
@@ -271,12 +273,59 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         del self._create_job_response_by_id[job_id]
         del self._polling_job_response_by_id[job_id]
 
+    def _get_creation_response_interpolation_context(self, job: AsyncJob) -> Dict[str, Any]:
+        """
+        Returns the interpolation context for the creation response.
+
+        Args:
+            job (AsyncJob): The job for which to get the creation response interpolation context.
+
+        Returns:
+            Dict[str, Any]: The interpolation context as a dictionary.
+        """
+        # TODO: currently we support only JsonDecoder to decode the response to track the ids or the status
+        # of the Jobs. We should consider to add the support of other decoders like XMLDecoder, in the future
+        creation_response_context = dict(self._create_job_response_by_id[job.api_job_id()].json())
+        if not "headers" in creation_response_context:
+            creation_response_context["headers"] = self._create_job_response_by_id[
+                job.api_job_id()
+            ].headers
+        if not "request" in creation_response_context:
+            creation_response_context["request"] = self._create_job_response_by_id[
+                job.api_job_id()
+            ].request
+        return creation_response_context
+
+    def _get_polling_response_interpolation_context(self, job: AsyncJob) -> Dict[str, Any]:
+        """
+        Returns the interpolation context for the polling response.
+
+        Args:
+            job (AsyncJob): The job for which to get the polling response interpolation context.
+
+        Returns:
+            Dict[str, Any]: The interpolation context as a dictionary.
+        """
+        # TODO: currently we support only JsonDecoder to decode the response to track the ids or the status
+        # of the Jobs. We should consider to add the support of other decoders like XMLDecoder, in the future
+        polling_response_context = dict(self._polling_job_response_by_id[job.api_job_id()].json())
+        if not "headers" in polling_response_context:
+            polling_response_context["headers"] = self._polling_job_response_by_id[
+                job.api_job_id()
+            ].headers
+        if not "request" in polling_response_context:
+            polling_response_context["request"] = self._polling_job_response_by_id[
+                job.api_job_id()
+            ].request
+        return polling_response_context
+
     def _get_create_job_stream_slice(self, job: AsyncJob) -> StreamSlice:
-        creation_response = self._create_job_response_by_id[job.api_job_id()].json()
         stream_slice = StreamSlice(
             partition={},
             cursor_slice={},
-            extra_fields={"creation_response": creation_response},
+            extra_fields={
+                "creation_response": self._get_creation_response_interpolation_context(job),
+            },
         )
         return stream_slice
 
@@ -284,11 +333,12 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         if not self.download_target_requester:
             url_response = self._polling_job_response_by_id[job.api_job_id()]
         else:
-            polling_response = self._polling_job_response_by_id[job.api_job_id()].json()
             stream_slice: StreamSlice = StreamSlice(
                 partition={},
                 cursor_slice={},
-                extra_fields={"polling_response": polling_response},
+                extra_fields={
+                    "polling_response": self._get_polling_response_interpolation_context(job),
+                },
             )
             url_response = self.download_target_requester.send_request(stream_slice=stream_slice)  # type: ignore # we expect download_target_requester to always be presented, otherwise raise an exception as we cannot proceed with the report
             if not url_response:

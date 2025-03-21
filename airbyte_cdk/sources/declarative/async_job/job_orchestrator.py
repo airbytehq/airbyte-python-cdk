@@ -44,16 +44,21 @@ class AsyncPartition:
     This bucket of api_jobs is a bit useless for this iteration but should become interesting when we will be able to split jobs
     """
 
-    _MAX_NUMBER_OF_ATTEMPTS = 3
+    _DEFAULT_MAX_JOB_RETRY = 3
 
-    def __init__(self, jobs: List[AsyncJob], stream_slice: StreamSlice) -> None:
+    def __init__(
+        self, jobs: List[AsyncJob], stream_slice: StreamSlice, job_max_retry: Optional[int] = None
+    ) -> None:
         self._attempts_per_job = {job: 1 for job in jobs}
         self._stream_slice = stream_slice
+        self._job_max_retry = (
+            job_max_retry if job_max_retry is not None else self._DEFAULT_MAX_JOB_RETRY
+        )
 
     def has_reached_max_attempt(self) -> bool:
         return any(
             map(
-                lambda attempt_count: attempt_count >= self._MAX_NUMBER_OF_ATTEMPTS,
+                lambda attempt_count: attempt_count >= self._job_max_retry,
                 self._attempts_per_job.values(),
             )
         )
@@ -62,7 +67,7 @@ class AsyncPartition:
         current_attempt_count = self._attempts_per_job.pop(job_to_replace, None)
         if current_attempt_count is None:
             raise ValueError("Could not find job to replace")
-        elif current_attempt_count >= self._MAX_NUMBER_OF_ATTEMPTS:
+        elif current_attempt_count >= self._job_max_retry:
             raise ValueError(f"Max attempt reached for job in partition {self._stream_slice}")
 
         new_attempt_count = current_attempt_count + 1
@@ -155,6 +160,7 @@ class AsyncJobOrchestrator:
         message_repository: MessageRepository,
         exceptions_to_break_on: Iterable[Type[Exception]] = tuple(),
         has_bulk_parent: bool = False,
+        job_max_retry: Optional[int] = None,
     ) -> None:
         """
         If the stream slices provided as a parameters relies on a async job streams that relies on the same JobTracker, `has_bulk_parent`
@@ -175,6 +181,7 @@ class AsyncJobOrchestrator:
         self._message_repository = message_repository
         self._exceptions_to_break_on: Tuple[Type[Exception], ...] = tuple(exceptions_to_break_on)
         self._has_bulk_parent = has_bulk_parent
+        self._job_max_retry = job_max_retry
 
         self._non_breaking_exceptions: List[Exception] = []
 
@@ -214,7 +221,7 @@ class AsyncJobOrchestrator:
             for _slice in self._slice_iterator:
                 at_least_one_slice_consumed_from_slice_iterator_during_current_iteration = True
                 job = self._start_job(_slice)
-                self._running_partitions.append(AsyncPartition([job], _slice))
+                self._running_partitions.append(AsyncPartition([job], _slice, self._job_max_retry))
                 if self._has_bulk_parent and self._slice_iterator.has_next():
                     break
         except ConcurrentJobLimitReached:
@@ -359,14 +366,11 @@ class AsyncJobOrchestrator:
                     self._process_partitions_with_errors(partition)
                 case _:
                     self._stop_timed_out_jobs(partition)
+                    # re-allocate FAILED jobs, but TIMEOUT jobs are not re-allocated
+                    self._reallocate_partition(current_running_partitions, partition)
 
-                    # job will be restarted in `_start_job`
-                    current_running_partitions.insert(0, partition)
-
-            for job in partition.jobs:
-                # We only remove completed jobs as we want failed/timed out jobs to be re-allocated in priority
-                if job.status() == AsyncJobStatus.COMPLETED:
-                    self._job_tracker.remove_job(job.api_job_id())
+            # We only remove completed / timeout jobs jobs as we want failed jobs to be re-allocated in priority
+            self._remove_completed_jobs(partition)
 
         # update the referenced list with running partitions
         self._running_partitions = current_running_partitions
@@ -381,7 +385,6 @@ class AsyncJobOrchestrator:
     def _stop_timed_out_jobs(self, partition: AsyncPartition) -> None:
         for job in partition.jobs:
             if job.status() == AsyncJobStatus.TIMED_OUT:
-                # we don't free allocation here because it is expected to retry the job
                 self._abort_job(job, free_job_allocation=False)
 
     def _abort_job(self, job: AsyncJob, free_job_allocation: bool = True) -> None:
@@ -391,6 +394,31 @@ class AsyncJobOrchestrator:
                 self._job_tracker.remove_job(job.api_job_id())
         except Exception as exception:
             LOGGER.warning(f"Could not free budget for job {job.api_job_id()}: {exception}")
+
+    def _remove_completed_jobs(self, partition: AsyncPartition) -> None:
+        """
+        Remove completed or timed out jobs from the partition.
+
+        Args:
+            partition (AsyncPartition): The partition to process.
+        """
+        for job in partition.jobs:
+            if job.status() == AsyncJobStatus.COMPLETED:
+                self._job_tracker.remove_job(job.api_job_id())
+
+    def _reallocate_partition(
+        self,
+        current_running_partitions: List[AsyncPartition],
+        partition: AsyncPartition,
+    ) -> None:
+        """
+        Reallocate the partition by starting a new job for each job in the
+        partition.
+        Args:
+            current_running_partitions (list): The list of currently running partitions.
+            partition (AsyncPartition): The partition to reallocate.
+        """
+        current_running_partitions.insert(0, partition)
 
     def _process_partitions_with_errors(self, partition: AsyncPartition) -> None:
         """
