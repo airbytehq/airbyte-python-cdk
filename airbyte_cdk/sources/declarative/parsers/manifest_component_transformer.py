@@ -132,7 +132,11 @@ class ManifestComponentTransformer:
         # level take precedence
         current_parameters = dict(copy.deepcopy(parent_parameters))
         component_parameters = propagated_component.pop(PARAMETERS_STR, {})
-        current_parameters = {**component_parameters, **current_parameters} if use_parent_parameters else {**current_parameters, **component_parameters}
+        current_parameters = (
+            {**component_parameters, **current_parameters}
+            if use_parent_parameters
+            else {**current_parameters, **component_parameters}
+        )
 
         # Parameters should be applied to the current component fields with the existing field taking precedence over parameters if
         # both exist
@@ -147,7 +151,10 @@ class ManifestComponentTransformer:
                 excluded_parameter = current_parameters.pop(field_name, None)
                 parent_type_field_identifier = f"{propagated_component.get('type')}.{field_name}"
                 propagated_component[field_name] = self.propagate_types_and_parameters(
-                    parent_type_field_identifier, field_value, current_parameters, use_parent_parameters=use_parent_parameters
+                    parent_type_field_identifier,
+                    field_value,
+                    current_parameters,
+                    use_parent_parameters=use_parent_parameters,
                 )
                 if excluded_parameter:
                     current_parameters[field_name] = excluded_parameter
@@ -160,7 +167,10 @@ class ManifestComponentTransformer:
                             f"{propagated_component.get('type')}.{field_name}"
                         )
                         field_value[i] = self.propagate_types_and_parameters(
-                            parent_type_field_identifier, element, current_parameters, use_parent_parameters=use_parent_parameters
+                            parent_type_field_identifier,
+                            element,
+                            current_parameters,
+                            use_parent_parameters=use_parent_parameters,
                         )
                 if excluded_parameter:
                     current_parameters[field_name] = excluded_parameter

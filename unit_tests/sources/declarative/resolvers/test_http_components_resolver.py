@@ -596,5 +596,3 @@ def test_dynamic_streams_with_http_components_resolver_retriever_with_parent_str
     actual_record_stream_names.sort()
 
     assert actual_record_stream_names == expected_stream_names
-
-
