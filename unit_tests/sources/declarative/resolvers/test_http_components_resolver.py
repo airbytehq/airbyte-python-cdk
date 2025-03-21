@@ -288,13 +288,13 @@ _MANIFEST_WITH_HTTP_COMPONENT_RESOLVER_WITH_RETRIEVER_WITH_PARENT_STREAM = {
                         "page_token_option": {
                             "type": "RequestOption",
                             "inject_into": "request_parameter",
-                            "field_name": "page_cursor"
+                            "field_name": "page_cursor",
                         },
                         "pagination_strategy": {
                             "type": "CursorPagination",
                             "cursor_value": "{{ response.get('next_cursor') }}",
-                            "stop_condition": "{{ not response.get('has_more', False) }}"
-                        }
+                            "stop_condition": "{{ not response.get('has_more', False) }}",
+                        },
                     },
                     "partition_router": {
                         "type": "SubstreamPartitionRouter",
@@ -560,7 +560,7 @@ def test_dynamic_streams_with_http_components_resolver_retriever_with_parent_str
                                 {"id": 1, "name": "item_1"},
                             ],
                             "has_more": True,
-                            "next_cursor": 1
+                            "next_cursor": 1,
                         }
                     )
                 ),
@@ -573,7 +573,7 @@ def test_dynamic_streams_with_http_components_resolver_retriever_with_parent_str
                             "data": [
                                 {"id": 2, "name": "item_2"},
                             ],
-                            "has_more": False
+                            "has_more": False,
                         }
                     )
                 ),
