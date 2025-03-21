@@ -709,6 +709,9 @@ def test_group_streams():
     )
     concurrent_streams, synchronous_streams = source._group_streams(config=_CONFIG)
 
+    for stream in source._stream_configs(source.resolved_manifest):
+        assert stream["dynamic_stream_name"] is None
+
     # 1 full refresh stream, 3 incremental streams, 1 substream w/o incremental, 1 list based substream w/o incremental
     # 1 async job stream, 1 substream w/ incremental
     assert len(concurrent_streams) == 8

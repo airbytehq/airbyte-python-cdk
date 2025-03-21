@@ -2049,6 +2049,12 @@ class DeclarativeStream(BaseModel):
         description="Array of state migrations to be applied on the input state",
         title="State Migrations",
     )
+    dynamic_stream_name: Optional[str] = Field(
+        "None",
+        description="The dynamic stream name that create current stream, if None is static stream.",
+        example=["Tables"],
+        title="Dynamic Stream Name",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -2489,6 +2495,9 @@ class HttpComponentsResolver(BaseModel):
 
 class DynamicDeclarativeStream(BaseModel):
     type: Literal["DynamicDeclarativeStream"]
+    name: Optional[str] = Field(
+        "", description="The dynamic stream name.", example=["Tables"], title="Name"
+    )
     stream_template: DeclarativeStream = Field(
         ..., description="Reference to the stream template.", title="Stream Template"
     )
