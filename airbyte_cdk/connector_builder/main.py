@@ -12,6 +12,7 @@ from airbyte_cdk.connector import BaseConnector
 from airbyte_cdk.connector_builder.connector_builder_handler import (
     TestReadLimits,
     create_source,
+    full_resolve_manifest,
     get_limits,
     read_stream,
     resolve_manifest,
@@ -81,6 +82,8 @@ def handle_connector_builder_request(
             catalog is not None
         ), "`test_read` requires a valid `ConfiguredAirbyteCatalog`, got None."
         return read_stream(source, config, catalog, state, limits)
+    elif command == "full_resolve_manifest":
+        return full_resolve_manifest(source)
     else:
         raise ValueError(f"Unrecognized command {command}.")
 

@@ -57,6 +57,7 @@ _MANIFEST = {
     "dynamic_streams": [
         {
             "type": "DynamicDeclarativeStream",
+            "name": "TestDynamicStream",
             "stream_template": {
                 "type": "DeclarativeStream",
                 "name": "",
@@ -487,6 +488,9 @@ def test_dynamic_streams_read_with_http_components_resolver():
         ]
         configured_catalog = to_configured_catalog(configured_streams)
 
+        for stream in source._dynamic_stream_configs(source.resolved_manifest, _CONFIG):
+            assert stream["dynamic_stream_name"] == "TestDynamicStream"
+
         records = [
             message.record
             for message in source.read(MagicMock(), _CONFIG, configured_catalog)
@@ -571,6 +575,9 @@ def test_dynamic_streams_with_http_components_resolver_retriever_with_parent_str
             for stream in actual_catalog.streams
         ]
         configured_catalog = to_configured_catalog(configured_streams)
+
+        for stream in source._dynamic_stream_configs(source.resolved_manifest, _CONFIG):
+            assert stream["dynamic_stream_name"] == "dynamic_stream_0"
 
         records = [
             message.record

@@ -117,5 +117,28 @@ def resolve_manifest(source: ManifestDeclarativeSource) -> AirbyteMessage:
         return error.as_airbyte_message()
 
 
+def full_resolve_manifest(source: ManifestDeclarativeSource) -> AirbyteMessage:
+    try:
+        manifest = source.resolved_manifest
+        streams = manifest.get("streams", [])
+        for stream in streams:
+            stream["dynamic_stream_name"] = None
+        streams.extend(source.dynamic_streams)
+
+        return AirbyteMessage(
+            type=Type.RECORD,
+            record=AirbyteRecordMessage(
+                data={"manifest": manifest},
+                emitted_at=_emitted_at(),
+                stream="full_resolve_manifest",
+            ),
+        )
+    except Exception as exc:
+        error = AirbyteTracedException.from_exception(
+            exc, message=f"Error full resolving manifest: {str(exc)}"
+        )
+        return error.as_airbyte_message()
+
+
 def _emitted_at() -> int:
     return ab_datetime_now().to_epoch_millis()
