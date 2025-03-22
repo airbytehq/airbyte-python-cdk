@@ -12,10 +12,10 @@ from airbyte_cdk.connector import BaseConnector
 from airbyte_cdk.connector_builder.connector_builder_handler import (
     TestReadLimits,
     create_source,
+    full_resolve_manifest,
     get_limits,
     read_stream,
     resolve_manifest,
-    full_resolve_manifest,
 )
 from airbyte_cdk.entrypoint import AirbyteEntrypoint
 from airbyte_cdk.models import (
