@@ -43,7 +43,7 @@ class TestReadLimits:
 def get_limits(config: Mapping[str, Any]) -> TestReadLimits:
     command_config = config.get("__test_read_config", {})
     max_pages_per_slice = (
-        command_config.get(MAX_PAGES_PER_SLICE_KEY) or DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE
+            command_config.get(MAX_PAGES_PER_SLICE_KEY) or DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE
     )
     max_slices = command_config.get(MAX_SLICES_KEY) or DEFAULT_MAXIMUM_NUMBER_OF_SLICES
     max_records = command_config.get(MAX_RECORDS_KEY) or DEFAULT_MAXIMUM_RECORDS
@@ -67,11 +67,11 @@ def create_source(config: Mapping[str, Any], limits: TestReadLimits) -> Manifest
 
 
 def read_stream(
-    source: DeclarativeSource,
-    config: Mapping[str, Any],
-    configured_catalog: ConfiguredAirbyteCatalog,
-    state: List[AirbyteStateMessage],
-    limits: TestReadLimits,
+        source: DeclarativeSource,
+        config: Mapping[str, Any],
+        configured_catalog: ConfiguredAirbyteCatalog,
+        state: List[AirbyteStateMessage],
+        limits: TestReadLimits,
 ) -> AirbyteMessage:
     try:
         test_read_handler = TestReader(
@@ -113,6 +113,29 @@ def resolve_manifest(source: ManifestDeclarativeSource) -> AirbyteMessage:
     except Exception as exc:
         error = AirbyteTracedException.from_exception(
             exc, message=f"Error resolving manifest: {str(exc)}"
+        )
+        return error.as_airbyte_message()
+
+
+def full_resolve_manifest(source: ManifestDeclarativeSource) -> AirbyteMessage:
+    try:
+        manifest = source.resolved_manifest
+        streams = manifest.get("streams", [])
+        for stream in streams:
+            stream["dynamic_stream_name"] = None
+        streams.extend(source.dynamic_streams)
+
+        return AirbyteMessage(
+            type=Type.RECORD,
+            record=AirbyteRecordMessage(
+                data={"manifest": manifest},
+                emitted_at=_emitted_at(),
+                stream="full_resolve_manifest",
+            ),
+        )
+    except Exception as exc:
+        error = AirbyteTracedException.from_exception(
+            exc, message=f"Error full resolving manifest: {str(exc)}"
         )
         return error.as_airbyte_message()
 

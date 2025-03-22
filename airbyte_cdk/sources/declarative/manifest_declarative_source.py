@@ -106,6 +106,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
             AlwaysLogSliceLogger() if emit_connector_builder_messages else DebugSliceLogger()
         )
 
+        self._config = config
         self._validate_source()
 
     @property
@@ -115,6 +116,10 @@ class ManifestDeclarativeSource(DeclarativeSource):
     @property
     def message_repository(self) -> MessageRepository:
         return self._message_repository
+
+    @property
+    def dynamic_streams(self) -> List[Dict[str, Any]]:
+        return self._dynamic_stream_configs(manifest=self._source_config, config=self._config)
 
     @property
     def connection_checker(self) -> ConnectionChecker:
@@ -343,7 +348,6 @@ class ManifestDeclarativeSource(DeclarativeSource):
         # This has a warning flag for static, but after we finish part 4 we'll replace manifest with self._source_config
         stream_configs: List[Dict[str, Any]] = manifest.get("streams", [])
         for s in stream_configs:
-            s["dynamic_stream_name"] = None
             if "type" not in s:
                 s["type"] = "DeclarativeStream"
         return stream_configs
