@@ -106,7 +106,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
             AlwaysLogSliceLogger() if emit_connector_builder_messages else DebugSliceLogger()
         )
 
-        self._config = config
+        self._config = config or {}
         self._validate_source()
 
     @property
