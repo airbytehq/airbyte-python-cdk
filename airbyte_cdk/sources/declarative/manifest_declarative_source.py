@@ -398,7 +398,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
                 # Ensure that each stream is created with a unique name
                 name = dynamic_stream.get("name")
 
-                dynamic_stream["dynamic_stream_name"] = dynamic_definition.get("name", f"dynamic_stream_{dynamic_definition_index}")
+                dynamic_stream["dynamic_stream_name"] = dynamic_definition.get(
+                    "name", f"dynamic_stream_{dynamic_definition_index}"
+                )
 
                 if not isinstance(name, str):
                     raise ValueError(
