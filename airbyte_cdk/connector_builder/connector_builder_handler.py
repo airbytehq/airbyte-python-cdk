@@ -124,7 +124,7 @@ def full_resolve_manifest(source: ManifestDeclarativeSource) -> AirbyteMessage:
         for stream in streams:
             stream["dynamic_stream_name"] = None
         streams.extend(source.dynamic_streams)
-
+        manifest["streams"] = streams
         return AirbyteMessage(
             type=Type.RECORD,
             record=AirbyteRecordMessage(
