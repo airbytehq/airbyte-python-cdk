@@ -156,7 +156,54 @@ MANIFEST = {
 }
 
 DYNAMIC_STREAM_MANIFEST = {
-    **MANIFEST,
+    "version": "0.30.3",
+    "definitions": {
+        "retriever": {
+            "paginator": {
+                "type": "DefaultPaginator",
+                "page_size": _page_size,
+                "page_size_option": {"inject_into": "request_parameter", "field_name": "page_size"},
+                "page_token_option": {"inject_into": "path", "type": "RequestPath"},
+                "pagination_strategy": {
+                    "type": "CursorPagination",
+                    "cursor_value": "{{ response._metadata.next }}",
+                    "page_size": _page_size,
+                },
+            },
+            "partition_router": {
+                "type": "ListPartitionRouter",
+                "values": ["0", "1", "2", "3", "4", "5", "6", "7"],
+                "cursor_field": "item_id",
+            },
+            "" "requester": {
+                "path": "/v3/marketing/lists",
+                "authenticator": {
+                    "type": "BearerAuthenticator",
+                    "api_token": "{{ config.apikey }}",
+                },
+                "request_parameters": {"a_param": "10"},
+            },
+            "record_selector": {"extractor": {"field_path": ["result"]}},
+        },
+    },
+    "streams": [
+        {
+            "type": "DeclarativeStream",
+            "$parameters": _stream_options,
+            "retriever": "#/definitions/retriever",
+        },
+    ],
+    "check": {"type": "CheckStream", "stream_names": ["lists"]},
+    "spec": {
+        "connection_specification": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "required": [],
+            "properties": {},
+            "additionalProperties": True,
+        },
+        "type": "Spec",
+    },
     "dynamic_streams": [
         {
             "type": "DynamicDeclarativeStream",
