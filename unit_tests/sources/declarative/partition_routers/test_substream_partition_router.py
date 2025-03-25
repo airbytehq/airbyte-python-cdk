@@ -475,16 +475,14 @@ def test_substream_partition_router_invalid_parent_record_type():
         ),
         # Case 7: Migrate child state to parent state but child state is empty
         (
-                {
-                    "state": {},
-                    "states": [],
-                    "parent_state": {
-                        "posts": {}
-                    },
-                    "lookback_window": 1,
-                    "use_global_cursor": False
-                },
-                {},
+            {
+                "state": {},
+                "states": [],
+                "parent_state": {"posts": {}},
+                "lookback_window": 1,
+                "use_global_cursor": False,
+            },
+            {},
         ),
     ],
     ids=[
