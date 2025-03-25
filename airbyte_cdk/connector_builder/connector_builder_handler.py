@@ -119,7 +119,7 @@ def resolve_manifest(source: ManifestDeclarativeSource) -> AirbyteMessage:
 
 def full_resolve_manifest(source: ManifestDeclarativeSource) -> AirbyteMessage:
     try:
-        manifest = source.resolved_manifest
+        manifest = {**source.resolved_manifest}
         streams = manifest.get("streams", [])
         for stream in streams:
             stream["dynamic_stream_name"] = None
