@@ -19,13 +19,22 @@ class ConfigBuilder:
             "credentials": {
                 "credentials": "api_token",
                 "email": "integration-test@airbyte.io",
-                "api_token": <redacted>
-            }
+                "api_token": "fake token",
+            },
         }
 
 
-def _source(catalog: ConfiguredAirbyteCatalog, config: Dict[str, Any], state: Optional[List[AirbyteStateMessage]] = None) -> YamlDeclarativeSource:
-    return YamlDeclarativeSource(path_to_yaml=str(Path(__file__).parent / "file_stream_manifest.yaml"), catalog=catalog, config=config, state=state)
+def _source(
+    catalog: ConfiguredAirbyteCatalog,
+    config: Dict[str, Any],
+    state: Optional[List[AirbyteStateMessage]] = None,
+) -> YamlDeclarativeSource:
+    return YamlDeclarativeSource(
+        path_to_yaml=str(Path(__file__).parent / "file_stream_manifest.yaml"),
+        catalog=catalog,
+        config=config,
+        state=state,
+    )
 
 
 def read(
@@ -36,7 +45,9 @@ def read(
 ) -> EntrypointOutput:
     config = config_builder.build()
     state = state_builder.build() if state_builder else StateBuilder().build()
-    return entrypoint_read(_source(catalog, config, state), config, catalog, state, expecting_exception)
+    return entrypoint_read(
+        _source(catalog, config, state), config, catalog, state, expecting_exception
+    )
 
 
 class FileStreamTest(TestCase):
@@ -44,18 +55,38 @@ class FileStreamTest(TestCase):
         return ConfigBuilder()
 
     def test_check(self) -> None:
-        source = _source(CatalogBuilder().with_stream(ConfiguredAirbyteStreamBuilder().with_name("articles")).build(), self._config().build())
+        source = _source(
+            CatalogBuilder()
+            .with_stream(ConfiguredAirbyteStreamBuilder().with_name("articles"))
+            .build(),
+            self._config().build(),
+        )
 
         check_result = source.check(Mock(), self._config().build())
 
         assert check_result.status == Status.SUCCEEDED
 
     def test_get_articles(self) -> None:
-        output = read(self._config(), CatalogBuilder().with_stream(ConfiguredAirbyteStreamBuilder().with_name("articles")).build())
+        output = read(
+            self._config(),
+            CatalogBuilder()
+            .with_stream(ConfiguredAirbyteStreamBuilder().with_name("articles"))
+            .build(),
+        )
 
         assert output.records
 
     def test_get_article_attachments(self) -> None:
-        output = read(self._config(), CatalogBuilder().with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments")).build())
+        output = read(
+            self._config(),
+            CatalogBuilder()
+            .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments"))
+            .build(),
+        )
 
         assert output.records
+        file_reference = output.records[0].record.file_reference
+        assert file_reference
+        assert file_reference.file_url
+        assert file_reference.file_relative_path
+        assert file_reference.file_size_bytes

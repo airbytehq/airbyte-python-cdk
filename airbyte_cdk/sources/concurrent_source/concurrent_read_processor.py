@@ -150,6 +150,7 @@ class ConcurrentReadProcessor:
             stream_name=record.stream_name,
             data_or_message=record.data,
             is_file_transfer_message=record.is_file_transfer_message,
+            file_reference=record.file_reference,
         )
         stream = self._stream_name_to_instance[record.stream_name]
 
