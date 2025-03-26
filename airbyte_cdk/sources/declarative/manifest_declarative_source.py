@@ -119,7 +119,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
     @property
     def dynamic_streams(self) -> List[Dict[str, Any]]:
-        return self._dynamic_stream_configs(manifest=self._source_config, config=self._config, with_dynamic_stream_name=True)
+        return self._dynamic_stream_configs(
+            manifest=self._source_config, config=self._config, with_dynamic_stream_name=True
+        )
 
     @property
     def connection_checker(self) -> ConnectionChecker:
@@ -353,7 +355,10 @@ class ManifestDeclarativeSource(DeclarativeSource):
         return stream_configs
 
     def _dynamic_stream_configs(
-        self, manifest: Mapping[str, Any], config: Mapping[str, Any], with_dynamic_stream_name: Optional[bool] = None
+        self,
+        manifest: Mapping[str, Any],
+        config: Mapping[str, Any],
+        with_dynamic_stream_name: Optional[bool] = None,
     ) -> List[Dict[str, Any]]:
         dynamic_stream_definitions: List[Dict[str, Any]] = manifest.get("dynamic_streams", [])
         dynamic_stream_configs: List[Dict[str, Any]] = []
