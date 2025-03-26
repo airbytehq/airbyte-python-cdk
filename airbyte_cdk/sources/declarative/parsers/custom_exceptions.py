@@ -19,3 +19,12 @@ class UndefinedReferenceException(Exception):
 
     def __init__(self, path: str, reference: str) -> None:
         super().__init__(f"Undefined reference {reference} from {path}")
+
+
+class ManifestDeduplicationException(Exception):
+    """
+    Raised when a circular reference is detected in a manifest.
+    """
+
+    def __init__(self, exception: str) -> None:
+        super().__init__(f"Failed to deduplicate manifest: {exception}")

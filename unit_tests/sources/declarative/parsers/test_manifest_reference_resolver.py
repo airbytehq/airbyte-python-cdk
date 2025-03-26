@@ -162,3 +162,247 @@ def test_circular_reference():
     content = {"elem_ref1": "#/elem_ref2", "elem_ref2": "#/elem_ref1"}
     with pytest.raises(CircularReferenceException):
         resolver.preprocess_manifest(content)
+
+
+def test_deduplicate_manifest_definitions():
+    content = {
+        "definitions": {
+            "streams": {
+                "A": {
+                    "type": "DeclarativeStream",
+                    "name": "A",
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "decoder": {"type": "JsonDecoder"},
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url_base": "https://pokeapi.co/api/v2/",
+                            "authenticator": {
+                                "type": "BasicHttpAuthenticator",
+                                "api_key": '{{ config["api_token"] }}',
+                            },
+                            "path": "path_to_A",
+                            "http_method": "GET",
+                        },
+                    },
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {
+                            "type": "object",
+                            "$schema": "http://json-schema.org/draft-07/schema#",
+                            "properties": {
+                                "a": {
+                                    "type": "string",
+                                }
+                            },
+                            "additionalProperties": True,
+                        },
+                    },
+                },
+                "A_1": {
+                    "type": "DeclarativeStream",
+                    "name": "A_1",
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "decoder": {"type": "JsonDecoder"},
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url_base": "https://pokeapi.co/api/v2/",
+                            "authenticator": {
+                                "type": "BasicHttpAuthenticator",
+                                "api_key": '{{ config["api_token"] }}',
+                            },
+                            "path": "path_to_A",
+                            "http_method": "GET",
+                        },
+                    },
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {
+                            "type": "object",
+                            "$schema": "http://json-schema.org/draft-07/schema#",
+                            "properties": {
+                                "a_1": {
+                                    "type": "string",
+                                }
+                            },
+                            "additionalProperties": True,
+                        },
+                    },
+                },
+                "B": {
+                    "type": "DeclarativeStream",
+                    "name": "B",
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "decoder": {"type": "JsonDecoder"},
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url_base": "https://pokeapi.co/api/v2/",
+                            "authenticator": {
+                                "type": "BasicHttpAuthenticator",
+                                "api_key": '{{ config["api_token"] }}',
+                            },
+                            "path": "path_to_B",
+                            "http_method": "GET",
+                        },
+                    },
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {
+                            "type": "object",
+                            "$schema": "http://json-schema.org/draft-07/schema#",
+                            "properties": {
+                                "b": {
+                                    "type": "string",
+                                }
+                            },
+                            "additionalProperties": True,
+                        },
+                    },
+                },
+                "B_1": {
+                    "type": "DeclarativeStream",
+                    "name": "B_1",
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "decoder": {"type": "JsonDecoder"},
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url_base": "https://pokeapi.co/api/v2/",
+                            "authenticator": {
+                                "type": "BasicHttpAuthenticator",
+                                "api_key": '{{ config["api_token"] }}',
+                            },
+                            "path": "path_to_B",
+                            "http_method": "GET",
+                        },
+                    },
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {
+                            "type": "object",
+                            "$schema": "http://json-schema.org/draft-07/schema#",
+                            "properties": {
+                                "b": {
+                                    "type": "string",
+                                }
+                            },
+                            "additionalProperties": True,
+                        },
+                    },
+                },
+            }
+        }
+    }
+    expected = {
+        "definitions": {
+            "streams": {
+                "A": {
+                    "type": "DeclarativeStream",
+                    "name": "A",
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "decoder": {"type": "JsonDecoder"},
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url_base": {"$ref": "#/definitions/shared/url_base"},
+                            "authenticator": {"$ref": "#/definitions/shared/authenticator"},
+                            "path": "path_to_A",
+                            "http_method": "GET",
+                        },
+                    },
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {
+                            "type": "object",
+                            "$schema": "http://json-schema.org/draft-07/schema#",
+                            "properties": {"a": {"type": "string"}},
+                            "additionalProperties": True,
+                        },
+                    },
+                },
+                "A_1": {
+                    "type": "DeclarativeStream",
+                    "name": "A_1",
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "decoder": {"type": "JsonDecoder"},
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url_base": {"$ref": "#/definitions/shared/url_base"},
+                            "authenticator": {"$ref": "#/definitions/shared/authenticator"},
+                            "path": "path_to_A",
+                            "http_method": "GET",
+                        },
+                    },
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {
+                            "type": "object",
+                            "$schema": "http://json-schema.org/draft-07/schema#",
+                            "properties": {"a_1": {"type": "string"}},
+                            "additionalProperties": True,
+                        },
+                    },
+                },
+                "B": {
+                    "type": "DeclarativeStream",
+                    "name": "B",
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "decoder": {"type": "JsonDecoder"},
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url_base": {"$ref": "#/definitions/shared/url_base"},
+                            "authenticator": {"$ref": "#/definitions/shared/authenticator"},
+                            "path": "path_to_B",
+                            "http_method": "GET",
+                        },
+                    },
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {
+                            "type": "object",
+                            "$schema": "http://json-schema.org/draft-07/schema#",
+                            "properties": {"b": {"type": "string"}},
+                            "additionalProperties": True,
+                        },
+                    },
+                },
+                "B_1": {
+                    "type": "DeclarativeStream",
+                    "name": "B_1",
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "decoder": {"type": "JsonDecoder"},
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url_base": {"$ref": "#/definitions/shared/url_base"},
+                            "authenticator": {"$ref": "#/definitions/shared/authenticator"},
+                            "path": "path_to_B",
+                            "http_method": "GET",
+                        },
+                    },
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {
+                            "type": "object",
+                            "$schema": "http://json-schema.org/draft-07/schema#",
+                            "properties": {"b": {"type": "string"}},
+                            "additionalProperties": True,
+                        },
+                    },
+                },
+            },
+            "shared": {
+                "authenticator": {
+                    "type": "BasicHttpAuthenticator",
+                    "api_key": '{{ config["api_token"] }}',
+                },
+                "url_base": "https://pokeapi.co/api/v2/",
+            },
+        }
+    }
+    config = resolver.preprocess_manifest(content)
+    assert config == expected

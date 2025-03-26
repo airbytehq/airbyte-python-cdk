@@ -9,6 +9,7 @@ from airbyte_cdk.sources.declarative.parsers.custom_exceptions import (
     CircularReferenceException,
     UndefinedReferenceException,
 )
+from airbyte_cdk.sources.declarative.parsers.manifest_deduplicator import deduplicate_definitions
 
 REF_TAG = "$ref"
 
@@ -102,9 +103,14 @@ class ManifestReferenceResolver:
     def preprocess_manifest(self, manifest: Mapping[str, Any]) -> Mapping[str, Any]:
         """
         :param manifest: incoming manifest that could have references to previously defined components
-        :return:
         """
-        return self._evaluate_node(manifest, manifest, set())  # type: ignore[no-any-return]
+
+        preprocessed_manifest = self._evaluate_node(manifest, manifest, set())
+
+        # we need to reduce commonalities in the manifest after the references have been resolved
+        reduced_manifest = deduplicate_definitions(preprocessed_manifest)
+
+        return reduced_manifest
 
     def _evaluate_node(self, node: Any, manifest: Mapping[str, Any], visited: Set[Any]) -> Any:
         if isinstance(node, dict):
