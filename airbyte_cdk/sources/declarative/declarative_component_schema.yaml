@@ -1427,13 +1427,6 @@ definitions:
             - "$ref": "#/definitions/LegacyToPerPartitionStateMigration"
             - "$ref": "#/definitions/CustomStateMigration"
         default: []
-      dynamic_stream_name:
-        title: Dynamic Stream Name
-        description: The dynamic stream name that create current stream, if None is static stream.
-        type: string
-        default: None
-        example:
-          - "Tables"
       $parameters:
         type: object
         additional_properties: true
