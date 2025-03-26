@@ -9,8 +9,8 @@ from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
     AirbyteRecordMessage,
-    AirbyteTraceMessage,
     AirbyteRecordMessageFileReference,
+    AirbyteTraceMessage,
 )
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.models.file_transfer_record_message import AirbyteFileTransferRecordMessage

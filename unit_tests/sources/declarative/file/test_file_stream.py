@@ -50,9 +50,12 @@ def read(
         _source(catalog, config, state), config, catalog, state, expecting_exception
     )
 
+
 def discover(config_builder: ConfigBuilder, expecting_exception: bool = False) -> EntrypointOutput:
     config = config_builder.build()
-    return entrypoint_discover(_source(CatalogBuilder().build(), config), config, expecting_exception)
+    return entrypoint_discover(
+        _source(CatalogBuilder().build(), config), config, expecting_exception
+    )
 
 
 class FileStreamTest(TestCase):
@@ -99,5 +102,9 @@ class FileStreamTest(TestCase):
     def test_discover_article_attachments(self) -> None:
         output = discover(self._config())
 
-        article_attachments_stream = next(filter(lambda stream: stream.name == "article_attachments", output.catalog.catalog.streams))
+        article_attachments_stream = next(
+            filter(
+                lambda stream: stream.name == "article_attachments", output.catalog.catalog.streams
+            )
+        )
         assert article_attachments_stream.is_file_based
