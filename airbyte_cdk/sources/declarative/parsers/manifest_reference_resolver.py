@@ -108,9 +108,9 @@ class ManifestReferenceResolver:
         preprocessed_manifest = self._evaluate_node(manifest, manifest, set())
 
         # we need to reduce commonalities in the manifest after the references have been resolved
-        reduced_manifest = deduplicate_definitions(preprocessed_manifest)
+        deduplicated_manifest = deduplicate_definitions(preprocessed_manifest)
 
-        return reduced_manifest
+        return deduplicated_manifest
 
     def _evaluate_node(self, node: Any, manifest: Mapping[str, Any], visited: Set[Any]) -> Any:
         if isinstance(node, dict):
