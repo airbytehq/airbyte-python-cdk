@@ -74,8 +74,7 @@ class DeclarativePartition(Partition):
                     )
                 )
                 if self._file_uploader:
-                    file_reference = self._file_uploader.upload(record)
-                    record.file_reference = file_reference
+                    self._file_uploader.upload(record)
                 yield record
             else:
                 self._message_repository.emit_message(stream_data)

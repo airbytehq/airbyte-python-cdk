@@ -23,7 +23,7 @@ class FileUploader:
         self._download_target_extractor = download_target_extractor
         self._content_extractor = content_extractor
 
-    def upload(self, record: Record) -> AirbyteRecordMessageFileReference:
+    def upload(self, record: Record) -> None:
         # TODO validate record shape - is the transformation applied at this point?
         mocked_response = SafeResponse()
         mocked_response.content = json.dumps(record.data).encode("utf-8")
@@ -54,8 +54,8 @@ class FileUploader:
                 f.write(response.content)
             file_size_bytes = full_path.stat().st_size
 
-        return AirbyteRecordMessageFileReference(
-            file_url=download_target,
-            file_relative_path=str(file_relative_path),
-            file_size_bytes=file_size_bytes,
-        )
+            record.file_reference = AirbyteRecordMessageFileReference(
+                file_url=download_target,
+                file_relative_path=str(file_relative_path),
+                file_size_bytes=file_size_bytes,
+            )
