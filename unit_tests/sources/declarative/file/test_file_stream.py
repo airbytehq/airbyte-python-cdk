@@ -7,6 +7,7 @@ from airbyte_cdk.models import AirbyteStateMessage, ConfiguredAirbyteCatalog, St
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.test.catalog_builder import CatalogBuilder, ConfiguredAirbyteStreamBuilder
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
+from airbyte_cdk.test.entrypoint_wrapper import discover as entrypoint_discover
 from airbyte_cdk.test.entrypoint_wrapper import read as entrypoint_read
 from airbyte_cdk.test.state_builder import StateBuilder
 
@@ -50,6 +51,13 @@ def read(
     )
 
 
+def discover(config_builder: ConfigBuilder, expecting_exception: bool = False) -> EntrypointOutput:
+    config = config_builder.build()
+    return entrypoint_discover(
+        _source(CatalogBuilder().build(), config), config, expecting_exception
+    )
+
+
 class FileStreamTest(TestCase):
     def _config(self) -> ConfigBuilder:
         return ConfigBuilder()
@@ -90,3 +98,13 @@ class FileStreamTest(TestCase):
         assert file_reference.file_url
         assert file_reference.file_relative_path
         assert file_reference.file_size_bytes
+
+    def test_discover_article_attachments(self) -> None:
+        output = discover(self._config())
+
+        article_attachments_stream = next(
+            filter(
+                lambda stream: stream.name == "article_attachments", output.catalog.catalog.streams
+            )
+        )
+        assert article_attachments_stream.is_file_based
