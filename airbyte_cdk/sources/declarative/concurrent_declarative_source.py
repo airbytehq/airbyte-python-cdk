@@ -339,6 +339,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             else None,
                             logger=self.logger,
                             cursor=cursor,
+                            supports_file_transfer=bool(file_uploader),
                         )
                     )
                 elif (
@@ -371,6 +372,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             cursor_field=None,
                             logger=self.logger,
                             cursor=final_state_cursor,
+                            supports_file_transfer=bool(file_uploader),
                         )
                     )
                 elif (
@@ -425,6 +427,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             cursor_field=perpartition_cursor.cursor_field.cursor_field_key,
                             logger=self.logger,
                             cursor=perpartition_cursor,
+                            supports_file_transfer=bool(file_uploader),
                         )
                     )
                 else:
