@@ -2,15 +2,21 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+import json
 import logging
 from typing import Any, Iterable, Mapping, Optional
 from unittest.mock import MagicMock
+from copy import deepcopy
 
 import pytest
 import requests
 
 from airbyte_cdk.sources.declarative.checks.check_stream import CheckStream
 from airbyte_cdk.sources.streams.http import HttpStream
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+)
+from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 
 logger = logging.getLogger("test")
 config = dict()
@@ -24,11 +30,11 @@ record = MagicMock()
     [
         ("test_success_check", record, stream_names, {}, (True, None)),
         (
-            "test_success_check_stream_slice",
-            record,
-            stream_names,
-            {"slice": "slice_value"},
-            (True, None),
+                "test_success_check_stream_slice",
+                record,
+                stream_names,
+                {"slice": "slice_value"},
+                (True, None),
         ),
         ("test_fail_check", None, stream_names, {}, (True, None)),
         ("test_try_to_check_invalid stream", record, ["invalid_stream_name"], {}, None),
@@ -36,7 +42,7 @@ record = MagicMock()
 )
 @pytest.mark.parametrize("slices_as_list", [True, False])
 def test_check_stream_with_slices_as_list(
-    test_name, record, streams_to_check, stream_slice, expectation, slices_as_list
+        test_name, record, streams_to_check, stream_slice, expectation, slices_as_list
 ):
     stream = MagicMock()
     stream.name = "s1"
@@ -101,22 +107,22 @@ def test_check_stream_with_no_stream_slices_aborts():
     "test_name, response_code, available_expectation, expected_messages",
     [
         (
-            "test_stream_unavailable_unhandled_error",
-            404,
-            False,
-            ["Not found. The requested resource was not found on the server."],
+                "test_stream_unavailable_unhandled_error",
+                404,
+                False,
+                ["Not found. The requested resource was not found on the server."],
         ),
         (
-            "test_stream_unavailable_handled_error",
-            403,
-            False,
-            ["Forbidden. You don't have permission to access this resource."],
+                "test_stream_unavailable_handled_error",
+                403,
+                False,
+                ["Forbidden. You don't have permission to access this resource."],
         ),
         ("test_stream_available", 200, True, []),
     ],
 )
 def test_check_http_stream_via_availability_strategy(
-    mocker, test_name, response_code, available_expectation, expected_messages
+        mocker, test_name, response_code, available_expectation, expected_messages
 ):
     class MockHttpStream(HttpStream):
         url_base = "https://test_base_url.com"
@@ -157,3 +163,243 @@ def test_check_http_stream_via_availability_strategy(
     assert stream_is_available == available_expectation
     for message in expected_messages:
         assert message in reason
+
+
+_CONFIG = {"start_date": "2024-07-01T00:00:00.000Z", "custom_streams": [
+    {"id": 1, "name": "item_1"},
+    {"id": 2, "name": "item_2"},
+]}
+
+_MANIFEST_WITHOUT_CHECK_COMPONENT = {
+    "version": "6.7.0",
+    "type": "DeclarativeSource",
+    "dynamic_streams": [
+        {
+            "type": "DynamicDeclarativeStream",
+            "name": "http_dynamic_stream",
+            "stream_template": {
+                "type": "DeclarativeStream",
+                "name": "",
+                "primary_key": [],
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "http://json-schema.org/schema#",
+                        "properties": {
+                            "ABC": {"type": "number"},
+                            "AED": {"type": "number"},
+                        },
+                        "type": "object",
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "$parameters": {"item_id": ""},
+                        "url_base": "https://api.test.com",
+                        "path": "/items/{{parameters['item_id']}}",
+                        "http_method": "GET",
+                        "authenticator": {
+                            "type": "ApiKeyAuthenticator",
+                            "header": "apikey",
+                            "api_token": "{{ config['api_key'] }}",
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "paginator": {"type": "NoPagination"},
+                },
+            },
+            "components_resolver": {
+                "type": "HttpComponentsResolver",
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://api.test.com",
+                        "path": "items",
+                        "http_method": "GET",
+                        "authenticator": {
+                            "type": "ApiKeyAuthenticator",
+                            "header": "apikey",
+                            "api_token": "{{ config['api_key'] }}",
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "paginator": {"type": "NoPagination"},
+                },
+                "components_mapping": [
+                    {
+                        "type": "ComponentMappingDefinition",
+                        "field_path": ["name"],
+                        "value": "{{components_values['name']}}",
+                    },
+                    {
+                        "type": "ComponentMappingDefinition",
+                        "field_path": [
+                            "retriever",
+                            "requester",
+                            "$parameters",
+                            "item_id",
+                        ],
+                        "value": "{{components_values['id']}}",
+                    },
+                ],
+            },
+        },
+        {
+            "type": "DynamicDeclarativeStream",
+            "stream_template": {
+                "type": "DeclarativeStream",
+                "name": "",
+                "primary_key": [],
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "http://json-schema.org/schema#",
+                        "properties": {
+                            "ABC": {"type": "number"},
+                            "AED": {"type": "number"},
+                        },
+                        "type": "object",
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "$parameters": {"item_id": ""},
+                        "url_base": "https://api.test.com",
+                        "path": "/items/{{parameters['item_id']}}",
+                        "http_method": "GET",
+                        "authenticator": {
+                            "type": "ApiKeyAuthenticator",
+                            "header": "apikey",
+                            "api_token": "{{ config['api_key'] }}",
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "paginator": {"type": "NoPagination"},
+                },
+            },
+            "components_resolver": {
+                "type": "ConfigComponentsResolver",
+                "stream_config": {
+                    "type": "StreamConfig",
+                    "configs_pointer": ["custom_streams"],
+                },
+                "components_mapping": [
+                    {
+                        "type": "ComponentMappingDefinition",
+                        "field_path": ["name"],
+                        "value": "{{components_values['name']}}",
+                    },
+                    {
+                        "type": "ComponentMappingDefinition",
+                        "field_path": [
+                            "retriever",
+                            "requester",
+                            "$parameters",
+                            "item_id",
+                        ],
+                        "value": "{{components_values['id']}}",
+                    },
+                ],
+            },
+        }
+    ],
+    "streams": [
+        {
+            "type": "DeclarativeStream",
+            "retriever": {
+                "type": "SimpleRetriever",
+                "requester": {
+                    "type": "HttpRequester",
+                    "$parameters": {"item_id": ""},
+                    "url_base": "https://api.test.com",
+                    "path": "/static",
+                    "http_method": "GET",
+                    "authenticator": {
+                        "type": "ApiKeyAuthenticator",
+                        "header": "apikey",
+                        "api_token": "{{ config['api_key'] }}",
+                    },
+                },
+                "record_selector": {
+                    "type": "RecordSelector",
+                    "extractor": {"type": "DpathExtractor", "field_path": []},
+                },
+                "paginator": {"type": "NoPagination"},
+            },
+            "name": "static_stream",
+            "primary_key": "id",
+        }
+    ]
+}
+
+
+@pytest.mark.parametrize(
+    "check_component",
+    [
+        pytest.param({"check": {"type": "CheckStream", "stream_names": ["static_stream"]}},
+                     id="test_check_only_static_streams"),
+        pytest.param({"check": {"type": "CheckStream", "stream_names": ["static_stream"],
+                                "dynamic_streams_check_configs": [
+                                    {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "http_dynamic_stream",
+                                     "stream_count": 2}]}}, id="test_check_static_streams_and_http_dynamic_stream"),
+        pytest.param({"check": {"type": "CheckStream", "stream_names": ["static_stream"],
+                                "dynamic_streams_check_configs": [
+                                    {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "http_dynamic_stream",
+                                     "stream_count": 2}]}}, id="test_check_static_streams_and_config_dynamic_stream"),
+        pytest.param({"check": {"type": "CheckStream", "dynamic_streams_check_configs": [
+            {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "http_dynamic_stream", "stream_count": 2}]}},
+                     id="test_check_http_dynamic_stream_and_config_dynamic_stream"),
+        pytest.param({"check": {"type": "CheckStream", "stream_names": ["static_stream"],
+                                "dynamic_streams_check_configs": [
+                                    {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "http_dynamic_stream",
+                                     "stream_count": 2}]}},
+                     id="test_check_static_streams_and_http_dynamic_stream_and_config_dynamic_stream"),
+    ],
+)
+def test_check_stream(check_component):
+    manifest = {**deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT), **check_component}
+
+    with HttpMocker() as http_mocker:
+        static_stream_request = HttpRequest(url="https://api.test.com/static")
+        static_stream_response = HttpResponse(
+            body=json.dumps([{"id": 1, "name": "static_1"}, {"id": 2, "name": "static_2"}])
+        )
+        http_mocker.get(static_stream_request, static_stream_response)
+
+        items_request = HttpRequest(url="https://api.test.com/items")
+        items_response = HttpResponse(
+            body=json.dumps([{"id": 1, "name": "item_1"}, {"id": 2, "name": "item_2"}])
+        )
+        http_mocker.get(items_request, items_response)
+
+        item_request = HttpRequest(url="https://api.test.com/items/1")
+        item_response = HttpResponse(body=json.dumps([]), status_code=200)
+        item_request_count = 1
+        http_mocker.get(item_request, item_response)
+
+        source = ConcurrentDeclarativeSource(
+            source_config=manifest,
+            config=_CONFIG,
+            catalog=None,
+            state=None,
+        )
+
+        stream_is_available, reason = source.check_connection(logger, _CONFIG)
+
+        http_mocker.assert_number_of_calls(item_request, item_request_count)
+
+    assert stream_is_available
