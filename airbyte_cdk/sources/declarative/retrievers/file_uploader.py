@@ -24,7 +24,6 @@ class FileUploader:
         self._content_extractor = content_extractor
 
     def upload(self, record: Record) -> None:
-        # TODO validate record shape - is the transformation applied at this point?
         mocked_response = SafeResponse()
         mocked_response.content = json.dumps(record.data).encode("utf-8")
         download_target = list(self._download_target_extractor.extract_records(mocked_response))[0]
