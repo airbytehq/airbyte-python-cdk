@@ -384,6 +384,7 @@ def test_resolve_manifest(valid_resolve_manifest_config_file):
                 },
                 "record_selector": {"extractor": {"field_path": ["result"]}},
             },
+            "shared": {},
         },
         "streams": [
             {
