@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 from typing import Optional
 
@@ -11,6 +12,7 @@ from airbyte_cdk.sources.declarative.requesters import Requester
 from airbyte_cdk.sources.declarative.types import Record, StreamSlice
 from airbyte_cdk.sources.utils.files_directory import get_files_directory
 
+logger = logging.getLogger("airbyte")
 
 class FileUploader:
     def __init__(
@@ -53,6 +55,11 @@ class FileUploader:
             with open(str(full_path), "wb") as f:
                 f.write(response.content)
             file_size_bytes = full_path.stat().st_size
+
+            logger.info("File uploaded successfully")
+            logger.info(f"File path: {full_path} ")
+            logger.info(f"File size: {file_size_bytes / 1024} KB")
+            logger.info(f"File download target: {download_target}")
 
             record.file_reference = AirbyteRecordMessageFileReference(
                 file_url=download_target,
