@@ -83,6 +83,12 @@ def test_macros_export(test_name, fn_name, found_in_macros):
             "%Y-%m-%dT%H:%M:%SZ",
             "1640998861000000",
         ),
+        (
+            1683729087,
+            "%Y-%m-%dT%H:%M:%SZ",
+            None,
+            "2023-05-10T14:31:27Z",
+        ),
     ],
     ids=[
         "test_datetime_string_to_date",
@@ -96,6 +102,7 @@ def test_macros_export(test_name, fn_name, found_in_macros):
         "test_datetime_string_to_rfc2822_date",
         "test_datetime_string_to_timestamp_in_seconds",
         "test_datetime_string_to_timestamp_in_microseconds",
+        "test_timestamp_to_format_string",
     ],
 )
 def test_format_datetime(input_value, format, input_format, expected_output):
