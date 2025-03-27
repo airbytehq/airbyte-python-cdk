@@ -133,6 +133,8 @@ def full_resolve_manifest(source: ManifestDeclarativeSource) -> AirbyteMessage:
                 stream="full_resolve_manifest",
             ),
         )
+    except AirbyteTracedException as exc:
+        return exc.as_airbyte_message()
     except Exception as exc:
         error = AirbyteTracedException.from_exception(
             exc, message=f"Error full resolving manifest: {str(exc)}"
