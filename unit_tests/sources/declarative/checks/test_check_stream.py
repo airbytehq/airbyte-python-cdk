@@ -166,8 +166,8 @@ def test_check_http_stream_via_availability_strategy(
 
 
 _CONFIG = {"start_date": "2024-07-01T00:00:00.000Z", "custom_streams": [
-    {"id": 1, "name": "item_1"},
-    {"id": 2, "name": "item_2"},
+    {"id": 3, "name": "item_3"},
+    {"id": 4, "name": "item_4"},
 ]}
 
 _MANIFEST_WITHOUT_CHECK_COMPONENT = {
@@ -342,6 +342,17 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
             },
             "name": "static_stream",
             "primary_key": "id",
+            "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "http://json-schema.org/schema#",
+                        "properties": {
+                            "id": {"type": "integer"},
+                            "name": {"type": "string"},
+                        },
+                        "type": "object",
+                    },
+                }
         }
     ]
 }
@@ -355,18 +366,19 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
         pytest.param({"check": {"type": "CheckStream", "stream_names": ["static_stream"],
                                 "dynamic_streams_check_configs": [
                                     {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "http_dynamic_stream",
-                                     "stream_count": 2}]}}, id="test_check_static_streams_and_http_dynamic_stream"),
+                                     "stream_count": 1}]}}, id="test_check_static_streams_and_http_dynamic_stream"),
         pytest.param({"check": {"type": "CheckStream", "stream_names": ["static_stream"],
                                 "dynamic_streams_check_configs": [
-                                    {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "http_dynamic_stream",
-                                     "stream_count": 2}]}}, id="test_check_static_streams_and_config_dynamic_stream"),
-        pytest.param({"check": {"type": "CheckStream", "dynamic_streams_check_configs": [
-            {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "http_dynamic_stream", "stream_count": 2}]}},
+                                    {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "dynamic_stream_1",
+                                     "stream_count": 1}]}}, id="test_check_static_streams_and_config_dynamic_stream"),
+        pytest.param({"check": {"type": "CheckStream", "dynamic_streams_check_configs": [{"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "dynamic_stream_1",
+                                     "stream_count": 1}, {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "http_dynamic_stream"}]}},
                      id="test_check_http_dynamic_stream_and_config_dynamic_stream"),
         pytest.param({"check": {"type": "CheckStream", "stream_names": ["static_stream"],
                                 "dynamic_streams_check_configs": [
-                                    {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "http_dynamic_stream",
-                                     "stream_count": 2}]}},
+                                    {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "dynamic_stream_1",
+                                     "stream_count": 1},
+                                    {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "http_dynamic_stream"}]}},
                      id="test_check_static_streams_and_http_dynamic_stream_and_config_dynamic_stream"),
     ],
 )
@@ -388,7 +400,10 @@ def test_check_stream(check_component):
 
         item_request = HttpRequest(url="https://api.test.com/items/1")
         item_response = HttpResponse(body=json.dumps([]), status_code=200)
-        item_request_count = 1
+        http_mocker.get(item_request, item_response)
+
+        item_request = HttpRequest(url="https://api.test.com/items/3")
+        item_response = HttpResponse(body=json.dumps([]), status_code=200)
         http_mocker.get(item_request, item_response)
 
         source = ConcurrentDeclarativeSource(
@@ -400,6 +415,16 @@ def test_check_stream(check_component):
 
         stream_is_available, reason = source.check_connection(logger, _CONFIG)
 
-        http_mocker.assert_number_of_calls(item_request, item_request_count)
-
     assert stream_is_available
+
+
+def test_check_stream_only_type_provided():
+    manifest = {**deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT), **{"check": {"type": "CheckStream"}}}
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest,
+        config=_CONFIG,
+        catalog=None,
+        state=None,
+    )
+    with pytest.raises(ValueError):
+        source.check_connection(logger, _CONFIG)

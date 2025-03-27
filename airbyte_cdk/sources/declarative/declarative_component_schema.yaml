@@ -316,11 +316,6 @@ definitions:
     type: object
     required:
       - type
-    anyOf:
-      - required:
-          - stream_names
-      - required:
-          - dynamic_streams_check_configs
     properties:
       type:
         type: string

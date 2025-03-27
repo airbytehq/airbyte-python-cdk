@@ -957,9 +957,9 @@ class ModelToComponentFactory:
         dynamic_streams_check_configs = [
             self._create_component_from_model(model=dynamic_stream_check_config, config=config)
             for dynamic_stream_check_config in model.dynamic_streams_check_configs
-        ]
+        ] if model.dynamic_streams_check_configs else []
 
-        return CheckStream(stream_names=model.stream_names or [], dynamic_streams_check_configs=dynamic_streams_check_configs or [], parameters={})
+        return CheckStream(stream_names=model.stream_names or [], dynamic_streams_check_configs=dynamic_streams_check_configs, parameters={})
 
     @staticmethod
     def create_check_dynamic_stream(

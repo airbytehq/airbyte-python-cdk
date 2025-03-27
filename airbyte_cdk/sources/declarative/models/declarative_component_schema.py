@@ -1533,18 +1533,7 @@ class AuthFlow(BaseModel):
     oauth_config_specification: Optional[OAuthConfigSpecification] = None
 
 
-class CheckStream1(BaseModel):
-    type: Literal["CheckStream"]
-    stream_names: List[str] = Field(
-        ...,
-        description="Names of the streams to try reading from when running a check operation.",
-        examples=[["users"], ["users", "contacts"]],
-        title="Stream Names",
-    )
-    dynamic_streams_check_configs: Optional[List[DynamicStreamCheckConfig]] = None
-
-
-class CheckStream2(BaseModel):
+class CheckStream(BaseModel):
     type: Literal["CheckStream"]
     stream_names: Optional[List[str]] = Field(
         None,
@@ -1552,15 +1541,7 @@ class CheckStream2(BaseModel):
         examples=[["users"], ["users", "contacts"]],
         title="Stream Names",
     )
-    dynamic_streams_check_configs: List[DynamicStreamCheckConfig]
-
-
-class CheckStream(BaseModel):
-    __root__: Union[CheckStream1, CheckStream2] = Field(
-        ...,
-        description="Defines the streams to try reading when running a check operation.",
-        title="Streams to Check",
-    )
+    dynamic_streams_check_configs: Optional[List[DynamicStreamCheckConfig]] = None
 
 
 class IncrementingCountCursor(BaseModel):
