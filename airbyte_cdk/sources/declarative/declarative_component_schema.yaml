@@ -3792,6 +3792,13 @@ definitions:
       type:
         type: string
         enum: [DynamicDeclarativeStream]
+      name:
+        title: Name
+        description: The dynamic stream name.
+        type: string
+        default: ""
+        example:
+          - "Tables"
       stream_template:
         title: Stream Template
         description: Reference to the stream template.

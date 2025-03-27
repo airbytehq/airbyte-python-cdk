@@ -2537,6 +2537,9 @@ class HttpComponentsResolver(BaseModel):
 
 class DynamicDeclarativeStream(BaseModel):
     type: Literal["DynamicDeclarativeStream"]
+    name: Optional[str] = Field(
+        "", description="The dynamic stream name.", example=["Tables"], title="Name"
+    )
     stream_template: DeclarativeStream = Field(
         ..., description="Reference to the stream template.", title="Stream Template"
     )
