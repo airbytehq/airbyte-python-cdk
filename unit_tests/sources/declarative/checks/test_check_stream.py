@@ -4,19 +4,19 @@
 
 import json
 import logging
+from copy import deepcopy
 from typing import Any, Iterable, Mapping, Optional
 from unittest.mock import MagicMock
-from copy import deepcopy
 
 import pytest
 import requests
 
 from jsonschema.exceptions import ValidationError
 from airbyte_cdk.sources.declarative.checks.check_stream import CheckStream
-from airbyte_cdk.sources.streams.http import HttpStream
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
+from airbyte_cdk.sources.streams.http import HttpStream
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 
 logger = logging.getLogger("test")
@@ -31,11 +31,11 @@ record = MagicMock()
     [
         ("test_success_check", record, stream_names, {}, (True, None)),
         (
-                "test_success_check_stream_slice",
-                record,
-                stream_names,
-                {"slice": "slice_value"},
-                (True, None),
+            "test_success_check_stream_slice",
+            record,
+            stream_names,
+            {"slice": "slice_value"},
+            (True, None),
         ),
         ("test_fail_check", None, stream_names, {}, (True, None)),
         ("test_try_to_check_invalid stream", record, ["invalid_stream_name"], {}, None),
@@ -43,7 +43,7 @@ record = MagicMock()
 )
 @pytest.mark.parametrize("slices_as_list", [True, False])
 def test_check_stream_with_slices_as_list(
-        test_name, record, streams_to_check, stream_slice, expectation, slices_as_list
+    test_name, record, streams_to_check, stream_slice, expectation, slices_as_list
 ):
     stream = MagicMock()
     stream.name = "s1"
@@ -108,22 +108,22 @@ def test_check_stream_with_no_stream_slices_aborts():
     "test_name, response_code, available_expectation, expected_messages",
     [
         (
-                "test_stream_unavailable_unhandled_error",
-                404,
-                False,
-                ["Not found. The requested resource was not found on the server."],
+            "test_stream_unavailable_unhandled_error",
+            404,
+            False,
+            ["Not found. The requested resource was not found on the server."],
         ),
         (
-                "test_stream_unavailable_handled_error",
-                403,
-                False,
-                ["Forbidden. You don't have permission to access this resource."],
+            "test_stream_unavailable_handled_error",
+            403,
+            False,
+            ["Forbidden. You don't have permission to access this resource."],
         ),
         ("test_stream_available", 200, True, []),
     ],
 )
 def test_check_http_stream_via_availability_strategy(
-        mocker, test_name, response_code, available_expectation, expected_messages
+    mocker, test_name, response_code, available_expectation, expected_messages
 ):
     class MockHttpStream(HttpStream):
         url_base = "https://test_base_url.com"
@@ -166,10 +166,13 @@ def test_check_http_stream_via_availability_strategy(
         assert message in reason
 
 
-_CONFIG = {"start_date": "2024-07-01T00:00:00.000Z", "custom_streams": [
-    {"id": 3, "name": "item_3"},
-    {"id": 4, "name": "item_4"},
-]}
+_CONFIG = {
+    "start_date": "2024-07-01T00:00:00.000Z",
+    "custom_streams": [
+        {"id": 3, "name": "item_3"},
+        {"id": 4, "name": "item_4"},
+    ],
+}
 
 _MANIFEST_WITHOUT_CHECK_COMPONENT = {
     "version": "6.7.0",
@@ -316,7 +319,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                     },
                 ],
             },
-        }
+        },
     ],
     "streams": [
         {
@@ -355,7 +358,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                 },
             }
         }
-    ]
+    ],
 }
 
 
