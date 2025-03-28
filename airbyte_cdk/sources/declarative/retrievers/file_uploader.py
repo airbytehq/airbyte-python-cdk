@@ -57,12 +57,12 @@ class FileUploader:
             file_size_bytes = full_path.stat().st_size
 
             logger.info("File uploaded successfully")
-            logger.info(f"File path: {full_path} ")
+            logger.info(f"File url: {str(full_path)} ")
             logger.info(f"File size: {file_size_bytes / 1024} KB")
-            logger.info(f"File download target: {download_target}")
+            logger.info(f"File relative path: {str(file_relative_path)}")
 
             record.file_reference = AirbyteRecordMessageFileReference(
-                file_url=download_target,
+                file_url=str(full_path),
                 file_relative_path=str(file_relative_path),
                 file_size_bytes=file_size_bytes,
             )
