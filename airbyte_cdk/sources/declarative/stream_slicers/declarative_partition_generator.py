@@ -3,7 +3,6 @@
 from typing import Any, Iterable, Mapping, Optional
 
 from airbyte_cdk.sources.declarative.retrievers import Retriever
-from airbyte_cdk.sources.declarative.retrievers.file_uploader import FileUploader
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.partition_generator import PartitionGenerator
@@ -19,7 +18,6 @@ class DeclarativePartitionFactory:
         json_schema: Mapping[str, Any],
         retriever: Retriever,
         message_repository: MessageRepository,
-        file_uploader: Optional[FileUploader] = None,
     ) -> None:
         """
         The DeclarativePartitionFactory takes a retriever_factory and not a retriever directly. The reason is that our components are not
@@ -30,7 +28,6 @@ class DeclarativePartitionFactory:
         self._json_schema = json_schema
         self._retriever = retriever
         self._message_repository = message_repository
-        self._file_uploader = file_uploader
 
     def create(self, stream_slice: StreamSlice) -> Partition:
         return DeclarativePartition(
@@ -38,7 +35,6 @@ class DeclarativePartitionFactory:
             self._json_schema,
             self._retriever,
             self._message_repository,
-            self._file_uploader,
             stream_slice,
         )
 
@@ -50,14 +46,12 @@ class DeclarativePartition(Partition):
         json_schema: Mapping[str, Any],
         retriever: Retriever,
         message_repository: MessageRepository,
-        file_uploader: Optional[FileUploader],
         stream_slice: StreamSlice,
     ):
         self._stream_name = stream_name
         self._json_schema = json_schema
         self._retriever = retriever
         self._message_repository = message_repository
-        self._file_uploader = file_uploader
         self._stream_slice = stream_slice
         self._hash = SliceHasher.hash(self._stream_name, self._stream_slice)
 
@@ -73,8 +67,6 @@ class DeclarativePartition(Partition):
                         associated_slice=self._stream_slice,
                     )
                 )
-                if self._file_uploader:
-                    self._file_uploader.upload(record)
                 yield record
             else:
                 self._message_repository.emit_message(stream_data)
