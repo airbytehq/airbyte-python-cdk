@@ -397,6 +397,12 @@ class ManifestDeclarativeSource(DeclarativeSource):
             for dynamic_stream in components_resolver.resolve_components(
                 stream_template_config=stream_template_config
             ):
+                dynamic_stream = {
+                    **ManifestComponentTransformer().propagate_types_and_parameters(
+                        "", dynamic_stream, {}, use_parent_parameters=True
+                    )
+                }
+
                 if "type" not in dynamic_stream:
                     dynamic_stream["type"] = "DeclarativeStream"
 
