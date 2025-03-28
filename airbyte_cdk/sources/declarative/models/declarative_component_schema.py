@@ -42,13 +42,15 @@ class BearerAuthenticator(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class CheckStream(BaseModel):
-    type: Literal["CheckStream"]
-    stream_names: List[str] = Field(
-        ...,
-        description="Names of the streams to try reading from when running a check operation.",
-        examples=[["users"], ["users", "contacts"]],
-        title="Stream Names",
+class DynamicStreamCheckConfig(BaseModel):
+    type: Literal["DynamicStreamCheckConfig"]
+    dynamic_stream_name: str = Field(
+        ..., description="The dynamic stream name.", title="Dynamic Stream Name"
+    )
+    stream_count: Optional[int] = Field(
+        0,
+        description="Numbers of the streams to try reading from when running a check operation.",
+        title="Stream Count",
     )
 
 
@@ -1521,6 +1523,17 @@ class AuthFlow(BaseModel):
         title="Predicate value",
     )
     oauth_config_specification: Optional[OAuthConfigSpecification] = None
+
+
+class CheckStream(BaseModel):
+    type: Literal["CheckStream"]
+    stream_names: Optional[List[str]] = Field(
+        None,
+        description="Names of the streams to try reading from when running a check operation.",
+        examples=[["users"], ["users", "contacts"]],
+        title="Stream Names",
+    )
+    dynamic_streams_check_configs: Optional[List[DynamicStreamCheckConfig]] = None
 
 
 class IncrementingCountCursor(BaseModel):

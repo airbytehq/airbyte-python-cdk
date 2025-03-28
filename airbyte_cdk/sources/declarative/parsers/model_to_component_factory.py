@@ -54,7 +54,11 @@ from airbyte_cdk.sources.declarative.auth.token_provider import (
     SessionTokenProvider,
     TokenProvider,
 )
-from airbyte_cdk.sources.declarative.checks import CheckDynamicStream, CheckStream
+from airbyte_cdk.sources.declarative.checks import (
+    CheckDynamicStream,
+    CheckStream,
+    DynamicStreamCheckConfig,
+)
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
@@ -217,6 +221,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DynamicSchemaLoader as DynamicSchemaLoaderModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    DynamicStreamCheckConfig as DynamicStreamCheckConfigModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ExponentialBackoffStrategy as ExponentialBackoffStrategyModel,
@@ -559,6 +566,7 @@ class ModelToComponentFactory:
             BasicHttpAuthenticatorModel: self.create_basic_http_authenticator,
             BearerAuthenticatorModel: self.create_bearer_authenticator,
             CheckStreamModel: self.create_check_stream,
+            DynamicStreamCheckConfigModel: self.create_dynamic_stream_check_config,
             CheckDynamicStreamModel: self.create_check_dynamic_stream,
             CompositeErrorHandlerModel: self.create_composite_error_handler,
             ConcurrencyLevelModel: self.create_concurrency_level,
@@ -936,8 +944,36 @@ class ModelToComponentFactory:
         )
 
     @staticmethod
-    def create_check_stream(model: CheckStreamModel, config: Config, **kwargs: Any) -> CheckStream:
-        return CheckStream(stream_names=model.stream_names, parameters={})
+    def create_dynamic_stream_check_config(
+        model: DynamicStreamCheckConfigModel, config: Config, **kwargs: Any
+    ) -> DynamicStreamCheckConfig:
+        return DynamicStreamCheckConfig(
+            dynamic_stream_name=model.dynamic_stream_name,
+            stream_count=model.stream_count or 0,
+        )
+
+    def create_check_stream(
+        self, model: CheckStreamModel, config: Config, **kwargs: Any
+    ) -> CheckStream:
+        if model.dynamic_streams_check_configs is None and model.stream_names is None:
+            raise ValueError(
+                "Expected either stream_names or dynamic_streams_check_configs to be set for CheckStream"
+            )
+
+        dynamic_streams_check_configs = (
+            [
+                self._create_component_from_model(model=dynamic_stream_check_config, config=config)
+                for dynamic_stream_check_config in model.dynamic_streams_check_configs
+            ]
+            if model.dynamic_streams_check_configs
+            else []
+        )
+
+        return CheckStream(
+            stream_names=model.stream_names or [],
+            dynamic_streams_check_configs=dynamic_streams_check_configs,
+            parameters={},
+        )
 
     @staticmethod
     def create_check_dynamic_stream(
