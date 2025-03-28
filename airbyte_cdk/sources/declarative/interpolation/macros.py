@@ -172,7 +172,7 @@ def format_datetime(
         return dt.strftime(format)
 
     if isinstance(dt, int):
-        dt_datetime = datetime.datetime.fromtimestamp(dt, tz=datetime.timezone.utc)
+        dt_datetime = DatetimeParser().parse(dt, input_format if input_format else "%s")
     else:
         dt_datetime = (
             datetime.datetime.strptime(dt, input_format) if input_format else str_to_datetime(dt)
