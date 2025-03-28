@@ -10,8 +10,8 @@ from unittest.mock import MagicMock
 
 import pytest
 import requests
-
 from jsonschema.exceptions import ValidationError
+
 from airbyte_cdk.sources.declarative.checks.check_stream import CheckStream
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
@@ -356,7 +356,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
                     },
                     "type": "object",
                 },
-            }
+            },
         }
     ],
 }
@@ -365,73 +365,226 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
 @pytest.mark.parametrize(
     "check_component, expected_result, expectation, response_code, expected_messages",
     [
-        pytest.param({"check": {"type": "CheckStream", "stream_names": ["static_stream"]}}, True, False, 200,
-                     [{"id": 1, "name": "static_1"}, {"id": 2, "name": "static_2"}],
-                     id="test_check_only_static_streams"),
-        pytest.param({"check": {"type": "CheckStream", "stream_names": ["static_stream"],
-                                "dynamic_streams_check_configs": [
-                                    {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "http_dynamic_stream",
-                                     "stream_count": 1}]}}, True, False, 200, [],
-                     id="test_check_static_streams_and_http_dynamic_stream"),
-        pytest.param({"check": {"type": "CheckStream", "stream_names": ["static_stream"],
-                                "dynamic_streams_check_configs": [
-                                    {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "dynamic_stream_1",
-                                     "stream_count": 1}]}}, True, False, 200, [],
-                     id="test_check_static_streams_and_config_dynamic_stream"),
-        pytest.param({"check": {"type": "CheckStream", "dynamic_streams_check_configs": [
-            {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "dynamic_stream_1",
-             "stream_count": 1}, {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "http_dynamic_stream"}]}},
-                     True, False, 200, [],
-                     id="test_check_http_dynamic_stream_and_config_dynamic_stream"),
-        pytest.param({"check": {"type": "CheckStream", "stream_names": ["static_stream"],
-                                "dynamic_streams_check_configs": [
-                                    {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "dynamic_stream_1",
-                                     "stream_count": 1},
-                                    {"type": "DynamicStreamCheckConfig",
-                                     "dynamic_stream_name": "http_dynamic_stream"}]}}, True, False, 200, [],
-                     id="test_check_static_streams_and_http_dynamic_stream_and_config_dynamic_stream"),
+        pytest.param(
+            {"check": {"type": "CheckStream", "stream_names": ["static_stream"]}},
+            True,
+            False,
+            200,
+            [{"id": 1, "name": "static_1"}, {"id": 2, "name": "static_2"}],
+            id="test_check_only_static_streams",
+        ),
+        pytest.param(
+            {
+                "check": {
+                    "type": "CheckStream",
+                    "stream_names": ["static_stream"],
+                    "dynamic_streams_check_configs": [
+                        {
+                            "type": "DynamicStreamCheckConfig",
+                            "dynamic_stream_name": "http_dynamic_stream",
+                            "stream_count": 1,
+                        }
+                    ],
+                }
+            },
+            True,
+            False,
+            200,
+            [],
+            id="test_check_static_streams_and_http_dynamic_stream",
+        ),
+        pytest.param(
+            {
+                "check": {
+                    "type": "CheckStream",
+                    "stream_names": ["static_stream"],
+                    "dynamic_streams_check_configs": [
+                        {
+                            "type": "DynamicStreamCheckConfig",
+                            "dynamic_stream_name": "dynamic_stream_1",
+                            "stream_count": 1,
+                        }
+                    ],
+                }
+            },
+            True,
+            False,
+            200,
+            [],
+            id="test_check_static_streams_and_config_dynamic_stream",
+        ),
+        pytest.param(
+            {
+                "check": {
+                    "type": "CheckStream",
+                    "dynamic_streams_check_configs": [
+                        {
+                            "type": "DynamicStreamCheckConfig",
+                            "dynamic_stream_name": "dynamic_stream_1",
+                            "stream_count": 1,
+                        },
+                        {
+                            "type": "DynamicStreamCheckConfig",
+                            "dynamic_stream_name": "http_dynamic_stream",
+                        },
+                    ],
+                }
+            },
+            True,
+            False,
+            200,
+            [],
+            id="test_check_http_dynamic_stream_and_config_dynamic_stream",
+        ),
+        pytest.param(
+            {
+                "check": {
+                    "type": "CheckStream",
+                    "stream_names": ["static_stream"],
+                    "dynamic_streams_check_configs": [
+                        {
+                            "type": "DynamicStreamCheckConfig",
+                            "dynamic_stream_name": "dynamic_stream_1",
+                            "stream_count": 1,
+                        },
+                        {
+                            "type": "DynamicStreamCheckConfig",
+                            "dynamic_stream_name": "http_dynamic_stream",
+                        },
+                    ],
+                }
+            },
+            True,
+            False,
+            200,
+            [],
+            id="test_check_static_streams_and_http_dynamic_stream_and_config_dynamic_stream",
+        ),
         pytest.param(
             {"check": {"type": "CheckStream", "stream_names": ["non_existent_stream"]}},
             False,
-            True, 200, [],
-            id="test_non_existent_static_stream"
+            True,
+            200,
+            [],
+            id="test_non_existent_static_stream",
         ),
         pytest.param(
-            {"check": {"type": "CheckStream", "dynamic_streams_check_configs": [
-                {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "unknown_dynamic_stream",
-                 "stream_count": 1}]}}
-            ,
+            {
+                "check": {
+                    "type": "CheckStream",
+                    "dynamic_streams_check_configs": [
+                        {
+                            "type": "DynamicStreamCheckConfig",
+                            "dynamic_stream_name": "unknown_dynamic_stream",
+                            "stream_count": 1,
+                        }
+                    ],
+                }
+            },
             False,
-            False, 200, [],
-            id="test_non_existent_dynamic_stream"
+            False,
+            200,
+            [],
+            id="test_non_existent_dynamic_stream",
         ),
-        pytest.param({"check": {"type": "CheckStream", "stream_names": ["static_stream"]}}, False, False, 404,
-                     ["Not found. The requested resource was not found on the server."],
-                     id="test_stream_unavailable_unhandled_error"),
-        pytest.param({"check": {"type": "CheckStream", "stream_names": ["static_stream"]}}, False, False, 403,
-                     ["Forbidden. You don't have permission to access this resource."],
-                     id="test_stream_unavailable_handled_error"),
-        pytest.param({"check": {"type": "CheckStream", "stream_names": ["static_stream"]}}, False, False, 401,
-                     ["Unauthorized. Please ensure you are authenticated correctly."],
-                     id="test_stream_unauthorized_error"),
-        pytest.param({"check": {"type": "CheckStream", "dynamic_streams_check_configs": [
-            {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "dynamic_stream_1",
-             "stream_count": 1}, {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "http_dynamic_stream"}]}},
-                     False, False, 404, ["Not found. The requested resource was not found on the server."],
-                     id="test_dynamic_stream_unavailable_unhandled_error"),
-        pytest.param({"check": {"type": "CheckStream", "dynamic_streams_check_configs": [
-            {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "dynamic_stream_1",
-             "stream_count": 1}, {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "http_dynamic_stream"}]}},
-                     False, False, 403, ["Forbidden. You don't have permission to access this resource."],
-                     id="test_dynamic_stream_unavailable_handled_error"),
-        pytest.param({"check": {"type": "CheckStream", "dynamic_streams_check_configs": [
-            {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "dynamic_stream_1",
-             "stream_count": 1}, {"type": "DynamicStreamCheckConfig", "dynamic_stream_name": "http_dynamic_stream"}]}},
-                     False, False, 401, ["Unauthorized. Please ensure you are authenticated correctly."],
-                     id="test_dynamic_stream_unauthorized_error"),
+        pytest.param(
+            {"check": {"type": "CheckStream", "stream_names": ["static_stream"]}},
+            False,
+            False,
+            404,
+            ["Not found. The requested resource was not found on the server."],
+            id="test_stream_unavailable_unhandled_error",
+        ),
+        pytest.param(
+            {"check": {"type": "CheckStream", "stream_names": ["static_stream"]}},
+            False,
+            False,
+            403,
+            ["Forbidden. You don't have permission to access this resource."],
+            id="test_stream_unavailable_handled_error",
+        ),
+        pytest.param(
+            {"check": {"type": "CheckStream", "stream_names": ["static_stream"]}},
+            False,
+            False,
+            401,
+            ["Unauthorized. Please ensure you are authenticated correctly."],
+            id="test_stream_unauthorized_error",
+        ),
+        pytest.param(
+            {
+                "check": {
+                    "type": "CheckStream",
+                    "dynamic_streams_check_configs": [
+                        {
+                            "type": "DynamicStreamCheckConfig",
+                            "dynamic_stream_name": "dynamic_stream_1",
+                            "stream_count": 1,
+                        },
+                        {
+                            "type": "DynamicStreamCheckConfig",
+                            "dynamic_stream_name": "http_dynamic_stream",
+                        },
+                    ],
+                }
+            },
+            False,
+            False,
+            404,
+            ["Not found. The requested resource was not found on the server."],
+            id="test_dynamic_stream_unavailable_unhandled_error",
+        ),
+        pytest.param(
+            {
+                "check": {
+                    "type": "CheckStream",
+                    "dynamic_streams_check_configs": [
+                        {
+                            "type": "DynamicStreamCheckConfig",
+                            "dynamic_stream_name": "dynamic_stream_1",
+                            "stream_count": 1,
+                        },
+                        {
+                            "type": "DynamicStreamCheckConfig",
+                            "dynamic_stream_name": "http_dynamic_stream",
+                        },
+                    ],
+                }
+            },
+            False,
+            False,
+            403,
+            ["Forbidden. You don't have permission to access this resource."],
+            id="test_dynamic_stream_unavailable_handled_error",
+        ),
+        pytest.param(
+            {
+                "check": {
+                    "type": "CheckStream",
+                    "dynamic_streams_check_configs": [
+                        {
+                            "type": "DynamicStreamCheckConfig",
+                            "dynamic_stream_name": "dynamic_stream_1",
+                            "stream_count": 1,
+                        },
+                        {
+                            "type": "DynamicStreamCheckConfig",
+                            "dynamic_stream_name": "http_dynamic_stream",
+                        },
+                    ],
+                }
+            },
+            False,
+            False,
+            401,
+            ["Unauthorized. Please ensure you are authenticated correctly."],
+            id="test_dynamic_stream_unauthorized_error",
+        ),
     ],
 )
-def test_check_stream1(check_component, expected_result, expectation, response_code, expected_messages):
+def test_check_stream1(
+    check_component, expected_result, expectation, response_code, expected_messages
+):
     manifest = {**deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT), **check_component}
 
     with HttpMocker() as http_mocker:
@@ -472,9 +625,15 @@ def test_check_stream1(check_component, expected_result, expectation, response_c
 
 def test_check_stream_missing_fields():
     """Test if ValueError is raised when dynamic_streams_check_configs is missing required fields."""
-    manifest = {**deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT),
-                **{"check": {"type": "CheckStream",
-                             "dynamic_streams_check_configs": [{"type": "DynamicStreamCheckConfig"}]}}}
+    manifest = {
+        **deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT),
+        **{
+            "check": {
+                "type": "CheckStream",
+                "dynamic_streams_check_configs": [{"type": "DynamicStreamCheckConfig"}],
+            }
+        },
+    }
     with pytest.raises(ValidationError):
         source = ConcurrentDeclarativeSource(
             source_config=manifest,
@@ -485,8 +644,7 @@ def test_check_stream_missing_fields():
 
 
 def test_check_stream_only_type_provided():
-    manifest = {**deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT),
-                **{"check": {"type": "CheckStream"}}}
+    manifest = {**deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT), **{"check": {"type": "CheckStream"}}}
     source = ConcurrentDeclarativeSource(
         source_config=manifest,
         config=_CONFIG,
