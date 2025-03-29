@@ -1,5 +1,6 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
+from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
