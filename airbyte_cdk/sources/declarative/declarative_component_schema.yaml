@@ -1023,6 +1023,15 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  EmitPartialRecordMergeStrategy:
+    title: Emit Partial Record
+    description: Record merge strategy where in the case where multiple requests are needed to retrieve all properties, properties are not consolidated back into a single record and are instead emitted as separate groups of properties. This strategy should only be used when records do not have a unique identifier like a primary key.
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [EmitPartialRecordMergeStrategy]
   JwtAuthenticator:
     title: JWT Authenticator
     description: Authenticator for requests using JWT authentication flow.
@@ -1731,6 +1740,30 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  GroupByKeyMergeStrategy:
+    title: Group by Key
+    description: Record merge strategy that combines records according to fields on the record.
+    required:
+      - type
+      - key
+    properties:
+      type:
+        type: string
+        enum: [GroupByKeyMergeStrategy]
+      key:
+        title: Key
+        description: The name of the field on the record whose value will be used to group properties that were retrieved through multiple API requests.
+        anyOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+        examples:
+          - "id"
+          - ["parent_id", "end_date"]
+      $parameters:
+        type: object
+        additionalProperties: true
   SessionTokenAuthenticator:
     type: object
     required:
@@ -1950,7 +1983,9 @@ definitions:
           - type: string
           - type: object
             additionalProperties:
-              type: string
+              anyOf:
+                - type: string
+                - $ref": "#/definitions/QueryProperties"
         interpolation_context:
           - next_page_token
           - stream_interval
@@ -2968,6 +3003,98 @@ definitions:
     examples:
       - id
       - ["code", "type"]
+  PropertiesFromEndpoint:
+    title: Properties from Endpoint
+    description: Defines the behavior for fetching the list of properties from an API that will be loaded into the requests to extract records.
+    type: object
+    required:
+      - type
+      - property_field_path
+      - retriever
+    properties:
+      type:
+        type: string
+        enum: [PropertiesFromEndpoint]
+      property_field_path:
+        description: Describes the path to the field that should be extracted
+        type: array
+        items:
+          type: string
+        examples:
+          - ["name"]
+        interpolation_context:
+          - config
+          - parameters
+      retriever:
+        description: Requester component that describes how to fetch the properties to query from a remote API endpoint.
+        anyOf:
+          - "$ref": "#/definitions/CustomRetriever"
+          - "$ref": "#/definitions/SimpleRetriever"
+      $parameters:
+        type: object
+        additionalProperties: true
+  PropertyChunking:
+    title: Property Chunking
+    description: For APIs with restrictions on the amount of properties that can be requester per request, property chunking can be applied to make multiple requests with a subset of the properties.
+    type: object
+    required:
+      - type
+      - property_limit_type
+    properties:
+      type:
+        type: string
+        enum: [PropertyChunking]
+      property_limit_type:
+        title: Property Limit Type
+        description: The type used to determine the maximum number of properties per chunk
+        enum:
+          - characters
+          - property_count
+      property_limit:
+        title: Property Limit
+        description: The maximum amount of properties that can be retrieved per request according to the limit type.
+        type: integer
+      record_merge_strategy:
+        title: Record Merge Strategy
+        description: Dictates how to records that require multiple requests to get all properties should be emitted to the destination
+        anyOf:
+          - "$ref": "#/definitions/EmitPartialRecordMergeStrategy"
+          - "$ref": "#/definitions/GroupByKeyMergeStrategy"
+      $parameters:
+        type: object
+        additionalProperties: true
+  QueryProperties:
+    title: Query Properties
+    description: For APIs that require explicit specification of the properties to query for, this component specifies which property fields and how they are supplied to outbound requests.
+    type: object
+    required:
+      - type
+      - property_list
+    properties:
+      type:
+        type: string
+        enum: [QueryProperties]
+      property_list:
+        title: Property List
+        description: The set of properties that will be queried for in the outbound request. This can either be statically defined or dynamic based on an API endpoint
+        anyOf:
+          - type: array
+            items:
+              type: string
+          - "$ref": "#/definitions/PropertiesFromEndpoint"
+      always_include_properties:
+        title: Always Include Properties
+        description: The list of properties that should be included in every set of properties when multiple chunks of properties are being requested.
+        type: array
+        items:
+          type: string
+      property_chunking:
+        title: Property Chunking
+        description: Defines how query properties will be grouped into smaller sets for APIs with limitations on the number of properties fetched per API request.
+        "$ref": "#/definitions/PropertyChunking"
+      $parameters:
+        type: object
+        additionalProperties: true
   RecordFilter:
     title: Record Filter
     description: Filter applied on a list of records.

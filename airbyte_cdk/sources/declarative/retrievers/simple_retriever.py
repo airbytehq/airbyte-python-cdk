@@ -1,8 +1,9 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
 import json
+from collections import defaultdict
 from dataclasses import InitVar, dataclass, field
 from functools import partial
 from itertools import islice
@@ -12,6 +13,7 @@ from typing import (
     Iterable,
     List,
     Mapping,
+    MutableMapping,
     Optional,
     Set,
     Tuple,
@@ -35,6 +37,7 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
     DefaultRequestOptionsProvider,
     RequestOptionsProvider,
 )
+from airbyte_cdk.sources.declarative.requesters.request_properties import QueryProperties
 from airbyte_cdk.sources.declarative.requesters.requester import Requester
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
@@ -88,6 +91,7 @@ class SimpleRetriever(Retriever):
     )
     cursor: Optional[DeclarativeCursor] = None
     ignore_stream_slicer_parameters_on_paginated_requests: bool = False
+    additional_query_properties: Optional[QueryProperties] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._paginator = self.paginator or NoPagination(parameters=parameters)
@@ -445,43 +449,103 @@ class SimpleRetriever(Retriever):
         :param stream_slice: The stream slice to read data for
         :return: The records read from the API source
         """
-        _slice = stream_slice or StreamSlice(partition={}, cursor_slice={})  # None-check
 
-        most_recent_record_from_slice = None
-        record_generator = partial(
-            self._parse_records,
-            stream_slice=stream_slice,
-            stream_state=self.state or {},
-            records_schema=records_schema,
-        )
-
-        if self.cursor and isinstance(self.cursor, ResumableFullRefreshCursor):
-            stream_state = self.state
-
-            # Before syncing the RFR stream, we check if the job's prior attempt was successful and don't need to
-            # fetch more records. The platform deletes stream state for full refresh streams before starting a
-            # new job, so we don't need to worry about this value existing for the initial attempt
-            if stream_state.get(FULL_REFRESH_SYNC_COMPLETE_KEY):
-                return
-
-            yield from self._read_single_page(record_generator, stream_state, _slice)
+        if self.additional_query_properties:
+            property_chunks = self.additional_query_properties.get_request_property_chunks(
+                stream_slice=stream_slice
+            )
+            has_multiple_chunks = self.additional_query_properties.has_multiple_chunks(
+                stream_slice=stream_slice
+            )
         else:
-            for stream_data in self._read_pages(record_generator, self.state, _slice):
-                current_record = self._extract_record(stream_data, _slice)
-                if self.cursor and current_record:
-                    self.cursor.observe(_slice, current_record)
+            property_chunks = [[""]]
+            has_multiple_chunks = False
+        merged_records: MutableMapping[str, Any] = defaultdict(dict)
+        _slice = stream_slice or StreamSlice(partition={}, cursor_slice={})  # None-check
+        most_recent_record_from_slice = None
 
-                # Latest record read, not necessarily within slice boundaries.
-                # TODO Remove once all custom components implement `observe` method.
-                # https://github.com/airbytehq/airbyte-internal-issues/issues/6955
-                most_recent_record_from_slice = self._get_most_recent_record(
-                    most_recent_record_from_slice, current_record, _slice
+        if self.additional_query_properties:
+            for properties in property_chunks:
+                _slice = StreamSlice(
+                    partition=_slice.partition or {},
+                    cursor_slice=_slice.cursor_slice or {},
+                    extra_fields={"query_properties": properties},
+                )  # None-check
+
+                record_generator = partial(
+                    self._parse_records,
+                    stream_slice=_slice,
+                    stream_state=self.state or {},
+                    records_schema=records_schema,
                 )
-                yield stream_data
 
+                for stream_data in self._read_pages(record_generator, self.state, _slice):
+                    current_record = self._extract_record(stream_data, _slice)
+                    if self.cursor and current_record:
+                        # Record merging should only be done if there are multiple slices. Otherwise, yielding
+                        # immediately is more efficient so records can be emitted immediately
+                        if (
+                            self.additional_query_properties.property_chunking
+                            and has_multiple_chunks
+                        ):
+                            merge_key = (
+                                self.additional_query_properties.property_chunking.get_merge_key(
+                                    current_record
+                                )
+                            )
+                            merged_records[merge_key].update(current_record)
+                        else:
+                            yield stream_data
+
+                        self.cursor.observe(_slice, current_record)
+
+                    # Latest record read, not necessarily within slice boundaries.
+                    # TODO Remove once all custom components implement `observe` method.
+                    # https://github.com/airbytehq/airbyte-internal-issues/issues/6955
+                    most_recent_record_from_slice = self._get_most_recent_record(
+                        most_recent_record_from_slice, current_record, _slice
+                    )
             if self.cursor:
                 self.cursor.close_slice(_slice, most_recent_record_from_slice)
-        return
+            yield from merged_records.values()
+        else:
+            _slice = stream_slice or StreamSlice(partition={}, cursor_slice={})  # None-check
+
+            most_recent_record_from_slice = None
+            record_generator = partial(
+                self._parse_records,
+                stream_slice=stream_slice,
+                stream_state=self.state or {},
+                records_schema=records_schema,
+            )
+
+            if self.cursor and isinstance(self.cursor, ResumableFullRefreshCursor):
+                stream_state = self.state
+
+                # Before syncing the RFR stream, we check if the job's prior attempt was successful and don't need to
+                # fetch more records. The platform deletes stream state for full refresh streams before starting a
+                # new job, so we don't need to worry about this value existing for the initial attempt
+                if stream_state.get(FULL_REFRESH_SYNC_COMPLETE_KEY):
+                    return
+
+                yield from self._read_single_page(record_generator, stream_state, _slice)
+            else:
+                for stream_data in self._read_pages(record_generator, self.state, _slice):
+                    current_record = self._extract_record(stream_data, _slice)
+                    if self.cursor and current_record:
+                        self.cursor.observe(_slice, current_record)
+
+                    # Latest record read, not necessarily within slice boundaries.
+                    # TODO Remove once all custom components implement `observe` method.
+                    # https://github.com/airbytehq/airbyte-internal-issues/issues/6955
+                    most_recent_record_from_slice = self._get_most_recent_record(
+                        most_recent_record_from_slice, current_record, _slice
+                    )
+                    yield stream_data
+
+                if self.cursor:
+                    self.cursor.close_slice(_slice, most_recent_record_from_slice)
+            return
 
     def _get_most_recent_record(
         self,

@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
 from __future__ import annotations
@@ -228,6 +228,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     FlattenFields as FlattenFieldsModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    GroupByKeyMergeStrategy as GroupByKeyMergeStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     GroupingPartitionRouter as GroupingPartitionRouterModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -316,6 +319,18 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ParentStreamConfig as ParentStreamConfigModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    PropertiesFromEndpoint as PropertiesFromEndpointModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    PropertyChunking as PropertyChunkingModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    PropertyLimitType as PropertyLimitTypeModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    QueryProperties as QueryPropertiesModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     Rate as RateModel,
@@ -433,6 +448,15 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
     RequestOptionsProvider,
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
+from airbyte_cdk.sources.declarative.requesters.request_properties import (
+    GroupByKey,
+    PropertiesFromEndpoint,
+    PropertyChunking,
+    QueryProperties,
+)
+from airbyte_cdk.sources.declarative.requesters.request_properties.property_chunking import (
+    PropertyLimitType,
+)
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
 from airbyte_cdk.sources.declarative.resolvers import (
     ComponentMappingDefinition,
@@ -588,6 +612,7 @@ class ModelToComponentFactory:
             ResponseToFileExtractorModel: self.create_response_to_file_extractor,
             ExponentialBackoffStrategyModel: self.create_exponential_backoff_strategy,
             SessionTokenAuthenticatorModel: self.create_session_token_authenticator,
+            GroupByKeyMergeStrategyModel: self.create_group_by_key,
             HttpRequesterModel: self.create_http_requester,
             HttpResponseFilterModel: self.create_http_response_filter,
             InlineSchemaLoaderModel: self.create_inline_schema_loader,
@@ -617,6 +642,9 @@ class ModelToComponentFactory:
             OffsetIncrementModel: self.create_offset_increment,
             PageIncrementModel: self.create_page_increment,
             ParentStreamConfigModel: self.create_parent_stream_config,
+            PropertiesFromEndpointModel: self.create_properties_from_endpoint,
+            PropertyChunkingModel: self.create_property_chunking,
+            QueryPropertiesModel: self.create_query_properties,
             RecordFilterModel: self.create_record_filter,
             RecordSelectorModel: self.create_record_selector,
             RemoveFieldsModel: self.create_remove_fields,
@@ -2047,8 +2075,8 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
+    @staticmethod
     def create_response_to_file_extractor(
-        self,
         model: ResponseToFileExtractorModel,
         **kwargs: Any,
     ) -> ResponseToFileExtractor:
@@ -2062,11 +2090,16 @@ class ModelToComponentFactory:
             factor=model.factor or 5, parameters=model.parameters or {}, config=config
         )
 
+    @staticmethod
+    def create_group_by_key(model: GroupByKeyMergeStrategyModel, config: Config) -> GroupByKey:
+        return GroupByKey(model.key, config=config, parameters=model.parameters or {})
+
     def create_http_requester(
         self,
         model: HttpRequesterModel,
         config: Config,
         decoder: Decoder = JsonDecoder(parameters={}),
+        query_properties_key: Optional[str] = None,
         *,
         name: str,
     ) -> HttpRequester:
@@ -2099,6 +2132,7 @@ class ModelToComponentFactory:
             request_body_json=model.request_body_json,
             request_headers=model.request_headers,
             request_parameters=model.request_parameters,
+            query_properties_key=query_properties_key,
             config=config,
             parameters=model.parameters or {},
         )
@@ -2566,6 +2600,79 @@ class ModelToComponentFactory:
             lazy_read_pointer=model_lazy_read_pointer,
         )
 
+    def create_properties_from_endpoint(
+        self, model: PropertiesFromEndpointModel, config: Config, **kwargs: Any
+    ) -> PropertiesFromEndpoint:
+        name = "property_retriever"
+        retriever = self._create_component_from_model(
+            model=model.retriever,
+            config=config,
+            name=name,
+            primary_key=None,
+            stream_slicer=None,
+            transformations=[],
+        )
+        return PropertiesFromEndpoint(
+            property_field_path=model.property_field_path,
+            retriever=retriever,
+            config=config,
+            parameters=model.parameters or {},
+        )
+
+    def create_property_chunking(
+        self, model: PropertyChunkingModel, config: Config, **kwargs: Any
+    ) -> PropertyChunking:
+        record_merge_strategy = (
+            self._create_component_from_model(
+                model=model.record_merge_strategy, config=config, **kwargs
+            )
+            if model.record_merge_strategy
+            else None
+        )
+
+        property_limit_type: PropertyLimitType
+        match model.property_limit_type:
+            case PropertyLimitTypeModel.property_count:
+                property_limit_type = PropertyLimitType.property_count
+            case PropertyLimitTypeModel.characters:
+                property_limit_type = PropertyLimitType.characters
+            case _:
+                raise ValueError(f"Invalid PropertyLimitType {property_limit_type}")
+
+        return PropertyChunking(
+            property_limit_type=property_limit_type,
+            property_limit=model.property_limit,
+            record_merge_strategy=record_merge_strategy,
+            config=config,
+            parameters=model.parameters or {},
+        )
+
+    def create_query_properties(
+        self, model: QueryPropertiesModel, config: Config, **kwargs: Any
+    ) -> QueryProperties:
+        if isinstance(model.property_list, list):
+            property_list = model.property_list
+        else:
+            property_list = self._create_component_from_model(
+                model=model.property_list, config=config, **kwargs
+            )
+
+        property_chunking = (
+            self._create_component_from_model(
+                model=model.property_chunking, config=config, **kwargs
+            )
+            if model.property_chunking
+            else None
+        )
+
+        return QueryProperties(
+            property_list=property_list,
+            always_include_properties=model.always_include_properties,
+            property_chunking=property_chunking,
+            config=config,
+            parameters=model.parameters or {},
+        )
+
     @staticmethod
     def create_record_filter(
         model: RecordFilterModel, config: Config, **kwargs: Any
@@ -2718,9 +2825,6 @@ class ModelToComponentFactory:
             if model.decoder
             else JsonDecoder(parameters={})
         )
-        requester = self._create_component_from_model(
-            model=model.requester, decoder=decoder, config=config, name=name
-        )
         record_selector = self._create_component_from_model(
             model=model.record_selector,
             name=name,
@@ -2728,6 +2832,53 @@ class ModelToComponentFactory:
             decoder=decoder,
             transformations=transformations,
             client_side_incremental_sync=client_side_incremental_sync,
+        )
+
+        query_properties: Optional[QueryProperties] = None
+        query_properties_key: Optional[str] = None
+        if (
+            hasattr(model.requester, "request_parameters")
+            and model.requester.request_parameters
+            and isinstance(model.requester.request_parameters, Mapping)
+        ):
+            query_properties_definitions = []
+            for key, request_parameter in model.requester.request_parameters.items():
+                if (
+                    isinstance(request_parameter, Mapping)
+                    and request_parameter.get("type") == "QueryProperties"
+                ):
+                    query_properties_key = key
+                    query_properties_definitions.append(request_parameter)
+                elif not isinstance(request_parameter, str):
+                    raise ValueError(
+                        f"Each element of request_parameters should be of type str or QueryProperties, but received {request_parameter.get('type')}"
+                    )
+
+            if len(query_properties_definitions) > 1:
+                raise ValueError(
+                    f"request_parameters should only define one QueryProperties field, but found {len(query_properties_definitions)}"
+                )
+
+            if len(query_properties_definitions) == 1:
+                query_properties = self.create_component(
+                    model_type=QueryPropertiesModel,
+                    component_definition=query_properties_definitions[0],
+                    config=config,
+                )
+
+            # Removes QueryProperties components from the interpolated mappings because it will be resolved in
+            # the provider from the slice directly instead of through jinja interpolation
+            if isinstance(model.requester.request_parameters, Mapping):
+                model.requester.request_parameters = self._remove_query_properties(
+                    model.requester.request_parameters
+                )
+
+        requester = self._create_component_from_model(
+            model=model.requester,
+            decoder=decoder,
+            query_properties_key=query_properties_key,
+            config=config,
+            name=name,
         )
         url_base = (
             model.requester.url_base
@@ -2834,8 +2985,41 @@ class ModelToComponentFactory:
             cursor=cursor,
             config=config,
             ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
+            additional_query_properties=query_properties,
             parameters=model.parameters or {},
         )
+
+    @staticmethod
+    def _remove_query_properties(
+        request_parameters: Mapping[str, Union[Any, str]],
+    ) -> Mapping[str, Union[Any, str]]:
+        return {
+            parameter_field: request_parameter
+            for parameter_field, request_parameter in request_parameters.items()
+            if not isinstance(request_parameter, Mapping)
+            or not request_parameter.get("type") == "QueryProperties"
+        }
+
+    @staticmethod
+    def _translate_query_properties_to_interpolated_strings(
+        request_parameters: Mapping[str, Union[Any, str]],
+    ) -> Mapping[str, Union[Any, str]]:
+        # todo blai: remove this since unused
+        new_request_parameters = dict()
+        for key, request_parameter in request_parameters.items():
+            if (
+                isinstance(request_parameter, Mapping)
+                and request_parameter.get("type") == "QueryProperties"
+            ):
+                # This may seem like this could be combined into the above conditional, but this is separated
+                # so that we do not add the properties into the new request_parameters mapping
+                if request_parameter.get("inject_into"):
+                    new_request_parameters[key] = (
+                        "{{ stream_partition.extra_fields['query_properties'] }}"
+                    )
+            else:
+                new_request_parameters[key] = request_parameter
+        return new_request_parameters
 
     def create_state_delegating_stream(
         self,
