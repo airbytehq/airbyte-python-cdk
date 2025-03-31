@@ -2003,6 +2003,15 @@ class FileUploader(BaseModel):
         None,
         description="Responsible for fetching the content of the file. If not defined, the assumption is that the whole response body is the file content",
     )
+    filename_extractor: Optional[str] = Field(
+        None,
+        description="Defines the name to store the file. Stream name is automatically added to the file path. File unique ID can be used to avoid overwriting files. Random UUID will be used if the extractor is not provided.",
+        examples=[
+            "{{ record.id }}/{{ record.file_name }}/",
+            "{{ record.id }}_{{ record.file_name }}/",
+        ],
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
 class DeclarativeStream(BaseModel):
