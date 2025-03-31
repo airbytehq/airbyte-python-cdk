@@ -124,16 +124,17 @@ def _reference_schemas(manifest: ManifestType) -> None:
     """
 
     # create the ref tag to each stream in the manifest
-    if STREAMS_TAG in manifest:
+    if STREAMS_TAG in manifest.keys():
         for stream in manifest[STREAMS_TAG]:
             stream_name = stream.get("name")
             # reference the stream schema for the stream to where it's storred
-            if stream_name in manifest[SCHEMAS_TAG].keys():
-                stream[SCHEMA_LOADER_TAG][SCHEMA_TAG] = _create_schema_ref(stream_name)
-            else:
-                raise ManifestDeduplicationException(
-                    f"Stream {stream_name} not found in `schemas`. Please check the manifest."
-                )
+            if SCHEMAS_TAG in manifest.keys():
+                if stream_name in manifest[SCHEMAS_TAG].keys():
+                    stream[SCHEMA_LOADER_TAG][SCHEMA_TAG] = _create_schema_ref(stream_name)
+                else:
+                    raise ManifestDeduplicationException(
+                        f"Stream {stream_name} not found in `schemas`. Please check the manifest."
+                    )
 
 
 def _replace_duplicates_with_refs(manifest: ManifestType, duplicates: DuplicatesType) -> None:
