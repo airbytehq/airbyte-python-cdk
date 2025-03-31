@@ -156,7 +156,7 @@ def duration(datestring: str) -> Union[datetime.timedelta, isodate.Duration]:
 
 
 def format_datetime(
-    dt: Union[str, datetime.datetime], format: str, input_format: Optional[str] = None
+    dt: Union[str, datetime.datetime, int], format: str, input_format: Optional[str] = None
 ) -> str:
     """
     Converts datetime to another format
@@ -170,9 +170,13 @@ def format_datetime(
     """
     if isinstance(dt, datetime.datetime):
         return dt.strftime(format)
-    dt_datetime = (
-        datetime.datetime.strptime(dt, input_format) if input_format else str_to_datetime(dt)
-    )
+
+    if isinstance(dt, int):
+        dt_datetime = DatetimeParser().parse(dt, input_format if input_format else "%s")
+    else:
+        dt_datetime = (
+            datetime.datetime.strptime(dt, input_format) if input_format else str_to_datetime(dt)
+        )
     return DatetimeParser().format(dt=dt_datetime, format=format)
 
 
