@@ -16,7 +16,6 @@ from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import 
 resolver = ManifestReferenceResolver()
 
 
-# @
 def test_refer():
     content = {"limit": 50, "limit_ref": "#/limit"}
     config = resolver.preprocess_manifest(content)
@@ -152,7 +151,10 @@ def test_list_of_dicts():
 
 
 def test_multiple_levels_of_indexing():
-    content = {"list": [{"A": ["a1", "a2"]}, {"B": ["b1", "b2"]}], "elem_ref": "#/list/1/B/0"}
+    content = {
+        "list": [{"A": ["a1", "a2"]}, {"B": ["b1", "b2"]}],
+        "elem_ref": "#/list/1/B/0",
+    }
     config = resolver.preprocess_manifest(content)
     elem_ref = config["elem_ref"]
     assert elem_ref == "b1"
@@ -164,8 +166,9 @@ def test_circular_reference():
         resolver.preprocess_manifest(content)
 
 
-def test_deduplicate_manifest_definitions():
+def test_deduplicate_manifest_when_multiple_url_base_are_resolved_and_most_frequent_is_shared():
     content = {
+        "type": "DeclarativeSource",
         "definitions": {
             "streams": {
                 "A": {
@@ -173,61 +176,20 @@ def test_deduplicate_manifest_definitions():
                     "name": "A",
                     "retriever": {
                         "type": "SimpleRetriever",
-                        "decoder": {"type": "JsonDecoder"},
                         "requester": {
-                            "type": "HttpRequester",
-                            "url_base": "https://pokeapi.co/api/v2/",
-                            "authenticator": {
-                                "type": "BasicHttpAuthenticator",
-                                "api_key": '{{ config["api_token"] }}',
-                            },
-                            "path": "path_to_A",
+                            "$ref": "#/definitions/requester_A",
+                            "path": "A",
                             "http_method": "GET",
                         },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                        "decoder": {"type": "JsonDecoder"},
                     },
                     "schema_loader": {
                         "type": "InlineSchemaLoader",
-                        "schema": {
-                            "type": "object",
-                            "$schema": "http://json-schema.org/draft-07/schema#",
-                            "properties": {
-                                "a": {
-                                    "type": "string",
-                                }
-                            },
-                            "additionalProperties": True,
-                        },
-                    },
-                },
-                "A_1": {
-                    "type": "DeclarativeStream",
-                    "name": "A_1",
-                    "retriever": {
-                        "type": "SimpleRetriever",
-                        "decoder": {"type": "JsonDecoder"},
-                        "requester": {
-                            "type": "HttpRequester",
-                            "url_base": "https://pokeapi.co/api/v2/",
-                            "authenticator": {
-                                "type": "BasicHttpAuthenticator",
-                                "api_key": '{{ config["api_token"] }}',
-                            },
-                            "path": "path_to_A",
-                            "http_method": "GET",
-                        },
-                    },
-                    "schema_loader": {
-                        "type": "InlineSchemaLoader",
-                        "schema": {
-                            "type": "object",
-                            "$schema": "http://json-schema.org/draft-07/schema#",
-                            "properties": {
-                                "a_1": {
-                                    "type": "string",
-                                }
-                            },
-                            "additionalProperties": True,
-                        },
+                        "schema": {"$ref": "#/schemas/A"},
                     },
                 },
                 "B": {
@@ -235,115 +197,314 @@ def test_deduplicate_manifest_definitions():
                     "name": "B",
                     "retriever": {
                         "type": "SimpleRetriever",
-                        "decoder": {"type": "JsonDecoder"},
                         "requester": {
-                            "type": "HttpRequester",
-                            "url_base": "https://pokeapi.co/api/v2/",
-                            "authenticator": {
-                                "type": "BasicHttpAuthenticator",
-                                "api_key": '{{ config["api_token"] }}',
-                            },
-                            "path": "path_to_B",
+                            "$ref": "#/definitions/requester_B",
+                            "path": "B",
                             "http_method": "GET",
                         },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                        "decoder": {"type": "JsonDecoder"},
                     },
                     "schema_loader": {
                         "type": "InlineSchemaLoader",
-                        "schema": {
-                            "type": "object",
-                            "$schema": "http://json-schema.org/draft-07/schema#",
-                            "properties": {
-                                "b": {
-                                    "type": "string",
-                                }
-                            },
-                            "additionalProperties": True,
-                        },
+                        "schema": {"$ref": "#/schemas/B"},
                     },
                 },
-                "B_1": {
+                "C": {
                     "type": "DeclarativeStream",
-                    "name": "B_1",
+                    "name": "C",
                     "retriever": {
                         "type": "SimpleRetriever",
-                        "decoder": {"type": "JsonDecoder"},
                         "requester": {
-                            "type": "HttpRequester",
-                            "url_base": "https://pokeapi.co/api/v2/",
-                            "authenticator": {
-                                "type": "BasicHttpAuthenticator",
-                                "api_key": '{{ config["api_token"] }}',
-                            },
-                            "path": "path_to_B",
+                            "$ref": "#/definitions/requester_A",
+                            "path": "C",
                             "http_method": "GET",
                         },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                        "decoder": {"type": "JsonDecoder"},
                     },
                     "schema_loader": {
                         "type": "InlineSchemaLoader",
-                        "schema": {
-                            "type": "object",
-                            "$schema": "http://json-schema.org/draft-07/schema#",
-                            "properties": {
-                                "b": {
-                                    "type": "string",
-                                }
-                            },
-                            "additionalProperties": True,
-                        },
+                        "schema": {"$ref": "#/schemas/C"},
                     },
                 },
-            }
-        }
+                "D": {
+                    "type": "DeclarativeStream",
+                    "name": "D",
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "requester": {
+                            "$ref": "#/definitions/requester_B",
+                            "path": "D",
+                            "http_method": "GET",
+                        },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                        "decoder": {"type": "JsonDecoder"},
+                    },
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {"$ref": "#/schemas/D"},
+                    },
+                },
+                "E": {
+                    "type": "DeclarativeStream",
+                    "name": "E",
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "requester": {
+                            "$ref": "#/definitions/requester_B",
+                            "path": "E",
+                            "http_method": "GET",
+                        },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                        "decoder": {"type": "JsonDecoder"},
+                    },
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {"$ref": "#/schemas/E"},
+                    },
+                },
+            },
+            # dummy requesters to be resolved and deduplicated
+            # to the shared `url_base` in the `definitions.shared` section
+            "requester_A": {
+                "type": "HttpRequester",
+                "url_base": "https://example.com/v1/",
+            },
+            "requester_B": {
+                "type": "HttpRequester",
+                "url_base": "https://example.com/v2/",
+            },
+        },
+        "streams": [
+            {"$ref": "#/definitions/streams/A"},
+            {"$ref": "#/definitions/streams/B"},
+            {"$ref": "#/definitions/streams/C"},
+            {"$ref": "#/definitions/streams/D"},
+            {"$ref": "#/definitions/streams/E"},
+        ],
+        "schemas": {
+            "A": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {},
+            },
+            "B": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {},
+            },
+            "C": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {},
+            },
+            "D": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {},
+            },
+            "E": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {},
+            },
+        },
     }
     expected = {
+        "type": "DeclarativeSource",
+        "definitions": {"shared": {"url_base": "https://example.com/v2/"}},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "A",
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.com/v1/",
+                        "path": "A",
+                        "http_method": "GET",
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "decoder": {"type": "JsonDecoder"},
+                },
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"$ref": "#/schemas/A"},
+                },
+            },
+            {
+                "type": "DeclarativeStream",
+                "name": "B",
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": {"$ref": "#/definitions/shared/url_base"},
+                        "path": "B",
+                        "http_method": "GET",
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "decoder": {"type": "JsonDecoder"},
+                },
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"$ref": "#/schemas/B"},
+                },
+            },
+            {
+                "type": "DeclarativeStream",
+                "name": "C",
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.com/v1/",
+                        "path": "C",
+                        "http_method": "GET",
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "decoder": {"type": "JsonDecoder"},
+                },
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"$ref": "#/schemas/C"},
+                },
+            },
+            {
+                "type": "DeclarativeStream",
+                "name": "D",
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": {"$ref": "#/definitions/shared/url_base"},
+                        "path": "D",
+                        "http_method": "GET",
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "decoder": {"type": "JsonDecoder"},
+                },
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"$ref": "#/schemas/D"},
+                },
+            },
+            {
+                "type": "DeclarativeStream",
+                "name": "E",
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": {"$ref": "#/definitions/shared/url_base"},
+                        "path": "E",
+                        "http_method": "GET",
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "decoder": {"type": "JsonDecoder"},
+                },
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"$ref": "#/schemas/E"},
+                },
+            },
+        ],
+        "schemas": {
+            "A": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {},
+            },
+            "B": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {},
+            },
+            "C": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {},
+            },
+            "D": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {},
+            },
+            "E": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {},
+            },
+        },
+    }
+    config = resolver.preprocess_manifest(content, reduce_commons=True)
+    assert config == expected
+
+
+def test_deduplicate_manifest_with_shared_definitions_url_base_are_present():
+    content = {
+        "type": "DeclarativeSource",
         "definitions": {
+            "shared": {"url_base": "https://example.com/v2/"},
             "streams": {
                 "A": {
                     "type": "DeclarativeStream",
                     "name": "A",
                     "retriever": {
                         "type": "SimpleRetriever",
-                        "decoder": {"type": "JsonDecoder"},
                         "requester": {
-                            "type": "HttpRequester",
-                            "url_base": {"$ref": "#/definitions/shared/url_base"},
-                            "authenticator": {"$ref": "#/definitions/shared/authenticator"},
-                            "path": "path_to_A",
+                            "$ref": "#/definitions/requester_A",
+                            "path": "A",
                             "http_method": "GET",
                         },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                        "decoder": {"type": "JsonDecoder"},
                     },
                     "schema_loader": {
                         "type": "InlineSchemaLoader",
-                        "schema": {
-                            "type": "object",
-                            "$schema": "http://json-schema.org/draft-07/schema#",
-                            "properties": {"a": {"type": "string"}},
-                            "additionalProperties": True,
-                        },
-                    },
-                },
-                "A_1": {
-                    "type": "DeclarativeStream",
-                    "name": "A_1",
-                    "retriever": {
-                        "type": "SimpleRetriever",
-                        "decoder": {"type": "JsonDecoder"},
-                        "requester": {
-                            "type": "HttpRequester",
-                            "url_base": {"$ref": "#/definitions/shared/url_base"},
-                            "authenticator": {"$ref": "#/definitions/shared/authenticator"},
-                            "path": "path_to_A",
-                            "http_method": "GET",
-                        },
-                    },
-                    "schema_loader": {
-                        "type": "InlineSchemaLoader",
-                        "schema": {
-                            "type": "object",
-                            "$schema": "http://json-schema.org/draft-07/schema#",
-                            "properties": {"a_1": {"type": "string"}},
-                            "additionalProperties": True,
-                        },
+                        "schema": {"$ref": "#/schemas/A"},
                     },
                 },
                 "B": {
@@ -351,58 +512,284 @@ def test_deduplicate_manifest_definitions():
                     "name": "B",
                     "retriever": {
                         "type": "SimpleRetriever",
-                        "decoder": {"type": "JsonDecoder"},
                         "requester": {
-                            "type": "HttpRequester",
-                            "url_base": {"$ref": "#/definitions/shared/url_base"},
-                            "authenticator": {"$ref": "#/definitions/shared/authenticator"},
-                            "path": "path_to_B",
+                            "$ref": "#/definitions/requester_B",
+                            "path": "B",
                             "http_method": "GET",
                         },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                        "decoder": {"type": "JsonDecoder"},
                     },
                     "schema_loader": {
                         "type": "InlineSchemaLoader",
-                        "schema": {
-                            "type": "object",
-                            "$schema": "http://json-schema.org/draft-07/schema#",
-                            "properties": {"b": {"type": "string"}},
-                            "additionalProperties": True,
-                        },
+                        "schema": {"$ref": "#/schemas/B"},
                     },
                 },
-                "B_1": {
+                "C": {
                     "type": "DeclarativeStream",
-                    "name": "B_1",
+                    "name": "C",
                     "retriever": {
                         "type": "SimpleRetriever",
-                        "decoder": {"type": "JsonDecoder"},
                         "requester": {
-                            "type": "HttpRequester",
-                            "url_base": {"$ref": "#/definitions/shared/url_base"},
-                            "authenticator": {"$ref": "#/definitions/shared/authenticator"},
-                            "path": "path_to_B",
+                            "$ref": "#/definitions/requester_A",
+                            "path": "C",
                             "http_method": "GET",
                         },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                        "decoder": {"type": "JsonDecoder"},
                     },
                     "schema_loader": {
                         "type": "InlineSchemaLoader",
-                        "schema": {
-                            "type": "object",
-                            "$schema": "http://json-schema.org/draft-07/schema#",
-                            "properties": {"b": {"type": "string"}},
-                            "additionalProperties": True,
+                        "schema": {"$ref": "#/schemas/C"},
+                    },
+                },
+                "D": {
+                    "type": "DeclarativeStream",
+                    "name": "D",
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "requester": {
+                            "$ref": "#/definitions/requester_B",
+                            "path": "D",
+                            "http_method": "GET",
                         },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                        "decoder": {"type": "JsonDecoder"},
+                    },
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {"$ref": "#/schemas/D"},
+                    },
+                },
+                "E": {
+                    "type": "DeclarativeStream",
+                    "name": "E",
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "requester": {
+                            "$ref": "#/definitions/requester_B",
+                            "path": "E",
+                            "http_method": "GET",
+                        },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                        "decoder": {"type": "JsonDecoder"},
+                    },
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {"$ref": "#/schemas/E"},
                     },
                 },
             },
-            "shared": {
-                "authenticator": {
-                    "type": "BasicHttpAuthenticator",
-                    "api_key": '{{ config["api_token"] }}',
-                },
-                "url_base": "https://pokeapi.co/api/v2/",
+            # dummy requesters to be resolved and deduplicated
+            # to the shared `url_base` in the `definitions.shared` section
+            "requester_A": {
+                "type": "HttpRequester",
+                "url_base": "https://example.com/v1/",
             },
-        }
+            "requester_B": {
+                "type": "HttpRequester",
+                "url_base": {"$ref": "#/definitions/shared/url_base"},
+            },
+        },
+        "streams": [
+            {"$ref": "#/definitions/streams/A"},
+            {"$ref": "#/definitions/streams/B"},
+            {"$ref": "#/definitions/streams/C"},
+            {"$ref": "#/definitions/streams/D"},
+            {"$ref": "#/definitions/streams/E"},
+        ],
+        "schemas": {
+            "A": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {},
+            },
+            "B": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {},
+            },
+            "C": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {},
+            },
+            "D": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {},
+            },
+            "E": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {},
+            },
+        },
     }
-    config = resolver.preprocess_manifest(content)
+    expected = {
+        "type": "DeclarativeSource",
+        "definitions": {"shared": {"url_base": "https://example.com/v2/"}},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "A",
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.com/v1/",
+                        "path": "A",
+                        "http_method": "GET",
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "decoder": {"type": "JsonDecoder"},
+                },
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"$ref": "#/schemas/A"},
+                },
+            },
+            {
+                "type": "DeclarativeStream",
+                "name": "B",
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": {"$ref": "#/definitions/shared/url_base"},
+                        "path": "B",
+                        "http_method": "GET",
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "decoder": {"type": "JsonDecoder"},
+                },
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"$ref": "#/schemas/B"},
+                },
+            },
+            {
+                "type": "DeclarativeStream",
+                "name": "C",
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.com/v1/",
+                        "path": "C",
+                        "http_method": "GET",
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "decoder": {"type": "JsonDecoder"},
+                },
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"$ref": "#/schemas/C"},
+                },
+            },
+            {
+                "type": "DeclarativeStream",
+                "name": "D",
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": {"$ref": "#/definitions/shared/url_base"},
+                        "path": "D",
+                        "http_method": "GET",
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "decoder": {"type": "JsonDecoder"},
+                },
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"$ref": "#/schemas/D"},
+                },
+            },
+            {
+                "type": "DeclarativeStream",
+                "name": "E",
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": {"$ref": "#/definitions/shared/url_base"},
+                        "path": "E",
+                        "http_method": "GET",
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "decoder": {"type": "JsonDecoder"},
+                },
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"$ref": "#/schemas/E"},
+                },
+            },
+        ],
+        "schemas": {
+            "A": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {},
+            },
+            "B": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {},
+            },
+            "C": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {},
+            },
+            "D": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {},
+            },
+            "E": {
+                "type": "object",
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "additionalProperties": True,
+                "properties": {},
+            },
+        },
+    }
+    config = resolver.preprocess_manifest(content, reduce_commons=True)
     assert config == expected

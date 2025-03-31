@@ -3,13 +3,13 @@
 #
 
 import re
-from typing import Any, Mapping, Set, Tuple, Union
+from typing import Any, Mapping, Optional, Set, Tuple, Union
 
 from airbyte_cdk.sources.declarative.parsers.custom_exceptions import (
     CircularReferenceException,
     UndefinedReferenceException,
 )
-from airbyte_cdk.sources.declarative.parsers.manifest_deduplicator import deduplicate_definitions
+from airbyte_cdk.sources.declarative.parsers.manifest_deduplicator import deduplicate_minifest
 
 REF_TAG = "$ref"
 
@@ -100,17 +100,25 @@ class ManifestReferenceResolver:
     until we find a key with the given path, or until there is nothing to traverse.
     """
 
-    def preprocess_manifest(self, manifest: Mapping[str, Any]) -> Mapping[str, Any]:
+    def preprocess_manifest(
+        self,
+        manifest: Mapping[str, Any],
+        reduce_commons: Optional[bool] = False,
+    ) -> Mapping[str, Any]:
         """
         :param manifest: incoming manifest that could have references to previously defined components
+        :param reduce_commons: whether to deduplicate the commonalities in the manifest after pre-processing.
         """
-
         preprocessed_manifest = self._evaluate_node(manifest, manifest, set())
 
-        # we need to reduce commonalities in the manifest after the references have been resolved
-        deduplicated_manifest = deduplicate_definitions(preprocessed_manifest)
+        # we need to reduce commonalities in the manifest after the references have been resolved,
+        # used mostly for Connector Builder use cases.
+        if reduce_commons:
+            deduplicated_manifest = deduplicate_minifest(preprocessed_manifest)
+            return deduplicated_manifest
 
-        return deduplicated_manifest
+        # return deduplicated_manifest
+        return preprocessed_manifest # type: ignore
 
     def _evaluate_node(self, node: Any, manifest: Mapping[str, Any], visited: Set[Any]) -> Any:
         if isinstance(node, dict):

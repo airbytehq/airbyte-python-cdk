@@ -26,5 +26,5 @@ class ManifestDeduplicationException(Exception):
     Raised when a circular reference is detected in a manifest.
     """
 
-    def __init__(self, exception: str) -> None:
-        super().__init__(f"Failed to deduplicate manifest: {exception}")
+    def __init__(self, message: str) -> None:
+        super().__init__(f"Failed to deduplicate manifest: {message}")
