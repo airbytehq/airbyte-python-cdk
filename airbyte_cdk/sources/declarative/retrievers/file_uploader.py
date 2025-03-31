@@ -4,6 +4,7 @@
 
 import json
 import logging
+import uuid
 from dataclasses import InitVar, dataclass, field
 from pathlib import Path
 from typing import Optional, Mapping, Union, Any
@@ -31,14 +32,15 @@ class FileUploader:
     config: Config
     parameters: InitVar[Mapping[str, Any]]
 
-    filename_extractor: Union[InterpolatedString, str]
+    filename_extractor: Optional[Union[InterpolatedString, str]] = None
     content_extractor: Optional[RecordExtractor] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        self._filename_extractor = InterpolatedString.create(
-            self.filename_extractor,
-            parameters=parameters,
-        )
+        if self.filename_extractor:
+            self.filename_extractor = InterpolatedString.create(
+                self.filename_extractor,
+                parameters=parameters,
+            )
 
     def upload(self, record: Record) -> None:
         mocked_response = SafeResponse()
@@ -60,9 +62,13 @@ class FileUploader:
         else:
             files_directory = Path(get_files_directory())
 
-            relative_path = self._filename_extractor.eval(self.config, record=record)
-            relative_path = relative_path.lstrip("/")
-            file_relative_path = Path(relative_path)
+            file_name = (
+                self.filename_extractor.eval(self.config, record=record)
+                if self.filename_extractor
+                else str(uuid.uuid4())
+            )
+            file_name = file_name.lstrip("/")
+            file_relative_path = Path(record.stream_name) / Path(file_name)
 
             full_path = files_directory / file_relative_path
             full_path.parent.mkdir(parents=True, exist_ok=True)
@@ -72,7 +78,7 @@ class FileUploader:
             file_size_bytes = full_path.stat().st_size
 
             logger.info("File uploaded successfully")
-            logger.info(f"File url: {str(full_path)} ")
+            logger.info(f"File url: {str(full_path)}")
             logger.info(f"File size: {file_size_bytes / 1024} KB")
             logger.info(f"File relative path: {str(file_relative_path)}")
 

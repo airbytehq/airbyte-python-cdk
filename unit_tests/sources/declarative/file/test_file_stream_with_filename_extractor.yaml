@@ -161,6 +161,7 @@ definitions:
       download_target_extractor:
         type: DpathExtractor
         field_path: [ "content_url" ]
+      filename_extractor: "{{ record.id }}/{{ record.file_name }}/"
 
 
 streams:

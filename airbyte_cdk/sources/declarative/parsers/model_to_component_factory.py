@@ -3353,7 +3353,7 @@ class ModelToComponentFactory:
             download_target_extractor=download_target_extractor,
             config=config,
             parameters=model.parameters or {},
-            filename_extractor=model.filename_extractor,
+            filename_extractor=model.filename_extractor if model.filename_extractor else None,
         )
 
     def create_moving_window_call_rate_policy(

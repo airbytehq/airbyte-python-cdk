@@ -1,3 +1,5 @@
+import re
+
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from unittest import TestCase
@@ -29,9 +31,12 @@ def _source(
     catalog: ConfiguredAirbyteCatalog,
     config: Dict[str, Any],
     state: Optional[List[AirbyteStateMessage]] = None,
+    yaml_file: Optional[str] = None,
 ) -> YamlDeclarativeSource:
+    if not yaml_file:
+        yaml_file = "file_stream_manifest.yaml"
     return YamlDeclarativeSource(
-        path_to_yaml=str(Path(__file__).parent / "file_stream_manifest.yaml"),
+        path_to_yaml=str(Path(__file__).parent / yaml_file),
         catalog=catalog,
         config=config,
         state=state,
@@ -43,11 +48,12 @@ def read(
     catalog: ConfiguredAirbyteCatalog,
     state_builder: Optional[StateBuilder] = None,
     expecting_exception: bool = False,
+    yaml_file: Optional[str] = None,
 ) -> EntrypointOutput:
     config = config_builder.build()
     state = state_builder.build() if state_builder else StateBuilder().build()
     return entrypoint_read(
-        _source(catalog, config, state), config, catalog, state, expecting_exception
+        _source(catalog, config, state, yaml_file), config, catalog, state, expecting_exception
     )
 
 
@@ -96,7 +102,32 @@ class FileStreamTest(TestCase):
         file_reference = output.records[0].record.file_reference
         assert file_reference
         assert file_reference.file_url
+        assert re.match(r"^.*/article_attachments/[0-9a-fA-F-]{36}$", file_reference.file_url)
         assert file_reference.file_relative_path
+        assert re.match(
+            r"^article_attachments/[0-9a-fA-F-]{36}$", file_reference.file_relative_path
+        )
+        assert file_reference.file_size_bytes
+
+    def test_get_article_attachments_with_filename_extractor(self) -> None:
+        output = read(
+            self._config(),
+            CatalogBuilder()
+            .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments"))
+            .build(),
+            yaml_file="test_file_stream_with_filename_extractor.yaml",
+        )
+
+        assert output.records
+        file_reference = output.records[0].record.file_reference
+        assert file_reference
+        assert file_reference.file_url
+        # todo: once we finally mock the response update to check file name
+        assert not re.match(r"^.*/article_attachments/[0-9a-fA-F-]{36}$", file_reference.file_url)
+        assert file_reference.file_relative_path
+        assert not re.match(
+            r"^article_attachments/[0-9a-fA-F-]{36}$", file_reference.file_relative_path
+        )
         assert file_reference.file_size_bytes
 
     def test_discover_article_attachments(self) -> None:
