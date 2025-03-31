@@ -207,19 +207,9 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             # these legacy Python streams the way we do low-code streams to determine if they are concurrent compatible,
             # so we need to treat them as synchronous
 
-            file_uploader = None
-            if isinstance(declarative_stream, DeclarativeStream):
-                file_uploader = (
-                    self._constructor.create_component(
-                        model_type=FileUploader,
-                        component_definition=name_to_stream_mapping[declarative_stream.name][
-                            "file_uploader"
-                        ],
-                        config=config,
-                    )
-                    if "file_uploader" in name_to_stream_mapping[declarative_stream.name]
-                    else None
-                )
+            supports_file_transfer = (
+                "file_uploader" in name_to_stream_mapping[declarative_stream.name]
+            )
 
             if (
                 isinstance(declarative_stream, DeclarativeStream)
@@ -288,7 +278,6 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                                 declarative_stream.get_json_schema(),
                                 retriever,
                                 self.message_repository,
-                                file_uploader,
                             ),
                             stream_slicer=declarative_stream.retriever.stream_slicer,
                         )
@@ -319,7 +308,6 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                                 declarative_stream.get_json_schema(),
                                 retriever,
                                 self.message_repository,
-                                file_uploader,
                             ),
                             stream_slicer=cursor,
                         )
@@ -339,7 +327,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             else None,
                             logger=self.logger,
                             cursor=cursor,
-                            supports_file_transfer=bool(file_uploader),
+                            supports_file_transfer=supports_file_transfer,
                         )
                     )
                 elif (
@@ -351,7 +339,6 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             declarative_stream.get_json_schema(),
                             declarative_stream.retriever,
                             self.message_repository,
-                            file_uploader,
                         ),
                         declarative_stream.retriever.stream_slicer,
                     )
@@ -372,7 +359,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             cursor_field=None,
                             logger=self.logger,
                             cursor=final_state_cursor,
-                            supports_file_transfer=bool(file_uploader),
+                            supports_file_transfer=supports_file_transfer,
                         )
                     )
                 elif (
@@ -412,7 +399,6 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             declarative_stream.get_json_schema(),
                             retriever,
                             self.message_repository,
-                            file_uploader,
                         ),
                         perpartition_cursor,
                     )
@@ -427,7 +413,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             cursor_field=perpartition_cursor.cursor_field.cursor_field_key,
                             logger=self.logger,
                             cursor=perpartition_cursor,
-                            supports_file_transfer=bool(file_uploader),
+                            supports_file_transfer=supports_file_transfer,
                         )
                     )
                 else:

@@ -1989,6 +1989,22 @@ class SelectiveAuthenticator(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class FileUploader(BaseModel):
+    type: Literal["FileUploader"]
+    requester: Union[CustomRequester, HttpRequester] = Field(
+        ...,
+        description="Requester component that describes how to prepare HTTP requests to send to the source API.",
+    )
+    download_target_extractor: Union[CustomRecordExtractor, DpathExtractor] = Field(
+        ...,
+        description="Responsible for fetching the url where the file is located. This is applied on each records and not on the HTTP response",
+    )
+    file_extractor: Optional[Union[CustomRecordExtractor, DpathExtractor]] = Field(
+        None,
+        description="Responsible for fetching the content of the file. If not defined, the assumption is that the whole response body is the file content",
+    )
+
+
 class DeclarativeStream(BaseModel):
     class Config:
         extra = Extra.allow
@@ -2046,6 +2062,11 @@ class DeclarativeStream(BaseModel):
         [],
         description="Array of state migrations to be applied on the input state",
         title="State Migrations",
+    )
+    file_uploader: Optional[FileUploader] = Field(
+        None,
+        description="(experimental) Describes how to fetch a file",
+        title="File Uploader",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -2278,22 +2299,6 @@ class StateDelegatingStream(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class FileUploader(BaseModel):
-    type: Literal["FileUploader"]
-    requester: Union[CustomRequester, HttpRequester] = Field(
-        ...,
-        description="Requester component that describes how to prepare HTTP requests to send to the source API.",
-    )
-    download_target_extractor: Union[CustomRecordExtractor, DpathExtractor] = Field(
-        ...,
-        description="Responsible for fetching the url where the file is located. This is applied on each records and not on the HTTP response",
-    )
-    file_extractor: Optional[Union[CustomRecordExtractor, DpathExtractor]] = Field(
-        None,
-        description="Responsible for fetching the content of the file. If not defined, the assumption is that the whole response body is the file content",
-    )
-
-
 class SimpleRetriever(BaseModel):
     type: Literal["SimpleRetriever"]
     record_selector: RecordSelector = Field(
@@ -2323,11 +2328,6 @@ class SimpleRetriever(BaseModel):
         [],
         description="PartitionRouter component that describes how to partition the stream, enabling incremental syncs and checkpointing.",
         title="Partition Router",
-    )
-    file_uploader: Optional[FileUploader] = Field(
-        None,
-        description="(experimental) Describes how to fetch a file",
-        title="File Uploader",
     )
     decoder: Optional[
         Union[
@@ -2485,6 +2485,7 @@ CompositeErrorHandler.update_forward_refs()
 DeclarativeSource1.update_forward_refs()
 DeclarativeSource2.update_forward_refs()
 SelectiveAuthenticator.update_forward_refs()
+FileUploader.update_forward_refs()
 DeclarativeStream.update_forward_refs()
 SessionTokenAuthenticator.update_forward_refs()
 DynamicSchemaLoader.update_forward_refs()
