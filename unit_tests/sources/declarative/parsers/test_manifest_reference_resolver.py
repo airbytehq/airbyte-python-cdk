@@ -330,7 +330,7 @@ def test_deduplicate_manifest_when_multiple_url_base_are_resolved_and_most_frequ
     }
     expected = {
         "type": "DeclarativeSource",
-        "definitions": {"shared": {"url_base": "https://example.com/v2/"}},
+        "definitions": {"shared": {"HttpRequester": {"url_base": "https://example.com/v2/"}}},
         "streams": [
             {
                 "type": "DeclarativeStream",
@@ -361,7 +361,7 @@ def test_deduplicate_manifest_when_multiple_url_base_are_resolved_and_most_frequ
                     "type": "SimpleRetriever",
                     "requester": {
                         "type": "HttpRequester",
-                        "url_base": {"$ref": "#/definitions/shared/url_base"},
+                        "url_base": {"$ref": "#/definitions/shared/HttpRequester/url_base"},
                         "path": "B",
                         "http_method": "GET",
                     },
@@ -405,7 +405,7 @@ def test_deduplicate_manifest_when_multiple_url_base_are_resolved_and_most_frequ
                     "type": "SimpleRetriever",
                     "requester": {
                         "type": "HttpRequester",
-                        "url_base": {"$ref": "#/definitions/shared/url_base"},
+                        "url_base": {"$ref": "#/definitions/shared/HttpRequester/url_base"},
                         "path": "D",
                         "http_method": "GET",
                     },
@@ -427,7 +427,7 @@ def test_deduplicate_manifest_when_multiple_url_base_are_resolved_and_most_frequ
                     "type": "SimpleRetriever",
                     "requester": {
                         "type": "HttpRequester",
-                        "url_base": {"$ref": "#/definitions/shared/url_base"},
+                        "url_base": {"$ref": "#/definitions/shared/HttpRequester/url_base"},
                         "path": "E",
                         "http_method": "GET",
                     },
@@ -484,7 +484,7 @@ def test_deduplicate_manifest_with_shared_definitions_url_base_are_present():
     content = {
         "type": "DeclarativeSource",
         "definitions": {
-            "shared": {"url_base": "https://example.com/v2/"},
+            "shared": {"HttpRequester": {"url_base": "https://example.com/v2/"}},
             "streams": {
                 "A": {
                     "type": "DeclarativeStream",
@@ -600,7 +600,7 @@ def test_deduplicate_manifest_with_shared_definitions_url_base_are_present():
             },
             "requester_B": {
                 "type": "HttpRequester",
-                "url_base": {"$ref": "#/definitions/shared/url_base"},
+                "url_base": {"$ref": "#/definitions/shared/HttpRequester/url_base"},
             },
         },
         "streams": [
@@ -645,7 +645,7 @@ def test_deduplicate_manifest_with_shared_definitions_url_base_are_present():
     }
     expected = {
         "type": "DeclarativeSource",
-        "definitions": {"shared": {"url_base": "https://example.com/v2/"}},
+        "definitions": {"shared": {"HttpRequester": {"url_base": "https://example.com/v2/"}}},
         "streams": [
             {
                 "type": "DeclarativeStream",
@@ -676,7 +676,7 @@ def test_deduplicate_manifest_with_shared_definitions_url_base_are_present():
                     "type": "SimpleRetriever",
                     "requester": {
                         "type": "HttpRequester",
-                        "url_base": {"$ref": "#/definitions/shared/url_base"},
+                        "url_base": {"$ref": "#/definitions/shared/HttpRequester/url_base"},
                         "path": "B",
                         "http_method": "GET",
                     },
@@ -720,7 +720,7 @@ def test_deduplicate_manifest_with_shared_definitions_url_base_are_present():
                     "type": "SimpleRetriever",
                     "requester": {
                         "type": "HttpRequester",
-                        "url_base": {"$ref": "#/definitions/shared/url_base"},
+                        "url_base": {"$ref": "#/definitions/shared/HttpRequester/url_base"},
                         "path": "D",
                         "http_method": "GET",
                     },
@@ -742,7 +742,7 @@ def test_deduplicate_manifest_with_shared_definitions_url_base_are_present():
                     "type": "SimpleRetriever",
                     "requester": {
                         "type": "HttpRequester",
-                        "url_base": {"$ref": "#/definitions/shared/url_base"},
+                        "url_base": {"$ref": "#/definitions/shared/HttpRequester/url_base"},
                         "path": "E",
                         "http_method": "GET",
                     },

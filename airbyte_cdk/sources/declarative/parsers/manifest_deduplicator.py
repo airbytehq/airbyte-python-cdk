@@ -49,10 +49,8 @@ def deduplicate_minifest(resolved_manifest: ManifestType) -> ManifestType:
 
         # prepare the `definitions` tag
         _prepare_definitions(_manifest)
-        # collect duplicates for a given manifest
-        duplicates = _collect_duplicates(_manifest)
         # replace duplicates with references, if any
-        _handle_duplicates(_manifest, duplicates)
+        _handle_duplicates(_manifest, _collect_duplicates(_manifest))
         # post processing the manifest
         _reference_schemas(_manifest)
 
@@ -147,20 +145,20 @@ def _replace_duplicates_with_refs(manifest: ManifestType, duplicates: Duplicates
     """
     for _, occurrences in duplicates.items():
         # take the component's name as the last part of it's path
-        key, value = _get_key_value_from_occurances(occurrences)
-        is_shared_def = _is_shared_definition(manifest, key)
+        type_key, key, value = _get_key_value_from_occurances(occurrences)
+        is_shared_def = _is_shared_definition(manifest, type_key, key)
 
         # Add to definitions if not there already
         if not is_shared_def:
-            _add_to_shared_definitions(manifest, key, value)
+            _add_to_shared_definitions(manifest, type_key, key, value)
 
         # Replace occurrences with references
         for path, parent_obj, value in occurrences:
             if is_shared_def:
-                if value == _get_shared_definition_value(manifest, key):
-                    parent_obj[key] = _create_shared_definition_ref(key)
+                if value == _get_shared_definition_value(manifest, type_key, key):
+                    parent_obj[key] = _create_shared_definition_ref(type_key, key)
             else:
-                parent_obj[key] = _create_shared_definition_ref(key)
+                parent_obj[key] = _create_shared_definition_ref(type_key, key)
 
 
 def _handle_duplicates(manifest: DefinitionsType, duplicates: DuplicatesType) -> None:
@@ -212,6 +210,7 @@ def _add_duplicate(
 
 def _add_to_shared_definitions(
     manifest: DefinitionsType,
+    type_key: str,
     key: str,
     value: Any,
 ) -> DefinitionsType:
@@ -223,9 +222,11 @@ def _add_to_shared_definitions(
         key: The key to use
         value: The value to add
     """
+    if type_key not in manifest[DEF_TAG][SHARED_TAG].keys():
+        manifest[DEF_TAG][SHARED_TAG][type_key] = {}
 
-    if key not in manifest[DEF_TAG][SHARED_TAG]:
-        manifest[DEF_TAG][SHARED_TAG][key] = value
+    if key not in manifest[DEF_TAG][SHARED_TAG][type_key].keys():
+        manifest[DEF_TAG][SHARED_TAG][type_key][key] = value
 
     return manifest
 
@@ -327,7 +328,7 @@ def _hash_object(node: Dict[str, Any]) -> Optional[str]:
     return None
 
 
-def _is_shared_definition(manifest: DefinitionsType, key: str) -> bool:
+def _is_shared_definition(manifest: DefinitionsType, type_key: str, key: str) -> bool:
     """
     Check if the key already exists in the shared definitions.
 
@@ -338,10 +339,16 @@ def _is_shared_definition(manifest: DefinitionsType, key: str) -> bool:
     Returns:
         True if the key exists in the shared definitions, False otherwise
     """
-    return key in manifest[DEF_TAG][SHARED_TAG]
+
+    if type_key in manifest[DEF_TAG][SHARED_TAG].keys():
+        # Check if the key exists in the shared definitions
+        if key in manifest[DEF_TAG][SHARED_TAG][type_key].keys():
+            return True
+
+    return False
 
 
-def _get_shared_definition_value(manifest: DefinitionsType, key: str) -> Any:
+def _get_shared_definition_value(manifest: DefinitionsType, type_key: str, key: str) -> Any:
     """
     Get the value of a shared definition by its key.
 
@@ -351,15 +358,16 @@ def _get_shared_definition_value(manifest: DefinitionsType, key: str) -> Any:
     Returns:
         The value of the shared definition
     """
-    if key in manifest[DEF_TAG][SHARED_TAG]:
-        return manifest[DEF_TAG][SHARED_TAG][key]
+    if type_key in manifest[DEF_TAG][SHARED_TAG].keys():
+        if key in manifest[DEF_TAG][SHARED_TAG][type_key].keys():
+            return manifest[DEF_TAG][SHARED_TAG][type_key][key]
     else:
         raise ManifestDeduplicationException(
             f"Key {key} not found in shared definitions. Please check the manifest."
         )
 
 
-def _get_key_value_from_occurances(occurrences: DuplicateOccurancesType) -> Tuple[str, Any]:
+def _get_key_value_from_occurances(occurrences: DuplicateOccurancesType) -> Tuple[str, str, Any]:
     """
     Get the key from the occurrences list.
 
@@ -367,15 +375,15 @@ def _get_key_value_from_occurances(occurrences: DuplicateOccurancesType) -> Tupl
         occurrences: The occurrences list
 
     Returns:
-        The key and value from the occurrences
+        The key, type and value from the occurrences
     """
 
     # Take the value from the first occurrence, as they are the same
-    path, _, value = occurrences[0]
-    return path[-1], value  # Return the component's name as the last part of its path
+    path, obj, value = occurrences[0]
+    return obj["type"], path[-1], value  # Return the component's name as the last part of its path
 
 
-def _create_shared_definition_ref(ref_key: str) -> Dict[str, str]:
+def _create_shared_definition_ref(type_key: str, key: str) -> Dict[str, str]:
     """
     Create a reference object for the shared definitions using the specified key.
 
@@ -385,7 +393,7 @@ def _create_shared_definition_ref(ref_key: str) -> Dict[str, str]:
     Returns:
         A reference object in the proper format
     """
-    return {"$ref": f"#/{DEF_TAG}/{SHARED_TAG}/{ref_key}"}
+    return {"$ref": f"#/{DEF_TAG}/{SHARED_TAG}/{type_key}/{key}"}
 
 
 def _create_schema_ref(ref_key: str) -> Dict[str, str]:
