@@ -86,7 +86,10 @@ class ManifestDeclarativeSource(DeclarativeSource):
         # If custom components are needed, locate and/or register them.
         self.components_module: ModuleType | None = get_registered_components_module(config=config)
 
-        resolved_source_config = ManifestReferenceResolver().preprocess_manifest(manifest)
+        self._reduce_manifest_commons = True if emit_connector_builder_messages else False
+        resolved_source_config = ManifestReferenceResolver().preprocess_manifest(
+            manifest, self._reduce_manifest_commons
+        )
         propagated_source_config = ManifestComponentTransformer().propagate_types_and_parameters(
             "", resolved_source_config, {}
         )
