@@ -118,7 +118,7 @@ class ManifestReferenceResolver:
             return deduplicated_manifest
 
         # return deduplicated_manifest
-        return preprocessed_manifest # type: ignore
+        return preprocessed_manifest  # type: ignore
 
     def _evaluate_node(self, node: Any, manifest: Mapping[str, Any], visited: Set[Any]) -> Any:
         if isinstance(node, dict):

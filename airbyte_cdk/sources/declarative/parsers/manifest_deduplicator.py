@@ -88,7 +88,7 @@ def _get_declarative_component_schema() -> Dict[str, Any]:
         )
         if raw_component_schema is not None:
             declarative_component_schema = yaml.load(raw_component_schema, Loader=yaml.SafeLoader)
-            return declarative_component_schema # type: ignore
+            return declarative_component_schema  # type: ignore
         else:
             raise RuntimeError(
                 "Failed to read manifest component json schema required for deduplication"
