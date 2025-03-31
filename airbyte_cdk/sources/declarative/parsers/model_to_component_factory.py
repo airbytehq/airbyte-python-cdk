@@ -3348,7 +3348,13 @@ class ModelToComponentFactory:
             name=name,
             **kwargs,
         )
-        return FileUploader(requester, download_target_extractor)
+        return FileUploader(
+            requester=requester,
+            download_target_extractor=download_target_extractor,
+            config=config,
+            parameters=model.parameters or {},
+            filename_extractor=model.filename_extractor,
+        )
 
     def create_moving_window_call_rate_policy(
         self, model: MovingWindowCallRatePolicyModel, config: Config, **kwargs: Any

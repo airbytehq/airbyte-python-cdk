@@ -1,7 +1,16 @@
-import json
-from pathlib import Path
-from typing import Optional
+#
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+#
 
+import json
+import logging
+from dataclasses import InitVar, dataclass, field
+from pathlib import Path
+from typing import Optional, Mapping, Union, Any
+
+from airbyte_cdk.sources.declarative.interpolation.interpolated_string import (
+    InterpolatedString,
+)
 from airbyte_cdk.models import AirbyteRecordMessageFileReference
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
@@ -9,42 +18,51 @@ from airbyte_cdk.sources.declarative.partition_routers.substream_partition_route
 )
 from airbyte_cdk.sources.declarative.requesters import Requester
 from airbyte_cdk.sources.declarative.types import Record, StreamSlice
+from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.files_directory import get_files_directory
 
+logger = logging.getLogger("airbyte")
 
+
+@dataclass
 class FileUploader:
-    def __init__(
-        self,
-        requester: Requester,
-        download_target_extractor: RecordExtractor,
-        content_extractor: Optional[RecordExtractor] = None,
-    ) -> None:
-        self._requester = requester
-        self._download_target_extractor = download_target_extractor
-        self._content_extractor = content_extractor
+    requester: Requester
+    download_target_extractor: RecordExtractor
+    config: Config
+    parameters: InitVar[Mapping[str, Any]]
+
+    filename_extractor: Union[InterpolatedString, str]
+    content_extractor: Optional[RecordExtractor] = None
+
+    def __post_init__(self, parameters: Mapping[str, Any]) -> None:
+        self._filename_extractor = InterpolatedString.create(
+            self.filename_extractor,
+            parameters=parameters,
+        )
 
     def upload(self, record: Record) -> None:
         mocked_response = SafeResponse()
         mocked_response.content = json.dumps(record.data).encode("utf-8")
-        download_target = list(self._download_target_extractor.extract_records(mocked_response))[0]
+        download_target = list(self.download_target_extractor.extract_records(mocked_response))[0]
         if not isinstance(download_target, str):
             raise ValueError(
                 f"download_target is expected to be a str but was {type(download_target)}: {download_target}"
             )
 
-        response = self._requester.send_request(
+        response = self.requester.send_request(
             stream_slice=StreamSlice(
                 partition={}, cursor_slice={}, extra_fields={"download_target": download_target}
             ),
         )
 
-        if self._content_extractor:
+        if self.content_extractor:
             raise NotImplementedError("TODO")
         else:
             files_directory = Path(get_files_directory())
-            # TODO:: we could either interpolate record data if some relative_path is provided or
-            #  use partition_field value in the slice {"partition_field": some_value_id} to create a path
-            file_relative_path = Path(record.stream_name) / record.data["file_name"]
+
+            relative_path = self._filename_extractor.eval(self.config, record=record)
+            relative_path = relative_path.lstrip("/")
+            file_relative_path = Path(relative_path)
 
             full_path = files_directory / file_relative_path
             full_path.parent.mkdir(parents=True, exist_ok=True)
@@ -53,8 +71,13 @@ class FileUploader:
                 f.write(response.content)
             file_size_bytes = full_path.stat().st_size
 
+            logger.info("File uploaded successfully")
+            logger.info(f"File url: {str(full_path)} ")
+            logger.info(f"File size: {file_size_bytes / 1024} KB")
+            logger.info(f"File relative path: {str(file_relative_path)}")
+
             record.file_reference = AirbyteRecordMessageFileReference(
-                file_url=download_target,
+                file_url=str(full_path),
                 file_relative_path=str(file_relative_path),
                 file_size_bytes=file_size_bytes,
             )
