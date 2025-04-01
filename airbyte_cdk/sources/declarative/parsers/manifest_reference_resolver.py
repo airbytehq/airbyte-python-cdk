@@ -102,7 +102,7 @@ class ManifestReferenceResolver:
     def preprocess_manifest(self, manifest: Mapping[str, Any]) -> Dict[str, Any]:
         """
         :param manifest: incoming manifest that could have references to previously defined components
-        :return: a new manifest with all references resolved
+        :return:
         """
         return self._evaluate_node(manifest, manifest, set())  # type: ignore[no-any-return]
 
