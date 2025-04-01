@@ -4,7 +4,7 @@
 
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, List, Mapping, Dict
+from typing import Any, Dict, List, Mapping
 
 from airbyte_cdk.connector_builder.test_reader import TestReader
 from airbyte_cdk.models import (
@@ -123,7 +123,6 @@ def resolve_manifest(source: ManifestDeclarativeSource) -> AirbyteMessage:
 
 def full_resolve_manifest(source: ManifestDeclarativeSource, limits: TestLimits) -> AirbyteMessage:
     try:
-
         manifest = {**source.resolved_manifest}
         streams = manifest.get("streams", [])
         for stream in streams:
