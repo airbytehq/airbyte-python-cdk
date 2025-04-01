@@ -20,7 +20,8 @@ class PropertyLimitType(Enum):
 @dataclass
 class PropertyChunking:
     """
-    tbd
+    Defines the behavior for how the complete list of properties to query for are broken down into smaller groups
+    that will be used for multiple requests to the target API.
     """
 
     property_limit_type: PropertyLimitType
@@ -48,6 +49,7 @@ class PropertyChunking:
         current_chunk = list(always_include_properties) if always_include_properties else []
         chunk_size = 0
         for property_field in property_fields:
+            # If property_limit_type is not defined, we default to property_count which is just an incrementing count
             property_field_size = (
                 len(property_field)
                 if self.property_limit_type == PropertyLimitType.characters
@@ -61,5 +63,5 @@ class PropertyChunking:
             chunk_size += property_field_size
         yield current_chunk
 
-    def get_merge_key(self, record: Record) -> str:
+    def get_merge_key(self, record: Record) -> Optional[str]:
         return self._record_merge_strategy.get_group_key(record=record)

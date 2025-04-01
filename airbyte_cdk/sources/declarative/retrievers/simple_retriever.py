@@ -505,7 +505,10 @@ class SimpleRetriever(Retriever):
                                 current_record
                             )
                         )
-                        merged_records[merge_key].update(current_record)
+                        if merge_key:
+                            merged_records[merge_key].update(current_record)
+                        else:
+                            yield stream_data
                     else:
                         yield stream_data
             if self.cursor:

@@ -13,7 +13,10 @@ from airbyte_cdk.sources.types import Config, StreamSlice
 @dataclass
 class QueryProperties:
     """
-    tbd
+    Low-code component that encompasses the behavior to inject additional property values into the outbound API
+    requests. Property values can be defined statically within the manifest or dynamically by making requests
+    to a partner API to retrieve the properties. Query properties also allow for splitting of the total set of
+    properties into smaller chunks to satisfy API restrictions around the total amount of data retrieved
     """
 
     property_list: Optional[Union[List[str], PropertiesFromEndpoint]]
