@@ -39,6 +39,9 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
 from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer import (
     ManifestComponentTransformer,
 )
+from airbyte_cdk.sources.declarative.parsers.manifest_normalizer import (
+    ManifestNormalizer,
+)
 from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import (
     ManifestReferenceResolver,
 )
@@ -55,6 +58,24 @@ from airbyte_cdk.sources.utils.slice_logger import (
     SliceLogger,
 )
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
+
+
+def _get_declarative_component_schema() -> Dict[str, Any]:
+    try:
+        raw_component_schema = pkgutil.get_data(
+            "airbyte_cdk", "sources/declarative/declarative_component_schema.yaml"
+        )
+        if raw_component_schema is not None:
+            declarative_component_schema = yaml.load(raw_component_schema, Loader=yaml.SafeLoader)
+            return declarative_component_schema  # type: ignore
+        else:
+            raise RuntimeError(
+                "Failed to read manifest component json schema required for deduplication"
+            )
+    except FileNotFoundError as e:
+        raise FileNotFoundError(
+            f"Failed to read manifest component json schema required for deduplication: {e}"
+        )
 
 
 class ManifestDeclarativeSource(DeclarativeSource):
@@ -78,6 +99,8 @@ class ManifestDeclarativeSource(DeclarativeSource):
             component_factory: optional factory if ModelToComponentFactory's default behavior needs to be tweaked.
         """
         self.logger = logging.getLogger(f"airbyte.{self.name}")
+
+        self._declarative_component_schema = _get_declarative_component_schema()
         # For ease of use we don't require the type to be specified at the top level manifest, but it should be included during processing
         manifest = dict(source_config)
         if "type" not in manifest:
@@ -86,10 +109,15 @@ class ManifestDeclarativeSource(DeclarativeSource):
         # If custom components are needed, locate and/or register them.
         self.components_module: ModuleType | None = get_registered_components_module(config=config)
 
-        self._reduce_manifest_commons = True if emit_connector_builder_messages else False
-        resolved_source_config = ManifestReferenceResolver().preprocess_manifest(
-            manifest, self._reduce_manifest_commons
-        )
+        resolved_source_config = ManifestReferenceResolver().preprocess_manifest(manifest)
+
+        if emit_connector_builder_messages:
+            # reduce commonalities in the manifest after the references have been resolved,
+            # used mostly for Connector Builder use cases.
+            resolved_source_config = ManifestNormalizer(
+                resolved_source_config, self._declarative_component_schema
+            ).normalize()
+
         propagated_source_config = ManifestComponentTransformer().propagate_types_and_parameters(
             "", resolved_source_config, {}
         )
@@ -269,22 +297,6 @@ class ManifestDeclarativeSource(DeclarativeSource):
         """
         Validates the connector manifest against the declarative component schema
         """
-        try:
-            raw_component_schema = pkgutil.get_data(
-                "airbyte_cdk", "sources/declarative/declarative_component_schema.yaml"
-            )
-            if raw_component_schema is not None:
-                declarative_component_schema = yaml.load(
-                    raw_component_schema, Loader=yaml.SafeLoader
-                )
-            else:
-                raise RuntimeError(
-                    "Failed to read manifest component json schema required for validation"
-                )
-        except FileNotFoundError as e:
-            raise FileNotFoundError(
-                f"Failed to read manifest component json schema required for validation: {e}"
-            )
 
         streams = self._source_config.get("streams")
         dynamic_streams = self._source_config.get("dynamic_streams")
@@ -294,7 +306,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
             )
 
         try:
-            validate(self._source_config, declarative_component_schema)
+            validate(self._source_config, self._declarative_component_schema)
         except ValidationError as e:
             raise ValidationError(
                 "Validation against json schema defined in declarative_component_schema.yaml schema failed"

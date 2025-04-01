@@ -21,7 +21,7 @@ class UndefinedReferenceException(Exception):
         super().__init__(f"Undefined reference {reference} from {path}")
 
 
-class ManifestDeduplicationException(Exception):
+class ManifestNormalizationException(Exception):
     """
     Raised when a circular reference is detected in a manifest.
     """

@@ -4,9 +4,15 @@
 
 import pytest
 
+from airbyte_cdk.sources.declarative.manifest_declarative_source import (
+    _get_declarative_component_schema,
+)
 from airbyte_cdk.sources.declarative.parsers.custom_exceptions import (
     CircularReferenceException,
     UndefinedReferenceException,
+)
+from airbyte_cdk.sources.declarative.parsers.manifest_normalizer import (
+    ManifestNormalizer,
 )
 from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import (
     ManifestReferenceResolver,
@@ -166,7 +172,9 @@ def test_circular_reference():
         resolver.preprocess_manifest(content)
 
 
-def test_deduplicate_manifest_when_multiple_url_base_are_resolved_and_most_frequent_is_shared():
+def test_deduplicate_manifest_when_multiple_url_base_are_resolved_and_most_frequent_is_shared() -> (
+    None
+):
     content = {
         "type": "DeclarativeSource",
         "definitions": {
@@ -476,11 +484,13 @@ def test_deduplicate_manifest_when_multiple_url_base_are_resolved_and_most_frequ
             },
         },
     }
-    config = resolver.preprocess_manifest(content, reduce_commons=True)
-    assert config == expected
+    resolved_manifest = resolver.preprocess_manifest(content)
+    schema = _get_declarative_component_schema()
+    normalized_manifest = ManifestNormalizer(resolved_manifest, schema).normalize()
+    assert normalized_manifest == expected
 
 
-def test_deduplicate_manifest_with_shared_definitions_url_base_are_present():
+def test_deduplicate_manifest_with_shared_definitions_url_base_are_present() -> None:
     content = {
         "type": "DeclarativeSource",
         "definitions": {
@@ -791,5 +801,7 @@ def test_deduplicate_manifest_with_shared_definitions_url_base_are_present():
             },
         },
     }
-    config = resolver.preprocess_manifest(content, reduce_commons=True)
-    assert config == expected
+    resolved_manifest = resolver.preprocess_manifest(content)
+    schema = _get_declarative_component_schema()
+    normalized_manifest = ManifestNormalizer(resolved_manifest, schema).normalize()
+    assert normalized_manifest == expected
