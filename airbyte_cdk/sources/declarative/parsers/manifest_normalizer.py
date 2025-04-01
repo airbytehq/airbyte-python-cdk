@@ -104,9 +104,7 @@ class ManifestNormalizer:
             ManifestNormalizationException: Caught internally and handled by returning the original manifest.
         """
         try:
-            # process the manifest
             self._deduplicate_minifest()
-            # post processing the manifest
             self._reference_schemas()
 
             return self._normalized_manifest
@@ -142,9 +140,7 @@ class ManifestNormalizer:
             # prepare the `definitions` tag
             self._prepare_definitions()
             # replace duplicates with references, if any
-            self._handle_duplicates(
-                self._collect_duplicates(),
-            )
+            self._handle_duplicates(self._collect_duplicates())
         except Exception as e:
             raise ManifestNormalizationException(str(e))
 
