@@ -515,7 +515,10 @@ class SimpleRetriever(Retriever):
                 self.cursor.close_slice(_slice, most_recent_record_from_slice)
 
             if has_multiple_chunks:
-                yield from merged_records.values()
+                yield from [
+                    Record(data=merged_record, stream_name=self.name, associated_slice=stream_slice)
+                    for merged_record in merged_records.values()
+                ]
         else:
             _slice = stream_slice or StreamSlice(partition={}, cursor_slice={})  # None-check
 

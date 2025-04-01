@@ -2856,7 +2856,7 @@ class ModelToComponentFactory:
 
             if len(query_properties_definitions) > 1:
                 raise ValueError(
-                    f"request_parameters should only define one QueryProperties field, but found {len(query_properties_definitions)}"
+                    f"request_parameters only supports defining one QueryProperties field, but found {len(query_properties_definitions)} usages"
                 )
 
             if len(query_properties_definitions) == 1:
@@ -2999,27 +2999,6 @@ class ModelToComponentFactory:
             if not isinstance(request_parameter, Mapping)
             or not request_parameter.get("type") == "QueryProperties"
         }
-
-    @staticmethod
-    def _translate_query_properties_to_interpolated_strings(
-        request_parameters: Mapping[str, Union[Any, str]],
-    ) -> Mapping[str, Union[Any, str]]:
-        # todo blai: remove this since unused
-        new_request_parameters = dict()
-        for key, request_parameter in request_parameters.items():
-            if (
-                isinstance(request_parameter, Mapping)
-                and request_parameter.get("type") == "QueryProperties"
-            ):
-                # This may seem like this could be combined into the above conditional, but this is separated
-                # so that we do not add the properties into the new request_parameters mapping
-                if request_parameter.get("inject_into"):
-                    new_request_parameters[key] = (
-                        "{{ stream_partition.extra_fields['query_properties'] }}"
-                    )
-            else:
-                new_request_parameters[key] = request_parameter
-        return new_request_parameters
 
     def create_state_delegating_stream(
         self,
