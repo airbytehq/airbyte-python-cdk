@@ -4,7 +4,10 @@ from dataclasses import InitVar, dataclass
 from enum import Enum
 from typing import Any, Iterable, List, Mapping, Optional
 
-from airbyte_cdk.sources.declarative.requesters.query_properties import GroupByKey
+from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import GroupByKey
+from airbyte_cdk.sources.declarative.requesters.query_properties.strategies.merge_strategy import (
+    RecordMergeStrategy,
+)
 from airbyte_cdk.sources.types import Config, Record
 
 
@@ -26,9 +29,7 @@ class PropertyChunking:
 
     property_limit_type: PropertyLimitType
     property_limit: Optional[int]
-    record_merge_strategy: Optional[
-        GroupByKey
-    ]  # This should eventually be some sort of interface or type
+    record_merge_strategy: Optional[RecordMergeStrategy]
     parameters: InitVar[Mapping[str, Any]]
     config: Config
 

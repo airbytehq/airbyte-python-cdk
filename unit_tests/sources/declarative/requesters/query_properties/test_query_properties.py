@@ -5,7 +5,6 @@ from unittest.mock import Mock
 import pytest
 
 from airbyte_cdk.sources.declarative.requesters.query_properties import (
-    GroupByKey,
     PropertiesFromEndpoint,
     QueryProperties,
 )
@@ -13,6 +12,7 @@ from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunki
     PropertyChunking,
     PropertyLimitType,
 )
+from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import GroupByKey
 from airbyte_cdk.sources.types import StreamSlice
 
 CONFIG = {}

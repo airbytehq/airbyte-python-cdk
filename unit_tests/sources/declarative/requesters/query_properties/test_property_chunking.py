@@ -2,10 +2,11 @@
 
 import pytest
 
-from airbyte_cdk.sources.declarative.requesters.query_properties import GroupByKey, PropertyChunking
+from airbyte_cdk.sources.declarative.requesters.query_properties import PropertyChunking
 from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunking import (
     PropertyLimitType,
 )
+from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import GroupByKey
 from airbyte_cdk.sources.types import Record
 
 CONFIG = {}

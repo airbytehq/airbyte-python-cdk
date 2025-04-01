@@ -347,6 +347,7 @@ class Clamping(BaseModel):
 
 class EmitPartialRecordMergeStrategy(BaseModel):
     type: Literal["EmitPartialRecordMergeStrategy"]
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
 class Algorithm(Enum):

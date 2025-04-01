@@ -219,6 +219,10 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     DynamicSchemaLoader as DynamicSchemaLoaderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    EmitPartialRecordMergeStrategy,
+    ValueType,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ExponentialBackoffStrategy as ExponentialBackoffStrategyModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -384,7 +388,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     UnlimitedCallRatePolicy as UnlimitedCallRatePolicyModel,
 )
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import ValueType
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     WaitTimeFromHeader as WaitTimeFromHeaderModel,
 )
@@ -441,13 +444,16 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     StopConditionPaginationStrategyDecorator,
 )
 from airbyte_cdk.sources.declarative.requesters.query_properties import (
-    GroupByKey,
     PropertiesFromEndpoint,
     PropertyChunking,
     QueryProperties,
 )
 from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunking import (
     PropertyLimitType,
+)
+from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import (
+    EmitPartialRecord,
+    GroupByKey,
 )
 from airbyte_cdk.sources.declarative.requesters.request_option import RequestOptionType
 from airbyte_cdk.sources.declarative.requesters.request_options import (
@@ -609,6 +615,7 @@ class ModelToComponentFactory:
             DefaultErrorHandlerModel: self.create_default_error_handler,
             DefaultPaginatorModel: self.create_default_paginator,
             DpathExtractorModel: self.create_dpath_extractor,
+            EmitPartialRecordMergeStrategy: self.create_emit_partial_record,
             ResponseToFileExtractorModel: self.create_response_to_file_extractor,
             ExponentialBackoffStrategyModel: self.create_exponential_backoff_strategy,
             SessionTokenAuthenticatorModel: self.create_session_token_authenticator,
@@ -789,6 +796,12 @@ class ModelToComponentFactory:
             replace_record=model.replace_record if model.replace_record is not None else False,
             parameters=model.parameters or {},
         )
+
+    @staticmethod
+    def create_emit_partial_record(
+        model: EmitPartialRecordMergeStrategy, config: Config, **kwargs: Any
+    ) -> EmitPartialRecord:
+        return EmitPartialRecord(config=config, parameters=model.parameters or {})
 
     @staticmethod
     def _json_schema_type_name_to_type(value_type: Optional[ValueType]) -> Optional[Type[Any]]:

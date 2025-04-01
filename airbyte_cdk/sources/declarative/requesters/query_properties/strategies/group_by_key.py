@@ -3,11 +3,14 @@
 from dataclasses import InitVar, dataclass
 from typing import Any, List, Mapping, Optional, Union
 
+from airbyte_cdk.sources.declarative.requesters.query_properties.strategies.merge_strategy import (
+    RecordMergeStrategy,
+)
 from airbyte_cdk.sources.types import Config, Record
 
 
 @dataclass
-class GroupByKey:
+class GroupByKey(RecordMergeStrategy):
     """
     Record merge strategy that combines records together according to values on the record for one or many keys.
     """

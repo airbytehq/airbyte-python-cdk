@@ -1032,6 +1032,9 @@ definitions:
       type:
         type: string
         enum: [EmitPartialRecordMergeStrategy]
+      $parameters:
+        type: object
+        additionalProperties: true
   JwtAuthenticator:
     title: JWT Authenticator
     description: Authenticator for requests using JWT authentication flow.

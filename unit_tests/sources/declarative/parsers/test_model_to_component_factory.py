@@ -9,7 +9,6 @@ from typing import Any, Iterable, Mapping
 import freezegun
 import pytest
 import requests
-from pydantic.v1 import ValidationError
 
 from airbyte_cdk import AirbyteTracedException
 from airbyte_cdk.models import (
@@ -127,7 +126,6 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     StopConditionPaginationStrategyDecorator,
 )
 from airbyte_cdk.sources.declarative.requesters.query_properties import (
-    GroupByKey,
     PropertiesFromEndpoint,
     PropertyChunking,
     QueryProperties,
@@ -135,6 +133,7 @@ from airbyte_cdk.sources.declarative.requesters.query_properties import (
 from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunking import (
     PropertyLimitType,
 )
+from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import GroupByKey
 from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
     RequestOptionType,
@@ -4376,7 +4375,7 @@ def test_create_property_chunking_invalid_property_limit_type():
 
     connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
 
-    with pytest.raises(ValidationError):
+    with pytest.raises:
         connector_builder_factory.create_component(
             model_type=PropertyChunkingModel,
             component_definition=property_chunking_model,

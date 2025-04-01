@@ -2,7 +2,7 @@
 
 import pytest
 
-from airbyte_cdk.sources.declarative.requesters.query_properties import GroupByKey
+from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import GroupByKey
 from airbyte_cdk.sources.types import Record
 
 

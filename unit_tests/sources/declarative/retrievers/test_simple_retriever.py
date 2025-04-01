@@ -31,11 +31,11 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     PageIncrement,
 )
 from airbyte_cdk.sources.declarative.requesters.query_properties import (
-    GroupByKey,
     PropertyChunking,
     QueryProperties,
 )
 from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunking import (
+    GroupByKey,
     PropertyLimitType,
 )
 from airbyte_cdk.sources.declarative.requesters.request_option import RequestOptionType
