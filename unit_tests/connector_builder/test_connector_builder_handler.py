@@ -20,7 +20,7 @@ from airbyte_cdk.connector_builder.connector_builder_handler import (
     DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE,
     DEFAULT_MAXIMUM_NUMBER_OF_SLICES,
     DEFAULT_MAXIMUM_RECORDS,
-    TestReadLimits,
+    TestLimits,
     create_source,
     get_limits,
     resolve_manifest,
@@ -384,6 +384,7 @@ RESOLVE_MANIFEST_CONFIG = {
 RESOLVE_DYNAMIC_STREAM_MANIFEST_CONFIG = {
     "__injected_declarative_manifest": DYNAMIC_STREAM_MANIFEST,
     "__command": "full_resolve_manifest",
+    "__test_read_config": {"max_streams": 2},
 }
 
 TEST_READ_CONFIG = {
@@ -524,7 +525,7 @@ def test_resolve_manifest(valid_resolve_manifest_config_file):
     command = "resolve_manifest"
     config["__command"] = command
     source = ManifestDeclarativeSource(source_config=MANIFEST)
-    limits = TestReadLimits()
+    limits = TestLimits()
     resolved_manifest = handle_connector_builder_request(
         source, command, config, create_configured_catalog("dummy_stream"), _A_STATE, limits
     )
@@ -728,7 +729,7 @@ def test_read():
             emitted_at=1,
         ),
     )
-    limits = TestReadLimits()
+    limits = TestLimits()
     with patch(
         "airbyte_cdk.connector_builder.test_reader.TestReader.run_test_read",
         return_value=stream_read,
@@ -789,7 +790,7 @@ def test_config_update() -> None:
             config,
             ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG),
             _A_PER_PARTITION_STATE,
-            TestReadLimits(),
+            TestLimits(),
         )
         assert output.record.data["latest_config_update"]
 
@@ -825,7 +826,7 @@ def test_read_returns_error_response(mock_from_exception):
     mock_from_exception.return_value = stack_trace
 
     source = MockManifestDeclarativeSource()
-    limits = TestReadLimits()
+    limits = TestLimits()
     response = read_stream(
         source,
         TEST_READ_CONFIG,
@@ -865,7 +866,7 @@ def test_handle_429_response():
     ] = {"backoff_strategies": [{"type": "ConstantBackoffStrategy", "backoff_time_in_seconds": 5}]}
 
     config = TEST_READ_CONFIG
-    limits = TestReadLimits()
+    limits = TestLimits()
     source = create_source(config, limits)
 
     with patch("requests.Session.send", return_value=response) as mock_send:
@@ -982,7 +983,7 @@ def test_create_source():
     max_records = 3
     max_pages_per_slice = 2
     max_slices = 1
-    limits = TestReadLimits(max_records, max_pages_per_slice, max_slices)
+    limits = TestLimits(max_records, max_pages_per_slice, max_slices)
 
     config = {"__injected_declarative_manifest": MANIFEST}
 
@@ -1064,7 +1065,7 @@ def test_read_source(mock_http_stream):
     max_records = 100
     max_pages_per_slice = 2
     max_slices = 3
-    limits = TestReadLimits(max_records, max_pages_per_slice, max_slices)
+    limits = TestLimits(max_records, max_pages_per_slice, max_slices)
 
     catalog = ConfiguredAirbyteCatalog(
         streams=[
@@ -1111,7 +1112,7 @@ def test_read_source_single_page_single_slice(mock_http_stream):
     max_records = 100
     max_pages_per_slice = 1
     max_slices = 1
-    limits = TestReadLimits(max_records, max_pages_per_slice, max_slices)
+    limits = TestLimits(max_records, max_pages_per_slice, max_slices)
 
     catalog = ConfiguredAirbyteCatalog(
         streams=[
@@ -1195,7 +1196,7 @@ def test_handle_read_external_requests(deployment_mode, url_base, expected_error
     endpoints when running on Cloud or OSS deployments
     """
 
-    limits = TestReadLimits(max_records=100, max_pages_per_slice=1, max_slices=1)
+    limits = TestLimits(max_records=100, max_pages_per_slice=1, max_slices=1)
 
     catalog = ConfiguredAirbyteCatalog(
         streams=[
@@ -1281,7 +1282,7 @@ def test_handle_read_external_oauth_request(deployment_mode, token_url, expected
     endpoints when running on Cloud or OSS deployments
     """
 
-    limits = TestReadLimits(max_records=100, max_pages_per_slice=1, max_slices=1)
+    limits = TestLimits(max_records=100, max_pages_per_slice=1, max_slices=1)
 
     catalog = ConfiguredAirbyteCatalog(
         streams=[
@@ -1339,7 +1340,7 @@ def test_read_stream_exception_with_secrets():
         ]
     )
     state = []
-    limits = TestReadLimits()
+    limits = TestLimits()
 
     # Add the secret to be filtered
     update_secrets([config["api_key"]])
@@ -1367,7 +1368,7 @@ def test_full_resolve_manifest(valid_resolve_manifest_config_file):
     config = copy.deepcopy(RESOLVE_DYNAMIC_STREAM_MANIFEST_CONFIG)
     command = config["__command"]
     source = ManifestDeclarativeSource(source_config=DYNAMIC_STREAM_MANIFEST)
-    limits = TestReadLimits()
+    limits = TestLimits(max_streams=2)
     with HttpMocker() as http_mocker:
         http_mocker.get(
             HttpRequest(url="https://api.test.com/parents"),
@@ -1610,72 +1611,6 @@ def test_full_resolve_manifest(valid_resolve_manifest_config_file):
                         "type": "HttpRequester",
                         "url_base": "https://api.test.com",
                         "path": "1/2",
-                        "http_method": "GET",
-                        "authenticator": {
-                            "type": "ApiKeyAuthenticator",
-                            "header": "apikey",
-                            "api_token": "{{ config['api_key'] }}",
-                        },
-                    },
-                    "record_selector": {
-                        "type": "RecordSelector",
-                        "extractor": {"type": "DpathExtractor", "field_path": []},
-                    },
-                    "paginator": {"type": "NoPagination"},
-                },
-                "dynamic_stream_name": "TestDynamicStream",
-            },
-            {
-                "type": "DeclarativeStream",
-                "name": "parent_2_item_1",
-                "primary_key": [],
-                "schema_loader": {
-                    "type": "InlineSchemaLoader",
-                    "schema": {
-                        "$schema": "http://json-schema.org/schema#",
-                        "properties": {"ABC": {"type": "number"}, "AED": {"type": "number"}},
-                        "type": "object",
-                    },
-                },
-                "retriever": {
-                    "type": "SimpleRetriever",
-                    "requester": {
-                        "type": "HttpRequester",
-                        "url_base": "https://api.test.com",
-                        "path": "2/1",
-                        "http_method": "GET",
-                        "authenticator": {
-                            "type": "ApiKeyAuthenticator",
-                            "header": "apikey",
-                            "api_token": "{{ config['api_key'] }}",
-                        },
-                    },
-                    "record_selector": {
-                        "type": "RecordSelector",
-                        "extractor": {"type": "DpathExtractor", "field_path": []},
-                    },
-                    "paginator": {"type": "NoPagination"},
-                },
-                "dynamic_stream_name": "TestDynamicStream",
-            },
-            {
-                "type": "DeclarativeStream",
-                "name": "parent_2_item_2",
-                "primary_key": [],
-                "schema_loader": {
-                    "type": "InlineSchemaLoader",
-                    "schema": {
-                        "$schema": "http://json-schema.org/schema#",
-                        "properties": {"ABC": {"type": "number"}, "AED": {"type": "number"}},
-                        "type": "object",
-                    },
-                },
-                "retriever": {
-                    "type": "SimpleRetriever",
-                    "requester": {
-                        "type": "HttpRequester",
-                        "url_base": "https://api.test.com",
-                        "path": "2/2",
                         "http_method": "GET",
                         "authenticator": {
                             "type": "ApiKeyAuthenticator",
