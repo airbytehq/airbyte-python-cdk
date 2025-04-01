@@ -176,6 +176,24 @@ from airbyte_cdk.sources.types import FieldPointer
             {"k": "v", "path": "static_value"},
             id="add all fields if condition is boolean True",
         ),
+        pytest.param(
+            {"k": "v"},
+            [(["path"], "static_value")],
+            None,
+            "{{ path[0] not in record.keys() }}",
+            {},
+            {"k": "v", "path": "static_value"},
+            id="add fields when condition uses path value",
+        ),
+        pytest.param(
+            {"k": "v", "existing_path": "record_value"},
+            [(["existing_path"], "static_value")],
+            None,
+            "{{ path[0] not in record.keys() }}",
+            {},
+            {"k": "v", "existing_path": "record_value"},
+            id="do not add fields when condition uses path value",
+        ),
     ],
 )
 def test_add_fields(

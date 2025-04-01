@@ -7,7 +7,10 @@ from typing import Mapping
 from pydantic.v1 import BaseModel
 
 from airbyte_cdk.sources.declarative.checks.check_dynamic_stream import CheckDynamicStream
-from airbyte_cdk.sources.declarative.checks.check_stream import CheckStream
+from airbyte_cdk.sources.declarative.checks.check_stream import (
+    CheckStream,
+    DynamicStreamCheckConfig,
+)
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 from airbyte_cdk.sources.declarative.models import (
     CheckDynamicStream as CheckDynamicStreamModel,
@@ -21,4 +24,4 @@ COMPONENTS_CHECKER_TYPE_MAPPING: Mapping[str, type[BaseModel]] = {
     "CheckDynamicStream": CheckDynamicStreamModel,
 }
 
-__all__ = ["CheckStream", "CheckDynamicStream", "ConnectionChecker"]
+__all__ = ["CheckStream", "CheckDynamicStream", "ConnectionChecker", "DynamicStreamCheckConfig"]

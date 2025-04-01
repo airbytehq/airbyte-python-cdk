@@ -4,7 +4,7 @@
 
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, List, Mapping
+from typing import Any, Dict, List, Mapping
 
 from airbyte_cdk.connector_builder.test_reader import TestReader
 from airbyte_cdk.models import (
@@ -27,30 +27,34 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE = 5
 DEFAULT_MAXIMUM_NUMBER_OF_SLICES = 5
 DEFAULT_MAXIMUM_RECORDS = 100
+DEFAULT_MAXIMUM_STREAMS = 100
 
 MAX_PAGES_PER_SLICE_KEY = "max_pages_per_slice"
 MAX_SLICES_KEY = "max_slices"
 MAX_RECORDS_KEY = "max_records"
+MAX_STREAMS_KEY = "max_streams"
 
 
 @dataclass
-class TestReadLimits:
+class TestLimits:
     max_records: int = field(default=DEFAULT_MAXIMUM_RECORDS)
     max_pages_per_slice: int = field(default=DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE)
     max_slices: int = field(default=DEFAULT_MAXIMUM_NUMBER_OF_SLICES)
+    max_streams: int = field(default=DEFAULT_MAXIMUM_STREAMS)
 
 
-def get_limits(config: Mapping[str, Any]) -> TestReadLimits:
+def get_limits(config: Mapping[str, Any]) -> TestLimits:
     command_config = config.get("__test_read_config", {})
     max_pages_per_slice = (
         command_config.get(MAX_PAGES_PER_SLICE_KEY) or DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE
     )
     max_slices = command_config.get(MAX_SLICES_KEY) or DEFAULT_MAXIMUM_NUMBER_OF_SLICES
     max_records = command_config.get(MAX_RECORDS_KEY) or DEFAULT_MAXIMUM_RECORDS
-    return TestReadLimits(max_records, max_pages_per_slice, max_slices)
+    max_streams = command_config.get(MAX_STREAMS_KEY) or DEFAULT_MAXIMUM_STREAMS
+    return TestLimits(max_records, max_pages_per_slice, max_slices, max_streams)
 
 
-def create_source(config: Mapping[str, Any], limits: TestReadLimits) -> ManifestDeclarativeSource:
+def create_source(config: Mapping[str, Any], limits: TestLimits) -> ManifestDeclarativeSource:
     manifest = config["__injected_declarative_manifest"]
     return ManifestDeclarativeSource(
         config=config,
@@ -71,7 +75,7 @@ def read_stream(
     config: Mapping[str, Any],
     configured_catalog: ConfiguredAirbyteCatalog,
     state: List[AirbyteStateMessage],
-    limits: TestReadLimits,
+    limits: TestLimits,
 ) -> AirbyteMessage:
     try:
         test_read_handler = TestReader(
@@ -117,13 +121,23 @@ def resolve_manifest(source: ManifestDeclarativeSource) -> AirbyteMessage:
         return error.as_airbyte_message()
 
 
-def full_resolve_manifest(source: ManifestDeclarativeSource) -> AirbyteMessage:
+def full_resolve_manifest(source: ManifestDeclarativeSource, limits: TestLimits) -> AirbyteMessage:
     try:
         manifest = {**source.resolved_manifest}
         streams = manifest.get("streams", [])
         for stream in streams:
             stream["dynamic_stream_name"] = None
-        streams.extend(source.dynamic_streams)
+
+        mapped_streams: Dict[str, List[Dict[str, Any]]] = {}
+        for stream in source.dynamic_streams:
+            generated_streams = mapped_streams.setdefault(stream["dynamic_stream_name"], [])
+
+            if len(generated_streams) < limits.max_streams:
+                generated_streams += [stream]
+
+        for generated_streams_list in mapped_streams.values():
+            streams.extend(generated_streams_list)
+
         manifest["streams"] = streams
         return AirbyteMessage(
             type=Type.RECORD,
