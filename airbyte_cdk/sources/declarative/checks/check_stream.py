@@ -55,7 +55,7 @@ class CheckStream(ConnectionChecker):
             if not streams:
                 return False, f"No streams to connect to from source {source}"
         except Exception as error:
-            return self._log_error(logger, "connecting to streams", error)
+            return self._log_error(logger, "discovering streams", error)
 
         stream_name_to_stream = {s.name: s for s in streams}
         for stream_name in self.stream_names:
