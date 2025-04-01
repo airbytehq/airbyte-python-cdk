@@ -102,9 +102,9 @@ class ManifestReferenceResolver:
     def preprocess_manifest(self, manifest: Mapping[str, Any]) -> Dict[str, Any]:
         """
         :param manifest: incoming manifest that could have references to previously defined components
-        :param reduce_commons: whether to deduplicate the commonalities in the manifest after pre-processing.
+        :return: a new manifest with all references resolved
         """
-        return self._evaluate_node(manifest, manifest, set())  # type: ignore
+        return self._evaluate_node(manifest, manifest, set())  # type: ignore[no-any-return]
 
     def _evaluate_node(self, node: Any, manifest: Mapping[str, Any], visited: Set[Any]) -> Any:
         if isinstance(node, dict):
