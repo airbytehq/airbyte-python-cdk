@@ -348,7 +348,7 @@ definitions:
         type: string
       stream_count:
         title: Stream Count
-        description: Numbers of the streams to try reading from when running a check operation.
+        description: The number of streams to attempt reading from during a check operation. If `stream_count` exceeds the total number of available streams, the minimum of the two values will be used.
         type: integer
         default: 0
   CheckDynamicStream:

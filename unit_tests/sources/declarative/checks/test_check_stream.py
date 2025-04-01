@@ -363,7 +363,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
 
 
 @pytest.mark.parametrize(
-    "check_component, expected_result, expectation, response_code, expected_messages",
+    "check_component, expected_result, expectation, response_code, expected_messages, request_count",
     [
         pytest.param(
             {"check": {"type": "CheckStream", "stream_names": ["static_stream"]}},
@@ -371,6 +371,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
             False,
             200,
             [{"id": 1, "name": "static_1"}, {"id": 2, "name": "static_2"}],
+            0,
             id="test_check_only_static_streams",
         ),
         pytest.param(
@@ -391,6 +392,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
             False,
             200,
             [],
+            0,
             id="test_check_static_streams_and_http_dynamic_stream",
         ),
         pytest.param(
@@ -411,6 +413,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
             False,
             200,
             [],
+            0,
             id="test_check_static_streams_and_config_dynamic_stream",
         ),
         pytest.param(
@@ -434,6 +437,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
             False,
             200,
             [],
+            0,
             id="test_check_http_dynamic_stream_and_config_dynamic_stream",
         ),
         pytest.param(
@@ -458,7 +462,28 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
             False,
             200,
             [],
+            0,
             id="test_check_static_streams_and_http_dynamic_stream_and_config_dynamic_stream",
+        ),
+        pytest.param(
+            {
+                "check": {
+                    "type": "CheckStream",
+                    "dynamic_streams_check_configs": [
+                        {
+                            "type": "DynamicStreamCheckConfig",
+                            "dynamic_stream_name": "http_dynamic_stream",
+                            "stream_count": 1000,
+                        },
+                    ],
+                }
+            },
+            True,
+            False,
+            200,
+            [],
+            1,
+            id="test_stream_count_gt_generated_streams",
         ),
         pytest.param(
             {"check": {"type": "CheckStream", "stream_names": ["non_existent_stream"]}},
@@ -466,6 +491,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
             True,
             200,
             [],
+            0,
             id="test_non_existent_static_stream",
         ),
         pytest.param(
@@ -485,6 +511,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
             False,
             200,
             [],
+            0,
             id="test_non_existent_dynamic_stream",
         ),
         pytest.param(
@@ -493,6 +520,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
             False,
             404,
             ["Not found. The requested resource was not found on the server."],
+            0,
             id="test_stream_unavailable_unhandled_error",
         ),
         pytest.param(
@@ -501,6 +529,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
             False,
             403,
             ["Forbidden. You don't have permission to access this resource."],
+            0,
             id="test_stream_unavailable_handled_error",
         ),
         pytest.param(
@@ -509,6 +538,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
             False,
             401,
             ["Unauthorized. Please ensure you are authenticated correctly."],
+            0,
             id="test_stream_unauthorized_error",
         ),
         pytest.param(
@@ -532,6 +562,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
             False,
             404,
             ["Not found. The requested resource was not found on the server."],
+            0,
             id="test_dynamic_stream_unavailable_unhandled_error",
         ),
         pytest.param(
@@ -555,6 +586,7 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
             False,
             403,
             ["Forbidden. You don't have permission to access this resource."],
+            0,
             id="test_dynamic_stream_unavailable_handled_error",
         ),
         pytest.param(
@@ -578,12 +610,13 @@ _MANIFEST_WITHOUT_CHECK_COMPONENT = {
             False,
             401,
             ["Unauthorized. Please ensure you are authenticated correctly."],
+            0,
             id="test_dynamic_stream_unauthorized_error",
         ),
     ],
 )
 def test_check_stream1(
-    check_component, expected_result, expectation, response_code, expected_messages
+    check_component, expected_result, expectation, response_code, expected_messages, request_count
 ):
     manifest = {**deepcopy(_MANIFEST_WITHOUT_CHECK_COMPONENT), **check_component}
 
@@ -600,13 +633,17 @@ def test_check_stream1(
         )
         http_mocker.get(items_request, items_response)
 
-        item_request = HttpRequest(url="https://api.test.com/items/1")
+        item_request_1 = HttpRequest(url="https://api.test.com/items/1")
         item_response = HttpResponse(body=json.dumps(expected_messages), status_code=response_code)
-        http_mocker.get(item_request, item_response)
+        http_mocker.get(item_request_1, item_response)
 
-        item_request = HttpRequest(url="https://api.test.com/items/3")
+        item_request_2 = HttpRequest(url="https://api.test.com/items/2")
         item_response = HttpResponse(body=json.dumps(expected_messages), status_code=response_code)
-        http_mocker.get(item_request, item_response)
+        http_mocker.get(item_request_2, item_response)
+
+        item_request_3 = HttpRequest(url="https://api.test.com/items/3")
+        item_response = HttpResponse(body=json.dumps(expected_messages), status_code=response_code)
+        http_mocker.get(item_request_3, item_response)
 
         source = ConcurrentDeclarativeSource(
             source_config=manifest,
@@ -619,7 +656,7 @@ def test_check_stream1(
                 source.check_connection(logger, _CONFIG)
         else:
             stream_is_available, reason = source.check_connection(logger, _CONFIG)
-
+            http_mocker.assert_number_of_calls(item_request_2, request_count)
             assert stream_is_available == expected_result
 
 
