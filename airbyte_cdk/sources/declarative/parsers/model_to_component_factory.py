@@ -226,7 +226,7 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     DynamicStreamCheckConfig as DynamicStreamCheckConfigModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    EmitPartialRecordMergeStrategy
+    EmitPartialRecordMergeStrategy as EmitPartialRecordMergeStrategyModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ExponentialBackoffStrategy as ExponentialBackoffStrategyModel,
@@ -394,9 +394,7 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     UnlimitedCallRatePolicy as UnlimitedCallRatePolicyModel,
 )
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    ValueType
-)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import ValueType
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     WaitTimeFromHeader as WaitTimeFromHeaderModel,
 )
@@ -625,7 +623,7 @@ class ModelToComponentFactory:
             DefaultErrorHandlerModel: self.create_default_error_handler,
             DefaultPaginatorModel: self.create_default_paginator,
             DpathExtractorModel: self.create_dpath_extractor,
-            EmitPartialRecordMergeStrategy: self.create_emit_partial_record,
+            EmitPartialRecordMergeStrategyModel: self.create_emit_partial_record,
             ResponseToFileExtractorModel: self.create_response_to_file_extractor,
             ExponentialBackoffStrategyModel: self.create_exponential_backoff_strategy,
             SessionTokenAuthenticatorModel: self.create_session_token_authenticator,
