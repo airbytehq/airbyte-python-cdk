@@ -440,6 +440,15 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     PageIncrement,
     StopConditionPaginationStrategyDecorator,
 )
+from airbyte_cdk.sources.declarative.requesters.query_properties import (
+    GroupByKey,
+    PropertiesFromEndpoint,
+    PropertyChunking,
+    QueryProperties,
+)
+from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunking import (
+    PropertyLimitType,
+)
 from airbyte_cdk.sources.declarative.requesters.request_option import RequestOptionType
 from airbyte_cdk.sources.declarative.requesters.request_options import (
     DatetimeBasedRequestOptionsProvider,
@@ -448,15 +457,6 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
     RequestOptionsProvider,
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
-from airbyte_cdk.sources.declarative.requesters.request_properties import (
-    GroupByKey,
-    PropertiesFromEndpoint,
-    PropertyChunking,
-    QueryProperties,
-)
-from airbyte_cdk.sources.declarative.requesters.request_properties.property_chunking import (
-    PropertyLimitType,
-)
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
 from airbyte_cdk.sources.declarative.resolvers import (
     ComponentMappingDefinition,

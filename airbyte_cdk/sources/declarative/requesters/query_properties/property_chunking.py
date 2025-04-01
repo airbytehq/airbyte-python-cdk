@@ -4,7 +4,7 @@ from dataclasses import InitVar, dataclass
 from enum import Enum
 from typing import Any, Iterable, List, Mapping, Optional
 
-from airbyte_cdk.sources.declarative.requesters.request_properties import GroupByKey
+from airbyte_cdk.sources.declarative.requesters.query_properties import GroupByKey
 from airbyte_cdk.sources.types import Config, Record
 
 

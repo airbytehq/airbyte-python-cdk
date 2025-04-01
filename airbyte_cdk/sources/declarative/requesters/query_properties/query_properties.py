@@ -3,7 +3,7 @@
 from dataclasses import InitVar, dataclass
 from typing import Any, Iterable, List, Mapping, Optional, Union
 
-from airbyte_cdk.sources.declarative.requesters.request_properties import (
+from airbyte_cdk.sources.declarative.requesters.query_properties import (
     PropertiesFromEndpoint,
     PropertyChunking,
 )

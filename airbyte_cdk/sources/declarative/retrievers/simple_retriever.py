@@ -33,11 +33,11 @@ from airbyte_cdk.sources.declarative.partition_routers.single_partition_router i
 )
 from airbyte_cdk.sources.declarative.requesters.paginators.no_pagination import NoPagination
 from airbyte_cdk.sources.declarative.requesters.paginators.paginator import Paginator
+from airbyte_cdk.sources.declarative.requesters.query_properties import QueryProperties
 from airbyte_cdk.sources.declarative.requesters.request_options import (
     DefaultRequestOptionsProvider,
     RequestOptionsProvider,
 )
-from airbyte_cdk.sources.declarative.requesters.request_properties import QueryProperties
 from airbyte_cdk.sources.declarative.requesters.requester import Requester
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
@@ -451,8 +451,10 @@ class SimpleRetriever(Retriever):
         """
 
         if self.additional_query_properties:
-            property_chunks = self.additional_query_properties.get_request_property_chunks(
-                stream_slice=stream_slice
+            property_chunks = list(
+                self.additional_query_properties.get_request_property_chunks(
+                    stream_slice=stream_slice
+                )
             )
             has_multiple_chunks = self.additional_query_properties.has_multiple_chunks(
                 stream_slice=stream_slice
@@ -482,21 +484,6 @@ class SimpleRetriever(Retriever):
                 for stream_data in self._read_pages(record_generator, self.state, _slice):
                     current_record = self._extract_record(stream_data, _slice)
                     if self.cursor and current_record:
-                        # Record merging should only be done if there are multiple slices. Otherwise, yielding
-                        # immediately is more efficient so records can be emitted immediately
-                        if (
-                            self.additional_query_properties.property_chunking
-                            and has_multiple_chunks
-                        ):
-                            merge_key = (
-                                self.additional_query_properties.property_chunking.get_merge_key(
-                                    current_record
-                                )
-                            )
-                            merged_records[merge_key].update(current_record)
-                        else:
-                            yield stream_data
-
                         self.cursor.observe(_slice, current_record)
 
                     # Latest record read, not necessarily within slice boundaries.
@@ -505,9 +492,27 @@ class SimpleRetriever(Retriever):
                     most_recent_record_from_slice = self._get_most_recent_record(
                         most_recent_record_from_slice, current_record, _slice
                     )
+
+                    # Record merging should only be done if there are multiple property chunks. Otherwise,
+                    # yielding immediately is more efficient so records can be emitted immediately
+                    if (
+                        has_multiple_chunks
+                        and self.additional_query_properties.property_chunking
+                        and current_record
+                    ):
+                        merge_key = (
+                            self.additional_query_properties.property_chunking.get_merge_key(
+                                current_record
+                            )
+                        )
+                        merged_records[merge_key].update(current_record)
+                    else:
+                        yield stream_data
             if self.cursor:
                 self.cursor.close_slice(_slice, most_recent_record_from_slice)
-            yield from merged_records.values()
+
+            if has_multiple_chunks:
+                yield from merged_records.values()
         else:
             _slice = stream_slice or StreamSlice(partition={}, cursor_slice={})  # None-check
 
