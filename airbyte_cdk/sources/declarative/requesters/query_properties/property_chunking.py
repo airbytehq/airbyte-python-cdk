@@ -13,7 +13,8 @@ from airbyte_cdk.sources.types import Config, Record
 
 class PropertyLimitType(Enum):
     """
-    yeah
+    The heuristic that determines when the maximum size of the current chunk of properties and when a new
+    one should be started.
     """
 
     characters = "characters"

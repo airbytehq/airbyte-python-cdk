@@ -2892,6 +2892,9 @@ class ModelToComponentFactory:
         ):
             query_properties_definitions = []
             for key, request_parameter in model.requester.request_parameters.items():
+                # When translating JSON schema into Pydantic models, enforcing types for arrays containing both
+                # concrete string complex object definitions like QueryProperties would get resolved to Union[str, Any].
+                # This adds the extra validation that we couldn't get for free in Pydantic model generation
                 if (
                     isinstance(request_parameter, Mapping)
                     and request_parameter.get("type") == "QueryProperties"

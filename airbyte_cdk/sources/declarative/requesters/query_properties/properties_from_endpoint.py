@@ -13,7 +13,8 @@ from airbyte_cdk.sources.types import Config, StreamSlice
 @dataclass
 class PropertiesFromEndpoint:
     """
-    tbd
+    Component that defines the behavior around how to dynamically retrieve a set of request properties from an
+    API endpoint. The set retrieved can then be injected into the requests to extract records from an API source.
     """
 
     property_field_path: List[str]
@@ -36,5 +37,4 @@ class PropertiesFromEndpoint:
                 node.eval(self.config) if not isinstance(node, str) else node
                 for node in self._property_field_path
             ]
-
-            yield dpath.get(property_obj, path)  # type: ignore # extracted will be a MutableMapping, given input data structure
+            yield dpath.get(property_obj, path, default=[])  # type: ignore # extracted will be a MutableMapping, given input data structure

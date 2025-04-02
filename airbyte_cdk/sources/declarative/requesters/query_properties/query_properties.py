@@ -39,7 +39,7 @@ class QueryProperties:
                 property_fields=fields, always_include_properties=self.always_include_properties
             )
         else:
-            yield from [list(fields)]
+            yield list(fields)
 
     def has_multiple_chunks(self, stream_slice: Optional[StreamSlice]) -> bool:
         property_chunks = iter(self.get_request_property_chunks(stream_slice=stream_slice))
