@@ -1755,6 +1755,11 @@ class ModelToComponentFactory:
                 transformations.append(
                     self._create_component_from_model(model=transformation_model, config=config)
                 )
+        file_uploader = None
+        if model.file_uploader:
+            file_uploader = self._create_component_from_model(
+                model=model.file_uploader, config=config
+            )
 
         retriever = self._create_component_from_model(
             model=model.retriever,
@@ -1766,6 +1771,7 @@ class ModelToComponentFactory:
             stop_condition_on_cursor=stop_condition_on_cursor,
             client_side_incremental_sync=client_side_incremental_sync,
             transformations=transformations,
+            file_uploader=file_uploader,
             incremental_sync=model.incremental_sync,
         )
         cursor_field = model.incremental_sync.cursor_field if model.incremental_sync else None
@@ -2607,6 +2613,7 @@ class ModelToComponentFactory:
         transformations: List[RecordTransformation] | None = None,
         decoder: Decoder | None = None,
         client_side_incremental_sync: Dict[str, Any] | None = None,
+        file_uploader: Optional[FileUploader] = None,
         **kwargs: Any,
     ) -> RecordSelector:
         extractor = self._create_component_from_model(
@@ -2644,6 +2651,7 @@ class ModelToComponentFactory:
             config=config,
             record_filter=record_filter,
             transformations=transformations or [],
+            file_uploader=file_uploader,
             schema_normalization=schema_normalization,
             parameters=model.parameters or {},
             transform_before_filtering=transform_before_filtering,
@@ -2701,6 +2709,7 @@ class ModelToComponentFactory:
         stop_condition_on_cursor: bool = False,
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
         transformations: List[RecordTransformation],
+        file_uploader: Optional[FileUploader] = None,
         incremental_sync: Optional[
             Union[
                 IncrementingCountCursorModel, DatetimeBasedCursorModel, CustomIncrementalSyncModel
@@ -2723,6 +2732,7 @@ class ModelToComponentFactory:
             decoder=decoder,
             transformations=transformations,
             client_side_incremental_sync=client_side_incremental_sync,
+            file_uploader=file_uploader,
         )
         url_base = (
             model.requester.url_base
@@ -3338,7 +3348,13 @@ class ModelToComponentFactory:
             name=name,
             **kwargs,
         )
-        return FileUploader(requester, download_target_extractor)
+        return FileUploader(
+            requester=requester,
+            download_target_extractor=download_target_extractor,
+            config=config,
+            parameters=model.parameters or {},
+            filename_extractor=model.filename_extractor if model.filename_extractor else None,
+        )
 
     def create_moving_window_call_rate_policy(
         self, model: MovingWindowCallRatePolicyModel, config: Config, **kwargs: Any
