@@ -807,7 +807,7 @@ class ModelToComponentFactory:
 
     @staticmethod
     def create_emit_partial_record(
-        model: EmitPartialRecordMergeStrategy, config: Config, **kwargs: Any
+        model: EmitPartialRecordMergeStrategyModel, config: Config, **kwargs: Any
     ) -> EmitPartialRecord:
         return EmitPartialRecord(config=config, parameters=model.parameters or {})
 
