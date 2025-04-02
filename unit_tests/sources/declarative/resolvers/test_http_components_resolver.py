@@ -60,7 +60,9 @@ _MANIFEST = {
             "name": "TestDynamicStream",
             "stream_template": {
                 "type": "DeclarativeStream",
-                "name": "",
+                "$parameters": {
+                    "name": "",
+                },
                 "primary_key": [],
                 "schema_loader": {
                     "type": "InlineSchemaLoader",
@@ -146,7 +148,9 @@ _MANIFEST_WITH_DUPLICATES = {
             "type": "DynamicDeclarativeStream",
             "stream_template": {
                 "type": "DeclarativeStream",
-                "name": "",
+                "$parameters": {
+                    "name": "",
+                },
                 "primary_key": [],
                 "schema_loader": {
                     "type": "InlineSchemaLoader",
@@ -232,7 +236,9 @@ _MANIFEST_WITH_HTTP_COMPONENT_RESOLVER_WITH_RETRIEVER_WITH_PARENT_STREAM = {
             "type": "DynamicDeclarativeStream",
             "stream_template": {
                 "type": "DeclarativeStream",
-                "name": "",
+                "$parameters": {
+                    "name": "",
+                },
                 "primary_key": [],
                 "schema_loader": {
                     "type": "InlineSchemaLoader",
@@ -344,7 +350,7 @@ _MANIFEST_WITH_HTTP_COMPONENT_RESOLVER_WITH_RETRIEVER_WITH_PARENT_STREAM = {
                 "components_mapping": [
                     {
                         "type": "ComponentMappingDefinition",
-                        "field_path": ["name"],
+                        "field_path": ["$parameters", "name"],
                         "value": "parent_{{stream_slice['parent_id']}}_{{components_values['name']}}",
                     },
                     {
@@ -592,6 +598,10 @@ def test_dynamic_streams_with_http_components_resolver_retriever_with_parent_str
             catalog=None,
             state=None,
         )
+        dynamic_streams = source._dynamic_stream_configs(source.resolved_manifest, _CONFIG)
+
+        assert len(dynamic_streams) == 4
+        assert dynamic_streams[0]["retriever"]["name"] == "parent_1_item_1"
 
         actual_catalog = source.discover(logger=source.logger, config=_CONFIG)
 

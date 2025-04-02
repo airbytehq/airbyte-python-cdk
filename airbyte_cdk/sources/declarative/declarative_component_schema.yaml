@@ -316,7 +316,6 @@ definitions:
     type: object
     required:
       - type
-      - stream_names
     properties:
       type:
         type: string
@@ -330,6 +329,28 @@ definitions:
         examples:
           - ["users"]
           - ["users", "contacts"]
+      dynamic_streams_check_configs:
+        type: array
+        items:
+          "$ref": "#/definitions/DynamicStreamCheckConfig"
+  DynamicStreamCheckConfig:
+    type: object
+    required:
+      - type
+      - dynamic_stream_name
+    properties:
+      type:
+        type: string
+        enum: [ DynamicStreamCheckConfig ]
+      dynamic_stream_name:
+        title: Dynamic Stream Name
+        description: The dynamic stream name.
+        type: string
+      stream_count:
+        title: Stream Count
+        description: The number of streams to attempt reading from during a check operation. If `stream_count` exceeds the total number of available streams, the minimum of the two values will be used.
+        type: integer
+        default: 0
   CheckDynamicStream:
     title: Dynamic Streams to Check
     description: (This component is experimental. Use at your own risk.) Defines the dynamic streams to try reading when running a check operation.
