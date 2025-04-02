@@ -74,7 +74,7 @@ class ManifestNormalizer:
      - removing duplicated definitions
      - replacing them with references.
 
-     To extend the functionality, use the `normilize()` method to include any additional processing steps.
+    To extend the functionality, use the `normilize()` method to include any additional processing steps.
     """
 
     def __init__(
@@ -117,8 +117,9 @@ class ManifestNormalizer:
         Get the streams from the manifest.
 
         Returns:
-            A list of streams
+            An Iterable of streams.
         """
+
         if STREAMS_TAG in self._normalized_manifest.keys():
             for stream in self._normalized_manifest[STREAMS_TAG]:
                 yield stream
@@ -128,14 +129,8 @@ class ManifestNormalizer:
     def _deduplicate_minifest(self) -> None:
         """
         Find commonalities in the input JSON structure and refactor it to avoid redundancy.
-
-        Args:
-            resolved_manifest: A dictionary representing a JSON structure to be analyzed.
-
-        Returns:
-            A refactored JSON structure with common properties extracted to `definitions.shared`,
-            the duplicated properties replaced with references
         """
+
         try:
             # prepare the `definitions` tag
             self._prepare_definitions()
@@ -148,10 +143,8 @@ class ManifestNormalizer:
         """
         Clean the definitions in the manifest by removing unnecessary properties.
         This function modifies the manifest in place.
-
-        Args:
-            manifest: The manifest to clean
         """
+
         # Check if the definitions tag exists
         if not DEF_TAG in self._normalized_manifest:
             self._normalized_manifest[DEF_TAG] = {}
@@ -169,9 +162,6 @@ class ManifestNormalizer:
         """
         Process the definitions in the manifest to move streams from definitions to the main stream list.
         This function modifies the manifest in place.
-
-        Args:
-            manifest: The manifest to process
         """
 
         # reference the stream schema for the stream to where it's stored
@@ -191,8 +181,9 @@ class ManifestNormalizer:
         Process duplicate objects and replace them with references.
 
         Args:
-            definitions: The definitions dictionary to modify
+            duplicates: The duplicates dictionary collected from the given manifest.
         """
+
         for _, occurrences in duplicates.items():
             type_key, key, value = self._get_occurance_samples(occurrences)
             is_shared_def = self._is_shared_definition(type_key, key)
@@ -214,7 +205,7 @@ class ManifestNormalizer:
         Process the duplicates and replace them with references.
 
         Args:
-            duplicates: Dictionary of duplicate objects
+            duplicates: The duplicates dictionary collected from the given manifest.
         """
 
         if len(duplicates) > 0:
@@ -242,6 +233,7 @@ class ManifestNormalizer:
             value (Any): The value to be hashed and used for identifying duplicates.
             key (Optional[str]): An optional key that, if provided, wraps the value in a dictionary before hashing.
         """
+
         # create hash for each duplicate observed
         value_to_hash = value if key is None else {key: value}
         duplicates[self._hash_object(value_to_hash)].append((current_path, obj, value))
@@ -334,7 +326,7 @@ class ManifestNormalizer:
             duplicates: The duplicates dictionary to sort
 
         Returns:
-            A sorted duplicates dictionary
+            A sorted duplicates dictionary.
         """
 
         # clean non-duplicates
@@ -432,6 +424,7 @@ class ManifestNormalizer:
         Returns:
             A reference object in the proper format
         """
+
         return {"$ref": f"#/{DEF_TAG}/{SHARED_TAG}/{type_key}/{key}"}
 
     def _create_schema_ref(self, ref_key: str) -> Dict[str, str]:
@@ -444,4 +437,5 @@ class ManifestNormalizer:
         Returns:
             A reference object in the proper format
         """
+
         return {"$ref": f"#/{SCHEMAS_TAG}/{ref_key}"}
