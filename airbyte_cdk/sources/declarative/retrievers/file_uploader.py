@@ -44,7 +44,7 @@ class FileUploader:
 
     def upload(self, record: Record) -> None:
         mocked_response = SafeResponse()
-        mocked_response.content = json.dumps(record.data).encode("utf-8")
+        mocked_response.content = json.dumps(record.data).encode()
         download_target = list(self.download_target_extractor.extract_records(mocked_response))[0]
         if not isinstance(download_target, str):
             raise ValueError(
