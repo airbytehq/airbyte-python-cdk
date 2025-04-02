@@ -456,9 +456,7 @@ class SimpleRetriever(Retriever):
                     stream_slice=stream_slice
                 )
             )
-            has_multiple_chunks = self.additional_query_properties.has_multiple_chunks(
-                stream_slice=stream_slice
-            )
+            has_multiple_chunks = self._has_multiple_chunks(stream_slice=stream_slice)
         else:
             property_chunks = [[""]]
             has_multiple_chunks = False
@@ -597,6 +595,20 @@ class SimpleRetriever(Retriever):
                 stream_name=self.name,
             )
         return None
+
+    def _has_multiple_chunks(self, stream_slice: Optional[StreamSlice]) -> bool:
+        if not self.additional_query_properties:
+            return False
+
+        property_chunks = iter(
+            self.additional_query_properties.get_request_property_chunks(stream_slice=stream_slice)
+        )
+        try:
+            next(property_chunks)
+            next(property_chunks)
+            return True
+        except StopIteration:
+            return False
 
     # stream_slices is defined with arguments on http stream and fixing this has a long tail of dependencies. Will be resolved by the decoupling of http stream and simple retriever
     def stream_slices(self) -> Iterable[Optional[StreamSlice]]:  # type: ignore

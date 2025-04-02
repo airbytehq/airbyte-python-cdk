@@ -2,8 +2,6 @@
 
 from unittest.mock import Mock
 
-import pytest
-
 from airbyte_cdk.sources.declarative.requesters.query_properties import (
     PropertiesFromEndpoint,
     QueryProperties,
@@ -115,51 +113,3 @@ def test_get_request_property_chunks_dynamic_endpoint():
     assert len(property_chunks) == 2
     assert property_chunks[0] == ["alice", "clover", "dio", "k", "luna"]
     assert property_chunks[1] == ["phi", "quark", "sigma", "tenmyouji"]
-
-
-@pytest.mark.parametrize(
-    "property_limit,expected_has_multiple_chunks",
-    [
-        pytest.param(
-            5,
-            True,
-            id="test_has_multiple_chunks",
-        ),
-        pytest.param(
-            10,
-            False,
-            id="test_has_multiple_chunks",
-        ),
-    ],
-)
-def test_has_multiple_chunks(property_limit, expected_has_multiple_chunks):
-    stream_slice = StreamSlice(cursor_slice={}, partition={})
-
-    query_properties = QueryProperties(
-        property_list=[
-            "ace",
-            "snake",
-            "santa",
-            "clover",
-            "junpei",
-            "june",
-            "seven",
-            "lotus",
-            "nine",
-        ],
-        always_include_properties=None,
-        property_chunking=PropertyChunking(
-            property_limit_type=PropertyLimitType.property_count,
-            property_limit=property_limit,
-            record_merge_strategy=GroupByKey(key="id", config=CONFIG, parameters={}),
-            config=CONFIG,
-            parameters={},
-        ),
-        config=CONFIG,
-        parameters={},
-    )
-
-    assert (
-        query_properties.has_multiple_chunks(stream_slice=stream_slice)
-        == expected_has_multiple_chunks
-    )

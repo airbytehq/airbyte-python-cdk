@@ -9,6 +9,7 @@ from typing import Any, Iterable, Mapping
 import freezegun
 import pytest
 import requests
+from pydantic.v1 import ValidationError
 
 from airbyte_cdk import AirbyteTracedException
 from airbyte_cdk.models import (
@@ -161,9 +162,7 @@ from airbyte_cdk.sources.streams.concurrent.clamping import (
     ClampingEndProvider,
     DayClampingStrategy,
     MonthClampingStrategy,
-    NoClamping,
     WeekClampingStrategy,
-    Weekday,
 )
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
@@ -4375,7 +4374,7 @@ def test_create_property_chunking_invalid_property_limit_type():
 
     connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
 
-    with pytest.raises:
+    with pytest.raises(ValidationError):
         connector_builder_factory.create_component(
             model_type=PropertyChunkingModel,
             component_definition=property_chunking_model,
