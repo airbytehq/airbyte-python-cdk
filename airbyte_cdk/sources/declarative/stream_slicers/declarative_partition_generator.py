@@ -58,11 +58,16 @@ class DeclarativePartition(Partition):
     def read(self) -> Iterable[Record]:
         for stream_data in self._retriever.read_records(self._json_schema, self._stream_slice):
             if isinstance(stream_data, Mapping):
-                yield Record(
-                    data=stream_data,
-                    stream_name=self.stream_name(),
-                    associated_slice=self._stream_slice,
+                record = (
+                    stream_data
+                    if isinstance(stream_data, Record)
+                    else Record(
+                        data=stream_data,
+                        stream_name=self.stream_name(),
+                        associated_slice=self._stream_slice,
+                    )
                 )
+                yield record
             else:
                 self._message_repository.emit_message(stream_data)
 
