@@ -11,7 +11,7 @@ from functools import cache
 from os import path
 from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Set, Tuple, Union
 
-from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, FailureType, Level
+from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, AirbyteStream, FailureType, Level
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import PrimaryKeyType
 from airbyte_cdk.sources.file_based.exceptions import (
@@ -145,14 +145,6 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         record[self.ab_file_name_col] = file.uri
         return record
 
-    def transform_record_for_file_transfer(
-        self, record: dict[str, Any], file: RemoteFile
-    ) -> dict[str, Any]:
-        # timstamp() returns a float representing the number of seconds since the unix epoch
-        record[self.modified] = int(file.last_modified.timestamp()) * 1000
-        record[self.source_file_url] = file.uri
-        return record
-
     def read_records_from_slice(self, stream_slice: StreamSlice) -> Iterable[AirbyteMessage]:
         """
         Yield all records from all remote files in `list_files_for_this_sync`.
@@ -166,6 +158,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
             raise MissingSchemaError(FileBasedSourceError.MISSING_SCHEMA, stream=self.name)
         # The stream only supports a single file type, so we can use the same parser for all files
         parser = self.get_parser()
+        file_transfer = FileTransfer()
         for file in stream_slice["files"]:
             # only serialize the datetime once
             file_datetime_string = file.last_modified.strftime(self.DATE_TIME_FORMAT)
@@ -173,19 +166,12 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
 
             try:
                 if self.use_file_transfer:
-                    self.logger.info(f"{self.name}: {file} file-based syncing")
-                    # todo: complete here the code to not rely on local parser
-                    file_transfer = FileTransfer()
-                    for record in file_transfer.get_file(
-                        self.config, file, self.stream_reader, self.logger
+                    for file_reference in file_transfer.upload(
+                        file=file, stream_reader=self.stream_reader, logger=self.logger
                     ):
-                        line_no += 1
-                        if not self.record_passes_validation_policy(record):
-                            n_skipped += 1
-                            continue
-                        record = self.transform_record_for_file_transfer(record, file)
+                        record = self.transform_record({}, file, file_datetime_string)
                         yield stream_data_to_airbyte_message(
-                            self.name, record, is_file_transfer_message=True
+                            self.name, record, file_reference=file_reference
                         )
                 else:
                     for record in parser.parse_records(
@@ -340,6 +326,11 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         return self.stream_reader.get_matching_files(
             self.config.globs or [], self.config.legacy_prefix, self.logger
         )
+
+    def as_airbyte_stream(self) -> AirbyteStream:
+        file_stream = super().as_airbyte_stream()
+        file_stream.is_file_based = self.use_file_transfer
+        return file_stream
 
     def infer_schema(self, files: List[RemoteFile]) -> Mapping[str, Any]:
         loop = asyncio.get_event_loop()

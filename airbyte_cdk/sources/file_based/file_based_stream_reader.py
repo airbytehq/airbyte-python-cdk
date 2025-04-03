@@ -12,6 +12,7 @@ from typing import Any, Dict, Iterable, List, Optional, Set
 
 from wcmatch.glob import GLOBSTAR, globmatch
 
+from airbyte_cdk.models import AirbyteRecordMessageFileReference
 from airbyte_cdk.sources.file_based.config.abstract_file_based_spec import AbstractFileBasedSpec
 from airbyte_cdk.sources.file_based.config.validate_config_transfer_modes import (
     include_identities_stream,
@@ -148,9 +149,9 @@ class AbstractFileBasedStreamReader(ABC):
         return False
 
     @abstractmethod
-    def get_file(
+    def upload(
         self, file: RemoteFile, local_directory: str, logger: logging.Logger
-    ) -> Dict[str, Any]:
+    ) -> AirbyteRecordMessageFileReference:
         """
         This is required for connectors that will support writing to
         files. It will handle the logic to download,get,read,acquire or
@@ -162,10 +163,10 @@ class AbstractFileBasedStreamReader(ABC):
                logger (logging.Logger): Logger for logging information and errors.
 
            Returns:
-               dict: A dictionary containing the following:
-                   - "file_url" (str): The absolute path of the downloaded file.
-                   - "bytes" (int): The file size in bytes.
-                   - "file_relative_path" (str): The relative path of the file for local storage. Is relative to local_directory as
+               AirbyteRecordMessageFileReference: A file reference object containing:
+                   - file_url (str): The absolute path of the downloaded file.
+                   - bytes (int): The file size in bytes.
+                   - file_relative_path (str): The relative path of the file for local storage. Is relative to local_directory as
                    this a mounted volume in the pod container.
 
         """

@@ -13,7 +13,7 @@ from unittest.mock import Mock
 import pytest
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level
-from airbyte_cdk.models import Type as MessageType
+from airbyte_cdk.models import Type as MessageType, AirbyteRecordMessageFileReference
 from airbyte_cdk.sources.file_based.availability_strategy import (
     AbstractFileBasedAvailabilityStrategy,
 )
@@ -275,11 +275,11 @@ class TestFileBasedErrorCollector:
 
 class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
     _NOW = datetime(2022, 10, 22, tzinfo=timezone.utc)
-    _A_RECORD = {
-        "bytes": 10,
-        "file_relative_path": "relative/path/file.csv",
-        "file_url": "/absolute/path/file.csv",
-    }
+    _A_FILE_REFERENCE_MESSAGE = AirbyteRecordMessageFileReference(
+        file_size_bytes=10,
+        file_relative_path="relative/path/file.csv",
+        file_url="/absolute/path/file.csv",
+    )
 
     def setUp(self) -> None:
         self._stream_config = Mock()
@@ -323,21 +323,19 @@ class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
 
     def test_when_read_records_from_slice_then_return_records(self) -> None:
         """Verify that we have the new file method and data is empty"""
-        with mock.patch.object(FileTransfer, "get_file", return_value=[self._A_RECORD]):
+        with mock.patch.object(FileTransfer, "upload", return_value=[self._A_FILE_REFERENCE_MESSAGE]):
+            remote_file = RemoteFile(uri="uri", last_modified=self._NOW)
             messages = list(
                 self._stream.read_records_from_slice(
-                    {"files": [RemoteFile(uri="uri", last_modified=self._NOW)]}
+                    {"files": [remote_file]}
                 )
             )
-            assert list(map(lambda message: message.record.file, messages)) == [self._A_RECORD]
-            assert list(map(lambda message: message.record.data, messages)) == [{}]
 
-    def test_when_transform_record_then_return_updated_record(self) -> None:
-        file = RemoteFile(uri="uri", last_modified=self._NOW)
-        last_updated = int(self._NOW.timestamp()) * 1000
-        transformed_record = self._stream.transform_record_for_file_transfer(self._A_RECORD, file)
-        assert transformed_record[self._stream.modified] == last_updated
-        assert transformed_record[self._stream.source_file_url] == file.uri
+            assert list(map(lambda message: message.record.file_reference, messages)) == [self._A_FILE_REFERENCE_MESSAGE]
+            assert list(map(lambda message: message.record.data, messages)) == [
+                {'_ab_source_file_last_modified': remote_file.last_modified.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                 '_ab_source_file_url': remote_file.uri}]
+
 
     def test_when_compute_slices(self) -> None:
         all_files = [
