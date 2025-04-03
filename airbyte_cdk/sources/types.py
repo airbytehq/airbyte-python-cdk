@@ -44,7 +44,7 @@ class Record(Mapping[str, Any]):
         return self._file_reference
 
     @file_reference.setter
-    def file_reference(self, value: AirbyteRecordMessageFileReference):
+    def file_reference(self, value: AirbyteRecordMessageFileReference) -> None:
         self._file_reference = value
 
     def __repr__(self) -> str:
