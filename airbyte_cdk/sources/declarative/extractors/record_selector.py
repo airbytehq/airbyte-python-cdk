@@ -19,7 +19,6 @@ from airbyte_cdk.sources.declarative.retrievers.file_uploader import FileUploade
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from airbyte_cdk.sources.utils.transform import TypeTransformer
-from airbyte_cdk.sources.declarative.retrievers.file_uploader import FileUploader
 
 
 @dataclass

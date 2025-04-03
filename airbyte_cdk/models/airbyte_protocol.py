@@ -8,7 +8,6 @@ from typing import Annotated, Any, Dict, List, Mapping, Optional, Union
 from airbyte_protocol_dataclasses.models import *  # noqa: F403  # Allow '*'
 from serpyco_rs.metadata import Alias
 
-
 # ruff: noqa: F405  # ignore fuzzy import issues with 'import *'
 
 

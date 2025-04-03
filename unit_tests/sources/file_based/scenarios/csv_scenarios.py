@@ -1141,7 +1141,7 @@ invalid_csv_scenario: TestScenario[InMemoryFilesSource] = (
                     "source_defined_cursor": True,
                     "supported_sync_modes": ["full_refresh", "incremental"],
                     "is_resumable": True,
-                    "is_file_based": False
+                    "is_file_based": False,
                 }
             ]
         }
@@ -1229,7 +1229,7 @@ invalid_csv_multi_scenario: TestScenario[InMemoryFilesSource] = (
                     "source_defined_cursor": True,
                     "supported_sync_modes": ["full_refresh", "incremental"],
                     "is_resumable": True,
-                    "is_file_based": False
+                    "is_file_based": False,
                 },
                 {
                     "json_schema": {
@@ -1245,7 +1245,7 @@ invalid_csv_multi_scenario: TestScenario[InMemoryFilesSource] = (
                     "default_cursor_field": ["_ab_source_file_last_modified"],
                     "supported_sync_modes": ["full_refresh", "incremental"],
                     "is_resumable": True,
-                    "is_file_based": False
+                    "is_file_based": False,
                 },
             ]
         }
@@ -2108,7 +2108,7 @@ schemaless_with_user_input_schema_fails_connection_check_scenario: TestScenario[
                     "source_defined_cursor": True,
                     "supported_sync_modes": ["full_refresh", "incremental"],
                     "is_resumable": True,
-                    "is_file_based": False
+                    "is_file_based": False,
                 }
             ]
         }
@@ -2211,7 +2211,7 @@ schemaless_with_user_input_schema_fails_connection_check_multi_stream_scenario: 
                     "default_cursor_field": ["_ab_source_file_last_modified"],
                     "supported_sync_modes": ["full_refresh", "incremental"],
                     "is_resumable": True,
-                    "is_file_based": False
+                    "is_file_based": False,
                 },
             ]
         }
@@ -2630,7 +2630,7 @@ csv_newline_in_values_not_quoted_scenario: TestScenario[InMemoryFilesSource] = (
                     "source_defined_cursor": True,
                     "supported_sync_modes": ["full_refresh", "incremental"],
                     "is_resumable": True,
-                    "is_file_based": False
+                    "is_file_based": False,
                 }
             ]
         }

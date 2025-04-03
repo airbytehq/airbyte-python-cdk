@@ -22,7 +22,11 @@ schemaless_schema = {"type": "object", "properties": {"data": {"type": "object"}
 # we use the File attributes for metadata records.
 file_transfer_schema = {
     "type": "object",
-    "properties": {"uri": {"type": "string"}, "last_modified": {"type": "string"}, "mime_type": {"type": ["null", "string"]}},
+    "properties": {
+        "uri": {"type": "string"},
+        "last_modified": {"type": "string"},
+        "mime_type": {"type": ["null", "string"]},
+    },
 }
 
 
