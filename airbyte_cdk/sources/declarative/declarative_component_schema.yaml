@@ -341,7 +341,7 @@ definitions:
     properties:
       type:
         type: string
-        enum: [ DynamicStreamCheckConfig ]
+        enum: [DynamicStreamCheckConfig]
       dynamic_stream_name:
         title: Dynamic Stream Name
         description: The dynamic stream name.
@@ -1041,18 +1041,6 @@ definitions:
         examples:
           - "P1W"
           - "{{ config['step_increment'] }}"
-      $parameters:
-        type: object
-        additionalProperties: true
-  EmitPartialRecordMergeStrategy:
-    title: Emit Partial Record
-    description: Record merge strategy where in the case where multiple requests are needed to retrieve all properties, properties are not consolidated back into a single record and are instead emitted as separate groups of properties. This strategy should only be used when records do not have a unique identifier like a primary key.
-    required:
-      - type
-    properties:
-      type:
-        type: string
-        enum: [EmitPartialRecordMergeStrategy]
       $parameters:
         type: object
         additionalProperties: true
@@ -3081,9 +3069,7 @@ definitions:
       record_merge_strategy:
         title: Record Merge Strategy
         description: Dictates how to records that require multiple requests to get all properties should be emitted to the destination
-        anyOf:
-          - "$ref": "#/definitions/EmitPartialRecordMergeStrategy"
-          - "$ref": "#/definitions/GroupByKeyMergeStrategy"
+        "$ref": "#/definitions/GroupByKeyMergeStrategy"
       $parameters:
         type: object
         additionalProperties: true

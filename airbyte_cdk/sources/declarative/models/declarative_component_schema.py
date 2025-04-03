@@ -51,7 +51,7 @@ class DynamicStreamCheckConfig(BaseModel):
     )
     stream_count: Optional[int] = Field(
         0,
-        description="Numbers of the streams to try reading from when running a check operation.",
+        description="The number of streams to attempt reading from during a check operation. If `stream_count` exceeds the total number of available streams, the minimum of the two values will be used.",
         title="Stream Count",
     )
 
@@ -345,11 +345,6 @@ class Clamping(BaseModel):
         title="Target",
     )
     target_details: Optional[Dict[str, Any]] = None
-
-
-class EmitPartialRecordMergeStrategy(BaseModel):
-    type: Literal["EmitPartialRecordMergeStrategy"]
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
 class Algorithm(Enum):
@@ -1224,9 +1219,7 @@ class PropertyChunking(BaseModel):
         description="The maximum amount of properties that can be retrieved per request according to the limit type.",
         title="Property Limit",
     )
-    record_merge_strategy: Optional[
-        Union[EmitPartialRecordMergeStrategy, GroupByKeyMergeStrategy]
-    ] = Field(
+    record_merge_strategy: Optional[GroupByKeyMergeStrategy] = Field(
         None,
         description="Dictates how to records that require multiple requests to get all properties should be emitted to the destination",
         title="Record Merge Strategy",

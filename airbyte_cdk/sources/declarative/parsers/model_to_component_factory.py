@@ -226,9 +226,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     DynamicStreamCheckConfig as DynamicStreamCheckConfigModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    EmitPartialRecordMergeStrategy as EmitPartialRecordMergeStrategyModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ExponentialBackoffStrategy as ExponentialBackoffStrategyModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -459,7 +456,6 @@ from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunki
     PropertyLimitType,
 )
 from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import (
-    EmitPartialRecord,
     GroupByKey,
 )
 from airbyte_cdk.sources.declarative.requesters.request_option import RequestOptionType
@@ -623,7 +619,6 @@ class ModelToComponentFactory:
             DefaultErrorHandlerModel: self.create_default_error_handler,
             DefaultPaginatorModel: self.create_default_paginator,
             DpathExtractorModel: self.create_dpath_extractor,
-            EmitPartialRecordMergeStrategyModel: self.create_emit_partial_record,
             ResponseToFileExtractorModel: self.create_response_to_file_extractor,
             ExponentialBackoffStrategyModel: self.create_exponential_backoff_strategy,
             SessionTokenAuthenticatorModel: self.create_session_token_authenticator,
@@ -804,12 +799,6 @@ class ModelToComponentFactory:
             replace_record=model.replace_record if model.replace_record is not None else False,
             parameters=model.parameters or {},
         )
-
-    @staticmethod
-    def create_emit_partial_record(
-        model: EmitPartialRecordMergeStrategyModel, config: Config, **kwargs: Any
-    ) -> EmitPartialRecord:
-        return EmitPartialRecord(config=config, parameters=model.parameters or {})
 
     @staticmethod
     def _json_schema_type_name_to_type(value_type: Optional[ValueType]) -> Optional[Type[Any]]:
@@ -2149,6 +2138,7 @@ class ModelToComponentFactory:
         config: Config,
         decoder: Decoder = JsonDecoder(parameters={}),
         query_properties_key: Optional[str] = None,
+        use_cache: Optional[bool] = None,
         *,
         name: str,
     ) -> HttpRequester:
@@ -2189,7 +2179,7 @@ class ModelToComponentFactory:
         assert model.use_cache is not None  # for mypy
         assert model.http_method is not None  # for mypy
 
-        use_cache = model.use_cache and not self._disable_cache
+        should_use_cache = (model.use_cache or bool(use_cache)) and not self._disable_cache
 
         return HttpRequester(
             name=name,
@@ -2204,7 +2194,7 @@ class ModelToComponentFactory:
             disable_retries=self._disable_retries,
             parameters=model.parameters or {},
             message_repository=self._message_repository,
-            use_cache=use_cache,
+            use_cache=should_use_cache,
             decoder=decoder,
             stream_response=decoder.is_stream_response() if decoder else False,
         )
@@ -2308,10 +2298,11 @@ class ModelToComponentFactory:
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
-            name="",
+            name="dynamic_properties",
             primary_key=None,
             stream_slicer=combined_slicers,
             transformations=[],
+            use_cache=True,
         )
         schema_type_identifier = self._create_component_from_model(
             model.schema_type_identifier, config=config, parameters=model.parameters or {}
@@ -2652,14 +2643,14 @@ class ModelToComponentFactory:
     def create_properties_from_endpoint(
         self, model: PropertiesFromEndpointModel, config: Config, **kwargs: Any
     ) -> PropertiesFromEndpoint:
-        name = "property_retriever"
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
-            name=name,
+            name="dynamic_properties",
             primary_key=None,
             stream_slicer=None,
             transformations=[],
+            use_cache=True,  # Enable caching on the HttpRequester/HttpClient because the properties endpoint will be called for every slice being processed, and it is highly unlikely for the response to different
         )
         return PropertiesFromEndpoint(
             property_field_path=model.property_field_path,
@@ -2867,6 +2858,7 @@ class ModelToComponentFactory:
                 IncrementingCountCursorModel, DatetimeBasedCursorModel, CustomIncrementalSyncModel
             ]
         ] = None,
+        use_cache: Optional[bool] = None,
         **kwargs: Any,
     ) -> SimpleRetriever:
         decoder = (
@@ -2928,9 +2920,10 @@ class ModelToComponentFactory:
         requester = self._create_component_from_model(
             model=model.requester,
             decoder=decoder,
-            query_properties_key=query_properties_key,
-            config=config,
             name=name,
+            query_properties_key=query_properties_key,
+            use_cache=use_cache,
+            config=config,
         )
         url_base = (
             model.requester.url_base
