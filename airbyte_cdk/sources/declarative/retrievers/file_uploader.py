@@ -7,13 +7,13 @@ import logging
 import uuid
 from dataclasses import InitVar, dataclass, field
 from pathlib import Path
-from typing import Optional, Mapping, Union, Any
+from typing import Any, Mapping, Optional, Union
 
+from airbyte_cdk.models import AirbyteRecordMessageFileReference
+from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import (
     InterpolatedString,
 )
-from airbyte_cdk.models import AirbyteRecordMessageFileReference
-from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (
     SafeResponse,
 )
