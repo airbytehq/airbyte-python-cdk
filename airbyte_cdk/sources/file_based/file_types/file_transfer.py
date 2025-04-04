@@ -2,7 +2,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 import logging
-from typing import Any, Dict, Iterable, Tuple
+from typing import Iterable, Tuple
 
 from airbyte_cdk.models import AirbyteRecordMessageFileReference
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
