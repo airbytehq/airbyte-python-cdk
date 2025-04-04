@@ -18,7 +18,8 @@ from airbyte_cdk.models import (
     AirbyteRecordMessageFileReference,
     Level,
 )
-from airbyte_cdk.models import Type as MessageType
+from airbyte_cdk.models import AirbyteStream, Type as MessageType
+from airbyte_cdk.sources.file_based import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.availability_strategy import (
     AbstractFileBasedAvailabilityStrategy,
 )
@@ -312,20 +313,6 @@ class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
             use_file_transfer=True,
         )
 
-        self._stream_not_mirroring = DefaultFileBasedStream(
-            config=self._stream_config,
-            catalog_schema=self._catalog_schema,
-            stream_reader=self._stream_reader,
-            availability_strategy=self._availability_strategy,
-            discovery_policy=self._discovery_policy,
-            parsers={MockFormat: self._parser},
-            validation_policy=self._validation_policy,
-            cursor=self._cursor,
-            errors_collector=FileBasedErrorsCollector(),
-            use_file_transfer=True,
-            preserve_directory_structure=False,
-        )
-
     def test_when_read_records_from_slice_then_return_records(self) -> None:
         """Verify that we have the new file method and data is empty"""
         with mock.patch.object(
@@ -474,3 +461,86 @@ class DefaultFileBasedStreamFileTransferTestNotMirroringDirectories(unittest.Tes
         assert "2 duplicates found for file name monthly-kickoff-202402.mpeg" in str(exc_info.value)
         assert "2 duplicates found for file name monthly-kickoff-202401.mpeg" in str(exc_info.value)
         assert "3 duplicates found for file name monthly-kickoff-202403.mpeg" in str(exc_info.value)
+
+
+class DefaultFileBasedStreamSchemaTest(unittest.TestCase):
+    _NOW = datetime(2022, 10, 22, tzinfo=timezone.utc)
+    _A_FILE_REFERENCE_MESSAGE = AirbyteRecordMessageFileReference(
+        file_size_bytes=10,
+        source_file_relative_path="relative/path/file.csv",
+        staging_file_url="/absolute/path/file.csv",
+    )
+
+    def setUp(self) -> None:
+        self._stream_config = Mock(spec=FileBasedStreamConfig)
+        self._stream_config.format = MockFormat()
+        self._stream_config.name = "a stream name"
+        self._stream_config.input_schema = ""
+        self._stream_config.schemaless = False
+        self._stream_config.primary_key = []
+        self._catalog_schema = Mock()
+        self._stream_reader = Mock(spec=AbstractFileBasedStreamReader)
+        self._availability_strategy = Mock(spec=AbstractFileBasedAvailabilityStrategy)
+        self._discovery_policy = Mock(spec=AbstractDiscoveryPolicy)
+        self._parser = Mock(spec=FileTypeParser)
+        self._validation_policy = Mock(spec=AbstractSchemaValidationPolicy)
+        self._validation_policy.name = "validation policy name"
+        self._cursor = Mock(spec=AbstractFileBasedCursor)
+
+    def test_non_file_based_stream(self) -> None:
+        """
+        Test that the stream is correct when file transfer is not used.
+        """
+        non_file_based_stream = DefaultFileBasedStream(
+            config=self._stream_config,
+            catalog_schema=self._catalog_schema,
+            stream_reader=self._stream_reader,
+            availability_strategy=self._availability_strategy,
+            discovery_policy=self._discovery_policy,
+            parsers={MockFormat: self._parser},
+            validation_policy=self._validation_policy,
+            cursor=self._cursor,
+            errors_collector=FileBasedErrorsCollector(),
+            use_file_transfer=False,
+        )
+        with (
+            mock.patch.object(non_file_based_stream, "get_json_schema", return_value={}),
+            mock.patch.object(
+                DefaultFileBasedStream,
+                "primary_key",
+                new_callable=mock.PropertyMock,
+                return_value=["id"],
+            ),
+        ):
+            airbyte_stream = non_file_based_stream.as_airbyte_stream()
+            assert isinstance(airbyte_stream, AirbyteStream)
+            assert not airbyte_stream.is_file_based
+
+    def test_file_based_stream(self) -> None:
+        """
+        Test that the stream is correct when file transfer used.
+        """
+        non_file_based_stream = DefaultFileBasedStream(
+            config=self._stream_config,
+            catalog_schema=self._catalog_schema,
+            stream_reader=self._stream_reader,
+            availability_strategy=self._availability_strategy,
+            discovery_policy=self._discovery_policy,
+            parsers={MockFormat: self._parser},
+            validation_policy=self._validation_policy,
+            cursor=self._cursor,
+            errors_collector=FileBasedErrorsCollector(),
+            use_file_transfer=True,
+        )
+        with (
+            mock.patch.object(non_file_based_stream, "get_json_schema", return_value={}),
+            mock.patch.object(
+                DefaultFileBasedStream,
+                "primary_key",
+                new_callable=mock.PropertyMock,
+                return_value=["id"],
+            ),
+        ):
+            airbyte_stream = non_file_based_stream.as_airbyte_stream()
+            assert isinstance(airbyte_stream, AirbyteStream)
+            assert airbyte_stream.is_file_based
