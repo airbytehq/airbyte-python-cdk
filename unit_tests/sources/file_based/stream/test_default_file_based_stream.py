@@ -282,8 +282,8 @@ class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
     _NOW = datetime(2022, 10, 22, tzinfo=timezone.utc)
     _A_FILE_REFERENCE_MESSAGE = AirbyteRecordMessageFileReference(
         file_size_bytes=10,
-        file_relative_path="relative/path/file.csv",
-        file_url="/absolute/path/file.csv",
+        source_file_relative_path="relative/path/file.csv",
+        staging_file_url="/absolute/path/file.csv",
     )
 
     def setUp(self) -> None:

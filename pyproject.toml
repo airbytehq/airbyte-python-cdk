@@ -30,7 +30,7 @@ enable = true
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
-airbyte-protocol-models-dataclasses = { version = "0.14.1337.dev1742858109", source = "testpypi" }
+airbyte-protocol-models-dataclasses = { version = "0.14.4.dev1743719077", source = "testpypi" }
 
 backoff = "*"
 cachetools = "*"

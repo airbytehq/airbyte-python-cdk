@@ -164,11 +164,9 @@ class AbstractFileBasedStreamReader(ABC):
 
            Returns:
                AirbyteRecordMessageFileReference: A file reference object containing:
-                   - file_url (str): The absolute path of the downloaded file.
-                   - bytes (int): The file size in bytes.
-                   - file_relative_path (str): The relative path of the file for local storage. Is relative to local_directory as
-                   this a mounted volume in the pod container.
-
+                   - staging_file_url (str): The absolute path to the referenced file in the staging area.
+                   - file_size_bytes (int): The size of the referenced file in bytes.
+                   - source_file_relative_path (str): The relative path to the referenced file in source.
         """
         ...
 
