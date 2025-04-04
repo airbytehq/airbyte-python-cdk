@@ -450,17 +450,18 @@ class SimpleRetriever(Retriever):
         :return: The records read from the API source
         """
 
-        if self.additional_query_properties:
-            property_chunks = list(
+        property_chunks = (
+            list(
                 self.additional_query_properties.get_request_property_chunks(
                     stream_slice=stream_slice
                 )
             )
-            has_multiple_chunks = self._has_multiple_chunks(stream_slice=stream_slice)
-        else:
-            property_chunks = [[""]]
-            has_multiple_chunks = False
+            if self.additional_query_properties
+            else []
+        )
+        records_without_merge_key = []
         merged_records: MutableMapping[str, Any] = defaultdict(dict)
+
         _slice = stream_slice or StreamSlice(partition={}, cursor_slice={})  # None-check
         most_recent_record_from_slice = None
 
@@ -491,13 +492,7 @@ class SimpleRetriever(Retriever):
                         most_recent_record_from_slice, current_record, _slice
                     )
 
-                    # Record merging should only be done if there are multiple property chunks. Otherwise,
-                    # yielding immediately is more efficient so records can be emitted immediately
-                    if (
-                        has_multiple_chunks
-                        and self.additional_query_properties.property_chunking
-                        and current_record
-                    ):
+                    if current_record and self.additional_query_properties.property_chunking:
                         merge_key = (
                             self.additional_query_properties.property_chunking.get_merge_key(
                                 current_record
@@ -506,17 +501,20 @@ class SimpleRetriever(Retriever):
                         if merge_key:
                             merged_records[merge_key].update(current_record)
                         else:
-                            yield stream_data
+                            # We should still emit records even if the record did not have a merge key
+                            records_without_merge_key.append(current_record)
                     else:
                         yield stream_data
             if self.cursor:
                 self.cursor.close_slice(_slice, most_recent_record_from_slice)
 
-            if has_multiple_chunks:
+            if len(merged_records) > 0:
                 yield from [
                     Record(data=merged_record, stream_name=self.name, associated_slice=stream_slice)
                     for merged_record in merged_records.values()
                 ]
+            if len(records_without_merge_key) > 0:
+                yield from records_without_merge_key
         else:
             _slice = stream_slice or StreamSlice(partition={}, cursor_slice={})  # None-check
 
@@ -595,20 +593,6 @@ class SimpleRetriever(Retriever):
                 stream_name=self.name,
             )
         return None
-
-    def _has_multiple_chunks(self, stream_slice: Optional[StreamSlice]) -> bool:
-        if not self.additional_query_properties:
-            return False
-
-        property_chunks = iter(
-            self.additional_query_properties.get_request_property_chunks(stream_slice=stream_slice)
-        )
-        try:
-            next(property_chunks)
-            next(property_chunks)
-            return True
-        except StopIteration:
-            return False
 
     # stream_slices is defined with arguments on http stream and fixing this has a long tail of dependencies. Will be resolved by the decoupling of http stream and simple retriever
     def stream_slices(self) -> Iterable[Optional[StreamSlice]]:  # type: ignore
