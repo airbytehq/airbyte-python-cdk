@@ -16,9 +16,10 @@ from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
     AirbyteRecordMessageFileReference,
+    AirbyteStream,
     Level,
 )
-from airbyte_cdk.models import AirbyteStream, Type as MessageType
+from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.file_based import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.availability_strategy import (
     AbstractFileBasedAvailabilityStrategy,
