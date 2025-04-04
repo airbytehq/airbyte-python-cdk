@@ -15,6 +15,9 @@ from airbyte_cdk.models import (
     Type,
 )
 from airbyte_cdk.models import Type as MessageType
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
+)
 from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
@@ -54,12 +57,23 @@ def get_limits(config: Mapping[str, Any]) -> TestLimits:
     return TestLimits(max_records, max_pages_per_slice, max_slices, max_streams)
 
 
-def create_source(config: Mapping[str, Any], limits: TestLimits) -> ManifestDeclarativeSource:
+def _ensure_concurrency_level(manifest: Dict[str, Any]) -> None:
+    # We need to do that to ensure that the state in the StreamReadSlices only contains the changes for one slice
+    # Note that this is below the _LOWEST_SAFE_CONCURRENCY_LEVEL but it is fine in this case because we are limiting the number of slices
+    # being generated which means that the memory usage is limited anyway
+    if "concurrency_level" not in manifest:
+        manifest["concurrency_level"] = {}
+    manifest["concurrency_level"]["default_concurrency"] = 1
+
+def create_source(config: Mapping[str, Any], catalog: ConfiguredAirbyteCatalog, state: Any, limits: TestLimits) -> ManifestDeclarativeSource:
     manifest = config["__injected_declarative_manifest"]
-    return ManifestDeclarativeSource(
+    _ensure_concurrency_level(manifest)
+    return ConcurrentDeclarativeSource(
         config=config,
-        emit_connector_builder_messages=True,
+        catalog=catalog,
+        state=state,
         source_config=manifest,
+        emit_connector_builder_messages=True,
         component_factory=ModelToComponentFactory(
             emit_connector_builder_messages=True,
             limit_pages_fetched_per_slice=limits.max_pages_per_slice,

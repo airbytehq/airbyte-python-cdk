@@ -157,6 +157,8 @@ def _run_command(
     stream_handler.setFormatter(AirbyteLogFormatter())
     parent_logger = logging.getLogger("")
     parent_logger.addHandler(stream_handler)
+    if "--debug" not in args:
+        args.append("--debug")
 
     parsed_args = AirbyteEntrypoint.parse_args(args)
 
@@ -195,7 +197,7 @@ def discover(
         config_file = make_file(tmp_directory_path / "config.json", config)
 
         return _run_command(
-            source, ["discover", "--config", config_file, "--debug"], expecting_exception
+            source, ["discover", "--config", config_file], expecting_exception
         )
 
 

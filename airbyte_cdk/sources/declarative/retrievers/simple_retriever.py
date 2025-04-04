@@ -584,10 +584,6 @@ class SimpleRetrieverTestReadDecorator(SimpleRetriever):
                 f"The maximum number of slices on a test read needs to be strictly positive. Got {self.maximum_number_of_slices}"
             )
 
-    # stream_slices is defined with arguments on http stream and fixing this has a long tail of dependencies. Will be resolved by the decoupling of http stream and simple retriever
-    def stream_slices(self) -> Iterable[Optional[StreamSlice]]:  # type: ignore
-        return islice(super().stream_slices(), self.maximum_number_of_slices)
-
     def _fetch_next_page(
         self,
         stream_state: Mapping[str, Any],
@@ -623,6 +619,7 @@ class SimpleRetrieverTestReadDecorator(SimpleRetriever):
                 stream_slice=stream_slice,
                 next_page_token=next_page_token,
             ),
+            # FIXME remove this implementation and have the log_formatter depend on the fact that the logger is debug or not
             log_formatter=lambda response: format_http_message(
                 response,
                 f"Stream '{self.name}' request",

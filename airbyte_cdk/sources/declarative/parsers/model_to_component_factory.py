@@ -106,7 +106,6 @@ from airbyte_cdk.sources.declarative.migrations.legacy_to_per_partition_state_mi
 )
 from airbyte_cdk.sources.declarative.models import (
     CustomStateMigration,
-    GzipDecoder,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     AddedFieldDefinition as AddedFieldDefinitionModel,
@@ -389,10 +388,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ZipfileDecoder as ZipfileDecoderModel,
 )
-from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
-    COMPONENTS_MODULE_NAME,
-    SDM_COMPONENTS_MODULE_NAME,
-)
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
     GroupingPartitionRouter,
@@ -464,6 +459,7 @@ from airbyte_cdk.sources.declarative.schema import (
 )
 from airbyte_cdk.sources.declarative.spec import Spec
 from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicer
+from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import TestReadSlicerDecorator
 from airbyte_cdk.sources.declarative.transformations import (
     AddFields,
     RecordTransformation,
@@ -518,7 +514,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.incrementing_count_
     IncrementingCountStreamStateConverter,
 )
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
-from airbyte_cdk.sources.types import Config
+from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 
 ComponentDefinition = Mapping[str, Any]
@@ -2845,6 +2841,8 @@ class ModelToComponentFactory:
             )
 
         if self._limit_slices_fetched or self._emit_connector_builder_messages:
+            slice_limit = self._limit_slices_fetched or 5
+            stream_slicer = TestReadSlicerDecorator(stream_slicer, slice_limit)  # FIXME Once log formatter is removed, we can just pass this to the SimpleRetriever
             return SimpleRetrieverTestReadDecorator(
                 name=name,
                 paginator=paginator,
@@ -2855,7 +2853,6 @@ class ModelToComponentFactory:
                 request_option_provider=request_options_provider,
                 cursor=cursor,
                 config=config,
-                maximum_number_of_slices=self._limit_slices_fetched or 5,
                 ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
                 parameters=model.parameters or {},
             )
