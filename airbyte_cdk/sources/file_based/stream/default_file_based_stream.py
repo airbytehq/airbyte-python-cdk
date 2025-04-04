@@ -239,6 +239,8 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
 
     @cache
     def get_json_schema(self) -> JsonSchema:
+        if self.use_file_transfer:
+            return file_transfer_schema
         extra_fields = {
             self.ab_last_mod_col: {"type": "string"},
             self.ab_file_name_col: {"type": "string"},
@@ -262,9 +264,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
             return {"type": "object", "properties": {**extra_fields, **schema["properties"]}}
 
     def _get_raw_json_schema(self) -> JsonSchema:
-        if self.use_file_transfer:
-            return file_transfer_schema
-        elif self.config.input_schema:
+        if self.config.input_schema:
             return self.config.get_input_schema()  # type: ignore
         elif self.config.schemaless:
             return schemaless_schema
