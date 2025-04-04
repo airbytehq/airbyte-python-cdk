@@ -30,6 +30,7 @@ from airbyte_cdk.sources.file_based.exceptions import (
     FileBasedSourceError,
 )
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
+from airbyte_cdk.sources.file_based.file_record_data import FileRecordData
 from airbyte_cdk.sources.file_based.file_types import FileTransfer
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
@@ -281,6 +282,11 @@ class TestFileBasedErrorCollector:
 
 class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
     _NOW = datetime(2022, 10, 22, tzinfo=timezone.utc)
+    _A_FILE_RECORD_DATA = FileRecordData(
+        folder="/absolute/path/",
+        filename="file.csv",
+        bytes=10,
+    )
     _A_FILE_REFERENCE_MESSAGE = AirbyteRecordMessageFileReference(
         file_size_bytes=10,
         source_file_relative_path="relative/path/file.csv",
@@ -316,7 +322,9 @@ class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
     def test_when_read_records_from_slice_then_return_records(self) -> None:
         """Verify that we have the new file method and data is empty"""
         with mock.patch.object(
-            FileTransfer, "upload", return_value=[self._A_FILE_REFERENCE_MESSAGE]
+            FileTransfer,
+            "upload",
+            return_value=[(self._A_FILE_RECORD_DATA, self._A_FILE_REFERENCE_MESSAGE)],
         ):
             remote_file = RemoteFile(uri="uri", last_modified=self._NOW)
             messages = list(self._stream.read_records_from_slice({"files": [remote_file]}))
@@ -326,10 +334,9 @@ class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
             ]
             assert list(map(lambda message: message.record.data, messages)) == [
                 {
-                    "_ab_source_file_last_modified": remote_file.last_modified.strftime(
-                        "%Y-%m-%dT%H:%M:%S.%fZ"
-                    ),
-                    "_ab_source_file_url": remote_file.uri,
+                    "bytes": 10,
+                    "filename": "file.csv",
+                    "folder": "/absolute/path/",
                 }
             ]
 

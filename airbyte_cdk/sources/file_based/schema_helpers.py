@@ -19,13 +19,17 @@ SchemaType = Mapping[str, Mapping[str, JsonSchemaSupportedType]]
 
 schemaless_schema = {"type": "object", "properties": {"data": {"type": "object"}}}
 
-# we use the File attributes for metadata records.
 file_transfer_schema = {
     "type": "object",
     "properties": {
-        "uri": {"type": "string"},
-        "last_modified": {"type": "string"},
+        "folder": {"type": "string"},
+        "file_name": {"type": "string"},
+        "bytes": {"type": "integer"},
+        "id": {"type": ["null", "string"]},
+        "created_at": {"type": ["null", "integer"]},
+        "updated_at": {"type": ["null", "integer"]},
         "mime_type": {"type": ["null", "string"]},
+        "description": {"type": ["null", "string"]},
     },
 }
 

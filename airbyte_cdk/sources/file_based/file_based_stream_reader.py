@@ -8,7 +8,7 @@ from datetime import datetime
 from enum import Enum
 from io import IOBase
 from os import makedirs, path
-from typing import Any, Dict, Iterable, List, Optional, Set
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from wcmatch.glob import GLOBSTAR, globmatch
 
@@ -19,6 +19,7 @@ from airbyte_cdk.sources.file_based.config.validate_config_transfer_modes import
     preserve_directory_structure,
     use_file_transfer,
 )
+from airbyte_cdk.sources.file_based.file_record_data import FileRecordData
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 
 
@@ -151,7 +152,7 @@ class AbstractFileBasedStreamReader(ABC):
     @abstractmethod
     def upload(
         self, file: RemoteFile, local_directory: str, logger: logging.Logger
-    ) -> AirbyteRecordMessageFileReference:
+    ) -> Tuple[FileRecordData, AirbyteRecordMessageFileReference]:
         """
         This is required for connectors that will support writing to
         files. It will handle the logic to download,get,read,acquire or

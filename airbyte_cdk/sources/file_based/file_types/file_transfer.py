@@ -2,10 +2,11 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 import logging
-from typing import Any, Dict, Iterable
+from typing import Any, Dict, Iterable, Tuple
 
 from airbyte_cdk.models import AirbyteRecordMessageFileReference
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
+from airbyte_cdk.sources.file_based.file_record_data import FileRecordData
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.utils.files_directory import get_files_directory
 
@@ -19,7 +20,7 @@ class FileTransfer:
         file: RemoteFile,
         stream_reader: AbstractFileBasedStreamReader,
         logger: logging.Logger,
-    ) -> Iterable[AirbyteRecordMessageFileReference]:
+    ) -> Iterable[Tuple[FileRecordData, AirbyteRecordMessageFileReference]]:
         try:
             yield stream_reader.upload(
                 file=file, local_directory=self._local_directory, logger=logger

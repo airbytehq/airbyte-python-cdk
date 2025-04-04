@@ -97,14 +97,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         self, configured_catalog_json_schema: Dict[str, Any]
     ) -> Dict[str, Any]:
         if self.use_file_transfer:
-            return {
-                "type": "object",
-                "properties": {
-                    "file_path": {"type": "string"},
-                    "file_size": {"type": "string"},
-                    self.ab_file_name_col: {"type": "string"},
-                },
-            }
+            return file_transfer_schema
         else:
             return super()._filter_schema_invalid_properties(configured_catalog_json_schema)
 
@@ -166,12 +159,13 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
 
             try:
                 if self.use_file_transfer:
-                    for file_reference in file_transfer.upload(
+                    for file_record_data, file_reference in file_transfer.upload(
                         file=file, stream_reader=self.stream_reader, logger=self.logger
                     ):
-                        record = self.transform_record({}, file, file_datetime_string)
                         yield stream_data_to_airbyte_message(
-                            self.name, record, file_reference=file_reference
+                            self.name,
+                            file_record_data.dict(exclude_none=True),
+                            file_reference=file_reference,
                         )
                 else:
                     for record in parser.parse_records(
