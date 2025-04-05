@@ -8,7 +8,7 @@ from datetime import datetime
 from enum import Enum
 from io import IOBase
 from os import makedirs, path
-from typing import Iterable, List, Optional, Set, Tuple
+from typing import Any, Iterable, List, Optional, Set, Tuple, MutableMapping
 
 from wcmatch.glob import GLOBSTAR, globmatch
 
@@ -30,6 +30,12 @@ class FileReadMode(Enum):
 
 class AbstractFileBasedStreamReader(ABC):
     DATE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
+    FILE_RELATIVE_PATH = "file_relative_path"
+    FILE_NAME = "file_name"
+    LOCAL_FILE_PATH = "local_file_path"
+    ABSOLUTE_FILE_PATH = "absolute_file_path"
+    SOURCE_FILE_URI = "source_file_relative_path"
+    FILE_FOLDER = "file_folder"
 
     def __init__(self) -> None:
         self._config = None
@@ -171,16 +177,28 @@ class AbstractFileBasedStreamReader(ABC):
         """
         ...
 
-    def _get_file_transfer_paths(self, file: RemoteFile, local_directory: str) -> List[str]:
+    def _get_file_transfer_paths(self, file: RemoteFile, local_directory: str) -> MutableMapping[str, Any]:
         preserve_directory_structure = self.preserve_directory_structure()
+        file_uri = file.uri
+        file_name = path.basename(file_uri)
+        file_folder = path.dirname(file_uri)
         if preserve_directory_structure:
             # Remove left slashes from source path format to make relative path for writing locally
-            file_relative_path = file.uri.lstrip("/")
+            file_relative_path = file_uri.lstrip("/")
         else:
-            file_relative_path = path.basename(file.uri)
+            file_relative_path = file_name
         local_file_path = path.join(local_directory, file_relative_path)
-
         # Ensure the local directory exists
         makedirs(path.dirname(local_file_path), exist_ok=True)
         absolute_file_path = path.abspath(local_file_path)
-        return [file_relative_path, local_file_path, absolute_file_path]
+
+        file_paths = {
+            self.FILE_RELATIVE_PATH: file_relative_path,
+            self.LOCAL_FILE_PATH: local_file_path,
+            self.ABSOLUTE_FILE_PATH: absolute_file_path,
+            self.FILE_NAME: file_name,
+            self.FILE_FOLDER: file_folder,
+            self.SOURCE_FILE_URI: file_uri,
+
+        }
+        return file_paths

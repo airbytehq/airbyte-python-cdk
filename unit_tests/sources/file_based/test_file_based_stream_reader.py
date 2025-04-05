@@ -5,6 +5,7 @@
 import logging
 from datetime import datetime
 from io import IOBase
+from os import path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Set
 
 import pytest
@@ -445,10 +446,13 @@ def test_preserve_sub_directories_scenarios(
     )
     reader = TestStreamReader()
     reader.config = TestSpec(**config)
-    file_relative_path, local_file_path, absolute_file_path = reader._get_file_transfer_paths(
+    file_paths = reader._get_file_transfer_paths(
         remote_file, "/tmp/transfer-files/"
     )
 
-    assert file_relative_path == expected_file_relative_path
-    assert local_file_path == expected_local_file_path
-    assert absolute_file_path == expected_absolute_file_path
+    assert file_paths[AbstractFileBasedStreamReader.FILE_RELATIVE_PATH] == expected_file_relative_path
+    assert file_paths[AbstractFileBasedStreamReader.LOCAL_FILE_PATH] == expected_local_file_path
+    assert file_paths[AbstractFileBasedStreamReader.ABSOLUTE_FILE_PATH] == expected_absolute_file_path
+    assert file_paths[AbstractFileBasedStreamReader.SOURCE_FILE_URI] == source_file
+    assert file_paths[AbstractFileBasedStreamReader.FILE_NAME] == path.basename(source_file)
+    assert file_paths[AbstractFileBasedStreamReader.FILE_FOLDER] == path.dirname(source_file)
