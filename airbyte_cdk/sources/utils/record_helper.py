@@ -13,7 +13,6 @@ from airbyte_cdk.models import (
     AirbyteTraceMessage,
 )
 from airbyte_cdk.models import Type as MessageType
-from airbyte_cdk.models.file_transfer_record_message import AirbyteFileTransferRecordMessage
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 
@@ -23,7 +22,6 @@ def stream_data_to_airbyte_message(
     data_or_message: StreamData,
     transformer: TypeTransformer = TypeTransformer(TransformConfig.NoTransform),
     schema: Optional[Mapping[str, Any]] = None,
-    is_file_transfer_message: bool = False,
     file_reference: Optional[AirbyteRecordMessageFileReference] = None,
 ) -> AirbyteMessage:
     if schema is None:
@@ -38,17 +36,12 @@ def stream_data_to_airbyte_message(
             # taken unless configured. See
             # docs/connector-development/cdk-python/schemas.md for details.
             transformer.transform(data, schema)
-            if is_file_transfer_message:
-                message = AirbyteFileTransferRecordMessage(
-                    stream=stream_name, file=data, emitted_at=now_millis, data={}
-                )
-            else:
-                message = AirbyteRecordMessage(
-                    stream=stream_name,
-                    data=data,
-                    emitted_at=now_millis,
-                    file_reference=file_reference,
-                )
+            message = AirbyteRecordMessage(
+                stream=stream_name,
+                data=data,
+                emitted_at=now_millis,
+                file_reference=file_reference,
+            )
             return AirbyteMessage(type=MessageType.RECORD, record=message)
         case AirbyteTraceMessage():
             return AirbyteMessage(type=MessageType.TRACE, trace=data_or_message)

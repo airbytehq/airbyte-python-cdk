@@ -270,7 +270,6 @@ class FileBasedStreamPartition(Partition):
                         yield Record(
                             data=record_message_data,
                             stream_name=self.stream_name(),
-                            is_file_transfer_message=self._use_file_transfer(),
                         )
                 else:
                     self._message_repository.emit_message(record_data)

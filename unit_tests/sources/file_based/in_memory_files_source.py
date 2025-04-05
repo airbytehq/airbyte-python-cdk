@@ -140,7 +140,7 @@ class InMemoryFilesStreamReader(AbstractFileBasedStreamReader):
     def file_size(self, file: RemoteFile) -> int:
         return 0
 
-    def get_file(
+    def upload(
         self, file: RemoteFile, local_directory: str, logger: logging.Logger
     ) -> Dict[str, Any]:
         return {}
