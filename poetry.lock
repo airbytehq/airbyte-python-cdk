@@ -5502,9 +5502,10 @@ type = ["pytest-mypy"]
 [extras]
 file-based = ["avro", "fastavro", "markdown", "pdf2image", "pdfminer.six", "pyarrow", "pytesseract", "python-calamine", "python-snappy", "unstructured", "unstructured.pytesseract"]
 sql = ["sqlalchemy"]
+tests = []
 vector-db-based = ["cohere", "langchain", "openai", "tiktoken"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.13"
-content-hash = "c8731f26643e07136e524d5e0d6e0f5c2229cf63d43bf5644de9f1cf8e565197"
+content-hash = "e179fe02d4aea69cff7d86b93989ca033b7a2160a82d4e5e563b46772e8acbc1"
