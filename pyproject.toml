@@ -110,10 +110,14 @@ deptry = "^0.23.0"
 file-based = ["avro", "fastavro", "pyarrow", "unstructured", "pdf2image", "pdfminer.six", "unstructured.pytesseract", "pytesseract", "markdown", "python-calamine", "python-snappy"]
 vector-db-based = ["langchain", "openai", "cohere", "tiktoken"]
 sql = ["sqlalchemy"]
+tests = ["pytest", "pytest-mock", "pytest-cov"]
 
 [tool.poetry.scripts]
 
 source-declarative-manifest = "airbyte_cdk.cli.source_declarative_manifest:run"
+
+[tool.poetry.plugins.pytest11]
+airbyte_cdk = "airbyte_cdk.test.pytest_config.plugin"
 
 [tool.isort]
 skip = ["__init__.py"]  # TODO: Remove after this is fixed: https://github.com/airbytehq/airbyte-python-cdk/issues/12

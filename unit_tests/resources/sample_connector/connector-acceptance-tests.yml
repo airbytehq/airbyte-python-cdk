@@ -1,0 +1,4 @@
+connector_image: sample-connector
+test_read:
+  config_path: secrets/config.json
+  empty_streams: []
