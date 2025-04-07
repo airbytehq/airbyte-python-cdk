@@ -8,7 +8,7 @@ from datetime import datetime
 from enum import Enum
 from io import IOBase
 from os import makedirs, path
-from typing import Any, Iterable, List, Optional, Set, Tuple, MutableMapping
+from typing import Any, Callable, Iterable, List, Optional, Set, Tuple, MutableMapping
 
 from wcmatch.glob import GLOBSTAR, globmatch
 
@@ -176,14 +176,18 @@ class AbstractFileBasedStreamReader(ABC):
         """
         ...
 
-    def _get_file_transfer_paths(self, file: RemoteFile, local_directory: str) -> MutableMapping[str, Any]:
+    def _get_file_transfer_paths(self, file: RemoteFile, local_directory: str, parse_file_path_from_uri: Optional[Callable] = None) -> MutableMapping[str, Any]:
         preserve_directory_structure = self.preserve_directory_structure()
-        file_uri = file.uri
-        file_name = path.basename(file_uri)
-        file_folder = path.dirname(file_uri)
+        if not parse_file_path_from_uri:
+            file_path = file.uri
+        else:
+            file_path = parse_file_path_from_uri(file.uri)
+
+        file_name = path.basename(file_path)
+        file_folder = path.dirname(file_path)
         if preserve_directory_structure:
             # Remove left slashes from source path format to make relative path for writing locally
-            file_relative_path = file_uri.lstrip("/")
+            file_relative_path = file_path.lstrip("/")
         else:
             file_relative_path = file_name
         local_file_path = path.join(local_directory, file_relative_path)
@@ -195,7 +199,7 @@ class AbstractFileBasedStreamReader(ABC):
             self.LOCAL_FILE_PATH: local_file_path,
             self.FILE_NAME: file_name,
             self.FILE_FOLDER: file_folder,
-            self.SOURCE_FILE_URI: file_uri,
+            self.SOURCE_FILE_URI: file.uri,
 
         }
         return file_paths
