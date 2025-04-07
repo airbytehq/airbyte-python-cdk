@@ -2911,7 +2911,7 @@ def test_use_request_options_provider_for_datetime_based_cursor():
         parameters={},
     )
 
-    connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
+    connector_builder_factory = ModelToComponentFactory()
     retriever = connector_builder_factory.create_component(
         model_type=SimpleRetrieverModel,
         component_definition=simple_retriever_model,
@@ -2999,7 +2999,7 @@ def test_do_not_separate_request_options_provider_for_non_datetime_based_cursor(
         partition_router=list_partition_router,
     )
 
-    connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
+    connector_builder_factory = ModelToComponentFactory()
     retriever = connector_builder_factory.create_component(
         model_type=SimpleRetrieverModel,
         component_definition=simple_retriever_model,
@@ -3041,7 +3041,7 @@ def test_use_default_request_options_provider():
         },
     }
 
-    connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
+    connector_builder_factory = ModelToComponentFactory()
     retriever = connector_builder_factory.create_component(
         model_type=SimpleRetrieverModel,
         component_definition=simple_retriever_model,

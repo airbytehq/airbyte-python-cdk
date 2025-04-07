@@ -3,7 +3,22 @@
 #
 
 import logging
-from typing import Any, Generic, Iterator, List, Mapping, MutableMapping, Optional, Tuple
+from dataclasses import dataclass, field
+from queue import Queue
+from typing import (
+    Any,
+    Callable,
+    Generic,
+    Iterable,
+    Iterator,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Tuple,
+)
+
+from airbyte_protocol_dataclasses.models import Level
 
 from airbyte_cdk.models import (
     AirbyteCatalog,
@@ -43,7 +58,9 @@ from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_genera
     DeclarativePartitionFactory,
     StreamSlicerPartitionGenerator,
 )
+from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import TestReadSlicerDecorator
 from airbyte_cdk.sources.declarative.types import ConnectionDefinition
+from airbyte_cdk.sources.message import InMemoryMessageRepository, LogMessage, MessageRepository
 from airbyte_cdk.sources.source import TState
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
@@ -54,6 +71,45 @@ from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, FinalStateCursor
 from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
 from airbyte_cdk.sources.streams.concurrent.helpers import get_primary_key_from_stream
+from airbyte_cdk.sources.streams.concurrent.partitions.types import QueueItem
+
+DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE = 5
+DEFAULT_MAXIMUM_NUMBER_OF_SLICES = 5
+DEFAULT_MAXIMUM_RECORDS = 100
+DEFAULT_MAXIMUM_STREAMS = 100
+
+
+@dataclass
+class TestLimits:
+    max_records: int = field(default=DEFAULT_MAXIMUM_RECORDS)
+    max_pages_per_slice: int = field(default=DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE)
+    max_slices: int = field(default=DEFAULT_MAXIMUM_NUMBER_OF_SLICES)
+    max_streams: int = field(default=DEFAULT_MAXIMUM_STREAMS)
+
+
+class ConcurrentMessageRepository(MessageRepository):
+
+    def __init__(self, queue: Queue[QueueItem], message_repository: MessageRepository):
+        self._queue = queue
+        self._decorated = message_repository
+
+    def emit_message(self, message: AirbyteMessage) -> None:
+        self._decorated.emit_message(message)
+        for message in self._decorated.consume_queue():
+            self._queue.put(message)
+
+    def log_message(self, level: Level, message_provider: Callable[[], LogMessage]) -> None:
+        self._decorated.log_message(level, message_provider)
+        for message in self._decorated.consume_queue():
+            self._queue.put(message)
+
+    def consume_queue(self) -> Iterable[AirbyteMessage]:
+        """
+        The consumption of messages from the ConcurrentMessageRepository is done through the queue passed in parameters.
+
+        TODO to confirm but it seems like yielding from self._queue.get() could cause locking issues as anyone can consume from the queue today, not just the main thread
+        """
+        yield from []
 
 
 class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
@@ -69,7 +125,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         source_config: ConnectionDefinition,
         debug: bool = False,
         emit_connector_builder_messages: bool = False,
-        component_factory: Optional[ModelToComponentFactory] = None,
+        limits: Optional[TestLimits] = None,
         **kwargs: Any,
     ) -> None:
         # todo: We could remove state from initialization. Now that streams are grouped during the read(), a source
@@ -80,10 +136,16 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         # cursors. We do this by no longer automatically instantiating RFR cursors when converting
         # the declarative models into runtime components. Concurrent sources will continue to checkpoint
         # incremental streams running in full refresh.
-        component_factory = component_factory or ModelToComponentFactory(
+        queue: Queue[QueueItem] = Queue(maxsize=10_000)
+        component_factory = ModelToComponentFactory(
             emit_connector_builder_messages=emit_connector_builder_messages,
             disable_resumable_full_refresh=True,
             connector_state_manager=self._connector_state_manager,
+            message_repository=ConcurrentMessageRepository(queue, InMemoryMessageRepository(Level.DEBUG if emit_connector_builder_messages else Level.INFO)),
+            limit_pages_fetched_per_slice = limits.max_pages_per_slice if limits else None,
+            limit_slices_fetched = limits.max_slices if limits else None,
+            disable_retries = True if limits else False,
+            disable_cache = True if limits else False,
         )
 
         super().__init__(
@@ -120,6 +182,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             logger=self.logger,
             slice_logger=self._slice_logger,
             message_repository=self.message_repository,
+            queue=queue,
         )
 
     # TODO: Remove this. This property is necessary to safely migrate Stripe during the transition state.
@@ -360,16 +423,19 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     and incremental_sync_component_definition.get("type", "")
                     == DatetimeBasedCursorModel.__name__
                     and hasattr(declarative_stream.retriever, "stream_slicer")
-                    and isinstance(
-                        declarative_stream.retriever.stream_slicer, PerPartitionWithGlobalCursor
+                    and (
+                        isinstance(
+                            declarative_stream.retriever.stream_slicer, PerPartitionWithGlobalCursor
+                        ) or
+                        hasattr(declarative_stream.retriever.stream_slicer, "_decorated") and isinstance(
+                        declarative_stream.retriever.stream_slicer._decorated, PerPartitionWithGlobalCursor)
                     )
-                ):
+                    ):
                     stream_state = self._connector_state_manager.get_stream_state(
                         stream_name=declarative_stream.name, namespace=declarative_stream.namespace
                     )
                     stream_state = self._migrate_state(declarative_stream, stream_state)
-
-                    partition_router = declarative_stream.retriever.stream_slicer._partition_router
+                    partition_router = declarative_stream.retriever.stream_slicer._decorated._partition_router if hasattr(declarative_stream.retriever.stream_slicer, "_decorated") else declarative_stream.retriever.stream_slicer._partition_router
 
                     perpartition_cursor = (
                         self._constructor.create_concurrent_cursor_from_perpartition_cursor(
@@ -386,6 +452,9 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
                     retriever = self._get_retriever(declarative_stream, stream_state)
 
+                    from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import (
+                        TestReadSlicerDecorator,
+                    )
                     partition_generator = StreamSlicerPartitionGenerator(
                         DeclarativePartitionFactory(
                             declarative_stream.name,
@@ -393,7 +462,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             retriever,
                             self.message_repository,
                         ),
-                        perpartition_cursor,
+                        TestReadSlicerDecorator(perpartition_cursor, declarative_stream.retriever.stream_slicer._maximum_number_of_slices) if hasattr(declarative_stream.retriever.stream_slicer, "_decorated") else perpartition_cursor,
                     )
 
                     concurrent_streams.append(

@@ -61,6 +61,7 @@ from airbyte_cdk.sources.declarative.manifest_declarative_source import Manifest
 from airbyte_cdk.sources.declarative.retrievers import SimpleRetrieverTestReadDecorator
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
+from airbyte_cdk.test.state_builder import StateBuilder
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets, update_secrets
 from unit_tests.connector_builder.utils import create_configured_catalog
 
@@ -74,6 +75,7 @@ _stream_options = {
 }
 _page_size = 2
 
+_NO_STATE = None
 _A_STATE = [
     AirbyteStateMessage(
         type="STREAM",
@@ -140,6 +142,19 @@ MANIFEST = {
             "type": "DeclarativeStream",
             "$parameters": _stream_options,
             "retriever": "#/definitions/retriever",
+            "incremental_sync": {
+                "type": "DatetimeBasedCursor",
+                "cursor_field": "updated_at",
+                "datetime_format": "%Y-%m-%dT%H:%M:%S.%fZ",
+                "start_datetime": {
+                    "datetime": "2025-01-01T00:00:00.000Z",
+                    "datetime_format": "%Y-%m-%dT%H:%M:%S.%fZ"
+                },
+                "start_time_option": {
+                    "field_name": "lastModifiedDateTime",
+                    "inject_into": "request_parameter"
+                }
+            },
         },
     ],
     "check": {"type": "CheckStream", "stream_names": ["lists"]},
@@ -568,6 +583,33 @@ def test_resolve_manifest(valid_resolve_manifest_config_file):
         "streams": [
             {
                 "type": "DeclarativeStream",
+                "incremental_sync": {
+                    "type": "DatetimeBasedCursor",
+                    "cursor_field": "updated_at",
+                    "datetime_format": "%Y-%m-%dT%H:%M:%S.%fZ",
+                    "start_datetime": {
+                        "type": "MinMaxDatetime",
+                        "datetime": "2025-01-01T00:00:00.000Z",
+                        "datetime_format": "%Y-%m-%dT%H:%M:%S.%fZ",
+                        "$parameters": _stream_options,
+                        "name": _stream_name,
+                        "url_base": _stream_url_base,
+                        "primary_key": _stream_primary_key,
+                    },
+                    "start_time_option": {
+                        "type": "RequestOption",
+                        "field_name": "lastModifiedDateTime",
+                        "inject_into": "request_parameter",
+                        "$parameters": _stream_options,
+                        "name": _stream_name,
+                        "primary_key": _stream_primary_key,
+                        "url_base": _stream_url_base,
+                    },
+                    "name": _stream_name,
+                    "primary_key": _stream_primary_key,
+                    "url_base": _stream_url_base,
+                    "$parameters": _stream_options,
+                },
                 "retriever": {
                     "type": "SimpleRetriever",
                     "paginator": {
@@ -867,19 +909,20 @@ def test_handle_429_response():
 
     config = TEST_READ_CONFIG
     limits = TestLimits()
-    source = create_source(config, limits)
+    catalog = ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG)
+    source = create_source(config, limits, catalog)
 
     with patch("requests.Session.send", return_value=response) as mock_send:
         response = handle_connector_builder_request(
             source,
             "test_read",
             config,
-            ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG),
+            catalog,
             _A_PER_PARTITION_STATE,
             limits,
         )
 
-        mock_send.assert_called_once()
+        assert mock_send.call_count == limits.max_slices
 
 
 @pytest.mark.parametrize(
@@ -1047,8 +1090,8 @@ def _create_429_page_response(response_body):
     requests.Session,
     "send",
     side_effect=(
-        _create_page_response({"result": [{"id": 0}, {"id": 1}], "_metadata": {"next": "next"}}),
-        _create_page_response({"result": [{"id": 2}], "_metadata": {"next": "next"}}),
+        _create_page_response({"result": [{"id": 0, "updated_at": "2025-01-01T00:00:00.000Z"}, {"id": 1, "updated_at": "2025-01-02T00:00:00.000Z"}], "_metadata": {"next": "next"}}),
+        _create_page_response({"result": [{"id": 2, "updated_at": "2025-01-03T00:00:00.000Z"}], "_metadata": {"next": "next"}}),
     )
     * 10,
 )
@@ -1081,7 +1124,7 @@ def test_read_source(mock_http_stream):
 
     config = {"__injected_declarative_manifest": MANIFEST}
 
-    source = create_source(config, limits)
+    source = create_source(config, limits, catalog, _NO_STATE)
 
     output_data = read_stream(source, config, catalog, _A_PER_PARTITION_STATE, limits).record.data
     slices = output_data["slices"]
@@ -1094,6 +1137,7 @@ def test_read_source(mock_http_stream):
         first_page, second_page = pages[0], pages[1]
         assert len(first_page["records"]) == _page_size
         assert len(second_page["records"]) == 1
+        assert s["state"]
 
     streams = source.streams(config)
     for s in streams:
@@ -1104,8 +1148,8 @@ def test_read_source(mock_http_stream):
     requests.Session,
     "send",
     side_effect=(
-        _create_page_response({"result": [{"id": 0}, {"id": 1}], "_metadata": {"next": "next"}}),
-        _create_page_response({"result": [{"id": 2}], "_metadata": {"next": "next"}}),
+        _create_page_response({"result": [{"id": 0, "updated_at": "2025-01-01T00:00:00.000Z"}, {"id": 1, "updated_at": "2025-01-02T00:00:00.000Z"}], "_metadata": {"next": "next"}}),
+        _create_page_response({"result": [{"id": 2, "updated_at": "2025-01-03T00:00:00.000Z"}], "_metadata": {"next": "next"}}),
     ),
 )
 def test_read_source_single_page_single_slice(mock_http_stream):
@@ -1244,13 +1288,13 @@ def test_handle_read_external_requests(deployment_mode, url_base, expected_error
         pytest.param(
             "CLOUD",
             "https://10.0.27.27/tokens/bearer",
-            "AirbyteTracedException",
+            "StreamThreadException",
             id="test_cloud_read_with_private_endpoint",
         ),
         pytest.param(
             "CLOUD",
             "http://unsecured.protocol/tokens/bearer",
-            "InvalidSchema",
+            "Invalid Protocol Scheme",
             id="test_cloud_read_with_unsecured_endpoint",
         ),
         pytest.param(

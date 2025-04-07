@@ -606,7 +606,6 @@ def test_concurrent_incremental_read_two_slices():
         Mock(spec=PartitionEnqueuer),
         Mock(spec=ThreadPoolManager),
         logger,
-        slice_logger,
         message_repository,
         Mock(spec=PartitionReader),
     )

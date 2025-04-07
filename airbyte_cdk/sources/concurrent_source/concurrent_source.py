@@ -4,7 +4,7 @@
 import concurrent
 import logging
 from queue import Queue
-from typing import Iterable, Iterator, List
+from typing import Iterable, Iterator, List, Optional
 
 from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.sources.concurrent_source.concurrent_read_processor import ConcurrentReadProcessor
@@ -16,7 +16,7 @@ from airbyte_cdk.sources.concurrent_source.thread_pool_manager import ThreadPool
 from airbyte_cdk.sources.message import InMemoryMessageRepository, MessageRepository
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream
 from airbyte_cdk.sources.streams.concurrent.partition_enqueuer import PartitionEnqueuer
-from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionReader
+from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionLogger, PartitionReader
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.types import (
     PartitionCompleteSentinel,
@@ -44,6 +44,7 @@ class ConcurrentSource:
         slice_logger: SliceLogger,
         message_repository: MessageRepository,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+        queue: Optional[Queue[QueueItem]] = None
     ) -> "ConcurrentSource":
         is_single_threaded = initial_number_of_partitions_to_generate == 1 and num_workers == 1
         too_many_generator = (
@@ -65,6 +66,7 @@ class ConcurrentSource:
             message_repository,
             initial_number_of_partitions_to_generate,
             timeout_seconds,
+            queue,
         )
 
     def __init__(
@@ -75,6 +77,7 @@ class ConcurrentSource:
         message_repository: MessageRepository = InMemoryMessageRepository(),
         initial_number_partitions_to_generate: int = 1,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+        queue: Optional[Queue[QueueItem]] = None,
     ) -> None:
         """
         :param threadpool: The threadpool to submit tasks to
@@ -90,6 +93,7 @@ class ConcurrentSource:
         self._message_repository = message_repository
         self._initial_number_partitions_to_generate = initial_number_partitions_to_generate
         self._timeout_seconds = timeout_seconds
+        self._queue = queue if queue else Queue(maxsize=10_000)
 
     def read(
         self,
@@ -101,15 +105,13 @@ class ConcurrentSource:
         # threads generating partitions that than are max number of workers. If it weren't the case, we could have threads only generating
         # partitions which would fill the queue. This number is arbitrarily set to 10_000 but will probably need to be changed given more
         # information and might even need to be configurable depending on the source
-        queue: Queue[QueueItem] = Queue(maxsize=10_000)
         concurrent_stream_processor = ConcurrentReadProcessor(
             streams,
-            PartitionEnqueuer(queue, self._threadpool),
+            PartitionEnqueuer(self._queue, self._threadpool),
             self._threadpool,
             self._logger,
-            self._slice_logger,
             self._message_repository,
-            PartitionReader(queue),
+            PartitionReader(self._queue, PartitionLogger(self._slice_logger, self._logger, self._message_repository)),
         )
 
         # Enqueue initial partition generation tasks
@@ -117,7 +119,7 @@ class ConcurrentSource:
 
         # Read from the queue until all partitions were generated and read
         yield from self._consume_from_queue(
-            queue,
+            self._queue,
             concurrent_stream_processor,
         )
         self._threadpool.check_for_errors_and_shutdown()
@@ -161,5 +163,7 @@ class ConcurrentSource:
             yield from concurrent_stream_processor.on_partition_complete_sentinel(queue_item)
         elif isinstance(queue_item, Record):
             yield from concurrent_stream_processor.on_record(queue_item)
+        elif isinstance(queue_item, AirbyteMessage):
+            yield queue_item
         else:
             raise ValueError(f"Unknown queue item type: {type(queue_item)}")

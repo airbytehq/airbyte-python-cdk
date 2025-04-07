@@ -9,7 +9,8 @@ from unittest.mock import Mock
 import pytest
 
 from airbyte_cdk.sources.concurrent_source.stream_thread_exception import StreamThreadException
-from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionReader
+from airbyte_cdk.sources.streams.concurrent.cursor import Cursor
+from airbyte_cdk.sources.streams.concurrent.partition_reader import PartitionLogger, PartitionReader
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.types import (
     PartitionCompleteSentinel,
@@ -26,10 +27,11 @@ _RECORDS = [
 class PartitionReaderTest(unittest.TestCase):
     def setUp(self) -> None:
         self._queue: Queue[QueueItem] = Queue()
-        self._partition_reader = PartitionReader(self._queue)
+        self._partition_reader = PartitionReader(self._queue, Mock(spec=PartitionLogger))  # FIXME ensure partition logger is called properly
+        self._cursor = Mock(spec=Cursor)
 
     def test_given_no_records_when_process_partition_then_only_emit_sentinel(self):
-        self._partition_reader.process_partition(self._a_partition([]))
+        self._partition_reader.process_partition(self._a_partition([]), self._cursor)
 
         while queue_item := self._queue.get():
             if not isinstance(queue_item, PartitionCompleteSentinel):
@@ -40,7 +42,7 @@ class PartitionReaderTest(unittest.TestCase):
         self,
     ):
         partition = self._a_partition(_RECORDS)
-        self._partition_reader.process_partition(partition)
+        self._partition_reader.process_partition(partition, self._cursor)
 
         queue_content = self._consume_queue()
 
@@ -52,7 +54,7 @@ class PartitionReaderTest(unittest.TestCase):
         partition = Mock()
         exception = ValueError()
         partition.read.side_effect = self._read_with_exception(_RECORDS, exception)
-        self._partition_reader.process_partition(partition)
+        self._partition_reader.process_partition(partition, self._cursor)
 
         queue_content = self._consume_queue()
 
