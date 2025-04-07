@@ -33,7 +33,6 @@ class AbstractFileBasedStreamReader(ABC):
     FILE_RELATIVE_PATH = "file_relative_path"
     FILE_NAME = "file_name"
     LOCAL_FILE_PATH = "local_file_path"
-    ABSOLUTE_FILE_PATH = "absolute_file_path"
     SOURCE_FILE_URI = "source_file_relative_path"
     FILE_FOLDER = "file_folder"
 
@@ -190,12 +189,10 @@ class AbstractFileBasedStreamReader(ABC):
         local_file_path = path.join(local_directory, file_relative_path)
         # Ensure the local directory exists
         makedirs(path.dirname(local_file_path), exist_ok=True)
-        absolute_file_path = path.abspath(local_file_path)
 
         file_paths = {
             self.FILE_RELATIVE_PATH: file_relative_path,
             self.LOCAL_FILE_PATH: local_file_path,
-            self.ABSOLUTE_FILE_PATH: absolute_file_path,
             self.FILE_NAME: file_name,
             self.FILE_FOLDER: file_folder,
             self.SOURCE_FILE_URI: file_uri,

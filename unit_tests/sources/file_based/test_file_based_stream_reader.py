@@ -384,7 +384,7 @@ def test_globs_and_prefixes_from_globs(
 
 
 @pytest.mark.parametrize(
-    "config, source_file, expected_file_relative_path, expected_local_file_path, expected_absolute_file_path",
+    "config, source_file, expected_file_relative_path, expected_local_file_path",
     [
         pytest.param(
             {
@@ -396,7 +396,6 @@ def test_globs_and_prefixes_from_globs(
             },
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
-            "/tmp/transfer-files/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "/tmp/transfer-files/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             id="preserve_directories_present_and_true",
         ),
@@ -411,7 +410,6 @@ def test_globs_and_prefixes_from_globs(
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "monthly-kickoff-202402.mpeg",
             "/tmp/transfer-files/monthly-kickoff-202402.mpeg",
-            "/tmp/transfer-files/monthly-kickoff-202402.mpeg",
             id="preserve_directories_present_and_false",
         ),
         pytest.param(
@@ -419,14 +417,12 @@ def test_globs_and_prefixes_from_globs(
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "/tmp/transfer-files/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
-            "/tmp/transfer-files/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             id="preserve_directories_not_present_defaults_true",
         ),
         pytest.param(
             {"streams": []},
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
-            "/tmp/transfer-files/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "/tmp/transfer-files/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             id="file_transfer_flag_not_present_defaults_true",
         ),
@@ -437,7 +433,6 @@ def test_preserve_sub_directories_scenarios(
     source_file: str,
     expected_file_relative_path: str,
     expected_local_file_path: str,
-    expected_absolute_file_path: str,
 ) -> None:
     remote_file = RemoteFile(
         uri=source_file,
@@ -452,7 +447,6 @@ def test_preserve_sub_directories_scenarios(
 
     assert file_paths[AbstractFileBasedStreamReader.FILE_RELATIVE_PATH] == expected_file_relative_path
     assert file_paths[AbstractFileBasedStreamReader.LOCAL_FILE_PATH] == expected_local_file_path
-    assert file_paths[AbstractFileBasedStreamReader.ABSOLUTE_FILE_PATH] == expected_absolute_file_path
     assert file_paths[AbstractFileBasedStreamReader.SOURCE_FILE_URI] == source_file
     assert file_paths[AbstractFileBasedStreamReader.FILE_NAME] == path.basename(source_file)
     assert file_paths[AbstractFileBasedStreamReader.FILE_FOLDER] == path.dirname(source_file)
