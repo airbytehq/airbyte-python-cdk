@@ -30,7 +30,7 @@ enable = true
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
-airbyte-protocol-models-dataclasses = { version = "0.14.4.dev1743719077", source = "testpypi" }
+airbyte-protocol-models-dataclasses = "^0.15"
 
 backoff = "*"
 cachetools = "*"
@@ -84,11 +84,6 @@ sqlalchemy = {version = "^2.0,!=2.0.36", optional = true }
 xmltodict = ">=0.13,<0.15"
 anyascii = "^0.3.2"
 whenever = "^0.6.16"
-
-[[tool.poetry.source]]
-name = "testpypi"
-url = "https://test.pypi.org/simple/"
-priority = "supplemental"
 
 [tool.poetry.group.dev.dependencies]
 freezegun = "*"
