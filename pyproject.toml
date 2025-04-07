@@ -117,6 +117,8 @@ tests = ["pytest", "pytest-mock", "pytest-cov"]
 source-declarative-manifest = "airbyte_cdk.cli.source_declarative_manifest:run"
 
 [tool.poetry.plugins.pytest11]
+# pytest11 is the entry point group name for pytest plugins
+# https://docs.pytest.org/en/7.3.x/how-to/writing_plugins.html#making-your-plugin-installable-by-others
 airbyte_cdk = "airbyte_cdk.test.pytest_config.plugin"
 
 [tool.isort]
@@ -256,4 +258,5 @@ DEP004 = [
   # TODO: These should probably be declared within a `tests` extra:
   "pytest",
   "requests_mock",
+  "_pytest",
 ]

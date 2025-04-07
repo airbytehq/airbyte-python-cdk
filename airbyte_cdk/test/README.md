@@ -11,7 +11,13 @@ The CDK includes a pytest plugin that automatically discovers connectors and the
 1. Install the Airbyte CDK with test extras:
 
 ```bash
-pip install airbyte-cdk[tests]
+poetry add airbyte-cdk[tests]
+```
+
+Or if you're developing the CDK itself:
+
+```bash
+poetry install --extras tests
 ```
 
 2. Run pytest in your connector directory with auto-discovery enabled:
