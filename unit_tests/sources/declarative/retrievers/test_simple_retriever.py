@@ -692,27 +692,6 @@ def test_path(test_name, requester_path, paginator_path, expected_path):
     assert actual_path == expected_path
 
 
-def test_limit_stream_slices():
-    maximum_number_of_slices = 4
-    stream_slicer = MagicMock()
-    stream_slicer.stream_slices.return_value = _generate_slices(maximum_number_of_slices * 2)
-    retriever = SimpleRetrieverTestReadDecorator(
-        name="stream_name",
-        primary_key=primary_key,
-        requester=MagicMock(),
-        paginator=MagicMock(),
-        record_selector=MagicMock(),
-        stream_slicer=stream_slicer,
-        maximum_number_of_slices=maximum_number_of_slices,
-        parameters={},
-        config={},
-    )
-
-    truncated_slices = list(retriever.stream_slices())
-
-    assert truncated_slices == _generate_slices(maximum_number_of_slices)
-
-
 @pytest.mark.parametrize(
     "test_name, first_greater_than_second",
     [

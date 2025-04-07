@@ -4,7 +4,7 @@
 
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Mapping
+from typing import Any, Dict, List, Mapping, Optional
 
 from airbyte_cdk.connector_builder.test_reader import TestReader
 from airbyte_cdk.models import (
@@ -16,7 +16,12 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.models import Type as MessageType
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE,
+    DEFAULT_MAXIMUM_NUMBER_OF_SLICES,
+    DEFAULT_MAXIMUM_RECORDS,
+    DEFAULT_MAXIMUM_STREAMS,
     ConcurrentDeclarativeSource,
+    TestLimits,
 )
 from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
@@ -27,23 +32,10 @@ from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
-DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE = 5
-DEFAULT_MAXIMUM_NUMBER_OF_SLICES = 5
-DEFAULT_MAXIMUM_RECORDS = 100
-DEFAULT_MAXIMUM_STREAMS = 100
-
 MAX_PAGES_PER_SLICE_KEY = "max_pages_per_slice"
 MAX_SLICES_KEY = "max_slices"
 MAX_RECORDS_KEY = "max_records"
 MAX_STREAMS_KEY = "max_streams"
-
-
-@dataclass
-class TestLimits:
-    max_records: int = field(default=DEFAULT_MAXIMUM_RECORDS)
-    max_pages_per_slice: int = field(default=DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE)
-    max_slices: int = field(default=DEFAULT_MAXIMUM_NUMBER_OF_SLICES)
-    max_streams: int = field(default=DEFAULT_MAXIMUM_STREAMS)
 
 
 def get_limits(config: Mapping[str, Any]) -> TestLimits:
@@ -62,10 +54,10 @@ def _ensure_concurrency_level(manifest: Dict[str, Any]) -> None:
     # Note that this is below the _LOWEST_SAFE_CONCURRENCY_LEVEL but it is fine in this case because we are limiting the number of slices
     # being generated which means that the memory usage is limited anyway
     if "concurrency_level" not in manifest:
-        manifest["concurrency_level"] = {}
+        manifest["concurrency_level"] = {"type": "ConcurrencyLevel"}
     manifest["concurrency_level"]["default_concurrency"] = 1
 
-def create_source(config: Mapping[str, Any], catalog: ConfiguredAirbyteCatalog, state: Any, limits: TestLimits) -> ManifestDeclarativeSource:
+def create_source(config: Mapping[str, Any], limits: TestLimits, catalog: Optional[ConfiguredAirbyteCatalog] = None, state: Any = None) -> ManifestDeclarativeSource:
     manifest = config["__injected_declarative_manifest"]
     _ensure_concurrency_level(manifest)
     return ConcurrentDeclarativeSource(
@@ -74,13 +66,7 @@ def create_source(config: Mapping[str, Any], catalog: ConfiguredAirbyteCatalog, 
         state=state,
         source_config=manifest,
         emit_connector_builder_messages=True,
-        component_factory=ModelToComponentFactory(
-            emit_connector_builder_messages=True,
-            limit_pages_fetched_per_slice=limits.max_pages_per_slice,
-            limit_slices_fetched=limits.max_slices,
-            disable_retries=True,
-            disable_cache=True,
-        ),
+        limits=limits,
     )
 
 

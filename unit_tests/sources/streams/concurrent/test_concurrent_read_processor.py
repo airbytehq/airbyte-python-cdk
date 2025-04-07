@@ -95,7 +95,6 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_enqueuer,
             self._thread_pool_manager,
             self._logger,
-            self._slice_logger,
             self._message_repository,
             self._partition_reader,
         )
@@ -109,7 +108,6 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_enqueuer,
             self._thread_pool_manager,
             self._logger,
-            self._slice_logger,
             self._message_repository,
             self._partition_reader,
         )
@@ -135,7 +133,6 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_enqueuer,
             self._thread_pool_manager,
             self._logger,
-            self._slice_logger,
             self._message_repository,
             self._partition_reader,
         )
@@ -171,7 +168,6 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_enqueuer,
             self._thread_pool_manager,
             self._logger,
-            self._slice_logger,
             self._message_repository,
             self._partition_reader,
         )
@@ -179,81 +175,11 @@ class TestConcurrentReadProcessor(unittest.TestCase):
         handler.on_partition(self._a_closed_partition)
 
         self._thread_pool_manager.submit.assert_called_with(
-            self._partition_reader.process_partition, self._a_closed_partition
+            self._partition_reader.process_partition, self._a_closed_partition, self._another_stream.cursor
         )
         assert (
             self._a_closed_partition in handler._streams_to_running_partitions[_ANOTHER_STREAM_NAME]
         )
-
-    def test_handle_partition_emits_log_message_if_it_should_be_logged(self):
-        stream_instances_to_read_from = [self._stream]
-        self._slice_logger = Mock(spec=SliceLogger)
-        self._slice_logger.should_log_slice_message.return_value = True
-        self._slice_logger.create_slice_log_message.return_value = self._log_message
-
-        handler = ConcurrentReadProcessor(
-            stream_instances_to_read_from,
-            self._partition_enqueuer,
-            self._thread_pool_manager,
-            self._logger,
-            self._slice_logger,
-            self._message_repository,
-            self._partition_reader,
-        )
-
-        handler.on_partition(self._an_open_partition)
-
-        self._thread_pool_manager.submit.assert_called_with(
-            self._partition_reader.process_partition, self._an_open_partition
-        )
-        self._message_repository.emit_message.assert_called_with(self._log_message)
-
-        assert self._an_open_partition in handler._streams_to_running_partitions[_STREAM_NAME]
-
-    @freezegun.freeze_time("2020-01-01T00:00:00")
-    def test_handle_on_partition_complete_sentinel_with_messages_from_repository(self):
-        stream_instances_to_read_from = [self._stream]
-        partition = Mock(spec=Partition)
-        log_message = Mock(spec=LogMessage)
-        partition.to_slice.return_value = log_message
-        partition.stream_name.return_value = _STREAM_NAME
-
-        handler = ConcurrentReadProcessor(
-            stream_instances_to_read_from,
-            self._partition_enqueuer,
-            self._thread_pool_manager,
-            self._logger,
-            self._slice_logger,
-            self._message_repository,
-            self._partition_reader,
-        )
-        handler.start_next_partition_generator()
-        handler.on_partition(partition)
-
-        sentinel = PartitionCompleteSentinel(partition)
-
-        self._message_repository.consume_queue.return_value = [
-            AirbyteMessage(
-                type=MessageType.LOG,
-                log=AirbyteLogMessage(
-                    level=LogLevel.INFO, message="message emitted from the repository"
-                ),
-            )
-        ]
-
-        messages = list(handler.on_partition_complete_sentinel(sentinel))
-
-        expected_messages = [
-            AirbyteMessage(
-                type=MessageType.LOG,
-                log=AirbyteLogMessage(
-                    level=LogLevel.INFO, message="message emitted from the repository"
-                ),
-            )
-        ]
-        assert messages == expected_messages
-
-        self._stream.cursor.close_partition.assert_called_once()
 
     @freezegun.freeze_time("2020-01-01T00:00:00")
     def test_handle_on_partition_complete_sentinel_yields_status_message_if_the_stream_is_done(
@@ -270,7 +196,6 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_enqueuer,
             self._thread_pool_manager,
             self._logger,
-            self._slice_logger,
             self._message_repository,
             self._partition_reader,
         )
@@ -302,55 +227,6 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             )
         ]
         assert messages == expected_messages
-        self._another_stream.cursor.close_partition.assert_called_once()
-
-    @freezegun.freeze_time("2020-01-01T00:00:00")
-    def test_given_exception_on_partition_complete_sentinel_then_yield_error_trace_message_and_stream_is_incomplete(
-        self,
-    ) -> None:
-        self._a_closed_partition.stream_name.return_value = self._stream.name
-        self._stream.cursor.close_partition.side_effect = ValueError
-
-        handler = ConcurrentReadProcessor(
-            [self._stream],
-            self._partition_enqueuer,
-            self._thread_pool_manager,
-            self._logger,
-            self._slice_logger,
-            self._message_repository,
-            self._partition_reader,
-        )
-        handler.start_next_partition_generator()
-        handler.on_partition(self._a_closed_partition)
-        list(
-            handler.on_partition_generation_completed(
-                PartitionGenerationCompletedSentinel(self._stream)
-            )
-        )
-        messages = list(
-            handler.on_partition_complete_sentinel(
-                PartitionCompleteSentinel(self._a_closed_partition)
-            )
-        )
-
-        expected_status_message = AirbyteMessage(
-            type=MessageType.TRACE,
-            trace=AirbyteTraceMessage(
-                type=TraceType.STREAM_STATUS,
-                stream_status=AirbyteStreamStatusTraceMessage(
-                    stream_descriptor=StreamDescriptor(
-                        name=self._stream.name,
-                    ),
-                    status=AirbyteStreamStatus.INCOMPLETE,
-                ),
-                emitted_at=1577836800000.0,
-            ),
-        )
-        assert list(map(lambda message: message.trace.type, messages)) == [
-            TraceType.ERROR,
-            TraceType.STREAM_STATUS,
-        ]
-        assert messages[1] == expected_status_message
 
     @freezegun.freeze_time("2020-01-01T00:00:00")
     def test_handle_on_partition_complete_sentinel_yields_no_status_message_if_the_stream_is_not_done(
@@ -367,7 +243,6 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_enqueuer,
             self._thread_pool_manager,
             self._logger,
-            self._slice_logger,
             self._message_repository,
             self._partition_reader,
         )
@@ -379,7 +254,6 @@ class TestConcurrentReadProcessor(unittest.TestCase):
 
         expected_messages = []
         assert messages == expected_messages
-        self._stream.cursor.close_partition.assert_called_once()
 
     @freezegun.freeze_time("2020-01-01T00:00:00")
     def test_on_record_no_status_message_no_repository_messge(self):
@@ -395,7 +269,6 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_enqueuer,
             self._thread_pool_manager,
             self._logger,
-            self._slice_logger,
             self._message_repository,
             self._partition_reader,
         )
@@ -441,7 +314,6 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_enqueuer,
             self._thread_pool_manager,
             self._logger,
-            self._slice_logger,
             self._message_repository,
             self._partition_reader,
         )
@@ -490,7 +362,6 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_enqueuer,
             self._thread_pool_manager,
             self._logger,
-            self._slice_logger,
             self._message_repository,
             self._partition_reader,
         )
@@ -541,7 +412,6 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_enqueuer,
             self._thread_pool_manager,
             self._logger,
-            self._slice_logger,
             self._message_repository,
             self._partition_reader,
         )
@@ -594,7 +464,6 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_enqueuer,
             self._thread_pool_manager,
             self._logger,
-            self._slice_logger,
             self._message_repository,
             self._partition_reader,
         )
@@ -657,7 +526,6 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_enqueuer,
             self._thread_pool_manager,
             self._logger,
-            self._slice_logger,
             self._message_repository,
             self._partition_reader,
         )
@@ -718,7 +586,6 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_enqueuer,
             self._thread_pool_manager,
             self._logger,
-            self._slice_logger,
             self._message_repository,
             self._partition_reader,
         )
@@ -747,7 +614,6 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_enqueuer,
             self._thread_pool_manager,
             self._logger,
-            self._slice_logger,
             self._message_repository,
             self._partition_reader,
         )
@@ -762,7 +628,6 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_enqueuer,
             self._thread_pool_manager,
             self._logger,
-            self._slice_logger,
             self._message_repository,
             self._partition_reader,
         )
@@ -779,7 +644,6 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_enqueuer,
             self._thread_pool_manager,
             self._logger,
-            self._slice_logger,
             self._message_repository,
             self._partition_reader,
         )
@@ -802,7 +666,6 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_enqueuer,
             self._thread_pool_manager,
             self._logger,
-            self._slice_logger,
             self._message_repository,
             self._partition_reader,
         )
@@ -817,7 +680,6 @@ class TestConcurrentReadProcessor(unittest.TestCase):
             self._partition_enqueuer,
             self._thread_pool_manager,
             self._logger,
-            self._slice_logger,
             self._message_repository,
             self._partition_reader,
         )
