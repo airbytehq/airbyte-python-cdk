@@ -18,12 +18,14 @@ def md5_checksum(file_path: Path) -> str:
     with open(file_path, "rb") as file:
         return md5(file.read()).hexdigest()
 
-class DeclarativeSourceTestSuite(SourceTestSuiteBase):
 
+class DeclarativeSourceTestSuite(SourceTestSuiteBase):
     manifest_path = Path("manifest.yaml")
     components_py_path: Path | None = None
 
-    def create_connector(self, connector_test: ConnectorTestScenario) -> ConcurrentDeclarativeSource:
+    def create_connector(
+        self, connector_test: ConnectorTestScenario
+    ) -> ConcurrentDeclarativeSource:
         config = connector_test.get_config_dict()
         # catalog = connector_test.get_catalog()
         # state = connector_test.get_state()
