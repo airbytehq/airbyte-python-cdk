@@ -33,7 +33,7 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
 
         manifest_dict = yaml.safe_load(self.manifest_path.read_text())
         if self.components_py_path and self.components_py_path.exists():
-            os.environ["AIRBYTE_ALLOW_CUSTOM_CODE"] = "true"
+            os.environ["AIRBYTE_ENABLE_UNSAFE_CODE"] = "true"
             config["__injected_components_py"] = self.components_py_path.read_text()
             config["__injected_components_py_checksums"] = {
                 "md5": md5_checksum(self.components_py_path),
