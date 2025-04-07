@@ -15,3 +15,4 @@ dist
 .idea
 .vscode
 **/__pycache__
+unit_tests/resources/sample_connector/secrets/config.json
