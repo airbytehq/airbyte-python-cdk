@@ -9,6 +9,7 @@ from typing import Any, Iterable, Mapping
 import freezegun
 import pytest
 import requests
+from pydantic.v1 import ValidationError
 
 from airbyte_cdk import AirbyteTracedException
 from airbyte_cdk.models import (
@@ -32,7 +33,7 @@ from airbyte_cdk.sources.declarative.auth.token import (
 from airbyte_cdk.sources.declarative.auth.token_provider import SessionTokenProvider
 from airbyte_cdk.sources.declarative.checks import CheckStream
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
-from airbyte_cdk.sources.declarative.datetime import MinMaxDatetime
+from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder, PaginationDecoderDecorator
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor, RecordFilter, RecordSelector
@@ -65,10 +66,14 @@ from airbyte_cdk.sources.declarative.models import CustomSchemaLoader as CustomS
 from airbyte_cdk.sources.declarative.models import DatetimeBasedCursor as DatetimeBasedCursorModel
 from airbyte_cdk.sources.declarative.models import DeclarativeStream as DeclarativeStreamModel
 from airbyte_cdk.sources.declarative.models import DefaultPaginator as DefaultPaginatorModel
+from airbyte_cdk.sources.declarative.models import (
+    GroupingPartitionRouter as GroupingPartitionRouterModel,
+)
 from airbyte_cdk.sources.declarative.models import HttpRequester as HttpRequesterModel
 from airbyte_cdk.sources.declarative.models import JwtAuthenticator as JwtAuthenticatorModel
 from airbyte_cdk.sources.declarative.models import ListPartitionRouter as ListPartitionRouterModel
 from airbyte_cdk.sources.declarative.models import OAuthAuthenticator as OAuthAuthenticatorModel
+from airbyte_cdk.sources.declarative.models import PropertyChunking as PropertyChunkingModel
 from airbyte_cdk.sources.declarative.models import RecordSelector as RecordSelectorModel
 from airbyte_cdk.sources.declarative.models import SimpleRetriever as SimpleRetrieverModel
 from airbyte_cdk.sources.declarative.models import Spec as SpecModel
@@ -96,6 +101,7 @@ from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
 from airbyte_cdk.sources.declarative.partition_routers import (
     AsyncJobPartitionRouter,
     CartesianProductStreamSlicer,
+    GroupingPartitionRouter,
     ListPartitionRouter,
     SinglePartitionRouter,
     SubstreamPartitionRouter,
@@ -120,6 +126,15 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     PageIncrement,
     StopConditionPaginationStrategyDecorator,
 )
+from airbyte_cdk.sources.declarative.requesters.query_properties import (
+    PropertiesFromEndpoint,
+    PropertyChunking,
+    QueryProperties,
+)
+from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunking import (
+    PropertyLimitType,
+)
+from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import GroupByKey
 from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
     RequestOptionType,
@@ -147,9 +162,7 @@ from airbyte_cdk.sources.streams.concurrent.clamping import (
     ClampingEndProvider,
     DayClampingStrategy,
     MonthClampingStrategy,
-    NoClamping,
     WeekClampingStrategy,
-    Weekday,
 )
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
@@ -3607,7 +3620,7 @@ def test_create_async_retriever():
             "timeout": ["timeout"],
             "completed": ["ready"],
         },
-        "urls_extractor": {"type": "DpathExtractor", "field_path": ["urls"]},
+        "download_target_extractor": {"type": "DpathExtractor", "field_path": ["urls"]},
         "record_selector": {
             "type": "RecordSelector",
             "extractor": {"type": "DpathExtractor", "field_path": ["data"]},
@@ -3615,7 +3628,7 @@ def test_create_async_retriever():
         "status_extractor": {"type": "DpathExtractor", "field_path": ["status"]},
         "polling_requester": {
             "type": "HttpRequester",
-            "path": "/v3/marketing/contacts/exports/{{stream_slice['create_job_response'].json()['id'] }}",
+            "path": "/v3/marketing/contacts/exports/{{creation_response['id'] }}",
             "url_base": "https://api.sendgrid.com",
             "http_method": "GET",
             "authenticator": {
@@ -3635,19 +3648,19 @@ def test_create_async_retriever():
         },
         "download_requester": {
             "type": "HttpRequester",
-            "path": "{{stream_slice['url']}}",
+            "path": "{{download_target}}",
             "url_base": "",
             "http_method": "GET",
         },
         "abort_requester": {
             "type": "HttpRequester",
-            "path": "{{stream_slice['url']}}/abort",
+            "path": "{{download_target}}/abort",
             "url_base": "",
             "http_method": "POST",
         },
         "delete_requester": {
             "type": "HttpRequester",
-            "path": "{{stream_slice['url']}}",
+            "path": "{{download_target}}",
             "url_base": "",
             "http_method": "POST",
         },
@@ -3681,7 +3694,7 @@ def test_create_async_retriever():
     assert job_repository.abort_requester
     assert job_repository.delete_requester
     assert job_repository.status_extractor
-    assert job_repository.urls_extractor
+    assert job_repository.download_target_extractor
 
     selector = component.record_selector
     extractor = selector.extractor
@@ -3840,3 +3853,530 @@ def test_api_budget_fixed_window_policy():
     assert matcher._method == "GET"
     assert matcher._url_base == "https://example.org"
     assert matcher._url_path_pattern.pattern == "/v2/data"
+
+
+def test_create_grouping_partition_router_with_underlying_router():
+    content = """
+    schema_loader:
+      file_path: "./source_example/schemas/{{ parameters['name'] }}.yaml"
+      name: "{{ parameters['stream_name'] }}"
+    retriever:
+      requester:
+        type: "HttpRequester"
+        path: "example"
+      record_selector:
+        extractor:
+          field_path: []
+    stream_A:
+      type: DeclarativeStream
+      name: "A"
+      primary_key: "id"
+      $parameters:
+        retriever: "#/retriever"
+        url_base: "https://airbyte.io"
+        schema_loader: "#/schema_loader"
+    sub_partition_router:
+      type: SubstreamPartitionRouter
+      parent_stream_configs:
+        - stream: "#/stream_A"
+          parent_key: id
+          partition_field: repository_id
+    partition_router:
+      type: GroupingPartitionRouter
+      underlying_partition_router: "#/sub_partition_router"
+      group_size: 2
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    partition_router = factory.create_component(
+        model_type=GroupingPartitionRouterModel,
+        component_definition=partition_router_manifest,
+        config=input_config,
+    )
+
+    # Test the created partition router
+    assert isinstance(partition_router, GroupingPartitionRouter)
+    assert isinstance(partition_router.underlying_partition_router, SubstreamPartitionRouter)
+    assert partition_router.group_size == 2
+
+    # Test the underlying partition router
+    parent_stream_configs = partition_router.underlying_partition_router.parent_stream_configs
+    assert len(parent_stream_configs) == 1
+    assert isinstance(parent_stream_configs[0].stream, DeclarativeStream)
+    assert parent_stream_configs[0].parent_key.eval({}) == "id"
+    assert parent_stream_configs[0].partition_field.eval({}) == "repository_id"
+
+
+def test_create_grouping_partition_router_invalid_group_size():
+    """Test that an invalid group_size (< 1) raises a ValueError."""
+    content = """
+    schema_loader:
+      file_path: "./source_example/schemas/{{ parameters['name'] }}.yaml"
+      name: "{{ parameters['stream_name'] }}"
+    retriever:
+      requester:
+        type: "HttpRequester"
+        path: "example"
+      record_selector:
+        extractor:
+          field_path: []
+    stream_A:
+      type: DeclarativeStream
+      name: "A"
+      primary_key: "id"
+      $parameters:
+        retriever: "#/retriever"
+        url_base: "https://airbyte.io"
+        schema_loader: "#/schema_loader"
+    sub_partition_router:
+      type: SubstreamPartitionRouter
+      parent_stream_configs:
+        - stream: "#/stream_A"
+          parent_key: id
+          partition_field: repository_id
+    partition_router:
+      type: GroupingPartitionRouter
+      underlying_partition_router: "#/sub_partition_router"
+      group_size: 0
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    with pytest.raises(ValueError, match="Group size must be greater than 0, got 0"):
+        factory.create_component(
+            model_type=GroupingPartitionRouterModel,
+            component_definition=partition_router_manifest,
+            config=input_config,
+        )
+
+
+def test_create_grouping_partition_router_substream_with_request_option():
+    """Test that a SubstreamPartitionRouter with request_option raises a ValueError."""
+    content = """
+    schema_loader:
+      file_path: "./source_example/schemas/{{ parameters['name'] }}.yaml"
+      name: "{{ parameters['stream_name'] }}"
+    retriever:
+      requester:
+        type: "HttpRequester"
+        path: "example"
+      record_selector:
+        extractor:
+          field_path: []
+    stream_A:
+      type: DeclarativeStream
+      name: "A"
+      primary_key: "id"
+      $parameters:
+        retriever: "#/retriever"
+        url_base: "https://airbyte.io"
+        schema_loader: "#/schema_loader"
+    sub_partition_router:
+      type: SubstreamPartitionRouter
+      parent_stream_configs:
+        - stream: "#/stream_A"
+          parent_key: id
+          partition_field: repository_id
+          request_option:
+            inject_into: request_parameter
+            field_name: "repo_id"
+    partition_router:
+      type: GroupingPartitionRouter
+      underlying_partition_router: "#/sub_partition_router"
+      group_size: 2
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["partition_router"], {}
+    )
+
+    with pytest.raises(
+        ValueError, match="Request options are not supported for GroupingPartitionRouter."
+    ):
+        factory.create_component(
+            model_type=GroupingPartitionRouterModel,
+            component_definition=partition_router_manifest,
+            config=input_config,
+        )
+
+
+def test_simple_retriever_with_query_properties():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+          type: DpathExtractor
+          field_path: ["extractor_path"]
+      record_filter:
+        type: RecordFilter
+        condition: "{{ record['id'] > stream_state['id'] }}"
+    requester:
+      type: HttpRequester
+      name: "{{ parameters['name'] }}"
+      url_base: "https://api.linkedin.com/rest/"
+      http_method: "GET"
+      path: "adAnalytics"
+      request_parameters:
+        nonary: "{{config['nonary'] }}"
+        fields:
+          type: QueryProperties
+          property_list:
+            - first_name
+            - last_name
+            - status
+            - organization
+            - created_at
+          always_include_properties:
+            - id
+          property_chunking:
+            type: PropertyChunking
+            property_limit_type: property_count
+            property_limit: 3
+            record_merge_strategy:
+              type: GroupByKeyMergeStrategy
+              key: ["id"]
+    analytics_stream:
+      type: DeclarativeStream
+      incremental_sync:
+        type: DatetimeBasedCursor
+        $parameters:
+          datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+        start_datetime: "{{ config['start_time'] }}"
+        cursor_field: "created"
+      retriever:
+        type: SimpleRetriever
+        name: "{{ parameters['name'] }}"
+        requester:
+          $ref: "#/requester"
+        record_selector:
+          $ref: "#/selector"
+      $parameters:
+        name: "analytics"
+        """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["analytics_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    query_properties = stream.retriever.additional_query_properties
+    assert isinstance(query_properties, QueryProperties)
+    assert query_properties.property_list == [
+        "first_name",
+        "last_name",
+        "status",
+        "organization",
+        "created_at",
+    ]
+    assert query_properties.always_include_properties == ["id"]
+
+    property_chunking = stream.retriever.additional_query_properties.property_chunking
+    assert isinstance(property_chunking, PropertyChunking)
+    assert property_chunking.property_limit_type == PropertyLimitType.property_count
+    assert property_chunking.property_limit == 3
+
+    merge_strategy = (
+        stream.retriever.additional_query_properties.property_chunking.record_merge_strategy
+    )
+    assert isinstance(merge_strategy, GroupByKey)
+    assert merge_strategy.key == ["id"]
+
+    request_options_provider = stream.retriever.requester.request_options_provider
+    assert isinstance(request_options_provider, InterpolatedRequestOptionsProvider)
+    # For a better developer experience we allow QueryProperties to be defined on the requester.request_parameters,
+    # but it actually is leveraged by the SimpleRetriever which is why it is not included in the RequestOptionsProvider
+    assert request_options_provider.query_properties_key == "fields"
+    assert "fields" not in request_options_provider.request_parameters
+    assert request_options_provider.request_parameters.get("nonary") == "{{config['nonary'] }}"
+
+
+def test_simple_retriever_with_properties_from_endpoint():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+          type: DpathExtractor
+          field_path: ["extractor_path"]
+      record_filter:
+        type: RecordFilter
+        condition: "{{ record['id'] > stream_state['id'] }}"
+    requester:
+      type: HttpRequester
+      name: "{{ parameters['name'] }}"
+      url_base: "https://api.hubapi.com"
+      http_method: "GET"
+      path: "adAnalytics"
+      request_parameters:
+        nonary: "{{config['nonary'] }}"
+        fields:
+          type: QueryProperties
+          property_list:
+            type: PropertiesFromEndpoint
+            property_field_path: [ "name" ]
+            retriever:
+              type: SimpleRetriever
+              requester:
+                type: HttpRequester
+                url_base: https://api.hubapi.com
+                path: "/properties/v2/dynamics/properties"
+                http_method: GET
+              record_selector:
+                type: RecordSelector
+                extractor:
+                  type: DpathExtractor
+                  field_path: []
+          property_chunking:
+            type: PropertyChunking
+            property_limit_type: property_count
+            property_limit: 3
+            record_merge_strategy:
+              type: GroupByKeyMergeStrategy
+              key: ["id"]
+    dynamic_properties_stream:
+      type: DeclarativeStream
+      incremental_sync:
+        type: DatetimeBasedCursor
+        $parameters:
+          datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+        start_datetime: "{{ config['start_time'] }}"
+        cursor_field: "created"
+      retriever:
+        type: SimpleRetriever
+        name: "{{ parameters['name'] }}"
+        requester:
+          $ref: "#/requester"
+        record_selector:
+          $ref: "#/selector"
+      $parameters:
+        name: "dynamics"
+        """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["dynamic_properties_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    query_properties = stream.retriever.additional_query_properties
+    assert isinstance(query_properties, QueryProperties)
+    assert query_properties.always_include_properties is None
+
+    properties_from_endpoint = stream.retriever.additional_query_properties.property_list
+    assert isinstance(properties_from_endpoint, PropertiesFromEndpoint)
+    assert properties_from_endpoint.property_field_path == ["name"]
+
+    properties_from_endpoint_retriever = (
+        stream.retriever.additional_query_properties.property_list.retriever
+    )
+    assert isinstance(properties_from_endpoint_retriever, SimpleRetriever)
+
+    properties_from_endpoint_requester = (
+        stream.retriever.additional_query_properties.property_list.retriever.requester
+    )
+    assert isinstance(properties_from_endpoint_requester, HttpRequester)
+    assert properties_from_endpoint_requester.url_base == "https://api.hubapi.com"
+    assert properties_from_endpoint_requester.path == "/properties/v2/dynamics/properties"
+
+    property_chunking = stream.retriever.additional_query_properties.property_chunking
+    assert isinstance(property_chunking, PropertyChunking)
+    assert property_chunking.property_limit_type == PropertyLimitType.property_count
+    assert property_chunking.property_limit == 3
+
+
+def test_request_parameters_raise_error_if_not_of_type_query_properties():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+          type: DpathExtractor
+          field_path: ["extractor_path"]
+      record_filter:
+        type: RecordFilter
+        condition: "{{ record['id'] > stream_state['id'] }}"
+    requester:
+      type: HttpRequester
+      name: "{{ parameters['name'] }}"
+      url_base: "https://api.linkedin.com/rest/"
+      http_method: "GET"
+      path: "adAnalytics"
+      request_parameters:
+        nonary: "{{config['nonary'] }}"
+        fields:
+          type: ListPartitionRouter
+          values: "{{config['repos']}}"
+          cursor_field: repository
+          request_option:
+            type: RequestOption
+            inject_into: body_json
+            field_path: ["repository", "id"]
+    analytics_stream:
+      type: DeclarativeStream
+      incremental_sync:
+        type: DatetimeBasedCursor
+        $parameters:
+          datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+        start_datetime: "{{ config['start_time'] }}"
+        cursor_field: "created"
+      retriever:
+        type: SimpleRetriever
+        name: "{{ parameters['name'] }}"
+        requester:
+          $ref: "#/requester"
+        record_selector:
+          $ref: "#/selector"
+      $parameters:
+        name: "analytics"
+        """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["analytics_stream"], {}
+    )
+
+    with pytest.raises(ValueError):
+        factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_manifest,
+            config=input_config,
+        )
+
+
+def test_create_simple_retriever_raise_error_if_multiple_request_properties():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+          type: DpathExtractor
+          field_path: ["extractor_path"]
+      record_filter:
+        type: RecordFilter
+        condition: "{{ record['id'] > stream_state['id'] }}"
+    requester:
+      type: HttpRequester
+      name: "{{ parameters['name'] }}"
+      url_base: "https://api.linkedin.com/rest/"
+      http_method: "GET"
+      path: "adAnalytics"
+      request_parameters:
+        first_query_properties:
+          type: QueryProperties
+          property_list:
+            - first_name
+            - last_name
+            - status
+            - organization
+            - created_at
+          always_include_properties:
+            - id
+          property_chunking:
+            type: PropertyChunking
+            property_limit_type: property_count
+            property_limit: 3
+            record_merge_strategy:
+              type: GroupByKeyMergeStrategy
+              key: ["id"]
+        nonary: "{{config['nonary'] }}"
+        invalid_extra_query_properties:
+          type: QueryProperties
+          property_list:
+            - first_name
+            - last_name
+            - status
+            - organization
+            - created_at
+          always_include_properties:
+            - id
+          property_chunking:
+            type: PropertyChunking
+            property_limit_type: property_count
+            property_limit: 3
+            record_merge_strategy:
+              type: GroupByKeyMergeStrategy
+              key: ["id"]
+    analytics_stream:
+      type: DeclarativeStream
+      incremental_sync:
+        type: DatetimeBasedCursor
+        $parameters:
+          datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+        start_datetime: "{{ config['start_time'] }}"
+        cursor_field: "created"
+      retriever:
+        type: SimpleRetriever
+        name: "{{ parameters['name'] }}"
+        requester:
+          $ref: "#/requester"
+        record_selector:
+          $ref: "#/selector"
+      $parameters:
+        name: "analytics"
+            """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["analytics_stream"], {}
+    )
+
+    with pytest.raises(ValueError):
+        factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_manifest,
+            config=input_config,
+        )
+
+
+def test_create_property_chunking_characters():
+    property_chunking_model = {
+        "type": "PropertyChunking",
+        "property_limit_type": "characters",
+        "property_limit": 100,
+        "record_merge_strategy": {"type": "GroupByKeyMergeStrategy", "key": ["id"]},
+    }
+
+    connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
+    property_chunking = connector_builder_factory.create_component(
+        model_type=PropertyChunkingModel,
+        component_definition=property_chunking_model,
+        config={},
+    )
+
+    assert isinstance(property_chunking, PropertyChunking)
+    assert property_chunking.property_limit_type == PropertyLimitType.characters
+    assert property_chunking.property_limit == 100
+
+
+def test_create_property_chunking_invalid_property_limit_type():
+    property_chunking_model = {
+        "type": "PropertyChunking",
+        "property_limit_type": "nope",
+        "property_limit": 20,
+        "record_merge_strategy": {"type": "GroupByKeyMergeStrategy", "key": ["id"]},
+    }
+
+    connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
+
+    with pytest.raises(ValidationError):
+        connector_builder_factory.create_component(
+            model_type=PropertyChunkingModel,
+            component_definition=property_chunking_model,
+            config={},
+        )

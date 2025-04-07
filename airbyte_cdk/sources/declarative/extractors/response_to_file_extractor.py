@@ -15,7 +15,6 @@ from numpy import nan
 
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 
-EMPTY_STR: str = ""
 DEFAULT_ENCODING: str = "utf-8"
 DOWNLOAD_CHUNK_SIZE: int = 1024 * 10
 

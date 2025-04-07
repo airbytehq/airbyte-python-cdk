@@ -71,5 +71,13 @@ LOG_MESSAGES_OUTPUT_TYPE = tuple[
     bool,
     HttpRequest | None,
     HttpResponse | None,
-    AuxiliaryRequest | AirbyteLogMessage | None,
+    AuxiliaryRequest | None,
+    AirbyteLogMessage | None,
+]
+
+ASYNC_AUXILIARY_REQUEST_TYPES = [
+    "ASYNC_CREATE",
+    "ASYNC_POLL",
+    "ASYNC_ABORT",
+    "ASYNC_DELETE",
 ]

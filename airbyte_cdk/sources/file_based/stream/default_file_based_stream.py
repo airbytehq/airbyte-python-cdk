@@ -356,7 +356,10 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
                         if "null" not in v:
                             schema[k] = ["null"] + v
                     elif v != "null":
-                        schema[k] = ["null", v]
+                        if isinstance(v, (str, list)):
+                            schema[k] = ["null", v]
+                        else:
+                            DefaultFileBasedStream._fill_nulls(v)
                 else:
                     DefaultFileBasedStream._fill_nulls(v)
         elif isinstance(schema, list):

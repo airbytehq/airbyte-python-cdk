@@ -1,6 +1,7 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
+
 import base64
 import hashlib
 import json
@@ -92,6 +93,24 @@ def base64decode(value: str) -> str:
     return base64.b64decode(value.encode("utf-8")).decode()
 
 
+def base64binascii_decode(value: str) -> str:
+    """
+    Implementation of a custom Jinja2 filter to decode base64 strings using ASCII encoding
+
+    For example:
+
+      OAuthAuthenticator:
+        $ref: "#/definitions/OAuthAuthenticator"
+        $parameters:
+          name: "client_id"
+          value: "{{ config['client_id'] | base64binascii_decode }}"
+
+    :param value: value to be decoded from base64 using ascii
+    :return: base64 decoded string ascii
+    """
+    return base64.standard_b64encode(value.encode("ascii")).decode("ascii")
+
+
 def string(value: Any) -> str:
     """
     Converts the input value to a string.
@@ -116,5 +135,5 @@ def regex_search(value: str, regex: str) -> str:
     return ""
 
 
-_filters_list = [hash, base64encode, base64decode, string, regex_search]
+_filters_list = [hash, base64encode, base64decode, base64binascii_decode, string, regex_search]
 filters = {f.__name__: f for f in _filters_list}

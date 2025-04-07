@@ -30,6 +30,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     DeclarativeStream as DeclarativeStreamModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import Spec as SpecModel
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    StateDelegatingStream as StateDelegatingStreamModel,
+)
 from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     get_registered_components_module,
 )
@@ -93,13 +96,17 @@ class ManifestDeclarativeSource(DeclarativeSource):
         self._constructor = (
             component_factory
             if component_factory
-            else ModelToComponentFactory(emit_connector_builder_messages)
+            else ModelToComponentFactory(
+                emit_connector_builder_messages,
+                max_concurrent_async_job_count=source_config.get("max_concurrent_async_job_count"),
+            )
         )
         self._message_repository = self._constructor.get_message_repository()
         self._slice_logger: SliceLogger = (
             AlwaysLogSliceLogger() if emit_connector_builder_messages else DebugSliceLogger()
         )
 
+        self._config = config or {}
         self._validate_source()
 
     @property
@@ -109,6 +116,12 @@ class ManifestDeclarativeSource(DeclarativeSource):
     @property
     def message_repository(self) -> MessageRepository:
         return self._message_repository
+
+    @property
+    def dynamic_streams(self) -> List[Dict[str, Any]]:
+        return self._dynamic_stream_configs(
+            manifest=self._source_config, config=self._config, with_dynamic_stream_name=True
+        )
 
     @property
     def connection_checker(self) -> ConnectionChecker:
@@ -143,7 +156,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
         source_streams = [
             self._constructor.create_component(
-                DeclarativeStreamModel,
+                StateDelegatingStreamModel
+                if stream_config.get("type") == StateDelegatingStreamModel.__name__
+                else DeclarativeStreamModel,
                 stream_config,
                 config,
                 emit_connector_builder_messages=self._emit_connector_builder_messages,
@@ -162,7 +177,15 @@ class ManifestDeclarativeSource(DeclarativeSource):
         def update_with_cache_parent_configs(parent_configs: list[dict[str, Any]]) -> None:
             for parent_config in parent_configs:
                 parent_streams.add(parent_config["stream"]["name"])
-                parent_config["stream"]["retriever"]["requester"]["use_cache"] = True
+                if parent_config["stream"]["type"] == "StateDelegatingStream":
+                    parent_config["stream"]["full_refresh_stream"]["retriever"]["requester"][
+                        "use_cache"
+                    ] = True
+                    parent_config["stream"]["incremental_stream"]["retriever"]["requester"][
+                        "use_cache"
+                    ] = True
+                else:
+                    parent_config["stream"]["retriever"]["requester"]["use_cache"] = True
 
         for stream_config in stream_configs:
             if stream_config.get("incremental_sync", {}).get("parent_stream"):
@@ -185,7 +208,15 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
         for stream_config in stream_configs:
             if stream_config["name"] in parent_streams:
-                stream_config["retriever"]["requester"]["use_cache"] = True
+                if stream_config["type"] == "StateDelegatingStream":
+                    stream_config["full_refresh_stream"]["retriever"]["requester"]["use_cache"] = (
+                        True
+                    )
+                    stream_config["incremental_stream"]["retriever"]["requester"]["use_cache"] = (
+                        True
+                    )
+                else:
+                    stream_config["retriever"]["requester"]["use_cache"] = True
 
         return stream_configs
 
@@ -324,13 +355,16 @@ class ManifestDeclarativeSource(DeclarativeSource):
         return stream_configs
 
     def _dynamic_stream_configs(
-        self, manifest: Mapping[str, Any], config: Mapping[str, Any]
+        self,
+        manifest: Mapping[str, Any],
+        config: Mapping[str, Any],
+        with_dynamic_stream_name: Optional[bool] = None,
     ) -> List[Dict[str, Any]]:
         dynamic_stream_definitions: List[Dict[str, Any]] = manifest.get("dynamic_streams", [])
         dynamic_stream_configs: List[Dict[str, Any]] = []
         seen_dynamic_streams: Set[str] = set()
 
-        for dynamic_definition in dynamic_stream_definitions:
+        for dynamic_definition_index, dynamic_definition in enumerate(dynamic_stream_definitions):
             components_resolver_config = dynamic_definition["components_resolver"]
 
             if not components_resolver_config:
@@ -363,11 +397,22 @@ class ManifestDeclarativeSource(DeclarativeSource):
             for dynamic_stream in components_resolver.resolve_components(
                 stream_template_config=stream_template_config
             ):
+                dynamic_stream = {
+                    **ManifestComponentTransformer().propagate_types_and_parameters(
+                        "", dynamic_stream, {}, use_parent_parameters=True
+                    )
+                }
+
                 if "type" not in dynamic_stream:
                     dynamic_stream["type"] = "DeclarativeStream"
 
                 # Ensure that each stream is created with a unique name
                 name = dynamic_stream.get("name")
+
+                if with_dynamic_stream_name:
+                    dynamic_stream["dynamic_stream_name"] = dynamic_definition.get(
+                        "name", f"dynamic_stream_{dynamic_definition_index}"
+                    )
 
                 if not isinstance(name, str):
                     raise ValueError(

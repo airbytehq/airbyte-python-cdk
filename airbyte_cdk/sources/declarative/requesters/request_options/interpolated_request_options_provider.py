@@ -1,9 +1,9 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Mapping, MutableMapping, Optional, Union
+from typing import Any, List, Mapping, MutableMapping, Optional, Union
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_nested_mapping import NestedMapping
 from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_nested_request_input_provider import (
@@ -40,6 +40,7 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
     request_headers: Optional[RequestInput] = None
     request_body_data: Optional[RequestInput] = None
     request_body_json: Optional[NestedMapping] = None
+    query_properties_key: Optional[str] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if self.request_parameters is None:
@@ -83,6 +84,28 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
             valid_value_types=ValidRequestTypes,
         )
         if isinstance(interpolated_value, dict):
+            if self.query_properties_key:
+                if not stream_slice:
+                    raise ValueError(
+                        "stream_slice should not be None if query properties in requests is enabled. Please contact Airbyte Support"
+                    )
+                elif (
+                    "query_properties" not in stream_slice.extra_fields
+                    or stream_slice.extra_fields.get("query_properties") is None
+                ):
+                    raise ValueError(
+                        "QueryProperties component is defined but stream_partition does not contain query_properties. Please contact Airbyte Support"
+                    )
+                elif not isinstance(stream_slice.extra_fields.get("query_properties"), List):
+                    raise ValueError(
+                        "QueryProperties component is defined but stream_slice.extra_fields.query_properties is not a List. Please contact Airbyte Support"
+                    )
+                interpolated_value = {
+                    **interpolated_value,
+                    self.query_properties_key: ",".join(
+                        stream_slice.extra_fields.get("query_properties")  # type: ignore  # Earlier type checks validate query_properties type
+                    ),
+                }
             return interpolated_value
         return {}
 

@@ -16,7 +16,10 @@ from airbyte_cdk.models import (
     Level,
     Type,
 )
+from airbyte_cdk.utils import PrintBuffer
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
+
+PRINT_BUFFER = PrintBuffer(flush_interval=0.1)
 
 LOGGING_CONFIG = {
     "version": 1,
@@ -27,7 +30,7 @@ LOGGING_CONFIG = {
     "handlers": {
         "console": {
             "class": "logging.StreamHandler",
-            "stream": "ext://sys.stdout",
+            "stream": PRINT_BUFFER,
             "formatter": "airbyte",
         },
     },

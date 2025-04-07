@@ -121,7 +121,7 @@ def test_http_requester():
         parameters={},
     )
 
-    assert requester.get_url_base() == "https://airbyte.io/"
+    assert requester.get_url_base() == "https://airbyte.io"
     assert (
         requester.get_path(stream_state={}, stream_slice=stream_slice, next_page_token={})
         == "v1/1234"
@@ -145,9 +145,9 @@ def test_http_requester():
 @pytest.mark.parametrize(
     "test_name, base_url, expected_base_url",
     [
-        ("test_no_trailing_slash", "https://example.com", "https://example.com/"),
+        ("test_no_trailing_slash", "https://example.com", "https://example.com"),
         ("test_with_trailing_slash", "https://example.com/", "https://example.com/"),
-        ("test_with_v1_no_trailing_slash", "https://example.com/v1", "https://example.com/v1/"),
+        ("test_with_v1_no_trailing_slash", "https://example.com/v1", "https://example.com/v1"),
         ("test_with_v1_with_trailing_slash", "https://example.com/v1/", "https://example.com/v1/"),
     ],
 )
@@ -946,7 +946,7 @@ def test_backoff_strategy_from_manifest_is_respected(http_requester_factory: Any
     )
 
 
-def test_http_requester_with_mock_apibudget(http_requester_factory, monkeypatch):
+def test_http_requester_with_mock_api_budget(http_requester_factory, monkeypatch):
     mock_budget = MagicMock(spec=HttpAPIBudget)
 
     requester = http_requester_factory(

@@ -1,14 +1,27 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
 import json
+from collections import defaultdict
 from dataclasses import InitVar, dataclass, field
 from functools import partial
 from itertools import islice
-from typing import Any, Callable, Iterable, List, Mapping, Optional, Set, Tuple, Union
+from typing import (
+    Any,
+    Callable,
+    Iterable,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    Set,
+    Tuple,
+    Union,
+)
 
 import requests
+from typing_extensions import deprecated
 
 from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
@@ -20,6 +33,7 @@ from airbyte_cdk.sources.declarative.partition_routers.single_partition_router i
 )
 from airbyte_cdk.sources.declarative.requesters.paginators.no_pagination import NoPagination
 from airbyte_cdk.sources.declarative.requesters.paginators.paginator import Paginator
+from airbyte_cdk.sources.declarative.requesters.query_properties import QueryProperties
 from airbyte_cdk.sources.declarative.requesters.request_options import (
     DefaultRequestOptionsProvider,
     RequestOptionsProvider,
@@ -28,6 +42,7 @@ from airbyte_cdk.sources.declarative.requesters.requester import Requester
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
 from airbyte_cdk.sources.http_logger import format_http_message
+from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from airbyte_cdk.utils.mapping_helpers import combine_mappings
@@ -76,6 +91,7 @@ class SimpleRetriever(Retriever):
     )
     cursor: Optional[DeclarativeCursor] = None
     ignore_stream_slicer_parameters_on_paginated_requests: bool = False
+    additional_query_properties: Optional[QueryProperties] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._paginator = self.paginator or NoPagination(parameters=parameters)
@@ -234,13 +250,22 @@ class SimpleRetriever(Retriever):
             raise ValueError("Request body json cannot be a string")
         return body_json
 
-    def _paginator_path(self, next_page_token: Optional[Mapping[str, Any]] = None) -> Optional[str]:
+    def _paginator_path(
+        self,
+        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Optional[Mapping[str, Any]] = None,
+        stream_slice: Optional[StreamSlice] = None,
+    ) -> Optional[str]:
         """
         If the paginator points to a path, follow it, else return nothing so the requester is used.
         :param next_page_token:
         :return:
         """
-        return self._paginator.path(next_page_token=next_page_token)
+        return self._paginator.path(
+            next_page_token=next_page_token,
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+        )
 
     def _parse_response(
         self,
@@ -299,7 +324,11 @@ class SimpleRetriever(Retriever):
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Optional[requests.Response]:
         return self.requester.send_request(
-            path=self._paginator_path(next_page_token=next_page_token),
+            path=self._paginator_path(
+                next_page_token=next_page_token,
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+            ),
             stream_state=stream_state,
             stream_slice=stream_slice,
             next_page_token=next_page_token,
@@ -420,43 +449,110 @@ class SimpleRetriever(Retriever):
         :param stream_slice: The stream slice to read data for
         :return: The records read from the API source
         """
-        _slice = stream_slice or StreamSlice(partition={}, cursor_slice={})  # None-check
 
-        most_recent_record_from_slice = None
-        record_generator = partial(
-            self._parse_records,
-            stream_state=self.state or {},
-            stream_slice=_slice,
-            records_schema=records_schema,
-        )
-
-        if self.cursor and isinstance(self.cursor, ResumableFullRefreshCursor):
-            stream_state = self.state
-
-            # Before syncing the RFR stream, we check if the job's prior attempt was successful and don't need to
-            # fetch more records. The platform deletes stream state for full refresh streams before starting a
-            # new job, so we don't need to worry about this value existing for the initial attempt
-            if stream_state.get(FULL_REFRESH_SYNC_COMPLETE_KEY):
-                return
-
-            yield from self._read_single_page(record_generator, stream_state, _slice)
-        else:
-            for stream_data in self._read_pages(record_generator, self.state, _slice):
-                current_record = self._extract_record(stream_data, _slice)
-                if self.cursor and current_record:
-                    self.cursor.observe(_slice, current_record)
-
-                # Latest record read, not necessarily within slice boundaries.
-                # TODO Remove once all custom components implement `observe` method.
-                # https://github.com/airbytehq/airbyte-internal-issues/issues/6955
-                most_recent_record_from_slice = self._get_most_recent_record(
-                    most_recent_record_from_slice, current_record, _slice
+        property_chunks = (
+            list(
+                self.additional_query_properties.get_request_property_chunks(
+                    stream_slice=stream_slice
                 )
-                yield stream_data
+            )
+            if self.additional_query_properties
+            else []
+        )
+        records_without_merge_key = []
+        merged_records: MutableMapping[str, Any] = defaultdict(dict)
 
+        _slice = stream_slice or StreamSlice(partition={}, cursor_slice={})  # None-check
+        most_recent_record_from_slice = None
+
+        if self.additional_query_properties:
+            for properties in property_chunks:
+                _slice = StreamSlice(
+                    partition=_slice.partition or {},
+                    cursor_slice=_slice.cursor_slice or {},
+                    extra_fields={"query_properties": properties},
+                )  # None-check
+
+                record_generator = partial(
+                    self._parse_records,
+                    stream_slice=_slice,
+                    stream_state=self.state or {},
+                    records_schema=records_schema,
+                )
+
+                for stream_data in self._read_pages(record_generator, self.state, _slice):
+                    current_record = self._extract_record(stream_data, _slice)
+                    if self.cursor and current_record:
+                        self.cursor.observe(_slice, current_record)
+
+                    # Latest record read, not necessarily within slice boundaries.
+                    # TODO Remove once all custom components implement `observe` method.
+                    # https://github.com/airbytehq/airbyte-internal-issues/issues/6955
+                    most_recent_record_from_slice = self._get_most_recent_record(
+                        most_recent_record_from_slice, current_record, _slice
+                    )
+
+                    if current_record and self.additional_query_properties.property_chunking:
+                        merge_key = (
+                            self.additional_query_properties.property_chunking.get_merge_key(
+                                current_record
+                            )
+                        )
+                        if merge_key:
+                            merged_records[merge_key].update(current_record)
+                        else:
+                            # We should still emit records even if the record did not have a merge key
+                            records_without_merge_key.append(current_record)
+                    else:
+                        yield stream_data
             if self.cursor:
                 self.cursor.close_slice(_slice, most_recent_record_from_slice)
-        return
+
+            if len(merged_records) > 0:
+                yield from [
+                    Record(data=merged_record, stream_name=self.name, associated_slice=stream_slice)
+                    for merged_record in merged_records.values()
+                ]
+            if len(records_without_merge_key) > 0:
+                yield from records_without_merge_key
+        else:
+            _slice = stream_slice or StreamSlice(partition={}, cursor_slice={})  # None-check
+
+            most_recent_record_from_slice = None
+            record_generator = partial(
+                self._parse_records,
+                stream_slice=stream_slice,
+                stream_state=self.state or {},
+                records_schema=records_schema,
+            )
+
+            if self.cursor and isinstance(self.cursor, ResumableFullRefreshCursor):
+                stream_state = self.state
+
+                # Before syncing the RFR stream, we check if the job's prior attempt was successful and don't need to
+                # fetch more records. The platform deletes stream state for full refresh streams before starting a
+                # new job, so we don't need to worry about this value existing for the initial attempt
+                if stream_state.get(FULL_REFRESH_SYNC_COMPLETE_KEY):
+                    return
+
+                yield from self._read_single_page(record_generator, stream_state, _slice)
+            else:
+                for stream_data in self._read_pages(record_generator, self.state, _slice):
+                    current_record = self._extract_record(stream_data, _slice)
+                    if self.cursor and current_record:
+                        self.cursor.observe(_slice, current_record)
+
+                    # Latest record read, not necessarily within slice boundaries.
+                    # TODO Remove once all custom components implement `observe` method.
+                    # https://github.com/airbytehq/airbyte-internal-issues/issues/6955
+                    most_recent_record_from_slice = self._get_most_recent_record(
+                        most_recent_record_from_slice, current_record, _slice
+                    )
+                    yield stream_data
+
+                if self.cursor:
+                    self.cursor.close_slice(_slice, most_recent_record_from_slice)
+            return
 
     def _get_most_recent_record(
         self,
@@ -570,7 +666,11 @@ class SimpleRetrieverTestReadDecorator(SimpleRetriever):
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Optional[requests.Response]:
         return self.requester.send_request(
-            path=self._paginator_path(next_page_token=next_page_token),
+            path=self._paginator_path(
+                next_page_token=next_page_token,
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+            ),
             stream_state=stream_state,
             stream_slice=stream_slice,
             next_page_token=next_page_token,
@@ -601,3 +701,73 @@ class SimpleRetrieverTestReadDecorator(SimpleRetriever):
                 self.name,
             ),
         )
+
+
+@deprecated(
+    "This class is experimental. Use at your own risk.",
+    category=ExperimentalClassWarning,
+)
+@dataclass
+class LazySimpleRetriever(SimpleRetriever):
+    """
+    A retriever that supports lazy loading from parent streams.
+    """
+
+    def _read_pages(
+        self,
+        records_generator_fn: Callable[[Optional[requests.Response]], Iterable[Record]],
+        stream_state: Mapping[str, Any],
+        stream_slice: StreamSlice,
+    ) -> Iterable[Record]:
+        response = stream_slice.extra_fields["child_response"]
+        if response:
+            last_page_size, last_record = 0, None
+            for record in records_generator_fn(response):  # type: ignore[call-arg] # only _parse_records expected as a func
+                last_page_size += 1
+                last_record = record
+                yield record
+
+            next_page_token = self._next_page_token(response, last_page_size, last_record, None)
+            if next_page_token:
+                yield from self._paginate(
+                    next_page_token,
+                    records_generator_fn,
+                    stream_state,
+                    stream_slice,
+                )
+
+            yield from []
+        else:
+            yield from self._read_pages(records_generator_fn, stream_state, stream_slice)
+
+    def _paginate(
+        self,
+        next_page_token: Any,
+        records_generator_fn: Callable[[Optional[requests.Response]], Iterable[Record]],
+        stream_state: Mapping[str, Any],
+        stream_slice: StreamSlice,
+    ) -> Iterable[Record]:
+        """Handle pagination by fetching subsequent pages."""
+        pagination_complete = False
+
+        while not pagination_complete:
+            response = self._fetch_next_page(stream_state, stream_slice, next_page_token)
+            last_page_size, last_record = 0, None
+
+            for record in records_generator_fn(response):  # type: ignore[call-arg] # only _parse_records expected as a func
+                last_page_size += 1
+                last_record = record
+                yield record
+
+            if not response:
+                pagination_complete = True
+            else:
+                last_page_token_value = (
+                    next_page_token.get("next_page_token") if next_page_token else None
+                )
+                next_page_token = self._next_page_token(
+                    response, last_page_size, last_record, last_page_token_value
+                )
+
+                if not next_page_token:
+                    pagination_complete = True

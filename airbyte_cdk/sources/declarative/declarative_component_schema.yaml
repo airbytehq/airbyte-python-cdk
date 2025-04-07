@@ -24,7 +24,9 @@ properties:
   streams:
     type: array
     items:
-      "$ref": "#/definitions/DeclarativeStream"
+      anyOf:
+        - "$ref": "#/definitions/DeclarativeStream"
+        - "$ref": "#/definitions/StateDelegatingStream"
   dynamic_streams:
     type: array
     items:
@@ -42,6 +44,15 @@ properties:
     "$ref": "#/definitions/ConcurrencyLevel"
   api_budget:
     "$ref": "#/definitions/HTTPAPIBudget"
+  max_concurrent_async_job_count:
+    title: Maximum Concurrent Asynchronous Jobs
+    description: Maximum number of concurrent asynchronous jobs to run. This property is only relevant for sources/streams that support asynchronous job execution through the AsyncRetriever (e.g. a report-based stream that initiates a job, polls the job status, and then fetches the job results). This is often set by the API's maximum number of concurrent jobs on the account level. Refer to the API's documentation for this information.
+    type:
+      - integer
+      - string
+    examples:
+      - 3
+      - "{{ config['max_concurrent_async_job_count'] }}"
   metadata:
     type: object
     description: For internal Airbyte use only - DO NOT modify manually. Used by consumers of declarative manifests for storing related metadata.
@@ -109,7 +120,20 @@ definitions:
         description: List of transformations (path and corresponding value) that will be added to the record.
         type: array
         items:
-          - "$ref": "#/definitions/AddedFieldDefinition"
+          "$ref": "#/definitions/AddedFieldDefinition"
+      condition:
+        description: Fields will be added if expression is evaluated to True.
+        type: string
+        default: ""
+        interpolation_context:
+          - config
+          - property
+          - parameters
+        examples:
+          - "{{ property|string == '' }}"
+          - "{{ property is integer }}"
+          - "{{ property|length > 5 }}"
+          - "{{ property == 'some_string_to_match' }}"
       $parameters:
         type: object
         additionalProperties: true
@@ -292,7 +316,6 @@ definitions:
     type: object
     required:
       - type
-      - stream_names
     properties:
       type:
         type: string
@@ -306,6 +329,28 @@ definitions:
         examples:
           - ["users"]
           - ["users", "contacts"]
+      dynamic_streams_check_configs:
+        type: array
+        items:
+          "$ref": "#/definitions/DynamicStreamCheckConfig"
+  DynamicStreamCheckConfig:
+    type: object
+    required:
+      - type
+      - dynamic_stream_name
+    properties:
+      type:
+        type: string
+        enum: [DynamicStreamCheckConfig]
+      dynamic_stream_name:
+        title: Dynamic Stream Name
+        description: The dynamic stream name.
+        type: string
+      stream_count:
+        title: Stream Count
+        description: The number of streams to attempt reading from during a check operation. If `stream_count` exceeds the total number of available streams, the minimum of the two values will be used.
+        type: integer
+        default: 0
   CheckDynamicStream:
     title: Dynamic Streams to Check
     description: (This component is experimental. Use at your own risk.) Defines the dynamic streams to try reading when running a check operation.
@@ -777,6 +822,44 @@ definitions:
       type:
         type: string
         enum: [LegacyToPerPartitionStateMigration]
+  IncrementingCountCursor:
+    title: Incrementing Count Cursor
+    description: Cursor that allows for incremental sync according to a continuously increasing integer.
+    type: object
+    required:
+      - type
+      - cursor_field
+    properties:
+      type:
+        type: string
+        enum: [IncrementingCountCursor]
+      cursor_field:
+        title: Cursor Field
+        description: The location of the value on a record that will be used as a bookmark during sync. To ensure no data loss, the API must return records in ascending order based on the cursor field. Nested fields are not supported, so the field must be at the top level of the record. You can use a combination of Add Field and Remove Field transformations to move the nested field to the top.
+        type: string
+        interpolation_context:
+          - config
+        examples:
+          - "created_at"
+          - "{{ config['record_cursor'] }}"
+      start_value:
+        title: Start Value
+        description: The value that determines the earliest record that should be synced.
+        anyOf:
+          - type: string
+          - type: integer
+        interpolation_context:
+          - config
+        examples:
+          - 0
+          - "{{ config['start_value'] }}"
+      start_value_option:
+        title: Inject Start Value Into Outgoing HTTP Request
+        description: Optionally configures how the start value will be sent in requests to the source API.
+        "$ref": "#/definitions/RequestOption"
+      $parameters:
+        type: object
+        additionalProperties: true
   DatetimeBasedCursor:
     title: Datetime Based Cursor
     description: Cursor to provide incremental capabilities over datetime.
@@ -844,6 +927,7 @@ definitions:
             * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`
             * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`
             * **%f**: Microsecond (zero-padded to 6 digits) - `000000`
+            * **%_ms**: Millisecond (zero-padded to 3 digits) - `000`
             * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`
             * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`
             * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`
@@ -1318,6 +1402,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/CustomIncrementalSync"
           - "$ref": "#/definitions/DatetimeBasedCursor"
+          - "$ref": "#/definitions/IncrementingCountCursor"
       name:
         title: Name
         description: The stream name.
@@ -1490,7 +1575,11 @@ definitions:
       limit:
         title: Limit
         description: The maximum number of calls allowed within the interval.
-        type: integer
+        anyOf:
+          - type: integer
+          - type: string
+        interpolation_context:
+          - config
       interval:
         title: Interval
         description: The time interval for the rate limit.
@@ -1613,7 +1702,7 @@ definitions:
         description: List of potentially nested fields describing the full path of the field to extract. Use "*" to extract all values from an array. See more info in the [docs](https://docs.airbyte.com/connector-development/config-based/understanding-the-yaml-file/record-selector).
         type: array
         items:
-          - type: string
+          type: string
         interpolation_context:
           - config
         examples:
@@ -1660,6 +1749,30 @@ definitions:
           - 5
           - 5.5
           - "10"
+      $parameters:
+        type: object
+        additionalProperties: true
+  GroupByKeyMergeStrategy:
+    title: Group by Key
+    description: Record merge strategy that combines records according to fields on the record.
+    required:
+      - type
+      - key
+    properties:
+      type:
+        type: string
+        enum: [GroupByKeyMergeStrategy]
+      key:
+        title: Key
+        description: The name of the field on the record whose value will be used to group properties that were retrieved through multiple API requests.
+        anyOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+        examples:
+          - "id"
+          - ["parent_id", "end_date"]
       $parameters:
         type: object
         additionalProperties: true
@@ -1750,7 +1863,6 @@ definitions:
     type: object
     required:
       - type
-      - path
       - url_base
     properties:
       type:
@@ -1762,9 +1874,18 @@ definitions:
         type: string
         interpolation_context:
           - config
+          - next_page_token
+          - stream_interval
+          - stream_partition
+          - stream_slice
+          - creation_response
+          - polling_response
+          - download_target
         examples:
           - "https://connect.squareup.com/v2"
-          - "{{ config['base_url'] or 'https://app.posthog.com'}}/api/"
+          - "{{ config['base_url'] or 'https://app.posthog.com'}}/api"
+          - "https://connect.squareup.com/v2/quotes/{{ stream_partition['id'] }}/quote_line_groups"
+          - "https://example.com/api/v1/resource/{{ next_page_token['id'] }}"
       path:
         title: URL Path
         description: Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
@@ -1775,6 +1896,9 @@ definitions:
           - stream_interval
           - stream_partition
           - stream_slice
+          - creation_response
+          - polling_response
+          - download_target
         examples:
           - "/products"
           - "/quotes/{{ stream_partition['id'] }}/quote_line_groups"
@@ -1871,7 +1995,9 @@ definitions:
           - type: string
           - type: object
             additionalProperties:
-              type: string
+              anyOf:
+                - type: string
+                - $ref": "#/definitions/QueryProperties"
         interpolation_context:
           - next_page_token
           - stream_interval
@@ -2018,7 +2144,7 @@ definitions:
         type: array
         default: []
         items:
-          - type: string
+          type: string
         interpolation_context:
           - config
       key_pointer:
@@ -2026,7 +2152,7 @@ definitions:
         description: List of potentially nested fields describing the full path of the field key to extract.
         type: array
         items:
-          - type: string
+          type: string
         interpolation_context:
           - config
       type_pointer:
@@ -2034,13 +2160,13 @@ definitions:
         description: List of potentially nested fields describing the full path of the field type to extract.
         type: array
         items:
-          - type: string
+          type: string
         interpolation_context:
           - config
       types_mapping:
         type: array
         items:
-          - "$ref": "#/definitions/TypesMap"
+          "$ref": "#/definitions/TypesMap"
       $parameters:
         type: object
         additionalProperties: true
@@ -2118,7 +2244,8 @@ definitions:
         type: object
         additionalProperties: true
   JsonDecoder:
-    title: Json Decoder
+    title: JSON
+    description: Select 'JSON' if the response is formatted as a JSON object.
     type: object
     required:
       - type
@@ -2127,8 +2254,8 @@ definitions:
         type: string
         enum: [JsonDecoder]
   JsonlDecoder:
-    title: JSONL Decoder
-    description: Use this if the response consists of JSON objects separated by new lines (`\n`) in JSONL format.
+    title: JSON Lines
+    description: Select 'JSON Lines' if the response consists of JSON objects separated by new lines ('\n') in JSONL format.
     type: object
     required:
       - type
@@ -2196,13 +2323,17 @@ definitions:
         description: A path to field that needs to be flattened.
         type: array
         items:
-          - type: string
+          type: string
         examples:
           - ["data"]
           - ["data", "*", "field"]
       delete_origin_value:
         title: Delete Origin Value
         description: Whether to delete the origin value or keep it. Default is False.
+        type: boolean
+      replace_record:
+        title: Replace Origin Record
+        description: Whether to replace the origin record or not. Default is False.
         type: boolean
       $parameters:
         type: object
@@ -2249,8 +2380,8 @@ definitions:
         type: object
         additionalProperties: true
   IterableDecoder:
-    title: Iterable Decoder
-    description: Use this if the response consists of strings separated by new lines (`\n`). The Decoder will wrap each row into a JSON object with the `record` key.
+    title: Iterable
+    description: Select 'Iterable' if the response consists of strings separated by new lines (`\n`). The string will then be wrapped into a JSON object with the `record` key.
     type: object
     required:
       - type
@@ -2259,8 +2390,8 @@ definitions:
         type: string
         enum: [IterableDecoder]
   XmlDecoder:
-    title: XML Decoder
-    description: Use this if the response is XML.
+    title: XML
+    description: Select 'XML' if the response consists of XML-formatted data.
     type: object
     required:
       - type
@@ -2291,8 +2422,8 @@ definitions:
         type: object
         additionalProperties: true
   ZipfileDecoder:
-    title: Zipfile Decoder
-    description: Decoder for response data that is returned as zipfile(s).
+    title: ZIP File
+    description: Select 'ZIP file' for response data that is returned as a zipfile. Requires specifying an inner data type/decoder to parse the unzipped data.
     type: object
     additionalProperties: true
     required:
@@ -2394,6 +2525,7 @@ definitions:
             * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`
             * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`
             * **%f**: Microsecond (zero-padded to 6 digits) - `000000`, `000001`, ..., `999999`
+            * **%_ms**: Millisecond (zero-padded to 3 digits) - `000`, `001`, ..., `999`
             * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`
             * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`
             * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`
@@ -2811,6 +2943,15 @@ definitions:
       type:
         type: string
         enum: [ParentStreamConfig]
+      lazy_read_pointer:
+        title: Lazy Read Pointer
+        description: If set, this will enable lazy reading, using the initial read of parent records to extract child records.
+        type: array
+        default: []
+        items:
+          - type: string
+        interpolation_context:
+          - config
       parent_key:
         title: Parent Key
         description: The primary key of records from the parent stream that will be used during the retrieval of records for the current substream. This parent identifier field is typically a characteristic of the child records being extracted from the source API.
@@ -2821,7 +2962,9 @@ definitions:
       stream:
         title: Parent Stream
         description: Reference to the parent stream.
-        "$ref": "#/definitions/DeclarativeStream"
+        anyOf:
+          - "$ref": "#/definitions/DeclarativeStream"
+          - "$ref": "#/definitions/StateDelegatingStream"
       partition_field:
         title: Current Parent Key Value Identifier
         description: While iterating over parent records during a sync, the parent_key value can be referenced by using this field.
@@ -2872,6 +3015,96 @@ definitions:
     examples:
       - id
       - ["code", "type"]
+  PropertiesFromEndpoint:
+    title: Properties from Endpoint
+    description: Defines the behavior for fetching the list of properties from an API that will be loaded into the requests to extract records.
+    type: object
+    required:
+      - type
+      - property_field_path
+      - retriever
+    properties:
+      type:
+        type: string
+        enum: [PropertiesFromEndpoint]
+      property_field_path:
+        description: Describes the path to the field that should be extracted
+        type: array
+        items:
+          type: string
+        examples:
+          - ["name"]
+        interpolation_context:
+          - config
+          - parameters
+      retriever:
+        description: Requester component that describes how to fetch the properties to query from a remote API endpoint.
+        anyOf:
+          - "$ref": "#/definitions/CustomRetriever"
+          - "$ref": "#/definitions/SimpleRetriever"
+      $parameters:
+        type: object
+        additionalProperties: true
+  PropertyChunking:
+    title: Property Chunking
+    description: For APIs with restrictions on the amount of properties that can be requester per request, property chunking can be applied to make multiple requests with a subset of the properties.
+    type: object
+    required:
+      - type
+      - property_limit_type
+    properties:
+      type:
+        type: string
+        enum: [PropertyChunking]
+      property_limit_type:
+        title: Property Limit Type
+        description: The type used to determine the maximum number of properties per chunk
+        enum:
+          - characters
+          - property_count
+      property_limit:
+        title: Property Limit
+        description: The maximum amount of properties that can be retrieved per request according to the limit type.
+        type: integer
+      record_merge_strategy:
+        title: Record Merge Strategy
+        description: Dictates how to records that require multiple requests to get all properties should be emitted to the destination
+        "$ref": "#/definitions/GroupByKeyMergeStrategy"
+      $parameters:
+        type: object
+        additionalProperties: true
+  QueryProperties:
+    title: Query Properties
+    description: For APIs that require explicit specification of the properties to query for, this component specifies which property fields and how they are supplied to outbound requests.
+    type: object
+    required:
+      - type
+      - property_list
+    properties:
+      type:
+        type: string
+        enum: [QueryProperties]
+      property_list:
+        title: Property List
+        description: The set of properties that will be queried for in the outbound request. This can either be statically defined or dynamic based on an API endpoint
+        anyOf:
+          - type: array
+            items:
+              type: string
+          - "$ref": "#/definitions/PropertiesFromEndpoint"
+      always_include_properties:
+        title: Always Include Properties
+        description: The list of properties that should be included in every set of properties when multiple chunks of properties are being requested.
+        type: array
+        items:
+          type: string
+      property_chunking:
+        title: Property Chunking
+        description: Defines how query properties will be grouped into smaller sets for APIs with limitations on the number of properties fetched per API request.
+        "$ref": "#/definitions/PropertyChunking"
+      $parameters:
+        type: object
+        additionalProperties: true
   RecordFilter:
     title: Record Filter
     description: Filter applied on a list of records.
@@ -2927,6 +3160,10 @@ definitions:
           - "$ref": "#/definitions/SchemaNormalization"
           - "$ref": "#/definitions/CustomSchemaNormalization"
         default: None
+      transform_before_filtering:
+        description: If true, transformation will be applied before record filtering.
+        type: boolean
+        default: false
       $parameters:
         type: object
         additionalProperties: true
@@ -3094,6 +3331,36 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  StateDelegatingStream:
+    description: (This component is experimental. Use at your own risk.) Orchestrate the retriever's usage based on the state value.
+    type: object
+    required:
+      - type
+      - name
+      - full_refresh_stream
+      - incremental_stream
+    properties:
+      type:
+        type: string
+        enum: [StateDelegatingStream]
+      name:
+        title: Name
+        description: The stream name.
+        type: string
+        default: ""
+        example:
+          - "Users"
+      full_refresh_stream:
+        title: Retriever
+        description: Component used to coordinate how records are extracted across stream slices and request pages when the state is empty or not provided.
+        "$ref": "#/definitions/DeclarativeStream"
+      incremental_stream:
+        title: Retriever
+        description: Component used to coordinate how records are extracted across stream slices and request pages when the state provided.
+        "$ref": "#/definitions/DeclarativeStream"
+      $parameters:
+        type: object
+        additionalProperties: true
   SimpleRetriever:
     description: Retrieves records by synchronously sending requests to fetch records. The retriever acts as an orchestrator between the requester, the record selector, the paginator, and the partition router.
     type: object
@@ -3130,12 +3397,14 @@ definitions:
           - "$ref": "#/definitions/CustomPartitionRouter"
           - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/SubstreamPartitionRouter"
+          - "$ref": "#/definitions/GroupingPartitionRouter"
           - type: array
             items:
               anyOf:
                 - "$ref": "#/definitions/CustomPartitionRouter"
                 - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/SubstreamPartitionRouter"
+                - "$ref": "#/definitions/GroupingPartitionRouter"
       decoder:
         title: Decoder
         description: Component decoding the response so records can be extracted.
@@ -3152,6 +3421,8 @@ definitions:
         type: object
         additionalProperties: true
   GzipDecoder:
+    title: gzip
+    description: Select 'gzip' for response data that is compressed with gzip. Requires specifying an inner data type/decoder to parse the decompressed data.
     type: object
     required:
       - type
@@ -3167,6 +3438,8 @@ definitions:
           - "$ref": "#/definitions/JsonDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
   CsvDecoder:
+    title: CSV
+    description: "Select 'CSV' for response data that is formatted as CSV (comma-separated values). Can specify an encoding (default: 'utf-8') and a delimiter (default: ',')."
     type: object
     required:
       - type
@@ -3209,7 +3482,7 @@ definitions:
         items:
           type: string
   AsyncRetriever:
-    description: "[Experimental - We expect the interface to change shortly and we reserve the right to not consider this a breaking change] Retrieves records by Asynchronously sending requests to fetch records. The retriever acts as an orchestrator between the requester, the record selector, the paginator, and the partition router."
+    description: "Retrieves records by Asynchronously sending requests to fetch records. The retriever acts as an orchestrator between the requester, the record selector, the paginator, and the partition router."
     type: object
     required:
       - type
@@ -3219,7 +3492,7 @@ definitions:
       - polling_requester
       - download_requester
       - status_extractor
-      - urls_extractor
+      - download_target_extractor
     properties:
       type:
         type: string
@@ -3236,7 +3509,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/CustomRecordExtractor"
           - "$ref": "#/definitions/DpathExtractor"
-      urls_extractor:
+      download_target_extractor:
         description: Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.
         anyOf:
           - "$ref": "#/definitions/CustomRecordExtractor"
@@ -3257,7 +3530,14 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/CustomRequester"
           - "$ref": "#/definitions/HttpRequester"
-      url_requester:
+      polling_job_timeout:
+        description: The time in minutes after which the single Async Job should be considered as Timed Out.
+        anyOf:
+          - type: integer
+          - type: string
+        interpolation_context:
+          - config
+      download_target_requester:
         description: Requester component that describes how to prepare HTTP requests to send to the source API to extract the url from polling response by the completed async job.
         anyOf:
           - "$ref": "#/definitions/CustomRequester"
@@ -3290,12 +3570,14 @@ definitions:
           - "$ref": "#/definitions/CustomPartitionRouter"
           - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/SubstreamPartitionRouter"
+          - "$ref": "#/definitions/GroupingPartitionRouter"
           - type: array
             items:
               anyOf:
                 - "$ref": "#/definitions/CustomPartitionRouter"
                 - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/SubstreamPartitionRouter"
+                - "$ref": "#/definitions/GroupingPartitionRouter"
       decoder:
         title: Decoder
         description: Component decoding the response so records can be extracted.
@@ -3412,6 +3694,44 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  GroupingPartitionRouter:
+    title: Grouping Partition Router
+    description: >
+      A decorator on top of a partition router that groups partitions into batches of a specified size.
+      This is useful for APIs that support filtering by multiple partition keys in a single request.
+      Note that per-partition incremental syncs may not work as expected because the grouping
+      of partitions might change between syncs, potentially leading to inconsistent state tracking.
+    type: object
+    required:
+      - type
+      - group_size
+      - underlying_partition_router
+    properties:
+      type:
+        type: string
+        enum: [GroupingPartitionRouter]
+      group_size:
+        title: Group Size
+        description: The number of partitions to include in each group. This determines how many partition values are batched together in a single slice.
+        type: integer
+        examples:
+          - 10
+          - 50
+      underlying_partition_router:
+        title: Underlying Partition Router
+        description: The partition router whose output will be grouped. This can be any valid partition router component.
+        anyOf:
+          - "$ref": "#/definitions/CustomPartitionRouter"
+          - "$ref": "#/definitions/ListPartitionRouter"
+          - "$ref": "#/definitions/SubstreamPartitionRouter"
+      deduplicate:
+        title: Deduplicate Partitions
+        description: If true, ensures that partitions are unique within each group by removing duplicates based on the partition key.
+        type: boolean
+        default: true
+      $parameters:
+        type: object
+        additionalProperties: true
   WaitUntilTimeFromHeader:
     title: Wait Until Time Defined In Response Header
     description: Extract time at which we can retry the request from response header and wait for the difference between now and that time.
@@ -3470,7 +3790,7 @@ definitions:
         description: A list of potentially nested fields indicating the full path where value will be added or updated.
         type: array
         items:
-          - type: string
+          type: string
         interpolation_context:
           - config
           - components_values
@@ -3546,7 +3866,7 @@ definitions:
         description: A list of potentially nested fields indicating the full path in source config file where streams configs located.
         type: array
         items:
-          - type: string
+          type: string
         interpolation_context:
           - parameters
         examples:
@@ -3583,6 +3903,13 @@ definitions:
       type:
         type: string
         enum: [DynamicDeclarativeStream]
+      name:
+        title: Name
+        description: The dynamic stream name.
+        type: string
+        default: ""
+        example:
+          - "Tables"
       stream_template:
         title: Stream Template
         description: Reference to the stream template.
@@ -3663,6 +3990,21 @@ interpolation:
             self: https://api.sendgrid.com/v3/marketing/lists?page_size=1&page_token=
             next: https://api.sendgrid.com/v3/marketing/lists?page_size=1&page_token=0236d6d2
             count: 82
+    - title: creation_response
+      description: The response received from the creation_requester in the AsyncRetriever component.
+      type: object
+      examples:
+        - id: "1234"
+    - title: polling_response
+      description: The response received from the polling_requester in the AsyncRetriever component.
+      type: object
+      examples:
+        - id: "1234"
+    - title: download_target
+      description: The `URL` received from the polling_requester in the AsyncRetriever with jobStatus as `COMPLETED`.
+      type: string
+      examples:
+        - "https://api.sendgrid.com/v3/marketing/lists?page_size=1&page_token=0236d6d2&filename=xxx_yyy_zzz.csv"
     - title: stream_interval
       description: The current stream interval being processed. The keys are defined by the incremental sync component. Default keys are `start_time` and `end_time`.
       type: object
@@ -3744,6 +4086,16 @@ interpolation:
         - "{{ format_datetime(config['start_time'], '%Y-%m-%d') }}"
         - "{{ format_datetime(config['start_date'], '%Y-%m-%dT%H:%M:%S.%fZ') }}"
         - "{{ format_datetime(config['start_date'], '%Y-%m-%dT%H:%M:%S.%fZ', '%a, %d %b %Y %H:%M:%S %z') }}"
+    - title: str_to_datetime
+      description: Converts a string to a datetime object with UTC timezone.
+      arguments:
+        s: The string to convert.
+      return_type: datetime.datetime
+      examples:
+        - "{{ str_to_datetime('2022-01-14') }}"
+        - "{{ str_to_datetime('2022-01-01 13:45:30') }}"
+        - "{{ str_to_datetime('2022-01-01T13:45:30+00:00') }}"
+        - "{{ str_to_datetime('2022-01-01T13:45:30.123456Z') }}"
   filters:
     - title: hash
       description: Convert the specified value to a hashed string.

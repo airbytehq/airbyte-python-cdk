@@ -20,6 +20,14 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
 from airbyte_cdk.sources.declarative.incremental import ConcurrentPerPartitionCursor
+from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
+    DeclarativePartition,
+)
+from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
+from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
+    CustomFormatConcurrentStreamStateConverter,
+)
+from airbyte_cdk.sources.types import StreamSlice
 from airbyte_cdk.test.catalog_builder import CatalogBuilder, ConfiguredAirbyteStreamBuilder
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput, read
 
@@ -2027,6 +2035,8 @@ def test_incremental_parent_state_no_records(
                                 "cursor": {"updated_at": PARENT_COMMENT_CURSOR_PARTITION_1},
                             }
                         ],
+                        "state": {},
+                        "use_global_cursor": False,
                         "parent_state": {"posts": {"updated_at": PARENT_POSTS_CURSOR}},
                     }
                 },
@@ -3017,3 +3027,426 @@ def test_state_throttling(mocker):
     cursor._emit_state_message()
     mock_connector_manager.update_state_for_stream.assert_called_once()
     mock_repo.emit_message.assert_called_once()
+
+
+def test_given_no_partitions_processed_when_close_partition_then_no_state_update():
+    mock_cursor = MagicMock()
+    # No slices for no partitions
+    mock_cursor.stream_slices.side_effect = [iter([])]
+    mock_cursor.state = {}  # Empty state for no partitions
+
+    cursor_factory_mock = MagicMock()
+    cursor_factory_mock.create.return_value = mock_cursor
+
+    connector_state_converter = CustomFormatConcurrentStreamStateConverter(
+        datetime_format="%Y-%m-%dT%H:%M:%SZ",
+        input_datetime_formats=["%Y-%m-%dT%H:%M:%SZ"],
+        is_sequential_state=True,
+        cursor_granularity=timedelta(0),
+    )
+
+    cursor = ConcurrentPerPartitionCursor(
+        cursor_factory=cursor_factory_mock,
+        partition_router=MagicMock(),
+        stream_name="test_stream",
+        stream_namespace=None,
+        stream_state={},
+        message_repository=MagicMock(),
+        connector_state_manager=MagicMock(),
+        connector_state_converter=connector_state_converter,
+        cursor_field=CursorField(cursor_field_key="updated_at"),
+    )
+    partition_router = cursor._partition_router
+    partition_router.stream_slices.return_value = iter([])
+    partition_router.get_stream_state.return_value = {}
+
+    slices = list(cursor.stream_slices())  # Call once
+    for slice in slices:
+        cursor.close_partition(
+            DeclarativePartition("test_stream", {}, MagicMock(), MagicMock(), slice)
+        )
+
+    assert cursor.state == {
+        "use_global_cursor": False,
+        "lookback_window": 0,
+        "states": [],
+    }
+    assert len(cursor._cursor_per_partition) == 0
+    assert len(cursor._semaphore_per_partition) == 0
+    assert len(cursor._partition_parent_state_map) == 0
+    assert mock_cursor.stream_slices.call_count == 0  # No calls since no partitions
+
+
+def test_given_unfinished_first_parent_partition_no_parent_state_update():
+    # Create two mock cursors with different states for each partition
+    mock_cursor_1 = MagicMock()
+    mock_cursor_1.stream_slices.return_value = iter(
+        [
+            {"slice1": "data1"},
+            {"slice2": "data1"},  # First partition slices
+        ]
+    )
+    mock_cursor_1.state = {"updated_at": "2024-01-01T00:00:00Z"}  # State for partition "1"
+
+    mock_cursor_2 = MagicMock()
+    mock_cursor_2.stream_slices.return_value = iter(
+        [
+            {"slice2": "data2"},
+            {"slice2": "data2"},  # Second partition slices
+        ]
+    )
+    mock_cursor_2.state = {"updated_at": "2024-01-02T00:00:00Z"}  # State for partition "2"
+
+    # Configure cursor factory to return different mock cursors based on partition
+    cursor_factory_mock = MagicMock()
+    cursor_factory_mock.create.side_effect = [mock_cursor_1, mock_cursor_2]
+
+    connector_state_converter = CustomFormatConcurrentStreamStateConverter(
+        datetime_format="%Y-%m-%dT%H:%M:%SZ",
+        input_datetime_formats=["%Y-%m-%dT%H:%M:%SZ"],
+        is_sequential_state=True,
+        cursor_granularity=timedelta(0),
+    )
+
+    cursor = ConcurrentPerPartitionCursor(
+        cursor_factory=cursor_factory_mock,
+        partition_router=MagicMock(),
+        stream_name="test_stream",
+        stream_namespace=None,
+        stream_state={
+            "states": [
+                {"partition": {"id": "1"}, "cursor": {"updated_at": "2024-01-01T00:00:00Z"}}
+            ],
+            "state": {"updated_at": "2024-01-01T00:00:00Z"},
+            "lookback_window": 86400,
+            "parent_state": {"posts": {"updated_at": "2024-01-01T00:00:00Z"}},
+        },
+        message_repository=MagicMock(),
+        connector_state_manager=MagicMock(),
+        connector_state_converter=connector_state_converter,
+        cursor_field=CursorField(cursor_field_key="updated_at"),
+    )
+    partition_router = cursor._partition_router
+    all_partitions = [
+        StreamSlice(partition={"id": "1"}, cursor_slice={}, extra_fields={}),
+        StreamSlice(partition={"id": "2"}, cursor_slice={}, extra_fields={}),  # New partition
+    ]
+    partition_router.stream_slices.return_value = iter(all_partitions)
+    partition_router.get_stream_state.side_effect = [
+        {"posts": {"updated_at": "2024-01-04T00:00:00Z"}},  # Initial parent state
+        {"posts": {"updated_at": "2024-01-05T00:00:00Z"}},  # Updated parent state for new partition
+    ]
+
+    slices = list(cursor.stream_slices())
+    # Close all partitions except from the first one
+    for slice in slices[1:]:
+        cursor.close_partition(
+            DeclarativePartition("test_stream", {}, MagicMock(), MagicMock(), slice)
+        )
+    cursor.ensure_at_least_one_state_emitted()
+
+    state = cursor.state
+    assert state == {
+        "use_global_cursor": False,
+        "states": [
+            {"partition": {"id": "1"}, "cursor": {"updated_at": "2024-01-01T00:00:00Z"}},
+            {"partition": {"id": "2"}, "cursor": {"updated_at": "2024-01-02T00:00:00Z"}},
+        ],
+        "state": {"updated_at": "2024-01-01T00:00:00Z"},
+        "lookback_window": 86400,
+        "parent_state": {"posts": {"updated_at": "2024-01-01T00:00:00Z"}},
+    }
+    assert mock_cursor_1.stream_slices.call_count == 1  # Called once for each partition
+    assert mock_cursor_2.stream_slices.call_count == 1  # Called once for each partition
+    assert len(cursor._semaphore_per_partition) == 2
+
+
+def test_given_unfinished_last_parent_partition_with_partial_parent_state_update():
+    # Create two mock cursors with different states for each partition
+    mock_cursor_1 = MagicMock()
+    mock_cursor_1.stream_slices.return_value = iter(
+        [
+            {"slice1": "data1"},
+            {"slice2": "data1"},  # First partition slices
+        ]
+    )
+    mock_cursor_1.state = {"updated_at": "2024-01-02T00:00:00Z"}  # State for partition "1"
+
+    mock_cursor_2 = MagicMock()
+    mock_cursor_2.stream_slices.return_value = iter(
+        [
+            {"slice2": "data2"},
+            {"slice2": "data2"},  # Second partition slices
+        ]
+    )
+    mock_cursor_2.state = {"updated_at": "2024-01-01T00:00:00Z"}  # State for partition "2"
+
+    # Configure cursor factory to return different mock cursors based on partition
+    cursor_factory_mock = MagicMock()
+    cursor_factory_mock.create.side_effect = [mock_cursor_1, mock_cursor_2]
+
+    connector_state_converter = CustomFormatConcurrentStreamStateConverter(
+        datetime_format="%Y-%m-%dT%H:%M:%SZ",
+        input_datetime_formats=["%Y-%m-%dT%H:%M:%SZ"],
+        is_sequential_state=True,
+        cursor_granularity=timedelta(0),
+    )
+
+    cursor = ConcurrentPerPartitionCursor(
+        cursor_factory=cursor_factory_mock,
+        partition_router=MagicMock(),
+        stream_name="test_stream",
+        stream_namespace=None,
+        stream_state={
+            "states": [
+                {"partition": {"id": "1"}, "cursor": {"updated_at": "2024-01-01T00:00:00Z"}}
+            ],
+            "state": {"updated_at": "2024-01-01T00:00:00Z"},
+            "lookback_window": 86400,
+            "parent_state": {"posts": {"updated_at": "2024-01-01T00:00:00Z"}},
+        },
+        message_repository=MagicMock(),
+        connector_state_manager=MagicMock(),
+        connector_state_converter=connector_state_converter,
+        cursor_field=CursorField(cursor_field_key="updated_at"),
+    )
+    partition_router = cursor._partition_router
+    all_partitions = [
+        StreamSlice(partition={"id": "1"}, cursor_slice={}, extra_fields={}),
+        StreamSlice(partition={"id": "2"}, cursor_slice={}, extra_fields={}),  # New partition
+    ]
+    partition_router.stream_slices.return_value = iter(all_partitions)
+    partition_router.get_stream_state.side_effect = [
+        {"posts": {"updated_at": "2024-01-04T00:00:00Z"}},  # Initial parent state
+        {"posts": {"updated_at": "2024-01-05T00:00:00Z"}},  # Updated parent state for new partition
+    ]
+
+    slices = list(cursor.stream_slices())
+    # Close all partitions except from the first one
+    for slice in slices[:-1]:
+        cursor.close_partition(
+            DeclarativePartition("test_stream", {}, MagicMock(), MagicMock(), slice)
+        )
+    cursor.ensure_at_least_one_state_emitted()
+
+    state = cursor.state
+    assert state == {
+        "use_global_cursor": False,
+        "states": [
+            {"partition": {"id": "1"}, "cursor": {"updated_at": "2024-01-02T00:00:00Z"}},
+            {"partition": {"id": "2"}, "cursor": {"updated_at": "2024-01-01T00:00:00Z"}},
+        ],
+        "state": {"updated_at": "2024-01-01T00:00:00Z"},
+        "lookback_window": 86400,
+        "parent_state": {"posts": {"updated_at": "2024-01-04T00:00:00Z"}},
+    }
+    assert mock_cursor_1.stream_slices.call_count == 1  # Called once for each partition
+    assert mock_cursor_2.stream_slices.call_count == 1  # Called once for each partition
+    assert len(cursor._semaphore_per_partition) == 1
+
+
+def test_given_all_partitions_finished_when_close_partition_then_final_state_emitted():
+    mock_cursor = MagicMock()
+    # Simulate one slice per cursor
+    mock_cursor.stream_slices.side_effect = [
+        iter(
+            [
+                {"slice1": "data"},  # First slice for partition 1
+            ]
+        ),
+        iter(
+            [
+                {"slice2": "data"},  # First slice for partition 2
+            ]
+        ),
+    ]
+    mock_cursor.state = {"updated_at": "2024-01-02T00:00:00Z"}  # Set cursor state (latest)
+
+    cursor_factory_mock = MagicMock()
+    cursor_factory_mock.create.return_value = mock_cursor
+
+    connector_state_converter = CustomFormatConcurrentStreamStateConverter(
+        datetime_format="%Y-%m-%dT%H:%M:%SZ",
+        input_datetime_formats=["%Y-%m-%dT%H:%M:%SZ"],
+        is_sequential_state=True,
+        cursor_granularity=timedelta(0),
+    )
+
+    cursor = ConcurrentPerPartitionCursor(
+        cursor_factory=cursor_factory_mock,
+        partition_router=MagicMock(),
+        stream_name="test_stream",
+        stream_namespace=None,
+        stream_state={
+            "states": [
+                {"partition": {"id": "1"}, "cursor": {"updated_at": "2024-01-01T00:00:00Z"}},
+                {"partition": {"id": "2"}, "cursor": {"updated_at": "2024-01-02T00:00:00Z"}},
+            ],
+            "state": {"updated_at": "2024-01-02T00:00:00Z"},
+            "lookback_window": 86400,
+            "parent_state": {"posts": {"updated_at": "2024-01-03T00:00:00Z"}},
+        },
+        message_repository=MagicMock(),
+        connector_state_manager=MagicMock(),
+        connector_state_converter=connector_state_converter,
+        cursor_field=CursorField(cursor_field_key="updated_at"),
+    )
+    partition_router = cursor._partition_router
+    partitions = [
+        StreamSlice(partition={"id": "1"}, cursor_slice={}, extra_fields={}),
+        StreamSlice(partition={"id": "2"}, cursor_slice={}, extra_fields={}),
+    ]
+    partition_router.stream_slices.return_value = iter(partitions)
+    partition_router.get_stream_state.return_value = {
+        "posts": {"updated_at": "2024-01-06T00:00:00Z"}
+    }
+
+    slices = list(cursor.stream_slices())
+    for slice in slices:
+        cursor.close_partition(
+            DeclarativePartition("test_stream", {}, MagicMock(), MagicMock(), slice)
+        )
+
+    cursor.ensure_at_least_one_state_emitted()
+
+    final_state = cursor.state
+    assert final_state["use_global_cursor"] is False
+    assert len(final_state["states"]) == 2
+    assert final_state["state"]["updated_at"] == "2024-01-02T00:00:00Z"
+    assert final_state["parent_state"] == {"posts": {"updated_at": "2024-01-06T00:00:00Z"}}
+    assert final_state["lookback_window"] == 1
+    assert cursor._message_repository.emit_message.call_count == 2
+    assert mock_cursor.stream_slices.call_count == 2  # Called once for each partition
+    assert len(cursor._semaphore_per_partition) == 1
+
+
+def test_given_partition_limit_exceeded_when_close_partition_then_switch_to_global_cursor():
+    mock_cursor = MagicMock()
+    # Simulate one slice per cursor
+    mock_cursor.stream_slices.side_effect = [iter([{"slice" + str(i): "data"}]) for i in range(3)]
+    mock_cursor.state = {"updated_at": "2024-01-01T00:00:00Z"}  # Set cursor state
+
+    cursor_factory_mock = MagicMock()
+    cursor_factory_mock.create.return_value = mock_cursor
+
+    connector_state_converter = CustomFormatConcurrentStreamStateConverter(
+        datetime_format="%Y-%m-%dT%H:%M:%SZ",
+        input_datetime_formats=["%Y-%m-%dT%H:%M:%SZ"],
+        is_sequential_state=True,
+        cursor_granularity=timedelta(0),
+    )
+
+    cursor = ConcurrentPerPartitionCursor(
+        cursor_factory=cursor_factory_mock,
+        partition_router=MagicMock(),
+        stream_name="test_stream",
+        stream_namespace=None,
+        stream_state={},
+        message_repository=MagicMock(),
+        connector_state_manager=MagicMock(),
+        connector_state_converter=connector_state_converter,
+        cursor_field=CursorField(cursor_field_key="updated_at"),
+    )
+    # Override default limit for testing
+    cursor.DEFAULT_MAX_PARTITIONS_NUMBER = 2
+    cursor.SWITCH_TO_GLOBAL_LIMIT = 1
+
+    partition_router = cursor._partition_router
+    partitions = [
+        StreamSlice(partition={"id": str(i)}, cursor_slice={}, extra_fields={}) for i in range(3)
+    ]  # 3 partitions
+    partition_router.stream_slices.return_value = iter(partitions)
+    partition_router.get_stream_state.side_effect = [
+        {"updated_at": "2024-01-02T00:00:00Z"},
+        {"updated_at": "2024-01-03T00:00:00Z"},
+        {"updated_at": "2024-01-04T00:00:00Z"},
+        {"updated_at": "2024-01-04T00:00:00Z"},
+    ]
+
+    slices = list(cursor.stream_slices())
+    for slice in slices:
+        cursor.close_partition(
+            DeclarativePartition("test_stream", {}, MagicMock(), MagicMock(), slice)
+        )
+    cursor.ensure_at_least_one_state_emitted()
+
+    final_state = cursor.state
+    assert len(slices) == 3
+    assert final_state["use_global_cursor"] is True
+    assert len(final_state.get("states", [])) == 0  # No per-partition states
+    assert final_state["parent_state"] == {"updated_at": "2024-01-04T00:00:00Z"}
+    assert "lookback_window" in final_state
+    assert len(cursor._cursor_per_partition) <= cursor.DEFAULT_MAX_PARTITIONS_NUMBER
+    assert mock_cursor.stream_slices.call_count == 3  # Called once for each partition
+
+
+def test_semaphore_cleanup():
+    # Create two mock cursors with different states for each partition
+    mock_cursor_1 = MagicMock()
+    mock_cursor_1.stream_slices.return_value = iter(
+        [
+            {"slice1": "data1"},
+            {"slice2": "data1"},  # First partition slices
+        ]
+    )
+    mock_cursor_1.state = {"updated_at": "2024-01-02T00:00:00Z"}  # State for partition "1"
+
+    mock_cursor_2 = MagicMock()
+    mock_cursor_2.stream_slices.return_value = iter(
+        [
+            {"slice2": "data2"},
+            {"slice2": "data2"},  # Second partition slices
+        ]
+    )
+    mock_cursor_2.state = {"updated_at": "2024-01-03T00:00:00Z"}  # State for partition "2"
+
+    # Configure cursor factory to return different mock cursors based on partition
+    cursor_factory_mock = MagicMock()
+    cursor_factory_mock.create.side_effect = [mock_cursor_1, mock_cursor_2]
+
+    cursor = ConcurrentPerPartitionCursor(
+        cursor_factory=cursor_factory_mock,
+        partition_router=MagicMock(),
+        stream_name="test_stream",
+        stream_namespace=None,
+        stream_state={},
+        message_repository=MagicMock(),
+        connector_state_manager=MagicMock(),
+        connector_state_converter=MagicMock(),
+        cursor_field=CursorField(cursor_field_key="updated_at"),
+    )
+
+    # Simulate partitions with unique parent states
+    slices = [
+        StreamSlice(partition={"id": "1"}, cursor_slice={}),
+        StreamSlice(partition={"id": "2"}, cursor_slice={}),
+    ]
+    cursor._partition_router.stream_slices.return_value = iter(slices)
+    # Simulate unique parent states for each partition
+    cursor._partition_router.get_stream_state.side_effect = [
+        {"parent": {"state": "state1"}},  # Parent state for partition "1"
+        {"parent": {"state": "state2"}},  # Parent state for partition "2"
+    ]
+
+    # Generate slices to populate semaphores and parent states
+    generated_slices = list(
+        cursor.stream_slices()
+    )  # Populate _semaphore_per_partition and _partition_parent_state_map
+
+    # Verify initial state
+    assert len(cursor._semaphore_per_partition) == 2
+    assert len(cursor._partition_parent_state_map) == 2
+    assert cursor._partition_parent_state_map['{"id":"1"}'] == {"parent": {"state": "state1"}}
+    assert cursor._partition_parent_state_map['{"id":"2"}'] == {"parent": {"state": "state2"}}
+
+    # Close partitions to acquire semaphores (value back to 0)
+    for s in generated_slices:
+        cursor.close_partition(DeclarativePartition("test_stream", {}, MagicMock(), MagicMock(), s))
+
+    # Check state after closing partitions
+    assert len(cursor._finished_partitions) == 2
+    assert len(cursor._semaphore_per_partition) == 0
+    assert '{"id":"1"}' not in cursor._semaphore_per_partition
+    assert '{"id":"2"}' not in cursor._semaphore_per_partition
+    assert len(cursor._partition_parent_state_map) == 0  # All parent states should be popped
+    assert cursor._parent_state == {"parent": {"state": "state2"}}  # Last parent state

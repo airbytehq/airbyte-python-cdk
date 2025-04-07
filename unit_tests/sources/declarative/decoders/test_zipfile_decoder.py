@@ -43,7 +43,12 @@ def test_zipfile_decoder_with_single_file_response(requests_mock, json_data):
     zipfile_decoder = ZipfileDecoder(parser=GzipParser(inner_parser=JsonParser()))
     compressed_data = gzip.compress(json.dumps(json_data).encode())
     zipped_data = create_zip_from_dict(compressed_data)
-    requests_mock.register_uri("GET", "https://airbyte.io/", content=zipped_data)
+    requests_mock.register_uri(
+        "GET",
+        "https://airbyte.io/",
+        content=zipped_data,
+        headers={"Content-Encoding": "application/zip"},
+    )
     response = requests.get("https://airbyte.io/")
 
     if isinstance(json_data, list):
