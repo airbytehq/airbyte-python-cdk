@@ -3,7 +3,7 @@ import inspect
 import os
 import sys
 from pathlib import Path
-from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, TypeVar, Union
+from typing import Any, Callable, Dict, Generator, List, Optional, Tuple, Type, TypeVar, Union, cast
 
 import pytest
 import yaml
@@ -12,14 +12,21 @@ from _pytest.config.argparsing import Parser
 from _pytest.nodes import Item
 from _pytest.python import Metafunc, Module
 
+from airbyte_cdk.sources import AbstractSource, Source
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import ConcurrentDeclarativeSource
 from airbyte_cdk.test.declarative.models import ConnectorTestScenario
 from airbyte_cdk.test.declarative.test_suites.connector_base import ConnectorTestSuiteBase
 from airbyte_cdk.test.declarative.test_suites.destination_base import DestinationTestSuiteBase
 from airbyte_cdk.test.declarative.test_suites.source_base import SourceTestSuiteBase
 
 
-def pytest_collect_file(parent: pytest.Collector, path) -> Optional[Module]:
-    """Handle file collection for pytest."""
+def pytest_collect_file(parent: pytest.Collector, path: Any) -> Optional[Module]:
+    """Handle file collection for pytest.
+    
+    Args:
+        parent: The parent collector
+        path: The path to the file being collected
+    """
     path_str = str(path)
     path_name = os.path.basename(path_str)
 
