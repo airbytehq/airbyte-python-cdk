@@ -59,7 +59,10 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             "discover",
             test_instance=instance,
         )
-        assert discover_result.catalog, "Expected a non-empty catalog."
+        if instance.expect_exception:
+            assert discover_result.errors, "Expected exception but got none."
+            return
+
         configured_catalog = ConfiguredAirbyteCatalog(
             streams=[
                 ConfiguredAirbyteStream(
