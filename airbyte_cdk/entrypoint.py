@@ -147,7 +147,11 @@ class AirbyteEntrypoint(object):
                     ]
                     yield self.airbyte_message_to_string(message)
                 else:
-                    if cmd == "discover" and not parsed_args.config and not self.source.check_config_against_spec:
+                    if (
+                        cmd == "discover"
+                        and not parsed_args.config
+                        and not self.source.check_config_against_spec
+                    ):
                         empty_config = {}
                         yield from [
                             self.airbyte_message_to_string(queued_message)
