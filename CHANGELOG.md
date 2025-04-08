@@ -4,6 +4,10 @@ Newer updates can be found here: [GitHub Release Notes](https://github.com/airby
 
 # Changelog
 
+## Unreleased
+
+- Added automatic detection of DynamicSchemaLoader to skip config validation during discovery
+
 ## 6.5.2
 
 bugfix: Ensure that streams with partition router are not executed concurrently
