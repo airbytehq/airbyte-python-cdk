@@ -151,7 +151,7 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             source_defined_primary_key=[["id_a"], ["id_b"]],
             namespace=None,
             is_resumable=False,
-            is_file_based=False
+            is_file_based=False,
         )
 
         airbyte_stream = stream.as_airbyte_stream()
@@ -220,7 +220,7 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             source_defined_primary_key=None,
             namespace="test",
             is_resumable=False,
-            is_file_based=False
+            is_file_based=False,
         )
         actual_airbyte_stream = stream.as_airbyte_stream()
 
@@ -241,7 +241,7 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
                 message_repository=self._message_repository,
             ),
             namespace="test",
-            supports_file_transfer=True
+            supports_file_transfer=True,
         )
         expected_airbyte_stream = AirbyteStream(
             name=self._name,
@@ -252,7 +252,7 @@ class ThreadBasedConcurrentStreamTest(unittest.TestCase):
             source_defined_primary_key=None,
             namespace="test",
             is_resumable=False,
-            is_file_based=True
+            is_file_based=True,
         )
         actual_airbyte_stream = stream.as_airbyte_stream()
 
