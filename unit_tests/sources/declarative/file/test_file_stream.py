@@ -65,10 +65,14 @@ def discover(config_builder: ConfigBuilder, expecting_exception: bool = False) -
         _source(CatalogBuilder().build(), config), config, expecting_exception
     )
 
+
 SERVER_URL = "https://d3v-airbyte.zendesk.com"
-STREAM_URL = f'{SERVER_URL}/api/v2/help_center/incremental/articles?start_time=1672531200'
-STREAM_ATTACHMENTS_URL = f'{SERVER_URL}/api/v2/help_center/articles/12138789487375/attachments?per_page=100&=1672531200'
-STREAM_ATTACHMENT_CONTENT_URL = f'{SERVER_URL}/hc/article_attachments/12138758717583'
+STREAM_URL = f"{SERVER_URL}/api/v2/help_center/incremental/articles?start_time=1672531200"
+STREAM_ATTACHMENTS_URL = (
+    f"{SERVER_URL}/api/v2/help_center/articles/12138789487375/attachments?per_page=100&=1672531200"
+)
+STREAM_ATTACHMENT_CONTENT_URL = f"{SERVER_URL}/hc/article_attachments/12138758717583"
+
 
 class FileStreamTest(TestCase):
     def _config(self) -> ConfigBuilder:
@@ -115,11 +119,15 @@ class FileStreamTest(TestCase):
             )
             http_mocker.get(
                 HttpRequest(url=STREAM_ATTACHMENTS_URL),
-                HttpResponse(json.dumps(find_template("file_api/article_attachments", __file__)), 200),
+                HttpResponse(
+                    json.dumps(find_template("file_api/article_attachments", __file__)), 200
+                ),
             )
             http_mocker.get(
                 HttpRequest(url=STREAM_ATTACHMENT_CONTENT_URL),
-                HttpResponse(find_binary_response("file_api/article_attachment_content.png", __file__), 200),
+                HttpResponse(
+                    find_binary_response("file_api/article_attachment_content.png", __file__), 200
+                ),
             )
 
             output = read(
@@ -133,7 +141,9 @@ class FileStreamTest(TestCase):
             file_reference = output.records[0].record.file_reference
             assert file_reference
             assert file_reference.staging_file_url
-            assert re.match(r"^.*/article_attachments/[0-9a-fA-F-]{36}$", file_reference.staging_file_url)
+            assert re.match(
+                r"^.*/article_attachments/[0-9a-fA-F-]{36}$", file_reference.staging_file_url
+            )
             assert file_reference.source_file_relative_path
             assert re.match(
                 r"^article_attachments/[0-9a-fA-F-]{36}$", file_reference.source_file_relative_path
@@ -148,11 +158,15 @@ class FileStreamTest(TestCase):
             )
             http_mocker.get(
                 HttpRequest(url=STREAM_ATTACHMENTS_URL),
-                HttpResponse(json.dumps(find_template("file_api/article_attachments", __file__)), 200),
+                HttpResponse(
+                    json.dumps(find_template("file_api/article_attachments", __file__)), 200
+                ),
             )
             http_mocker.get(
                 HttpRequest(url=STREAM_ATTACHMENT_CONTENT_URL),
-                HttpResponse(find_binary_response("file_api/article_attachment_content.png", __file__), 200),
+                HttpResponse(
+                    find_binary_response("file_api/article_attachment_content.png", __file__), 200
+                ),
             )
 
             output = read(
@@ -166,7 +180,10 @@ class FileStreamTest(TestCase):
             assert output.records
             file_reference = output.records[0].record.file_reference
             assert file_reference
-            assert file_reference.staging_file_url == '/tmp/airbyte-file-transfer/article_attachments/12138758717583/some_image_name.png'
+            assert (
+                file_reference.staging_file_url
+                == "/tmp/airbyte-file-transfer/article_attachments/12138758717583/some_image_name.png"
+            )
             assert file_reference.source_file_relative_path
             assert not re.match(
                 r"^article_attachments/[0-9a-fA-F-]{36}$", file_reference.source_file_relative_path
