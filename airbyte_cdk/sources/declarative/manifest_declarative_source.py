@@ -58,12 +58,7 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
 class ManifestDeclarativeSource(DeclarativeSource):
-    """Declarative source defined by a manifest of low-code components that define source connector behavior
-
-    If any stream in the source uses a DynamicSchemaLoader, config validation will be skipped during
-    discovery. This allows sources with dynamic schemas to run discovery without requiring authentication
-    when the schema endpoint doesn't need auth to provide catalog information.
-    """
+    """Declarative source defined by a manifest of low-code components that define source connector behavior"""
 
     def __init__(
         self,
