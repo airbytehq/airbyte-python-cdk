@@ -21,6 +21,7 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
 )
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_format, ab_datetime_parse
 from airbyte_cdk.utils.mapping_helpers import _validate_component_request_option_paths
 
 
@@ -112,7 +113,6 @@ class DatetimeBasedCursor(DeclarativeCursor):
         self._partition_field_end = InterpolatedString.create(
             self.partition_field_end or "end_time", parameters=parameters
         )
-        self._parser = DatetimeParser()
 
         # If datetime format is not specified then start/end datetime should inherit it from the stream slicer
         if not self._start_datetime.datetime_format:
@@ -253,7 +253,7 @@ class DatetimeBasedCursor(DeclarativeCursor):
         return datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
 
     def _format_datetime(self, dt: datetime.datetime) -> str:
-        return self._parser.format(dt, self.datetime_format)
+        return ab_datetime_format(dt, self.datetime_format)
 
     def _partition_daterange(
         self,
@@ -308,12 +308,11 @@ class DatetimeBasedCursor(DeclarativeCursor):
         return comparator(cursor_date, default_date)
 
     def parse_date(self, date: str) -> datetime.datetime:
-        for datetime_format in self.cursor_datetime_formats + [self.datetime_format]:
-            try:
-                return self._parser.parse(date, datetime_format)
-            except ValueError:
-                pass
-        raise ValueError(f"No format in {self.cursor_datetime_formats} matching {date}")
+        try:
+            # Try each format in the list, falling back to the default format
+            return ab_datetime_parse(date, formats=self.cursor_datetime_formats + [self.datetime_format]).to_datetime()
+        except ValueError:
+            raise ValueError(f"No format in {self.cursor_datetime_formats + [self.datetime_format]} matching {date}")
 
     @classmethod
     def _parse_timedelta(cls, time_str: Optional[str]) -> Union[datetime.timedelta, Duration]:

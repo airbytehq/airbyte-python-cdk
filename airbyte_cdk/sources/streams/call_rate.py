@@ -19,6 +19,8 @@ from pyrate_limiter import InMemoryBucket, Limiter, RateItem, TimeClock
 from pyrate_limiter import Rate as PyRateRate
 from pyrate_limiter.exceptions import BucketFullException
 
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime
+
 # prevents mypy from complaining about missing session attributes in LimiterMixin
 if TYPE_CHECKING:
     MIXIN_BASE = requests.Session
@@ -662,9 +664,9 @@ class HttpAPIBudget(APIBudget):
         self, response: requests.Response
     ) -> Optional[datetime.datetime]:
         if response.headers.get(self._ratelimit_reset_header):
-            return datetime.datetime.fromtimestamp(
+            return AirbyteDateTime.fromtimestamp(
                 int(response.headers[self._ratelimit_reset_header])
-            )
+            ).to_datetime()
         return None
 
     def get_calls_left_from_response(self, response: requests.Response) -> Optional[int]:

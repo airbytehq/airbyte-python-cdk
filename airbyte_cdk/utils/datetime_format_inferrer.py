@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 
 from airbyte_cdk.models import AirbyteRecordMessage
 from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_parse, ab_datetime_try_parse
 
 
 class DatetimeFormatInferrer:
@@ -53,9 +54,9 @@ class DatetimeFormatInferrer:
     def _matches_format(self, value: Any, format: str) -> bool:
         """Checks if the value matches the format"""
         try:
-            self._parser.parse(value, format)
-            return True
-        except ValueError:
+            dt = ab_datetime_try_parse(value, formats=[format], disallow_other_formats=True)
+            return dt is not None
+        except (ValueError, TypeError):
             return False
 
     def _initialize(self, record: AirbyteRecordMessage) -> None:

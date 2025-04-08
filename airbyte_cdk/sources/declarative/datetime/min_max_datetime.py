@@ -8,6 +8,7 @@ from typing import Any, Mapping, Optional, Union
 
 from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_format, ab_datetime_parse
 
 
 @dataclass
@@ -39,7 +40,6 @@ class MinMaxDatetime:
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.datetime = InterpolatedString.create(self.datetime, parameters=parameters or {})
-        self._parser = DatetimeParser()
         self.min_datetime = (
             InterpolatedString.create(self.min_datetime, parameters=parameters)  # type: ignore [assignment]  #  expression has type "InterpolatedString | None", variable has type "InterpolatedString | str"
             if self.min_datetime
@@ -65,25 +65,25 @@ class MinMaxDatetime:
         if not datetime_format:
             datetime_format = "%Y-%m-%dT%H:%M:%S.%f%z"
 
-        time = self._parser.parse(
+        time = ab_datetime_parse(
             str(
                 self.datetime.eval(  # type: ignore[union-attr] # str has no attribute "eval"
                     config,
                     **additional_parameters,
                 )
             ),
-            datetime_format,
-        )  # type: ignore # datetime is always cast to an interpolated string
+            formats=[datetime_format] if datetime_format else None
+        ).to_datetime()  # type: ignore # datetime is always cast to an interpolated string
 
         if self.min_datetime:
             min_time = str(self.min_datetime.eval(config, **additional_parameters))  # type: ignore # min_datetime is always cast to an interpolated string
             if min_time:
-                min_datetime = self._parser.parse(min_time, datetime_format)  # type: ignore # min_datetime is always cast to an interpolated string
+                min_datetime = ab_datetime_parse(min_time, formats=[datetime_format] if datetime_format else None).to_datetime()  # type: ignore # min_datetime is always cast to an interpolated string
                 time = max(time, min_datetime)
         if self.max_datetime:
             max_time = str(self.max_datetime.eval(config, **additional_parameters))  # type: ignore # max_datetime is always cast to an interpolated string
             if max_time:
-                max_datetime = self._parser.parse(max_time, datetime_format)
+                max_datetime = ab_datetime_parse(max_time, formats=[datetime_format] if datetime_format else None).to_datetime()
                 time = min(time, max_datetime)
         return time
 

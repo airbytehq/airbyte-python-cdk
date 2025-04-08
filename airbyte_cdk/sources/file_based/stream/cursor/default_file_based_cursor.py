@@ -12,6 +12,7 @@ from airbyte_cdk.sources.file_based.stream.cursor.abstract_file_based_cursor imp
     AbstractFileBasedCursor,
 )
 from airbyte_cdk.sources.file_based.types import StreamState
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_format, ab_datetime_parse
 
 
 class DefaultFileBasedCursor(AbstractFileBasedCursor):
@@ -42,8 +43,8 @@ class DefaultFileBasedCursor(AbstractFileBasedCursor):
         self._initial_earliest_file_in_history = self._compute_earliest_file_in_history()
 
     def add_file(self, file: RemoteFile) -> None:
-        self._file_to_datetime_history[file.uri] = file.last_modified.strftime(
-            self.DATE_TIME_FORMAT
+        self._file_to_datetime_history[file.uri] = ab_datetime_format(
+            file.last_modified, self.DATE_TIME_FORMAT
         )
         if len(self._file_to_datetime_history) > self.DEFAULT_MAX_HISTORY_SIZE:
             # Get the earliest file based on its last modified date and its uri
@@ -82,9 +83,9 @@ class DefaultFileBasedCursor(AbstractFileBasedCursor):
     def _should_sync_file(self, file: RemoteFile, logger: logging.Logger) -> bool:
         if file.uri in self._file_to_datetime_history:
             # If the file's uri is in the history, we should sync the file if it has been modified since it was synced
-            updated_at_from_history = datetime.strptime(
-                self._file_to_datetime_history[file.uri], self.DATE_TIME_FORMAT
-            )
+            updated_at_from_history = ab_datetime_parse(
+                self._file_to_datetime_history[file.uri], formats=[self.DATE_TIME_FORMAT]
+            ).to_datetime()
             if file.last_modified < updated_at_from_history:
                 logger.warning(
                     f"The file {file.uri}'s last modified date is older than the last time it was synced. This is unexpected. Skipping the file."
@@ -132,7 +133,7 @@ class DefaultFileBasedCursor(AbstractFileBasedCursor):
                 self._file_to_datetime_history.items(), key=lambda f: (f[1], f[0])
             )
             return RemoteFile(
-                uri=filename, last_modified=datetime.strptime(last_modified, self.DATE_TIME_FORMAT)
+                uri=filename, last_modified=ab_datetime_parse(last_modified, formats=[self.DATE_TIME_FORMAT]).to_datetime()
             )
         else:
             return None
@@ -142,7 +143,7 @@ class DefaultFileBasedCursor(AbstractFileBasedCursor):
             return datetime.min
         else:
             earliest = min(self._file_to_datetime_history.values())
-            earliest_dt = datetime.strptime(earliest, self.DATE_TIME_FORMAT)
+            earliest_dt = ab_datetime_parse(earliest, formats=[self.DATE_TIME_FORMAT]).to_datetime()
             if self._is_history_full():
                 time_window = datetime.now() - self._time_window_if_history_is_full
                 earliest_dt = min(earliest_dt, time_window)

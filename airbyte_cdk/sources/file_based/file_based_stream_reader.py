@@ -19,6 +19,7 @@ from airbyte_cdk.sources.file_based.config.validate_config_transfer_modes import
     use_file_transfer,
 )
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_parse
 
 
 class FileReadMode(Enum):
@@ -95,7 +96,7 @@ class AbstractFileBasedStreamReader(ABC):
         Utility method for filtering files based on globs.
         """
         start_date = (
-            datetime.strptime(self.config.start_date, self.DATE_TIME_FORMAT)
+            ab_datetime_parse(self.config.start_date, formats=[self.DATE_TIME_FORMAT]).to_datetime()
             if self.config and self.config.start_date
             else None
         )

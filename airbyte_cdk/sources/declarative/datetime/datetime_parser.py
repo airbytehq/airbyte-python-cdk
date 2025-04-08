@@ -5,6 +5,8 @@
 import datetime
 from typing import Union
 
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_format, ab_datetime_parse
+
 
 class DatetimeParser:
     """
@@ -19,47 +21,82 @@ class DatetimeParser:
     _UNIX_EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
 
     def parse(self, date: Union[str, int], format: str) -> datetime.datetime:
-        # "%s" is a valid (but unreliable) directive for formatting, but not for parsing
-        # It is defined as
-        # The number of seconds since the Epoch, 1970-01-01 00:00:00+0000 (UTC). https://man7.org/linux/man-pages/man3/strptime.3.html
-        #
-        # The recommended way to parse a date from its timestamp representation is to use datetime.fromtimestamp
-        # See https://stackoverflow.com/a/4974930
+        """
+        Parse a datetime string according to a specified format.
+
+        Args:
+            date: String to parse
+            format: Format string as described in https://docs.python.org/3/library/datetime.html#strftime-and-strptime-behavior
+                with the following extensions:
+                - %s: Unix timestamp
+                - %s_as_float: Unix timestamp as float
+                - %epoch_microseconds: Microseconds since epoch
+                - %ms: Milliseconds since epoch
+                - %_ms: Custom millisecond format
+
+        Returns:
+            The parsed datetime
+        """
+        # Special format handling
         if format == "%s":
             return datetime.datetime.fromtimestamp(int(date), tz=datetime.timezone.utc)
         elif format == "%s_as_float":
             return datetime.datetime.fromtimestamp(float(date), tz=datetime.timezone.utc)
         elif format == "%epoch_microseconds":
-            return self._UNIX_EPOCH + datetime.timedelta(microseconds=int(date))
+            epoch = datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
+            return epoch + datetime.timedelta(microseconds=int(date))
         elif format == "%ms":
-            return self._UNIX_EPOCH + datetime.timedelta(milliseconds=int(date))
+            epoch = datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
+            return epoch + datetime.timedelta(milliseconds=int(date))
         elif "%_ms" in format:
+            # Convert custom millisecond format to standard format
             format = format.replace("%_ms", "%f")
-        parsed_datetime = datetime.datetime.strptime(str(date), format)
-        if self._is_naive(parsed_datetime):
+            
+        # For standard formats, use ab_datetime_parse with the specific format
+        try:
+            result = ab_datetime_parse(date, formats=[format], disallow_other_formats=True)
+            return result.to_datetime()  # Convert AirbyteDateTime to standard datetime
+        except ValueError:
+            # Fallback to original implementation for backward compatibility
+            parsed_datetime = datetime.datetime.strptime(str(date), format)
+            if self._is_naive(parsed_datetime):
+                return parsed_datetime.replace(tzinfo=datetime.timezone.utc)
             return parsed_datetime.replace(tzinfo=datetime.timezone.utc)
-        return parsed_datetime
+        return parsed_datetime.replace(tzinfo=datetime.timezone.utc)
 
     def format(self, dt: datetime.datetime, format: str) -> str:
-        # strftime("%s") is unreliable because it ignores the time zone information and assumes the time zone of the system it's running on
-        # It's safer to use the timestamp() method than the %s directive
-        # See https://stackoverflow.com/a/4974930
+        """
+        Format a datetime object according to a specified format.
+
+        Args:
+            dt: The datetime object to format
+            format: Format string as described in https://docs.python.org/3/library/datetime.html#strftime-and-strptime-behavior
+                with the following extensions:
+                - %s: Unix timestamp
+                - %s_as_float: Unix timestamp as float
+                - %epoch_microseconds: Microseconds since epoch
+                - %ms: Milliseconds since epoch
+                - %_ms: Custom millisecond format
+
+        Returns:
+            The formatted string
+        """
+        # Handle special formats
         if format == "%s":
             return str(int(dt.timestamp()))
-        if format == "%s_as_float":
+        elif format == "%s_as_float":
             return str(float(dt.timestamp()))
-        if format == "%epoch_microseconds":
+        elif format == "%epoch_microseconds":
             return str(int(dt.timestamp() * 1_000_000))
-        if format == "%ms":
-            # timstamp() returns a float representing the number of seconds since the unix epoch
+        elif format == "%ms":
             return str(int(dt.timestamp() * 1000))
-        if "%_ms" in format:
+        elif "%_ms" in format:
             _format = format.replace("%_ms", "%f")
             milliseconds = int(dt.microsecond / 1000)
-            formatted_dt = dt.strftime(_format).replace(dt.strftime("%f"), "%03d" % milliseconds)
-            return formatted_dt
-        else:
-            return dt.strftime(format)
+            return dt.strftime(_format).replace(dt.strftime("%f"), "%03d" % milliseconds)
+
+        # For standard formats, use ab_datetime_format
+        return ab_datetime_format(dt, format)
 
     def _is_naive(self, dt: datetime.datetime) -> bool:
         return dt.tzinfo is None or dt.tzinfo.utcoffset(dt) is None

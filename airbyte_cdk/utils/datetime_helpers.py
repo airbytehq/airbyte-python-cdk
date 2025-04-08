@@ -487,7 +487,7 @@ def ab_datetime_format(
         '2023-03-14T15:09:26+00:00'
     """
     if isinstance(dt, AirbyteDateTime):
-        return str(dt)
+        return dt.strftime(format) if format else str(dt)
 
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)

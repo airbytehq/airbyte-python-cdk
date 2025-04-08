@@ -13,6 +13,11 @@ from dateutil import parser
 from isodate import parse_duration
 
 from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser
+from airbyte_cdk.utils.datetime_helpers import (
+    ab_datetime_format,
+    ab_datetime_now,
+    ab_datetime_parse,
+)
 
 """
 This file contains macros that can be evaluated by a `JinjaInterpolation` object
@@ -26,7 +31,7 @@ def now_utc() -> datetime.datetime:
     Usage:
     `"{{ now_utc() }}"`
     """
-    return datetime.datetime.now(datetime.timezone.utc)
+    return ab_datetime_now().to_datetime()
 
 
 def today_utc() -> datetime.date:
@@ -82,12 +87,10 @@ def str_to_datetime(s: str) -> datetime.datetime:
     :param s: string to parse as datetime
     :return: datetime object in UTC timezone
     """
-
-    parsed_date = parser.isoparse(s)
-    if not parsed_date.tzinfo:
-        # Assume UTC if the input does not contain a timezone
-        parsed_date = parsed_date.replace(tzinfo=pytz.utc)
-    return parsed_date.astimezone(pytz.utc)
+    dt = ab_datetime_parse(s).to_datetime()
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=pytz.utc)
+    return dt.astimezone(pytz.utc)
 
 
 def max(*args: typing.Any) -> typing.Any:
@@ -140,9 +143,10 @@ def day_delta(num_days: int, format: str = "%Y-%m-%dT%H:%M:%S.%f%z") -> str:
     :param num_days: number of days to add to current date time
     :return: datetime formatted as RFC3339
     """
-    return (
-        datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=num_days)
-    ).strftime(format)
+    return ab_datetime_format(
+        ab_datetime_now().to_datetime() + datetime.timedelta(days=num_days),
+        format
+    )
 
 
 def duration(datestring: str) -> Union[datetime.timedelta, isodate.Duration]:
@@ -169,17 +173,17 @@ def format_datetime(
     https://github.com/python/cpython/issues/56959
     """
     if isinstance(dt, datetime.datetime):
-        return dt.strftime(format)
+        return ab_datetime_format(dt, format)
 
     if isinstance(dt, int):
-        dt_datetime = DatetimeParser().parse(dt, input_format if input_format else "%s")
+        dt_datetime = ab_datetime_parse(dt, formats=[input_format] if input_format else None).to_datetime()
     else:
         dt_datetime = (
-            datetime.datetime.strptime(dt, input_format) if input_format else str_to_datetime(dt)
+            ab_datetime_parse(dt, formats=[input_format] if input_format else None).to_datetime() if input_format else str_to_datetime(dt)
         )
     if dt_datetime.tzinfo is None:
         dt_datetime = dt_datetime.replace(tzinfo=pytz.utc)
-    return DatetimeParser().format(dt=dt_datetime, format=format)
+    return ab_datetime_format(dt_datetime, format)
 
 
 _macros_list = [
