@@ -91,6 +91,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         debug: bool = False,
         emit_connector_builder_messages: bool = False,
         component_factory: Optional[ModelToComponentFactory] = None,
+        post_resolve_manifest: Optional[bool] = False,
     ) -> None:
         """
         Args:
@@ -128,6 +129,13 @@ class ManifestDeclarativeSource(DeclarativeSource):
                 propagated_source_config,
                 self._declarative_component_schema,
             ).normalize()
+
+            # The manifest is now in a format that the Connector Builder UI can use.
+            # however, the local tests may depend on the completely resolved manifest.
+            if post_resolve_manifest:
+                propagated_source_config = ManifestReferenceResolver().preprocess_manifest(
+                    propagated_source_config
+                )
 
         self._source_config = propagated_source_config
         self._debug = debug
