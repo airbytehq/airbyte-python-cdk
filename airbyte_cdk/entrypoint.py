@@ -93,7 +93,7 @@ class AirbyteEntrypoint(object):
         )
         required_discover_parser = discover_parser.add_argument_group("required named arguments")
         required_discover_parser.add_argument(
-            "--config", type=str, required=True, help="path to the json configuration file"
+            "--config", type=str, required=False, help="path to the json configuration file"
         )
 
         # read
@@ -147,33 +147,44 @@ class AirbyteEntrypoint(object):
                     ]
                     yield self.airbyte_message_to_string(message)
                 else:
-                    raw_config = self.source.read_config(parsed_args.config)
-                    config = self.source.configure(raw_config, temp_dir)
-
-                    yield from [
-                        self.airbyte_message_to_string(queued_message)
-                        for queued_message in self._emit_queued_messages(self.source)
-                    ]
-                    if cmd == "check":
+                    if cmd == "discover" and not parsed_args.config and not self.source.check_config_against_spec:
+                        empty_config = {}
+                        yield from [
+                            self.airbyte_message_to_string(queued_message)
+                            for queued_message in self._emit_queued_messages(self.source)
+                        ]
                         yield from map(
                             AirbyteEntrypoint.airbyte_message_to_string,
-                            self.check(source_spec, config),
-                        )
-                    elif cmd == "discover":
-                        yield from map(
-                            AirbyteEntrypoint.airbyte_message_to_string,
-                            self.discover(source_spec, config),
-                        )
-                    elif cmd == "read":
-                        config_catalog = self.source.read_catalog(parsed_args.catalog)
-                        state = self.source.read_state(parsed_args.state)
-
-                        yield from map(
-                            AirbyteEntrypoint.airbyte_message_to_string,
-                            self.read(source_spec, config, config_catalog, state),
+                            self.discover(source_spec, empty_config),
                         )
                     else:
-                        raise Exception("Unexpected command " + cmd)
+                        raw_config = self.source.read_config(parsed_args.config)
+                        config = self.source.configure(raw_config, temp_dir)
+
+                        yield from [
+                            self.airbyte_message_to_string(queued_message)
+                            for queued_message in self._emit_queued_messages(self.source)
+                        ]
+                        if cmd == "check":
+                            yield from map(
+                                AirbyteEntrypoint.airbyte_message_to_string,
+                                self.check(source_spec, config),
+                            )
+                        elif cmd == "discover":
+                            yield from map(
+                                AirbyteEntrypoint.airbyte_message_to_string,
+                                self.discover(source_spec, config),
+                            )
+                        elif cmd == "read":
+                            config_catalog = self.source.read_catalog(parsed_args.catalog)
+                            state = self.source.read_state(parsed_args.state)
+
+                            yield from map(
+                                AirbyteEntrypoint.airbyte_message_to_string,
+                                self.read(source_spec, config, config_catalog, state),
+                            )
+                        else:
+                            raise Exception("Unexpected command " + cmd)
         finally:
             yield from [
                 self.airbyte_message_to_string(queued_message)
