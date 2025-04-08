@@ -606,7 +606,6 @@ def test_resolve_manifest(valid_resolve_manifest_config_file):
                     },
                     "requester": {
                         "type": "HttpRequester",
-                        "path": "/v3/marketing/lists",
                         "authenticator": {
                             "type": "BearerAuthenticator",
                             "api_token": "{{ config.apikey }}",
@@ -618,7 +617,7 @@ def test_resolve_manifest(valid_resolve_manifest_config_file):
                         "request_parameters": {"a_param": "10"},
                         "name": _stream_name,
                         "primary_key": _stream_primary_key,
-                        "url_base": _stream_url_base,
+                        "url": _stream_url_base + "/v3/marketing/lists",
                         "$parameters": _stream_options,
                     },
                     "partition_router": {
@@ -1493,7 +1492,6 @@ def test_full_resolve_manifest(valid_resolve_manifest_config_file):
                         },
                     },
                     "requester": {
-                        "path": "/v3/marketing/lists",
                         "authenticator": {
                             "type": "BearerAuthenticator",
                             "api_token": "{{ config.apikey }}",
@@ -1510,7 +1508,7 @@ def test_full_resolve_manifest(valid_resolve_manifest_config_file):
                         "type": "HttpRequester",
                         "name": "stream_with_custom_requester",
                         "primary_key": "id",
-                        "url_base": "https://10.0.27.27/api/v1/",
+                        "url": "https://10.0.27.27/api/v1/v3/marketing/lists",
                         "$parameters": {
                             "name": "stream_with_custom_requester",
                             "primary_key": "id",

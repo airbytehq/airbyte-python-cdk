@@ -75,6 +75,9 @@ async def main():
                     "--set-default-enum-member",
                     "--use-double-quotes",
                     "--remove-special-field-name-prefix",
+                    # account the `deprecated` flag provided for the field.
+                    "--field-extra-keys",
+                    "deprecated",
                 ],
                 use_entrypoint=True,
             )
