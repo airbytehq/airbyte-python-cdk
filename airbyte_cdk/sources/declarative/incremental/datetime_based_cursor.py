@@ -310,9 +310,13 @@ class DatetimeBasedCursor(DeclarativeCursor):
     def parse_date(self, date: str) -> datetime.datetime:
         try:
             # Try each format in the list, falling back to the default format
-            return ab_datetime_parse(date, formats=self.cursor_datetime_formats + [self.datetime_format]).to_datetime()
+            return ab_datetime_parse(
+                date, formats=self.cursor_datetime_formats + [self.datetime_format]
+            ).to_datetime()
         except ValueError:
-            raise ValueError(f"No format in {self.cursor_datetime_formats + [self.datetime_format]} matching {date}")
+            raise ValueError(
+                f"No format in {self.cursor_datetime_formats + [self.datetime_format]} matching {date}"
+            )
 
     @classmethod
     def _parse_timedelta(cls, time_str: Optional[str]) -> Union[datetime.timedelta, Duration]:

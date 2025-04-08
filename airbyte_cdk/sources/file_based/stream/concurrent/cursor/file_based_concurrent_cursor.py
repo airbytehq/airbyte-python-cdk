@@ -111,7 +111,9 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
         )
         cursor_str = min(prev_cursor_str, earliest_file_cursor_value)
         cursor_dt, cursor_uri = cursor_str.split("_", 1)
-        return ab_datetime_parse(cursor_dt, formats=[self.DATE_TIME_FORMAT]).to_datetime(), cursor_uri
+        return ab_datetime_parse(
+            cursor_dt, formats=[self.DATE_TIME_FORMAT]
+        ).to_datetime(), cursor_uri
 
     def _get_cursor_key_from_file(self, file: Optional[RemoteFile]) -> str:
         if file:
@@ -126,7 +128,9 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
                 )
                 return RemoteFile(
                     uri=filename,
-                    last_modified=ab_datetime_parse(last_modified, formats=[self.DATE_TIME_FORMAT]).to_datetime(),
+                    last_modified=ab_datetime_parse(
+                        last_modified, formats=[self.DATE_TIME_FORMAT]
+                    ).to_datetime(),
                 )
             else:
                 return None
@@ -211,7 +215,9 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
                 )
                 return RemoteFile(
                     uri=filename,
-                    last_modified=ab_datetime_parse(last_modified, formats=[self.DATE_TIME_FORMAT]).to_datetime(),
+                    last_modified=ab_datetime_parse(
+                        last_modified, formats=[self.DATE_TIME_FORMAT]
+                    ).to_datetime(),
                 )
             else:
                 return None

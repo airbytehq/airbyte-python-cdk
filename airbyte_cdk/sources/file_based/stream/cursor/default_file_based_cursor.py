@@ -133,7 +133,10 @@ class DefaultFileBasedCursor(AbstractFileBasedCursor):
                 self._file_to_datetime_history.items(), key=lambda f: (f[1], f[0])
             )
             return RemoteFile(
-                uri=filename, last_modified=ab_datetime_parse(last_modified, formats=[self.DATE_TIME_FORMAT]).to_datetime()
+                uri=filename,
+                last_modified=ab_datetime_parse(
+                    last_modified, formats=[self.DATE_TIME_FORMAT]
+                ).to_datetime(),
             )
         else:
             return None

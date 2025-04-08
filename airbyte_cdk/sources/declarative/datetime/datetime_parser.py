@@ -51,7 +51,7 @@ class DatetimeParser:
         elif "%_ms" in format:
             # Convert custom millisecond format to standard format
             format = format.replace("%_ms", "%f")
-            
+
         # For standard formats, use ab_datetime_parse with the specific format
         try:
             result = ab_datetime_parse(date, formats=[format], disallow_other_formats=True)

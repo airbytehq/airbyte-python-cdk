@@ -144,8 +144,7 @@ def day_delta(num_days: int, format: str = "%Y-%m-%dT%H:%M:%S.%f%z") -> str:
     :return: datetime formatted as RFC3339
     """
     return ab_datetime_format(
-        ab_datetime_now().to_datetime() + datetime.timedelta(days=num_days),
-        format
+        ab_datetime_now().to_datetime() + datetime.timedelta(days=num_days), format
     )
 
 
@@ -176,10 +175,14 @@ def format_datetime(
         return ab_datetime_format(dt, format)
 
     if isinstance(dt, int):
-        dt_datetime = ab_datetime_parse(dt, formats=[input_format] if input_format else None).to_datetime()
+        dt_datetime = ab_datetime_parse(
+            dt, formats=[input_format] if input_format else None
+        ).to_datetime()
     else:
         dt_datetime = (
-            ab_datetime_parse(dt, formats=[input_format] if input_format else None).to_datetime() if input_format else str_to_datetime(dt)
+            ab_datetime_parse(dt, formats=[input_format] if input_format else None).to_datetime()
+            if input_format
+            else str_to_datetime(dt)
         )
     if dt_datetime.tzinfo is None:
         dt_datetime = dt_datetime.replace(tzinfo=pytz.utc)
