@@ -324,3 +324,16 @@ class AbstractSource(Source, ABC):
         on the first error seen and emit a single error trace message for that stream.
         """
         return False
+        
+    @property
+    def check_config_during_discover(self) -> bool:
+        """
+        Determines whether config validation should be skipped during discovery.
+        
+        By default, config validation is not skipped during discovery. This can be overridden
+        by sources that can provide catalog information without requiring authentication.
+        
+        Returns:
+            bool: True if config validation should be skipped during discovery, False otherwise.
+        """
+        return False

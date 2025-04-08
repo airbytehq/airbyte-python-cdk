@@ -241,10 +241,7 @@ class AirbyteEntrypoint(object):
         self, source_spec: ConnectorSpecification, config: TConfig
     ) -> Iterable[AirbyteMessage]:
         self.set_up_secret_filter(config, source_spec.connectionSpecification)
-        if (
-            not hasattr(self.source, "check_config_during_discover")
-            or not self.source.check_config_during_discover
-        ):
+        if not self.source.check_config_during_discover:
             self.validate_connection(source_spec, config)
         catalog = self.source.discover(self.logger, config)
 
