@@ -49,7 +49,7 @@ class DynamicStreamCheckConfig(BaseModel):
     )
     stream_count: Optional[int] = Field(
         0,
-        description="Numbers of the streams to try reading from when running a check operation.",
+        description="The number of streams to attempt reading from during a check operation. If `stream_count` exceeds the total number of available streams, the minimum of the two values will be used.",
         title="Stream Count",
     )
 
@@ -2113,7 +2113,7 @@ class HttpRequester(BaseModel):
     type: Literal["HttpRequester"]
     url_base: str = Field(
         ...,
-        description="Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.",
+        description="The Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.",
         examples=[
             "https://connect.squareup.com/v2",
             "{{ config['base_url'] or 'https://app.posthog.com'}}/api",
@@ -2124,7 +2124,7 @@ class HttpRequester(BaseModel):
     )
     path: Optional[str] = Field(
         None,
-        description="Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.",
+        description="The Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.",
         examples=[
             "/products",
             "/quotes/{{ stream_partition['id'] }}/quote_line_groups",

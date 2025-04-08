@@ -84,9 +84,12 @@ class ManifestNormalizer:
     ) -> None:
         self._resolved_manifest = resolved_manifest
         self._declarative_schema = declarative_schema
+        self._normalized_manifest: ManifestType = copy.deepcopy(self._resolved_manifest)
         # get the tags marked as `sharable` in the component schema
         self._sharable_tags = _get_sharable_schema_tags(self._declarative_schema)
-        self._normalized_manifest: ManifestType = copy.deepcopy(self._resolved_manifest)
+
+    def to_json_str(self) -> str:
+        return json.dumps(self._normalized_manifest, indent=2)
 
     def normalize(self) -> ManifestType:
         """
@@ -193,7 +196,7 @@ class ManifestNormalizer:
                 self._add_to_shared_definitions(type_key, key, value)
 
             # Replace occurrences with references
-            for path, parent_obj, value in occurrences:
+            for _, parent_obj, value in occurrences:
                 if is_shared_def:
                     if value == self._get_shared_definition_value(type_key, key):
                         parent_obj[key] = self._create_shared_definition_ref(type_key, key)
@@ -235,7 +238,7 @@ class ManifestNormalizer:
         """
 
         # create hash for each duplicate observed
-        value_to_hash = value if key is None else {key: value}
+        value_to_hash = {key: value} if key is not None else value
         duplicates[self._hash_object(value_to_hash)].append((current_path, obj, value))
 
     def _add_to_shared_definitions(

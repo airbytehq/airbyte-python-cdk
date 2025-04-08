@@ -30,7 +30,6 @@ def test_macros_export(test_name, fn_name, found_in_macros):
         assert fn_name not in macros
 
 
-@freeze_time("2022-01-01")
 @pytest.mark.parametrize(
     "input_value, format, input_format, expected_output",
     [

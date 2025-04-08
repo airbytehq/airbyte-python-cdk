@@ -1604,7 +1604,6 @@ definitions:
         title: URL Base
         description: The base URL (scheme and host, e.g. "https://api.example.com") to match.
         type: string
-        sharable: True
       url_path_pattern:
         title: URL Path Pattern
         description: A regular expression pattern to match the URL path.
@@ -1846,8 +1845,9 @@ definitions:
         type: string
         enum: [HttpRequester]
       url_base:
+        sharable: true
         title: API Base URL
-        description: Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
+        description: The Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
         type: string
         interpolation_context:
           - config
@@ -1863,10 +1863,9 @@ definitions:
           - "{{ config['base_url'] or 'https://app.posthog.com'}}/api"
           - "https://connect.squareup.com/v2/quotes/{{ stream_partition['id'] }}/quote_line_groups"
           - "https://example.com/api/v1/resource/{{ next_page_token['id'] }}"
-        sharable: True
       path:
         title: URL Path
-        description: Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
+        description: The Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
         type: string
         interpolation_context:
           - config
@@ -1882,6 +1881,7 @@ definitions:
           - "/quotes/{{ stream_partition['id'] }}/quote_line_groups"
           - "/trades/{{ config['symbol_id'] }}/history"
       authenticator:
+        sharable: true
         title: Authenticator
         description: Authentication method to use for requests sent to the API.
         anyOf:
@@ -1895,7 +1895,6 @@ definitions:
           - "$ref": "#/definitions/SessionTokenAuthenticator"
           - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
           - "$ref": "#/definitions/SelectiveAuthenticator"
-        sharable: True
       error_handler:
         title: Error Handler
         description: Error handler component that defines how to handle errors.

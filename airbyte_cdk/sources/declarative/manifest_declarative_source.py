@@ -29,7 +29,9 @@ from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DeclarativeStream as DeclarativeStreamModel,
 )
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import Spec as SpecModel
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    Spec as SpecModel,
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     StateDelegatingStream as StateDelegatingStreamModel,
 )
@@ -89,7 +91,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         debug: bool = False,
         emit_connector_builder_messages: bool = False,
         component_factory: Optional[ModelToComponentFactory] = None,
-    ):
+    ) -> None:
         """
         Args:
             config: The provided config dict.
@@ -109,18 +111,24 @@ class ManifestDeclarativeSource(DeclarativeSource):
         # If custom components are needed, locate and/or register them.
         self.components_module: ModuleType | None = get_registered_components_module(config=config)
 
+        # resolve all `$ref` references in the manifest
         resolved_source_config = ManifestReferenceResolver().preprocess_manifest(manifest)
-
-        if emit_connector_builder_messages:
-            # reduce commonalities in the manifest after the references have been resolved,
-            # used mostly for Connector Builder use cases.
-            resolved_source_config = ManifestNormalizer(
-                resolved_source_config, self._declarative_component_schema
-            ).normalize()
-
+        # resolve all components in the manifest
         propagated_source_config = ManifestComponentTransformer().propagate_types_and_parameters(
             "", resolved_source_config, {}
         )
+
+        if emit_connector_builder_messages:
+            # Connector Builder Ui rendering requires the manifest to be in a specific format.
+            # 1) references have been resolved
+            # 2) deprecated fields have been migrated
+            # 3) the commonly used definitions are extracted to the `definitions.shared.*`
+            # 4) ! the normalized manifest could be validated after the additional UI post-processing.
+            propagated_source_config = ManifestNormalizer(
+                propagated_source_config,
+                self._declarative_component_schema,
+            ).normalize()
+
         self._source_config = propagated_source_config
         self._debug = debug
         self._emit_connector_builder_messages = emit_connector_builder_messages
@@ -151,7 +159,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
     @property
     def dynamic_streams(self) -> List[Dict[str, Any]]:
         return self._dynamic_stream_configs(
-            manifest=self._source_config, config=self._config, with_dynamic_stream_name=True
+            manifest=self._source_config,
+            config=self._config,
+            with_dynamic_stream_name=True,
         )
 
     @property
@@ -174,7 +184,10 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
     def streams(self, config: Mapping[str, Any]) -> List[Stream]:
         self._emit_manifest_debug_message(
-            extra_args={"source_name": self.name, "parsed_config": json.dumps(self._source_config)}
+            extra_args={
+                "source_name": self.name,
+                "parsed_config": json.dumps(self._source_config),
+            }
         )
 
         stream_configs = self._stream_configs(self._source_config) + self._dynamic_stream_configs(
@@ -187,9 +200,11 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
         source_streams = [
             self._constructor.create_component(
-                StateDelegatingStreamModel
-                if stream_config.get("type") == StateDelegatingStreamModel.__name__
-                else DeclarativeStreamModel,
+                (
+                    StateDelegatingStreamModel
+                    if stream_config.get("type") == StateDelegatingStreamModel.__name__
+                    else DeclarativeStreamModel
+                ),
                 stream_config,
                 config,
                 emit_connector_builder_messages=self._emit_connector_builder_messages,
@@ -205,7 +220,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
     ) -> List[Dict[str, Any]]:
         parent_streams = set()
 
-        def update_with_cache_parent_configs(parent_configs: list[dict[str, Any]]) -> None:
+        def update_with_cache_parent_configs(
+            parent_configs: list[dict[str, Any]],
+        ) -> None:
             for parent_config in parent_configs:
                 parent_streams.add(parent_config["stream"]["name"])
                 if parent_config["stream"]["type"] == "StateDelegatingStream":
@@ -260,7 +277,10 @@ class ManifestDeclarativeSource(DeclarativeSource):
         """
         self._configure_logger_level(logger)
         self._emit_manifest_debug_message(
-            extra_args={"source_name": self.name, "parsed_config": json.dumps(self._source_config)}
+            extra_args={
+                "source_name": self.name,
+                "parsed_config": json.dumps(self._source_config),
+            }
         )
 
         spec = self._source_config.get("spec")
@@ -404,7 +424,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
             # Create a resolver for dynamic components based on type
             components_resolver = self._constructor.create_component(
-                COMPONENTS_RESOLVER_TYPE_MAPPING[resolver_type], components_resolver_config, config
+                COMPONENTS_RESOLVER_TYPE_MAPPING[resolver_type],
+                components_resolver_config,
+                config,
             )
 
             stream_template_config = dynamic_definition["stream_template"]
