@@ -8,7 +8,7 @@ from datetime import datetime
 from enum import Enum
 from io import IOBase
 from os import makedirs, path
-from typing import Any, Callable, Iterable, List, Optional, Set, Tuple, MutableMapping
+from typing import Any, Callable, Iterable, List, MutableMapping, Optional, Set, Tuple
 
 from wcmatch.glob import GLOBSTAR, globmatch
 
@@ -176,7 +176,12 @@ class AbstractFileBasedStreamReader(ABC):
         """
         ...
 
-    def _get_file_transfer_paths(self, file: RemoteFile, local_directory: str, parse_file_path_from_uri: Optional[Callable] = None) -> MutableMapping[str, Any]:
+    def _get_file_transfer_paths(
+        self,
+        file: RemoteFile,
+        local_directory: str,
+        parse_file_path_from_uri: Optional[Callable[[str], str]] = None,
+    ) -> MutableMapping[str, Any]:
         preserve_directory_structure = self.preserve_directory_structure()
         if not parse_file_path_from_uri:
             file_path = file.uri
@@ -200,6 +205,5 @@ class AbstractFileBasedStreamReader(ABC):
             self.FILE_NAME: file_name,
             self.FILE_FOLDER: file_folder,
             self.SOURCE_FILE_URI: file.uri,
-
         }
         return file_paths

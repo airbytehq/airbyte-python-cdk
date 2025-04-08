@@ -441,11 +441,11 @@ def test_preserve_sub_directories_scenarios(
     )
     reader = TestStreamReader()
     reader.config = TestSpec(**config)
-    file_paths = reader._get_file_transfer_paths(
-        remote_file, "/tmp/transfer-files/"
-    )
+    file_paths = reader._get_file_transfer_paths(remote_file, "/tmp/transfer-files/")
 
-    assert file_paths[AbstractFileBasedStreamReader.FILE_RELATIVE_PATH] == expected_file_relative_path
+    assert (
+        file_paths[AbstractFileBasedStreamReader.FILE_RELATIVE_PATH] == expected_file_relative_path
+    )
     assert file_paths[AbstractFileBasedStreamReader.LOCAL_FILE_PATH] == expected_local_file_path
     assert file_paths[AbstractFileBasedStreamReader.SOURCE_FILE_URI] == source_file
     assert file_paths[AbstractFileBasedStreamReader.FILE_NAME] == path.basename(source_file)
