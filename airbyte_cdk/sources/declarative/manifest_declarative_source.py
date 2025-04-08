@@ -109,7 +109,8 @@ class ManifestDeclarativeSource(DeclarativeSource):
         self._config = config or {}
         self._validate_source()
 
-        self.check_config_against_spec = not self._uses_dynamic_schema_loader()
+        self.check_config_during_discover = self._uses_dynamic_schema_loader()
+        self.check_config_against_spec = True
 
     @property
     def resolved_manifest(self) -> Mapping[str, Any]:

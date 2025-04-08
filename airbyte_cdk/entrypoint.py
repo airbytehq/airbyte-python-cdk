@@ -149,7 +149,8 @@ class AirbyteEntrypoint(object):
                 elif (
                     cmd == "discover"
                     and not parsed_args.config
-                    and not self.source.check_config_against_spec
+                    and hasattr(self.source, "check_config_during_discover")
+                    and self.source.check_config_during_discover
                 ):
                     # Connector supports unprivileged discover
                     empty_config: dict[str, Any] = {}
@@ -240,7 +241,7 @@ class AirbyteEntrypoint(object):
         self, source_spec: ConnectorSpecification, config: TConfig
     ) -> Iterable[AirbyteMessage]:
         self.set_up_secret_filter(config, source_spec.connectionSpecification)
-        if self.source.check_config_against_spec:
+        if not hasattr(self.source, "check_config_during_discover") or not self.source.check_config_during_discover:
             self.validate_connection(source_spec, config)
         catalog = self.source.discover(self.logger, config)
 

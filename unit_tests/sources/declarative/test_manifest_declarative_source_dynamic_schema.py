@@ -10,8 +10,8 @@ from airbyte_cdk.sources.declarative.manifest_declarative_source import Manifest
 from airbyte_cdk.sources.utils.schema_helpers import check_config_against_spec_or_exit
 
 
-def test_check_config_against_spec_with_dynamic_schema_loader():
-    """Test that check_config_against_spec is False when DynamicSchemaLoader is used."""
+def test_check_config_during_discover_with_dynamic_schema_loader():
+    """Test that check_config_during_discover is True when DynamicSchemaLoader is used."""
     source_config = {
         "type": "DeclarativeSource",
         "check": {"type": "CheckStream"},
@@ -41,11 +41,12 @@ def test_check_config_against_spec_with_dynamic_schema_loader():
 
     source = ManifestDeclarativeSource(source_config=source_config)
 
-    assert source.check_config_against_spec is False
+    assert source.check_config_during_discover is True
+    assert source.check_config_against_spec is True
 
 
-def test_check_config_against_spec_without_dynamic_schema_loader():
-    """Test that check_config_against_spec is True when DynamicSchemaLoader is not used."""
+def test_check_config_during_discover_without_dynamic_schema_loader():
+    """Test that check_config_during_discover is False when DynamicSchemaLoader is not used."""
     source_config = {
         "type": "DeclarativeSource",
         "check": {"type": "CheckStream"},
@@ -64,6 +65,9 @@ def test_check_config_against_spec_without_dynamic_schema_loader():
     }
 
     source = ManifestDeclarativeSource(source_config=source_config)
+    
+    assert source.check_config_during_discover is False
+    assert source.check_config_against_spec is True
 
 
 @patch(
@@ -109,7 +113,8 @@ def test_discover_with_dynamic_schema_loader_no_config(mock_streams):
 
     source = ManifestDeclarativeSource(source_config=source_config)
 
-    assert source.check_config_against_spec is False
+    assert source.check_config_during_discover is True
+    assert source.check_config_against_spec is True
 
     logger = MagicMock()
     catalog = source.discover(logger, {})
@@ -152,6 +157,7 @@ def test_discover_without_dynamic_schema_loader_no_config(mock_streams):
 
     source = ManifestDeclarativeSource(source_config=source_config)
 
+    assert source.check_config_during_discover is False
     assert source.check_config_against_spec is True
 
     logger = MagicMock()
@@ -161,4 +167,5 @@ def test_discover_without_dynamic_schema_loader_no_config(mock_streams):
     assert len(catalog.streams) == 1
     assert catalog.streams[0].name == "test_static_stream"
 
+    assert source.check_config_during_discover is False
     assert source.check_config_against_spec is True
