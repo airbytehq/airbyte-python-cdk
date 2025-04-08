@@ -151,6 +151,7 @@ class AirbyteEntrypoint(object):
                     and not parsed_args.config
                     and not self.source.check_config_against_spec
                 ):
+                    # Connector supports unprivileged discover
                     empty_config: dict[str, Any] = {}
                     yield from (
                         self.airbyte_message_to_string(queued_message)
