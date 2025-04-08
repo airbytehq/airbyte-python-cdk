@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
 import json
@@ -29,6 +29,14 @@ from airbyte_cdk.sources.declarative.requesters.paginators import DefaultPaginat
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     CursorPaginationStrategy,
     PageIncrement,
+)
+from airbyte_cdk.sources.declarative.requesters.query_properties import (
+    PropertyChunking,
+    QueryProperties,
+)
+from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunking import (
+    GroupByKey,
+    PropertyLimitType,
 )
 from airbyte_cdk.sources.declarative.requesters.request_option import RequestOptionType
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
@@ -992,7 +1000,7 @@ def test_retriever_is_stateless():
                 {"id": "0", "first_name": "eric", "last_name": "tao"},
                 {"id": "1", "first_name": "rishi", "last_name": "ramdani"},
                 {"id": "2", "first_name": "harper", "last_name": "stern"},
-                {"id": "3", "first_name": "erobertric", "last_name": "spearing"},
+                {"id": "3", "first_name": "robert", "last_name": "spearing"},
                 {"id": "4", "first_name": "yasmin", "last_name": "kara-hanani"},
             ]
         }
@@ -1092,3 +1100,503 @@ def test_retriever_is_stateless():
     assert actual_records[5] == Record(
         data={"id": "5", "first_name": "daria", "last_name": "greenock"}, stream_name="employees"
     )
+
+
+def test_simple_retriever_with_additional_query_properties():
+    stream_name = "stream_name"
+    expected_records = [
+        Record(
+            {
+                "id": "a",
+                "first_name": "gentarou",
+                "last_name": "hongou",
+                "nonary": "second",
+                "bracelet": "1",
+            },
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            {
+                "id": "b",
+                "first_name": "clover",
+                "last_name": "field",
+                "nonary": "ambidex",
+                "bracelet": "green",
+            },
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            {
+                "id": "c",
+                "first_name": "akane",
+                "last_name": "kurashiki",
+                "nonary": "second",
+                "bracelet": "6",
+            },
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            {
+                "id": "d",
+                "first_name": "sigma",
+                "last_name": "klim",
+                "nonary": "ambidex",
+                "bracelet": "red",
+            },
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            {
+                "id": "e",
+                "first_name": "light",
+                "last_name": "field",
+                "nonary": "second",
+                "bracelet": "2",
+            },
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+    ]
+
+    stream_slice = StreamSlice(cursor_slice={}, partition={})
+
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({"data": [record.data for record in expected_records]}).encode(
+        "utf-8"
+    )
+
+    requester = MagicMock()
+    requester.send_request.side_effect = [
+        response,
+        response,
+    ]
+
+    record_selector = MagicMock()
+    record_selector.select_records.side_effect = [
+        [
+            Record(
+                data={"id": "a", "first_name": "gentarou", "last_name": "hongou"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "b", "first_name": "clover", "last_name": "field"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "c", "first_name": "akane", "last_name": "kurashiki"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "d", "first_name": "sigma", "last_name": "klim"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "e", "first_name": "light", "last_name": "field"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+        ],
+        [
+            Record(
+                data={"id": "e", "nonary": "second", "bracelet": "2"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "d", "nonary": "ambidex", "bracelet": "red"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "c", "nonary": "second", "bracelet": "6"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "b", "nonary": "ambidex", "bracelet": "green"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "a", "nonary": "second", "bracelet": "1"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+        ],
+    ]
+
+    query_properties = QueryProperties(
+        property_list=["first_name", "last_name", "nonary", "bracelet"],
+        always_include_properties=[],
+        property_chunking=PropertyChunking(
+            property_limit_type=PropertyLimitType.property_count,
+            property_limit=2,
+            record_merge_strategy=GroupByKey(key="id", config=config, parameters={}),
+            config=config,
+            parameters={},
+        ),
+        config=config,
+        parameters={},
+    )
+
+    retriever = SimpleRetriever(
+        name=stream_name,
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        additional_query_properties=query_properties,
+        parameters={},
+        config={},
+    )
+
+    actual_records = [
+        r for r in retriever.read_records(records_schema={}, stream_slice=stream_slice)
+    ]
+
+    assert len(actual_records) == 5
+    assert actual_records == expected_records
+
+
+def test_simple_retriever_with_additional_query_properties_single_chunk():
+    stream_name = "stream_name"
+    expected_records = [
+        Record(
+            {
+                "id": "a",
+                "first_name": "gentarou",
+                "last_name": "hongou",
+                "nonary": "second",
+                "bracelet": "1",
+            },
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            {
+                "id": "b",
+                "first_name": "clover",
+                "last_name": "field",
+                "nonary": "ambidex",
+                "bracelet": "green",
+            },
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            {
+                "id": "c",
+                "first_name": "akane",
+                "last_name": "kurashiki",
+                "nonary": "second",
+                "bracelet": "6",
+            },
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            {
+                "id": "d",
+                "first_name": "sigma",
+                "last_name": "klim",
+                "nonary": "ambidex",
+                "bracelet": "red",
+            },
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            {
+                "id": "e",
+                "first_name": "light",
+                "last_name": "field",
+                "nonary": "second",
+                "bracelet": "2",
+            },
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            {"id": "f", "first_name": "carlos", "nonary": "decision", "bracelet": "c"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+    ]
+
+    stream_slice = StreamSlice(cursor_slice={}, partition={})
+
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({"data": [record.data for record in expected_records]}).encode(
+        "utf-8"
+    )
+
+    requester = MagicMock()
+    requester.send_request.side_effect = [
+        response,
+        response,
+    ]
+
+    record_selector = MagicMock()
+    record_selector.select_records.side_effect = [
+        [
+            Record(
+                data={
+                    "id": "a",
+                    "first_name": "gentarou",
+                    "last_name": "hongou",
+                    "nonary": "second",
+                    "bracelet": "1",
+                },
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={
+                    "id": "b",
+                    "first_name": "clover",
+                    "last_name": "field",
+                    "nonary": "ambidex",
+                    "bracelet": "green",
+                },
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={
+                    "id": "c",
+                    "first_name": "akane",
+                    "last_name": "kurashiki",
+                    "nonary": "second",
+                    "bracelet": "6",
+                },
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={
+                    "id": "d",
+                    "first_name": "sigma",
+                    "last_name": "klim",
+                    "nonary": "ambidex",
+                    "bracelet": "red",
+                },
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={
+                    "id": "e",
+                    "first_name": "light",
+                    "last_name": "field",
+                    "nonary": "second",
+                    "bracelet": "2",
+                },
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "f", "first_name": "carlos", "nonary": "decision", "bracelet": "c"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+        ]
+    ]
+
+    query_properties = QueryProperties(
+        property_list=["first_name", "last_name", "nonary", "bracelet"],
+        always_include_properties=[],
+        property_chunking=PropertyChunking(
+            property_limit_type=PropertyLimitType.property_count,
+            property_limit=10,
+            record_merge_strategy=GroupByKey(key="id", config=config, parameters={}),
+            config=config,
+            parameters={},
+        ),
+        config=config,
+        parameters={},
+    )
+
+    retriever = SimpleRetriever(
+        name=stream_name,
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        additional_query_properties=query_properties,
+        parameters={},
+        config={},
+    )
+
+    actual_records = [
+        r for r in retriever.read_records(records_schema={}, stream_slice=stream_slice)
+    ]
+
+    assert len(actual_records) == 6
+    assert actual_records == expected_records
+
+
+def test_simple_retriever_still_emit_records_if_no_merge_key():
+    stream_name = "stream_name"
+    expected_records = [
+        Record(
+            data={"id": "a", "first_name": "gentarou", "last_name": "hongou"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            data={"id": "b", "first_name": "clover", "last_name": "field"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            data={"id": "c", "first_name": "akane", "last_name": "kurashiki"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            data={"id": "d", "first_name": "sigma", "last_name": "klim"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            data={"id": "e", "first_name": "light", "last_name": "field"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            data={"id": "e", "nonary": "second", "bracelet": "2"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            data={"id": "d", "nonary": "ambidex", "bracelet": "red"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            data={"id": "c", "nonary": "second", "bracelet": "6"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            data={"id": "b", "nonary": "ambidex", "bracelet": "green"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+        Record(
+            data={"id": "a", "nonary": "second", "bracelet": "1"},
+            associated_slice=None,
+            stream_name=stream_name,
+        ),
+    ]
+
+    stream_slice = StreamSlice(cursor_slice={}, partition={})
+
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({"data": [record.data for record in expected_records]}).encode(
+        "utf-8"
+    )
+
+    requester = MagicMock()
+    requester.send_request.side_effect = [
+        response,
+        response,
+    ]
+
+    record_selector = MagicMock()
+    record_selector.select_records.side_effect = [
+        [
+            Record(
+                data={"id": "a", "first_name": "gentarou", "last_name": "hongou"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "b", "first_name": "clover", "last_name": "field"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "c", "first_name": "akane", "last_name": "kurashiki"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "d", "first_name": "sigma", "last_name": "klim"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "e", "first_name": "light", "last_name": "field"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+        ],
+        [
+            Record(
+                data={"id": "e", "nonary": "second", "bracelet": "2"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "d", "nonary": "ambidex", "bracelet": "red"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "c", "nonary": "second", "bracelet": "6"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "b", "nonary": "ambidex", "bracelet": "green"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+            Record(
+                data={"id": "a", "nonary": "second", "bracelet": "1"},
+                associated_slice=None,
+                stream_name=stream_name,
+            ),
+        ],
+    ]
+
+    query_properties = QueryProperties(
+        property_list=["first_name", "last_name", "nonary", "bracelet"],
+        always_include_properties=[],
+        property_chunking=PropertyChunking(
+            property_limit_type=PropertyLimitType.property_count,
+            property_limit=2,
+            record_merge_strategy=GroupByKey(key="not_real", config=config, parameters={}),
+            config=config,
+            parameters={},
+        ),
+        config=config,
+        parameters={},
+    )
+
+    retriever = SimpleRetriever(
+        name=stream_name,
+        primary_key=primary_key,
+        requester=requester,
+        record_selector=record_selector,
+        additional_query_properties=query_properties,
+        parameters={},
+        config={},
+    )
+
+    actual_records = [
+        r for r in retriever.read_records(records_schema={}, stream_slice=stream_slice)
+    ]
+
+    assert len(actual_records) == 10
+    assert actual_records == expected_records

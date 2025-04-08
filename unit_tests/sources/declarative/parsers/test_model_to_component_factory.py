@@ -9,6 +9,7 @@ from typing import Any, Iterable, Mapping
 import freezegun
 import pytest
 import requests
+from pydantic.v1 import ValidationError
 
 from airbyte_cdk import AirbyteTracedException
 from airbyte_cdk.models import (
@@ -72,6 +73,7 @@ from airbyte_cdk.sources.declarative.models import HttpRequester as HttpRequeste
 from airbyte_cdk.sources.declarative.models import JwtAuthenticator as JwtAuthenticatorModel
 from airbyte_cdk.sources.declarative.models import ListPartitionRouter as ListPartitionRouterModel
 from airbyte_cdk.sources.declarative.models import OAuthAuthenticator as OAuthAuthenticatorModel
+from airbyte_cdk.sources.declarative.models import PropertyChunking as PropertyChunkingModel
 from airbyte_cdk.sources.declarative.models import RecordSelector as RecordSelectorModel
 from airbyte_cdk.sources.declarative.models import SimpleRetriever as SimpleRetrieverModel
 from airbyte_cdk.sources.declarative.models import Spec as SpecModel
@@ -124,6 +126,15 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     PageIncrement,
     StopConditionPaginationStrategyDecorator,
 )
+from airbyte_cdk.sources.declarative.requesters.query_properties import (
+    PropertiesFromEndpoint,
+    PropertyChunking,
+    QueryProperties,
+)
+from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunking import (
+    PropertyLimitType,
+)
+from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import GroupByKey
 from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
     RequestOptionType,
@@ -151,9 +162,7 @@ from airbyte_cdk.sources.streams.concurrent.clamping import (
     ClampingEndProvider,
     DayClampingStrategy,
     MonthClampingStrategy,
-    NoClamping,
     WeekClampingStrategy,
-    Weekday,
 )
 from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
@@ -3996,4 +4005,378 @@ def test_create_grouping_partition_router_substream_with_request_option():
             model_type=GroupingPartitionRouterModel,
             component_definition=partition_router_manifest,
             config=input_config,
+        )
+
+
+def test_simple_retriever_with_query_properties():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+          type: DpathExtractor
+          field_path: ["extractor_path"]
+      record_filter:
+        type: RecordFilter
+        condition: "{{ record['id'] > stream_state['id'] }}"
+    requester:
+      type: HttpRequester
+      name: "{{ parameters['name'] }}"
+      url_base: "https://api.linkedin.com/rest/"
+      http_method: "GET"
+      path: "adAnalytics"
+      request_parameters:
+        nonary: "{{config['nonary'] }}"
+        fields:
+          type: QueryProperties
+          property_list:
+            - first_name
+            - last_name
+            - status
+            - organization
+            - created_at
+          always_include_properties:
+            - id
+          property_chunking:
+            type: PropertyChunking
+            property_limit_type: property_count
+            property_limit: 3
+            record_merge_strategy:
+              type: GroupByKeyMergeStrategy
+              key: ["id"]
+    analytics_stream:
+      type: DeclarativeStream
+      incremental_sync:
+        type: DatetimeBasedCursor
+        $parameters:
+          datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+        start_datetime: "{{ config['start_time'] }}"
+        cursor_field: "created"
+      retriever:
+        type: SimpleRetriever
+        name: "{{ parameters['name'] }}"
+        requester:
+          $ref: "#/requester"
+        record_selector:
+          $ref: "#/selector"
+      $parameters:
+        name: "analytics"
+        """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["analytics_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    query_properties = stream.retriever.additional_query_properties
+    assert isinstance(query_properties, QueryProperties)
+    assert query_properties.property_list == [
+        "first_name",
+        "last_name",
+        "status",
+        "organization",
+        "created_at",
+    ]
+    assert query_properties.always_include_properties == ["id"]
+
+    property_chunking = stream.retriever.additional_query_properties.property_chunking
+    assert isinstance(property_chunking, PropertyChunking)
+    assert property_chunking.property_limit_type == PropertyLimitType.property_count
+    assert property_chunking.property_limit == 3
+
+    merge_strategy = (
+        stream.retriever.additional_query_properties.property_chunking.record_merge_strategy
+    )
+    assert isinstance(merge_strategy, GroupByKey)
+    assert merge_strategy.key == ["id"]
+
+    request_options_provider = stream.retriever.requester.request_options_provider
+    assert isinstance(request_options_provider, InterpolatedRequestOptionsProvider)
+    # For a better developer experience we allow QueryProperties to be defined on the requester.request_parameters,
+    # but it actually is leveraged by the SimpleRetriever which is why it is not included in the RequestOptionsProvider
+    assert request_options_provider.query_properties_key == "fields"
+    assert "fields" not in request_options_provider.request_parameters
+    assert request_options_provider.request_parameters.get("nonary") == "{{config['nonary'] }}"
+
+
+def test_simple_retriever_with_properties_from_endpoint():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+          type: DpathExtractor
+          field_path: ["extractor_path"]
+      record_filter:
+        type: RecordFilter
+        condition: "{{ record['id'] > stream_state['id'] }}"
+    requester:
+      type: HttpRequester
+      name: "{{ parameters['name'] }}"
+      url_base: "https://api.hubapi.com"
+      http_method: "GET"
+      path: "adAnalytics"
+      request_parameters:
+        nonary: "{{config['nonary'] }}"
+        fields:
+          type: QueryProperties
+          property_list:
+            type: PropertiesFromEndpoint
+            property_field_path: [ "name" ]
+            retriever:
+              type: SimpleRetriever
+              requester:
+                type: HttpRequester
+                url_base: https://api.hubapi.com
+                path: "/properties/v2/dynamics/properties"
+                http_method: GET
+              record_selector:
+                type: RecordSelector
+                extractor:
+                  type: DpathExtractor
+                  field_path: []
+          property_chunking:
+            type: PropertyChunking
+            property_limit_type: property_count
+            property_limit: 3
+            record_merge_strategy:
+              type: GroupByKeyMergeStrategy
+              key: ["id"]
+    dynamic_properties_stream:
+      type: DeclarativeStream
+      incremental_sync:
+        type: DatetimeBasedCursor
+        $parameters:
+          datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+        start_datetime: "{{ config['start_time'] }}"
+        cursor_field: "created"
+      retriever:
+        type: SimpleRetriever
+        name: "{{ parameters['name'] }}"
+        requester:
+          $ref: "#/requester"
+        record_selector:
+          $ref: "#/selector"
+      $parameters:
+        name: "dynamics"
+        """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["dynamic_properties_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    query_properties = stream.retriever.additional_query_properties
+    assert isinstance(query_properties, QueryProperties)
+    assert query_properties.always_include_properties is None
+
+    properties_from_endpoint = stream.retriever.additional_query_properties.property_list
+    assert isinstance(properties_from_endpoint, PropertiesFromEndpoint)
+    assert properties_from_endpoint.property_field_path == ["name"]
+
+    properties_from_endpoint_retriever = (
+        stream.retriever.additional_query_properties.property_list.retriever
+    )
+    assert isinstance(properties_from_endpoint_retriever, SimpleRetriever)
+
+    properties_from_endpoint_requester = (
+        stream.retriever.additional_query_properties.property_list.retriever.requester
+    )
+    assert isinstance(properties_from_endpoint_requester, HttpRequester)
+    assert properties_from_endpoint_requester.url_base == "https://api.hubapi.com"
+    assert properties_from_endpoint_requester.path == "/properties/v2/dynamics/properties"
+
+    property_chunking = stream.retriever.additional_query_properties.property_chunking
+    assert isinstance(property_chunking, PropertyChunking)
+    assert property_chunking.property_limit_type == PropertyLimitType.property_count
+    assert property_chunking.property_limit == 3
+
+
+def test_request_parameters_raise_error_if_not_of_type_query_properties():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+          type: DpathExtractor
+          field_path: ["extractor_path"]
+      record_filter:
+        type: RecordFilter
+        condition: "{{ record['id'] > stream_state['id'] }}"
+    requester:
+      type: HttpRequester
+      name: "{{ parameters['name'] }}"
+      url_base: "https://api.linkedin.com/rest/"
+      http_method: "GET"
+      path: "adAnalytics"
+      request_parameters:
+        nonary: "{{config['nonary'] }}"
+        fields:
+          type: ListPartitionRouter
+          values: "{{config['repos']}}"
+          cursor_field: repository
+          request_option:
+            type: RequestOption
+            inject_into: body_json
+            field_path: ["repository", "id"]
+    analytics_stream:
+      type: DeclarativeStream
+      incremental_sync:
+        type: DatetimeBasedCursor
+        $parameters:
+          datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+        start_datetime: "{{ config['start_time'] }}"
+        cursor_field: "created"
+      retriever:
+        type: SimpleRetriever
+        name: "{{ parameters['name'] }}"
+        requester:
+          $ref: "#/requester"
+        record_selector:
+          $ref: "#/selector"
+      $parameters:
+        name: "analytics"
+        """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["analytics_stream"], {}
+    )
+
+    with pytest.raises(ValueError):
+        factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_manifest,
+            config=input_config,
+        )
+
+
+def test_create_simple_retriever_raise_error_if_multiple_request_properties():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+          type: DpathExtractor
+          field_path: ["extractor_path"]
+      record_filter:
+        type: RecordFilter
+        condition: "{{ record['id'] > stream_state['id'] }}"
+    requester:
+      type: HttpRequester
+      name: "{{ parameters['name'] }}"
+      url_base: "https://api.linkedin.com/rest/"
+      http_method: "GET"
+      path: "adAnalytics"
+      request_parameters:
+        first_query_properties:
+          type: QueryProperties
+          property_list:
+            - first_name
+            - last_name
+            - status
+            - organization
+            - created_at
+          always_include_properties:
+            - id
+          property_chunking:
+            type: PropertyChunking
+            property_limit_type: property_count
+            property_limit: 3
+            record_merge_strategy:
+              type: GroupByKeyMergeStrategy
+              key: ["id"]
+        nonary: "{{config['nonary'] }}"
+        invalid_extra_query_properties:
+          type: QueryProperties
+          property_list:
+            - first_name
+            - last_name
+            - status
+            - organization
+            - created_at
+          always_include_properties:
+            - id
+          property_chunking:
+            type: PropertyChunking
+            property_limit_type: property_count
+            property_limit: 3
+            record_merge_strategy:
+              type: GroupByKeyMergeStrategy
+              key: ["id"]
+    analytics_stream:
+      type: DeclarativeStream
+      incremental_sync:
+        type: DatetimeBasedCursor
+        $parameters:
+          datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+        start_datetime: "{{ config['start_time'] }}"
+        cursor_field: "created"
+      retriever:
+        type: SimpleRetriever
+        name: "{{ parameters['name'] }}"
+        requester:
+          $ref: "#/requester"
+        record_selector:
+          $ref: "#/selector"
+      $parameters:
+        name: "analytics"
+            """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["analytics_stream"], {}
+    )
+
+    with pytest.raises(ValueError):
+        factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_manifest,
+            config=input_config,
+        )
+
+
+def test_create_property_chunking_characters():
+    property_chunking_model = {
+        "type": "PropertyChunking",
+        "property_limit_type": "characters",
+        "property_limit": 100,
+        "record_merge_strategy": {"type": "GroupByKeyMergeStrategy", "key": ["id"]},
+    }
+
+    connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
+    property_chunking = connector_builder_factory.create_component(
+        model_type=PropertyChunkingModel,
+        component_definition=property_chunking_model,
+        config={},
+    )
+
+    assert isinstance(property_chunking, PropertyChunking)
+    assert property_chunking.property_limit_type == PropertyLimitType.characters
+    assert property_chunking.property_limit == 100
+
+
+def test_create_property_chunking_invalid_property_limit_type():
+    property_chunking_model = {
+        "type": "PropertyChunking",
+        "property_limit_type": "nope",
+        "property_limit": 20,
+        "record_merge_strategy": {"type": "GroupByKeyMergeStrategy", "key": ["id"]},
+    }
+
+    connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
+
+    with pytest.raises(ValidationError):
+        connector_builder_factory.create_component(
+            model_type=PropertyChunkingModel,
+            component_definition=property_chunking_model,
+            config={},
         )

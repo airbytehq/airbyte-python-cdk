@@ -627,7 +627,6 @@ class TestManifestDeclarativeSource:
                     },
                 }
             ],
-            "check": {"type": "CheckStream"},
         }
         with pytest.raises(ValidationError):
             ManifestDeclarativeSource(source_config=manifest)
