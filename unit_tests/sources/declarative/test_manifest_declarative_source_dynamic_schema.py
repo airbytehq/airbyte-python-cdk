@@ -25,20 +25,20 @@ def test_check_config_against_spec_with_dynamic_schema_loader():
                     },
                     "schema_type_identifier": {
                         "key_pointer": ["name"],
-                    }
+                    },
                 },
                 "retriever": {
                     "type": "SimpleRetriever",
                     "requester": {"url_base": "https://example.com", "http_method": "GET"},
                     "record_selector": {"extractor": {"field_path": []}},
-                }
+                },
             }
         ],
-        "version": "0.1.0"
+        "version": "0.1.0",
     }
-    
+
     source = ManifestDeclarativeSource(source_config=source_config)
-    
+
     assert source.check_config_against_spec is False
 
 
@@ -50,20 +50,17 @@ def test_check_config_against_spec_without_dynamic_schema_loader():
         "streams": [
             {
                 "name": "test_stream",
-                "schema_loader": {
-                    "type": "InlineSchemaLoader",
-                    "schema": {}
-                },
+                "schema_loader": {"type": "InlineSchemaLoader", "schema": {}},
                 "retriever": {
                     "type": "SimpleRetriever",
                     "requester": {"url_base": "https://example.com", "http_method": "GET"},
                     "record_selector": {"extractor": {"field_path": []}},
-                }
+                },
             }
         ],
-        "version": "0.1.0"
+        "version": "0.1.0",
     }
-    
+
     source = ManifestDeclarativeSource(source_config=source_config)
-    
+
     assert source.check_config_against_spec is True
