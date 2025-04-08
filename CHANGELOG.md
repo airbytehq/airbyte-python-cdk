@@ -4,10 +4,6 @@ Newer updates can be found here: [GitHub Release Notes](https://github.com/airby
 
 # Changelog
 
-## Unreleased
-
-- Added `check_config_during_discover` flag to declarative sources to skip config validation during discovery for sources with DynamicSchemaLoader
-
 ## 6.5.2
 
 bugfix: Ensure that streams with partition router are not executed concurrently
