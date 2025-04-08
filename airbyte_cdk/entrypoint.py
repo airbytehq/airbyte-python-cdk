@@ -152,7 +152,7 @@ class AirbyteEntrypoint(object):
                         and not parsed_args.config
                         and not self.source.check_config_against_spec
                     ):
-                        empty_config = {}
+                        empty_config: dict[str, Any] = {}
                         yield from [
                             self.airbyte_message_to_string(queued_message)
                             for queued_message in self._emit_queued_messages(self.source)
