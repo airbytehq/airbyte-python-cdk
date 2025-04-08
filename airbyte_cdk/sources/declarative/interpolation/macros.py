@@ -177,6 +177,8 @@ def format_datetime(
         dt_datetime = (
             datetime.datetime.strptime(dt, input_format) if input_format else str_to_datetime(dt)
         )
+    if dt_datetime.tzinfo is None:
+        dt_datetime = dt_datetime.replace(tzinfo=pytz.utc)
     return DatetimeParser().format(dt=dt_datetime, format=format)
 
 
