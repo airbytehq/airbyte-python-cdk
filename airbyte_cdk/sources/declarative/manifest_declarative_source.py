@@ -110,8 +110,6 @@ class ManifestDeclarativeSource(DeclarativeSource):
         self._config = config or {}
         self._validate_source()
         
-        self.check_config_against_spec = True
-        
         self.check_config_during_discover = self._uses_dynamic_schema_loader()
 
     @property
