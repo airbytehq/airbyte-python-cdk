@@ -411,11 +411,15 @@ def ab_datetime_parse(
             for format_str in formats:
                 try:
                     if format_str == "%s":
-                        if isinstance(dt_str, int) or (isinstance(dt_str, str) and dt_str.isdigit()):
+                        if isinstance(dt_str, int) or (
+                            isinstance(dt_str, str) and dt_str.isdigit()
+                        ):
                             timestamp = int(dt_str)
                             if timestamp < 0:
                                 raise ValueError("Timestamp cannot be negative")
-                            return AirbyteDateTime.from_datetime(datetime.fromtimestamp(timestamp, tz=timezone.utc))
+                            return AirbyteDateTime.from_datetime(
+                                datetime.fromtimestamp(timestamp, tz=timezone.utc)
+                            )
                     parsed = datetime.strptime(dt_str, format_str)
                     if parsed.tzinfo is None:
                         parsed = parsed.replace(tzinfo=timezone.utc)
@@ -451,11 +455,15 @@ def ab_datetime_parse(
             for format_str in formats:
                 try:
                     if format_str == "%s":
-                        if isinstance(dt_str, int) or (isinstance(dt_str, str) and dt_str.isdigit()):
+                        if isinstance(dt_str, int) or (
+                            isinstance(dt_str, str) and dt_str.isdigit()
+                        ):
                             timestamp = int(dt_str)
                             if timestamp < 0:
                                 raise ValueError("Timestamp cannot be negative")
-                            return AirbyteDateTime.from_datetime(datetime.fromtimestamp(timestamp, tz=timezone.utc))
+                            return AirbyteDateTime.from_datetime(
+                                datetime.fromtimestamp(timestamp, tz=timezone.utc)
+                            )
                     parsed = datetime.strptime(dt_str, format_str)
                     if parsed.tzinfo is None:
                         parsed = parsed.replace(tzinfo=timezone.utc)
