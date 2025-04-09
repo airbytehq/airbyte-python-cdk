@@ -402,7 +402,25 @@ def ab_datetime_parse(
     """
     try:
         # Remove None values from formats list, and coalesce to None if empty
-        formats = [f for f in formats if f] or None
+        formats = [f for f in formats or [] if f] or None
+
+        # Handle numeric values as Unix timestamps (UTC)
+        if isinstance(dt_str, int) or (
+            isinstance(dt_str, str)
+            and (dt_str.isdigit() or (dt_str.startswith("-") and dt_str[1:].isdigit()))
+            and (
+                not formats
+                or ("%s" in formats)  # Custom case for Unix timestamp in declarative sources
+            )
+        ):
+            timestamp = int(dt_str)
+            if timestamp < 0:
+                raise ValueError("Timestamp cannot be negative")
+            if len(str(abs(timestamp))) > 10:
+                raise ValueError("Timestamp value too large")
+
+            instant = Instant.from_timestamp(timestamp)
+            return AirbyteDateTime.from_datetime(instant.py_datetime())
 
         if formats:
             for format_str in formats:
@@ -428,20 +446,6 @@ def ab_datetime_parse(
                 raise ValueError(
                     f"Could not parse datetime string '{dt_str}' with any of the provided formats: {formats}"
                 )
-
-        # Handle numeric values as Unix timestamps (UTC)
-        if isinstance(dt_str, int) or (
-            isinstance(dt_str, str)
-            and (dt_str.isdigit() or (dt_str.startswith("-") and dt_str[1:].isdigit()))
-            and not formats  # Skip timestamp handling if formats were provided but failed
-        ):
-            timestamp = int(dt_str)
-            if timestamp < 0:
-                raise ValueError("Timestamp cannot be negative")
-            if len(str(abs(timestamp))) > 10:
-                raise ValueError("Timestamp value too large")
-            instant = Instant.from_timestamp(timestamp)
-            return AirbyteDateTime.from_datetime(instant.py_datetime())
 
         if not isinstance(dt_str, str):
             raise ValueError(
@@ -497,6 +501,7 @@ def ab_datetime_parse(
             return AirbyteDateTime.from_datetime(parsed)
         except (ValueError, TypeError):
             raise ValueError(f"Could not parse datetime string: {dt_str}")
+
     except ValueError as e:
         if "Invalid date format:" in str(e):
             raise
@@ -529,11 +534,17 @@ def ab_datetime_try_parse(
         >>> ab_datetime_try_parse("2023-03-14T15:09:26Z")  # Returns AirbyteDateTime
         >>> ab_datetime_try_parse("2023-03-14 15:09:26Z")  # Missing 'T' delimiter still parsable
         >>> ab_datetime_try_parse("2023-03-14")            # Returns midnight UTC time
-        >>> ab_datetime_try_parse("2023-03-14 15:09:26", formats=["%Y-%m-%d %H:%M:%S"])  # Using specific format
+        >>> ab_datetime_try_parse(
+        >>>     "2023-03-14 15:09:26",
+        >>>     formats=["%Y-%m-%d %H:%M:%S"],             # Using specific format
+        >>>     disallow_other_formats=True,               # Disallow other formats
+        >>> )
     """
     try:
         return ab_datetime_parse(
-            dt_str, formats=formats, disallow_other_formats=disallow_other_formats
+            dt_str,
+            formats=formats,
+            disallow_other_formats=disallow_other_formats,
         )
     except (ValueError, TypeError):
         return None
