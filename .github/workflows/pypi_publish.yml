@@ -60,7 +60,7 @@ jobs:
           echo "Setting detected version to '$DETECTED_VERSION'"
           echo "DETECTED_VERSION=${DETECTED_VERSION}" >> $GITHUB_ENV
 
-      - name: Validate and set VERSION (git-ref='${{ github.ref_name }}', detected='${{ env.DETECTED_VERSION }}', input='${{ github.event.inputs.version || 'none' }}')
+      - name: Validate and set VERSION (detected='${{ env.DETECTED_VERSION }}', input='${{ github.event.inputs.version || 'none' }}')
         id: set_version
         run: |
           INPUT_VERSION=${{ github.event.inputs.version }}
