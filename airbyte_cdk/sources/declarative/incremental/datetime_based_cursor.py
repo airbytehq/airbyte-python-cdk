@@ -294,6 +294,8 @@ class DatetimeBasedCursor(DeclarativeCursor):
         would have broken anyway.
         """
         try:
+            if hasattr(start, "to_datetime"):
+                start = start.to_datetime()
             return start + step
         except OverflowError:
             return datetime.datetime.max.replace(tzinfo=datetime.timezone.utc)
