@@ -144,9 +144,14 @@ class AirbyteDateTime(datetime):
         Returns a standard datetime object with the same attributes as this AirbyteDateTime.
         """
         return datetime(
-            self.year, self.month, self.day, 
-            self.hour, self.minute, self.second, self.microsecond, 
-            tzinfo=self.tzinfo
+            self.year,
+            self.month,
+            self.day,
+            self.hour,
+            self.minute,
+            self.second,
+            self.microsecond,
+            tzinfo=self.tzinfo,
         )
 
     def __str__(self) -> str:
