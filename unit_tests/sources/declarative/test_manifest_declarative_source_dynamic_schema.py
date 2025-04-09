@@ -1,5 +1,8 @@
 #
+# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+
+"""Tests for the ManifestDeclarativeSource with DynamicSchemaLoader."""
 
 from unittest.mock import MagicMock, patch
 
@@ -65,7 +68,7 @@ def test_check_config_during_discover_without_dynamic_schema_loader():
     }
 
     source = ManifestDeclarativeSource(source_config=source_config)
-
+    
     assert source.check_config_during_discover is False
     assert source.check_config_against_spec is True
 

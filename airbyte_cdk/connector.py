@@ -33,6 +33,14 @@ TConfig = TypeVar("TConfig", bound=Mapping[str, Any])
 class BaseConnector(ABC, Generic[TConfig]):
     # configure whether the `check_config_against_spec_or_exit()` needs to be called
     check_config_against_spec: bool = True
+    
+    check_config_during_discover: bool = False
+    """
+    Determines whether config validation should be skipped during discovery.
+    
+    By default, config validation is not skipped during discovery. This can be overridden
+    by sources that can provide catalog information without requiring authentication.
+    """
 
     @abstractmethod
     def configure(self, config: Mapping[str, Any], temp_dir: str) -> TConfig:
