@@ -9,8 +9,8 @@ name: CDK Publish
 
 on:
   push:
-    # tags:
-    #   - "v*"
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       version:
