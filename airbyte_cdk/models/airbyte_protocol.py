@@ -8,8 +8,6 @@ from typing import Annotated, Any, Dict, List, Mapping, Optional, Union
 from airbyte_protocol_dataclasses.models import *  # noqa: F403  # Allow '*'
 from serpyco_rs.metadata import Alias
 
-from airbyte_cdk.models.file_transfer_record_message import AirbyteFileTransferRecordMessage
-
 # ruff: noqa: F405  # ignore fuzzy import issues with 'import *'
 
 
@@ -84,7 +82,7 @@ class AirbyteMessage:
     spec: Optional[ConnectorSpecification] = None  # type: ignore [name-defined]
     connectionStatus: Optional[AirbyteConnectionStatus] = None  # type: ignore [name-defined]
     catalog: Optional[AirbyteCatalog] = None  # type: ignore [name-defined]
-    record: Optional[Union[AirbyteFileTransferRecordMessage, AirbyteRecordMessage]] = None  # type: ignore [name-defined]
+    record: Optional[AirbyteRecordMessage] = None  # type: ignore [name-defined]
     state: Optional[AirbyteStateMessage] = None
     trace: Optional[AirbyteTraceMessage] = None  # type: ignore [name-defined]
     control: Optional[AirbyteControlMessage] = None  # type: ignore [name-defined]

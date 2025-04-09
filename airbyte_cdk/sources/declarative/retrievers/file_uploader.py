@@ -83,7 +83,7 @@ class FileUploader:
             logger.info(f"File relative path: {str(file_relative_path)}")
 
             record.file_reference = AirbyteRecordMessageFileReference(
-                file_url=str(full_path),
-                file_relative_path=str(file_relative_path),
+                staging_file_url=str(full_path),
+                source_file_relative_path=str(file_relative_path),
                 file_size_bytes=file_size_bytes,
             )

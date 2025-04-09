@@ -198,6 +198,14 @@ def find_template(resource: str, execution_folder: str) -> Dict[str, Any]:
         return json.load(template_file)  # type: ignore  # we assume the dev correctly set up the resource file
 
 
+def find_binary_response(resource: str, execution_folder: str) -> bytes:
+    response_filepath = str(
+        get_unit_test_folder(execution_folder) / "resource" / "http" / "response" / f"{resource}"
+    )
+    with open(response_filepath, "rb") as response_file:
+        return response_file.read()  # type: ignore  # we assume the dev correctly set up the resource file
+
+
 def create_record_builder(
     response_template: Dict[str, Any],
     records_path: Union[FieldPath, NestedPath],

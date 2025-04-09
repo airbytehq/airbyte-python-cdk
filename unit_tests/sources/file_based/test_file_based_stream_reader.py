@@ -5,6 +5,7 @@
 import logging
 from datetime import datetime
 from io import IOBase
+from os import path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Set
 
 import pytest
@@ -79,7 +80,7 @@ class TestStreamReader(AbstractFileBasedStreamReader):
     def file_size(self, file: RemoteFile) -> int:
         return 0
 
-    def get_file(
+    def upload(
         self, file: RemoteFile, local_directory: str, logger: logging.Logger
     ) -> Dict[str, Any]:
         return {}
@@ -383,7 +384,7 @@ def test_globs_and_prefixes_from_globs(
 
 
 @pytest.mark.parametrize(
-    "config, source_file, expected_file_relative_path, expected_local_file_path, expected_absolute_file_path",
+    "config, source_file, expected_file_relative_path, expected_local_file_path",
     [
         pytest.param(
             {
@@ -395,7 +396,6 @@ def test_globs_and_prefixes_from_globs(
             },
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
-            "/tmp/transfer-files/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "/tmp/transfer-files/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             id="preserve_directories_present_and_true",
         ),
@@ -410,7 +410,6 @@ def test_globs_and_prefixes_from_globs(
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "monthly-kickoff-202402.mpeg",
             "/tmp/transfer-files/monthly-kickoff-202402.mpeg",
-            "/tmp/transfer-files/monthly-kickoff-202402.mpeg",
             id="preserve_directories_present_and_false",
         ),
         pytest.param(
@@ -418,14 +417,12 @@ def test_globs_and_prefixes_from_globs(
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "/tmp/transfer-files/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
-            "/tmp/transfer-files/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             id="preserve_directories_not_present_defaults_true",
         ),
         pytest.param(
             {"streams": []},
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
-            "/tmp/transfer-files/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "/tmp/transfer-files/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             id="file_transfer_flag_not_present_defaults_true",
         ),
@@ -436,7 +433,6 @@ def test_preserve_sub_directories_scenarios(
     source_file: str,
     expected_file_relative_path: str,
     expected_local_file_path: str,
-    expected_absolute_file_path: str,
 ) -> None:
     remote_file = RemoteFile(
         uri=source_file,
@@ -445,10 +441,12 @@ def test_preserve_sub_directories_scenarios(
     )
     reader = TestStreamReader()
     reader.config = TestSpec(**config)
-    file_relative_path, local_file_path, absolute_file_path = reader._get_file_transfer_paths(
-        remote_file, "/tmp/transfer-files/"
-    )
+    file_paths = reader._get_file_transfer_paths(remote_file, "/tmp/transfer-files/")
 
-    assert file_relative_path == expected_file_relative_path
-    assert local_file_path == expected_local_file_path
-    assert absolute_file_path == expected_absolute_file_path
+    assert (
+        file_paths[AbstractFileBasedStreamReader.FILE_RELATIVE_PATH] == expected_file_relative_path
+    )
+    assert file_paths[AbstractFileBasedStreamReader.LOCAL_FILE_PATH] == expected_local_file_path
+    assert file_paths[AbstractFileBasedStreamReader.SOURCE_FILE_URI] == source_file
+    assert file_paths[AbstractFileBasedStreamReader.FILE_NAME] == path.basename(source_file)
+    assert file_paths[AbstractFileBasedStreamReader.FILE_FOLDER] == path.dirname(source_file)
