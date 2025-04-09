@@ -27,6 +27,7 @@ version = "0.0.0"  # Version will be calculated dynamically.
 
 [tool.poetry-dynamic-versioning]
 enable = true
+style = "pep440"  # Ensures compatibility with PyPI
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
