@@ -267,7 +267,11 @@ class DatetimeBasedCursor(DeclarativeCursor):
 
         while self._is_within_date_range(start, end):
             next_start = self._evaluate_next_start_date_safely(start, step)
-            end_date = self._get_date(next_start - self._cursor_granularity, end, min)
+            if hasattr(next_start, "to_datetime"):
+                next_start_dt = next_start.to_datetime()
+            else:
+                next_start_dt = next_start
+            end_date = self._get_date(next_start_dt - self._cursor_granularity, end, min)
             dates.append(
                 StreamSlice(
                     partition={},
