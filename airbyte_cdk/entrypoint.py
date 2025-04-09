@@ -149,8 +149,7 @@ class AirbyteEntrypoint(object):
                 elif (
                     cmd == "discover"
                     and not parsed_args.config
-                    and hasattr(self.source, "check_config_during_discover")
-                    and self.source.check_config_during_discover
+                    and not self.source.check_config_during_discover
                 ):
                     # Connector supports unprivileged discover
                     empty_config: dict[str, Any] = {}
