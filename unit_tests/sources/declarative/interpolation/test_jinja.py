@@ -11,6 +11,7 @@ from jinja2.exceptions import TemplateSyntaxError
 from airbyte_cdk import StreamSlice
 from airbyte_cdk.sources.declarative.interpolation.jinja import JinjaInterpolation
 from airbyte_cdk.utils import AirbyteTracedException
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 
 interpolation = JinjaInterpolation()
 
@@ -148,9 +149,9 @@ def test_negative_day_delta():
     delta_template = "{{ day_delta(-25) }}"
     val = interpolation.eval(delta_template, {})
 
-    assert val <= (
-        datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=25)
-    ).strftime("%Y-%m-%dT%H:%M:%S.%f%z")
+    assert val <= (ab_datetime_now() - datetime.timedelta(days=25)).strftime(
+        "%Y-%m-%dT%H:%M:%S.%f%z"
+    )
 
 
 @pytest.mark.parametrize(

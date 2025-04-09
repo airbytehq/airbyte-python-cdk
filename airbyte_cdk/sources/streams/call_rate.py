@@ -334,7 +334,7 @@ class FixedWindowCallRatePolicy(BaseCallRatePolicy):
             self._update_current_window()
 
             if self._calls_num + weight > self._call_limit:
-                reset_in = self._next_reset_ts - datetime.datetime.now()
+                reset_in = self._next_reset_ts - ab_datetime_now()
                 error_message = (
                     f"reached maximum number of allowed calls {self._call_limit} "
                     f"per {self._offset} interval, next reset in {reset_in}."
