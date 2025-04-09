@@ -93,7 +93,7 @@ class AirbyteEntrypoint(object):
         )
         required_discover_parser = discover_parser.add_argument_group("required named arguments")
         required_discover_parser.add_argument(
-            "--config", type=str, required=True, help="path to the json configuration file"
+            "--config", type=str, required=False, help="path to the json configuration file"
         )
 
         # read
@@ -141,19 +141,34 @@ class AirbyteEntrypoint(object):
                 )
                 if cmd == "spec":
                     message = AirbyteMessage(type=Type.SPEC, spec=source_spec)
-                    yield from [
+                    yield from (
                         self.airbyte_message_to_string(queued_message)
                         for queued_message in self._emit_queued_messages(self.source)
-                    ]
+                    )
                     yield self.airbyte_message_to_string(message)
+                elif (
+                    cmd == "discover"
+                    and not parsed_args.config
+                    and not self.source.check_config_during_discover
+                ):
+                    # Connector supports unprivileged discover
+                    empty_config: dict[str, Any] = {}
+                    yield from (
+                        self.airbyte_message_to_string(queued_message)
+                        for queued_message in self._emit_queued_messages(self.source)
+                    )
+                    yield from map(
+                        AirbyteEntrypoint.airbyte_message_to_string,
+                        self.discover(source_spec, empty_config),
+                    )
                 else:
                     raw_config = self.source.read_config(parsed_args.config)
                     config = self.source.configure(raw_config, temp_dir)
 
-                    yield from [
+                    yield from (
                         self.airbyte_message_to_string(queued_message)
                         for queued_message in self._emit_queued_messages(self.source)
-                    ]
+                    )
                     if cmd == "check":
                         yield from map(
                             AirbyteEntrypoint.airbyte_message_to_string,
@@ -225,7 +240,7 @@ class AirbyteEntrypoint(object):
         self, source_spec: ConnectorSpecification, config: TConfig
     ) -> Iterable[AirbyteMessage]:
         self.set_up_secret_filter(config, source_spec.connectionSpecification)
-        if self.source.check_config_against_spec:
+        if not self.source.check_config_during_discover:
             self.validate_connection(source_spec, config)
         catalog = self.source.discover(self.logger, config)
 
