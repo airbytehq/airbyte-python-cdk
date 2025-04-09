@@ -358,7 +358,9 @@ def ab_datetime_now() -> AirbyteDateTime:
     return AirbyteDateTime.from_datetime(datetime.now(timezone.utc))
 
 
-def ab_datetime_parse(dt_str: str | int, formats: list[str] | None = None, disallow_other_formats: bool = False) -> AirbyteDateTime:
+def ab_datetime_parse(
+    dt_str: str | int, formats: list[str] | None = None, disallow_other_formats: bool = False
+) -> AirbyteDateTime:
     """Parses a datetime string or timestamp into an AirbyteDateTime with timezone awareness.
 
     This implementation is as flexible as possible to handle various datetime formats.
@@ -423,10 +425,11 @@ def ab_datetime_parse(dt_str: str | int, formats: list[str] | None = None, disal
                     return AirbyteDateTime.from_datetime(parsed)
                 except ValueError:
                     continue
-            
-            if disallow_other_formats:
-                raise ValueError(f"Could not parse datetime string '{dt_str}' with any of the provided formats: {formats}")
 
+            if disallow_other_formats:
+                raise ValueError(
+                    f"Could not parse datetime string '{dt_str}' with any of the provided formats: {formats}"
+                )
 
         # Handle date-only format first
         if ":" not in dt_str and dt_str.count("-") == 2 and "/" not in dt_str:
@@ -462,7 +465,9 @@ def ab_datetime_parse(dt_str: str | int, formats: list[str] | None = None, disal
         raise ValueError(f"Could not parse datetime string: {dt_str}")
 
 
-def ab_datetime_try_parse(dt_str: str | int, formats: list[str] | None = None, disallow_other_formats: bool = False) -> AirbyteDateTime | None:
+def ab_datetime_try_parse(
+    dt_str: str | int, formats: list[str] | None = None, disallow_other_formats: bool = False
+) -> AirbyteDateTime | None:
     """Try to parse the input as a datetime, failing gracefully instead of raising an exception.
 
     This is a thin wrapper around `ab_datetime_parse()` that catches parsing errors and
@@ -485,7 +490,9 @@ def ab_datetime_try_parse(dt_str: str | int, formats: list[str] | None = None, d
         >>> ab_datetime_try_parse("2023-03-14 15:09:26", formats=["%Y-%m-%d %H:%M:%S"])  # Using specific format
     """
     try:
-        return ab_datetime_parse(dt_str, formats=formats, disallow_other_formats=disallow_other_formats)
+        return ab_datetime_parse(
+            dt_str, formats=formats, disallow_other_formats=disallow_other_formats
+        )
     except (ValueError, TypeError):
         return None
 
