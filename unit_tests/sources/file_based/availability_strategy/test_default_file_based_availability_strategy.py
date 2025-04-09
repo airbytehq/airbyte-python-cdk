@@ -16,9 +16,10 @@ from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFile
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.stream import AbstractFileBasedStream
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 
 _FILE_WITH_UNKNOWN_EXTENSION = RemoteFile(
-    uri="a.unknown_extension", last_modified=datetime.now(), file_type="csv"
+    uri="a.unknown_extension", last_modified=ab_datetime_now(), file_type="csv"
 )
 _ANY_CONFIG = FileBasedStreamConfig(
     name="config.name",

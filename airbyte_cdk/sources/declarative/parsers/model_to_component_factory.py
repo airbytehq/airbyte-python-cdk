@@ -546,6 +546,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.incrementing_count_
 from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 
 ComponentDefinition = Mapping[str, Any]
 
@@ -3532,7 +3533,7 @@ class ModelToComponentFactory:
         # Set the initial reset timestamp to 10 days from now.
         # This value will be updated by the first request.
         return FixedWindowCallRatePolicy(
-            next_reset_ts=datetime.datetime.now() + datetime.timedelta(days=10),
+            next_reset_ts=ab_datetime_now() + datetime.timedelta(days=10),
             period=parse_duration(model.period),
             call_limit=model.call_limit,
             matchers=matchers,

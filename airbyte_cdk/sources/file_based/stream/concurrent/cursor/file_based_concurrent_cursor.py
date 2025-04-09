@@ -20,6 +20,11 @@ from airbyte_cdk.sources.message.repository import MessageRepository
 from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.types import Record
+from airbyte_cdk.utils.datetime_helpers import (
+    ab_datetime_format,
+    ab_datetime_now,
+    ab_datetime_parse,
+)
 
 if TYPE_CHECKING:
     from airbyte_cdk.sources.file_based.stream.concurrent.adapters import FileBasedStreamPartition
@@ -110,11 +115,15 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
         )
         cursor_str = min(prev_cursor_str, earliest_file_cursor_value)
         cursor_dt, cursor_uri = cursor_str.split("_", 1)
-        return datetime.strptime(cursor_dt, self.DATE_TIME_FORMAT), cursor_uri
+        return ab_datetime_parse(
+            cursor_dt,
+            formats=[self.DATE_TIME_FORMAT],
+            disallow_other_formats=False,
+        ), cursor_uri
 
     def _get_cursor_key_from_file(self, file: Optional[RemoteFile]) -> str:
         if file:
-            return f"{datetime.strftime(file.last_modified, self.DATE_TIME_FORMAT)}_{file.uri}"
+            return f"{ab_datetime_format(file.last_modified, self.DATE_TIME_FORMAT)}_{file.uri}"
         return self.zero_cursor_value
 
     def _compute_earliest_file_in_history(self) -> Optional[RemoteFile]:
@@ -125,7 +134,11 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
                 )
                 return RemoteFile(
                     uri=filename,
-                    last_modified=datetime.strptime(last_modified, self.DATE_TIME_FORMAT),
+                    last_modified=ab_datetime_parse(
+                        last_modified,
+                        formats=[self.DATE_TIME_FORMAT],
+                        disallow_other_formats=False,
+                    ),
                 )
             else:
                 return None
@@ -153,8 +166,9 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
                     )
                 else:
                     self._pending_files.pop(file.uri)
-                self._file_to_datetime_history[file.uri] = file.last_modified.strftime(
-                    self.DATE_TIME_FORMAT
+                self._file_to_datetime_history[file.uri] = ab_datetime_format(
+                    file.last_modified,
+                    format=self.DATE_TIME_FORMAT,
                 )
                 if len(self._file_to_datetime_history) > self.DEFAULT_MAX_HISTORY_SIZE:
                     # Get the earliest file based on its last modified date and its uri
@@ -206,11 +220,16 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
         with self._state_lock:
             if self._file_to_datetime_history:
                 filename, last_modified = max(
-                    self._file_to_datetime_history.items(), key=lambda f: (f[1], f[0])
+                    self._file_to_datetime_history.items(),
+                    key=lambda f: (f[1], f[0]),
                 )
                 return RemoteFile(
                     uri=filename,
-                    last_modified=datetime.strptime(last_modified, self.DATE_TIME_FORMAT),
+                    last_modified=ab_datetime_parse(
+                        last_modified,
+                        formats=[self.DATE_TIME_FORMAT],
+                        disallow_other_formats=False,
+                    ),
                 )
             else:
                 return None
@@ -239,8 +258,10 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
         with self._state_lock:
             if file.uri in self._file_to_datetime_history:
                 # If the file's uri is in the history, we should sync the file if it has been modified since it was synced
-                updated_at_from_history = datetime.strptime(
-                    self._file_to_datetime_history[file.uri], self.DATE_TIME_FORMAT
+                updated_at_from_history = ab_datetime_parse(
+                    self._file_to_datetime_history[file.uri],
+                    formats=[self.DATE_TIME_FORMAT],
+                    disallow_other_formats=False,
                 )
                 if file.last_modified < updated_at_from_history:
                     self._message_repository.emit_message(
@@ -287,9 +308,13 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
             return datetime.min
         else:
             earliest = min(self._file_to_datetime_history.values())
-            earliest_dt = datetime.strptime(earliest, self.DATE_TIME_FORMAT)
+            earliest_dt = ab_datetime_parse(
+                earliest,
+                formats=[self.DATE_TIME_FORMAT],
+                disallow_other_formats=False,
+            )
             if self._is_history_full():
-                time_window = datetime.now() - self._time_window_if_history_is_full
+                time_window = ab_datetime_now() - self._time_window_if_history_is_full
                 earliest_dt = min(earliest_dt, time_window)
             return earliest_dt
 

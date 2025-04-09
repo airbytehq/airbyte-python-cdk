@@ -19,6 +19,8 @@ from pyrate_limiter import InMemoryBucket, Limiter, RateItem, TimeClock
 from pyrate_limiter import Rate as PyRateRate
 from pyrate_limiter.exceptions import BucketFullException
 
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now
+
 # prevents mypy from complaining about missing session attributes in LimiterMixin
 if TYPE_CHECKING:
     MIXIN_BASE = requests.Session
@@ -280,7 +282,7 @@ class UnlimitedCallRatePolicy(BaseCallRatePolicy):
             ),
             FixedWindowCallRatePolicy(
                 matchers=[HttpRequestMatcher(url="/some/method")],
-                next_reset_ts=datetime.now(),
+                next_reset_ts=ab_datetime_now(),
                 period=timedelta(hours=1)
                 call_limit=1000,
             ),
@@ -332,7 +334,7 @@ class FixedWindowCallRatePolicy(BaseCallRatePolicy):
             self._update_current_window()
 
             if self._calls_num + weight > self._call_limit:
-                reset_in = self._next_reset_ts - datetime.datetime.now()
+                reset_in = self._next_reset_ts - ab_datetime_now()
                 error_message = (
                     f"reached maximum number of allowed calls {self._call_limit} "
                     f"per {self._offset} interval, next reset in {reset_in}."
@@ -385,7 +387,7 @@ class FixedWindowCallRatePolicy(BaseCallRatePolicy):
                 self._next_reset_ts = call_reset_ts
 
     def _update_current_window(self) -> None:
-        now = datetime.datetime.now()
+        now = ab_datetime_now()
         if now > self._next_reset_ts:
             logger.debug("started new window, %s calls available now", self._call_limit)
             self._next_reset_ts = self._next_reset_ts + self._offset
@@ -662,7 +664,7 @@ class HttpAPIBudget(APIBudget):
         self, response: requests.Response
     ) -> Optional[datetime.datetime]:
         if response.headers.get(self._ratelimit_reset_header):
-            return datetime.datetime.fromtimestamp(
+            return AirbyteDateTime.fromtimestamp(
                 int(response.headers[self._ratelimit_reset_header])
             )
         return None

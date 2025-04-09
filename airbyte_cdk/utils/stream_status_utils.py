@@ -17,6 +17,7 @@ from airbyte_cdk.models import (
     TraceType,
 )
 from airbyte_cdk.models import Type as MessageType
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 
 
 def as_airbyte_message(
@@ -28,7 +29,7 @@ def as_airbyte_message(
     Builds an AirbyteStreamStatusTraceMessage for the provided stream
     """
 
-    now_millis = datetime.now().timestamp() * 1000.0
+    now_millis = ab_datetime_now().to_epoch_millis()
 
     trace_message = AirbyteTraceMessage(
         type=TraceType.STREAM_STATUS,

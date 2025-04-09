@@ -21,6 +21,11 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
 )
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
+from airbyte_cdk.utils.datetime_helpers import (
+    ab_datetime_format,
+    ab_datetime_now,
+    ab_datetime_parse,
+)
 from airbyte_cdk.utils.mapping_helpers import _validate_component_request_option_paths
 
 
@@ -89,7 +94,6 @@ class DatetimeBasedCursor(DeclarativeCursor):
             None if not self.end_datetime else MinMaxDatetime.create(self.end_datetime, parameters)
         )
 
-        self._timezone = datetime.timezone.utc
         self._interpolation = JinjaInterpolation()
 
         self._step = (
@@ -112,7 +116,6 @@ class DatetimeBasedCursor(DeclarativeCursor):
         self._partition_field_end = InterpolatedString.create(
             self.partition_field_end or "end_time", parameters=parameters
         )
-        self._parser = DatetimeParser()
 
         # If datetime format is not specified then start/end datetime should inherit it from the stream slicer
         if not self._start_datetime.datetime_format:
@@ -240,10 +243,10 @@ class DatetimeBasedCursor(DeclarativeCursor):
 
         :return datetime.datetime: The best end datetime, which is either the current datetime or the pre-configured end datetime, whichever is earlier.
         """
-        now = datetime.datetime.now(tz=self._timezone)
+        now = ab_datetime_now()
         if not self._end_datetime:
             return now
-        return min(self._end_datetime.get_datetime(self.config), now)
+        return min(self._end_datetime.get_datetime(self.config), now.to_datetime())
 
     def _calculate_cursor_datetime_from_state(
         self, stream_state: Mapping[str, Any]
@@ -253,7 +256,12 @@ class DatetimeBasedCursor(DeclarativeCursor):
         return datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
 
     def _format_datetime(self, dt: datetime.datetime) -> str:
-        return self._parser.format(dt, self.datetime_format)
+        """Format the datetime according to the configured format.
+
+        # TODO: Standardize cursor serialization with ISO 8601 format and deprecate custom formats
+        #       in STATE messages.
+        """
+        return ab_datetime_format(dt, self.datetime_format)
 
     def _partition_daterange(
         self,
@@ -308,12 +316,15 @@ class DatetimeBasedCursor(DeclarativeCursor):
         return comparator(cursor_date, default_date)
 
     def parse_date(self, date: str) -> datetime.datetime:
-        for datetime_format in self.cursor_datetime_formats + [self.datetime_format]:
-            try:
-                return self._parser.parse(date, datetime_format)
-            except ValueError:
-                pass
-        raise ValueError(f"No format in {self.cursor_datetime_formats} matching {date}")
+        formats = list(set(self.cursor_datetime_formats + [self.datetime_format]))
+        try:
+            return ab_datetime_parse(
+                date,
+                formats=formats,
+                disallow_other_formats=False,  # TODO: Consider permissive parsing.
+            )
+        except ValueError as ex:
+            raise ValueError(f"No format in {formats} matching '{date}'") from ex
 
     @classmethod
     def _parse_timedelta(cls, time_str: Optional[str]) -> Union[datetime.timedelta, Duration]:

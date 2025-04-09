@@ -37,6 +37,7 @@ from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeP
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
 from airbyte_cdk.utils import is_cloud_environment
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 unstructured_partition_pdf = None
@@ -300,7 +301,7 @@ class UnstructuredParser(FileTypeParser):
                 format_config.processing,
                 FileType.MD,
                 "auto",
-                RemoteFile(uri="test", last_modified=datetime.now()),
+                RemoteFile(uri="test", last_modified=ab_datetime_now()),
             )
         except Exception:
             return False, "".join(traceback.format_exc())
