@@ -31,8 +31,8 @@ TConfig = TypeVar("TConfig", bound=Mapping[str, Any])
 
 
 class BaseConnector(ABC, Generic[TConfig]):
-    # configure whether the `check_config_against_spec_or_exit()` needs to be called
     check_config_against_spec: bool = True
+    """Configure whether `check_config_against_spec_or_exit()` needs to be called."""
     
     check_config_during_discover: bool = False
     """
