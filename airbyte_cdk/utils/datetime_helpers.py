@@ -141,10 +141,13 @@ class AirbyteDateTime(datetime):
     def to_datetime(self) -> datetime:
         """Converts this AirbyteDateTime to a standard datetime object.
 
-        Today, this just returns `self` because AirbyteDateTime is a subclass of `datetime`.
-        In the future, we may modify our internal representation to use a different base class.
+        Returns a standard datetime object with the same attributes as this AirbyteDateTime.
         """
-        return self
+        return datetime(
+            self.year, self.month, self.day, 
+            self.hour, self.minute, self.second, self.microsecond, 
+            tzinfo=self.tzinfo
+        )
 
     def __str__(self) -> str:
         """Returns the datetime in ISO8601/RFC3339 format with 'T' delimiter.
