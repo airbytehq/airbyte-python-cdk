@@ -325,6 +325,8 @@ class AbstractSource(Source, ABC):
         """
         return False
 
+    _check_config_during_discover: bool = False
+    
     @property
     def check_config_during_discover(self) -> bool:
         """
@@ -336,4 +338,14 @@ class AbstractSource(Source, ABC):
         Returns:
             bool: True if config validation should be skipped during discovery, False otherwise.
         """
-        return False
+        return self._check_config_during_discover
+        
+    @check_config_during_discover.setter
+    def check_config_during_discover(self, value: bool) -> None:
+        """
+        Sets whether config validation should be skipped during discovery.
+        
+        Args:
+            value: True if config validation should be skipped during discovery, False otherwise.
+        """
+        self._check_config_during_discover = value
