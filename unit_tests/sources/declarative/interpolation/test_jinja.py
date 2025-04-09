@@ -131,9 +131,9 @@ def test_positive_day_delta():
     val = interpolation.eval(delta_template, {})
 
     # We need to assert against an earlier delta since the interpolation function runs datetime.now() a few milliseconds earlier
-    assert val > (
-        datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=24, hours=23)
-    ).strftime("%Y-%m-%dT%H:%M:%S.%f%z")
+    assert val > (ab_datetime_now() + datetime.timedelta(days=24, hours=23)).strftime(
+        "%Y-%m-%dT%H:%M:%S.%f%z"
+    )
 
 
 def test_positive_day_delta_with_format():

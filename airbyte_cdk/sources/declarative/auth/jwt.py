@@ -14,6 +14,7 @@ from airbyte_cdk.sources.declarative.auth.declarative_authenticator import Decla
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 
 
 class JwtAlgorithm(str):
@@ -127,7 +128,7 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         """
         Builds and returns the payload used when signing the JWT.
         """
-        now = int(datetime.now().timestamp())
+        now = ab_datetime_now().timestamp()
         exp = now + self._token_duration if isinstance(self._token_duration, int) else now
         nbf = now
 

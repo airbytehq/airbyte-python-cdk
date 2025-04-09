@@ -12,7 +12,11 @@ from airbyte_cdk.sources.file_based.stream.cursor.abstract_file_based_cursor imp
     AbstractFileBasedCursor,
 )
 from airbyte_cdk.sources.file_based.types import StreamState
-from airbyte_cdk.utils.datetime_helpers import ab_datetime_format, ab_datetime_parse
+from airbyte_cdk.utils.datetime_helpers import (
+    ab_datetime_format,
+    ab_datetime_now,
+    ab_datetime_parse,
+)
 
 
 class DefaultFileBasedCursor(AbstractFileBasedCursor):
@@ -156,6 +160,6 @@ class DefaultFileBasedCursor(AbstractFileBasedCursor):
                 disallow_other_formats=False,
             )
             if self._is_history_full():
-                time_window = datetime.now() - self._time_window_if_history_is_full
+                time_window = ab_datetime_now() - self._time_window_if_history_is_full
                 earliest_dt = min(earliest_dt, time_window)
             return earliest_dt

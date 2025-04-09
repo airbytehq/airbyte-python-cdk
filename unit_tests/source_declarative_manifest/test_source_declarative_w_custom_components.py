@@ -126,7 +126,7 @@ def test_missing_checksum_fails_to_run(
     py_components_config_dict = get_py_components_config_dict()
     # Truncate the start_date to speed up tests
     py_components_config_dict["start_date"] = (
-        datetime.datetime.now() - datetime.timedelta(days=2)
+        ab_datetime_now() - datetime.timedelta(days=2)
     ).strftime("%Y-%m-%d")
 
     py_components_config_dict.pop("__injected_components_py_checksums")
@@ -158,7 +158,7 @@ def test_invalid_checksum_fails_to_run(
     py_components_config_dict = get_py_components_config_dict()
     # Truncate the start_date to speed up tests
     py_components_config_dict["start_date"] = (
-        datetime.datetime.now() - datetime.timedelta(days=2)
+        ab_datetime_now() - datetime.timedelta(days=2)
     ).strftime("%Y-%m-%d")
 
     py_components_config_dict["__injected_components_py_checksums"][hash_type] = "invalid_checksum"
@@ -205,7 +205,7 @@ def test_fail_unless_custom_code_enabled_explicitly(
     py_components_config_dict = get_py_components_config_dict()
     # Truncate the start_date to speed up tests
     py_components_config_dict["start_date"] = (
-        datetime.datetime.now() - datetime.timedelta(days=2)
+        ab_datetime_now() - datetime.timedelta(days=2)
     ).strftime("%Y-%m-%d")
 
     with NamedTemporaryFile(delete=False, suffix=".json") as temp_config_file:
@@ -242,7 +242,7 @@ def test_sync_with_injected_py_components(
     )
     # Truncate the start_date to speed up tests
     py_components_config_dict["start_date"] = (
-        datetime.datetime.now() - datetime.timedelta(days=2)
+        ab_datetime_now() - datetime.timedelta(days=2)
     ).strftime("%Y-%m-%d")
     assert isinstance(py_components_config_dict, dict)
     assert "__injected_declarative_manifest" in py_components_config_dict

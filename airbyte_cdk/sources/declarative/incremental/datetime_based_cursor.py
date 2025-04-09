@@ -21,7 +21,11 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
 )
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
-from airbyte_cdk.utils.datetime_helpers import ab_datetime_format, ab_datetime_parse
+from airbyte_cdk.utils.datetime_helpers import (
+    ab_datetime_format,
+    ab_datetime_now,
+    ab_datetime_parse,
+)
 from airbyte_cdk.utils.mapping_helpers import _validate_component_request_option_paths
 
 
@@ -90,7 +94,6 @@ class DatetimeBasedCursor(DeclarativeCursor):
             None if not self.end_datetime else MinMaxDatetime.create(self.end_datetime, parameters)
         )
 
-        self._timezone = datetime.timezone.utc
         self._interpolation = JinjaInterpolation()
 
         self._step = (
@@ -240,10 +243,10 @@ class DatetimeBasedCursor(DeclarativeCursor):
 
         :return datetime.datetime: The best end datetime, which is either the current datetime or the pre-configured end datetime, whichever is earlier.
         """
-        now = datetime.datetime.now(tz=self._timezone)
+        now = ab_datetime_now()
         if not self._end_datetime:
             return now
-        return min(self._end_datetime.get_datetime(self.config), now)
+        return min(self._end_datetime.get_datetime(self.config), now.to_datetime())
 
     def _calculate_cursor_datetime_from_state(
         self, stream_state: Mapping[str, Any]

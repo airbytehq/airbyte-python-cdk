@@ -91,7 +91,7 @@ class TestJwtAuthenticator:
             additional_jwt_payload=additional_jwt_payload,
         )
         with freezegun.freeze_time("2022-01-01 00:00:00"):
-            expected["iat"] = int(datetime.now().timestamp())
+            expected["iat"] = int(ab_datetime_now().to_timestamp())
             expected["exp"] = expected["iat"] + 1000
             expected["nbf"] = expected["iat"]
             assert authenticator._get_jwt_payload() == expected

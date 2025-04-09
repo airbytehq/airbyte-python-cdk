@@ -81,8 +81,9 @@ assert not ab_datetime_try_parse("foo")                    # Invalid: not parsab
 ```
 """
 
+import decimal
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional, Union, overload
+from typing import Any, Optional, Union, cast, overload
 
 from dateutil import parser
 from typing_extensions import Never
@@ -360,8 +361,8 @@ def ab_datetime_now() -> AirbyteDateTime:
 
 
 def ab_datetime_parse(
-    dt_str: str | int,
-    formats: list[str | None] | None = None,
+    dt_str: str | int | float,
+    formats: list[str | None] | list[str] | None = None,
     disallow_other_formats: bool = False,
 ) -> AirbyteDateTime:
     """Parses a datetime string or timestamp into an AirbyteDateTime with timezone awareness.
@@ -403,6 +404,27 @@ def ab_datetime_parse(
     try:
         # Remove None values from formats list, and coalesce to None if empty
         formats = [f for f in formats or [] if f] or None
+
+        if isinstance(dt_str, str):
+            if dt_str.startswith("-"):
+                raise ValueError("Timestamp cannot be negative: " + dt_str)
+
+            if dt_str[1:].replace(".", "").isdigit():
+                # Handle floats and ints as strings
+                if "." in dt_str:
+                    dt_str = float(dt_str)
+                else:
+                    dt_str = int(dt_str)
+
+        if isinstance(dt_str, float):
+            # Handle float values as Unix timestamps (UTC)
+            if dt_str < 0:
+                raise ValueError("Timestamp cannot be negative")
+            if len(str(abs(int(dt_str)))) > 10:
+                raise ValueError("Timestamp value too large")
+
+            instant = Instant.from_timestamp(dt_str)
+            return AirbyteDateTime.from_datetime(instant.py_datetime())
 
         # Handle numeric values as Unix timestamps (UTC)
         if isinstance(dt_str, int) or (

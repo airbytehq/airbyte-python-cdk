@@ -2,6 +2,8 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
+
 
 class Timer:
     def __init__(self, timeout: timedelta) -> None:
@@ -36,4 +38,4 @@ class Timer:
 
     @staticmethod
     def _now() -> datetime:
-        return datetime.now(tz=timezone.utc)
+        return ab_datetime_now()

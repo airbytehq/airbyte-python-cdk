@@ -19,7 +19,7 @@ from pyrate_limiter import InMemoryBucket, Limiter, RateItem, TimeClock
 from pyrate_limiter import Rate as PyRateRate
 from pyrate_limiter.exceptions import BucketFullException
 
-from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now
 
 # prevents mypy from complaining about missing session attributes in LimiterMixin
 if TYPE_CHECKING:
@@ -282,7 +282,7 @@ class UnlimitedCallRatePolicy(BaseCallRatePolicy):
             ),
             FixedWindowCallRatePolicy(
                 matchers=[HttpRequestMatcher(url="/some/method")],
-                next_reset_ts=datetime.now(),
+                next_reset_ts=ab_datetime_now(),
                 period=timedelta(hours=1)
                 call_limit=1000,
             ),
@@ -387,7 +387,7 @@ class FixedWindowCallRatePolicy(BaseCallRatePolicy):
                 self._next_reset_ts = call_reset_ts
 
     def _update_current_window(self) -> None:
-        now = datetime.datetime.now()
+        now = ab_datetime_now()
         if now > self._next_reset_ts:
             logger.debug("started new window, %s calls available now", self._call_limit)
             self._next_reset_ts = self._next_reset_ts + self._offset

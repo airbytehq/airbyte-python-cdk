@@ -20,7 +20,11 @@ from airbyte_cdk.sources.message.repository import MessageRepository
 from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.types import Record
-from airbyte_cdk.utils.datetime_helpers import ab_datetime_format, ab_datetime_parse
+from airbyte_cdk.utils.datetime_helpers import (
+    ab_datetime_format,
+    ab_datetime_now,
+    ab_datetime_parse,
+)
 
 if TYPE_CHECKING:
     from airbyte_cdk.sources.file_based.stream.concurrent.adapters import FileBasedStreamPartition
@@ -310,7 +314,7 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
                 disallow_other_formats=False,
             )
             if self._is_history_full():
-                time_window = datetime.now() - self._time_window_if_history_is_full
+                time_window = ab_datetime_now() - self._time_window_if_history_is_full
                 earliest_dt = min(earliest_dt, time_window)
             return earliest_dt
 
