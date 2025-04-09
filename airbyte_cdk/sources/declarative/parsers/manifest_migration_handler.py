@@ -12,9 +12,9 @@ from airbyte_cdk.sources.types import EmptyString
 # Type definitions for better readability
 ManifestType = Dict[str, Any]
 DefinitionsType = Dict[str, Any]
-MigrationsType = List[Tuple[str, str, Optional[str]]]
 MigrationType = Tuple[str, str, Optional[str]]
-MigratedTagsType = Dict[str, List[Tuple[str, str, Optional[str]]]]
+MigrationsType = List[MigrationType]
+MigratedTagsType = Dict[str, MigrationsType]
 MigrationFunctionType = Callable[[Any, MigrationType], None]
 
 
@@ -22,6 +22,7 @@ MigrationFunctionType = Callable[[Any, MigrationType], None]
 TYPE_TAG = "type"
 DEF_TAG = "definitions"
 MIGRATIONS_TAG = "migrations"
+MIGRATIONS_STACK_TAG = "stack"
 ORIGINAL_KEY = "original_key"
 REPLACEMENT_KEY = "replacement_key"
 
@@ -67,18 +68,28 @@ class ManifestMigrationHandler:
     ) -> None:
         self._manifest = manifest
         self._declarative_schema = declarative_schema
-
         self._migrated_manifest: ManifestType = copy.deepcopy(self._manifest)
         # get the declared migrations from schema
         self._migration_tags = self._get_migration_schema_tags(self._declarative_schema)
 
     def migrate(self) -> ManifestType:
+        """
+        Migrates the manifest by applying configured migrations to different component types.
+
+        This method iterates through all registered component types and their associated
+        migrations in `_migration_tags`, applying them sequentially by calling
+        `_handle_migrations` for each component type.
+
+        Returns:
+            ManifestType: The migrated manifest if migration succeeds, or the original
+                         manifest if a ManifestMigrationException occurs during migration.
+        """
         try:
             for component_type, migrations in self._migration_tags.items():
                 self._handle_migrations(component_type, migrations)
             return self._migrated_manifest
-        except ManifestMigrationException as e:
-            # if any errors occurs we return the original resolved manifest
+        except ManifestMigrationException:
+            # if any errors occur we return the original resolved manifest
             return self._manifest
 
     def _get_migration_schema_tags(self, schema: DefinitionsType) -> MigratedTagsType:
@@ -99,22 +110,36 @@ class ManifestMigrationHandler:
 
         for component_name, component_declaration in schema_definitions.items():
             if MIGRATIONS_TAG in component_declaration.keys():
-                # create the placeholder for the migrations
                 migrations_tags[component_name] = []
-                # iterate over the migrations
+
                 for migration in component_declaration[MIGRATIONS_TAG]:
-                    migrations_tags[component_name].append(
-                        (
-                            # type of migration
-                            migration.get(TYPE_TAG),
-                            # what is the migrated key
-                            migration.get(ORIGINAL_KEY),
-                            # (optional) what is the new key to be used
-                            migration.get(REPLACEMENT_KEY),
-                        ),
-                    )
+                    # register the stack of migrations
+                    if migration[TYPE_TAG] == MIGRATIONS_STACK_TAG:
+                        for migration in migration[MIGRATIONS_TAG]:
+                            self._register_migration(migrations_tags, component_name, migration)
+                    # register a single migration
+                    else:
+                        self._register_migration(migrations_tags, component_name, migration)
 
         return migrations_tags
+
+    def _register_migration(
+        self,
+        migrations_tags: MigratedTagsType,
+        component_name: str,
+        migration: Dict[str, Any],
+    ) -> None:
+        """
+        Registers the migration in the migrations_tags dictionary.
+        """
+
+        migrations_tags[component_name].append(
+            (
+                migration[TYPE_TAG],  # type of migration
+                migration[ORIGINAL_KEY],  # what is the migrated key
+                migration.get(REPLACEMENT_KEY),  # (optional) what is the new key to be used
+            ),
+        )
 
     def _handle_migrations(
         self,
@@ -138,6 +163,21 @@ class ManifestMigrationHandler:
             raise ManifestMigrationException(f"Failed to migrate the manifest: {e}") from e
 
     def _process_migration(self, obj: Any, component_type: str, migration: MigrationType) -> None:
+        """
+        Process a migration rule by recursively traversing through a nested data structure.
+
+        This method applies migrations to components of a specified type that contain the migrated key.
+        It recursively processes dictionaries and lists, looking for components that match the criteria.
+        Migration is skipped for component types listed in NON_MIGRATABLE_TYPES.
+
+        Args:
+            obj: The object to process, which can be a dictionary, list, or other type.
+            component_type: The type of component to apply the migration to.
+            migration: A tuple containing migration type, migrated key, and additional migration info.
+
+        Returns:
+            None
+        """
         migration_type, migrated_key, _ = migration
 
         if isinstance(obj, dict):
@@ -146,9 +186,11 @@ class ManifestMigrationHandler:
             # check for component type match the designed migration
             if TYPE_TAG in obj_keys:
                 obj_type = obj[TYPE_TAG]
-                # do not migrate if the type is not in the list of migratable types
+
+                # do not migrate if the particular type is in the list of non-migratable types
                 if obj_type in NON_MIGRATABLE_TYPES:
                     return
+
                 if obj_type == component_type and migrated_key in obj_keys:
                     if migration_type in self._migration_type_mapping.keys():
                         # Call the appropriate function based on the migration type

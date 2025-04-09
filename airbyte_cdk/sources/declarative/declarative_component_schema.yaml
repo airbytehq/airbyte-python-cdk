@@ -1863,13 +1863,15 @@ definitions:
         description: The `url_base` has been deprecated, in favor of the `url` field.
         original_key: url_base
         replacement_key: url
-      - type: handle_url_parts
-        description: The `path` has been deprecated, in favor of the `url` field. The value from the `path` field will be joined to the `url` field.
-        original_key: path
-        replacement_key: url
-      - type: remove_field
-        description: The `path` has been deprecated, in favor of the `url` field.
-        original_key: path
+      - type: stack
+        migrations:
+          - type: handle_url_parts
+            description: The `path` has been deprecated, in favor of the `url` field. The value from the `path` field will be joined to the `url` field.
+            original_key: path
+            replacement_key: url
+          - type: remove_field
+            description: The `path` has been deprecated, in favor of the `url` field.
+            original_key: path
     title: HTTP Requester
     description: Requester submitting HTTP requests and extracting records from the response.
     type: object
