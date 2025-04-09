@@ -407,10 +407,32 @@ def ab_datetime_parse(
         '2023-03-14T15:09:26+00:00'
     """
     try:
+        if formats:
+            for format_str in formats:
+                try:
+                    if format_str == "%s":
+                        if isinstance(dt_str, int) or (isinstance(dt_str, str) and dt_str.isdigit()):
+                            timestamp = int(dt_str)
+                            if timestamp < 0:
+                                raise ValueError("Timestamp cannot be negative")
+                            return AirbyteDateTime.from_datetime(datetime.fromtimestamp(timestamp, tz=timezone.utc))
+                    parsed = datetime.strptime(dt_str, format_str)
+                    if parsed.tzinfo is None:
+                        parsed = parsed.replace(tzinfo=timezone.utc)
+                    return AirbyteDateTime.from_datetime(parsed)
+                except ValueError:
+                    continue
+
+            if disallow_other_formats:
+                raise ValueError(
+                    f"Could not parse datetime string '{dt_str}' with any of the provided formats: {formats}"
+                )
+
         # Handle numeric values as Unix timestamps (UTC)
         if isinstance(dt_str, int) or (
             isinstance(dt_str, str)
             and (dt_str.isdigit() or (dt_str.startswith("-") and dt_str[1:].isdigit()))
+            and not formats  # Skip timestamp handling if formats were provided but failed
         ):
             timestamp = int(dt_str)
             if timestamp < 0:
@@ -428,6 +450,12 @@ def ab_datetime_parse(
         if formats:
             for format_str in formats:
                 try:
+                    if format_str == "%s":
+                        if isinstance(dt_str, int) or (isinstance(dt_str, str) and dt_str.isdigit()):
+                            timestamp = int(dt_str)
+                            if timestamp < 0:
+                                raise ValueError("Timestamp cannot be negative")
+                            return AirbyteDateTime.from_datetime(datetime.fromtimestamp(timestamp, tz=timezone.utc))
                     parsed = datetime.strptime(dt_str, format_str)
                     if parsed.tzinfo is None:
                         parsed = parsed.replace(tzinfo=timezone.utc)
