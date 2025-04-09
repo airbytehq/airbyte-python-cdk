@@ -344,7 +344,9 @@ class AirbyteDateTime(datetime):
         return ab_datetime_parse(dt_str)
 
 
-def ab_datetime_now() -> AirbyteDateTime:
+def ab_datetime_now(
+    tz: str | timezone | None = None,
+) -> AirbyteDateTime:
     """Returns the current time as an AirbyteDateTime in UTC timezone.
 
     Returns:

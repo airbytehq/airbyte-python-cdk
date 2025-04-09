@@ -41,7 +41,7 @@ def today_utc() -> datetime.date:
     Usage:
     `"{{ today_utc() }}"`
     """
-    return datetime.datetime.now(datetime.timezone.utc).date()
+    return ab_datetime_now().date()
 
 
 def today_with_timezone(timezone: str) -> datetime.date:
@@ -51,7 +51,7 @@ def today_with_timezone(timezone: str) -> datetime.date:
     :param timezone: timezone expressed as IANA keys format. Example: "Pacific/Tarawa"
     :return:
     """
-    return datetime.datetime.now(tz=pytz.timezone(timezone)).date()
+    return ab_datetime_now(tz=timezone).date()
 
 
 def timestamp(dt: Union[float, str]) -> Union[int, float]:
