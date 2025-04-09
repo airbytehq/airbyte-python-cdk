@@ -73,21 +73,21 @@ class MinMaxDatetime:
                 )
             ),
             formats=[datetime_format] if datetime_format else None,
-        ).to_datetime()  # type: ignore # datetime is always cast to an interpolated string
+        )
 
         if self.min_datetime:
             min_time = str(self.min_datetime.eval(config, **additional_parameters))  # type: ignore # min_datetime is always cast to an interpolated string
             if min_time:
                 min_datetime = ab_datetime_parse(
                     min_time, formats=[datetime_format] if datetime_format else None
-                ).to_datetime()  # type: ignore # min_datetime is always cast to an interpolated string
+                )
                 time = max(time, min_datetime)
         if self.max_datetime:
             max_time = str(self.max_datetime.eval(config, **additional_parameters))  # type: ignore # max_datetime is always cast to an interpolated string
             if max_time:
                 max_datetime = ab_datetime_parse(
                     max_time, formats=[datetime_format] if datetime_format else None
-                ).to_datetime()
+                )
                 time = min(time, max_datetime)
         return time
 
