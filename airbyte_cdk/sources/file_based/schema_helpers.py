@@ -26,10 +26,8 @@ file_transfer_schema = {
         "file_name": {"type": "string"},
         "bytes": {"type": "integer"},
         "id": {"type": ["null", "string"]},
-        "created_at": {"type": ["null", "integer"]},
-        "updated_at": {"type": ["null", "integer"]},
+        "updated_at": {"type": ["null", "string"]},
         "mime_type": {"type": ["null", "string"]},
-        "description": {"type": ["null", "string"]},
     },
 }
 
