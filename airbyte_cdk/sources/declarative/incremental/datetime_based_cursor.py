@@ -321,9 +321,7 @@ class DatetimeBasedCursor(DeclarativeCursor):
                 disallow_other_formats=False,  # TODO: Consider permissive parsing.
             )
         except ValueError as ex:
-            raise ValueError(
-                f"No format in {formats} matching '{date}'"
-            ) from ex
+            raise ValueError(f"No format in {formats} matching '{date}'") from ex
 
     @classmethod
     def _parse_timedelta(cls, time_str: Optional[str]) -> Union[datetime.timedelta, Duration]:

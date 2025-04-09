@@ -216,8 +216,9 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
         with self._state_lock:
             if self._file_to_datetime_history:
                 filename, last_modified = max(
-                    self._file_to_datetime_history.items(), key=lambda f: (f[1], f[0])
-                )``
+                    self._file_to_datetime_history.items(),
+                    key=lambda f: (f[1], f[0]),
+                )
                 return RemoteFile(
                     uri=filename,
                     last_modified=ab_datetime_parse(
