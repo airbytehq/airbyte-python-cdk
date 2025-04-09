@@ -219,9 +219,10 @@ class AirbyteDateTime(datetime):
         Raises:
             TypeError: If other is not a timedelta.
         """
-        result = super().__add__(other)
-        if isinstance(result, datetime):
-            return AirbyteDateTime.from_datetime(result)
+        if isinstance(other, timedelta):
+            result = super().__add__(other)
+            if isinstance(result, datetime):
+                return AirbyteDateTime.from_datetime(result)
         raise TypeError("Invalid operation")
 
     def __radd__(self, other: timedelta) -> "AirbyteDateTime":
