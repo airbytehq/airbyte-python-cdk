@@ -253,6 +253,11 @@ class DatetimeBasedCursor(DeclarativeCursor):
         return datetime.datetime.min.replace(tzinfo=datetime.timezone.utc)
 
     def _format_datetime(self, dt: datetime.datetime) -> str:
+        """Format the datetime according to the configured format.
+
+        # TODO: Standardize cursor serialization with ISO 8601 format and deprecate custom formats
+        #       in STATE messages.
+        """
         return ab_datetime_format(dt, self.datetime_format)
 
     def _partition_daterange(
@@ -267,11 +272,7 @@ class DatetimeBasedCursor(DeclarativeCursor):
 
         while self._is_within_date_range(start, end):
             next_start = self._evaluate_next_start_date_safely(start, step)
-            if hasattr(next_start, "to_datetime"):
-                next_start_dt = next_start.to_datetime()
-            else:
-                next_start_dt = next_start
-            end_date = self._get_date(next_start_dt - self._cursor_granularity, end, min)
+            end_date = self._get_date(next_start - self._cursor_granularity, end, min)
             dates.append(
                 StreamSlice(
                     partition={},
@@ -298,8 +299,6 @@ class DatetimeBasedCursor(DeclarativeCursor):
         would have broken anyway.
         """
         try:
-            if hasattr(start, "to_datetime"):
-                start = start.to_datetime()
             return start + step
         except OverflowError:
             return datetime.datetime.max.replace(tzinfo=datetime.timezone.utc)
@@ -314,15 +313,17 @@ class DatetimeBasedCursor(DeclarativeCursor):
         return comparator(cursor_date, default_date)
 
     def parse_date(self, date: str) -> datetime.datetime:
+        formats = list(set(self.cursor_datetime_formats + [self.datetime_format]))
         try:
-            # Try each format in the list, falling back to the default format
             return ab_datetime_parse(
-                date, formats=self.cursor_datetime_formats + [self.datetime_format]
-            ).to_datetime()
-        except ValueError:
-            raise ValueError(
-                f"No format in {self.cursor_datetime_formats + [self.datetime_format]} matching {date}"
+                date,
+                formats=formats,
+                disallow_other_formats=False,  # TODO: Consider permissive parsing.
             )
+        except ValueError as ex:
+            raise ValueError(
+                f"No format in {formats} matching '{date}'"
+            ) from ex
 
     @classmethod
     def _parse_timedelta(cls, time_str: Optional[str]) -> Union[datetime.timedelta, Duration]:

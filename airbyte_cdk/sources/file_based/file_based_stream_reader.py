@@ -96,7 +96,11 @@ class AbstractFileBasedStreamReader(ABC):
         Utility method for filtering files based on globs.
         """
         start_date = (
-            ab_datetime_parse(self.config.start_date, formats=[self.DATE_TIME_FORMAT]).to_datetime()
+            ab_datetime_parse(
+                self.config.start_date,
+                formats=[self.DATE_TIME_FORMAT],
+                disallow_other_formats=False,
+            )
             if self.config and self.config.start_date
             else None
         )

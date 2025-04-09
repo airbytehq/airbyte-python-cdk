@@ -31,7 +31,7 @@ def now_utc() -> datetime.datetime:
     Usage:
     `"{{ now_utc() }}"`
     """
-    return ab_datetime_now().to_datetime()
+    return ab_datetime_now()
 
 
 def today_utc() -> datetime.date:
@@ -67,10 +67,7 @@ def timestamp(dt: Union[float, str]) -> Union[int, float]:
     :param dt: datetime to convert to timestamp
     :return: unix timestamp
     """
-    if isinstance(dt, (int, float)):
-        return int(dt)
-    else:
-        return str_to_datetime(dt).astimezone(pytz.utc).timestamp()
+    return ab_datetime_parse(dt).timestamp()
 
 
 def str_to_datetime(s: str) -> datetime.datetime:
@@ -87,10 +84,7 @@ def str_to_datetime(s: str) -> datetime.datetime:
     :param s: string to parse as datetime
     :return: datetime object in UTC timezone
     """
-    dt = ab_datetime_parse(s).to_datetime()
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=pytz.utc)
-    return dt.astimezone(pytz.utc)
+    return ab_datetime_parse(s)
 
 
 def max(*args: typing.Any) -> typing.Any:
@@ -144,7 +138,8 @@ def day_delta(num_days: int, format: str = "%Y-%m-%dT%H:%M:%S.%f%z") -> str:
     :return: datetime formatted as RFC3339
     """
     return ab_datetime_format(
-        ab_datetime_now().to_datetime() + datetime.timedelta(days=num_days), format
+        ab_datetime_now() + datetime.timedelta(days=num_days),
+        format=format,
     )
 
 
@@ -175,18 +170,12 @@ def format_datetime(
         return ab_datetime_format(dt, format)
 
     if isinstance(dt, int):
-        dt_datetime = ab_datetime_parse(
-            dt, formats=[input_format] if input_format else None
-        ).to_datetime()
+        dt_datetime = ab_datetime_parse(dt, formats=[input_format])
     else:
-        dt_datetime = (
-            ab_datetime_parse(dt, formats=[input_format] if input_format else None).to_datetime()
-            if input_format
-            else str_to_datetime(dt)
-        )
+        dt_datetime = ab_datetime_parse(dt, formats=[input_format])
     if dt_datetime.tzinfo is None:
         dt_datetime = dt_datetime.replace(tzinfo=pytz.utc)
-    return ab_datetime_format(dt_datetime, format)
+    return ab_datetime_format(dt_datetime, format=format)
 
 
 _macros_list = [

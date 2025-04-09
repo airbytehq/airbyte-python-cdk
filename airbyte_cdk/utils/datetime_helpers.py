@@ -141,18 +141,10 @@ class AirbyteDateTime(datetime):
     def to_datetime(self) -> datetime:
         """Converts this AirbyteDateTime to a standard datetime object.
 
-        Returns a standard datetime object with the same attributes as this AirbyteDateTime.
+        Today, this just returns `self` because AirbyteDateTime is a subclass of `datetime`.
+        In the future, we may modify our internal representation to use a different base class.
         """
-        return datetime(
-            self.year,
-            self.month,
-            self.day,
-            self.hour,
-            self.minute,
-            self.second,
-            self.microsecond,
-            tzinfo=self.tzinfo,
-        )
+        return self
 
     def __str__(self) -> str:
         """Returns the datetime in ISO8601/RFC3339 format with 'T' delimiter.
@@ -368,7 +360,9 @@ def ab_datetime_now() -> AirbyteDateTime:
 
 
 def ab_datetime_parse(
-    dt_str: str | int, formats: list[str] | None = None, disallow_other_formats: bool = False
+    dt_str: str | int,
+    formats: list[str | None] | None = None,
+    disallow_other_formats: bool = False,
 ) -> AirbyteDateTime:
     """Parses a datetime string or timestamp into an AirbyteDateTime with timezone awareness.
 
@@ -407,6 +401,9 @@ def ab_datetime_parse(
         '2023-03-14T15:09:26+00:00'
     """
     try:
+        # Remove None values from formats list, and coalesce to None if empty
+        formats = [f for f in formats if f] or None
+
         if formats:
             for format_str in formats:
                 try:

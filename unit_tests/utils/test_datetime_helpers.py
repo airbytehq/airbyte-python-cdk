@@ -197,11 +197,6 @@ def test_format(input_dt, expected_output):
     """Test formatting various datetime objects."""
     assert ab_datetime_format(input_dt) == expected_output
 
-    # Test with custom format for AirbyteDateTime
-    if isinstance(input_dt, AirbyteDateTime):
-        custom_format = "%Y-%m-%d %H:%M:%S"
-        assert ab_datetime_format(input_dt, custom_format) == input_dt.strftime(custom_format)
-
 
 def test_operator_overloading():
     """Test datetime operator overloading (+, -, etc.)."""

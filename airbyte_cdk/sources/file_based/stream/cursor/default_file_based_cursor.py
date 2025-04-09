@@ -84,8 +84,10 @@ class DefaultFileBasedCursor(AbstractFileBasedCursor):
         if file.uri in self._file_to_datetime_history:
             # If the file's uri is in the history, we should sync the file if it has been modified since it was synced
             updated_at_from_history = ab_datetime_parse(
-                self._file_to_datetime_history[file.uri], formats=[self.DATE_TIME_FORMAT]
-            ).to_datetime()
+                self._file_to_datetime_history[file.uri],
+                formats=[self.DATE_TIME_FORMAT],
+                disallow_other_formats=False,
+            )
             if file.last_modified < updated_at_from_history:
                 logger.warning(
                     f"The file {file.uri}'s last modified date is older than the last time it was synced. This is unexpected. Skipping the file."
@@ -135,8 +137,10 @@ class DefaultFileBasedCursor(AbstractFileBasedCursor):
             return RemoteFile(
                 uri=filename,
                 last_modified=ab_datetime_parse(
-                    last_modified, formats=[self.DATE_TIME_FORMAT]
-                ).to_datetime(),
+                    last_modified,
+                    formats=[self.DATE_TIME_FORMAT],
+                    disallow_other_formats=False,
+                ),
             )
         else:
             return None
@@ -146,7 +150,11 @@ class DefaultFileBasedCursor(AbstractFileBasedCursor):
             return datetime.min
         else:
             earliest = min(self._file_to_datetime_history.values())
-            earliest_dt = ab_datetime_parse(earliest, formats=[self.DATE_TIME_FORMAT]).to_datetime()
+            earliest_dt = ab_datetime_parse(
+                earliest,
+                formats=[self.DATE_TIME_FORMAT],
+                disallow_other_formats=False,
+            )
             if self._is_history_full():
                 time_window = datetime.now() - self._time_window_if_history_is_full
                 earliest_dt = min(earliest_dt, time_window)

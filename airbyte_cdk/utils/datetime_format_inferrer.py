@@ -54,7 +54,11 @@ class DatetimeFormatInferrer:
     def _matches_format(self, value: Any, format: str) -> bool:
         """Checks if the value matches the format"""
         try:
-            dt = ab_datetime_try_parse(value, formats=[format], disallow_other_formats=True)
+            dt = ab_datetime_try_parse(
+                value,
+                formats=[format],
+                disallow_other_formats=True,
+            )
             return dt is not None
         except (ValueError, TypeError):
             return False

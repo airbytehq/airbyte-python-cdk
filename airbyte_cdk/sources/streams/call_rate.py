@@ -666,7 +666,7 @@ class HttpAPIBudget(APIBudget):
         if response.headers.get(self._ratelimit_reset_header):
             return AirbyteDateTime.fromtimestamp(
                 int(response.headers[self._ratelimit_reset_header])
-            ).to_datetime()
+            )
         return None
 
     def get_calls_left_from_response(self, response: requests.Response) -> Optional[int]:
