@@ -5,12 +5,12 @@
 # Note: We may want to rename this file at some point. However, if we rename the workflow file name,
 # we have to also update the Trusted Publisher settings on PyPI.
 
-name: Packaging and Publishing
+name: CDK Publish
 
 on:
   push:
-    tags:
-      - "v*"
+    # tags:
+    #   - "v*"
   workflow_dispatch:
     inputs:
       version:
@@ -37,17 +37,30 @@ jobs:
     name: Build Python Package
     runs-on: ubuntu-24.04
     steps:
-      - name: Detect Release Tag Version
+
+      - name: Checkout CDK Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect Prerelease Version using Dunamai
+        uses: mtkennerly/dunamai-action@v1
+        with:
+          args: --style pep440
+          env-var: DETECTED_VERSION
+
+      - name: Detect Release Tag Version from git ref ('${{ github.ref_name }}')
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
+          echo "Overriding Dunamai detected version: '${{ env.DETECTED_VERSION || 'none' }}'"
+          # Extract the version from the git ref
           DETECTED_VERSION=${{ github.ref_name }}
-          echo "Version ref set to '${DETECTED_VERSION}'"
           # Remove the 'v' prefix if it exists
           DETECTED_VERSION="${DETECTED_VERSION#v}"
-          echo "Setting version to '$DETECTED_VERSION'"
+          echo "Setting detected version to '$DETECTED_VERSION'"
           echo "DETECTED_VERSION=${DETECTED_VERSION}" >> $GITHUB_ENV
 
-      - name: Validate and set VERSION from git ref ('${{ github.ref_name }}') and input (${{ github.event.inputs.version || 'none' }})
+      - name: Validate and set VERSION (git-ref='${{ github.ref_name }}', detected='${{ env.DETECTED_VERSION }}', input='${{ github.event.inputs.version || 'none' }}')
         id: set_version
         run: |
           INPUT_VERSION=${{ github.event.inputs.version }}
@@ -83,10 +96,6 @@ jobs:
             echo "IS_PRERELEASE=true" >> $GITHUB_ENV
             echo "IS_PRERELEASE=true" >> $GITHUB_OUTPUT
           fi
-
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - uses: hynek/build-and-inspect-python-package@v2
         env:
