@@ -10,7 +10,7 @@ up iteration cycles.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, cast
 
 import yaml
 from pydantic import BaseModel
@@ -33,7 +33,7 @@ class ConnectorTestScenario(BaseModel):
         bypass_reason: str
 
     config_path: Path | None = None
-    config_dict: dict | None = None
+    config_dict: dict[str, Any] | None = None
 
     id: str | None = None
 
@@ -43,27 +43,27 @@ class ConnectorTestScenario(BaseModel):
     file_types: AcceptanceTestFileTypes | None = None
     status: Literal["succeed", "failed"] | None = None
 
-    def get_config_dict(self) -> dict:
+    def get_config_dict(self) -> dict[str, Any]:
         """Return the config dictionary.
 
         If a config dictionary has already been loaded, return it. Otherwise, load
-        Otherwise, load the config file and return the dictionary.
+        the config file and return the dictionary.
         """
         if self.config_dict:
             return self.config_dict
 
         if self.config_path:
-            return yaml.safe_load(self.config_path.read_text())
+            return cast(dict[str, Any], yaml.safe_load(self.config_path.read_text()))
 
         raise ValueError("No config dictionary or path provided.")
 
     @property
     def expect_exception(self) -> bool:
-        return self.status and self.status == "failed"
+        return self.status and self.status == "failed" or False
 
     @property
     def instance_name(self) -> str:
-        return self.config_path.stem
+        return self.config_path.stem if self.config_path else "Unnamed Scenario"
 
     def __str__(self) -> str:
         if self.id:

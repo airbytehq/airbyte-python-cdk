@@ -1,7 +1,7 @@
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Callable, Literal
+from typing import Any, Callable, Literal
 
 import orjson
 
@@ -22,7 +22,7 @@ def run_test_job(
     verb: Literal["read", "check", "discover"],
     test_instance: ConnectorTestScenario,
     *,
-    catalog: dict | None = None,
+    catalog: dict[str, Any] | None = None,
 ) -> entrypoint_wrapper.EntrypointOutput:
     """Run a test job from provided CLI args and return the result."""
     if not connector:
@@ -49,7 +49,7 @@ def run_test_job(
     else:
         raise ValueError(f"Invalid source type: {type(connector)}")
 
-    args = [verb]
+    args: list[str] = [verb]
     if test_instance.config_path:
         args += ["--config", str(test_instance.config_path)]
     elif test_instance.config_dict:
@@ -103,12 +103,12 @@ def run_test_job(
         assert len(result.connection_status_messages) == 1, (
             "Expected exactly one CONNECTION_STATUS message. Got "
             f"{len(result.connection_status_messages)}:\n"
-            + "\n".join(result.connection_status_messages)
+            + "\n".join([str(msg) for msg in result.connection_status_messages])
         )
         if test_instance.expect_exception:
             assert result.connection_status_messages[0].connectionStatus.status == Status.FAILED, (
                 "Expected CONNECTION_STATUS message to be FAILED. Got: \n"
-                + "\n".join([str(result.connection_status_messages)])
+                + "\n".join([str(msg) for msg in result.connection_status_messages])
             )
         return result
 

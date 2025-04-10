@@ -20,6 +20,11 @@ from airbyte_cdk.models import (
     AirbyteMessage,
     Type,
 )
+from airbyte_cdk.sources.declarative.declarative_source import (
+    AbstractSource,
+    ConcurrentDeclarativeSource,
+    Source,
+)
 from airbyte_cdk.test import entrypoint_wrapper
 from airbyte_cdk.test.declarative.models import (
     ConnectorTestScenario,
@@ -41,10 +46,10 @@ class RunnableConnector(abc.ABC):
     """A connector that can be run in a test scenario."""
 
     @abc.abstractmethod
-    def launch(cls, args: list[str] | None): ...
+    def launch(cls, args: list[str] | None) -> None: ...
 
 
-def generate_tests(metafunc):
+def generate_tests(metafunc) -> None:
     """
     A helper for pytest_generate_tests hook.
 

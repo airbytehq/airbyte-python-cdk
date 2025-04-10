@@ -26,6 +26,7 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
     def create_connector(
         self, connector_test: ConnectorTestScenario
     ) -> ConcurrentDeclarativeSource:
+        """Create a connector instance for the test suite."""
         config = connector_test.get_config_dict()
         # catalog = connector_test.get_catalog()
         # state = connector_test.get_state()
