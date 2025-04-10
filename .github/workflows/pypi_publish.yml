@@ -51,7 +51,7 @@ jobs:
       - name: Detect Prerelease Version using Dunamai
         uses: mtkennerly/dunamai-action@v1
         with:
-          args: --style pep440
+          args: --format "{base}.post{distance}.dev${{ github.run_id }}"
           env-var: DETECTED_VERSION
 
       - name: Detect Release Tag Version from git ref ('${{ github.ref_name }}')
@@ -80,8 +80,8 @@ jobs:
           INPUT_VERSION="${INPUT_VERSION#v}"
           # Fail if detected version is non-empty and different from the input version
           if [ -n "${DETECTED_VERSION:-}" ] && [ -n "${INPUT_VERSION:-}" ] && [ "${DETECTED_VERSION}" != "${INPUT_VERSION}" ]; then
-            echo "Error: Version input '${INPUT_VERSION}' does not match detected version '${DETECTED_VERSION}'."
-            exit 1
+            echo "Warning: Version input '${INPUT_VERSION}' does not match detected version '${DETECTED_VERSION}'."
+            echo "Using input version '${INPUT_VERSION}' instead."
           fi
           # Set the version to the input version if non-empty, otherwise the detected version
           VERSION="${INPUT_VERSION:-$DETECTED_VERSION}"
