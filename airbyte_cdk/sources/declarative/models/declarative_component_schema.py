@@ -8,6 +8,10 @@ from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic.v1 import BaseModel, Extra, Field
 
+from airbyte_cdk.sources.declarative.models.base_model_with_deprecations import (
+    BaseModelWithDeprecations,
+)
+
 
 class AuthFlowType(Enum):
     oauth2_0 = "oauth2.0"
@@ -2145,11 +2149,12 @@ class SessionTokenAuthenticator(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class HttpRequester(BaseModel):
+class HttpRequester(BaseModelWithDeprecations):
     type: Literal["HttpRequester"]
     url_base: Optional[str] = Field(
         None,
         deprecated=True,
+        deprecation_message="Use `url` field instead.",
         description="Deprecated, use the `url` instead. Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.",
         examples=[
             "https://connect.squareup.com/v2",
@@ -2173,6 +2178,7 @@ class HttpRequester(BaseModel):
     path: Optional[str] = Field(
         None,
         deprecated=True,
+        deprecation_message="Use `url` field instead.",
         description="Deprecated, use the `url` instead. Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.",
         examples=[
             "/products",

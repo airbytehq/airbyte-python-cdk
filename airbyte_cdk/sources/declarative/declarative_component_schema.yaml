@@ -1883,6 +1883,7 @@ definitions:
         enum: [HttpRequester]
       url_base:
         deprecated: true
+        deprecation_message: "Use `url` field instead."
         sharable: true
         title: API Base URL
         description: Deprecated, use the `url` instead. Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
@@ -1922,6 +1923,7 @@ definitions:
           - "https://example.com/api/v1/resource/{{ next_page_token['id'] }}"
       path:
         deprecated: true
+        deprecation_message: "Use `url` field instead."
         title: URL Path
         description: Deprecated, use the `url` instead. Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
         type: string
