@@ -20,10 +20,10 @@ from airbyte_cdk.models import (
     AirbyteMessage,
     Type,
 )
+from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.declarative.declarative_source import (
     AbstractSource,
-    ConcurrentDeclarativeSource,
-    Source,
+    DeclarativeSource,
 )
 from airbyte_cdk.test import entrypoint_wrapper
 from airbyte_cdk.test.declarative.models import (
@@ -112,7 +112,7 @@ class ConnectorTestSuiteBase(abc.ABC):
     @classmethod
     def create_connector(
         cls, scenario: ConnectorTestScenario
-    ) -> Source | AbstractSource | ConcurrentDeclarativeSource | RunnableConnector:
+    ) -> Source | AbstractSource | DeclarativeSource | RunnableConnector:
         """Instantiate the connector class."""
         raise NotImplementedError("Subclasses must implement this method.")
 
