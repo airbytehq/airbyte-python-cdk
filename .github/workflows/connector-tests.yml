@@ -96,7 +96,7 @@ jobs:
     name: "Check: '${{matrix.connector}}' (skip=${{needs.cdk_changes.outputs['src'] == 'false' || needs.cdk_changes.outputs[matrix.cdk_extra] == 'false'}})"
     permissions:
       checks: write
-      contents: write  # Required for creating commit statuses
+      contents: write # Required for creating commit statuses
       pull-requests: read
     steps:
       - name: Abort if extra not changed (${{matrix.cdk_extra}})

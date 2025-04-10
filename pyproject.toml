@@ -131,12 +131,12 @@ build-package = {cmd = "poetry build", help = "Build the python package: source 
 build = {sequence = ["assemble", "build-package"], help = "Run all tasks to build the package."}
 
 # Format check tasks
-_format-check-ruff = {cmd = "ruff format --check .", help = "Check formatting with Ruff."}
+_format-check-ruff = {cmd = "poetry run ruff format --check .", help = "Check formatting with Ruff."}
 _format-check-prettier = {cmd = "npx prettier . --check", help = "Check formatting with prettier."}
 format-check = {sequence = ["_format-check-ruff", "_format-check-prettier"], help = "Check formatting for all file types.", ignore_fail = "return_non_zero"}
 
 # Format fix tasks
-_format-fix-ruff = {cmd = "ruff format .", help = "Format with Ruff."}
+_format-fix-ruff = {cmd = "poetry run ruff format .", help = "Format with Ruff."}
 _format-fix-prettier = {cmd = "npx prettier . --write", help = "Format with prettier."}
 format-fix = {sequence = ["_format-fix-ruff", "_format-fix-prettier"], help = "Format all file types.", ignore_fail = "return_non_zero"}
 
@@ -162,7 +162,7 @@ fix-and-check = {sequence = ["fix-all", "check-all"], help = "Lint-fix and forma
 
 pytest = {cmd = "poetry run coverage run -m pytest --durations=10", help = "Run all pytest tests."}
 pytest-fast = {cmd = "poetry run coverage run -m pytest --durations=5 --exitfirst -m 'not flaky and not slow and not requires_creds'", help = "Run pytest tests, failing fast and excluding slow tests."}
-unit-test-with-cov = {cmd = "pytest -s unit_tests --cov=airbyte_cdk --cov-report=term --cov-config ./pyproject.toml", help = "Run unit tests and create a coverage report."}
+unit-test-with-cov = {cmd = "poetry run pytest -s unit_tests --cov=airbyte_cdk --cov-report=term --cov-config ./pyproject.toml", help = "Run unit tests and create a coverage report."}
 
 # Combined check tasks (other)
 

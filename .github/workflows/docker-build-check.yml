@@ -7,7 +7,7 @@ on:
 
 jobs:
   docker-build-check:
-    name: SDM Docker Image Build  # Renamed job to be more descriptive
+    name: SDM Docker Image Build # Renamed job to be more descriptive
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout code

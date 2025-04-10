@@ -19,6 +19,7 @@ Here are some tips to get started using the project dependencies and development
 1. Unit tests can be run via `poetry run pytest`.
 
 Note: By default in Poetry 2.0, `poetry lock` only refreshes the lockfile without pulling new versions. This is the same behavior as the previous `poetry lock --no-update` command.
+
 1. You can use "Poe" tasks to perform common actions such as lint checks (`poetry run poe lint`), autoformatting (`poetry run poe format-fix`), etc. For a list of tasks you can run, try `poetry run poe list`.
 
 Note that installing all extras is required to run the full suite of unit tests.
