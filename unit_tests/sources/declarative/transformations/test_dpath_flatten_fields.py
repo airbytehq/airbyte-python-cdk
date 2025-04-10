@@ -9,6 +9,7 @@ _DO_NOT_DELETE_ORIGIN_VALUE = False
 _DO_NOT_REPLACE_WITH_VALUE = False
 _NO_KEY_TRANSFORMATIONS = None
 
+
 @pytest.mark.parametrize(
     [
         "input_record",
@@ -173,7 +174,13 @@ _NO_KEY_TRANSFORMATIONS = None
     ],
 )
 def test_dpath_flatten_lists(
-    input_record, config, field_path, delete_origin_value, replace_record, key_transformation, expected_record
+    input_record,
+    config,
+    field_path,
+    delete_origin_value,
+    replace_record,
+    key_transformation,
+    expected_record,
 ):
     flattener = DpathFlattenFields(
         field_path=field_path,
