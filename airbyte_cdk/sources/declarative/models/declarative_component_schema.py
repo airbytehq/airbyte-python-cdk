@@ -897,6 +897,14 @@ class DpathFlattenFields(BaseModel):
         description="Whether to replace the origin record or not. Default is False.",
         title="Replace Origin Record",
     )
+    key_transformation: Optional[str] = Field(
+        None,
+        description="Transformation for object keys. If not provided, original key will be used.",
+        examples=[
+            "flattened_{{ key }}",
+        ],
+        title="Key transformation",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 

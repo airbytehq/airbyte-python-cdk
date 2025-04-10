@@ -2335,6 +2335,12 @@ definitions:
         title: Replace Origin Record
         description: Whether to replace the origin record or not. Default is False.
         type: boolean
+      key_transformation:
+        title: Key transformation
+        description: Transformation for object keys. If not provided, original key will be used.
+        type: string
+        examples:
+          - "flattened_{{ key }}"
       $parameters:
         type: object
         additionalProperties: true
