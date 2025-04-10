@@ -51,7 +51,7 @@ jobs:
       - name: Detect Prerelease Version using Dunamai
         uses: mtkennerly/dunamai-action@v1
         with:
-          args: --style pep440 --format "{base}.post{distance}.dev0{commit}"
+          args: --format "{base}.post{distance}.dev0{commit}"
           env-var: DETECTED_VERSION
 
       - name: Detect Release Tag Version from git ref ('${{ github.ref_name }}')
