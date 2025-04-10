@@ -83,6 +83,10 @@ class EntrypointOutput:
         return self._get_message_by_types([Type.STATE])
 
     @property
+    def connection_status_messages(self) -> List[AirbyteMessage]:
+        return self._get_message_by_types([Type.CONNECTION_STATUS])
+
+    @property
     def most_recent_state(self) -> Any:
         state_messages = self._get_message_by_types([Type.STATE])
         if not state_messages:

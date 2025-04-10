@@ -45,7 +45,7 @@ class SimpleClass:
 
 
 def get_fixture_path(file_name) -> str:
-    return os.path.join(os.path.dirname(__file__), file_name)
+    return Path(__file__).parent.parent / file_name
 
 
 def test_components_module_from_string() -> None:

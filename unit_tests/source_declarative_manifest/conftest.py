@@ -3,13 +3,14 @@
 #
 
 import os
+from pathlib import Path
 
 import pytest
 import yaml
 
 
 def get_fixture_path(file_name):
-    return os.path.join(os.path.dirname(__file__), file_name)
+    return Path(__file__).parent.parent / file_name
 
 
 @pytest.fixture
