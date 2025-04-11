@@ -26,6 +26,9 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.declarative.checks import COMPONENTS_CHECKER_TYPE_MAPPING
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
+from airbyte_cdk.sources.declarative.migrations.manifest.migration_handler import (
+    ManifestMigrationHandler,
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DeclarativeStream as DeclarativeStreamModel,
 )
@@ -57,6 +60,24 @@ from airbyte_cdk.sources.utils.slice_logger import (
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
+def _get_declarative_component_schema() -> Dict[str, Any]:
+    try:
+        raw_component_schema = pkgutil.get_data(
+            "airbyte_cdk", "sources/declarative/declarative_component_schema.yaml"
+        )
+        if raw_component_schema is not None:
+            declarative_component_schema = yaml.load(raw_component_schema, Loader=yaml.SafeLoader)
+            return declarative_component_schema  # type: ignore
+        else:
+            raise RuntimeError(
+                "Failed to read manifest component json schema required for deduplication"
+            )
+    except FileNotFoundError as e:
+        raise FileNotFoundError(
+            f"Failed to read manifest component json schema required for deduplication: {e}"
+        )
+
+
 class ManifestDeclarativeSource(DeclarativeSource):
     """Declarative source defined by a manifest of low-code components that define source connector behavior"""
 
@@ -68,7 +89,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         debug: bool = False,
         emit_connector_builder_messages: bool = False,
         component_factory: Optional[ModelToComponentFactory] = None,
-    ):
+    ) -> None:
         """
         Args:
             config: The provided config dict.
@@ -78,6 +99,8 @@ class ManifestDeclarativeSource(DeclarativeSource):
             component_factory: optional factory if ModelToComponentFactory's default behavior needs to be tweaked.
         """
         self.logger = logging.getLogger(f"airbyte.{self.name}")
+
+        self._declarative_component_schema = _get_declarative_component_schema()
         # For ease of use we don't require the type to be specified at the top level manifest, but it should be included during processing
         manifest = dict(source_config)
         if "type" not in manifest:
@@ -90,7 +113,12 @@ class ManifestDeclarativeSource(DeclarativeSource):
         propagated_source_config = ManifestComponentTransformer().propagate_types_and_parameters(
             "", resolved_source_config, {}
         )
-        self._source_config = propagated_source_config
+
+        migrated_source_config = ManifestMigrationHandler(
+            propagated_source_config
+        ).apply_migrations()
+
+        self._source_config = migrated_source_config
         self._debug = debug
         self._emit_connector_builder_messages = emit_connector_builder_messages
         self._constructor = (

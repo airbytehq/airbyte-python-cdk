@@ -1,5 +1,6 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
+import re
 import sys
 from glob import glob
 from pathlib import Path
@@ -28,6 +29,63 @@ def generate_init_module_content() -> str:
     return header
 
 
+def replace_base_model_for_classes_with_deprecated_fields(post_processed_content: str) -> str:
+    """
+    Replace the base model for classes with deprecated fields.
+    This function looks for classes that inherit from `BaseModel` and have fields marked as deprecated.
+    It replaces the base model with `BaseModelWithDeprecations` for those classes.
+    """
+
+    # Find classes with deprecated fields
+    classes_with_deprecated_fields = set()
+    class_matches = re.finditer(r"class (\w+)\(BaseModel\):", post_processed_content)
+
+    for class_match in class_matches:
+        class_name = class_match.group(1)
+        class_start = class_match.start()
+        # Find the next class definition or end of file
+        next_class_match = re.search(
+            r"class \w+\(",
+            post_processed_content[class_start + len(class_match.group(0)) :],
+        )
+        class_end = (
+            len(post_processed_content)
+            if next_class_match is None
+            else class_start + len(class_match.group(0)) + next_class_match.start()
+        )
+        class_content = post_processed_content[class_start:class_end]
+
+        # Check if any field has deprecated=True
+        if re.search(r"deprecated\s*=\s*True", class_content):
+            classes_with_deprecated_fields.add(class_name)
+
+    # update the imports to include the new base model with deprecation warinings
+    # only if there are classes with the fields marked as deprecated.
+    if len(classes_with_deprecated_fields) > 0:
+        # Find where to insert the base model - after imports but before class definitions
+        imports_end = post_processed_content.find(
+            "\n\n",
+            post_processed_content.find("from pydantic.v1 import"),
+        )
+        if imports_end > 0:
+            post_processed_content = (
+                post_processed_content[:imports_end]
+                + "\n\n"
+                + "from airbyte_cdk.sources.declarative.models.base_model_with_deprecations import (\n"
+                + "    BaseModelWithDeprecations,\n"
+                + ")"
+                + post_processed_content[imports_end:]
+            )
+
+    # Use the `BaseModelWithDeprecations` base model for the classes with deprecated fields
+    for class_name in classes_with_deprecated_fields:
+        pattern = rf"class {class_name}\(BaseModel\):"
+        replacement = f"class {class_name}(BaseModelWithDeprecations):"
+        post_processed_content = re.sub(pattern, replacement, post_processed_content)
+
+    return post_processed_content
+
+
 async def post_process_codegen(codegen_container: dagger.Container):
     codegen_container = codegen_container.with_exec(
         ["mkdir", "/generated_post_processed"], use_entrypoint=True
@@ -41,6 +99,11 @@ async def post_process_codegen(codegen_container: dagger.Container):
             post_processed_content = original_content.replace(
                 " _parameters:", " parameters:"
             ).replace("from pydantic", "from pydantic.v1")
+
+            post_processed_content = replace_base_model_for_classes_with_deprecated_fields(
+                post_processed_content
+            )
+
             codegen_container = codegen_container.with_new_file(
                 f"/generated_post_processed/{generated_file}", contents=post_processed_content
             )
@@ -75,6 +138,12 @@ async def main():
                     "--set-default-enum-member",
                     "--use-double-quotes",
                     "--remove-special-field-name-prefix",
+                    # allow usage of the extra key such as `deprecated`, etc.
+                    "--field-extra-keys",
+                    # account the `deprecated` flag provided for the field.
+                    "deprecated",
+                    # account the `deprecation_message` provided for the field.
+                    "deprecation_message",
                 ],
                 use_entrypoint=True,
             )

@@ -2146,7 +2146,7 @@ class ModelToComponentFactory:
             self._create_component_from_model(
                 model=model.authenticator,
                 config=config,
-                url_base=model.url_base,
+                url_base=model.url or model.url_base,
                 name=name,
                 decoder=decoder,
             )
@@ -2183,6 +2183,7 @@ class ModelToComponentFactory:
 
         return HttpRequester(
             name=name,
+            url=model.url,
             url_base=model.url_base,
             path=model.path,
             authenticator=authenticator,
@@ -2925,11 +2926,17 @@ class ModelToComponentFactory:
             use_cache=use_cache,
             config=config,
         )
-        url_base = (
+        _url = (
+            model.requester.url
+            if hasattr(model.requester, "url") and model.requester.url is not None
+            else requester.get_url()
+        )
+        _url_base = (
             model.requester.url_base
-            if hasattr(model.requester, "url_base")
+            if hasattr(model.requester, "url_base") and model.requester.url_base is not None
             else requester.get_url_base()
         )
+        url_base = _url or _url_base
 
         # Define cursor only if per partition or common incremental support is needed
         cursor = stream_slicer if isinstance(stream_slicer, DeclarativeCursor) else None

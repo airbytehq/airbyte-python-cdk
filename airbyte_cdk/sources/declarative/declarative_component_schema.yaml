@@ -1863,14 +1863,16 @@ definitions:
     type: object
     required:
       - type
-      - url_base
     properties:
       type:
         type: string
         enum: [HttpRequester]
       url_base:
+        deprecated: true
+        deprecation_message: "Use `url` field instead."
+        sharable: true
         title: API Base URL
-        description: Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
+        description: Deprecated, use the `url` instead. Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
         type: string
         interpolation_context:
           - config
@@ -1886,9 +1888,30 @@ definitions:
           - "{{ config['base_url'] or 'https://app.posthog.com'}}/api"
           - "https://connect.squareup.com/v2/quotes/{{ stream_partition['id'] }}/quote_line_groups"
           - "https://example.com/api/v1/resource/{{ next_page_token['id'] }}"
+      url:
+        sharable: true
+        title: API URL
+        description: The URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
+        type: string
+        interpolation_context:
+          - config
+          - next_page_token
+          - stream_interval
+          - stream_partition
+          - stream_slice
+          - creation_response
+          - polling_response
+          - download_target
+        examples:
+          - "https://connect.squareup.com/v2"
+          - "{{ config['url'] or 'https://app.posthog.com'}}/api"
+          - "https://connect.squareup.com/v2/quotes/{{ stream_partition['id'] }}/quote_line_groups"
+          - "https://example.com/api/v1/resource/{{ next_page_token['id'] }}"
       path:
+        deprecated: true
+        deprecation_message: "Use `url` field instead."
         title: URL Path
-        description: Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
+        description: Deprecated, use the `url` instead. Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
         type: string
         interpolation_context:
           - config
