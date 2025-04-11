@@ -26,6 +26,9 @@ from airbyte_cdk.models import (
 from airbyte_cdk.sources.declarative.checks import COMPONENTS_CHECKER_TYPE_MAPPING
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
+from airbyte_cdk.sources.declarative.migrations.manifest.migration_handler import (
+    ManifestMigrationHandler,
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DeclarativeStream as DeclarativeStreamModel,
 )
@@ -38,9 +41,6 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
 )
 from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer import (
     ManifestComponentTransformer,
-)
-from airbyte_cdk.sources.declarative.parsers.manifest_migration_handler import (
-    ManifestMigrationHandler,
 )
 from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import (
     ManifestReferenceResolver,
@@ -114,10 +114,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
             "", resolved_source_config, {}
         )
 
-        # migrate definitions to the new format, if any are present
         migrated_source_config = ManifestMigrationHandler(
-            propagated_source_config, self._declarative_component_schema
-        ).migrate()
+            propagated_source_config
+        ).apply_migrations()
 
         self._source_config = migrated_source_config
         self._debug = debug

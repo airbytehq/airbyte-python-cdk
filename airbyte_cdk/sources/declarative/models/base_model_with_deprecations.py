@@ -8,6 +8,13 @@ from typing import Any
 
 from pydantic.v1 import BaseModel
 
+from airbyte_cdk.models import (
+    AirbyteLogMessage,
+    AirbyteMessage,
+    Level,
+    Type,
+)
+
 # format the warning message
 warnings.formatwarning = (
     lambda message, category, *args, **kwargs: f"{category.__name__}: {message}"
@@ -35,6 +42,16 @@ class BaseModelWithDeprecations(BaseModel):
             f"Component type: `{self.__class__.__name__}`. Field '{field_name}' is deprecated. {message}",
             DeprecationWarning,
         )
+
+        # print(
+        #     AirbyteMessage(
+        #         type=Type.LOG,
+        #         log=AirbyteLogMessage(
+        #             level=Level.WARN,
+        #             message=f"Component type: `{self.__class__.__name__}`. Field '{field_name}' is deprecated. {message}",
+        #         ),
+        #     )
+        # )
 
     def __init__(self, **data: Any) -> None:
         """
