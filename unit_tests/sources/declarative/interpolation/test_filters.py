@@ -162,5 +162,5 @@ def test_hmac_with_invalid_hash_type() -> None:
 
     s = "{{ '%s' | hmac('%s', 'md5') }}" % (message, secret_key)
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError):
         interpolation.eval(s, config={})

@@ -141,14 +141,14 @@ def hmac(value: Any, key: str, hash_type: str = "sha256") -> str:
     Implementation of a custom Jinja2 hmac filter with SHA-256 support.
 
     This filter creates a Hash-based Message Authentication Code (HMAC) using a cryptographic
-    hash function and a secret key. Currently only supports SHA-256.
+    hash function and a secret key. Currently only supports SHA-256, and returns hexdigest of the signature.
 
     Example usage in a low code connector:
 
     auth_headers:
       $ref: "#/definitions/base_auth"
       $parameters:
-        signature: "{{ 'message_to_sign' | hmac_hash('my_secret_key') }}"
+        signature: "{{ 'message_to_sign' | hmac('my_secret_key') }}"
 
     :param value: The message to be authenticated
     :param key: The secret key for the HMAC
