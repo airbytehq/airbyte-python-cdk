@@ -406,7 +406,14 @@ class TestOauth2Authenticator:
             (None, None, AirbyteDateTime(year=2022, month=1, day=1, hour=1)),
             (None, "YYYY-MM-DD", AirbyteDateTime(year=2022, month=1, day=1, hour=1)),
         ],
-        ids=["seconds", "string_of_seconds", "simple_date", "simple_datetime", "default_behavior", "default_behavior_with_format"],
+        ids=[
+            "seconds",
+            "string_of_seconds",
+            "simple_date",
+            "simple_datetime",
+            "default_behavior",
+            "default_behavior_with_format",
+        ],
     )
     @freezegun.freeze_time("2022-01-01")
     def test_parse_refresh_token_lifespan(
