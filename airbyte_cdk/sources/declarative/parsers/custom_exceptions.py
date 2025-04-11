@@ -28,12 +28,3 @@ class ManifestNormalizationException(Exception):
 
     def __init__(self, message: str) -> None:
         super().__init__(f"Failed to deduplicate manifest: {message}")
-
-
-class ManifestMigrationException(Exception):
-    """
-    Raised when a migration error occurs in the manifest.
-    """
-
-    def __init__(self, message: str) -> None:
-        super().__init__(f"Failed to migrate the manifest: {message}")

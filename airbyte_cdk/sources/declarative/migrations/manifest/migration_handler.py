@@ -5,15 +5,15 @@
 import copy
 from typing import Type
 
+from airbyte_cdk.sources.declarative.migrations.manifest.exceptions import (
+    ManifestMigrationException,
+)
 from airbyte_cdk.sources.declarative.migrations.manifest.manifest_migration import (
     ManifestMigration,
     ManifestType,
 )
 from airbyte_cdk.sources.declarative.migrations.manifest.migrations_registry import (
     migrations_registry,
-)
-from airbyte_cdk.sources.declarative.parsers.custom_exceptions import (
-    ManifestMigrationException,
 )
 
 
