@@ -6,7 +6,7 @@ import json
 import logging
 from datetime import timedelta
 from typing import Optional, Union
-from unittest.mock import Mock, PropertyMock
+from unittest.mock import Mock
 
 import freezegun
 import pytest
