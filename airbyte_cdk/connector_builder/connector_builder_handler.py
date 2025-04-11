@@ -4,7 +4,7 @@
 
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Mapping
+from typing import Any, Dict, List, Mapping, Optional
 
 from airbyte_cdk.connector_builder.test_reader import TestReader
 from airbyte_cdk.models import (
@@ -54,12 +54,17 @@ def get_limits(config: Mapping[str, Any]) -> TestLimits:
     return TestLimits(max_records, max_pages_per_slice, max_slices, max_streams)
 
 
-def create_source(config: Mapping[str, Any], limits: TestLimits) -> ManifestDeclarativeSource:
+def create_source(
+    config: Mapping[str, Any],
+    limits: TestLimits,
+    post_resolve_manifest: Optional[bool] = False,
+) -> ManifestDeclarativeSource:
     manifest = config["__injected_declarative_manifest"]
     return ManifestDeclarativeSource(
         config=config,
         emit_connector_builder_messages=True,
         source_config=manifest,
+        post_resolve_manifest=post_resolve_manifest,
         component_factory=ModelToComponentFactory(
             emit_connector_builder_messages=True,
             limit_pages_fetched_per_slice=limits.max_pages_per_slice,

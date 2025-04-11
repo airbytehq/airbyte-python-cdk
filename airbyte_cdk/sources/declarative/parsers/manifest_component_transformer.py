@@ -4,7 +4,7 @@
 
 import copy
 import typing
-from typing import Any, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional
 
 PARAMETERS_STR = "$parameters"
 
@@ -95,7 +95,7 @@ class ManifestComponentTransformer:
         declarative_component: Mapping[str, Any],
         parent_parameters: Mapping[str, Any],
         use_parent_parameters: Optional[bool] = None,
-    ) -> Mapping[str, Any]:
+    ) -> Dict[str, Any]:
         """
         Recursively transforms the specified declarative component and subcomponents to propagate parameters and insert the
         default component type if it was not already present. The resulting transformed components are a deep copy of the input
