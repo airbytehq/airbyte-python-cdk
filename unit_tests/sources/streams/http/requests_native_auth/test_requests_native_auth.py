@@ -4,9 +4,9 @@
 
 import json
 import logging
-from datetime import timedelta, timezone
+from datetime import timedelta
 from typing import Optional, Union
-from unittest.mock import Mock
+from unittest.mock import Mock, PropertyMock
 
 import freezegun
 import pytest
@@ -236,6 +236,7 @@ class TestOauth2Authenticator:
         }
         assert body == expected
 
+    @freezegun.freeze_time("2022-01-01")
     def test_refresh_access_token(self, mocker):
         oauth = Oauth2Authenticator(
             token_refresh_endpoint="https://refresh_endpoint.com",
@@ -280,6 +281,15 @@ class TestOauth2Authenticator:
 
         assert isinstance(expires_in, str)
         assert ("access_token", "2022-04-24T00:00:00Z") == (token, expires_in)
+
+        # Test with no expires_in
+        mocker.patch.object(
+            resp,
+            "json",
+            return_value={"access_token": "access_token"},
+        )
+        token, expires_in = oauth.refresh_access_token()
+        assert expires_in == "3600"
 
         # Test with nested access_token and expires_in as str(int)
         mocker.patch.object(
@@ -393,8 +403,10 @@ class TestOauth2Authenticator:
                 "YYYY-MM-DDTHH:mm:ss.SSSSSSZ",
                 AirbyteDateTime(year=2022, month=2, day=12),
             ),
+            (None, None, AirbyteDateTime(year=2022, month=1, day=1, hour=1)),
+            (None, "YYYY-MM-DD", AirbyteDateTime(year=2022, month=1, day=1, hour=1)),
         ],
-        ids=["seconds", "string_of_seconds", "simple_date", "simple_datetime"],
+        ids=["seconds", "string_of_seconds", "simple_date", "simple_datetime", "default_behavior", "default_behavior_with_format"],
     )
     @freezegun.freeze_time("2022-01-01")
     def test_parse_refresh_token_lifespan(
