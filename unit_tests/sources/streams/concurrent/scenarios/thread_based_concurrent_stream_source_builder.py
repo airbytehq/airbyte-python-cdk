@@ -145,12 +145,6 @@ class InMemoryPartition(Partition):
         else:
             return hash(self._name)
 
-    def close(self) -> None:
-        self._is_closed = True
-
-    def is_closed(self) -> bool:
-        return self._is_closed
-
 
 class ConcurrentSourceBuilder(SourceBuilder[ConcurrentCdkSource]):
     def __init__(self):
