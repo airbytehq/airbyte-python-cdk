@@ -355,7 +355,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             self._emit_control_message()
         return self.access_token
 
-    def refresh_access_token(self) -> Tuple[str, str, str]:  # type: ignore[override]
+    def refresh_access_token(self) -> Tuple[str, Optional[str], str]:  # type: ignore[override]
         """
         Refreshes the access token by making a handled request and extracting the necessary token information.
 

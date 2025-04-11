@@ -147,6 +147,15 @@ class AbstractOauth2Authenticator(AuthBase):
     # ----------------
     # PRIVATE METHODS
     # ----------------
+    
+    def _default_token_expiry_date(self) -> str:
+        """
+        Returns the default token expiry date
+        """
+        if self.token_expiry_is_time_of_expiration:
+            return str(ab_datetime_now() + timedelta(hours=1))
+        else:
+            return "3600"
 
     def _wrap_refresh_token_exception(
         self, exception: requests.exceptions.RequestException
@@ -316,9 +325,15 @@ class AbstractOauth2Authenticator(AuthBase):
             response_data (Mapping[str, Any]): The response data from which to extract the token_expiry_date.
 
         Returns:
-            str: The extracted token_expiry_date.
+            The extracted token_expiry_date or None if not found.
         """
-        return self._find_and_get_value_from_response(response_data, self.get_expires_in_name())
+        expires_in = self._find_and_get_value_from_response(response_data, self.get_expires_in_name())
+        # If the access token expires in is None, we do not know when the token will expire
+        # 1 hour was chosen as a middle ground to avoid unnecessary frequent refreshes and token expiration
+        if expires_in is None:
+            return self._default_token_expiry_date()
+        else:
+            return expires_in
 
     def _find_and_get_value_from_response(
         self,
