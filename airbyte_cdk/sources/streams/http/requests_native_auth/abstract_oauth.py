@@ -130,7 +130,7 @@ class AbstractOauth2Authenticator(AuthBase):
         headers = self.get_refresh_request_headers()
         return headers if headers else None
 
-    def refresh_access_token(self) -> Tuple[str, Optional[str]]:
+    def refresh_access_token(self) -> Tuple[str, Union[str, int]]:
         """
         Returns the refresh token and its expiration datetime
 
