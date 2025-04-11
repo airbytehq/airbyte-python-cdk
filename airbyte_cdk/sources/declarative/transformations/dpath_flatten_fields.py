@@ -8,6 +8,13 @@ from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 
 
+@dataclass(frozen=True)
+class KeyTransformation:
+    prefix: Union[InterpolatedString, str, None] = None
+    suffix: Union[InterpolatedString, str, None] = None
+    custom: Union[InterpolatedString, str, None] = None
+
+
 @dataclass
 class DpathFlattenFields(RecordTransformation):
     """
@@ -16,7 +23,7 @@ class DpathFlattenFields(RecordTransformation):
     field_path: List[Union[InterpolatedString, str]] path to the field to flatten.
     delete_origin_value: bool = False whether to delete origin field or keep it. Default is False.
     replace_record: bool = False whether to replace origin record or not. Default is False.
-    key_transformation: string = None how to transform extracted object keys
+    key_transformation: KeyTransformation = None how to transform extracted object keys
 
     """
 
@@ -25,7 +32,7 @@ class DpathFlattenFields(RecordTransformation):
     parameters: InitVar[Mapping[str, Any]]
     delete_origin_value: bool = False
     replace_record: bool = False
-    key_transformation: Union[InterpolatedString, str, None] = None
+    key_transformation: Union[KeyTransformation, None] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._parameters = parameters
@@ -37,6 +44,30 @@ class DpathFlattenFields(RecordTransformation):
                 self._field_path[path_index] = InterpolatedString.create(
                     self.field_path[path_index], parameters=self._parameters
                 )
+
+    def _apply_key_transformation(self, extracted: Mapping[str, Any]) -> Mapping[str, Any]:
+        if self.key_transformation:
+            if self.key_transformation.prefix:
+                prefix = InterpolatedString.create(
+                    self.key_transformation.prefix, parameters=self._parameters
+                ).eval(config=self.config)
+                extracted = {f"{prefix}{key}": value for key, value in extracted.items()}
+
+            if self.key_transformation.suffix:
+                suffix = InterpolatedString.create(
+                    self.key_transformation.suffix, parameters=self._parameters
+                ).eval(config=self.config)
+                extracted = {f"{key}{suffix}": value for key, value in extracted.items()}
+
+            if self.key_transformation.custom:
+                updated_extracted = {}
+                for key, value in extracted.items():
+                    updated_key = InterpolatedString.create(
+                        self.key_transformation.custom, parameters=self._parameters
+                    ).eval(key=key, config=self.config)
+                    updated_extracted[updated_key] = value
+                extracted = updated_extracted
+        return extracted
 
     def transform(
         self,
@@ -53,14 +84,7 @@ class DpathFlattenFields(RecordTransformation):
             extracted = dpath.get(record, path, default=[])
 
         if isinstance(extracted, dict):
-            if self.key_transformation:
-                updated_extracted = {}
-                for key, value in extracted.items():
-                    updated_key = InterpolatedString.create(
-                        self.key_transformation, parameters=self._parameters
-                    ).eval(key=key, config=self.config)
-                    updated_extracted[updated_key] = value
-                extracted = updated_extracted
+            extracted = self._apply_key_transformation(extracted)
 
             if self.replace_record and extracted:
                 dpath.delete(record, "**")
