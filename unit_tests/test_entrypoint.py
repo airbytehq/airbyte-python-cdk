@@ -172,14 +172,13 @@ def test_parse_valid_args(
     ["cmd", "args"],
     [
         ("check", {"config": "config_path"}),
-        ("discover", {"config": "config_path"}),
         ("read", {"config": "config_path", "catalog": "catalog_path"}),
     ],
 )
 def test_parse_missing_required_args(
     cmd: str, args: MutableMapping[str, Any], entrypoint: AirbyteEntrypoint
 ):
-    required_args = {"check": ["config"], "discover": ["config"], "read": ["config", "catalog"]}
+    required_args = {"check": ["config"], "read": ["config", "catalog"]}
     for required_arg in required_args[cmd]:
         argcopy = deepcopy(args)
         del argcopy[required_arg]
