@@ -27,7 +27,15 @@ from typing import (
 from isodate import parse_duration
 from pydantic.v1 import BaseModel
 
-from airbyte_cdk.models import FailureType, Level
+from airbyte_cdk.models import (
+    AirbyteStateBlob,
+    AirbyteStateMessage,
+    AirbyteStateType,
+    AirbyteStreamState,
+    FailureType,
+    Level,
+    StreamDescriptor,
+)
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator
 from airbyte_cdk.sources.declarative.async_job.job_tracker import JobTracker
@@ -94,9 +102,7 @@ from airbyte_cdk.sources.declarative.incremental import (
     CursorFactory,
     DatetimeBasedCursor,
     DeclarativeCursor,
-    GlobalSubstreamCursor,
     PerPartitionCursor,
-    PerPartitionWithGlobalCursor,
     ResumableFullRefreshCursor,
 )
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
@@ -106,7 +112,6 @@ from airbyte_cdk.sources.declarative.migrations.legacy_to_per_partition_state_mi
 )
 from airbyte_cdk.sources.declarative.models import (
     CustomStateMigration,
-    GzipDecoder,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     AddedFieldDefinition as AddedFieldDefinitionModel,
@@ -535,7 +540,7 @@ from airbyte_cdk.sources.streams.concurrent.clamping import (
     WeekClampingStrategy,
     Weekday,
 )
-from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, CursorField
+from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, Cursor, CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
     DateTimeStreamStateConverter,
@@ -576,7 +581,7 @@ class ModelToComponentFactory:
         self._emit_connector_builder_messages = emit_connector_builder_messages
         self._disable_retries = disable_retries
         self._disable_cache = disable_cache
-        self._disable_resumable_full_refresh = disable_resumable_full_refresh
+        self._disable_resumable_full_refresh = disable_resumable_full_refresh  # FIXME can we remove this? 
         self._message_repository = message_repository or InMemoryMessageRepository(
             self._evaluate_log_level(emit_connector_builder_messages)
         )
@@ -1390,7 +1395,7 @@ class ModelToComponentFactory:
 
         interpolated_cursor_field = InterpolatedString.create(
             datetime_based_cursor_model.cursor_field,
-            parameters=datetime_based_cursor_model.parameters or {},
+            parameters=component_definition.get("parameters", component_definition.get("$parameters", {})),  # FIXME being called from `_group_stream`, parameters is not propagated
         )
         cursor_field = CursorField(interpolated_cursor_field.eval(config=config))
 
@@ -1747,24 +1752,11 @@ class ModelToComponentFactory:
             and hasattr(model.incremental_sync, "is_client_side_incremental")
             and model.incremental_sync.is_client_side_incremental
         ):
-            supported_slicers = (
-                DatetimeBasedCursor,
-                GlobalSubstreamCursor,
-                PerPartitionWithGlobalCursor,
-            )
-            if combined_slicers and not isinstance(combined_slicers, supported_slicers):
+            if combined_slicers and not isinstance(combined_slicers, Cursor):
                 raise ValueError(
-                    "Unsupported Slicer is used. PerPartitionWithGlobalCursor should be used here instead"
+                    f"Unsupported slicer `{type(combined_slicers)}` is used with is_client_side_incremental"
                 )
-            cursor = (
-                combined_slicers
-                if isinstance(
-                    combined_slicers, (PerPartitionWithGlobalCursor, GlobalSubstreamCursor)
-                )
-                else self._create_component_from_model(model=model.incremental_sync, config=config)
-            )
-
-            client_side_incremental_sync = {"cursor": cursor}
+            client_side_incremental_sync = {"cursor": combined_slicers}
 
         if model.incremental_sync and isinstance(model.incremental_sync, DatetimeBasedCursorModel):
             cursor_model = model.incremental_sync
@@ -1908,52 +1900,29 @@ class ModelToComponentFactory:
         stream_slicer: Optional[PartitionRouter],
         config: Config,
     ) -> Optional[StreamSlicer]:
+        stream_state = self._connector_state_manager.get_stream_state(
+            stream_name=model.name, namespace=None
+        )  # FIXME should this be in create_concurrent_cursor_from_perpartition_cursor
         if model.incremental_sync and stream_slicer:
-            if model.retriever.type == "AsyncRetriever":
-                return self.create_concurrent_cursor_from_perpartition_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
-                    state_manager=self._connector_state_manager,
-                    model_type=DatetimeBasedCursorModel,
-                    component_definition=model.incremental_sync.__dict__,
-                    stream_name=model.name or "",
-                    stream_namespace=None,
-                    config=config or {},
-                    stream_state={},
-                    partition_router=stream_slicer,
-                )
-
-            incremental_sync_model = model.incremental_sync
-            cursor_component = self._create_component_from_model(
-                model=incremental_sync_model, config=config
-            )
-            is_global_cursor = (
-                hasattr(incremental_sync_model, "global_substream_cursor")
-                and incremental_sync_model.global_substream_cursor
-            )
-
-            if is_global_cursor:
-                return GlobalSubstreamCursor(
-                    stream_cursor=cursor_component, partition_router=stream_slicer
-                )
-            return PerPartitionWithGlobalCursor(
-                cursor_factory=CursorFactory(
-                    lambda: self._create_component_from_model(
-                        model=incremental_sync_model, config=config
-                    ),
-                ),
+            return self.create_concurrent_cursor_from_perpartition_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
+                state_manager=self._connector_state_manager,
+                model_type=DatetimeBasedCursorModel,
+                component_definition=model.incremental_sync.__dict__,
+                stream_name=model.name or "",
+                stream_namespace=None,
+                config=config or {},
+                stream_state=stream_state,
                 partition_router=stream_slicer,
-                stream_cursor=cursor_component,
             )
         elif model.incremental_sync:
-            if model.retriever.type == "AsyncRetriever":
-                return self.create_concurrent_cursor_from_datetime_based_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
-                    model_type=DatetimeBasedCursorModel,
-                    component_definition=model.incremental_sync.__dict__,
-                    stream_name=model.name or "",
-                    stream_namespace=None,
-                    config=config or {},
-                    stream_state_migrations=model.state_migrations,
-                )
-            return self._create_component_from_model(model=model.incremental_sync, config=config)  # type: ignore[no-any-return]  # Will be created Cursor as stream_slicer_model is model.incremental_sync
+            return self.create_concurrent_cursor_from_datetime_based_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
+                model_type=DatetimeBasedCursorModel,
+                component_definition=model.incremental_sync.__dict__,
+                stream_name=model.name or "",
+                stream_namespace=None,
+                config=config or {},
+                stream_state_migrations=model.state_migrations,
+            )
         return None
 
     def _build_resumable_cursor(
@@ -1981,44 +1950,14 @@ class ModelToComponentFactory:
     def _merge_stream_slicers(
         self, model: DeclarativeStreamModel, config: Config
     ) -> Optional[StreamSlicer]:
-        retriever_model = model.retriever
-
         stream_slicer = self._build_stream_slicer_from_partition_router(
-            retriever_model, config, stream_name=model.name
+            model.retriever, config, stream_name=model.name
         )
-
-        if retriever_model.type == "AsyncRetriever":
-            is_not_datetime_cursor = (
-                model.incremental_sync.type != "DatetimeBasedCursor"
-                if model.incremental_sync
-                else None
-            )
-            is_partition_router = (
-                bool(retriever_model.partition_router) if model.incremental_sync else None
-            )
-
-            if is_not_datetime_cursor:
-                # We are currently in a transition to the Concurrent CDK and AsyncRetriever can only work with the
-                # support or unordered slices (for example, when we trigger reports for January and February, the report
-                # in February can be completed first). Once we have support for custom concurrent cursor or have a new
-                # implementation available in the CDK, we can enable more cursors here.
-                raise ValueError(
-                    "AsyncRetriever with cursor other than DatetimeBasedCursor is not supported yet."
-                )
-
-            if is_partition_router and not stream_slicer:
-                # Note that this development is also done in parallel to the per partition development which once merged
-                # we could support here by calling create_concurrent_cursor_from_perpartition_cursor
-                raise ValueError("Per partition state is not supported yet for AsyncRetriever.")
 
         if model.incremental_sync:
             return self._build_incremental_cursor(model, stream_slicer, config)
 
-        return (
-            stream_slicer
-            if self._disable_resumable_full_refresh
-            else self._build_resumable_cursor(retriever_model, stream_slicer)
-        )
+        return stream_slicer
 
     def create_default_error_handler(
         self, model: DefaultErrorHandlerModel, config: Config, **kwargs: Any
@@ -2935,9 +2874,9 @@ class ModelToComponentFactory:
         cursor = stream_slicer if isinstance(stream_slicer, DeclarativeCursor) else None
 
         if (
-            not isinstance(stream_slicer, DatetimeBasedCursor)
-            or type(stream_slicer) is not DatetimeBasedCursor
-        ):
+            not isinstance(stream_slicer, (ConcurrentCursor, ConcurrentPerPartitionCursor))
+            or type(stream_slicer) not in {ConcurrentCursor, ConcurrentPerPartitionCursor}
+        ):  # FIXME this condition is probably wrong given the existance of IncrementingCountCursor
             # Many of the custom component implementations of DatetimeBasedCursor override get_request_params() (or other methods).
             # Because we're decoupling RequestOptionsProvider from the Cursor, custom components will eventually need to reimplement
             # their own RequestOptionsProvider. However, right now the existing StreamSlicer/Cursor still can act as the SimpleRetriever's
@@ -3340,12 +3279,19 @@ class ModelToComponentFactory:
     def _create_message_repository_substream_wrapper(
         self, model: ParentStreamConfigModel, config: Config, **kwargs: Any
     ) -> Any:
+        if model.incremental_dependency:
+            parent_state = ConcurrentPerPartitionCursor.get_parent_state(self._connector_state_manager.get_stream_state(kwargs["stream_name"], None), model.stream.name)
+            connector_state_manager = ConnectorStateManager([parent_state] if parent_state else [])
+        else:
+            connector_state_manager = ConnectorStateManager([])
+
         substream_factory = ModelToComponentFactory(
             limit_pages_fetched_per_slice=self._limit_pages_fetched_per_slice,
             limit_slices_fetched=self._limit_slices_fetched,
             emit_connector_builder_messages=self._emit_connector_builder_messages,
             disable_retries=self._disable_retries,
             disable_cache=self._disable_cache,
+            connector_state_manager=connector_state_manager,
             message_repository=LogAppenderMessageRepositoryDecorator(
                 {"airbyte_cdk": {"stream": {"is_substream": True}}, "http": {"is_auxiliary": True}},
                 self._message_repository,

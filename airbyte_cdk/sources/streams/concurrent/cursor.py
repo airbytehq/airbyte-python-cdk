@@ -80,7 +80,7 @@ class Cursor(StreamSlicer, ABC):
         Subclasses can override this method to provide actual behavior.
         """
         yield StreamSlice(partition={}, cursor_slice={})
-
+        
 
 class FinalStateCursor(Cursor):
     """Cursor that is used to guarantee at least one state message is emitted for a concurrent stream."""

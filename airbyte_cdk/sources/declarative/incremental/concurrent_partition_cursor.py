@@ -11,11 +11,18 @@ from copy import deepcopy
 from datetime import timedelta
 from typing import Any, Callable, Iterable, Mapping, MutableMapping, Optional
 
+from airbyte_cdk.models import (
+    AirbyteStateBlob,
+    AirbyteStateMessage,
+    AirbyteStateType,
+    AirbyteStreamState,
+    StreamDescriptor,
+)
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.incremental.global_substream_cursor import (
     Timer,
     iterate_with_last_flag_and_state,
-)
+)  # FIXME since it relies on the declarative package, this can generate circular imports errors
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.checkpoint.per_partition_key_serializer import (
@@ -261,6 +268,7 @@ class ConcurrentPerPartitionCursor(Cursor):
             slices, self._partition_router.get_stream_state
         ):
             yield from self._generate_slices_from_partition(partition, parent_state)
+        self._parent_state = self._partition_router.get_stream_state()
 
     def _generate_slices_from_partition(
         self, partition: StreamSlice, parent_state: Mapping[str, Any]
@@ -289,6 +297,7 @@ class ConcurrentPerPartitionCursor(Cursor):
                 ]
                 != parent_state
             ):
+                print(f"GODO:\n\t{parent_state}")  # FIXME parent state needs to be tracked in substream partition router
                 self._partition_parent_state_map[partition_key] = deepcopy(parent_state)
 
         for cursor_slice, is_last_slice, _ in iterate_with_last_flag_and_state(
@@ -496,3 +505,13 @@ class ConcurrentPerPartitionCursor(Cursor):
 
     def limit_reached(self) -> bool:
         return self._number_of_partitions > self.SWITCH_TO_GLOBAL_LIMIT
+
+    @staticmethod
+    def get_parent_state(stream_state: Optional[StreamState], parent_stream_name: str) -> Optional[AirbyteStateMessage]:
+        return AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(parent_stream_name, None),
+                stream_state=AirbyteStateBlob(stream_state["parent_state"][parent_stream_name])
+            )
+        ) if stream_state else None

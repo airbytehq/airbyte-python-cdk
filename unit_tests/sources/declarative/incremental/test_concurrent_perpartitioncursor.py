@@ -675,7 +675,7 @@ PARTITION_SYNC_START_TIME = "2024-01-02T00:00:00Z"
                             "id": 10,
                             "parent_slice": {"id": 1, "parent_slice": {}},
                         },
-                        "cursor": {"created_at": INITIAL_STATE_PARTITION_10_CURSOR_TIMESTAMP},
+                        "cursor": {"created_at": INITIAL_STATE_PARTITION_10_CURSOR_TIMESTAMP},  # that's a very fucked up state as it has different format for different partition
                     },
                     {
                         "partition": {
@@ -742,7 +742,7 @@ PARTITION_SYNC_START_TIME = "2024-01-02T00:00:00Z"
         ),
     ],
 )
-def test_incremental_parent_state_no_incremental_dependency(
+def test_incremental_parent_state_no_incremental_dependency(  #posts/1/comments/10/votes
     test_name, manifest, mock_requests, expected_records, initial_state, expected_state
 ):
     """
@@ -840,6 +840,9 @@ def run_incremental_parent_state_test(
 
         # For each intermediate state, perform another read starting from that state
         for state, records_before_state in intermediate_states[:-1]:
+            import logging
+            logger = logging.getLogger()
+            logger.warning(f"Running tmp state: {state.stream.stream_state.__dict__}")
             output_intermediate = _run_read(manifest, CONFIG, STREAM_NAME, [state])
             records_from_state = [r.record.data for r in output_intermediate.records]
 
@@ -869,9 +872,14 @@ def run_incremental_parent_state_test(
 
         # Assert that the final state matches the expected state for all runs
         for i, final_state in enumerate(final_states):
-            assert (
-                final_state in expected_states
-            ), f"Final state mismatch at run {i + 1}. Expected {expected_states}, got {final_state}"
+            if len(expected_states) == 1:
+                assert (
+                    final_state == expected_states[0]
+                ), f"Final state mismatch at run {i + 1}. Expected {expected_states}, got {final_state}"
+            else:
+                assert (
+                    final_state in expected_states
+                ), f"Final state mismatch at run {i + 1}. Expected {expected_states}, got {final_state}"
 
 
 @pytest.mark.parametrize(
@@ -1134,6 +1142,9 @@ def run_incremental_parent_state_test(
                             "posts": {"updated_at": POST_1_UPDATED_AT}
                         },  # post 1 is the latest
                         "lookback_window": 1,
+                        "state": {
+                            "updated_at": "2024-01-25T00:00:00Z"
+                        },
                         "states": [
                             {
                                 "partition": {"id": 1, "parent_slice": {}},
