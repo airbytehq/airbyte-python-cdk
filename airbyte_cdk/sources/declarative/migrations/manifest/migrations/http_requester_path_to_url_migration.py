@@ -9,6 +9,12 @@ from airbyte_cdk.sources.types import EmptyString
 
 
 class HttpRequesterPathToUrlMigration(ManifestMigration):
+    """
+    This migration is responsible for migrating the `path` key to `url` in the HttpRequester component.
+    The `path` key is expected to be a relative path, and the `url` key is expected to be a full URL.
+    The migration will concatenate the `url_base` and `path` to form a full URL.
+    """
+
     component_type = "HttpRequester"
     original_key = "path"
     replacement_key = "url"

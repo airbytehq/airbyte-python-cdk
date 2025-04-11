@@ -34,6 +34,24 @@ class ManifestMigration:
         :param kwargs: Additional arguments for migration
         """
 
+    def _is_component(self, obj: Dict[str, Any]) -> bool:
+        """
+        Check if the object is a component.
+
+        :param obj: The object to check
+        :return: True if the object is a component, False otherwise
+        """
+        return TYPE_TAG in obj.keys()
+
+    def _is_migratable(self, obj: Dict[str, Any]) -> bool:
+        """
+        Check if the object is a migratable component.
+
+        :param obj: The object to check
+        :return: True if the object is a migratable component, False otherwise
+        """
+        return obj[TYPE_TAG] not in NON_MIGRATABLE_TYPES
+
     def _process_manifest(self, obj: Any) -> None:
         """
         Recursively processes a manifest object, migrating components that match the migration criteria.
@@ -54,21 +72,21 @@ class ManifestMigration:
             None, since we process the manifest in place.
         """
         if isinstance(obj, dict):
-            obj_keys = obj.keys()
-            # check for component type match the designed migration
-            if TYPE_TAG in obj_keys:
-                obj_type = obj[TYPE_TAG]
-
-                # do not migrate if the particular type is in the list of non-migratable types
-                if obj_type in NON_MIGRATABLE_TYPES:
+            # Check if the object is a component
+            if self._is_component(obj):
+                # Check if the object is allowed to be migrated
+                if not self._is_migratable(obj):
                     return
 
+                # Check if the object should be migrated
                 if self.should_migrate(obj):
+                    # Perform the migration, if needed
                     self.migrate(obj)
 
             # Process all values in the dictionary
-            for v in list(obj.values()):
-                self._process_manifest(v)
+            for value in list(obj.values()):
+                self._process_manifest(value)
+
         elif isinstance(obj, list):
             # Process all items in the list
             for item in obj:
