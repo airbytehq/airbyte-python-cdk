@@ -5,7 +5,6 @@
 import datetime
 
 import pytest
-from freezegun import freeze_time
 
 from airbyte_cdk.sources.declarative.interpolation.macros import macros
 
