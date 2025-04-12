@@ -53,7 +53,12 @@ def get_limits(config: Mapping[str, Any]) -> TestLimits:
     max_slices = command_config.get(MAX_SLICES_KEY) or DEFAULT_MAXIMUM_NUMBER_OF_SLICES
     max_records = command_config.get(MAX_RECORDS_KEY) or DEFAULT_MAXIMUM_RECORDS
     max_streams = command_config.get(MAX_STREAMS_KEY) or DEFAULT_MAXIMUM_STREAMS
-    return TestLimits(max_records, max_pages_per_slice, max_slices, max_streams)
+    return TestLimits(
+        max_records=max_records,
+        max_pages_per_slice=max_pages_per_slice,
+        max_slices=max_slices,
+        max_streams=max_streams,
+    )
 
 
 def create_source(config: Mapping[str, Any], limits: TestLimits) -> ManifestDeclarativeSource:
