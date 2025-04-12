@@ -6,8 +6,9 @@ from __future__ import annotations
 import abc
 import inspect
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import pytest
 import yaml
@@ -90,6 +91,9 @@ def generate_tests(metafunc: pytest.Metafunc) -> None:
 class ConnectorTestSuiteBase(abc.ABC):
     """Base class for connector test suites."""
 
+    connector: type[IConnector] | Callable[[], IConnector] | None = None
+    """The connector class or a factory function that returns an instance of IConnector."""
+
     @classmethod
     def get_test_class_dir(cls) -> Path:
         """Get the file path that contains the class."""
@@ -97,16 +101,24 @@ class ConnectorTestSuiteBase(abc.ABC):
         # Get the directory containing the test file
         return Path(inspect.getfile(module)).parent
 
-    connector: type[Connector] | Path | JavaClass | DockerImage | None = None
-    """The connector class or path to the connector to test."""
-
     @classmethod
     def create_connector(
         cls,
         scenario: ConnectorTestScenario,
     ) -> IConnector:
         """Instantiate the connector class."""
-        raise NotImplementedError("Subclasses must implement this method.")
+        connector = cls.connector  # type: ignore
+        if connector:
+            if callable(connector) or isinstance(connector, type):
+                # If the connector is a class or factory function, instantiate it:
+                return cast(IConnector, connector())
+
+        # Otherwise, we can't instantiate the connector. Fail with a clear error message.
+        raise NotImplementedError(
+            "No connector class or connector factory function provided. "
+            "Please provide a class or factory function in `cls.connector`, or "
+            "override `cls.create_connector()` to define a custom initialization process."
+        )
 
     def run_test_scenario(
         self,

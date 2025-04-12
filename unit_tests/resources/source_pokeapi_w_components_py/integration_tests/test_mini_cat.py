@@ -7,7 +7,7 @@ from airbyte_cdk.test.declarative.test_suites import (
 )
 
 
-def pytest_generate_tests(metafunc):
+def pytest_generate_tests(metafunc) -> None:
     generate_tests(metafunc)
 
 
