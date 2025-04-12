@@ -62,7 +62,9 @@ DEFAULT_CONFIG = {
 
 
 class TestStreamReader(AbstractFileBasedStreamReader):
-    __test__: ClassVar[bool] = False  # Prevent pytest from thinking that this is a test class, despite the name
+    __test__: ClassVar[bool] = (
+        False  # Prevent pytest from thinking that this is a test class, despite the name
+    )
 
     @property
     def config(self) -> Optional[AbstractFileBasedSpec]:
@@ -102,7 +104,9 @@ class TestStreamReader(AbstractFileBasedStreamReader):
 
 
 class TestSpec(AbstractFileBasedSpec):
-    __test__: ClassVar[bool] = False  # Prevent pytest from thinking that this is a test class, despite the name
+    __test__: ClassVar[bool] = (
+        False  # Prevent pytest from thinking that this is a test class, despite the name
+    )
 
     @classmethod
     def documentation_url(cls) -> AnyUrl:

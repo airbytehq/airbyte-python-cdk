@@ -42,7 +42,9 @@ class SourceBuilder(ABC, Generic[SourceType]):
 
 
 class TestScenario(Generic[SourceType]):
-    __test__: ClassVar[bool] = False  # Prevent pytest from thinking that this is a test class, despite the name
+    __test__: ClassVar[bool] = (
+        False  # Prevent pytest from thinking that this is a test class, despite the name
+    )
 
     def __init__(
         self,
