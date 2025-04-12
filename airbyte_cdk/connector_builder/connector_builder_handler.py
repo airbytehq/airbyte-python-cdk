@@ -35,7 +35,7 @@ MAX_RECORDS_KEY = "max_records"
 MAX_STREAMS_KEY = "max_streams"
 
 
-@dataclass
+@dataclass(kw_only=True)
 class TestLimits:
     __test__: bool = False  # Prevent pytest from treating this as a test case, despite its name
 
