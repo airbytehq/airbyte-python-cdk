@@ -45,9 +45,13 @@ def run_test_job(
     if isinstance(connector, type) or callable(connector):
         # If the connector is a class or a factory lambda, instantiate it.
         connector_obj = connector()
-    elif isinstance(
-        connector, IConnector,
-    ) or True:  # TODO: Get a valid protocol check here
+    elif (
+        isinstance(
+            connector,
+            IConnector,
+        )
+        or True
+    ):  # TODO: Get a valid protocol check here
         connector_obj = connector
     else:
         raise ValueError(
