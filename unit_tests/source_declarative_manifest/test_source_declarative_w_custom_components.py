@@ -5,7 +5,6 @@
 import datetime
 import json
 import logging
-import os
 import sys
 import types
 from collections.abc import Callable, Mapping
@@ -13,7 +12,6 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 
-from dpath import get
 import pytest
 import yaml
 from airbyte_protocol_dataclasses.models.airbyte_protocol import AirbyteCatalog
