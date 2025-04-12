@@ -259,6 +259,8 @@ def test_composite_raw_decoder_csv_parser_values(requests_mock, encoding: str, d
 
 
 class TestServer(BaseHTTPRequestHandler):
+    __test__ = False  # Prevent pytest from thinking that this is a test class, despite the name
+
     def do_GET(self) -> None:
         self.send_response(200)
         self.end_headers()

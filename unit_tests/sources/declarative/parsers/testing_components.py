@@ -21,6 +21,8 @@ class TestingSomeComponent(DefaultErrorHandler):
     A basic test class with various field permutations used to test manifests with custom components
     """
 
+    __test__ = False  # Prevent pytest from thinking that this is a test class, despite the name
+
     subcomponent_field_with_hint: DpathExtractor = field(
         default_factory=lambda: DpathExtractor(field_path=[], config={}, parameters={})
     )
@@ -36,6 +38,8 @@ class TestingCustomSubstreamPartitionRouter(SubstreamPartitionRouter):
     """
     A test class based on a SubstreamPartitionRouter used for testing manifests that use custom components.
     """
+
+    __test__ = False  # Prevent pytest from thinking that this is a test class, despite the name
 
     custom_field: str
     custom_pagination_strategy: PaginationStrategy

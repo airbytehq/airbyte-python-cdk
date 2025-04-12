@@ -62,6 +62,8 @@ DEFAULT_CONFIG = {
 
 
 class TestStreamReader(AbstractFileBasedStreamReader):
+    __test__ = False  # Prevent pytest from thinking that this is a test class, despite the name
+
     @property
     def config(self) -> Optional[AbstractFileBasedSpec]:
         return self._config
@@ -100,6 +102,8 @@ class TestStreamReader(AbstractFileBasedStreamReader):
 
 
 class TestSpec(AbstractFileBasedSpec):
+    __test__ = False  # Prevent pytest from thinking that this is a test class, despite the name
+
     @classmethod
     def documentation_url(cls) -> AnyUrl:
         return AnyUrl(scheme="https", url="https://docs.airbyte.com/integrations/sources/test")  # type: ignore
