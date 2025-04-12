@@ -13,6 +13,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any
 
+from dpath import get
 import pytest
 import yaml
 from airbyte_protocol_dataclasses.models.airbyte_protocol import AirbyteCatalog
@@ -44,8 +45,8 @@ class SimpleClass:
 """
 
 
-def get_fixture_path(file_name) -> str:
-    return Path(__file__).parent.parent / file_name
+def get_resource_path(file_name) -> str:
+    return Path(__file__).parent.parent / "resources" / file_name
 
 
 def test_components_module_from_string() -> None:
@@ -90,7 +91,7 @@ def get_py_components_config_dict(
     *,
     failing_components: bool = False,
 ) -> dict[str, Any]:
-    connector_dir = Path(get_fixture_path("resources/source_pokeapi_w_components_py"))
+    connector_dir = Path(get_resource_path("source_pokeapi_w_components_py"))
     manifest_yml_path: Path = connector_dir / "manifest.yaml"
     custom_py_code_path: Path = connector_dir / (
         "components.py" if not failing_components else "components_failing.py"
