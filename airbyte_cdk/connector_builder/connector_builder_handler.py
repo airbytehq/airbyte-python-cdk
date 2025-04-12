@@ -37,6 +37,8 @@ MAX_STREAMS_KEY = "max_streams"
 
 @dataclass
 class TestLimits:
+    __test__: bool = False  # Prevent pytest from treating this as a test case, despite its name
+
     max_records: int = field(default=DEFAULT_MAXIMUM_RECORDS)
     max_pages_per_slice: int = field(default=DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE)
     max_slices: int = field(default=DEFAULT_MAXIMUM_NUMBER_OF_SLICES)
