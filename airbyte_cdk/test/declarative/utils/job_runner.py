@@ -100,9 +100,9 @@ def run_test_job(
         # Check is expected to fail gracefully without an exception.
         # Instead, we assert that we have a CONNECTION_STATUS message with
         # a failure status.
-        assert not result.errors, "Expected no errors from check. Got:\n" + "\n".join([
-            str(error) for error in result.errors
-        ])
+        assert not result.errors, "Expected no errors from check. Got:\n" + "\n".join(
+            [str(error) for error in result.errors]
+        )
         assert len(result.connection_status_messages) == 1, (
             "Expected exactly one CONNECTION_STATUS message. Got "
             f"{len(result.connection_status_messages)}:\n"

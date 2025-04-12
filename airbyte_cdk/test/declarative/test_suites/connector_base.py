@@ -27,6 +27,7 @@ from airbyte_cdk.test.declarative.utils.job_runner import IConnector, run_test_j
 ACCEPTANCE_TEST_CONFIG = "acceptance-test-config.yml"
 MANIFEST_YAML = "manifest.yaml"
 
+
 class JavaClass(str):
     """A string that represents a Java class."""
 

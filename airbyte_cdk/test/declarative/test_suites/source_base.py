@@ -69,7 +69,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
                     sync_mode=SyncMode.full_refresh,
                     destination_sync_mode=DestinationSyncMode.append_dedup,
                 )
-                for stream in discover_result.catalog.catalog.streams # type: ignore [reportOptionalMemberAccess]
+                for stream in discover_result.catalog.catalog.streams  # type: ignore [reportOptionalMemberAccess]
             ]
         )
         result = run_test_job(
@@ -101,8 +101,8 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
                         },
                         supported_sync_modes=[SyncMode.full_refresh],
                     ),
-                    sync_mode="INVALID", # type: ignore [reportArgumentType]
-                    destination_sync_mode="INVALID", # type: ignore [reportArgumentType]
+                    sync_mode="INVALID",  # type: ignore [reportArgumentType]
+                    destination_sync_mode="INVALID",  # type: ignore [reportArgumentType]
                 )
             ]
         )
