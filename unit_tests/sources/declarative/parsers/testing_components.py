@@ -15,7 +15,7 @@ from airbyte_cdk.sources.declarative.requesters.paginators import (
 )
 
 
-@dataclass
+@dataclass(kw_only=True)
 class TestingSomeComponent(DefaultErrorHandler):
     """
     A basic test class with various field permutations used to test manifests with custom components
@@ -33,7 +33,7 @@ class TestingSomeComponent(DefaultErrorHandler):
     paginator: DefaultPaginator = None
 
 
-@dataclass
+@dataclass(kw_only=True)
 class TestingCustomSubstreamPartitionRouter(SubstreamPartitionRouter):
     """
     A test class based on a SubstreamPartitionRouter used for testing manifests that use custom components.
