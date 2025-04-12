@@ -2,9 +2,6 @@
 """Base class for source test suites."""
 
 from dataclasses import asdict
-from pathlib import Path
-
-import pytest
 
 from airbyte_cdk.models import (
     AirbyteMessage,

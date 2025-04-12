@@ -32,6 +32,7 @@ enable = true
 python = ">=3.10,<3.13"
 airbyte-protocol-models-dataclasses = "^0.14"
 backoff = "*"
+boltons = "^25.0.0"
 cachetools = "*"
 dpath = "^2.1.6"
 dunamai = "^1.22.0"
@@ -83,7 +84,6 @@ sqlalchemy = {version = "^2.0,!=2.0.36", optional = true }
 xmltodict = ">=0.13,<0.15"
 anyascii = "^0.3.2"
 whenever = "^0.6.16"
-boltons = "^25.0.0"
 
 [tool.poetry.group.dev.dependencies]
 freezegun = "*"

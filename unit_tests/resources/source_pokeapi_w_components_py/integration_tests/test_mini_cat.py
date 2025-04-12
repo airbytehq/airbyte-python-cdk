@@ -30,4 +30,3 @@ class TestSuiteSourcePokeAPI(DeclarativeSourceTestSuite):
     working_dir = CONNECTOR_ROOT
     manifest_path = get_resource_path("manifest.yaml")
     components_py_path = get_resource_path("components.py")
-    acceptance_test_config_path = get_resource_path("acceptance-test-config.yml")

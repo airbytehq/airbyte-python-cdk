@@ -6,6 +6,7 @@ Here we have base classes for a robust set of declarative connector test suites.
 
 from airbyte_cdk.test.declarative.test_suites.connector_base import (
     ConnectorTestScenario,
+    ConnectorTestSuiteBase,
     generate_tests,
 )
 from airbyte_cdk.test.declarative.test_suites.declarative_sources import (
