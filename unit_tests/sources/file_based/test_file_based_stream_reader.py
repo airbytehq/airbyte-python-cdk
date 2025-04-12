@@ -62,9 +62,7 @@ DEFAULT_CONFIG = {
 
 
 class TestStreamReader(AbstractFileBasedStreamReader):
-    __test__: ClassVar[bool] = (
-        False  # Prevent pytest from thinking that this is a test class, despite the name
-    )
+    __test__: ClassVar[bool] = False  # Tell Pytest this is not a Pytest class, despite its name
 
     @property
     def config(self) -> Optional[AbstractFileBasedSpec]:
