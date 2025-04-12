@@ -66,7 +66,9 @@ class TestReader:
 
     """
 
-    __test__: ClassVar[bool] = False  # Prevent pytest from treating this as a test case, despite its name
+    __test__: ClassVar[bool] = (
+        False  # Prevent pytest from treating this as a test case, despite its name
+    )
 
     logger = logging.getLogger("airbyte.connector-builder")
 
