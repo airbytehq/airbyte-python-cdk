@@ -1,12 +1,12 @@
 """Global pytest configuration for the Airbyte CDK tests."""
 
 from pathlib import Path
-from typing import Optional
+from typing import cast
 
 import pytest
 
 
-def pytest_collect_file(parent: Optional[pytest.Module], path: Path) -> pytest.Module | None:
+def pytest_collect_file(parent: pytest.Module | None, path: Path) -> pytest.Module | None:
     """Collect test files based on their names."""
     if path.name == "test_connector.py":
         return cast(pytest.Module, pytest.Module.from_parent(parent, path=path))
@@ -41,6 +41,6 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     print(f"Setting up test: {item.name}")
 
 
-def pytest_runtest_teardown(item: pytest.Item, nextitem: Optional[pytest.Item]) -> None:
+def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None) -> None:
     # This hook is called after each test function is executed
     print(f"Tearing down test: {item.name}")

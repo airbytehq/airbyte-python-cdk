@@ -45,8 +45,10 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         conn_status_messages: list[AirbyteMessage] = [
             msg for msg in result._messages if msg.type == Type.CONNECTION_STATUS
         ]  # noqa: SLF001  # Non-public API
-        assert len(conn_status_messages) == 1, (
-            "Expected exactly one CONNECTION_STATUS message. Got: \n" + "\n".join(result._messages)
+        num_status_messages = len(conn_status_messages)
+        assert num_status_messages == 1, (
+            f"Expected exactly one CONNECTION_STATUS message. Got {num_status_messages}: \n"
+            + "\n".join([str(m) for m in result._messages])
         )
 
     def test_basic_read(
@@ -70,7 +72,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
                     sync_mode=SyncMode.full_refresh,
                     destination_sync_mode=DestinationSyncMode.append_dedup,
                 )
-                for stream in discover_result.catalog.catalog.streams
+                for stream in discover_result.catalog.catalog.streams # type: ignore [reportOptionalMemberAccess]
             ]
         )
         result = run_test_job(
@@ -102,8 +104,8 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
                         },
                         supported_sync_modes=[SyncMode.full_refresh],
                     ),
-                    sync_mode="INVALID",
-                    destination_sync_mode="INVALID",
+                    sync_mode="INVALID", # type: ignore [reportArgumentType]
+                    destination_sync_mode="INVALID", # type: ignore [reportArgumentType]
                 )
             ]
         )

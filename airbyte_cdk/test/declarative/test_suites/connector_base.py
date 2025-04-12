@@ -4,32 +4,23 @@
 from __future__ import annotations
 
 import abc
-import functools
-import inspect
-import sys
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 import pytest
 import yaml
-from pydantic import BaseModel
-from typing_extensions import override
+from boltons.typeutils import classproperty
 
 from airbyte_cdk import Connector
 from airbyte_cdk.models import (
     AirbyteMessage,
     Type,
 )
-from airbyte_cdk.sources import Source
-from airbyte_cdk.sources.declarative.declarative_source import (
-    AbstractSource,
-    DeclarativeSource,
-)
 from airbyte_cdk.test import entrypoint_wrapper
 from airbyte_cdk.test.declarative.models import (
     ConnectorTestScenario,
 )
-from airbyte_cdk.test.declarative.utils.job_runner import run_test_job
+from airbyte_cdk.test.declarative.utils.job_runner import IConnector, run_test_job
 
 ACCEPTANCE_TEST_CONFIG = "acceptance-test-config.yml"
 
@@ -49,7 +40,7 @@ class RunnableConnector(abc.ABC):
     def launch(cls, args: list[str] | None) -> None: ...
 
 
-def generate_tests(metafunc) -> None:
+def generate_tests(metafunc: pytest.Metafunc) -> None:
     """
     A helper for pytest_generate_tests hook.
 
@@ -111,8 +102,9 @@ class ConnectorTestSuiteBase(abc.ABC):
 
     @classmethod
     def create_connector(
-        cls, scenario: ConnectorTestScenario
-    ) -> Source | AbstractSource | DeclarativeSource | RunnableConnector:
+        cls,
+        scenario: ConnectorTestScenario,
+    ) -> IConnector:
         """Instantiate the connector class."""
         raise NotImplementedError("Subclasses must implement this method.")
 
@@ -121,7 +113,7 @@ class ConnectorTestSuiteBase(abc.ABC):
         verb: Literal["read", "check", "discover"],
         test_scenario: ConnectorTestScenario,
         *,
-        catalog: dict | None = None,
+        catalog: dict[str, Any] | None = None,
     ) -> entrypoint_wrapper.EntrypointOutput:
         """Run a test job from provided CLI args and return the result."""
         return run_test_job(
@@ -146,11 +138,10 @@ class ConnectorTestSuiteBase(abc.ABC):
             msg for msg in result._messages if msg.type == Type.CONNECTION_STATUS
         ]  # noqa: SLF001  # Non-public API
         assert len(conn_status_messages) == 1, (
-            "Expected exactly one CONNECTION_STATUS message. Got: \n" + "\n".join(result._messages)
+            f"Expected exactly one CONNECTION_STATUS message. Got: {result._messages}"
         )
 
-    @classmethod
-    @property
+    @classproperty
     def acceptance_test_config_path(self) -> Path:
         """Get the path to the acceptance test config file.
 
