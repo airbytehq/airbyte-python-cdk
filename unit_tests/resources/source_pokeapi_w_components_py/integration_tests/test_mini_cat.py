@@ -13,7 +13,6 @@ def get_resource_path(file_name: str) -> Path:
     """Get the path to a resource file."""
     return CONNECTOR_ROOT / file_name
 
-
 def pytest_generate_tests(metafunc):
     generate_tests(metafunc)
 

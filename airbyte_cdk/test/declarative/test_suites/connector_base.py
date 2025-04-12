@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import abc
+import inspect
+import sys
 from pathlib import Path
 from typing import Any, Literal
 
@@ -23,7 +25,7 @@ from airbyte_cdk.test.declarative.models import (
 from airbyte_cdk.test.declarative.utils.job_runner import IConnector, run_test_job
 
 ACCEPTANCE_TEST_CONFIG = "acceptance-test-config.yml"
-
+MANIFEST_YAML = "manifest.yaml"
 
 class JavaClass(str):
     """A string that represents a Java class."""
@@ -87,12 +89,12 @@ def generate_tests(metafunc: pytest.Metafunc) -> None:
 class ConnectorTestSuiteBase(abc.ABC):
     """Base class for connector test suites."""
 
-    acceptance_test_file_path = Path("./acceptance-test-config.json")
-    """The path to the acceptance test config file.
-
-    By default, this is set to the `acceptance-test-config.json` file in
-    the root of the connector source directory.
-    """
+    @classmethod
+    def get_test_class_dir(cls) -> Path:
+        """Get the file path that contains the class."""
+        module = sys.modules[cls.__module__]
+        # Get the directory containing the test file
+        return Path(inspect.getfile(module)).parent
 
     connector: type[Connector] | Path | JavaClass | DockerImage | None = None
     """The connector class or path to the connector to test."""
@@ -142,21 +144,55 @@ class ConnectorTestSuiteBase(abc.ABC):
         )
 
     @classproperty
-    def acceptance_test_config_path(self) -> Path:
+    def manifest_yml_path(cls) -> Path:
         """Get the path to the acceptance test config file.
 
-        Check vwd and parent directories of cwd for the config file, and return the first one found.
+        Check cwd and parent directories of cwd for the config file, and return the first one found.
 
         Give up if the config file is not found in any parent directory.
         """
-        current_dir = Path.cwd()
-        for parent_dir in current_dir.parents:
-            config_path = parent_dir / ACCEPTANCE_TEST_CONFIG
-            if config_path.exists():
-                return config_path
+        result = cls.connector_root_dir / MANIFEST_YAML
+        if result.exists():
+            return result
+
         raise FileNotFoundError(
-            f"Acceptance test config file not found in any parent directory from : {Path.cwd()}"
+            f"Manifest file not found at: {str(result)}. "
+            f"Please check if the file exists in the connector root directory."
         )
+
+    @classproperty
+    def connector_root_dir(cls) -> Path:
+        """Get the root directory of the connector."""
+        for parent in cls.get_test_class_dir().parents:
+            if (parent / MANIFEST_YAML).exists():
+                return parent
+            if (parent / ACCEPTANCE_TEST_CONFIG).exists():
+                return parent
+            if parent.name == "airbyte_cdk":
+                break
+        # If we reach here, we didn't find the manifest file in any parent directory
+        # Check if the manifest file exists in the current directory
+        for parent in Path.cwd().parents:
+            if (parent / MANIFEST_YAML).exists():
+                return parent
+            if (parent / ACCEPTANCE_TEST_CONFIG).exists():
+                return parent
+            if parent.name == "airbyte_cdk":
+                break
+
+        raise FileNotFoundError(
+            "Could not find connector root directory relative to "
+            f"'{str(cls.get_test_class_dir())}' or '{str(Path.cwd())}'."
+        )
+
+    @classproperty
+    def acceptance_test_config_path(cls) -> Path:
+        """Get the path to the acceptance test config file."""
+        result = cls.connector_root_dir / ACCEPTANCE_TEST_CONFIG
+        if result.exists():
+            return result
+
+        raise FileNotFoundError(f"Acceptance test config file not found at: {str(result)}")
 
     @classmethod
     def get_scenarios(
@@ -184,7 +220,7 @@ class ConnectorTestSuiteBase(abc.ABC):
             for test in all_tests_config["acceptance_tests"][category]["tests"]
             if "iam_role" not in test["config_path"]
         ]
-        working_dir = cls.working_dir or Path()
+        working_dir = cls.get_test_class_dir()
         for test in tests_scenarios:
             if test.config_path:
                 test.config_path = working_dir / test.config_path
