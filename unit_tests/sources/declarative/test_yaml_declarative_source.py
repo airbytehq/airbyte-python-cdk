@@ -5,6 +5,7 @@
 import logging
 import os
 import tempfile
+from typing import ClassVar
 
 import pytest
 from yaml.parser import ParserError
@@ -133,7 +134,7 @@ class TestYamlDeclarativeSource:
 
 
 class TestFileContent:
-    __test__ = False  # Prevent pytest from thinking that this is a test class, despite the name
+    __test__: ClassVar[bool] = False  # Prevent pytest from thinking that this is a test class, despite the name
 
     def __init__(self, content):
         self.file = tempfile.NamedTemporaryFile(mode="w", delete=False)
