@@ -111,7 +111,7 @@ class ConnectorTestSuiteBase(abc.ABC):
         if connector:
             if callable(connector) or isinstance(connector, type):
                 # If the connector is a class or factory function, instantiate it:
-                return cast(IConnector, connector())
+                return cast(IConnector, connector())  # type: ignore [redundant-cast]
 
         # Otherwise, we can't instantiate the connector. Fail with a clear error message.
         raise NotImplementedError(
