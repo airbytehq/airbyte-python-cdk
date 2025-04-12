@@ -86,7 +86,9 @@ def read_stream(
 ) -> AirbyteMessage:
     try:
         test_read_handler = TestReader(
-            limits.max_pages_per_slice, limits.max_slices, limits.max_records
+            max_pages_per_slice=limits.max_pages_per_slice,
+            max_slices=limits.max_slices,
+            max_record_limit=limits.max_records,
         )
         # The connector builder only supports a single stream
         stream_name = configured_catalog.streams[0].stream.name

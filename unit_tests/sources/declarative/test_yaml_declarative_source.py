@@ -86,7 +86,7 @@ class TestYamlDeclarativeSource:
           type: CheckStream
           stream_names: ["lists"]
         """
-        temporary_file = TestFileContent(content)
+        temporary_file = TestFileContent(content=content)
         MockYamlDeclarativeSource(temporary_file.filename)
 
     def test_source_fails_for_invalid_yaml(self):
@@ -104,7 +104,7 @@ class TestYamlDeclarativeSource:
           type: CheckStream
           stream_names: ["lists"]
         """
-        temporary_file = TestFileContent(content)
+        temporary_file = TestFileContent(content=content)
         with pytest.raises(ParserError):
             MockYamlDeclarativeSource(temporary_file.filename)
 
@@ -127,7 +127,7 @@ class TestYamlDeclarativeSource:
           type: CheckStream
           stream_names: ["lists"]
         """
-        temporary_file = TestFileContent(content)
+        temporary_file = TestFileContent(content=content)
         with pytest.raises(UndefinedReferenceException):
             MockYamlDeclarativeSource(temporary_file.filename)
 
