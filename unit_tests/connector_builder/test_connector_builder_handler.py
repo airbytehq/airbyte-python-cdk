@@ -979,11 +979,15 @@ def test_get_limits(
     assert limits.max_slices == expected_max_slices
 
 
-def test_create_source():
+def test_create_source() -> None:
     max_records = 3
     max_pages_per_slice = 2
     max_slices = 1
-    limits = TestLimits(max_records, max_pages_per_slice, max_slices)
+    limits = TestLimits(
+        max_records=max_records,
+        max_pages_per_slice=max_pages_per_slice,
+        max_slices=max_slices,
+    )
 
     config = {"__injected_declarative_manifest": MANIFEST}
 
