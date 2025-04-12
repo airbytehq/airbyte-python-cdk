@@ -100,9 +100,6 @@ class ConnectorTestSuiteBase(abc.ABC):
     connector: type[Connector] | Path | JavaClass | DockerImage | None = None
     """The connector class or path to the connector to test."""
 
-    working_dir: Path | None = None
-    """The root directory of the connector source code."""
-
     @classmethod
     def create_connector(
         cls,
@@ -142,23 +139,6 @@ class ConnectorTestSuiteBase(abc.ABC):
         ]  # noqa: SLF001  # Non-public API
         assert len(conn_status_messages) == 1, (
             f"Expected exactly one CONNECTION_STATUS message. Got: {result._messages}"
-        )
-
-    @classproperty
-    def manifest_yml_path(cls) -> Path:
-        """Get the path to the acceptance test config file.
-
-        Check cwd and parent directories of cwd for the config file, and return the first one found.
-
-        Give up if the config file is not found in any parent directory.
-        """
-        result = cls.get_connector_root_dir() / MANIFEST_YAML
-        if result.exists():
-            return result
-
-        raise FileNotFoundError(
-            f"Manifest file not found at: {str(result)}. "
-            f"Please check if the file exists in the connector root directory."
         )
 
     @classmethod
@@ -221,10 +201,11 @@ class ConnectorTestSuiteBase(abc.ABC):
             for test in all_tests_config["acceptance_tests"][category]["tests"]
             if "iam_role" not in test["config_path"]
         ]
-        working_dir = cls.get_test_class_dir()
+        connector_root = cls.get_connector_root_dir().absolute()
         for test in tests_scenarios:
             if test.config_path:
-                test.config_path = working_dir / test.config_path
+                test.config_path = connector_root / test.config_path
             if test.configured_catalog_path:
-                test.configured_catalog_path = working_dir / test.configured_catalog_path
+                test.configured_catalog_path = connector_root / test.configured_catalog_path
+
         return tests_scenarios
