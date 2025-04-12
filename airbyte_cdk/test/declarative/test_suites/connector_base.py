@@ -152,7 +152,7 @@ class ConnectorTestSuiteBase(abc.ABC):
 
         Give up if the config file is not found in any parent directory.
         """
-        result = cls.connector_root_dir / MANIFEST_YAML
+        result = cls.get_connector_root_dir() / MANIFEST_YAML
         if result.exists():
             return result
 
@@ -161,8 +161,8 @@ class ConnectorTestSuiteBase(abc.ABC):
             f"Please check if the file exists in the connector root directory."
         )
 
-    @classproperty
-    def connector_root_dir(cls) -> Path:
+    @classmethod
+    def get_connector_root_dir(cls) -> Path:
         """Get the root directory of the connector."""
         for parent in cls.get_test_class_dir().parents:
             if (parent / MANIFEST_YAML).exists():
@@ -189,7 +189,7 @@ class ConnectorTestSuiteBase(abc.ABC):
     @classproperty
     def acceptance_test_config_path(cls) -> Path:
         """Get the path to the acceptance test config file."""
-        result = cls.connector_root_dir / ACCEPTANCE_TEST_CONFIG
+        result = cls.get_connector_root_dir() / ACCEPTANCE_TEST_CONFIG
         if result.exists():
             return result
 

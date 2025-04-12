@@ -85,7 +85,7 @@ def run_test_job(
     # Because it *also* can fail, we have ot redundantly wrap it in a try/except block.
 
     result: entrypoint_wrapper.EntrypointOutput = entrypoint_wrapper._run_command(  # noqa: SLF001  # Non-public API
-        source=connector_obj,  # type: ignore [reportArgumentType]
+        source=connector_obj,  # type: ignore [arg-type]
         args=args,
         expecting_exception=test_instance.expect_exception,
     )
