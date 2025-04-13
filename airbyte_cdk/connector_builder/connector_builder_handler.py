@@ -4,7 +4,7 @@
 
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Mapping
+from typing import Any, ClassVar, Dict, List, Mapping
 
 from airbyte_cdk.connector_builder.test_reader import TestReader
 from airbyte_cdk.models import (
@@ -35,9 +35,9 @@ MAX_RECORDS_KEY = "max_records"
 MAX_STREAMS_KEY = "max_streams"
 
 
-@dataclass(kw_only=True)
+@dataclass
 class TestLimits:
-    __test__: bool = False  # Prevent pytest from treating this as a test case, despite its name
+    __test__: ClassVar[bool] = False  # Tell Pytest this is not a Pytest class, despite its name
 
     max_records: int = field(default=DEFAULT_MAXIMUM_RECORDS)
     max_pages_per_slice: int = field(default=DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE)

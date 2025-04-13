@@ -4,7 +4,7 @@
 
 
 import logging
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Union
+from typing import Any, ClassVar, Dict, Iterator, List, Mapping, Optional, Union
 
 from airbyte_cdk.connector_builder.models import (
     AuxiliaryRequest,
@@ -66,7 +66,7 @@ class TestReader:
 
     """
 
-    __test__: bool = False  # Prevent pytest from treating this as a test case, despite its name
+    __test__: ClassVar[bool] = False  # Tell Pytest this is not a Pytest class, despite its name
 
     logger = logging.getLogger("airbyte.connector-builder")
 

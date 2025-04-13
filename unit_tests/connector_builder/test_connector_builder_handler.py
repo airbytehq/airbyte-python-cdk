@@ -983,11 +983,7 @@ def test_create_source() -> None:
     max_records = 3
     max_pages_per_slice = 2
     max_slices = 1
-    limits = TestLimits(
-        max_records=max_records,
-        max_pages_per_slice=max_pages_per_slice,
-        max_slices=max_slices,
-    )
+    limits = TestLimits(max_records, max_pages_per_slice, max_slices)
 
     config = {"__injected_declarative_manifest": MANIFEST}
 
@@ -1069,11 +1065,7 @@ def test_read_source(mock_http_stream):
     max_records = 100
     max_pages_per_slice = 2
     max_slices = 3
-    limits = TestLimits(
-        max_records=max_records,
-        max_pages_per_slice=max_pages_per_slice,
-        max_slices=max_slices,
-    )
+    limits = TestLimits(max_records, max_pages_per_slice, max_slices)
 
     catalog = ConfiguredAirbyteCatalog(
         streams=[
@@ -1120,11 +1112,7 @@ def test_read_source_single_page_single_slice(mock_http_stream):
     max_records = 100
     max_pages_per_slice = 1
     max_slices = 1
-    limits = TestLimits(
-        max_records=max_records,
-        max_pages_per_slice=max_pages_per_slice,
-        max_slices=max_slices,
-    )
+    limits = TestLimits(max_records, max_pages_per_slice, max_slices)
 
     catalog = ConfiguredAirbyteCatalog(
         streams=[
@@ -1208,11 +1196,7 @@ def test_handle_read_external_requests(deployment_mode, url_base, expected_error
     endpoints when running on Cloud or OSS deployments
     """
 
-    limits = TestLimits(
-        max_records=100,
-        max_pages_per_slice=1,
-        max_slices=1,
-    )
+    limits = TestLimits(max_records=100, max_pages_per_slice=1, max_slices=1)
 
     catalog = ConfiguredAirbyteCatalog(
         streams=[
@@ -1298,11 +1282,7 @@ def test_handle_read_external_oauth_request(deployment_mode, token_url, expected
     endpoints when running on Cloud or OSS deployments
     """
 
-    limits = TestLimits(
-        max_records=100,
-        max_pages_per_slice=1,
-        max_slices=1,
-    )
+    limits = TestLimits(max_records=100, max_pages_per_slice=1, max_slices=1)
 
     catalog = ConfiguredAirbyteCatalog(
         streams=[

@@ -4,7 +4,7 @@
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any, Generic, List, Mapping, Optional, Set, Tuple, Type, TypeVar
+from typing import Any, ClassVar, Generic, List, Mapping, Optional, Set, Tuple, Type, TypeVar
 
 from airbyte_cdk.models import (
     AirbyteAnalyticsTraceMessage,
@@ -42,7 +42,7 @@ class SourceBuilder(ABC, Generic[SourceType]):
 
 
 class TestScenario(Generic[SourceType]):
-    __test__ = False  # Prevent pytest from thinking that this is a test class, despite the name
+    __test__: ClassVar[bool] = False  # Tell Pytest this is not a Pytest class, despite its name
 
     def __init__(
         self,

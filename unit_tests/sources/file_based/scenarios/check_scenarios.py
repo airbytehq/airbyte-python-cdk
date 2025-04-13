@@ -140,8 +140,7 @@ error_listing_files_scenario = (
     .set_source_builder(
         _base_failure_scenario.source_builder.copy().set_stream_reader(
             TestErrorListMatchingFilesInMemoryFilesStreamReader(
-                files=_base_failure_scenario.source_builder._files,
-                file_type="csv",
+                files=_base_failure_scenario.source_builder._files, file_type="csv"
             )
         )
     )
@@ -155,8 +154,7 @@ error_reading_file_scenario = (
     .set_source_builder(
         _base_failure_scenario.source_builder.copy().set_stream_reader(
             TestErrorOpenFileInMemoryFilesStreamReader(
-                files=_base_failure_scenario.source_builder._files,
-                file_type="csv",
+                files=_base_failure_scenario.source_builder._files, file_type="csv"
             )
         )
     )

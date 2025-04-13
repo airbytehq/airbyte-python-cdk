@@ -5,7 +5,7 @@
 import logging
 from datetime import datetime
 from io import IOBase
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Set
+from typing import Any, ClassVar, Dict, Iterable, List, Mapping, Optional, Set
 
 import pytest
 from pydantic.v1 import AnyUrl
@@ -62,7 +62,7 @@ DEFAULT_CONFIG = {
 
 
 class TestStreamReader(AbstractFileBasedStreamReader):
-    __test__ = False  # Prevent pytest from thinking that this is a test class, despite the name
+    __test__: ClassVar[bool] = False  # Tell Pytest this is not a Pytest class, despite its name
 
     @property
     def config(self) -> Optional[AbstractFileBasedSpec]:
@@ -102,7 +102,9 @@ class TestStreamReader(AbstractFileBasedStreamReader):
 
 
 class TestSpec(AbstractFileBasedSpec):
-    __test__ = False  # Prevent pytest from thinking that this is a test class, despite the name
+    __test__: ClassVar[bool] = (
+        False  # Prevent pytest from thinking that this is a test class, despite the name
+    )
 
     @classmethod
     def documentation_url(cls) -> AnyUrl:

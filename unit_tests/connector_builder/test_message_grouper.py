@@ -203,10 +203,7 @@ def test_get_grouped_messages(mock_entrypoint_read: Mock) -> None:
         ),
     )
 
-    connector_builder_handler = TestReader(
-        max_pages_per_slice=MAX_PAGES_PER_SLICE,
-        max_slices=MAX_SLICES,
-    )
+    connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
     actual_response: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
@@ -290,10 +287,7 @@ def test_get_grouped_messages_with_logs(mock_entrypoint_read: Mock) -> None:
         ),
     )
 
-    connector_builder_handler = TestReader(
-        max_pages_per_slice=MAX_PAGES_PER_SLICE,
-        max_slices=MAX_SLICES,
-    )
+    connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
 
     actual_response: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
@@ -346,11 +340,7 @@ def test_get_grouped_messages_record_limit(
     n_records = 2
     record_limit = min(request_record_limit, max_record_limit)
 
-    api = TestReader(
-        max_pages_per_slice=MAX_PAGES_PER_SLICE,
-        max_slices=MAX_SLICES,
-        max_record_limit=max_record_limit,
-    )
+    api = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES, max_record_limit=max_record_limit)
     # this is the call we expect to raise an exception
     if should_fail:
         with pytest.raises(ValueError):
@@ -414,11 +404,7 @@ def test_get_grouped_messages_default_record_limit(
     )
     n_records = 2
 
-    api = TestReader(
-        max_pages_per_slice=MAX_PAGES_PER_SLICE,
-        max_slices=MAX_SLICES,
-        max_record_limit=max_record_limit,
-    )
+    api = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES, max_record_limit=max_record_limit)
     actual_response: StreamRead = api.run_test_read(
         source=mock_source,
         config=CONFIG,
@@ -457,10 +443,7 @@ def test_get_grouped_messages_limit_0(mock_entrypoint_read: Mock) -> None:
             ]
         ),
     )
-    api = TestReader(
-        max_pages_per_slice=MAX_PAGES_PER_SLICE,
-        max_slices=MAX_SLICES,
-    )
+    api = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
 
     with pytest.raises(ValueError):
         api.run_test_read(
@@ -518,10 +501,7 @@ def test_get_grouped_messages_no_records(mock_entrypoint_read: Mock) -> None:
         ),
     )
 
-    message_grouper = TestReader(
-        max_pages_per_slice=MAX_PAGES_PER_SLICE,
-        max_slices=MAX_SLICES,
-    )
+    message_grouper = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
 
     actual_response: StreamRead = message_grouper.run_test_read(
         source=mock_source,
@@ -634,10 +614,7 @@ def test_get_grouped_messages_with_many_slices(mock_entrypoint_read: Mock) -> No
         ),
     )
 
-    connector_builder_handler = TestReader(
-        max_pages_per_slice=MAX_PAGES_PER_SLICE,
-        max_slices=MAX_SLICES,
-    )
+    connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
 
     stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
@@ -681,10 +658,7 @@ def test_get_grouped_messages_given_maximum_number_of_slices_then_test_read_limi
         ),
     )
 
-    api = TestReader(
-        max_pages_per_slice=MAX_PAGES_PER_SLICE,
-        max_slices=MAX_SLICES,
-    )
+    api = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
 
     stream_read: StreamRead = api.run_test_read(
         source=mock_source,
@@ -712,10 +686,7 @@ def test_get_grouped_messages_given_maximum_number_of_pages_then_test_read_limit
         ),
     )
 
-    api = TestReader(
-        max_pages_per_slice=MAX_PAGES_PER_SLICE,
-        max_slices=MAX_SLICES,
-    )
+    api = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
 
     stream_read: StreamRead = api.run_test_read(
         source=mock_source,
@@ -734,10 +705,7 @@ def test_read_stream_returns_error_if_stream_does_not_exist() -> None:
 
     full_config: Mapping[str, Any] = {**CONFIG, **{"__injected_declarative_manifest": MANIFEST}}
 
-    message_grouper = TestReader(
-        max_pages_per_slice=MAX_PAGES_PER_SLICE,
-        max_slices=MAX_SLICES,
-    )
+    message_grouper = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
     actual_response = message_grouper.run_test_read(
         source=mock_source,
         config=full_config,
@@ -762,10 +730,7 @@ def test_given_control_message_then_stream_read_has_config_update(
             + [connector_configuration_control_message(1, updated_config)]
         ),
     )
-    connector_builder_handler = TestReader(
-        max_pages_per_slice=MAX_PAGES_PER_SLICE,
-        max_slices=MAX_SLICES,
-    )
+    connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
     stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
@@ -795,10 +760,7 @@ def test_given_multiple_control_messages_then_stream_read_has_latest_based_on_em
             ]
         ),
     )
-    connector_builder_handler = TestReader(
-        max_pages_per_slice=MAX_PAGES_PER_SLICE,
-        max_slices=MAX_SLICES,
-    )
+    connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
     stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
@@ -826,10 +788,7 @@ def test_given_multiple_control_messages_with_same_timestamp_then_stream_read_ha
             ]
         ),
     )
-    connector_builder_handler = TestReader(
-        max_pages_per_slice=MAX_PAGES_PER_SLICE,
-        max_slices=MAX_SLICES,
-    )
+    connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
     stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
@@ -846,10 +805,7 @@ def test_given_auxiliary_requests_then_return_auxiliary_request(mock_entrypoint_
         mock_entrypoint_read,
         iter(any_request_and_response_with_a_record() + [auxiliary_request_log_message()]),
     )
-    connector_builder_handler = TestReader(
-        max_pages_per_slice=MAX_PAGES_PER_SLICE,
-        max_slices=MAX_SLICES,
-    )
+    connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
     stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
@@ -863,10 +819,7 @@ def test_given_auxiliary_requests_then_return_auxiliary_request(mock_entrypoint_
 @patch("airbyte_cdk.connector_builder.test_reader.reader.AirbyteEntrypoint.read")
 def test_given_no_slices_then_return_empty_slices(mock_entrypoint_read: Mock) -> None:
     mock_source = make_mock_source(mock_entrypoint_read, iter([auxiliary_request_log_message()]))
-    connector_builder_handler = TestReader(
-        max_pages_per_slice=MAX_PAGES_PER_SLICE,
-        max_slices=MAX_SLICES,
-    )
+    connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
     stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
         config=CONFIG,
@@ -892,10 +845,7 @@ def test_given_pk_then_ensure_pk_is_pass_to_schema_inferrence(mock_entrypoint_re
     mock_source.streams.return_value = [Mock()]
     mock_source.streams.return_value[0].primary_key = [["id"]]
     mock_source.streams.return_value[0].cursor_field = _NO_CURSOR_FIELD
-    connector_builder_handler = TestReader(
-        max_pages_per_slice=MAX_PAGES_PER_SLICE,
-        max_slices=MAX_SLICES,
-    )
+    connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
 
     stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
@@ -924,10 +874,7 @@ def test_given_cursor_field_then_ensure_cursor_field_is_pass_to_schema_inferrenc
     mock_source.streams.return_value = [Mock()]
     mock_source.streams.return_value[0].primary_key = _NO_PK
     mock_source.streams.return_value[0].cursor_field = ["date"]
-    connector_builder_handler = TestReader(
-        max_pages_per_slice=MAX_PAGES_PER_SLICE,
-        max_slices=MAX_SLICES,
-    )
+    connector_builder_handler = TestReader(MAX_PAGES_PER_SLICE, MAX_SLICES)
 
     stream_read: StreamRead = connector_builder_handler.run_test_read(
         source=mock_source,
