@@ -440,7 +440,9 @@ definitions:
         description: Backoff time in seconds.
         anyOf:
           - type: number
+            title: Number of seconds
           - type: string
+            title: Interpolated Value
         interpolation_context:
           - config
         examples:
@@ -1057,15 +1059,18 @@ definitions:
         type: string
         enum: [JwtAuthenticator]
       secret_key:
+        title: Secret Key
         type: string
         description: Secret used to sign the JSON web token.
         examples:
           - "{{ config['secret_key'] }}"
       base64_encode_secret_key:
+        title: Base64-encode Secret Key
         type: boolean
         description: When set to true, the secret key will be base64 encoded prior to being encoded as part of the JWT. Only set to "true" when required by the API.
         default: False
       algorithm:
+        title: Algorithm
         type: string
         description: Algorithm used to sign the JSON web token.
         enum:
@@ -1673,13 +1678,15 @@ definitions:
         title: Pagination Strategy
         description: Strategy defining how records are paginated.
         anyOf:
+          - "$ref": "#/definitions/PageIncrement"
+          - "$ref": "#/definitions/OffsetIncrement"
           - "$ref": "#/definitions/CursorPagination"
           - "$ref": "#/definitions/CustomPaginationStrategy"
-          - "$ref": "#/definitions/OffsetIncrement"
-          - "$ref": "#/definitions/PageIncrement"
       page_size_option:
+        title: Inject Page Size Into Outgoing HTTP Request
         "$ref": "#/definitions/RequestOption"
       page_token_option:
+        title: Inject Page Token Into Outgoing HTTP Request
         anyOf:
           - "$ref": "#/definitions/RequestOption"
           - "$ref": "#/definitions/RequestPath"
@@ -1777,6 +1784,8 @@ definitions:
         type: object
         additionalProperties: true
   SessionTokenAuthenticator:
+    title: Session Token Authenticator
+    description: Authenticator for requests using the session token as an API key that's injected into the request.
     type: object
     required:
       - type
@@ -1907,23 +1916,23 @@ definitions:
         title: Authenticator
         description: Authentication method to use for requests sent to the API.
         anyOf:
+          - "$ref": "#/definitions/NoAuth"
           - "$ref": "#/definitions/ApiKeyAuthenticator"
           - "$ref": "#/definitions/BasicHttpAuthenticator"
           - "$ref": "#/definitions/BearerAuthenticator"
-          - "$ref": "#/definitions/CustomAuthenticator"
           - "$ref": "#/definitions/OAuthAuthenticator"
           - "$ref": "#/definitions/JwtAuthenticator"
-          - "$ref": "#/definitions/NoAuth"
           - "$ref": "#/definitions/SessionTokenAuthenticator"
-          - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
           - "$ref": "#/definitions/SelectiveAuthenticator"
+          - "$ref": "#/definitions/CustomAuthenticator"
+          - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
       error_handler:
         title: Error Handler
         description: Error handler component that defines how to handle errors.
         anyOf:
           - "$ref": "#/definitions/DefaultErrorHandler"
-          - "$ref": "#/definitions/CustomErrorHandler"
           - "$ref": "#/definitions/CompositeErrorHandler"
+          - "$ref": "#/definitions/CustomErrorHandler"
       http_method:
         title: HTTP Method
         description: The HTTP method used to fetch data from the source (can be GET or POST).
@@ -1993,11 +2002,13 @@ definitions:
         description: Specifies the query parameters that should be set on an outgoing HTTP request given the inputs.
         anyOf:
           - type: string
+            title: Interpolated Value
           - type: object
+            title: Key/Value Pairs
             additionalProperties:
               anyOf:
                 - type: string
-                - $ref": "#/definitions/QueryProperties"
+                - $ref: "#/definitions/QueryProperties"
         interpolation_context:
           - next_page_token
           - stream_interval
@@ -2877,7 +2888,9 @@ definitions:
         description: The number of records to include in each pages.
         anyOf:
           - type: integer
+            title: Number of Records
           - type: string
+            title: Interpolated Value
         interpolation_context:
           - config
           - response
@@ -2909,7 +2922,9 @@ definitions:
           - config
         anyOf:
           - type: integer
+            title: Number of Records
           - type: string
+            title: Interpolated Value
         examples:
           - 100
           - "100"
@@ -3116,6 +3131,7 @@ definitions:
         type: string
         enum: [RecordFilter]
       condition:
+        title: Condition
         description: The predicate to filter a record. Records will be removed if evaluated to False.
         type: string
         default: ""
@@ -3145,25 +3161,24 @@ definitions:
         enum: [RecordSelector]
       extractor:
         anyOf:
-          - "$ref": "#/definitions/CustomRecordExtractor"
           - "$ref": "#/definitions/DpathExtractor"
+          - "$ref": "#/definitions/CustomRecordExtractor"
       record_filter:
         title: Record Filter
         description: Responsible for filtering records to be emitted by the Source.
         anyOf:
-          - "$ref": "#/definitions/CustomRecordFilter"
           - "$ref": "#/definitions/RecordFilter"
+          - "$ref": "#/definitions/CustomRecordFilter"
       schema_normalization:
         title: Schema Normalization
         description: Responsible for normalization according to the schema.
         anyOf:
           - "$ref": "#/definitions/SchemaNormalization"
           - "$ref": "#/definitions/CustomSchemaNormalization"
-        default: None
       transform_before_filtering:
+        title: Transform Before Filtering
         description: If true, transformation will be applied before record filtering.
         type: boolean
-        default: false
       $parameters:
         type: object
         additionalProperties: true
@@ -3172,11 +3187,11 @@ definitions:
     description: Responsible for normalization according to the schema.
     type: string
     enum:
-      - None
       - Default
+      - None
     examples:
-      - None
       - Default
+      - None
   RemoveFields:
     title: Remove Fields
     description: A transformation which removes fields from a record. The fields removed are designated using FieldPointers. During transformation, if a field or any of its parents does not exist in the record, no error is thrown.
@@ -3274,6 +3289,7 @@ definitions:
     title: Session Token Authenticator
     description: Deprecated - use SessionTokenAuthenticator instead. Authenticator for requests authenticated using session tokens. A session token is a random value generated by a server to identify a specific user for the duration of one interaction session.
     type: object
+    deprecated: true
     required:
       - type
       - header
@@ -3332,6 +3348,7 @@ definitions:
         type: object
         additionalProperties: true
   StateDelegatingStream:
+    title: State Delegating Stream
     description: (This component is experimental. Use at your own risk.) Orchestrate the retriever's usage based on the state value.
     type: object
     required:
@@ -3362,6 +3379,7 @@ definitions:
         type: object
         additionalProperties: true
   SimpleRetriever:
+    title: Synchronous Retriever
     description: Retrieves records by synchronously sending requests to fetch records. The retriever acts as an orchestrator between the requester, the record selector, the paginator, and the partition router.
     type: object
     required:
@@ -3378,8 +3396,8 @@ definitions:
       requester:
         description: Requester component that describes how to prepare HTTP requests to send to the source API.
         anyOf:
-          - "$ref": "#/definitions/CustomRequester"
           - "$ref": "#/definitions/HttpRequester"
+          - "$ref": "#/definitions/CustomRequester"
       paginator:
         description: Paginator component that describes how to navigate through the API's pages.
         anyOf:
@@ -3482,6 +3500,7 @@ definitions:
         items:
           type: string
   AsyncRetriever:
+    title: Asynchronous Retriever
     description: "Retrieves records by Asynchronously sending requests to fetch records. The retriever acts as an orchestrator between the requester, the record selector, the paginator, and the partition router."
     type: object
     required:
@@ -3507,18 +3526,18 @@ definitions:
       status_extractor:
         description: Responsible for fetching the actual status of the async job.
         anyOf:
-          - "$ref": "#/definitions/CustomRecordExtractor"
           - "$ref": "#/definitions/DpathExtractor"
+          - "$ref": "#/definitions/CustomRecordExtractor"
       download_target_extractor:
         description: Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.
         anyOf:
-          - "$ref": "#/definitions/CustomRecordExtractor"
           - "$ref": "#/definitions/DpathExtractor"
+          - "$ref": "#/definitions/CustomRecordExtractor"
       download_extractor:
         description: Responsible for fetching the records from provided urls.
         anyOf:
-          - "$ref": "#/definitions/CustomRecordExtractor"
           - "$ref": "#/definitions/DpathExtractor"
+          - "$ref": "#/definitions/CustomRecordExtractor"
           - "$ref": "#/definitions/ResponseToFileExtractor"
       creation_requester:
         description: Requester component that describes how to prepare HTTP requests to send to the source API to create the async server-side job.
