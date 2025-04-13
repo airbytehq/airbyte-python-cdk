@@ -40,7 +40,7 @@ class MockSource(Source):
         logger: logging.Logger,
         config: Mapping[str, Any],
         catalog: ConfiguredAirbyteCatalog,
-        state: MutableMapping[str, Any] = None,
+        state: MutableMapping[str, Any] | None = None,
     ) -> Iterable[AirbyteMessage]:
         logger.info(I_AM_A_SECRET_VALUE)
         logger.info(
@@ -171,7 +171,7 @@ def test_airbyte_secrets_are_masked_on_uncaught_exceptions(mocker, caplog, capsy
             logger: logging.Logger,
             config: Mapping[str, Any],
             catalog: ConfiguredAirbyteCatalog,
-            state: MutableMapping[str, Any] = None,
+            state: MutableMapping[str, Any] | None = None,
         ):
             raise Exception("Exception:" + I_AM_A_SECRET_VALUE)
 
@@ -222,7 +222,7 @@ def test_non_airbyte_secrets_are_not_masked_on_uncaught_exceptions(mocker, caplo
             logger: logging.Logger,
             config: Mapping[str, Any],
             catalog: ConfiguredAirbyteCatalog,
-            state: MutableMapping[str, Any] = None,
+            state: MutableMapping[str, Any] | None = None,
         ):
             raise Exception("Exception:" + NOT_A_SECRET_VALUE)
 

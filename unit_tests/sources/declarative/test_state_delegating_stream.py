@@ -173,7 +173,7 @@ def get_records(
     source: ConcurrentDeclarativeSource,
     config: dict,
     catalog: ConfiguredAirbyteCatalog,
-    state: list = None,
+    state: list | None = None,
 ) -> list:
     """
     Reads records from the source given a configuration, catalog, and optional state.

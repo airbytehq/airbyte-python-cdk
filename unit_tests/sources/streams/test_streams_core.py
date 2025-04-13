@@ -35,9 +35,9 @@ class StreamStubFullRefresh(Stream):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: list[str] = None,
-        stream_slice: Mapping[str, Any] = None,
-        stream_state: Mapping[str, Any] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         pass
 
@@ -54,9 +54,9 @@ class StreamStubIncremental(Stream, CheckpointMixin):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: list[str] = None,
-        stream_slice: Mapping[str, Any] = None,
-        stream_state: Mapping[str, Any] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         pass
 
@@ -83,9 +83,9 @@ class StreamStubResumableFullRefresh(Stream, CheckpointMixin):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: list[str] = None,
-        stream_slice: Mapping[str, Any] = None,
-        stream_state: Mapping[str, Any] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         pass
 
@@ -110,9 +110,9 @@ class StreamStubLegacyStateInterface(Stream):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: list[str] = None,
-        stream_slice: Mapping[str, Any] = None,
-        stream_state: Mapping[str, Any] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         pass
 
@@ -134,9 +134,9 @@ class StreamStubIncrementalEmptyNamespace(Stream):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: list[str] = None,
-        stream_slice: Mapping[str, Any] = None,
-        stream_state: Mapping[str, Any] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         pass
 
@@ -248,9 +248,9 @@ class ParentHttpStreamStub(HttpStream):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: list[str] = None,
-        stream_slice: Mapping[str, Any] = None,
-        stream_state: Mapping[str, Any] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         return [{"id": 400, "name": "a_parent_record"}]
 

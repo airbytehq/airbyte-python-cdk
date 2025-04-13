@@ -506,7 +506,7 @@ def test_that_response_was_cached(mocker, requests_mock):
 class CacheHttpStreamWithSlices(CacheHttpStream):
     paths = ["", "search"]
 
-    def path(self, stream_slice: Mapping[str, Any] = None, **kwargs) -> str:
+    def path(self, stream_slice: Mapping[str, Any] | None = None, **kwargs) -> str:
         return f"{stream_slice['path']}" if stream_slice else ""
 
     def stream_slices(self, **kwargs) -> Iterable[Mapping[str, Any] | None]:

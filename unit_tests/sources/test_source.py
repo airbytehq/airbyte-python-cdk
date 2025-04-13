@@ -38,7 +38,7 @@ class MockSource(Source):
         logger: logging.Logger,
         config: Mapping[str, Any],
         catalog: ConfiguredAirbyteCatalog,
-        state: MutableMapping[str, Any] = None,
+        state: MutableMapping[str, Any] | None = None,
     ):
         pass
 

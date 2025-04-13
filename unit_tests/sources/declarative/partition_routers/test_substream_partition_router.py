@@ -106,8 +106,8 @@ class MockStream(DeclarativeStream):
         self,
         *,
         sync_mode: SyncMode,
-        cursor_field: list[str] = None,
-        stream_state: Mapping[str, Any] = None,
+        cursor_field: list[str] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamSlice | None]:
         for s in self._slices:
             if isinstance(s, StreamSlice):
@@ -118,9 +118,9 @@ class MockStream(DeclarativeStream):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: list[str] = None,
-        stream_slice: Mapping[str, Any] = None,
-        stream_state: Mapping[str, Any] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         # The parent stream's records should always be read as full refresh
         assert sync_mode == SyncMode.full_refresh
@@ -158,9 +158,9 @@ class MockIncrementalStream(MockStream):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: list[str] = None,
-        stream_slice: Mapping[str, Any] = None,
-        stream_state: Mapping[str, Any] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         results = [
             record
@@ -192,9 +192,9 @@ class MockResumableFullRefreshStream(MockStream):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: list[str] = None,
-        stream_slice: Mapping[str, Any] = None,
-        stream_state: Mapping[str, Any] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         page_number = self.state.get("next_page_token") or 1
         yield from self._record_pages[page_number - 1]

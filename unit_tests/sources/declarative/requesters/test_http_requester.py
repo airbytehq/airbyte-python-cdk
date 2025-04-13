@@ -56,7 +56,7 @@ def http_requester_factory():
         error_handler: ErrorHandler | None = None,
         api_budget: HttpAPIBudget | None = None,
         config: Config | None = None,
-        parameters: Mapping[str, Any] = None,
+        parameters: Mapping[str, Any] | None = None,
         disable_retries: bool = False,
         message_repository: MessageRepository | None = None,
         use_cache: bool = False,

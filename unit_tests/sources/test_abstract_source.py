@@ -59,8 +59,8 @@ logger = logging.getLogger("airbyte")
 class MockSource(AbstractSource):
     def __init__(
         self,
-        check_lambda: Callable[[], tuple[bool, Any | None]] = None,
-        streams: list[Stream] = None,
+        check_lambda: Callable[[], tuple[bool, Any | None]] | None = None,
+        streams: list[Stream] | None = None,
         message_repository: MessageRepository = None,
         exception_on_missing_stream: bool = True,
         stop_sync_on_stream_failure: bool = False,
@@ -174,10 +174,8 @@ def test_raising_check(mocker):
 class MockStream(Stream):
     def __init__(
         self,
-        inputs_and_mocked_outputs: list[
-            tuple[Mapping[str, Any], Iterable[Mapping[str, Any]]]
-        ] = None,
-        name: str = None,
+        inputs_and_mocked_outputs: list[tuple[Mapping[str, Any], Iterable[Mapping[str, Any]]]] | None = None,
+        name: str | None = None,
     ):
         self._inputs_and_mocked_outputs = inputs_and_mocked_outputs
         self._name = name
@@ -240,8 +238,8 @@ class MockStreamWithState(MockStreamWithCursor):
 class MockStreamEmittingAirbyteMessages(MockStreamWithState):
     def __init__(
         self,
-        inputs_and_mocked_outputs: list[tuple[Mapping[str, Any], Iterable[AirbyteMessage]]] = None,
-        name: str = None,
+        inputs_and_mocked_outputs: list[tuple[Mapping[str, Any], Iterable[AirbyteMessage]]] | None = None,
+        name: str | None = None,
         state=None,
     ):
         super().__init__(inputs_and_mocked_outputs, name, state)
@@ -268,8 +266,8 @@ class MockStreamEmittingAirbyteMessages(MockStreamWithState):
 class MockResumableFullRefreshStream(Stream):
     def __init__(
         self,
-        inputs_and_mocked_outputs: list[tuple[Mapping[str, Any], Mapping[str, Any]]] = None,
-        name: str = None,
+        inputs_and_mocked_outputs: list[tuple[Mapping[str, Any], Mapping[str, Any]]] | None = None,
+        name: str | None = None,
     ):
         self._inputs_and_mocked_outputs = inputs_and_mocked_outputs
         self._name = name
@@ -477,7 +475,7 @@ def _as_stream_status(stream: str, status: AirbyteStreamStatus) -> AirbyteMessag
     return AirbyteMessage(type=MessageType.TRACE, trace=trace_message)
 
 
-def _as_state(stream_name: str = "", per_stream_state: dict[str, Any] = None):
+def _as_state(stream_name: str = "", per_stream_state: dict[str, Any] | None = None):
     return AirbyteMessage(
         type=Type.STATE,
         state=AirbyteStateMessage(

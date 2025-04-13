@@ -102,9 +102,9 @@ class HttpTestStream(HttpStream, ABC):
     def path(
         self,
         *,
-        stream_state: Mapping[str, Any] = None,
-        stream_slice: Mapping[str, Any] = None,
-        next_page_token: Mapping[str, Any] = None,
+        stream_state: Mapping[str, Any] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> str:
         return "cast"
 
@@ -113,8 +113,8 @@ class HttpTestStream(HttpStream, ABC):
         response: requests.Response,
         *,
         stream_state: Mapping[str, Any],
-        stream_slice: Mapping[str, Any] = None,
-        next_page_token: Mapping[str, Any] = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping]:
         body = response.json() or {}
         return body["records"]

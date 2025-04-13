@@ -50,7 +50,7 @@ class _MockStream(Stream):
     def __init__(
         self,
         slice_to_records: Mapping[str, list[Mapping[str, Any]]],
-        json_schema: dict[str, Any] = None,
+        json_schema: dict[str, Any] | None = None,
     ):
         self._slice_to_records = slice_to_records
         self._mocked_json_schema = json_schema or {}
