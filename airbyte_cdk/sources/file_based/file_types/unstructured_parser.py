@@ -458,7 +458,7 @@ class UnstructuredParser(FileTypeParser):
             category_depth = dpath.get(el, "metadata/category_depth", default=1) or 1
             if not isinstance(category_depth, int):
                 category_depth = (
-                    int(category_depth) if isinstance(category_depth, (str, float)) else 1
+                    int(category_depth) if isinstance(category_depth, str | float) else 1
                 )
             heading_str = "#" * category_depth
             return f"{heading_str} {dpath.get(el, 'text')}"

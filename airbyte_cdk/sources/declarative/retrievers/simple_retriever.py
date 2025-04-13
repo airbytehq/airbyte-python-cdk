@@ -579,7 +579,7 @@ class SimpleRetriever(Retriever):
         if isinstance(stream_data, Record):
             # Record is not part of `StreamData` but is the most common implementation of `Mapping[str, Any]` which is part of `StreamData`
             return stream_data
-        elif isinstance(stream_data, (dict, Mapping)):
+        elif isinstance(stream_data, dict | Mapping):
             return Record(
                 data=dict(stream_data), associated_slice=stream_slice, stream_name=self.name
             )

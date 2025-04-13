@@ -80,7 +80,7 @@ class HttpResponseFilter:
             else response_or_exception.__class__
         )
 
-        if isinstance(mapped_key, (int, Exception)):
+        if isinstance(mapped_key, int | Exception):
             default_mapped_error_resolution = self._match_default_error_mapping(mapped_key)
         else:
             default_mapped_error_resolution = None

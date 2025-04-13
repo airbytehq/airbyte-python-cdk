@@ -24,7 +24,7 @@ class DefaultHttpResponseFilter(HttpResponseFilter):
     ) -> ErrorResolution | None:
         default_mapped_error_resolution = None
 
-        if isinstance(response_or_exception, (requests.Response, Exception)):
+        if isinstance(response_or_exception, requests.Response | Exception):
             mapped_key: int | type = (
                 response_or_exception.status_code
                 if isinstance(response_or_exception, requests.Response)

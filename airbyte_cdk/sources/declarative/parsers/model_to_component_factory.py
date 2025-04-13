@@ -872,7 +872,7 @@ class ModelToComponentFactory:
             )
         partition_router = retriever.partition_router
         if not isinstance(
-            partition_router, (SubstreamPartitionRouterModel, CustomPartitionRouterModel)
+            partition_router, SubstreamPartitionRouterModel | CustomPartitionRouterModel
         ):
             raise ValueError(
                 f"LegacyToPerPartitionStateMigrations can only be applied on a SimpleRetriever with a Substream partition router. Got {type(partition_router)}"
@@ -1757,7 +1757,7 @@ class ModelToComponentFactory:
             cursor = (
                 combined_slicers
                 if isinstance(
-                    combined_slicers, (PerPartitionWithGlobalCursor, GlobalSubstreamCursor)
+                    combined_slicers, PerPartitionWithGlobalCursor | GlobalSubstreamCursor
                 )
                 else self._create_component_from_model(model=model.incremental_sync, config=config)
             )
@@ -2396,7 +2396,7 @@ class ModelToComponentFactory:
                 inner_parser=ModelToComponentFactory._get_parser(model.decoder, config)
             )
         elif isinstance(
-            model, (CustomDecoderModel, IterableDecoderModel, XmlDecoderModel, ZipfileDecoderModel)
+            model, CustomDecoderModel | IterableDecoderModel | XmlDecoderModel | ZipfileDecoderModel
         ):
             raise ValueError(f"Decoder type {model} does not have parser associated to it")
 
@@ -3475,7 +3475,7 @@ class ModelToComponentFactory:
     )
 
     def _is_supported_decoder_for_pagination(self, decoder: Decoder) -> bool:
-        if isinstance(decoder, (JsonDecoder, XmlDecoder)):
+        if isinstance(decoder, JsonDecoder | XmlDecoder):
             return True
         elif isinstance(decoder, CompositeRawDecoder):
             return self._is_supported_parser_for_pagination(decoder.parser)

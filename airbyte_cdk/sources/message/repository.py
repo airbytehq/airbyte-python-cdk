@@ -131,7 +131,7 @@ class LogAppenderMessageRepositoryDecorator(MessageRepository):
                     self._append_second_to_first(first[key], second[key], path + [str(key)])  # type: ignore # type is verified above
                 else:
                     if first[key] != second[key]:
-                        _LOGGER.warning("Conflict at %s" % ".".join(path + [str(key)]))
+                        _LOGGER.warning("Conflict at {}".format(".".join(path + [str(key)])))
                     first[key] = second[key]
             else:
                 first[key] = second[key]

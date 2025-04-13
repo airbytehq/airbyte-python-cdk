@@ -263,7 +263,7 @@ class AirbyteDateTime(datetime):
             result = super().__sub__(other)  # type: ignore[call-overload]
             if isinstance(result, datetime):
                 return AirbyteDateTime.from_datetime(result)
-        elif isinstance(other, (datetime, AirbyteDateTime)):
+        elif isinstance(other, datetime | AirbyteDateTime):
             result = super().__sub__(other)  # type: ignore[call-overload]
             if isinstance(result, timedelta):
                 return result

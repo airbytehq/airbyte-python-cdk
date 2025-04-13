@@ -230,7 +230,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
                 elif isinstance(message, AirbyteMessage):
                     if message.type == Type.RECORD:
                         yield message.record.data  # type: ignore  # message.record won't be None here as the message is a record
-                elif isinstance(message, (dict, Mapping)):
+                elif isinstance(message, dict | Mapping):
                     yield message
                 else:
                     raise TypeError(f"Unknown type `{type(message)}` for message")
