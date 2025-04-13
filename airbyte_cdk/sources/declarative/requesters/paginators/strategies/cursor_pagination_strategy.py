@@ -3,7 +3,8 @@
 #
 
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Dict, Mapping, Optional, Union
+from typing import Any, Dict, Optional, Union
+from collections.abc import Mapping
 
 import requests
 
@@ -33,11 +34,11 @@ class CursorPaginationStrategy(PaginationStrategy):
         decoder (Decoder): decoder to decode the response
     """
 
-    cursor_value: Union[InterpolatedString, str]
+    cursor_value: InterpolatedString | str
     config: Config
     parameters: InitVar[Mapping[str, Any]]
-    page_size: Optional[int] = None
-    stop_condition: Optional[Union[InterpolatedBoolean, str]] = None
+    page_size: int | None = None
+    stop_condition: InterpolatedBoolean | str | None = None
     decoder: Decoder = field(
         default_factory=lambda: PaginationDecoderDecorator(decoder=JsonDecoder(parameters={}))
     )
@@ -48,14 +49,14 @@ class CursorPaginationStrategy(PaginationStrategy):
         else:
             self._cursor_value = self.cursor_value
         if isinstance(self.stop_condition, str):
-            self._stop_condition: Optional[InterpolatedBoolean] = InterpolatedBoolean(
+            self._stop_condition: InterpolatedBoolean | None = InterpolatedBoolean(
                 condition=self.stop_condition, parameters=parameters
             )
         else:
             self._stop_condition = self.stop_condition
 
     @property
-    def initial_token(self) -> Optional[Any]:
+    def initial_token(self) -> Any | None:
         """
         CursorPaginationStrategy does not have an initial value because the next cursor is typically included
         in the response of the first request. For Resumable Full Refresh streams that checkpoint the page
@@ -67,13 +68,13 @@ class CursorPaginationStrategy(PaginationStrategy):
         self,
         response: requests.Response,
         last_page_size: int,
-        last_record: Optional[Record],
-        last_page_token_value: Optional[Any] = None,
-    ) -> Optional[Any]:
+        last_record: Record | None,
+        last_page_token_value: Any | None = None,
+    ) -> Any | None:
         decoded_response = next(self.decoder.decode(response))
         # The default way that link is presented in requests.Response is a string of various links (last, next, etc). This
         # is not indexable or useful for parsing the cursor, so we replace it with the link dictionary from response.links
-        headers: Dict[str, Any] = dict(response.headers)
+        headers: dict[str, Any] = dict(response.headers)
         headers["link"] = response.links
         if self._stop_condition:
             should_stop = self._stop_condition.eval(
@@ -94,5 +95,5 @@ class CursorPaginationStrategy(PaginationStrategy):
         )
         return token if token else None
 
-    def get_page_size(self) -> Optional[int]:
+    def get_page_size(self) -> int | None:
         return self.page_size

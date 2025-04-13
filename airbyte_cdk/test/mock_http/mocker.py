@@ -5,7 +5,8 @@ import functools
 from collections import defaultdict
 from enum import Enum
 from types import TracebackType
-from typing import Callable, Dict, Iterable, List, Optional, Union
+from typing import Dict, List, Optional, Union
+from collections.abc import Callable, Iterable
 
 import requests_mock
 
@@ -41,7 +42,7 @@ class HttpMocker(contextlib.ContextDecorator):
 
     def __init__(self) -> None:
         self._mocker = requests_mock.Mocker()
-        self._matchers: Dict[SupportedHttpMethods, List[HttpRequestMatcher]] = defaultdict(list)
+        self._matchers: dict[SupportedHttpMethods, list[HttpRequestMatcher]] = defaultdict(list)
 
     def __enter__(self) -> "HttpMocker":
         self._mocker.__enter__()
@@ -49,9 +50,9 @@ class HttpMocker(contextlib.ContextDecorator):
 
     def __exit__(
         self,
-        exc_type: Optional[BaseException],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: BaseException | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         self._mocker.__exit__(exc_type, exc_val, exc_tb)
 
@@ -64,7 +65,7 @@ class HttpMocker(contextlib.ContextDecorator):
         self,
         method: SupportedHttpMethods,
         request: HttpRequest,
-        responses: Union[HttpResponse, List[HttpResponse]],
+        responses: HttpResponse | list[HttpResponse],
     ) -> None:
         if isinstance(responses, HttpResponse):
             responses = [responses]
@@ -91,24 +92,24 @@ class HttpMocker(contextlib.ContextDecorator):
     def _get_body_field(response: HttpResponse) -> str:
         return "text" if isinstance(response.body, str) else "content"
 
-    def get(self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]) -> None:
+    def get(self, request: HttpRequest, responses: HttpResponse | list[HttpResponse]) -> None:
         self._mock_request_method(SupportedHttpMethods.GET, request, responses)
 
     def patch(
-        self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]
+        self, request: HttpRequest, responses: HttpResponse | list[HttpResponse]
     ) -> None:
         self._mock_request_method(SupportedHttpMethods.PATCH, request, responses)
 
     def post(
-        self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]
+        self, request: HttpRequest, responses: HttpResponse | list[HttpResponse]
     ) -> None:
         self._mock_request_method(SupportedHttpMethods.POST, request, responses)
 
-    def put(self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]) -> None:
+    def put(self, request: HttpRequest, responses: HttpResponse | list[HttpResponse]) -> None:
         self._mock_request_method(SupportedHttpMethods.PUT, request, responses)
 
     def delete(
-        self, request: HttpRequest, responses: Union[HttpResponse, List[HttpResponse]]
+        self, request: HttpRequest, responses: HttpResponse | list[HttpResponse]
     ) -> None:
         self._mock_request_method(SupportedHttpMethods.DELETE, request, responses)
 

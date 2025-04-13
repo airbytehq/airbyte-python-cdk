@@ -10,7 +10,7 @@ import requests
 
 class ErrorMessageParser(ABC):
     @abstractmethod
-    def parse_response_error_message(self, response: requests.Response) -> Optional[str]:
+    def parse_response_error_message(self, response: requests.Response) -> str | None:
         """
         Parse error message from response.
         :param response: response received for the request

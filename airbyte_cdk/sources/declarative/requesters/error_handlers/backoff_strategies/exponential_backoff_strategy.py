@@ -3,7 +3,8 @@
 #
 
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Optional, Union
+from collections.abc import Mapping
 
 import requests
 
@@ -23,7 +24,7 @@ class ExponentialBackoffStrategy(BackoffStrategy):
 
     parameters: InitVar[Mapping[str, Any]]
     config: Config
-    factor: Union[float, InterpolatedString, str] = 5
+    factor: float | InterpolatedString | str = 5
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if not isinstance(self.factor, InterpolatedString):
@@ -39,7 +40,7 @@ class ExponentialBackoffStrategy(BackoffStrategy):
 
     def backoff_time(
         self,
-        response_or_exception: Optional[Union[requests.Response, requests.RequestException]],
+        response_or_exception: requests.Response | requests.RequestException | None,
         attempt_count: int,
-    ) -> Optional[float]:
+    ) -> float | None:
         return self._retry_factor * 2**attempt_count  # type: ignore # factor is always cast to an interpolated string

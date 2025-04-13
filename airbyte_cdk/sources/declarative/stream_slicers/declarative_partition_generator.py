@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Optional
+from collections.abc import Iterable, Mapping
 
 from airbyte_cdk.sources.declarative.retrievers import Retriever
 from airbyte_cdk.sources.message import MessageRepository
@@ -66,7 +67,7 @@ class DeclarativePartition(Partition):
             else:
                 self._message_repository.emit_message(stream_data)
 
-    def to_slice(self) -> Optional[Mapping[str, Any]]:
+    def to_slice(self) -> Mapping[str, Any] | None:
         return self._stream_slice
 
     def stream_name(self) -> str:

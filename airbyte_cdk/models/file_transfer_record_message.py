@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 @dataclass
 class AirbyteFileTransferRecordMessage:
     stream: str
-    file: Dict[str, Any]
+    file: dict[str, Any]
     emitted_at: int
-    namespace: Optional[str] = None
-    data: Optional[Dict[str, Any]] = None
+    namespace: str | None = None
+    data: dict[str, Any] | None = None

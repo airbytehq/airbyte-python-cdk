@@ -3,7 +3,8 @@
 #
 import time
 from collections.abc import Mapping as ABCMapping
-from typing import Any, Mapping, Optional
+from typing import Any, Optional
+from collections.abc import Mapping
 
 from airbyte_cdk.models import (
     AirbyteLogMessage,
@@ -21,7 +22,7 @@ def stream_data_to_airbyte_message(
     stream_name: str,
     data_or_message: StreamData,
     transformer: TypeTransformer = TypeTransformer(TransformConfig.NoTransform),
-    schema: Optional[Mapping[str, Any]] = None,
+    schema: Mapping[str, Any] | None = None,
     is_file_transfer_message: bool = False,
 ) -> AirbyteMessage:
     if schema is None:

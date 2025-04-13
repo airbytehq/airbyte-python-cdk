@@ -4,7 +4,8 @@
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Iterable, MutableMapping, Optional
+from typing import Any, Optional
+from collections.abc import Iterable, MutableMapping
 
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
@@ -34,7 +35,7 @@ class DefaultFileBasedCursor(AbstractFileBasedCursor):
             )
 
         self._start_time = self._compute_start_time()
-        self._initial_earliest_file_in_history: Optional[RemoteFile] = None
+        self._initial_earliest_file_in_history: RemoteFile | None = None
 
     def set_initial_state(self, value: StreamState) -> None:
         self._file_to_datetime_history = value.get("history", {})
@@ -59,7 +60,7 @@ class DefaultFileBasedCursor(AbstractFileBasedCursor):
         state = {"history": self._file_to_datetime_history, self.CURSOR_FIELD: self._get_cursor()}
         return state
 
-    def _get_cursor(self) -> Optional[str]:
+    def _get_cursor(self) -> str | None:
         """
         Returns the cursor value.
 
@@ -126,7 +127,7 @@ class DefaultFileBasedCursor(AbstractFileBasedCursor):
     def get_start_time(self) -> datetime:
         return self._start_time
 
-    def _compute_earliest_file_in_history(self) -> Optional[RemoteFile]:
+    def _compute_earliest_file_in_history(self) -> RemoteFile | None:
         if self._file_to_datetime_history:
             filename, last_modified = min(
                 self._file_to_datetime_history.items(), key=lambda f: (f[1], f[0])

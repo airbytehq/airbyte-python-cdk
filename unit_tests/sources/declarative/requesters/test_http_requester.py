@@ -3,7 +3,8 @@
 #
 
 from datetime import timedelta
-from typing import Any, Mapping, Optional
+from typing import Any, Optional
+from collections.abc import Mapping
 from unittest import mock
 from unittest.mock import MagicMock
 from urllib.parse import parse_qs, urlparse
@@ -50,14 +51,14 @@ def http_requester_factory():
         url_base: str = "https://test_base_url.com",
         path: str = "/",
         http_method: str = HttpMethod.GET,
-        request_options_provider: Optional[InterpolatedRequestOptionsProvider] = None,
-        authenticator: Optional[DeclarativeAuthenticator] = None,
-        error_handler: Optional[ErrorHandler] = None,
-        api_budget: Optional[HttpAPIBudget] = None,
-        config: Optional[Config] = None,
+        request_options_provider: InterpolatedRequestOptionsProvider | None = None,
+        authenticator: DeclarativeAuthenticator | None = None,
+        error_handler: ErrorHandler | None = None,
+        api_budget: HttpAPIBudget | None = None,
+        config: Config | None = None,
         parameters: Mapping[str, Any] = None,
         disable_retries: bool = False,
-        message_repository: Optional[MessageRepository] = None,
+        message_repository: MessageRepository | None = None,
         use_cache: bool = False,
     ) -> HttpRequester:
         return HttpRequester(
@@ -192,12 +193,12 @@ def test_path(test_name, path, expected_path):
 
 
 def create_requester(
-    url_base: Optional[str] = None,
-    parameters: Optional[Mapping[str, Any]] = {},
-    config: Optional[Config] = None,
-    path: Optional[str] = None,
-    authenticator: Optional[DeclarativeAuthenticator] = None,
-    error_handler: Optional[ErrorHandler] = None,
+    url_base: str | None = None,
+    parameters: Mapping[str, Any] | None = {},
+    config: Config | None = None,
+    path: str | None = None,
+    authenticator: DeclarativeAuthenticator | None = None,
+    error_handler: ErrorHandler | None = None,
 ) -> HttpRequester:
     requester = HttpRequester(
         name="name",

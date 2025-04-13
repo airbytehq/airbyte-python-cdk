@@ -5,7 +5,8 @@ import os
 import tempfile
 import time
 from datetime import datetime, timedelta
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Optional
+from collections.abc import Iterable, Mapping
 
 import pytest
 import requests
@@ -31,7 +32,7 @@ class StubDummyHttpStream(HttpStream):
     url_base = "https://test_base_url.com"
     primary_key = "some_key"
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         return {"next_page_token": True}  # endless pages
 
     def path(self, **kwargs) -> str:

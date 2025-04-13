@@ -6,7 +6,8 @@ import json
 import pkgutil
 import sys
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Mapping, Tuple, Union
+from typing import Any, Tuple, Union
+from collections.abc import Mapping
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
@@ -43,7 +44,7 @@ class JsonFileSchemaLoader(ResourceSchemaLoader, SchemaLoader):
 
     config: Config
     parameters: InitVar[Mapping[str, Any]]
-    file_path: Union[InterpolatedString, str] = field(default="")
+    file_path: InterpolatedString | str = field(default="")
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if not self.file_path:
@@ -58,7 +59,7 @@ class JsonFileSchemaLoader(ResourceSchemaLoader, SchemaLoader):
         raw_json_file = pkgutil.get_data(resource, schema_path)
 
         if not raw_json_file:
-            raise IOError(f"Cannot find file {json_schema_path}")
+            raise OSError(f"Cannot find file {json_schema_path}")
         try:
             raw_schema = json.loads(raw_json_file)
         except ValueError as err:
@@ -70,7 +71,7 @@ class JsonFileSchemaLoader(ResourceSchemaLoader, SchemaLoader):
         return self.file_path.eval(self.config)  # type: ignore # file_path is always cast to an interpolated string
 
     @staticmethod
-    def extract_resource_and_schema_path(json_schema_path: str) -> Tuple[str, str]:
+    def extract_resource_and_schema_path(json_schema_path: str) -> tuple[str, str]:
         """
         When the connector is running on a docker container, package_data is accessible from the resource (source_<name>), so we extract
         the resource from the first part of the schema path and the remaining path is used to find the schema file. This is a slight

@@ -4,7 +4,8 @@
 
 from abc import abstractmethod
 from functools import cache, cached_property, lru_cache
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Type
+from typing import Any, Dict, List, Optional, Type
+from collections.abc import Iterable, Mapping
 
 from typing_extensions import deprecated
 
@@ -53,11 +54,11 @@ class AbstractFileBasedStream(Stream):
     def __init__(
         self,
         config: FileBasedStreamConfig,
-        catalog_schema: Optional[Mapping[str, Any]],
+        catalog_schema: Mapping[str, Any] | None,
         stream_reader: AbstractFileBasedStreamReader,
         availability_strategy: AbstractFileBasedAvailabilityStrategy,
         discovery_policy: AbstractDiscoveryPolicy,
-        parsers: Dict[Type[Any], FileTypeParser],
+        parsers: dict[type[Any], FileTypeParser],
         validation_policy: AbstractSchemaValidationPolicy,
         errors_collector: FileBasedErrorsCollector,
         cursor: AbstractFileBasedCursor,
@@ -78,7 +79,7 @@ class AbstractFileBasedStream(Stream):
     def primary_key(self) -> PrimaryKeyType: ...
 
     @cache
-    def list_files(self) -> List[RemoteFile]:
+    def list_files(self) -> list[RemoteFile]:
         """
         List all files that belong to the stream.
 
@@ -98,9 +99,9 @@ class AbstractFileBasedStream(Stream):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: StreamSlice | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any] | AirbyteMessage]:
         """
         Yield all records from all remote files in `list_files_for_this_sync`.
@@ -124,9 +125,9 @@ class AbstractFileBasedStream(Stream):
         self,
         *,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
-    ) -> Iterable[Optional[Mapping[str, Any]]]:
+        cursor_field: list[str] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
+    ) -> Iterable[Mapping[str, Any] | None]:
         """
         This method acts as an adapter between the generic Stream interface and the file-based's
         stream since file-based streams manage their own states.
@@ -134,7 +135,7 @@ class AbstractFileBasedStream(Stream):
         return self.compute_slices()
 
     @abstractmethod
-    def compute_slices(self) -> Iterable[Optional[StreamSlice]]:
+    def compute_slices(self) -> Iterable[StreamSlice | None]:
         """
         Return a list of slices that will be used to read files in the current sync.
         :return: The slices to use for the current sync.
@@ -142,7 +143,7 @@ class AbstractFileBasedStream(Stream):
         ...
 
     @abstractmethod
-    @lru_cache(maxsize=None)
+    @cache
     def get_json_schema(self) -> Mapping[str, Any]:
         """
         Return the JSON Schema for a stream.
@@ -150,7 +151,7 @@ class AbstractFileBasedStream(Stream):
         ...
 
     @abstractmethod
-    def infer_schema(self, files: List[RemoteFile]) -> Mapping[str, Any]:
+    def infer_schema(self, files: list[RemoteFile]) -> Mapping[str, Any]:
         """
         Infer the schema for files in the stream.
         """
@@ -187,7 +188,7 @@ class AbstractFileBasedStream(Stream):
     def name(self) -> str:
         return self.config.name
 
-    def get_cursor(self) -> Optional[Cursor]:
+    def get_cursor(self) -> Cursor | None:
         """
         This is a temporary hack. Because file-based, declarative, and concurrent have _slightly_ different cursor implementations
         the file-based cursor isn't compatible with the cursor-based iteration flow in core.py top-level CDK. By setting this to

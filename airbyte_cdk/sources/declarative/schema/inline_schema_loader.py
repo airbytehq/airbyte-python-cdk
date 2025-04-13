@@ -3,7 +3,8 @@
 #
 
 from dataclasses import InitVar, dataclass
-from typing import Any, Dict, Mapping
+from typing import Any, Dict
+from collections.abc import Mapping
 
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
 
@@ -12,7 +13,7 @@ from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
 class InlineSchemaLoader(SchemaLoader):
     """Describes a stream's schema"""
 
-    schema: Dict[str, Any]
+    schema: dict[str, Any]
     parameters: InitVar[Mapping[str, Any]]
 
     def get_json_schema(self) -> Mapping[str, Any]:

@@ -13,10 +13,10 @@ from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 class KeysToLowerTransformation(RecordTransformation):
     def transform(
         self,
-        record: Dict[str, Any],
-        config: Optional[Config] = None,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
+        record: dict[str, Any],
+        config: Config | None = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
     ) -> None:
         for key in set(record.keys()):
             record[key.lower()] = record.pop(key)

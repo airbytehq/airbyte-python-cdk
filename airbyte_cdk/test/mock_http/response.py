@@ -1,13 +1,14 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 
 from types import MappingProxyType
-from typing import Mapping, Union
+from typing import Union
+from collections.abc import Mapping
 
 
 class HttpResponse:
     def __init__(
         self,
-        body: Union[str, bytes],
+        body: str | bytes,
         status_code: int = 200,
         headers: Mapping[str, str] = MappingProxyType({}),
     ):
@@ -16,7 +17,7 @@ class HttpResponse:
         self._headers = headers
 
     @property
-    def body(self) -> Union[str, bytes]:
+    def body(self) -> str | bytes:
         return self._body
 
     @property

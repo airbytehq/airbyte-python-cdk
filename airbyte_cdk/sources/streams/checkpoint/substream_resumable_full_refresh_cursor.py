@@ -1,7 +1,8 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 from dataclasses import dataclass
-from typing import Any, Mapping, MutableMapping, Optional
+from typing import Any, Optional
+from collections.abc import Mapping, MutableMapping
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.streams.checkpoint import Cursor
@@ -95,7 +96,7 @@ class SubstreamResumableFullRefreshCursor(Cursor):
         """
         return False
 
-    def select_state(self, stream_slice: Optional[StreamSlice] = None) -> Optional[StreamState]:
+    def select_state(self, stream_slice: StreamSlice | None = None) -> StreamState | None:
         if not stream_slice:
             raise ValueError("A partition needs to be provided in order to extract a state")
 

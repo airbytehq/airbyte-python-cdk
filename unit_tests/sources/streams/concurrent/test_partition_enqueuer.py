@@ -3,7 +3,8 @@
 #
 import unittest
 from queue import Queue
-from typing import Callable, Iterable, List
+from typing import List
+from collections.abc import Callable, Iterable
 from unittest.mock import Mock, patch
 
 from airbyte_cdk.sources.concurrent_source.partition_generation_completed_sentinel import (
@@ -16,7 +17,7 @@ from airbyte_cdk.sources.streams.concurrent.partition_enqueuer import PartitionE
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 from airbyte_cdk.sources.streams.concurrent.partitions.types import QueueItem
 
-_SOME_PARTITIONS: List[Partition] = [Mock(spec=Partition), Mock(spec=Partition)]
+_SOME_PARTITIONS: list[Partition] = [Mock(spec=Partition), Mock(spec=Partition)]
 _A_STREAM_NAME = "a_stream_name"
 
 
@@ -88,7 +89,7 @@ class PartitionEnqueuerTest(unittest.TestCase):
         ]
 
     def _partitions_before_raising(
-        self, partitions: List[Partition], exception: Exception
+        self, partitions: list[Partition], exception: Exception
     ) -> Callable[[], Iterable[Partition]]:
         def inner_function() -> Iterable[Partition]:
             for partition in partitions:
@@ -98,13 +99,13 @@ class PartitionEnqueuerTest(unittest.TestCase):
         return inner_function
 
     @staticmethod
-    def _a_stream(partitions: List[Partition]) -> AbstractStream:
+    def _a_stream(partitions: list[Partition]) -> AbstractStream:
         stream = Mock(spec=AbstractStream)
         stream.generate_partitions.return_value = iter(partitions)
         return stream
 
-    def _consume_queue(self) -> List[QueueItem]:
-        queue_content: List[QueueItem] = []
+    def _consume_queue(self) -> list[QueueItem]:
+        queue_content: list[QueueItem] = []
         while queue_item := self._queue.get():
             if isinstance(queue_item, PartitionGenerationCompletedSentinel):
                 queue_content.append(queue_item)

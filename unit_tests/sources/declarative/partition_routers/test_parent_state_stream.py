@@ -1,7 +1,8 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 import copy
-from typing import Any, List, Mapping, MutableMapping, Optional, Union
+from typing import Any, List, Optional, Union
+from collections.abc import Mapping, MutableMapping
 from unittest.mock import MagicMock
 
 import orjson
@@ -238,8 +239,8 @@ def _run_read(
     manifest: Mapping[str, Any],
     config: Mapping[str, Any],
     stream_name: str,
-    state: Optional[Union[List[AirbyteStateMessage], MutableMapping[str, Any]]] = None,
-) -> List[AirbyteMessage]:
+    state: list[AirbyteStateMessage] | MutableMapping[str, Any] | None = None,
+) -> list[AirbyteMessage]:
     source = ManifestDeclarativeSource(source_config=manifest)
     catalog = ConfiguredAirbyteCatalog(
         streams=[

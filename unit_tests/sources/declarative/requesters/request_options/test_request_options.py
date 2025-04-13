@@ -35,10 +35,10 @@ from airbyte_cdk.sources.declarative.requesters.request_option import (
     ],
 )
 def test_request_option_validation(
-    field_name: Optional[str],
+    field_name: str | None,
     field_path: Any,
     inject_into: RequestOptionType,
-    error_type: Type[Exception],
+    error_type: type[Exception],
     error_message: str,
 ):
     """Test various validation cases for RequestOption"""
@@ -81,11 +81,11 @@ def test_request_option_validation(
     ],
 )
 def test_inject_into_request_cases(
-    request_option_args: Dict[str, Any], value: Any, expected_result: Dict[str, Any]
+    request_option_args: dict[str, Any], value: Any, expected_result: dict[str, Any]
 ):
     """Test various injection cases"""
     config = {"base_field": "value"}
-    target: Dict[str, Any] = {}
+    target: dict[str, Any] = {}
 
     request_option = RequestOption(**request_option_args, parameters={})
     request_option.inject_into_request(target, value, config)
@@ -116,16 +116,16 @@ def test_inject_into_request_cases(
     ],
 )
 def test_interpolation_cases(
-    config: Dict[str, Any],
-    parameters: Dict[str, Any],
-    field_path: List[str],
-    expected_structure: Dict[str, Any],
+    config: dict[str, Any],
+    parameters: dict[str, Any],
+    field_path: list[str],
+    expected_structure: dict[str, Any],
 ):
     """Test various interpolation scenarios"""
     request_option = RequestOption(
         field_path=field_path, inject_into=RequestOptionType.body_json, parameters=parameters
     )
-    target: Dict[str, Any] = {}
+    target: dict[str, Any] = {}
     request_option.inject_into_request(target, "test_value", config)
     assert target == expected_structure
 
@@ -141,10 +141,10 @@ def test_interpolation_cases(
         (None, type(None)),
     ],
 )
-def test_value_type_handling(value: Any, expected_type: Type):
+def test_value_type_handling(value: Any, expected_type: type):
     """Test handling of different value types"""
     config = {}
-    target: Dict[str, Any] = {}
+    target: dict[str, Any] = {}
     request_option = RequestOption(
         field_path=["data", "test"], inject_into=RequestOptionType.body_json, parameters={}
     )
@@ -161,8 +161,8 @@ def test_value_type_handling(value: Any, expected_type: Type):
     ],
 )
 def test__is_field_path(
-    field_name: Optional[str],
-    field_path: Optional[List[str]],
+    field_name: str | None,
+    field_path: list[str] | None,
     inject_into: RequestOptionType,
     expected__is_field_path: bool,
 ):

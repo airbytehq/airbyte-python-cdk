@@ -5,7 +5,8 @@
 import json
 import logging
 from abc import ABC
-from typing import Any, Iterable, List, Mapping, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
+from collections.abc import Iterable, Mapping
 
 import requests
 from requests.auth import AuthBase
@@ -32,7 +33,7 @@ class SourceTestFixture(AbstractSource):
     """
 
     def __init__(
-        self, streams: Optional[List[Stream]] = None, authenticator: Optional[AuthBase] = None
+        self, streams: list[Stream] | None = None, authenticator: AuthBase | None = None
     ):
         self._streams = streams
         self._authenticator = authenticator
@@ -77,10 +78,10 @@ class SourceTestFixture(AbstractSource):
             ]
         )
 
-    def check_connection(self, *args, **kwargs) -> Tuple[bool, Optional[Any]]:
+    def check_connection(self, *args, **kwargs) -> tuple[bool, Any | None]:
         return True, ""
 
-    def streams(self, *args, **kwargs) -> List[Stream]:
+    def streams(self, *args, **kwargs) -> list[Stream]:
         return [HttpTestStream(authenticator=self._authenticator)]
 
 
@@ -88,14 +89,14 @@ class HttpTestStream(HttpStream, ABC):
     url_base = "https://airbyte.com/api/v1/"
 
     @property
-    def cursor_field(self) -> Union[str, List[str]]:
+    def cursor_field(self) -> str | list[str]:
         return ["updated_at"]
 
     @property
     def availability_strategy(self):
         return None
 
-    def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
+    def primary_key(self) -> str | list[str] | list[list[str]] | None:
         return "id"
 
     def path(
@@ -118,7 +119,7 @@ class HttpTestStream(HttpStream, ABC):
         body = response.json() or {}
         return body["records"]
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         return None
 
     def get_json_schema(self) -> Mapping[str, Any]:
@@ -151,7 +152,7 @@ class SourceFixtureOauthAuthenticator(Oauth2Authenticator):
     Test OAuth authenticator that only overrides the request and response aspect of the authenticator flow
     """
 
-    def refresh_access_token(self) -> Tuple[str, int]:
+    def refresh_access_token(self) -> tuple[str, int]:
         response = requests.request(method="POST", url=self.get_token_refresh_endpoint(), params={})
         response.raise_for_status()
         return (

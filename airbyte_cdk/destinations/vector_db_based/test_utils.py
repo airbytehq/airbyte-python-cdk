@@ -47,7 +47,7 @@ class BaseIntegrationTest(unittest.TestCase):
 
         return ConfiguredAirbyteCatalog(streams=[overwrite_stream])
 
-    def _state(self, data: Dict[str, Any]) -> AirbyteMessage:
+    def _state(self, data: dict[str, Any]) -> AirbyteMessage:
         return AirbyteMessage(type=Type.STATE, state=AirbyteStateMessage(data=data))
 
     def _record(self, stream: str, str_value: str, int_value: int) -> AirbyteMessage:
@@ -59,5 +59,5 @@ class BaseIntegrationTest(unittest.TestCase):
         )
 
     def setUp(self) -> None:
-        with open("secrets/config.json", "r") as f:
+        with open("secrets/config.json") as f:
             self.config = json.loads(f.read())

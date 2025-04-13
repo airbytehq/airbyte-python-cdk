@@ -462,7 +462,7 @@ def ab_datetime_try_parse(dt_str: str) -> AirbyteDateTime | None:
 
 
 def ab_datetime_format(
-    dt: Union[datetime, AirbyteDateTime],
+    dt: datetime | AirbyteDateTime,
     format: str | None = None,
 ) -> str:
     """Formats a datetime object as an ISO8601/RFC3339 string with 'T' delimiter and timezone.

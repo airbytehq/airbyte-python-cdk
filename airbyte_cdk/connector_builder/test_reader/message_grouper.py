@@ -3,7 +3,8 @@
 #
 
 
-from typing import Any, Dict, Iterator, List, Mapping, Optional
+from typing import Any, Dict, List, Optional
+from collections.abc import Iterator, Mapping
 
 from airbyte_cdk.connector_builder.models import (
     AuxiliaryRequest,
@@ -85,13 +86,13 @@ def get_message_groups(
 
     records_count = 0
     at_least_one_page_in_group = False
-    current_page_records: List[Mapping[str, Any]] = []
-    current_slice_descriptor: Optional[Dict[str, Any]] = None
-    current_slice_pages: List[StreamReadPages] = []
-    current_page_request: Optional[HttpRequest] = None
-    current_page_response: Optional[HttpResponse] = None
-    latest_state_message: Optional[Dict[str, Any]] = None
-    slice_auxiliary_requests: List[AuxiliaryRequest] = []
+    current_page_records: list[Mapping[str, Any]] = []
+    current_slice_descriptor: dict[str, Any] | None = None
+    current_slice_pages: list[StreamReadPages] = []
+    current_page_request: HttpRequest | None = None
+    current_page_response: HttpResponse | None = None
+    latest_state_message: dict[str, Any] | None = None
+    slice_auxiliary_requests: list[AuxiliaryRequest] = []
 
     while records_count < limit and (message := next(messages, None)):
         json_message = airbyte_message_to_json(message)

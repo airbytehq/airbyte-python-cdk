@@ -5,7 +5,8 @@
 import json
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Mapping, Optional
+from typing import Any, Optional
+from collections.abc import Mapping
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level
 from airbyte_cdk.models import Type as MessageType
@@ -19,7 +20,7 @@ class SliceLogger(ABC):
 
     SLICE_LOG_PREFIX = "slice:"
 
-    def create_slice_log_message(self, _slice: Optional[Mapping[str, Any]]) -> AirbyteMessage:
+    def create_slice_log_message(self, _slice: Mapping[str, Any] | None) -> AirbyteMessage:
         """
         Mapping is an interface that can be implemented in various ways. However, json.dumps will just do a `str(<object>)` if
         the slice is a class implementing Mapping. Therefore, we want to cast this as a dict before passing this to json.dump

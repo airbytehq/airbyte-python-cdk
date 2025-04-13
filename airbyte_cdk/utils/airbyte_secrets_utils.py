@@ -2,15 +2,16 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Any, List, Mapping
+from typing import Any, List
+from collections.abc import Mapping
 
 import dpath
 
 
-def get_secret_paths(spec: Mapping[str, Any]) -> List[List[str]]:
+def get_secret_paths(spec: Mapping[str, Any]) -> list[list[str]]:
     paths = []
 
-    def traverse_schema(schema_item: Any, path: List[str]) -> None:
+    def traverse_schema(schema_item: Any, path: list[str]) -> None:
         """
         schema_item can be any property or value in the originally input jsonschema, depending on how far down the recursion stack we go
         path is the path to that schema item in the original input
@@ -38,7 +39,7 @@ def get_secret_paths(spec: Mapping[str, Any]) -> List[List[str]]:
 
 def get_secrets(
     connection_specification: Mapping[str, Any], config: Mapping[str, Any]
-) -> List[Any]:
+) -> list[Any]:
     """
     Get a list of secret values from the source config based on the source specification
     :type connection_specification: the connection_specification field of an AirbyteSpecification i.e the JSONSchema definition
@@ -55,10 +56,10 @@ def get_secrets(
     return result
 
 
-__SECRETS_FROM_CONFIG: List[str] = []
+__SECRETS_FROM_CONFIG: list[str] = []
 
 
-def update_secrets(secrets: List[str]) -> None:
+def update_secrets(secrets: list[str]) -> None:
     """Update the list of secrets to be replaced"""
     global __SECRETS_FROM_CONFIG
     __SECRETS_FROM_CONFIG = secrets

@@ -3,7 +3,8 @@
 #
 
 import json
-from typing import Any, Iterator, List, Mapping
+from typing import Any, List
+from collections.abc import Iterator, Mapping
 from unittest.mock import MagicMock, Mock, patch
 
 import orjson
@@ -998,7 +999,7 @@ def request_response_log_message(
     )
 
 
-def any_request_and_response_with_a_record() -> List[AirbyteMessage]:
+def any_request_and_response_with_a_record() -> list[AirbyteMessage]:
     return [
         request_response_log_message({"request": 1}, {"response": 2}, "http://any_url.com"),
         record_message("hashiras", {"name": "Shinobu Kocho"}),

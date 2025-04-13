@@ -7,7 +7,8 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from io import BufferedIOBase
-from typing import Any, Dict, Generator, List, MutableMapping, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
+from collections.abc import Generator, MutableMapping
 
 logger = logging.getLogger("airbyte")
 
@@ -26,5 +27,5 @@ class Parser(ABC):
 
 
 # reusable parser types
-PARSERS_TYPE = List[Tuple[Set[str], Set[str], Parser]]
-PARSERS_BY_HEADER_TYPE = Optional[Dict[str, Dict[str, Parser]]]
+PARSERS_TYPE = list[tuple[set[str], set[str], Parser]]
+PARSERS_BY_HEADER_TYPE = Optional[dict[str, dict[str, Parser]]]

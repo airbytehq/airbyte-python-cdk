@@ -1,7 +1,8 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 from abc import abstractmethod
-from typing import Any, Iterable, Mapping, Set
+from typing import Any, Set
+from collections.abc import Iterable, Mapping
 
 from airbyte_cdk.sources.declarative.async_job.job import AsyncJob
 from airbyte_cdk.sources.types import StreamSlice
@@ -13,7 +14,7 @@ class AsyncJobRepository:
         pass
 
     @abstractmethod
-    def update_jobs_status(self, jobs: Set[AsyncJob]) -> None:
+    def update_jobs_status(self, jobs: set[AsyncJob]) -> None:
         pass
 
     @abstractmethod

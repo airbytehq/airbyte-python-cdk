@@ -5,7 +5,8 @@
 import logging
 import traceback
 from dataclasses import InitVar, dataclass
-from typing import Any, List, Mapping, Tuple
+from typing import Any, List, Tuple
+from collections.abc import Mapping
 
 from airbyte_cdk import AbstractSource
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
@@ -33,7 +34,7 @@ class CheckDynamicStream(ConnectionChecker):
 
     def check_connection(
         self, source: AbstractSource, logger: logging.Logger, config: Mapping[str, Any]
-    ) -> Tuple[bool, Any]:
+    ) -> tuple[bool, Any]:
         streams = source.streams(config=config)
 
         if len(streams) == 0:

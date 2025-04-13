@@ -3,7 +3,8 @@
 #
 
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Optional, Union
+from collections.abc import Mapping
 
 import requests
 
@@ -25,7 +26,7 @@ class PageIncrement(PaginationStrategy):
     """
 
     config: Config
-    page_size: Optional[Union[str, int]]
+    page_size: str | int | None
     parameters: InitVar[Mapping[str, Any]]
     start_from_page: int = 0
     inject_on_first_request: bool = False
@@ -40,7 +41,7 @@ class PageIncrement(PaginationStrategy):
             self._page_size = page_size
 
     @property
-    def initial_token(self) -> Optional[Any]:
+    def initial_token(self) -> Any | None:
         if self.inject_on_first_request:
             return self.start_from_page
         return None
@@ -49,9 +50,9 @@ class PageIncrement(PaginationStrategy):
         self,
         response: requests.Response,
         last_page_size: int,
-        last_record: Optional[Record],
-        last_page_token_value: Optional[Any],
-    ) -> Optional[Any]:
+        last_record: Record | None,
+        last_page_token_value: Any | None,
+    ) -> Any | None:
         # Stop paginating when there are fewer records than the page size or the current page has no records
         if (self._page_size and last_page_size < self._page_size) or last_page_size == 0:
             return None
@@ -67,5 +68,5 @@ class PageIncrement(PaginationStrategy):
         else:
             return last_page_token_value + 1
 
-    def get_page_size(self) -> Optional[int]:
+    def get_page_size(self) -> int | None:
         return self._page_size

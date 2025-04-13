@@ -2,7 +2,8 @@
 
 from dataclasses import InitVar, dataclass
 from enum import Enum
-from typing import Any, Iterable, List, Mapping, Optional
+from typing import Any, List, Optional
+from collections.abc import Iterable, Mapping
 
 from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import GroupByKey
 from airbyte_cdk.sources.declarative.requesters.query_properties.strategies.merge_strategy import (
@@ -29,8 +30,8 @@ class PropertyChunking:
     """
 
     property_limit_type: PropertyLimitType
-    property_limit: Optional[int]
-    record_merge_strategy: Optional[RecordMergeStrategy]
+    property_limit: int | None
+    record_merge_strategy: RecordMergeStrategy | None
     parameters: InitVar[Mapping[str, Any]]
     config: Config
 
@@ -40,8 +41,8 @@ class PropertyChunking:
         )
 
     def get_request_property_chunks(
-        self, property_fields: Iterable[str], always_include_properties: Optional[List[str]]
-    ) -> Iterable[List[str]]:
+        self, property_fields: Iterable[str], always_include_properties: list[str] | None
+    ) -> Iterable[list[str]]:
         if not self.property_limit:
             single_property_chunk = list(property_fields)
             if always_include_properties:
@@ -65,5 +66,5 @@ class PropertyChunking:
             chunk_size += property_field_size
         yield current_chunk
 
-    def get_merge_key(self, record: Record) -> Optional[str]:
+    def get_merge_key(self, record: Record) -> str | None:
         return self._record_merge_strategy.get_group_key(record=record)

@@ -9,24 +9,24 @@ from typing import Any, Dict, List, Optional
 @dataclass
 class HttpResponse:
     status: int
-    body: Optional[str] = None
-    headers: Optional[Dict[str, Any]] = None
+    body: str | None = None
+    headers: dict[str, Any] | None = None
 
 
 @dataclass
 class HttpRequest:
     url: str
-    headers: Optional[Dict[str, Any]]
+    headers: dict[str, Any] | None
     http_method: str
-    body: Optional[str] = None
+    body: str | None = None
 
 
 @dataclass
 class LogMessage:
     message: str
     level: str
-    internal_message: Optional[str] = None
-    stacktrace: Optional[str] = None
+    internal_message: str | None = None
+    stacktrace: str | None = None
 
 
 @dataclass
@@ -40,34 +40,34 @@ class AuxiliaryRequest:
 
 @dataclass
 class StreamReadPages:
-    records: List[object]
-    request: Optional[HttpRequest] = None
-    response: Optional[HttpResponse] = None
+    records: list[object]
+    request: HttpRequest | None = None
+    response: HttpResponse | None = None
 
 
 @dataclass
 class StreamReadSlices:
-    pages: List[StreamReadPages]
-    slice_descriptor: Optional[Dict[str, Any]]
-    state: Optional[List[Dict[str, Any]]] = None
-    auxiliary_requests: Optional[List[AuxiliaryRequest]] = None
+    pages: list[StreamReadPages]
+    slice_descriptor: dict[str, Any] | None
+    state: list[dict[str, Any]] | None = None
+    auxiliary_requests: list[AuxiliaryRequest] | None = None
 
 
 @dataclass
-class StreamRead(object):
-    logs: List[LogMessage]
-    slices: List[StreamReadSlices]
+class StreamRead:
+    logs: list[LogMessage]
+    slices: list[StreamReadSlices]
     test_read_limit_reached: bool
-    auxiliary_requests: List[AuxiliaryRequest]
-    inferred_schema: Optional[Dict[str, Any]]
-    inferred_datetime_formats: Optional[Dict[str, str]]
-    latest_config_update: Optional[Dict[str, Any]]
+    auxiliary_requests: list[AuxiliaryRequest]
+    inferred_schema: dict[str, Any] | None
+    inferred_datetime_formats: dict[str, str] | None
+    latest_config_update: dict[str, Any] | None
 
 
 @dataclass
 class StreamReadRequestBody:
-    manifest: Dict[str, Any]
+    manifest: dict[str, Any]
     stream: str
-    config: Dict[str, Any]
-    state: Optional[Dict[str, Any]]
-    record_limit: Optional[int]
+    config: dict[str, Any]
+    state: dict[str, Any] | None
+    record_limit: int | None

@@ -1,5 +1,6 @@
 from dataclasses import InitVar, dataclass
-from typing import Any, Dict, List, Mapping, Optional, Union
+from typing import Any, Dict, List, Optional, Union
+from collections.abc import Mapping
 
 import dpath
 
@@ -20,7 +21,7 @@ class DpathFlattenFields(RecordTransformation):
     """
 
     config: Config
-    field_path: List[Union[InterpolatedString, str]]
+    field_path: list[InterpolatedString | str]
     parameters: InitVar[Mapping[str, Any]]
     delete_origin_value: bool = False
     replace_record: bool = False
@@ -37,10 +38,10 @@ class DpathFlattenFields(RecordTransformation):
 
     def transform(
         self,
-        record: Dict[str, Any],
-        config: Optional[Config] = None,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
+        record: dict[str, Any],
+        config: Config | None = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
     ) -> None:
         path = [path.eval(self.config) for path in self._field_path]
         if "*" in path:

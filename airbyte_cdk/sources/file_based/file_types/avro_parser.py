@@ -3,7 +3,8 @@
 #
 
 import logging
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, cast
+from typing import Any, Dict, Optional, Tuple, cast
+from collections.abc import Iterable, Mapping
 
 import fastavro
 
@@ -46,7 +47,7 @@ AVRO_LOGICAL_TYPE_TO_JSON = {
 class AvroParser(FileTypeParser):
     ENCODING = None
 
-    def check_config(self, config: FileBasedStreamConfig) -> Tuple[bool, Optional[str]]:
+    def check_config(self, config: FileBasedStreamConfig) -> tuple[bool, str | None]:
         """
         AvroParser does not require config checks, implicit pydantic validation is enough.
         """
@@ -173,8 +174,8 @@ class AvroParser(FileTypeParser):
         file: RemoteFile,
         stream_reader: AbstractFileBasedStreamReader,
         logger: logging.Logger,
-        discovered_schema: Optional[Mapping[str, SchemaType]],
-    ) -> Iterable[Dict[str, Any]]:
+        discovered_schema: Mapping[str, SchemaType] | None,
+    ) -> Iterable[dict[str, Any]]:
         avro_format = config.format or AvroFormat(filetype="avro")
         if not isinstance(avro_format, AvroFormat):
             raise ValueError(f"Expected ParquetFormat, got {avro_format}")

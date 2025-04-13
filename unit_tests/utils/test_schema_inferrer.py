@@ -2,7 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import List, Mapping
+from typing import List
+from collections.abc import Mapping
 
 import pytest
 
@@ -268,7 +269,7 @@ NOW = 1234567
         ),
     ],
 )
-def test_schema_derivation(input_records: List, expected_schemas: Mapping):
+def test_schema_derivation(input_records: list, expected_schemas: Mapping):
     inferrer = SchemaInferrer()
     for record in input_records:
         inferrer.accumulate(
@@ -289,7 +290,7 @@ _IS_PK = True
 _IS_CURSOR_FIELD = True
 
 
-def _create_inferrer_with_required_field(is_pk: bool, field: List[List[str]]) -> SchemaInferrer:
+def _create_inferrer_with_required_field(is_pk: bool, field: list[list[str]]) -> SchemaInferrer:
     if is_pk:
         return SchemaInferrer(field)
     return SchemaInferrer([[]], field)

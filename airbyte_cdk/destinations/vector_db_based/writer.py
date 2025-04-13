@@ -4,7 +4,8 @@
 
 
 from collections import defaultdict
-from typing import Dict, Iterable, List, Tuple
+from typing import Dict, List, Tuple
+from collections.abc import Iterable
 
 from airbyte_cdk.destinations.vector_db_based.config import ProcessingConfigModel
 from airbyte_cdk.destinations.vector_db_based.document_processor import Chunk, DocumentProcessor
@@ -42,8 +43,8 @@ class Writer:
         self._init_batch()
 
     def _init_batch(self) -> None:
-        self.chunks: Dict[Tuple[str, str], List[Chunk]] = defaultdict(list)
-        self.ids_to_delete: Dict[Tuple[str, str], List[str]] = defaultdict(list)
+        self.chunks: dict[tuple[str, str], list[Chunk]] = defaultdict(list)
+        self.ids_to_delete: dict[tuple[str, str], list[str]] = defaultdict(list)
         self.number_of_chunks = 0
 
     def _convert_to_document(self, chunk: Chunk) -> Document:

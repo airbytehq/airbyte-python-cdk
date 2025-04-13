@@ -3,7 +3,8 @@
 #
 
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Optional, Union
+from collections.abc import Mapping
 
 from airbyte_cdk.sources.declarative.interpolation.jinja import JinjaInterpolation
 from airbyte_cdk.sources.types import Config
@@ -22,7 +23,7 @@ class InterpolatedString:
 
     string: str
     parameters: InitVar[Mapping[str, Any]]
-    default: Optional[str] = None
+    default: str | None = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.default = self.default or self.string

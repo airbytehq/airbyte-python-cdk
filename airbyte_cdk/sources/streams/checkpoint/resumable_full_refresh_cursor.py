@@ -46,6 +46,6 @@ class ResumableFullRefreshCursor(Cursor):
         """
         return False
 
-    def select_state(self, stream_slice: Optional[StreamSlice] = None) -> Optional[StreamState]:
+    def select_state(self, stream_slice: StreamSlice | None = None) -> StreamState | None:
         # A top-level RFR cursor only manages the state of a single partition
         return self._cursor

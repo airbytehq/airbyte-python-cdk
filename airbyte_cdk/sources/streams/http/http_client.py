@@ -6,7 +6,8 @@ import logging
 import os
 import urllib
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
+from collections.abc import Callable, Mapping
 
 import orjson
 import requests
@@ -82,15 +83,15 @@ class HttpClient:
         self,
         name: str,
         logger: logging.Logger,
-        error_handler: Optional[ErrorHandler] = None,
-        api_budget: Optional[APIBudget] = None,
-        session: Optional[Union[requests.Session, requests_cache.CachedSession]] = None,
-        authenticator: Optional[AuthBase] = None,
+        error_handler: ErrorHandler | None = None,
+        api_budget: APIBudget | None = None,
+        session: requests.Session | requests_cache.CachedSession | None = None,
+        authenticator: AuthBase | None = None,
         use_cache: bool = False,
-        backoff_strategy: Optional[Union[BackoffStrategy, List[BackoffStrategy]]] = None,
-        error_message_parser: Optional[ErrorMessageParser] = None,
+        backoff_strategy: BackoffStrategy | list[BackoffStrategy] | None = None,
+        error_message_parser: ErrorMessageParser | None = None,
         disable_retries: bool = False,
-        message_repository: Optional[MessageRepository] = None,
+        message_repository: MessageRepository | None = None,
     ):
         self._name = name
         self._api_budget: APIBudget = api_budget or APIBudget(policies=[])
@@ -117,7 +118,7 @@ class HttpClient:
         else:
             self._backoff_strategies = [DefaultBackoffStrategy()]
         self._error_message_parser = error_message_parser or JsonErrorMessageParser()
-        self._request_attempt_count: Dict[requests.PreparedRequest, int] = {}
+        self._request_attempt_count: dict[requests.PreparedRequest, int] = {}
         self._disable_retries = disable_retries
         self._message_repository = message_repository
 
@@ -166,7 +167,7 @@ class HttpClient:
             self._session.cache.clear()  # type: ignore # cache.clear is not typed
 
     def _dedupe_query_params(
-        self, url: str, params: Optional[Mapping[str, str]]
+        self, url: str, params: Mapping[str, str] | None
     ) -> Mapping[str, str]:
         """
         Remove query parameters from params mapping if they are already encoded in the URL.
@@ -189,10 +190,10 @@ class HttpClient:
         http_method: str,
         url: str,
         dedupe_query_params: bool = False,
-        headers: Optional[Mapping[str, str]] = None,
-        params: Optional[Mapping[str, str]] = None,
-        json: Optional[Mapping[str, Any]] = None,
-        data: Optional[Union[str, Mapping[str, Any]]] = None,
+        headers: Mapping[str, str] | None = None,
+        params: Mapping[str, str] | None = None,
+        json: Mapping[str, Any] | None = None,
+        data: str | Mapping[str, Any] | None = None,
     ) -> requests.PreparedRequest:
         if dedupe_query_params:
             query_params = self._dedupe_query_params(url, params)
@@ -241,8 +242,8 @@ class HttpClient:
         self,
         request: requests.PreparedRequest,
         request_kwargs: Mapping[str, Any],
-        log_formatter: Optional[Callable[[requests.Response], Any]] = None,
-        exit_on_rate_limit: Optional[bool] = False,
+        log_formatter: Callable[[requests.Response], Any] | None = None,
+        exit_on_rate_limit: bool | None = False,
     ) -> requests.Response:
         """
         Sends a request with retry logic.
@@ -280,8 +281,8 @@ class HttpClient:
         self,
         request: requests.PreparedRequest,
         request_kwargs: Mapping[str, Any],
-        log_formatter: Optional[Callable[[requests.Response], Any]] = None,
-        exit_on_rate_limit: Optional[bool] = False,
+        log_formatter: Callable[[requests.Response], Any] | None = None,
+        exit_on_rate_limit: bool | None = False,
     ) -> requests.Response:
         if request not in self._request_attempt_count:
             self._request_attempt_count[request] = 1
@@ -295,8 +296,8 @@ class HttpClient:
             extra={"headers": request.headers, "url": request.url, "request_body": request.body},
         )
 
-        response: Optional[requests.Response] = None
-        exc: Optional[requests.RequestException] = None
+        response: requests.Response | None = None
+        exc: requests.RequestException | None = None
 
         try:
             response = self._session.send(request, **request_kwargs)
@@ -347,7 +348,7 @@ class HttpClient:
 
         return response  # type: ignore # will either return a valid response of type requests.Response or raise an exception
 
-    def _get_response_body(self, response: requests.Response) -> Optional[JsonType]:
+    def _get_response_body(self, response: requests.Response) -> JsonType | None:
         """
         Extracts and returns the body of an HTTP response.
 
@@ -383,11 +384,11 @@ class HttpClient:
 
     def _handle_error_resolution(
         self,
-        response: Optional[requests.Response],
-        exc: Optional[requests.RequestException],
+        response: requests.Response | None,
+        exc: requests.RequestException | None,
         request: requests.PreparedRequest,
         error_resolution: ErrorResolution,
-        exit_on_rate_limit: Optional[bool] = False,
+        exit_on_rate_limit: bool | None = False,
     ) -> None:
         if error_resolution.response_action not in self._ACTIONS_TO_RETRY_ON:
             self._evict_key(request)
@@ -499,14 +500,14 @@ class HttpClient:
         http_method: str,
         url: str,
         request_kwargs: Mapping[str, Any],
-        headers: Optional[Mapping[str, str]] = None,
-        params: Optional[Mapping[str, str]] = None,
-        json: Optional[Mapping[str, Any]] = None,
-        data: Optional[Union[str, Mapping[str, Any]]] = None,
+        headers: Mapping[str, str] | None = None,
+        params: Mapping[str, str] | None = None,
+        json: Mapping[str, Any] | None = None,
+        data: str | Mapping[str, Any] | None = None,
         dedupe_query_params: bool = False,
-        log_formatter: Optional[Callable[[requests.Response], Any]] = None,
-        exit_on_rate_limit: Optional[bool] = False,
-    ) -> Tuple[requests.PreparedRequest, requests.Response]:
+        log_formatter: Callable[[requests.Response], Any] | None = None,
+        exit_on_rate_limit: bool | None = False,
+    ) -> tuple[requests.PreparedRequest, requests.Response]:
         """
         Prepares and sends request and return request and response objects.
         """

@@ -11,7 +11,7 @@ from airbyte_cdk.sources.utils.types import JsonType
 
 
 class JsonErrorMessageParser(ErrorMessageParser):
-    def _try_get_error(self, value: Optional[JsonType]) -> Optional[str]:
+    def _try_get_error(self, value: JsonType | None) -> str | None:
         if isinstance(value, str):
             return value
         elif isinstance(value, list):
@@ -35,7 +35,7 @@ class JsonErrorMessageParser(ErrorMessageParser):
             return self._try_get_error(new_value)
         return None
 
-    def parse_response_error_message(self, response: requests.Response) -> Optional[str]:
+    def parse_response_error_message(self, response: requests.Response) -> str | None:
         """
         Parses the raw response object from a failed request into a user-friendly error message.
 

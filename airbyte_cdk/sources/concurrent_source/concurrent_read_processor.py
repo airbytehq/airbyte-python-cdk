@@ -2,7 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 import logging
-from typing import Dict, Iterable, List, Optional, Set
+from typing import Dict, List, Optional, Set
+from collections.abc import Iterable
 
 from airbyte_cdk.exception_handler import generate_failed_streams_error_message
 from airbyte_cdk.models import AirbyteMessage, AirbyteStreamStatus, FailureType, StreamDescriptor
@@ -30,7 +31,7 @@ from airbyte_cdk.utils.stream_status_utils import (
 class ConcurrentReadProcessor:
     def __init__(
         self,
-        stream_instances_to_read_from: List[AbstractStream],
+        stream_instances_to_read_from: list[AbstractStream],
         partition_enqueuer: PartitionEnqueuer,
         thread_pool_manager: ThreadPoolManager,
         logger: logging.Logger,
@@ -50,20 +51,20 @@ class ConcurrentReadProcessor:
         """
         self._stream_name_to_instance = {s.name: s for s in stream_instances_to_read_from}
         self._record_counter = {}
-        self._streams_to_running_partitions: Dict[str, Set[Partition]] = {}
+        self._streams_to_running_partitions: dict[str, set[Partition]] = {}
         for stream in stream_instances_to_read_from:
             self._streams_to_running_partitions[stream.name] = set()
             self._record_counter[stream.name] = 0
         self._thread_pool_manager = thread_pool_manager
         self._partition_enqueuer = partition_enqueuer
         self._stream_instances_to_start_partition_generation = stream_instances_to_read_from
-        self._streams_currently_generating_partitions: List[str] = []
+        self._streams_currently_generating_partitions: list[str] = []
         self._logger = logger
         self._slice_logger = slice_logger
         self._message_repository = message_repository
         self._partition_reader = partition_reader
-        self._streams_done: Set[str] = set()
-        self._exceptions_per_stream_name: dict[str, List[Exception]] = {}
+        self._streams_done: set[str] = set()
+        self._exceptions_per_stream_name: dict[str, list[Exception]] = {}
 
     def on_partition_generation_completed(
         self, sentinel: PartitionGenerationCompletedSentinel
@@ -186,7 +187,7 @@ class ConcurrentReadProcessor:
     def _flag_exception(self, stream_name: str, exception: Exception) -> None:
         self._exceptions_per_stream_name.setdefault(stream_name, []).append(exception)
 
-    def start_next_partition_generator(self) -> Optional[AirbyteMessage]:
+    def start_next_partition_generator(self) -> AirbyteMessage | None:
         """
         Start the next partition generator.
         1. Pop the next stream to read from

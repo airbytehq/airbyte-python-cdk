@@ -7,7 +7,8 @@ import copy
 import json
 import logging
 from dataclasses import InitVar, dataclass
-from typing import TYPE_CHECKING, Any, Iterable, List, Mapping, MutableMapping, Optional, Union
+from typing import TYPE_CHECKING, Any, List, Optional, Union
+from collections.abc import Iterable, Mapping, MutableMapping
 
 import dpath
 import requests
@@ -41,16 +42,16 @@ class ParentStreamConfig:
     """
 
     stream: "DeclarativeStream"  # Parent streams must be DeclarativeStream because we can't know which part of the stream slice is a partition for regular Stream
-    parent_key: Union[InterpolatedString, str]
-    partition_field: Union[InterpolatedString, str]
+    parent_key: InterpolatedString | str
+    partition_field: InterpolatedString | str
     config: Config
     parameters: InitVar[Mapping[str, Any]]
-    extra_fields: Optional[Union[List[List[str]], List[List[InterpolatedString]]]] = (
+    extra_fields: list[list[str]] | list[list[InterpolatedString]] | None = (
         None  # List of field paths (arrays of strings)
     )
-    request_option: Optional[RequestOption] = None
+    request_option: RequestOption | None = None
     incremental_dependency: bool = False
-    lazy_read_pointer: Optional[List[Union[InterpolatedString, str]]] = None
+    lazy_read_pointer: list[InterpolatedString | str] | None = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.parent_key = InterpolatedString.create(self.parent_key, parameters=parameters)
@@ -86,7 +87,7 @@ class SubstreamPartitionRouter(PartitionRouter):
         parent_stream_configs (List[ParentStreamConfig]): parent streams to iterate over and their config
     """
 
-    parent_stream_configs: List[ParentStreamConfig]
+    parent_stream_configs: list[ParentStreamConfig]
     config: Config
     parameters: InitVar[Mapping[str, Any]]
 
@@ -97,42 +98,42 @@ class SubstreamPartitionRouter(PartitionRouter):
 
     def get_request_params(
         self,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         # Pass the stream_slice from the argument, not the cursor because the cursor is updated after processing the response
         return self._get_request_option(RequestOptionType.request_parameter, stream_slice)
 
     def get_request_headers(
         self,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         # Pass the stream_slice from the argument, not the cursor because the cursor is updated after processing the response
         return self._get_request_option(RequestOptionType.header, stream_slice)
 
     def get_request_body_data(
         self,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         # Pass the stream_slice from the argument, not the cursor because the cursor is updated after processing the response
         return self._get_request_option(RequestOptionType.body_data, stream_slice)
 
     def get_request_body_json(
         self,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         # Pass the stream_slice from the argument, not the cursor because the cursor is updated after processing the response
         return self._get_request_option(RequestOptionType.body_json, stream_slice)
 
     def _get_request_option(
-        self, option_type: RequestOptionType, stream_slice: Optional[StreamSlice]
+        self, option_type: RequestOptionType, stream_slice: StreamSlice | None
     ) -> Mapping[str, Any]:
         params: MutableMapping[str, Any] = {}
         if stream_slice:
@@ -231,7 +232,7 @@ class SubstreamPartitionRouter(PartitionRouter):
                     )
 
     def _extract_child_response(
-        self, parent_record: Mapping[str, Any] | AirbyteMessage, pointer: List[InterpolatedString]
+        self, parent_record: Mapping[str, Any] | AirbyteMessage, pointer: list[InterpolatedString]
     ) -> requests.Response:
         """Extract child records from a parent record based on lazy pointers."""
 
@@ -248,7 +249,7 @@ class SubstreamPartitionRouter(PartitionRouter):
     def _extract_extra_fields(
         self,
         parent_record: Mapping[str, Any] | AirbyteMessage,
-        extra_fields: Optional[List[List[str]]] = None,
+        extra_fields: list[list[str]] | None = None,
     ) -> Mapping[str, Any]:
         """
         Extracts additional fields specified by their paths from the parent record.
@@ -394,7 +395,7 @@ class SubstreamPartitionRouter(PartitionRouter):
 
         return parent_state
 
-    def get_stream_state(self) -> Optional[Mapping[str, StreamState]]:
+    def get_stream_state(self) -> Mapping[str, StreamState] | None:
         """
         Get the state of the parent streams.
 
@@ -433,9 +434,9 @@ class SafeResponse(requests.Response):
         return getattr(requests.Response, name, None)
 
     @property
-    def content(self) -> Optional[bytes]:
+    def content(self) -> bytes | None:
         return super().content
 
     @content.setter
-    def content(self, value: Union[str, bytes]) -> None:
+    def content(self, value: str | bytes) -> None:
         self._content = value.encode() if isinstance(value, str) else value

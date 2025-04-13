@@ -5,7 +5,8 @@
 import json
 import logging
 from http import HTTPStatus
-from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
+from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
@@ -44,7 +45,7 @@ class StubBasicReadHttpStream(HttpStream):
         self.resp_counter = 1
         self._deduplicate_query_params = deduplicate_query_params
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         return None
 
     def path(self, **kwargs) -> str:
@@ -59,7 +60,7 @@ class StubBasicReadHttpStream(HttpStream):
         return self._deduplicate_query_params
 
     @property
-    def cursor_field(self) -> Union[str, List[str]]:
+    def cursor_field(self) -> str | list[str]:
         return ["updated_at"]
 
 
@@ -105,7 +106,7 @@ class StubNextPageTokenHttpStream(StubBasicReadHttpStream):
         super().__init__()
         self._pages = pages
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         while self.current_page < self._pages:
             page_token = {"page": self.current_page}
             self.current_page += 1
@@ -157,7 +158,7 @@ def test_stub_bad_url_http_stream_read_records(mocker):
 
 
 class StubCustomBackoffHttpStream(StubBasicReadHttpStream):
-    def backoff_time(self, response: requests.Response) -> Optional[float]:
+    def backoff_time(self, response: requests.Response) -> float | None:
         return 0.5
 
 
@@ -185,7 +186,7 @@ def test_stub_custom_backoff_http_stream_retries(mocker, retries):
         def max_retries(self):
             return retries
 
-        def get_error_handler(self) -> Optional[ErrorHandler]:
+        def get_error_handler(self) -> ErrorHandler | None:
             return HttpStatusErrorHandler(logging.Logger, max_retries=retries)
 
     stream = StubCustomBackoffHttpStreamRetries()
@@ -207,7 +208,7 @@ def test_stub_custom_backoff_http_stream_endless_retries(mocker):
     mocker.patch("time.sleep", lambda x: None)
 
     class StubCustomBackoffHttpStreamRetries(StubCustomBackoffHttpStream):
-        def get_error_handler(self) -> Optional[ErrorHandler]:
+        def get_error_handler(self) -> ErrorHandler | None:
             return HttpStatusErrorHandler(logging.Logger, max_retries=99999)
 
     infinite_number = 20
@@ -275,7 +276,7 @@ class AutoFailFalseHttpStream(StubBasicReadHttpStream):
     raise_on_http_errors = False
     max_retries = 3
 
-    def get_error_handler(self) -> Optional[ErrorHandler]:
+    def get_error_handler(self) -> ErrorHandler | None:
         return HttpStatusErrorHandler(logging.getLogger(), max_retries=3)
 
 
@@ -336,7 +337,7 @@ def test_raise_on_http_errors(mocker, error):
 
 
 class StubHttpStreamWithErrorHandler(StubBasicReadHttpStream):
-    def get_error_handler(self) -> Optional[ErrorHandler]:
+    def get_error_handler(self) -> ErrorHandler | None:
         return HttpStatusErrorHandler(logging.getLogger())
 
 
@@ -448,7 +449,7 @@ class CacheHttpSubStream(HttpSubStream):
     def parse_response(self, response: requests.Response, **kwargs) -> Iterable[Mapping]:
         return []
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         return None
 
     def path(self, **kwargs) -> str:
@@ -508,7 +509,7 @@ class CacheHttpStreamWithSlices(CacheHttpStream):
     def path(self, stream_slice: Mapping[str, Any] = None, **kwargs) -> str:
         return f"{stream_slice['path']}" if stream_slice else ""
 
-    def stream_slices(self, **kwargs) -> Iterable[Optional[Mapping[str, Any]]]:
+    def stream_slices(self, **kwargs) -> Iterable[Mapping[str, Any] | None]:
         for path in self.paths:
             yield {"path": path}
 
@@ -625,7 +626,7 @@ def test_send_raise_on_http_errors_logs(mocker, status_code):
         ({}, None),
     ],
 )
-def test_default_parse_response_error_message(api_response: dict, expected_message: Optional[str]):
+def test_default_parse_response_error_message(api_response: dict, expected_message: str | None):
     stream = StubBasicReadHttpStream()
     response = MagicMock()
     response.json.return_value = api_response
@@ -809,7 +810,7 @@ class StubParentHttpStream(HttpStream, CheckpointMixin):
 
     counter = 0
 
-    def __init__(self, records: List[Mapping[str, Any]]):
+    def __init__(self, records: list[Mapping[str, Any]]):
         super().__init__()
         self._records = records
         self._state: MutableMapping[str, Any] = {}
@@ -821,13 +822,13 @@ class StubParentHttpStream(HttpStream, CheckpointMixin):
     def path(
         self,
         *,
-        stream_state: Optional[Mapping[str, Any]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Mapping[str, Any] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> str:
         return "/stub"
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         return {"__ab_full_refresh_sync_complete": True}
 
     def _read_single_page(
@@ -837,12 +838,12 @@ class StubParentHttpStream(HttpStream, CheckpointMixin):
                 requests.PreparedRequest,
                 requests.Response,
                 Mapping[str, Any],
-                Optional[Mapping[str, Any]],
+                Mapping[str, Any] | None,
             ],
             Iterable[StreamData],
         ],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
         yield from self._records
 
@@ -853,8 +854,8 @@ class StubParentHttpStream(HttpStream, CheckpointMixin):
         response: requests.Response,
         *,
         stream_state: Mapping[str, Any],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         return []
 
@@ -867,7 +868,7 @@ class StubParentResumableFullRefreshStream(HttpStream, CheckpointMixin):
 
     counter = 0
 
-    def __init__(self, record_pages: List[List[Mapping[str, Any]]]):
+    def __init__(self, record_pages: list[list[Mapping[str, Any]]]):
         super().__init__()
         self._record_pages = record_pages
         self._state: MutableMapping[str, Any] = {}
@@ -879,21 +880,21 @@ class StubParentResumableFullRefreshStream(HttpStream, CheckpointMixin):
     def path(
         self,
         *,
-        stream_state: Optional[Mapping[str, Any]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Mapping[str, Any] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> str:
         return "/stub"
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         return {"__ab_full_refresh_sync_complete": True}
 
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
         page_number = self.state.get("page") or 1
         yield from self._record_pages[page_number - 1]
@@ -908,8 +909,8 @@ class StubParentResumableFullRefreshStream(HttpStream, CheckpointMixin):
         response: requests.Response,
         *,
         stream_state: Mapping[str, Any],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         return []
 
@@ -927,13 +928,13 @@ class StubHttpSubstream(HttpSubStream):
     def path(
         self,
         *,
-        stream_state: Optional[Mapping[str, Any]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Mapping[str, Any] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> str:
         return "/stub"
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         return None
 
     def _read_pages(
@@ -943,12 +944,12 @@ class StubHttpSubstream(HttpSubStream):
                 requests.PreparedRequest,
                 requests.Response,
                 Mapping[str, Any],
-                Optional[Mapping[str, Any]],
+                Mapping[str, Any] | None,
             ],
             Iterable[StreamData],
         ],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
         return [
             {"id": "abc", "parent": stream_slice.get("id")},
@@ -960,8 +961,8 @@ class StubHttpSubstream(HttpSubStream):
         response: requests.Response,
         *,
         stream_state: Mapping[str, Any],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         return []
 
@@ -1052,7 +1053,7 @@ class StubFullRefreshHttpStream(HttpStream):
         self._deduplicate_query_params = deduplicate_query_params
         self._pages = pages
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         current_page = self.cursor.get_stream_state().get("page", 1)
         if current_page < self._pages:
             current_page += 1
@@ -1077,9 +1078,9 @@ class StubFullRefreshLegacySliceHttpStream(StubFullRefreshHttpStream):
         self,
         *,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
-    ) -> Iterable[Optional[Mapping[str, Any]]]:
+        cursor_field: list[str] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
+    ) -> Iterable[Mapping[str, Any] | None]:
         yield from [{}]
 
 
@@ -1267,7 +1268,7 @@ class StubSubstreamResumableFullRefreshStream(HttpSubStream, CheckpointMixin):
     def __init__(
         self,
         parent: HttpStream,
-        partition_id_to_child_records: Mapping[str, List[Mapping[str, Any]]],
+        partition_id_to_child_records: Mapping[str, list[Mapping[str, Any]]],
     ):
         super().__init__(parent=parent)
         self._partition_id_to_child_records = partition_id_to_child_records
@@ -1280,13 +1281,13 @@ class StubSubstreamResumableFullRefreshStream(HttpSubStream, CheckpointMixin):
     def path(
         self,
         *,
-        stream_state: Optional[Mapping[str, Any]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: Mapping[str, Any] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> str:
         return f"/parents/{stream_slice.get('parent_id')}/children"
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         return None
 
     # def read_records(
@@ -1306,10 +1307,10 @@ class StubSubstreamResumableFullRefreshStream(HttpSubStream, CheckpointMixin):
 
     def _fetch_next_page(
         self,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Tuple[requests.PreparedRequest, requests.Response]:
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
+    ) -> tuple[requests.PreparedRequest, requests.Response]:
         return requests.PreparedRequest(), requests.Response()
 
     def parse_response(
@@ -1317,8 +1318,8 @@ class StubSubstreamResumableFullRefreshStream(HttpSubStream, CheckpointMixin):
         response: requests.Response,
         *,
         stream_state: Mapping[str, Any],
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         partition_id = stream_slice.get("parent").get("parent_id")
         if partition_id in self._partition_id_to_child_records:
@@ -1535,7 +1536,7 @@ class StubWithCursorFields(StubBasicReadHttpStream):
     def __init__(
         self,
         has_multiple_slices: bool,
-        set_cursor_field: List[str],
+        set_cursor_field: list[str],
         deduplicate_query_params: bool = False,
         **kwargs,
     ):
@@ -1544,7 +1545,7 @@ class StubWithCursorFields(StubBasicReadHttpStream):
         super().__init__()
 
     @property
-    def cursor_field(self) -> Union[str, List[str]]:
+    def cursor_field(self) -> str | list[str]:
         return self._cursor_field
 
 

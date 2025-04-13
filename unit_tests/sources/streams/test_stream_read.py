@@ -4,7 +4,8 @@
 
 import logging
 from copy import deepcopy
-from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Union
+from typing import Any, Dict, List, Optional, Union
+from collections.abc import Iterable, Mapping, MutableMapping
 from unittest.mock import Mock
 
 import pytest
@@ -48,32 +49,32 @@ _NO_STATE = None
 class _MockStream(Stream):
     def __init__(
         self,
-        slice_to_records: Mapping[str, List[Mapping[str, Any]]],
-        json_schema: Dict[str, Any] = None,
+        slice_to_records: Mapping[str, list[Mapping[str, Any]]],
+        json_schema: dict[str, Any] = None,
     ):
         self._slice_to_records = slice_to_records
         self._mocked_json_schema = json_schema or {}
 
     @property
-    def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
+    def primary_key(self) -> str | list[str] | list[list[str]] | None:
         return None
 
     def stream_slices(
         self,
         *,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
-    ) -> Iterable[Optional[Mapping[str, Any]]]:
+        cursor_field: list[str] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
+    ) -> Iterable[Mapping[str, Any] | None]:
         for partition in self._slice_to_records.keys():
             yield {"partition_key": partition}
 
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
         yield from self._slice_to_records[stream_slice["partition_key"]]
 
@@ -94,15 +95,15 @@ class _MockIncrementalStream(_MockStream, CheckpointMixin):
         self._state = value
 
     @property
-    def cursor_field(self) -> Union[str, List[str]]:
+    def cursor_field(self) -> str | list[str]:
         return ["created_at"]
 
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
         cursor = self.cursor_field[0]
         for record in self._slice_to_records[stream_slice["partition_key"]]:
@@ -157,7 +158,7 @@ def _concurrent_stream(
     slice_logger,
     logger,
     message_repository,
-    cursor: Optional[Cursor] = None,
+    cursor: Cursor | None = None,
 ):
     stream = _stream(slice_to_partition_mapping, slice_logger, logger, message_repository)
     cursor = cursor or FinalStateCursor(

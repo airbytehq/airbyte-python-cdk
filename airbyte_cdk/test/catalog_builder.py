@@ -12,7 +12,7 @@ from airbyte_cdk.models import (
 
 class ConfiguredAirbyteStreamBuilder:
     def __init__(self) -> None:
-        self._stream: Dict[str, Any] = {
+        self._stream: dict[str, Any] = {
             "stream": {
                 "name": "any name",
                 "json_schema": {},
@@ -32,12 +32,12 @@ class ConfiguredAirbyteStreamBuilder:
         self._stream["sync_mode"] = sync_mode.name
         return self
 
-    def with_primary_key(self, pk: List[List[str]]) -> "ConfiguredAirbyteStreamBuilder":
+    def with_primary_key(self, pk: list[list[str]]) -> "ConfiguredAirbyteStreamBuilder":
         self._stream["primary_key"] = pk
         self._stream["stream"]["source_defined_primary_key"] = pk  # type: ignore  # we assume that self._stream["stream"] is a Dict[str, Any]
         return self
 
-    def with_json_schema(self, json_schema: Dict[str, Any]) -> "ConfiguredAirbyteStreamBuilder":
+    def with_json_schema(self, json_schema: dict[str, Any]) -> "ConfiguredAirbyteStreamBuilder":
         self._stream["stream"]["json_schema"] = json_schema
         return self
 
@@ -47,7 +47,7 @@ class ConfiguredAirbyteStreamBuilder:
 
 class CatalogBuilder:
     def __init__(self) -> None:
-        self._streams: List[ConfiguredAirbyteStreamBuilder] = []
+        self._streams: list[ConfiguredAirbyteStreamBuilder] = []
 
     @overload
     def with_stream(self, name: ConfiguredAirbyteStreamBuilder) -> "CatalogBuilder": ...
@@ -57,8 +57,8 @@ class CatalogBuilder:
 
     def with_stream(
         self,
-        name: Union[str, ConfiguredAirbyteStreamBuilder],
-        sync_mode: Union[SyncMode, None] = None,
+        name: str | ConfiguredAirbyteStreamBuilder,
+        sync_mode: SyncMode | None = None,
     ) -> "CatalogBuilder":
         # As we are introducing a fully fledge ConfiguredAirbyteStreamBuilder, we would like to deprecate the previous interface
         # with_stream(str, SyncMode)

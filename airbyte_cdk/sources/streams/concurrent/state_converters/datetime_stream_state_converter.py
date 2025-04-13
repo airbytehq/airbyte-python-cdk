@@ -4,7 +4,8 @@
 
 from abc import abstractmethod
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, List, MutableMapping, Optional, Tuple
+from typing import Any, List, Optional, Tuple
+from collections.abc import Callable, MutableMapping
 
 # FIXME We would eventually like the Concurrent package do be agnostic of the declarative package. However, this is a breaking change and
 #  the goal in the short term is only to fix the issue we are seeing for source-declarative-manifest.
@@ -58,8 +59,8 @@ class DateTimeStreamStateConverter(AbstractStreamStateConverter):
         self,
         cursor_field: CursorField,
         stream_state: MutableMapping[str, Any],
-        start: Optional[datetime],
-    ) -> Tuple[datetime, MutableMapping[str, Any]]:
+        start: datetime | None,
+    ) -> tuple[datetime, MutableMapping[str, Any]]:
         """
         Convert the state message to the format required by the ConcurrentCursor.
 
@@ -97,7 +98,7 @@ class DateTimeStreamStateConverter(AbstractStreamStateConverter):
         self,
         cursor_field: CursorField,
         stream_state: MutableMapping[str, Any],
-        start: Optional[datetime],
+        start: datetime | None,
     ) -> datetime:
         sync_start = start if start is not None else self.zero_value
         prev_sync_low_water_mark = (
@@ -159,7 +160,7 @@ class IsoMillisConcurrentStreamStateConverter(DateTimeStreamStateConverter):
     _zero_value = "0001-01-01T00:00:00.000Z"
 
     def __init__(
-        self, is_sequential_state: bool = True, cursor_granularity: Optional[timedelta] = None
+        self, is_sequential_state: bool = True, cursor_granularity: timedelta | None = None
     ):
         super().__init__(is_sequential_state=is_sequential_state)
         self._cursor_granularity = cursor_granularity or timedelta(milliseconds=1)
@@ -199,9 +200,9 @@ class CustomFormatConcurrentStreamStateConverter(IsoMillisConcurrentStreamStateC
     def __init__(
         self,
         datetime_format: str,
-        input_datetime_formats: Optional[List[str]] = None,
+        input_datetime_formats: list[str] | None = None,
         is_sequential_state: bool = True,
-        cursor_granularity: Optional[timedelta] = None,
+        cursor_granularity: timedelta | None = None,
     ):
         super().__init__(
             is_sequential_state=is_sequential_state, cursor_granularity=cursor_granularity

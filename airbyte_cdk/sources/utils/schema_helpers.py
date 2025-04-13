@@ -7,7 +7,8 @@ import importlib
 import json
 import os
 import pkgutil
-from typing import Any, ClassVar, Dict, List, Mapping, MutableMapping, Optional, Tuple
+from typing import Any, ClassVar, Dict, List, Optional, Tuple
+from collections.abc import Mapping, MutableMapping
 
 import jsonref
 from jsonschema import RefResolver, validate
@@ -29,7 +30,7 @@ class JsonFileLoader:
         self.shared = shared
         self.uri_base = uri_base
 
-    def __call__(self, uri: str) -> Dict[str, Any]:
+    def __call__(self, uri: str) -> dict[str, Any]:
         uri = uri.replace(self.uri_base, f"{self.uri_base}/{self.shared}/")
         with open(uri) as f:
             data = json.load(f)
@@ -63,7 +64,7 @@ def resolve_ref_links(obj: Any) -> Any:
         return obj
 
 
-def _expand_refs(schema: Any, ref_resolver: Optional[RefResolver] = None) -> None:
+def _expand_refs(schema: Any, ref_resolver: RefResolver | None = None) -> None:
     """Internal function to iterate over schema and replace all occurrences of $ref with their definitions. Recursive.
 
     :param schema: schema that will be patched
@@ -82,7 +83,7 @@ def _expand_refs(schema: Any, ref_resolver: Optional[RefResolver] = None) -> Non
         else:
             for key, value in schema.items():
                 _expand_refs(value, ref_resolver=ref_resolver)
-    elif isinstance(schema, List):
+    elif isinstance(schema, list):
         for value in schema:
             _expand_refs(value, ref_resolver=ref_resolver)
 
@@ -134,7 +135,7 @@ class ResourceSchemaLoader:
         schema_filename = f"schemas/{name}.json"
         raw_file = pkgutil.get_data(self.package_name, schema_filename)
         if not raw_file:
-            raise IOError(f"Cannot find file {schema_filename}")
+            raise OSError(f"Cannot find file {schema_filename}")
         try:
             raw_schema = json.loads(raw_file)
         except ValueError as err:
@@ -208,7 +209,7 @@ class InternalConfig(BaseModel):
         return False
 
 
-def split_config(config: Mapping[str, Any]) -> Tuple[dict[str, Any], InternalConfig]:
+def split_config(config: Mapping[str, Any]) -> tuple[dict[str, Any], InternalConfig]:
     """
     Break config map object into 2 instances: first is a dict with user defined
     configuration and second is internal config that contains private keys for

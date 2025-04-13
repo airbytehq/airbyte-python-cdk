@@ -5,7 +5,8 @@
 import logging
 import traceback
 from dataclasses import InitVar, dataclass
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
+from collections.abc import Mapping
 
 from airbyte_cdk import AbstractSource
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
@@ -31,16 +32,16 @@ class CheckStream(ConnectionChecker):
         stream_name (List[str]): names of streams to check
     """
 
-    stream_names: List[str]
+    stream_names: list[str]
     parameters: InitVar[Mapping[str, Any]]
-    dynamic_streams_check_configs: Optional[List[DynamicStreamCheckConfig]] = None
+    dynamic_streams_check_configs: list[DynamicStreamCheckConfig] | None = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._parameters = parameters
         if self.dynamic_streams_check_configs is None:
             self.dynamic_streams_check_configs = []
 
-    def _log_error(self, logger: logging.Logger, action: str, error: Exception) -> Tuple[bool, str]:
+    def _log_error(self, logger: logging.Logger, action: str, error: Exception) -> tuple[bool, str]:
         """Logs an error and returns a formatted error message."""
         error_message = f"Encountered an error while {action}. Error: {error}"
         logger.error(error_message + f"Error traceback: \n {traceback.format_exc()}", exc_info=True)
@@ -48,7 +49,7 @@ class CheckStream(ConnectionChecker):
 
     def check_connection(
         self, source: AbstractSource, logger: logging.Logger, config: Mapping[str, Any]
-    ) -> Tuple[bool, Any]:
+    ) -> tuple[bool, Any]:
         """Checks the connection to the source and its streams."""
         try:
             streams = source.streams(config=config)
@@ -82,8 +83,8 @@ class CheckStream(ConnectionChecker):
         return True, None
 
     def _check_stream_availability(
-        self, stream_name_to_stream: Dict[str, Any], stream_name: str, logger: logging.Logger
-    ) -> Tuple[bool, Any]:
+        self, stream_name_to_stream: dict[str, Any], stream_name: str, logger: logging.Logger
+    ) -> tuple[bool, Any]:
         """Checks if streams are available."""
         availability_strategy = HttpAvailabilityStrategy()
         try:
@@ -98,8 +99,8 @@ class CheckStream(ConnectionChecker):
         return True, None
 
     def _check_dynamic_streams_availability(
-        self, source: AbstractSource, stream_name_to_stream: Dict[str, Any], logger: logging.Logger
-    ) -> Tuple[bool, Any]:
+        self, source: AbstractSource, stream_name_to_stream: dict[str, Any], logger: logging.Logger
+    ) -> tuple[bool, Any]:
         """Checks the availability of dynamic streams."""
         dynamic_streams = source.resolved_manifest.get("dynamic_streams", [])  # type: ignore[attr-defined] # The source's resolved_manifest manifest is checked before calling this method
         dynamic_stream_name_to_dynamic_stream = {
@@ -124,21 +125,21 @@ class CheckStream(ConnectionChecker):
         return True, None
 
     def _map_generated_streams(
-        self, dynamic_streams: List[Dict[str, Any]]
-    ) -> Dict[str, List[Dict[str, Any]]]:
+        self, dynamic_streams: list[dict[str, Any]]
+    ) -> dict[str, list[dict[str, Any]]]:
         """Maps dynamic stream names to their corresponding generated streams."""
-        mapped_streams: Dict[str, List[Dict[str, Any]]] = {}
+        mapped_streams: dict[str, list[dict[str, Any]]] = {}
         for stream in dynamic_streams:
             mapped_streams.setdefault(stream["dynamic_stream_name"], []).append(stream)
         return mapped_streams
 
     def _check_generated_streams_availability(
         self,
-        generated_streams: List[Dict[str, Any]],
-        stream_name_to_stream: Dict[str, Any],
+        generated_streams: list[dict[str, Any]],
+        stream_name_to_stream: dict[str, Any],
         logger: logging.Logger,
         max_count: int,
-    ) -> Tuple[bool, Any]:
+    ) -> tuple[bool, Any]:
         """Checks availability of generated dynamic streams."""
         availability_strategy = HttpAvailabilityStrategy()
         for declarative_stream in generated_streams[: min(max_count, len(generated_streams))]:

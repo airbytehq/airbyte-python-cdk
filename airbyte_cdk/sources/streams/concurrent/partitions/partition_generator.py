@@ -3,7 +3,7 @@
 #
 
 from abc import ABC, abstractmethod
-from typing import Iterable
+from collections.abc import Iterable
 
 from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partition
 

@@ -25,7 +25,7 @@ decoder_jsonl = CompositeRawDecoder(parser=JsonLineParser(), stream_response=Tru
 decoder_iterable = IterableDecoder(parameters={})
 
 
-def create_response(body: Union[Dict, bytes]):
+def create_response(body: dict | bytes):
     response = requests.Response()
     response.raw = io.BytesIO(body if isinstance(body, bytes) else json.dumps(body).encode("utf-8"))
     return response
@@ -113,7 +113,7 @@ def create_response(body: Union[Dict, bytes]):
         "test_extract_from_string_per_line_iterable",
     ],
 )
-def test_dpath_extractor(field_path: List, decoder: Decoder, body, expected_records: List):
+def test_dpath_extractor(field_path: list, decoder: Decoder, body, expected_records: list):
     extractor = DpathExtractor(
         field_path=field_path, config=config, decoder=decoder, parameters=parameters
     )

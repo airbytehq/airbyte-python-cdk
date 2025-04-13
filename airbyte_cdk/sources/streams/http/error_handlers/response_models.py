@@ -21,9 +21,9 @@ class ResponseAction(Enum):
 
 @dataclass
 class ErrorResolution:
-    response_action: Optional[ResponseAction] = None
-    failure_type: Optional[FailureType] = None
-    error_message: Optional[str] = None
+    response_action: ResponseAction | None = None
+    failure_type: FailureType | None = None
+    error_message: str | None = None
 
 
 def _format_exception_error_message(exception: Exception) -> str:
@@ -43,7 +43,7 @@ def _format_response_error_message(response: requests.Response) -> str:
 
 
 def create_fallback_error_resolution(
-    response_or_exception: Optional[Union[requests.Response, Exception]],
+    response_or_exception: requests.Response | Exception | None,
 ) -> ErrorResolution:
     if response_or_exception is None:
         # We do not expect this case to happen but if it does, it would be good to understand the cause and improve the error message

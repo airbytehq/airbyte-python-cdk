@@ -3,7 +3,8 @@
 #
 
 from copy import deepcopy
-from typing import Any, Mapping, Optional, Type
+from typing import Any, Optional, Type
+from collections.abc import Mapping
 
 from airbyte_cdk.sources.file_based.availability_strategy.abstract_file_based_availability_strategy import (
     AbstractFileBasedAvailabilityStrategy,
@@ -25,22 +26,22 @@ from unit_tests.sources.file_based.scenarios.scenario_builder import SourceBuild
 class FileBasedSourceBuilder(SourceBuilder[InMemoryFilesSource]):
     def __init__(self) -> None:
         self._files: Mapping[str, Any] = {}
-        self._file_type: Optional[str] = None
-        self._availability_strategy: Optional[AbstractFileBasedAvailabilityStrategy] = None
+        self._file_type: str | None = None
+        self._availability_strategy: AbstractFileBasedAvailabilityStrategy | None = None
         self._discovery_policy: AbstractDiscoveryPolicy = DefaultDiscoveryPolicy()
-        self._validation_policies: Optional[Mapping[str, AbstractSchemaValidationPolicy]] = None
+        self._validation_policies: Mapping[str, AbstractSchemaValidationPolicy] | None = None
         self._parsers = default_parsers
-        self._stream_reader: Optional[AbstractFileBasedStreamReader] = None
+        self._stream_reader: AbstractFileBasedStreamReader | None = None
         self._file_write_options: Mapping[str, Any] = {}
-        self._cursor_cls: Optional[Type[AbstractFileBasedCursor]] = None
-        self._config: Optional[Mapping[str, Any]] = None
-        self._state: Optional[TState] = None
+        self._cursor_cls: type[AbstractFileBasedCursor] | None = None
+        self._config: Mapping[str, Any] | None = None
+        self._state: TState | None = None
 
     def build(
         self,
-        configured_catalog: Optional[Mapping[str, Any]],
-        config: Optional[Mapping[str, Any]],
-        state: Optional[TState],
+        configured_catalog: Mapping[str, Any] | None,
+        config: Mapping[str, Any] | None,
+        state: TState | None,
     ) -> InMemoryFilesSource:
         if self._file_type is None:
             raise ValueError("file_type is not set")
@@ -67,7 +68,7 @@ class FileBasedSourceBuilder(SourceBuilder[InMemoryFilesSource]):
         self._file_type = file_type
         return self
 
-    def set_parsers(self, parsers: Mapping[Type[Any], FileTypeParser]) -> "FileBasedSourceBuilder":
+    def set_parsers(self, parsers: Mapping[type[Any], FileTypeParser]) -> "FileBasedSourceBuilder":
         self._parsers = parsers
         return self
 

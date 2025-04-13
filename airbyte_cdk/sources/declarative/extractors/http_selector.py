@@ -3,7 +3,8 @@
 #
 
 from abc import abstractmethod
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Optional
+from collections.abc import Iterable, Mapping
 
 import requests
 
@@ -22,8 +23,8 @@ class HttpSelector:
         response: requests.Response,
         stream_state: StreamState,
         records_schema: Mapping[str, Any],
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Record]:
         """
         Selects records from the response

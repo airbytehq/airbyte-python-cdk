@@ -5,7 +5,8 @@ import codecs
 import logging
 from dataclasses import InitVar, dataclass
 from gzip import decompress
-from typing import Any, Generator, List, Mapping, MutableMapping, Optional
+from typing import Any, List, Optional
+from collections.abc import Generator, Mapping, MutableMapping
 
 import orjson
 import requests

@@ -98,7 +98,7 @@ NOW = 1234567
         ("no scope expand", [{}, {"d": "2022-02-03"}], {}),
     ],
 )
-def test_schema_inferrer(test_name, input_records: List, expected_candidate_fields: Dict[str, str]):
+def test_schema_inferrer(test_name, input_records: list, expected_candidate_fields: dict[str, str]):
     inferrer = DatetimeFormatInferrer()
     for record in input_records:
         inferrer.accumulate(AirbyteRecordMessage(stream="abc", data=record, emitted_at=NOW))

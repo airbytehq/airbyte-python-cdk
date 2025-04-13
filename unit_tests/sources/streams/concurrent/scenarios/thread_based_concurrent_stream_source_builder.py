@@ -3,7 +3,8 @@
 #
 import json
 import logging
-from typing import Any, Iterable, List, Mapping, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
+from collections.abc import Iterable, Mapping
 
 from airbyte_cdk.models import (
     ConfiguredAirbyteCatalog,
@@ -28,15 +29,15 @@ from unit_tests.sources.file_based.scenarios.scenario_builder import SourceBuild
 
 
 class LegacyStream(Stream):
-    def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
+    def primary_key(self) -> str | list[str] | list[list[str]] | None:
         return None
 
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
         yield from []
 
@@ -44,8 +45,8 @@ class LegacyStream(Stream):
 class ConcurrentCdkSource(ConcurrentSourceAdapter):
     def __init__(
         self,
-        streams: List[DefaultStream],
-        message_repository: Optional[MessageRepository],
+        streams: list[DefaultStream],
+        message_repository: MessageRepository | None,
         max_workers,
         timeout_in_seconds,
     ):
@@ -58,11 +59,11 @@ class ConcurrentCdkSource(ConcurrentSourceAdapter):
 
     def check_connection(
         self, logger: logging.Logger, config: Mapping[str, Any]
-    ) -> Tuple[bool, Optional[Any]]:
+    ) -> tuple[bool, Any | None]:
         # Check is not verified because it is up to the source to implement this method
         return True, None
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> list[Stream]:
         return [
             StreamFacade(
                 s,
@@ -104,12 +105,12 @@ class ConcurrentCdkSource(ConcurrentSourceAdapter):
         )
 
     @property
-    def message_repository(self) -> Union[None, MessageRepository]:
+    def message_repository(self) -> None | MessageRepository:
         return self._message_repository
 
 
 class InMemoryPartitionGenerator(PartitionGenerator):
-    def __init__(self, partitions: List[Partition]):
+    def __init__(self, partitions: list[Partition]):
         self._partitions = partitions
 
     def generate(self) -> Iterable[Partition]:
@@ -134,7 +135,7 @@ class InMemoryPartition(Partition):
             else:
                 yield record_or_exception
 
-    def to_slice(self) -> Optional[Mapping[str, Any]]:
+    def to_slice(self) -> Mapping[str, Any] | None:
         return self._slice
 
     def __hash__(self) -> int:
@@ -154,13 +155,13 @@ class InMemoryPartition(Partition):
 
 class ConcurrentSourceBuilder(SourceBuilder[ConcurrentCdkSource]):
     def __init__(self):
-        self._streams: List[DefaultStream] = []
+        self._streams: list[DefaultStream] = []
         self._message_repository = None
 
-    def build(self, configured_catalog: Optional[Mapping[str, Any]], _, __) -> ConcurrentCdkSource:
+    def build(self, configured_catalog: Mapping[str, Any] | None, _, __) -> ConcurrentCdkSource:
         return ConcurrentCdkSource(self._streams, self._message_repository, 1, 1)
 
-    def set_streams(self, streams: List[DefaultStream]) -> "ConcurrentSourceBuilder":
+    def set_streams(self, streams: list[DefaultStream]) -> "ConcurrentSourceBuilder":
         self._streams = streams
         return self
 

@@ -4,7 +4,8 @@
 
 from dataclasses import InitVar, dataclass
 from enum import Enum
-from typing import Any, List, Literal, Mapping, MutableMapping, Optional, Union
+from typing import Any, List, Literal, Optional, Union
+from collections.abc import Mapping, MutableMapping
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.types import Config
@@ -35,8 +36,8 @@ class RequestOption:
 
     inject_into: RequestOptionType
     parameters: InitVar[Mapping[str, Any]]
-    field_name: Optional[Union[InterpolatedString, str]] = None
-    field_path: Optional[List[Union[InterpolatedString, str]]] = None
+    field_name: InterpolatedString | str | None = None
+    field_path: list[InterpolatedString | str] | None = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         # Validate inputs. We should expect either field_name or field_path, but not both
@@ -94,14 +95,14 @@ class RequestOption:
             current = target
             # Convert path segments into strings, evaluating any interpolated segments
             # Example: ["data", "{{ config[user_type] }}", "id"] -> ["data", "admin", "id"]
-            *path_parts, final_key = [
+            *path_parts, final_key = (
                 str(
                     segment.eval(config=config)
                     if isinstance(segment, InterpolatedString)
                     else segment
                 )
                 for segment in self.field_path
-            ]
+            )
 
             # Build a nested dictionary structure and set the final value at the deepest level
             for part in path_parts:

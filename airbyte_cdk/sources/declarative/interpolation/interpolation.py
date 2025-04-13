@@ -19,7 +19,7 @@ class Interpolation(ABC):
         self,
         input_str: str,
         config: Config,
-        default: Optional[str] = None,
+        default: str | None = None,
         **additional_options: Any,
     ) -> Any:
         """

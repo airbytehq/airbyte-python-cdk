@@ -4,7 +4,8 @@ import logging
 import sys
 import threading
 import time
-from typing import Callable, List, Mapping, Optional, Set, Tuple
+from typing import List, Optional, Set, Tuple
+from collections.abc import Callable, Mapping
 from unittest import TestCase, mock
 from unittest.mock import MagicMock, Mock, call
 
@@ -63,11 +64,11 @@ class AsyncPartitionTest(TestCase):
 
 
 def _status_update_per_jobs(
-    status_update_per_jobs: Mapping[AsyncJob, List[AsyncJobStatus]],
+    status_update_per_jobs: Mapping[AsyncJob, list[AsyncJobStatus]],
 ) -> Callable[[set[AsyncJob]], None]:
     status_index_by_job = {job: 0 for job in status_update_per_jobs.keys()}
 
-    def _update_status(jobs: Set[AsyncJob]) -> None:
+    def _update_status(jobs: set[AsyncJob]) -> None:
         for job in jobs:
             status_index = status_index_by_job[job]
             job.update_status(status_update_per_jobs[job][status_index])
@@ -183,7 +184,7 @@ class AsyncJobOrchestratorTest(TestCase):
         assert self._job_repository.delete.mock_calls == [call(first_job), call(second_job)]
 
     def _orchestrator(
-        self, slices: List[StreamSlice], job_tracker: Optional[JobTracker] = None
+        self, slices: list[StreamSlice], job_tracker: JobTracker | None = None
     ) -> AsyncJobOrchestrator:
         job_tracker = job_tracker if job_tracker else JobTracker(_NO_JOB_LIMIT)
         return AsyncJobOrchestrator(
@@ -366,7 +367,7 @@ class AsyncJobOrchestratorTest(TestCase):
 
     def _accumulate_create_and_get_completed_partitions(
         self, orchestrator: AsyncJobOrchestrator
-    ) -> Tuple[List[AsyncPartition], Optional[Exception]]:
+    ) -> tuple[list[AsyncPartition], Exception | None]:
         result = []
         try:
             for i in orchestrator.create_and_get_completed_partitions():

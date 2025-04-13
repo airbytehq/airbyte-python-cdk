@@ -17,7 +17,7 @@ if typing.TYPE_CHECKING:
 class HttpAvailabilityStrategy(AvailabilityStrategy):
     def check_availability(
         self, stream: Stream, logger: logging.Logger, source: Optional["Source"] = None
-    ) -> Tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """
         Check stream availability by attempting to read the first record of the
         stream.
@@ -30,7 +30,7 @@ class HttpAvailabilityStrategy(AvailabilityStrategy):
           for some reason and the str should describe what went wrong and how to
           resolve the unavailability, if possible.
         """
-        reason: Optional[str]
+        reason: str | None
         try:
             # Some streams need a stream slice to read records (e.g. if they have a SubstreamPartitionRouter)
             # Streams that don't need a stream slice will return `None` as their first stream slice.

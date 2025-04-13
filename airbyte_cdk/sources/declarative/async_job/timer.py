@@ -5,8 +5,8 @@ from typing import Optional
 
 class Timer:
     def __init__(self, timeout: timedelta) -> None:
-        self._start_datetime: Optional[datetime] = None
-        self._end_datetime: Optional[datetime] = None
+        self._start_datetime: datetime | None = None
+        self._end_datetime: datetime | None = None
         self._timeout = timeout
 
     def start(self) -> None:
@@ -21,7 +21,7 @@ class Timer:
         return self._start_datetime is not None
 
     @property
-    def elapsed_time(self) -> Optional[timedelta]:
+    def elapsed_time(self) -> timedelta | None:
         if not self._start_datetime:
             return None
 

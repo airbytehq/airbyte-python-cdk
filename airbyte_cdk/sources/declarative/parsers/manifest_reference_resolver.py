@@ -3,7 +3,8 @@
 #
 
 import re
-from typing import Any, Mapping, Set, Tuple, Union
+from typing import Any, Set, Tuple, Union
+from collections.abc import Mapping
 
 from airbyte_cdk.sources.declarative.parsers.custom_exceptions import (
     CircularReferenceException,
@@ -106,7 +107,7 @@ class ManifestReferenceResolver:
         """
         return self._evaluate_node(manifest, manifest, set())  # type: ignore[no-any-return]
 
-    def _evaluate_node(self, node: Any, manifest: Mapping[str, Any], visited: Set[Any]) -> Any:
+    def _evaluate_node(self, node: Any, manifest: Mapping[str, Any], visited: set[Any]) -> Any:
         if isinstance(node, dict):
             evaluated_dict = {
                 k: self._evaluate_node(v, manifest, visited)
@@ -185,7 +186,7 @@ class ManifestReferenceResolver:
         return manifest_node
 
 
-def _parse_path(ref: str) -> Tuple[Union[str, int], str]:
+def _parse_path(ref: str) -> tuple[str | int, str]:
     """
     Return the next path component, together with the rest of the path.
 

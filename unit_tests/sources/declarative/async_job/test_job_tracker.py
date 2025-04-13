@@ -37,7 +37,7 @@ class JobTrackerTest(TestCase):
         with pytest.raises(ConcurrentJobLimitReached):
             self._tracker.try_to_get_intent()
 
-    def _reach_limit(self) -> List[str]:
+    def _reach_limit(self) -> list[str]:
         return [self._tracker.try_to_get_intent() for i in range(_LIMIT)]
 
 

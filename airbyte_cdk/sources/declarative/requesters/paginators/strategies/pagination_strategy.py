@@ -19,7 +19,7 @@ class PaginationStrategy:
 
     @property
     @abstractmethod
-    def initial_token(self) -> Optional[Any]:
+    def initial_token(self) -> Any | None:
         """
         Return the initial value of the token
         """
@@ -29,9 +29,9 @@ class PaginationStrategy:
         self,
         response: requests.Response,
         last_page_size: int,
-        last_record: Optional[Record],
-        last_page_token_value: Optional[Any],
-    ) -> Optional[Any]:
+        last_record: Record | None,
+        last_page_token_value: Any | None,
+    ) -> Any | None:
         """
         :param response: response to process
         :param last_page_size: the number of records read from the response
@@ -42,7 +42,7 @@ class PaginationStrategy:
         pass
 
     @abstractmethod
-    def get_page_size(self) -> Optional[int]:
+    def get_page_size(self) -> int | None:
         """
         :return: page size: The number of records to fetch in a page. Returns None if unspecified
         """

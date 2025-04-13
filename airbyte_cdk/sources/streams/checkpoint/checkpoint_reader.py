@@ -2,7 +2,8 @@
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Optional
+from collections.abc import Iterable, Mapping
 
 from airbyte_cdk.sources.types import StreamSlice
 
@@ -25,7 +26,7 @@ class CheckpointReader(ABC):
     """
 
     @abstractmethod
-    def next(self) -> Optional[Mapping[str, Any]]:
+    def next(self) -> Mapping[str, Any] | None:
         """
         Returns the next slice that will be used to fetch the next group of records. Returning None indicates that the reader
         has finished iterating over all slices.
@@ -41,7 +42,7 @@ class CheckpointReader(ABC):
         """
 
     @abstractmethod
-    def get_checkpoint(self) -> Optional[Mapping[str, Any]]:
+    def get_checkpoint(self) -> Mapping[str, Any] | None:
         """
         Retrieves the current state value of the stream. The connector does not emit state messages if the checkpoint value is None.
         """
@@ -54,13 +55,13 @@ class IncrementalCheckpointReader(CheckpointReader):
     """
 
     def __init__(
-        self, stream_state: Mapping[str, Any], stream_slices: Iterable[Optional[Mapping[str, Any]]]
+        self, stream_state: Mapping[str, Any], stream_slices: Iterable[Mapping[str, Any] | None]
     ):
-        self._state: Optional[Mapping[str, Any]] = stream_state
+        self._state: Mapping[str, Any] | None = stream_state
         self._stream_slices = iter(stream_slices)
         self._has_slices = False
 
-    def next(self) -> Optional[Mapping[str, Any]]:
+    def next(self) -> Mapping[str, Any] | None:
         try:
             next_slice = next(self._stream_slices)
             self._has_slices = True
@@ -76,7 +77,7 @@ class IncrementalCheckpointReader(CheckpointReader):
     def observe(self, new_state: Mapping[str, Any]) -> None:
         self._state = new_state
 
-    def get_checkpoint(self) -> Optional[Mapping[str, Any]]:
+    def get_checkpoint(self) -> Mapping[str, Any] | None:
         return self._state
 
 
@@ -92,7 +93,7 @@ class CursorBasedCheckpointReader(CheckpointReader):
     def __init__(
         self,
         cursor: Cursor,
-        stream_slices: Iterable[Optional[Mapping[str, Any]]],
+        stream_slices: Iterable[Mapping[str, Any] | None],
         read_state_from_cursor: bool = False,
     ):
         self._cursor = cursor
@@ -100,11 +101,11 @@ class CursorBasedCheckpointReader(CheckpointReader):
         # read_state_from_cursor is used to delineate that partitions should determine when to stop syncing dynamically according
         # to the value of the state at runtime. This currently only applies to streams that use resumable full refresh.
         self._read_state_from_cursor = read_state_from_cursor
-        self._current_slice: Optional[StreamSlice] = None
+        self._current_slice: StreamSlice | None = None
         self._finished_sync = False
-        self._previous_state: Optional[Mapping[str, Any]] = None
+        self._previous_state: Mapping[str, Any] | None = None
 
-    def next(self) -> Optional[Mapping[str, Any]]:
+    def next(self) -> Mapping[str, Any] | None:
         try:
             self.current_slice = self._find_next_slice()
             return self.current_slice
@@ -117,7 +118,7 @@ class CursorBasedCheckpointReader(CheckpointReader):
         # while processing records
         pass
 
-    def get_checkpoint(self) -> Optional[Mapping[str, Any]]:
+    def get_checkpoint(self) -> Mapping[str, Any] | None:
         # This is used to avoid sending a duplicate state messages
         new_state = self._cursor.get_stream_state()
         if new_state != self._previous_state:
@@ -194,7 +195,7 @@ class CursorBasedCheckpointReader(CheckpointReader):
             return self.read_and_convert_slice()
 
     @property
-    def current_slice(self) -> Optional[StreamSlice]:
+    def current_slice(self) -> StreamSlice | None:
         return self._current_slice
 
     @current_slice.setter
@@ -234,7 +235,7 @@ class LegacyCursorBasedCheckpointReader(CursorBasedCheckpointReader):
     def __init__(
         self,
         cursor: Cursor,
-        stream_slices: Iterable[Optional[Mapping[str, Any]]],
+        stream_slices: Iterable[Mapping[str, Any] | None],
         read_state_from_cursor: bool = False,
     ):
         super().__init__(
@@ -243,7 +244,7 @@ class LegacyCursorBasedCheckpointReader(CursorBasedCheckpointReader):
             read_state_from_cursor=read_state_from_cursor,
         )
 
-    def next(self) -> Optional[Mapping[str, Any]]:
+    def next(self) -> Mapping[str, Any] | None:
         try:
             self.current_slice = self._find_next_slice()
 
@@ -293,7 +294,7 @@ class ResumableFullRefreshCheckpointReader(CheckpointReader):
         self._first_page = bool(stream_state == {})
         self._state: Mapping[str, Any] = stream_state
 
-    def next(self) -> Optional[Mapping[str, Any]]:
+    def next(self) -> Mapping[str, Any] | None:
         if self._first_page:
             self._first_page = False
             return self._state
@@ -305,7 +306,7 @@ class ResumableFullRefreshCheckpointReader(CheckpointReader):
     def observe(self, new_state: Mapping[str, Any]) -> None:
         self._state = new_state
 
-    def get_checkpoint(self) -> Optional[Mapping[str, Any]]:
+    def get_checkpoint(self) -> Mapping[str, Any] | None:
         return self._state or {}
 
 
@@ -315,11 +316,11 @@ class FullRefreshCheckpointReader(CheckpointReader):
     is not capable of managing state. At the end of a sync, a final state message is emitted to signal completion.
     """
 
-    def __init__(self, stream_slices: Iterable[Optional[Mapping[str, Any]]]):
+    def __init__(self, stream_slices: Iterable[Mapping[str, Any] | None]):
         self._stream_slices = iter(stream_slices)
         self._final_checkpoint = False
 
-    def next(self) -> Optional[Mapping[str, Any]]:
+    def next(self) -> Mapping[str, Any] | None:
         try:
             return next(self._stream_slices)
         except StopIteration:
@@ -329,7 +330,7 @@ class FullRefreshCheckpointReader(CheckpointReader):
     def observe(self, new_state: Mapping[str, Any]) -> None:
         pass
 
-    def get_checkpoint(self) -> Optional[Mapping[str, Any]]:
+    def get_checkpoint(self) -> Mapping[str, Any] | None:
         if self._final_checkpoint:
             return {"__ab_no_cursor_state_message": True}
         return None

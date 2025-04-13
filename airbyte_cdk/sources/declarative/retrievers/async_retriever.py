@@ -2,7 +2,8 @@
 
 
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Optional
+from collections.abc import Iterable, Mapping
 
 from airbyte_cdk.sources.declarative.async_job.job import AsyncJob
 from airbyte_cdk.sources.declarative.extractors.record_selector import RecordSelector
@@ -84,7 +85,7 @@ class AsyncRetriever(Retriever):
         return self.state
 
     def _validate_and_get_stream_slice_jobs(
-        self, stream_slice: Optional[StreamSlice] = None
+        self, stream_slice: StreamSlice | None = None
     ) -> Iterable[AsyncJob]:
         """
         Validates the stream_slice argument and returns the partition from it.
@@ -101,13 +102,13 @@ class AsyncRetriever(Retriever):
         """
         return stream_slice.extra_fields.get("jobs", []) if stream_slice else []
 
-    def stream_slices(self) -> Iterable[Optional[StreamSlice]]:
+    def stream_slices(self) -> Iterable[StreamSlice | None]:
         yield from self.stream_slicer.stream_slices()
 
     def read_records(
         self,
         records_schema: Mapping[str, Any],
-        stream_slice: Optional[StreamSlice] = None,
+        stream_slice: StreamSlice | None = None,
     ) -> Iterable[StreamData]:
         # emit the slice_descriptor log message, for connector builder TestRead
         yield self.slice_logger.create_slice_log_message(stream_slice.cursor_slice)  # type: ignore

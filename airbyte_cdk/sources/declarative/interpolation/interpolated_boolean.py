@@ -3,12 +3,13 @@
 #
 
 from dataclasses import InitVar, dataclass
-from typing import Any, Final, List, Mapping
+from typing import Any, Final, List
+from collections.abc import Mapping
 
 from airbyte_cdk.sources.declarative.interpolation.jinja import JinjaInterpolation
 from airbyte_cdk.sources.types import Config
 
-FALSE_VALUES: Final[List[Any]] = [
+FALSE_VALUES: Final[list[Any]] = [
     "False",
     "false",
     "{}",

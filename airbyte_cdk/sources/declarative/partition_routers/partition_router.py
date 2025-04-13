@@ -4,7 +4,8 @@
 
 from abc import abstractmethod
 from dataclasses import dataclass
-from typing import Mapping, Optional
+from typing import Optional
+from collections.abc import Mapping
 
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
 from airbyte_cdk.sources.types import StreamState
@@ -41,7 +42,7 @@ class PartitionRouter(StreamSlicer):
         """
 
     @abstractmethod
-    def get_stream_state(self) -> Optional[Mapping[str, StreamState]]:
+    def get_stream_state(self) -> Mapping[str, StreamState] | None:
         """
         Get the state of the parent streams.
 

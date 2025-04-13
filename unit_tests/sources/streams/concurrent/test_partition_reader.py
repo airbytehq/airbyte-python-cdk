@@ -3,7 +3,8 @@
 #
 import unittest
 from queue import Queue
-from typing import Callable, Iterable, List
+from typing import List
+from collections.abc import Callable, Iterable
 from unittest.mock import Mock
 
 import pytest
@@ -61,14 +62,14 @@ class PartitionReaderTest(unittest.TestCase):
             PartitionCompleteSentinel(partition),
         ]
 
-    def _a_partition(self, records: List[Record]) -> Partition:
+    def _a_partition(self, records: list[Record]) -> Partition:
         partition = Mock(spec=Partition)
         partition.read.return_value = iter(records)
         return partition
 
     @staticmethod
     def _read_with_exception(
-        records: List[Record], exception: Exception
+        records: list[Record], exception: Exception
     ) -> Callable[[], Iterable[Record]]:
         def mocked_function() -> Iterable[Record]:
             yield from records

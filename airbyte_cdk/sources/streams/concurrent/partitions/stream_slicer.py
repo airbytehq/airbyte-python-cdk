@@ -1,7 +1,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 from abc import ABC, abstractmethod
-from typing import Iterable
+from collections.abc import Iterable
 
 from airbyte_cdk.sources.types import StreamSlice
 

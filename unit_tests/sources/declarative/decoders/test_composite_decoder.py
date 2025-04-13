@@ -8,7 +8,7 @@ import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from io import BytesIO, StringIO
 from threading import Thread
-from typing import Iterable
+from collections.abc import Iterable
 from unittest.mock import Mock, patch
 
 import pytest

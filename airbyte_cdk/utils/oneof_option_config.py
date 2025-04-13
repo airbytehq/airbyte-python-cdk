@@ -26,7 +26,7 @@ class OneOfOptionConfig:
     """
 
     @staticmethod
-    def schema_extra(schema: Dict[str, Any], model: Any) -> None:
+    def schema_extra(schema: dict[str, Any], model: Any) -> None:
         if hasattr(model.Config, "description"):
             schema["description"] = model.Config.description
         if hasattr(model.Config, "discriminator"):

@@ -4,7 +4,8 @@
 
 import logging
 from enum import Flag, auto
-from typing import Any, Callable, Dict, Generator, Mapping, Optional, cast
+from typing import Any, Dict, Optional, cast
+from collections.abc import Callable, Generator, Mapping
 
 from jsonschema import Draft7Validator, RefResolver, ValidationError, Validator, validators
 
@@ -68,7 +69,7 @@ class TypeTransformer:
     Class for transforming object before output.
     """
 
-    _custom_normalizer: Optional[Callable[[Any, Dict[str, Any]], Any]] = None
+    _custom_normalizer: Callable[[Any, dict[str, Any]], Any] | None = None
 
     def __init__(self, config: TransformConfig):
         """
@@ -106,7 +107,7 @@ class TypeTransformer:
         self._custom_normalizer = normalization_callback
         return normalization_callback
 
-    def __normalize(self, original_item: Any, subschema: Dict[str, Any]) -> Any:
+    def __normalize(self, original_item: Any, subschema: dict[str, Any]) -> Any:
         """
         Applies different transform function to object's field according to config.
         :param original_item original value of field.
@@ -121,7 +122,7 @@ class TypeTransformer:
         return original_item
 
     @staticmethod
-    def default_convert(original_item: Any, subschema: Dict[str, Any]) -> Any:
+    def default_convert(original_item: Any, subschema: dict[str, Any]) -> Any:
         """
         Default transform function that is used when TransformConfig.DefaultSchemaNormalization flag set.
         :param original_item original value of field.
@@ -178,7 +179,7 @@ class TypeTransformer:
             validator_instance: Validator,
             property_value: Any,
             instance: Any,
-            schema: Dict[str, Any],
+            schema: dict[str, Any],
         ) -> Generator[Any, Any, None]:
             """
             Jsonschema validator callable it uses for validating instance. We
@@ -228,7 +229,7 @@ class TypeTransformer:
 
     def transform(
         self,
-        record: Dict[str, Any],
+        record: dict[str, Any],
         schema: Mapping[str, Any],
     ) -> None:
         """

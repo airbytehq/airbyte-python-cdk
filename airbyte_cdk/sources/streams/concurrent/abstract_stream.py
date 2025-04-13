@@ -3,7 +3,8 @@
 #
 
 from abc import ABC, abstractmethod
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Optional
+from collections.abc import Iterable, Mapping
 
 from typing_extensions import deprecated
 
@@ -58,7 +59,7 @@ class AbstractStream(ABC):
 
     @property
     @abstractmethod
-    def cursor_field(self) -> Optional[str]:
+    def cursor_field(self) -> str | None:
         """
         Override to return the default cursor field used by this stream e.g: an API entity might always use created_at as the cursor field.
         :return: The name of the field used as a cursor. Nested cursor fields are not supported.

@@ -7,7 +7,8 @@ import logging
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Generator, Literal, Optional
+from typing import Any, Literal, Optional
+from collections.abc import Generator
 
 logger = logging.getLogger("airbyte")
 
@@ -60,7 +61,7 @@ class EventTimer:
 class Event:
     name: str
     start: float = field(default_factory=time.perf_counter_ns)
-    end: Optional[float] = field(default=None)
+    end: float | None = field(default=None)
 
     @property
     def duration(self) -> float:
