@@ -2,9 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from copy import deepcopy
-from typing import Any, Optional, Type
 from collections.abc import Mapping
+from copy import deepcopy
+from typing import Any, Optional
 
 from airbyte_cdk.sources.file_based.availability_strategy.abstract_file_based_availability_strategy import (
     AbstractFileBasedAvailabilityStrategy,
