@@ -2,7 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from collections.abc import list, Union
+from typing import List, Union
 
 from pydantic.v1 import BaseModel, Field
 

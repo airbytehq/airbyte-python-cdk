@@ -3,7 +3,7 @@
 #
 
 from typing import Any
-from collections.abc import list
+from typing import List
 from collections.abc import Mapping
 
 import pytest

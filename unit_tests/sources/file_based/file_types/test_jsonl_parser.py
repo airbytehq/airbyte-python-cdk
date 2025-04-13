@@ -6,7 +6,7 @@ import asyncio
 import io
 import json
 from typing import Any
-from collections.abc import dict
+from typing import Dict
 from unittest.mock import MagicMock, Mock
 
 import pytest

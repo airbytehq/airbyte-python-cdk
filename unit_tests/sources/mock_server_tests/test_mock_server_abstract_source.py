@@ -3,7 +3,7 @@
 #
 
 from datetime import datetime, timedelta, timezone
-from collections.abc import list, Optional
+from typing import List, Optional
 from unittest import TestCase
 
 import freezegun

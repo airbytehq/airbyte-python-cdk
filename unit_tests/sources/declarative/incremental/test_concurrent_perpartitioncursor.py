@@ -3,7 +3,7 @@ import copy
 from copy import deepcopy
 from datetime import datetime, timedelta
 from typing import Any
-from collections.abc import list, Optional, Union
+from typing import List, Optional, Union
 from collections.abc import Mapping, MutableMapping
 from unittest.mock import MagicMock, patch
 from urllib.parse import unquote

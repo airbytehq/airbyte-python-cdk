@@ -3,8 +3,8 @@
 #
 import io
 import json
-from collections.abc import dict
-from collections.abc import list, Union
+from typing import Dict
+from typing import List, Union
 
 import pytest
 import requests

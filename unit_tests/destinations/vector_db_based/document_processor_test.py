@@ -3,7 +3,7 @@
 #
 
 from typing import Any
-from collections.abc import list, Optional
+from typing import List, Optional
 from collections.abc import Mapping
 from unittest.mock import MagicMock
 

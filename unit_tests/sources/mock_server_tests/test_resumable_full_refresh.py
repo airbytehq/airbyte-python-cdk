@@ -4,7 +4,7 @@
 
 from datetime import datetime, timezone
 from typing import Any
-from collections.abc import dict, List, Optional
+from typing import Dict, List, Optional
 from unittest import TestCase
 
 import freezegun

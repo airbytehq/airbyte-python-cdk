@@ -2,8 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from collections.abc import dict
-from collections.abc import list
+from typing import Dict
+from typing import List
 
 import pytest
 

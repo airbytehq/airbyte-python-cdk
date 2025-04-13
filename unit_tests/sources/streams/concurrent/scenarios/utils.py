@@ -2,7 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 from typing import Any
-from collections.abc import list, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 from collections.abc import Iterable, Mapping
 
 from airbyte_cdk.models import SyncMode

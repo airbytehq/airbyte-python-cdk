@@ -3,7 +3,7 @@
 
 import logging
 from typing import Any
-from collections.abc import list, Optional, Set, Tuple
+from typing import List, Optional, Set, Tuple
 from collections.abc import Iterable, Mapping
 from unittest import TestCase, mock
 

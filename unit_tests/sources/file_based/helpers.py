@@ -6,7 +6,7 @@ import logging
 from datetime import datetime
 from io import IOBase
 from typing import Any
-from collections.abc import dict, List, Optional
+from typing import Dict, List, Optional
 from collections.abc import Mapping
 
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig

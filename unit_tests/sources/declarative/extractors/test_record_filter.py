@@ -1,7 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-from collections.abc import list, Optional
+from typing import List, Optional
 from collections.abc import Mapping
 
 import pytest

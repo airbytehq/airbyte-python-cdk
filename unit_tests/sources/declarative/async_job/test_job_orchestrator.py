@@ -4,7 +4,7 @@ import logging
 import sys
 import threading
 import time
-from collections.abc import list, Optional, Set, Tuple
+from typing import List, Optional, Set, Tuple
 from collections.abc import Callable, Mapping
 from unittest import TestCase, mock
 from unittest.mock import MagicMock, Mock, call

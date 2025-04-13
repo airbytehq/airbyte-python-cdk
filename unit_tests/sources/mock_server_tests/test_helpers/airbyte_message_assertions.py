@@ -2,7 +2,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
-from collections.abc import list
+from typing import List
 
 import pytest
 

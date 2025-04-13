@@ -8,7 +8,7 @@ import json
 from os import PathLike
 from pathlib import Path
 from typing import Any
-from collections.abc import dict, List, Union
+from typing import Dict, List, Union
 from collections.abc import Iterable, Mapping
 from unittest.mock import ANY
 

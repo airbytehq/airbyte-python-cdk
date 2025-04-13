@@ -4,7 +4,7 @@ import json
 import logging
 import os
 from typing import Any
-from collections.abc import list, Optional
+from typing import List, Optional
 from collections.abc import Iterator, Mapping
 from unittest import TestCase
 from unittest.mock import Mock, patch

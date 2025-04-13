@@ -7,7 +7,7 @@ from argparse import Namespace
 from collections import defaultdict
 from copy import deepcopy
 from typing import Any
-from collections.abc import list, Union
+from typing import List, Union
 from collections.abc import Mapping, MutableMapping
 from unittest import mock
 from unittest.mock import MagicMock, patch
