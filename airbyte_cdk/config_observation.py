@@ -57,7 +57,7 @@ class ObservedDict(dict):  # type: ignore # disallow_any_generics is set to True
             for i, sub_value in enumerate(value):
                 if isinstance(sub_value, MutableMapping):
                     value[i] = ObservedDict(sub_value, self.observer)
-        super(ObservedDict, self).__setitem__(item, value)
+        super().__setitem__(item, value)
         if self.update_on_unchanged_value or value != previous_value:
             self.observer.update()
 

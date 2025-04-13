@@ -92,8 +92,7 @@ class PartitionEnqueuerTest(unittest.TestCase):
         self, partitions: list[Partition], exception: Exception
     ) -> Callable[[], Iterable[Partition]]:
         def inner_function() -> Iterable[Partition]:
-            for partition in partitions:
-                yield partition
+            yield from partitions
             raise exception
 
         return inner_function

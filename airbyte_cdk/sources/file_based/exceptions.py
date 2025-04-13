@@ -63,7 +63,7 @@ class FileBasedErrorsCollector:
 
 
 class BaseFileBasedSourceError(Exception):
-    def __init__(self, error: Union[FileBasedSourceError, str], **kwargs):  # type: ignore # noqa
+    def __init__(self, error: FileBasedSourceError | str, **kwargs):  # type: ignore # noqa
         if isinstance(error, FileBasedSourceError):
             error = FileBasedSourceError(error).value
         super().__init__(

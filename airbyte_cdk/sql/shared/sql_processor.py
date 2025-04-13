@@ -210,7 +210,7 @@ class SqlProcessorBase(abc.ABC):
         return self.sql_config.get_sql_engine()
 
     @contextmanager
-    def get_sql_connection(self) -> Generator[sqlalchemy.engine.Connection, None, None]:
+    def get_sql_connection(self) -> Generator[sqlalchemy.engine.Connection]:
         """A context manager which returns a new SQL connection for running queries.
 
         If the connection needs to close, it will be closed automatically.
