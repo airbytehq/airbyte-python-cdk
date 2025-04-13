@@ -3,7 +3,8 @@
 #
 
 import json
-from typing import Any, List
+from typing import Any
+from collections.abc import list
 from collections.abc import Iterator, Mapping
 from unittest.mock import MagicMock, Mock, patch
 

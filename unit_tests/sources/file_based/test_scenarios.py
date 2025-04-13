@@ -5,7 +5,8 @@
 import json
 import math
 from pathlib import Path, PosixPath
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
+from collections.abc import dict, List, Optional, Union
 from collections.abc import Mapping
 
 import pytest

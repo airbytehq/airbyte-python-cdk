@@ -4,7 +4,8 @@
 
 import json
 import os
-from typing import Any, List
+from typing import Any
+from collections.abc import list
 from collections.abc import Mapping
 from unittest import mock
 from unittest.mock import patch

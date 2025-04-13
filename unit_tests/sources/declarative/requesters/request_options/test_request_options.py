@@ -1,4 +1,5 @@
-from typing import Any, Dict, List, Optional, Type
+from typing import Any
+from collections.abc import dict, List, Optional, Type
 
 import pytest
 

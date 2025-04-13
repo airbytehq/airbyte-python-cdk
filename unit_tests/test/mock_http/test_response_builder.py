@@ -2,7 +2,8 @@
 import json
 from copy import deepcopy
 from pathlib import Path as FilePath
-from typing import Any, Dict, Optional, Union
+from typing import Any
+from collections.abc import dict, Optional, Union
 from unittest import TestCase
 from unittest.mock import Mock
 

@@ -2,7 +2,8 @@
 
 
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
+from collections.abc import dict, List, Optional, Tuple
 from collections.abc import MutableMapping
 from unittest.mock import MagicMock
 

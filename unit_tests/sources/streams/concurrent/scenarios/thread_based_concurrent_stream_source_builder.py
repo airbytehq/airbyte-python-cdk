@@ -3,7 +3,8 @@
 #
 import json
 import logging
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any
+from collections.abc import list, Optional, Tuple, Union
 from collections.abc import Iterable, Mapping
 
 from airbyte_cdk.models import (

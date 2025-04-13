@@ -3,7 +3,7 @@
 #
 import unittest
 from queue import Queue
-from typing import List
+from collections.abc import list
 from collections.abc import Callable, Iterable
 from unittest.mock import Mock, patch
 

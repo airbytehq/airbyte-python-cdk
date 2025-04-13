@@ -9,7 +9,8 @@ import logging
 import tempfile
 from datetime import datetime
 from io import IOBase
-from typing import Any, Dict, List, Optional
+from typing import Any
+from collections.abc import dict, List, Optional
 from collections.abc import Iterable, Mapping
 
 import avro.io as ai

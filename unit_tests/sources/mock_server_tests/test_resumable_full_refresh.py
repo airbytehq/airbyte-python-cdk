@@ -3,7 +3,8 @@
 #
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
+from collections.abc import dict, List, Optional
 from unittest import TestCase
 
 import freezegun

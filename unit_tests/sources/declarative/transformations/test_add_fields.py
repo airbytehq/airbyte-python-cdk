@@ -2,7 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Any, List, Optional, Tuple
+from typing import Any
+from collections.abc import list, Optional, Tuple
 from collections.abc import Mapping
 
 import pytest

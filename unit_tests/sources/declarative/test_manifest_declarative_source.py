@@ -8,7 +8,8 @@ import os
 import sys
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, List
+from typing import Any
+from collections.abc import list
 from collections.abc import Mapping
 from unittest.mock import call, patch
 

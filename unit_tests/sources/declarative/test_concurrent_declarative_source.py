@@ -6,7 +6,8 @@ import copy
 import json
 import math
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
+from collections.abc import dict, List, Optional, Tuple, Union
 from collections.abc import Iterable, Mapping
 from unittest.mock import patch
 

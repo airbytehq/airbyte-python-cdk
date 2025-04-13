@@ -5,7 +5,8 @@
 import logging
 from datetime import datetime
 from io import IOBase
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
+from collections.abc import dict, List, Optional, Set
 from collections.abc import Iterable, Mapping
 
 import pytest

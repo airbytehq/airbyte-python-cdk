@@ -3,7 +3,7 @@
 #
 
 from contextlib import nullcontext as does_not_raise
-from typing import List
+from collections.abc import list
 
 import pytest
 

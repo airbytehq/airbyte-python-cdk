@@ -2,7 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Any, List, Optional, Union
+from typing import Any
+from collections.abc import list, Optional, Union
 from collections.abc import Iterable, Mapping
 from unittest.mock import MagicMock
 

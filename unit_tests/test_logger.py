@@ -4,7 +4,7 @@
 
 import json
 import logging
-from typing import Dict
+from collections.abc import dict
 
 import pytest
 
