@@ -53,12 +53,7 @@ def get_limits(config: Mapping[str, Any]) -> TestLimits:
     max_slices = command_config.get(MAX_SLICES_KEY) or DEFAULT_MAXIMUM_NUMBER_OF_SLICES
     max_records = command_config.get(MAX_RECORDS_KEY) or DEFAULT_MAXIMUM_RECORDS
     max_streams = command_config.get(MAX_STREAMS_KEY) or DEFAULT_MAXIMUM_STREAMS
-    return TestLimits(
-        max_records=max_records,
-        max_pages_per_slice=max_pages_per_slice,
-        max_slices=max_slices,
-        max_streams=max_streams,
-    )
+    return TestLimits(max_records, max_pages_per_slice, max_slices, max_streams)
 
 
 def create_source(config: Mapping[str, Any], limits: TestLimits) -> ManifestDeclarativeSource:
@@ -86,9 +81,7 @@ def read_stream(
 ) -> AirbyteMessage:
     try:
         test_read_handler = TestReader(
-            max_pages_per_slice=limits.max_pages_per_slice,
-            max_slices=limits.max_slices,
-            max_record_limit=limits.max_records,
+            limits.max_pages_per_slice, limits.max_slices, limits.max_records
         )
         # The connector builder only supports a single stream
         stream_name = configured_catalog.streams[0].stream.name
