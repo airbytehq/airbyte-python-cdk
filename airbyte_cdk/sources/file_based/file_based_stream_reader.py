@@ -178,21 +178,16 @@ class AbstractFileBasedStreamReader(ABC):
 
     def _get_file_transfer_paths(
         self,
-        file: RemoteFile,
-        local_directory: str,
-        parse_file_path_from_uri: Optional[Callable[[str], str]] = None,
+        source_file_relative_path: str,
+        local_directory: str
     ) -> MutableMapping[str, Any]:
         preserve_directory_structure = self.preserve_directory_structure()
-        if not parse_file_path_from_uri:
-            file_path = file.uri
-        else:
-            file_path = parse_file_path_from_uri(file.uri)
 
-        file_name = path.basename(file_path)
-        file_folder = path.dirname(file_path)
+        file_name = path.basename(source_file_relative_path)
+        file_folder = path.dirname(source_file_relative_path)
         if preserve_directory_structure:
             # Remove left slashes from source path format to make relative path for writing locally
-            file_relative_path = file_path.lstrip("/")
+            file_relative_path = source_file_relative_path.lstrip("/")
         else:
             file_relative_path = file_name
         local_file_path = path.join(local_directory, file_relative_path)
@@ -203,7 +198,6 @@ class AbstractFileBasedStreamReader(ABC):
             self.FILE_RELATIVE_PATH: file_relative_path,
             self.LOCAL_FILE_PATH: local_file_path,
             self.FILE_NAME: file_name,
-            self.FILE_FOLDER: file_folder,
-            self.SOURCE_FILE_URI: file.uri,
+            self.FILE_FOLDER: file_folder
         }
         return file_paths

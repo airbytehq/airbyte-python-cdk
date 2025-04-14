@@ -384,7 +384,7 @@ def test_globs_and_prefixes_from_globs(
 
 
 @pytest.mark.parametrize(
-    "config, source_file, expected_file_relative_path, expected_local_file_path",
+    "config, source_file_path, expected_file_relative_path, expected_local_file_path",
     [
         pytest.param(
             {
@@ -430,23 +430,21 @@ def test_globs_and_prefixes_from_globs(
 )
 def test_preserve_sub_directories_scenarios(
     config: Mapping[str, Any],
-    source_file: str,
+    source_file_path: str,
     expected_file_relative_path: str,
     expected_local_file_path: str,
 ) -> None:
-    remote_file = RemoteFile(
-        uri=source_file,
-        last_modified=datetime(2025, 1, 9, 11, 27, 20),
-        mime_type=None,
-    )
+    """
+    Test scenarios when preserve_directory_structure is True or False, the flag indicates whether we need to
+    use a relative path to upload the file or simply place it in the root.
+    """
     reader = TestStreamReader()
     reader.config = TestSpec(**config)
-    file_paths = reader._get_file_transfer_paths(remote_file, "/tmp/transfer-files/")
+    file_paths = reader._get_file_transfer_paths(source_file_path, "/tmp/transfer-files/")
 
     assert (
         file_paths[AbstractFileBasedStreamReader.FILE_RELATIVE_PATH] == expected_file_relative_path
     )
     assert file_paths[AbstractFileBasedStreamReader.LOCAL_FILE_PATH] == expected_local_file_path
-    assert file_paths[AbstractFileBasedStreamReader.SOURCE_FILE_URI] == source_file
-    assert file_paths[AbstractFileBasedStreamReader.FILE_NAME] == path.basename(source_file)
-    assert file_paths[AbstractFileBasedStreamReader.FILE_FOLDER] == path.dirname(source_file)
+    assert file_paths[AbstractFileBasedStreamReader.FILE_NAME] == path.basename(source_file_path)
+    assert file_paths[AbstractFileBasedStreamReader.FILE_FOLDER] == path.dirname(source_file_path)
