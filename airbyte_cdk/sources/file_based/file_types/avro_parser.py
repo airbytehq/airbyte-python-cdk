@@ -154,7 +154,7 @@ class AvroParser(FileTypeParser):
                 # For example: ^-?\d{1,5}(?:\.\d{1,3})?$ would accept 12345.123 and 123456.12345 would  be rejected
                 return {
                     "type": "string",
-                    "pattern": f"^-?\\d{{{1,max_whole_number_range}}}(?:\\.\\d{1,decimal_range})?$",
+                    "pattern": f"^-?\\d{{{1, max_whole_number_range}}}(?:\\.\\d{1, decimal_range})?$",
                 }
             elif "logicalType" in avro_field:
                 if avro_field["logicalType"] not in AVRO_LOGICAL_TYPE_TO_JSON:
