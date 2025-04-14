@@ -2,10 +2,10 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Iterable, Mapping
 from copy import deepcopy
 from dataclasses import InitVar, dataclass, field
 from typing import Any, Dict, List
-from collections.abc import Iterable, Mapping
 
 import dpath
 from typing_extensions import deprecated

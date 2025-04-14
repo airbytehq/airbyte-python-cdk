@@ -4,12 +4,12 @@
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Iterable
 from datetime import datetime
 from enum import Enum
 from io import IOBase
 from os import makedirs, path
 from typing import Any, Dict, List, Optional, Set
-from collections.abc import Iterable
 
 from wcmatch.glob import GLOBSTAR, globmatch
 

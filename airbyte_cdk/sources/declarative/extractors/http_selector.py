@@ -3,8 +3,8 @@
 #
 
 from abc import abstractmethod
-from typing import Any, Optional
 from collections.abc import Iterable, Mapping
+from typing import Any, Optional
 
 import requests
 

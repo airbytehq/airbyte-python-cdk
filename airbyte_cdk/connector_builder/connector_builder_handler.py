@@ -3,9 +3,9 @@
 #
 
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from typing import Any, Dict, List
-from collections.abc import Mapping
 
 from airbyte_cdk.connector_builder.test_reader import TestReader
 from airbyte_cdk.models import (

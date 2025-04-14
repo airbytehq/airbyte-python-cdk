@@ -3,9 +3,9 @@
 import logging
 import threading
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Set, Union
-from collections.abc import Mapping
 
 from airbyte_cdk.logger import lazy_log
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString

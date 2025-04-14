@@ -5,11 +5,11 @@
 import json
 import logging
 import pkgutil
+from collections.abc import Iterator, Mapping
 from copy import deepcopy
 from importlib import metadata
 from types import ModuleType
 from typing import Any, Dict, List, Optional, Set
-from collections.abc import Iterator, Mapping
 
 import yaml
 from jsonschema.exceptions import ValidationError

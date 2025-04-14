@@ -2,9 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 import unittest
+from collections.abc import Callable, Iterable
 from queue import Queue
 from typing import List
-from collections.abc import Callable, Iterable
 from unittest.mock import Mock
 
 import pytest

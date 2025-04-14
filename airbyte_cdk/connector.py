@@ -8,8 +8,8 @@ import logging
 import os
 import pkgutil
 from abc import ABC, abstractmethod
-from typing import Any, Generic, Optional, Protocol, TypeVar
 from collections.abc import Mapping
+from typing import Any, Generic, Optional, Protocol, TypeVar
 
 import yaml
 

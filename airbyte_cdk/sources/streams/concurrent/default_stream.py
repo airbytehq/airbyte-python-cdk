@@ -2,10 +2,10 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from functools import lru_cache, cache
+from collections.abc import Iterable, Mapping
+from functools import cache, lru_cache
 from logging import Logger
 from typing import Any, List, Optional
-from collections.abc import Iterable, Mapping
 
 from airbyte_cdk.models import AirbyteStream, SyncMode
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream

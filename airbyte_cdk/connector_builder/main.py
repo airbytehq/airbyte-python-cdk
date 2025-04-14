@@ -4,8 +4,8 @@
 
 
 import sys
-from typing import Any, List, Optional, Tuple
 from collections.abc import Mapping
+from typing import Any, List, Optional, Tuple
 
 import orjson
 

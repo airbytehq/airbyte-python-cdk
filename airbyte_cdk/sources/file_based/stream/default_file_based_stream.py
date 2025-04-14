@@ -6,11 +6,11 @@ import asyncio
 import itertools
 import traceback
 from collections import defaultdict
+from collections.abc import Iterable, Mapping, MutableMapping
 from copy import deepcopy
 from functools import cache
 from os import path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
-from collections.abc import Iterable, Mapping, MutableMapping
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, FailureType, Level
 from airbyte_cdk.models import Type as MessageType

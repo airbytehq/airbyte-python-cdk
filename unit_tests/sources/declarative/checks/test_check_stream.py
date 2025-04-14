@@ -4,9 +4,9 @@
 
 import json
 import logging
+from collections.abc import Iterable, Mapping
 from copy import deepcopy
 from typing import Any, Optional
-from collections.abc import Iterable, Mapping
 from unittest.mock import MagicMock
 
 import pytest

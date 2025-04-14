@@ -3,9 +3,9 @@
 #
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Optional
-from collections.abc import Mapping
 
 import requests
 

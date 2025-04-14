@@ -251,7 +251,13 @@ class VectorDBConfigModel(BaseModel):
     Processing, embedding and advanced configuration are provided by this base class, while the indexing configuration is provided by the destination connector in the sub class.
     """
 
-    embedding: OpenAIEmbeddingConfigModel | CohereEmbeddingConfigModel | FakeEmbeddingConfigModel | AzureOpenAIEmbeddingConfigModel | OpenAICompatibleEmbeddingConfigModel = Field(
+    embedding: (
+        OpenAIEmbeddingConfigModel
+        | CohereEmbeddingConfigModel
+        | FakeEmbeddingConfigModel
+        | AzureOpenAIEmbeddingConfigModel
+        | OpenAICompatibleEmbeddingConfigModel
+    ) = Field(
         ...,
         title="Embedding",
         description="Embedding configuration",

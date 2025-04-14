@@ -7,8 +7,8 @@ import io
 import logging
 import sys
 from abc import ABC, abstractmethod
-from typing import Any, List
 from collections.abc import Iterable, Mapping
+from typing import Any, List
 
 import orjson
 

@@ -2,8 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Any, Type
 from collections.abc import Mapping
+from typing import Any, Type
 
 import pytest as pytest
 from pydantic.v1.error_wrappers import ValidationError

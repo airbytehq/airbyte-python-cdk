@@ -4,8 +4,8 @@
 
 import threading
 import time
-from typing import Any, Optional, TypeVar, Union
 from collections.abc import Callable, Iterable, Mapping
+from typing import Any, Optional, TypeVar, Union
 
 from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor

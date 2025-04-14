@@ -2,9 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping
 from datetime import timedelta
 from typing import Any, Optional
-from collections.abc import Mapping
 from unittest import mock
 from unittest.mock import MagicMock
 from urllib.parse import parse_qs, urlparse

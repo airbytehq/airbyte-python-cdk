@@ -2,9 +2,9 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
 from typing import Any, Dict, Optional
-from collections.abc import Mapping
 
 from airbyte_cdk import InterpolatedString
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation

@@ -1,9 +1,9 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 
+from collections.abc import Iterable, Mapping
 from dataclasses import InitVar, dataclass, field
 from typing import Any, Optional
-from collections.abc import Iterable, Mapping
 
 from airbyte_cdk.sources.declarative.async_job.job import AsyncJob
 from airbyte_cdk.sources.declarative.extractors.record_selector import RecordSelector

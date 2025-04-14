@@ -4,8 +4,8 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Tuple
 from collections.abc import Mapping
+from typing import Any, Tuple
 
 from airbyte_cdk import AbstractSource
 

@@ -5,6 +5,7 @@ import threading
 import time
 import traceback
 import uuid
+from collections.abc import Generator, Iterable, Mapping
 from datetime import timedelta
 from typing import (
     Any,
@@ -16,7 +17,6 @@ from typing import (
     Type,
     TypeVar,
 )
-from collections.abc import Generator, Iterable, Mapping
 
 from airbyte_cdk.logger import lazy_log
 from airbyte_cdk.models import FailureType

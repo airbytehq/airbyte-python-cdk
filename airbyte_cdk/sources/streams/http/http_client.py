@@ -5,9 +5,9 @@
 import logging
 import os
 import urllib
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
-from collections.abc import Callable, Mapping
 
 import orjson
 import requests
@@ -166,9 +166,7 @@ class HttpClient:
         if isinstance(self._session, requests_cache.CachedSession):
             self._session.cache.clear()  # type: ignore # cache.clear is not typed
 
-    def _dedupe_query_params(
-        self, url: str, params: Mapping[str, str] | None
-    ) -> Mapping[str, str]:
+    def _dedupe_query_params(self, url: str, params: Mapping[str, str] | None) -> Mapping[str, str]:
         """
         Remove query parameters from params mapping if they are already encoded in the URL.
         :param url: URL with

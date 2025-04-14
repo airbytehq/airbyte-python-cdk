@@ -1,7 +1,7 @@
 import hashlib
 import json
-from typing import Any, Final, Optional
 from collections.abc import Mapping
+from typing import Any, Final, Optional
 
 
 class SliceEncoder(json.JSONEncoder):

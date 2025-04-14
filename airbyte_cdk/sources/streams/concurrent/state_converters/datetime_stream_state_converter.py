@@ -3,9 +3,9 @@
 #
 
 from abc import abstractmethod
+from collections.abc import Callable, MutableMapping
 from datetime import datetime, timedelta, timezone
 from typing import Any, List, Optional, Tuple
-from collections.abc import Callable, MutableMapping
 
 # FIXME We would eventually like the Concurrent package do be agnostic of the declarative package. However, this is a breaking change and
 #  the goal in the short term is only to fix the issue we are seeing for source-declarative-manifest.

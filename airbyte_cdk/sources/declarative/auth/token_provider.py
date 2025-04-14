@@ -5,9 +5,9 @@
 
 import datetime
 from abc import abstractmethod
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass, field
 from typing import Any, List, Optional, Union
-from collections.abc import Mapping
 
 import dpath
 from isodate import Duration

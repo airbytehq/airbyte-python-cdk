@@ -3,8 +3,8 @@
 #
 
 import re
-from typing import Any, Set, Tuple, Union
 from collections.abc import Mapping
+from typing import Any, Set, Tuple, Union
 
 from airbyte_cdk.sources.declarative.parsers.custom_exceptions import (
     CircularReferenceException,

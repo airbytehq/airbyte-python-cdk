@@ -6,10 +6,10 @@ import inspect
 import itertools
 import logging
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from functools import cached_property, lru_cache, cache
-from typing import Any, Dict, List, Optional, Union
 from collections.abc import Iterable, Iterator, Mapping, MutableMapping
+from dataclasses import dataclass
+from functools import cache, cached_property, lru_cache
+from typing import Any, Dict, List, Optional, Union
 
 from typing_extensions import deprecated
 

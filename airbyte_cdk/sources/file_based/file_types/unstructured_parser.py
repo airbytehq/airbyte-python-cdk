@@ -4,10 +4,10 @@
 import logging
 import os
 import traceback
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from io import BytesIO, IOBase
 from typing import Any, Dict, List, Optional, Tuple, Union
-from collections.abc import Iterable, Mapping
 
 import backoff
 import dpath

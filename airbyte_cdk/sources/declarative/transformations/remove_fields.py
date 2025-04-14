@@ -2,9 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
 from typing import Any, Dict, List, Optional
-from collections.abc import Mapping
 
 import dpath
 import dpath.exceptions

@@ -4,8 +4,8 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
 from collections.abc import Iterable
+from typing import Any, Dict, Optional
 
 from airbyte_cdk.sources.file_based import AbstractFileBasedSpec
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile

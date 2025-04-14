@@ -2,9 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 from abc import abstractmethod
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
-from collections.abc import Iterable, Mapping
 
 import requests
 

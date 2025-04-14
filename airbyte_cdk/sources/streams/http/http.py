@@ -4,9 +4,9 @@
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from datetime import timedelta
 from typing import Any, List, Optional, Tuple, Union
-from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from urllib.parse import urljoin
 
 import requests
@@ -52,9 +52,7 @@ class HttpStream(Stream, CheckpointMixin, ABC):
         None  # Use this variable to define page size for API http requests with pagination support
     )
 
-    def __init__(
-        self, authenticator: AuthBase | None = None, api_budget: APIBudget | None = None
-    ):
+    def __init__(self, authenticator: AuthBase | None = None, api_budget: APIBudget | None = None):
         self._exit_on_rate_limit: bool = False
         self._http_client = HttpClient(
             name=self.name,

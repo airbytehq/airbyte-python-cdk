@@ -1,8 +1,8 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 from abc import abstractmethod
-from typing import Any, Set
 from collections.abc import Iterable, Mapping
+from typing import Any, Set
 
 from airbyte_cdk.sources.declarative.async_job.job import AsyncJob
 from airbyte_cdk.sources.types import StreamSlice

@@ -1,8 +1,8 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 
+from collections.abc import Iterable, Mapping
 from dataclasses import InitVar, dataclass
 from typing import Any, List, Optional, Union
-from collections.abc import Iterable, Mapping
 
 from airbyte_cdk.sources.declarative.requesters.query_properties import (
     PropertiesFromEndpoint,

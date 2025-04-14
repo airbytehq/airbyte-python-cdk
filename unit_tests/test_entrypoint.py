@@ -5,9 +5,9 @@
 import os
 from argparse import Namespace
 from collections import defaultdict
+from collections.abc import Mapping, MutableMapping
 from copy import deepcopy
 from typing import Any, List, Union
-from collections.abc import Mapping, MutableMapping
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -189,7 +189,10 @@ def test_parse_missing_required_args(
 
 
 def _wrap_message(
-    submessage: AirbyteConnectionStatus | ConnectorSpecification | AirbyteRecordMessage | AirbyteCatalog,
+    submessage: AirbyteConnectionStatus
+    | ConnectorSpecification
+    | AirbyteRecordMessage
+    | AirbyteCatalog,
 ) -> str:
     if isinstance(submessage, AirbyteConnectionStatus):
         message = AirbyteMessage(type=Type.CONNECTION_STATUS, connectionStatus=submessage)

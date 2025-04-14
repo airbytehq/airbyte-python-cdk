@@ -12,9 +12,9 @@ import socket
 import sys
 import tempfile
 from collections import defaultdict
+from collections.abc import Iterable, Mapping
 from functools import wraps
 from typing import Any, DefaultDict, List, Optional
-from collections.abc import Iterable, Mapping
 from urllib.parse import urlparse
 
 import orjson

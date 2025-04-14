@@ -2,9 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
 from typing import Any, Optional
-from collections.abc import Mapping
 
 from airbyte_cdk.models import (
     AdvancedAuth,

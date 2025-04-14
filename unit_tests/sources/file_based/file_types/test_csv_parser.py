@@ -7,9 +7,9 @@ import csv
 import io
 import logging
 import unittest
+from collections.abc import Generator
 from datetime import datetime
 from typing import Any, Dict, List, Set
-from collections.abc import Generator
 from unittest import TestCase, mock
 from unittest.mock import Mock
 

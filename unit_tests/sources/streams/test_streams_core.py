@@ -3,8 +3,8 @@
 #
 
 import logging
-from typing import Any, List, Optional
 from collections.abc import Iterable, Mapping, MutableMapping
+from typing import Any, List, Optional
 from unittest import mock
 
 import pytest

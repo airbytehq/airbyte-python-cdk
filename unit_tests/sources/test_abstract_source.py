@@ -5,6 +5,7 @@
 import copy
 import datetime
 import logging
+from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from typing import (
     Any,
     Dict,
@@ -13,7 +14,6 @@ from typing import (
     Tuple,
     Union,
 )
-from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from unittest.mock import Mock
 
 import pytest

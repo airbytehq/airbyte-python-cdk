@@ -6,9 +6,9 @@
 import copy
 import json
 import logging
+from collections.abc import Iterable, Mapping, MutableMapping
 from dataclasses import InitVar, dataclass
 from typing import TYPE_CHECKING, Any, List, Optional, Union
-from collections.abc import Iterable, Mapping, MutableMapping
 
 import dpath
 import requests

@@ -4,9 +4,9 @@
 import os
 import tempfile
 import time
+from collections.abc import Iterable, Mapping
 from datetime import datetime, timedelta
 from typing import Any, Optional
-from collections.abc import Iterable, Mapping
 
 import pytest
 import requests

@@ -5,6 +5,7 @@
 import functools
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from typing import (
     Any,
     List,
@@ -12,7 +13,6 @@ from typing import (
     Tuple,
     Union,
 )
-from collections.abc import Callable, Iterable, Mapping, MutableMapping
 
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository

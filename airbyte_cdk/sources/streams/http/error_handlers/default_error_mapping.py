@@ -2,8 +2,8 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Type, Union
 from collections.abc import Mapping
+from typing import Type, Union
 
 from requests.exceptions import InvalidSchema, InvalidURL, RequestException
 

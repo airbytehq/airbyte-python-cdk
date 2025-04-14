@@ -4,6 +4,7 @@
 
 import json
 from collections import defaultdict
+from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from dataclasses import InitVar, dataclass, field
 from functools import partial
 from itertools import islice
@@ -15,7 +16,6 @@ from typing import (
     Tuple,
     Union,
 )
-from collections.abc import Callable, Iterable, Mapping, MutableMapping
 
 import requests
 from typing_extensions import deprecated
@@ -569,9 +569,7 @@ class SimpleRetriever(Retriever):
         else:
             return None
 
-    def _extract_record(
-        self, stream_data: StreamData, stream_slice: StreamSlice
-    ) -> Record | None:
+    def _extract_record(self, stream_data: StreamData, stream_slice: StreamSlice) -> Record | None:
         """
         As we allow the output of _read_pages to be StreamData, it can be multiple things. Therefore, we need to filter out and normalize
         to data to streamline the rest of the process.

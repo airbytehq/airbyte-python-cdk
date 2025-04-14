@@ -1,9 +1,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 
 
+from collections.abc import MutableMapping
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
-from collections.abc import MutableMapping
 from unittest.mock import MagicMock
 
 import pytest

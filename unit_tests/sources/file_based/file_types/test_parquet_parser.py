@@ -5,8 +5,8 @@
 import asyncio
 import datetime
 import math
-from typing import Any, Union
 from collections.abc import Mapping
+from typing import Any, Union
 from unittest.mock import Mock
 
 import pyarrow as pa
@@ -327,9 +327,7 @@ def test_type_mapping(
             "this is a string",
             id="test_parquet_string",
         ),
-        pytest.param(
-            pa.utf8(), _default_parquet_format, b"utf8", "utf8", id="test_utf8"
-        ),
+        pytest.param(pa.utf8(), _default_parquet_format, b"utf8", "utf8", id="test_utf8"),
         pytest.param(
             pa.large_binary(),
             _default_parquet_format,

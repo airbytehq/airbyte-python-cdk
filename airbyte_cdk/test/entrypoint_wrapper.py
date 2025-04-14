@@ -19,10 +19,10 @@ import logging
 import re
 import tempfile
 import traceback
+from collections.abc import Mapping
 from io import StringIO
 from pathlib import Path
 from typing import Any, List, Optional, Union
-from collections.abc import Mapping
 
 import orjson
 from pydantic import ValidationError as V2ValidationError

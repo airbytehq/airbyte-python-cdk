@@ -1,8 +1,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 
 import json
-from typing import Any, List, Optional, Union
 from collections.abc import Mapping
+from typing import Any, List, Optional, Union
 from urllib.parse import parse_qs, urlencode, urlparse
 
 ANY_QUERY_PARAMS = "any query_parameters"

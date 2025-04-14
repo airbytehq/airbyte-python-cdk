@@ -1,9 +1,9 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from collections.abc import Iterable, Mapping
 from dataclasses import InitVar, dataclass
 from typing import Any, Optional, Union
-from collections.abc import Iterable, Mapping
 
 from airbyte_cdk.sources.declarative.incremental import (
     DatetimeBasedCursor,

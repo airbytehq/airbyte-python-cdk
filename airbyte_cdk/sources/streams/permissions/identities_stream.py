@@ -4,8 +4,8 @@
 
 import traceback
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional
 from collections.abc import Iterable, Mapping, MutableMapping
+from typing import Any, Dict, List, Optional
 
 from airbyte_protocol_dataclasses.models import SyncMode
 

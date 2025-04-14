@@ -1,9 +1,9 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 
+from collections.abc import Iterable, Mapping
 from dataclasses import InitVar, dataclass
 from enum import Enum
 from typing import Any, List, Optional
-from collections.abc import Iterable, Mapping
 
 from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import GroupByKey
 from airbyte_cdk.sources.declarative.requesters.query_properties.strategies.merge_strategy import (

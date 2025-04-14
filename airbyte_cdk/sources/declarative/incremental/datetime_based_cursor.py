@@ -3,10 +3,10 @@
 #
 
 import datetime
+from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from dataclasses import InitVar, dataclass, field
 from datetime import timedelta
 from typing import Any, List, Optional, Union
-from collections.abc import Callable, Iterable, Mapping, MutableMapping
 
 from isodate import Duration, duration_isoformat, parse_duration
 

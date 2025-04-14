@@ -3,10 +3,10 @@
 #
 
 
+from collections.abc import Mapping, MutableMapping
 from copy import deepcopy
 from dataclasses import InitVar, dataclass, field
 from typing import Any, List, Optional, Union
-from collections.abc import Mapping, MutableMapping
 
 import dpath
 from typing_extensions import deprecated

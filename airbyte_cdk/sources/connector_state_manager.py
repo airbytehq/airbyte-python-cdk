@@ -3,9 +3,9 @@
 #
 
 import copy
+from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass
 from typing import Any, List, Optional, Tuple, Union, cast
-from collections.abc import Mapping, MutableMapping
 
 from airbyte_cdk.models import (
     AirbyteMessage,
@@ -51,9 +51,7 @@ class ConnectorStateManager:
             )
         self.per_stream_states = per_stream_states
 
-    def get_stream_state(
-        self, stream_name: str, namespace: str | None
-    ) -> MutableMapping[str, Any]:
+    def get_stream_state(self, stream_name: str, namespace: str | None) -> MutableMapping[str, Any]:
         """
         Retrieves the state of a given stream based on its descriptor (name + namespace).
         :param stream_name: Name of the stream being fetched

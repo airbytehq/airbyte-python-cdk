@@ -3,8 +3,8 @@
 #
 
 import logging
-from typing import Any, Dict, Optional, Tuple, cast
 from collections.abc import Iterable, Mapping
+from typing import Any, Dict, Optional, Tuple, cast
 
 import fastavro
 

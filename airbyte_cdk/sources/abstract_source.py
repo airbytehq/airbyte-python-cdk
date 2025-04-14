@@ -4,6 +4,7 @@
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Iterable, Iterator, Mapping, MutableMapping
 from typing import (
     Any,
     Dict,
@@ -12,7 +13,6 @@ from typing import (
     Tuple,
     Union,
 )
-from collections.abc import Iterable, Iterator, Mapping, MutableMapping
 
 from airbyte_cdk.exception_handler import generate_failed_streams_error_message
 from airbyte_cdk.models import (

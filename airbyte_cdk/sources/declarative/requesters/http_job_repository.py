@@ -1,10 +1,10 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 import logging
 import uuid
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any, Dict, Optional
-from collections.abc import Iterable, Mapping
 
 import requests
 from requests import Response

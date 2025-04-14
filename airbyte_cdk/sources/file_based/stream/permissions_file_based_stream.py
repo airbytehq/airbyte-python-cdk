@@ -3,8 +3,8 @@
 #
 
 import traceback
-from typing import Any, Dict
 from collections.abc import Iterable
+from typing import Any, Dict
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level
 from airbyte_cdk.models import Type as MessageType

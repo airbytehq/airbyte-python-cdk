@@ -3,10 +3,10 @@
 #
 import codecs
 import logging
+from collections.abc import Generator, Mapping, MutableMapping
 from dataclasses import InitVar, dataclass
 from gzip import decompress
 from typing import Any, List, Optional
-from collections.abc import Generator, Mapping, MutableMapping
 
 import orjson
 import requests

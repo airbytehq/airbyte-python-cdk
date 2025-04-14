@@ -3,8 +3,8 @@
 #
 
 from abc import ABC, abstractmethod
-from typing import Any, Optional
 from collections.abc import Iterable, Mapping
+from typing import Any, Optional
 
 from typing_extensions import deprecated
 

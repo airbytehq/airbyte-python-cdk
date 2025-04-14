@@ -2,9 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping, Sequence
 from datetime import timedelta
 from typing import Any, List, Optional, Tuple, Union
-from collections.abc import Mapping, Sequence
 
 import dpath
 

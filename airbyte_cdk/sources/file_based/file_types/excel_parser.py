@@ -3,10 +3,10 @@
 #
 
 import logging
+from collections.abc import Iterable, Mapping
 from io import IOBase
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
-from collections.abc import Iterable, Mapping
 
 import orjson
 import pandas as pd

@@ -3,8 +3,8 @@
 #
 
 from abc import abstractmethod
-from typing import Any
 from collections.abc import Mapping
+from typing import Any
 
 import requests
 from requests.auth import AuthBase

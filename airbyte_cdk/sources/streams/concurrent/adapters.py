@@ -5,9 +5,9 @@
 import copy
 import json
 import logging
-from functools import lru_cache, cache
-from typing import Any, List, Optional, Tuple, Union
 from collections.abc import Iterable, Mapping, MutableMapping
+from functools import cache, lru_cache
+from typing import Any, List, Optional, Tuple, Union
 
 from typing_extensions import deprecated
 

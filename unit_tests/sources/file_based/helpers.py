@@ -3,10 +3,10 @@
 #
 
 import logging
+from collections.abc import Mapping
 from datetime import datetime
 from io import IOBase
 from typing import Any, Dict, List, Optional
-from collections.abc import Mapping
 
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.discovery_policy import DefaultDiscoveryPolicy

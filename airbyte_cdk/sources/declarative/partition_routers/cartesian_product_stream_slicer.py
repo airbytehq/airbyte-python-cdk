@@ -5,10 +5,9 @@
 import itertools
 import logging
 from collections import ChainMap
-from collections.abc import Callable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import InitVar, dataclass
 from typing import Any, List, Optional
-from collections.abc import Iterable, Mapping
 
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
 from airbyte_cdk.sources.declarative.partition_routers.substream_partition_router import (

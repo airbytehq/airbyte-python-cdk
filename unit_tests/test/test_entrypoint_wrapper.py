@@ -3,8 +3,8 @@
 import json
 import logging
 import os
-from typing import Any, List, Optional
 from collections.abc import Iterator, Mapping
+from typing import Any, List, Optional
 from unittest import TestCase
 from unittest.mock import Mock, patch
 

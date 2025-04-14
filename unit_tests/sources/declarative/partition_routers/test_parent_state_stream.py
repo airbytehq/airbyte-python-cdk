@@ -1,8 +1,8 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 import copy
-from typing import Any, List, Optional, Union
 from collections.abc import Mapping, MutableMapping
+from typing import Any, List, Optional, Union
 from unittest.mock import MagicMock
 
 import orjson

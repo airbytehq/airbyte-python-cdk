@@ -5,8 +5,8 @@
 import io
 import json
 import logging
-from typing import Any, Optional
 from collections.abc import Iterable, Mapping
+from typing import Any, Optional
 
 import pytest
 import requests

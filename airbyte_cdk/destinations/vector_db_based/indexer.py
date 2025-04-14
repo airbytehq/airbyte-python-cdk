@@ -4,8 +4,8 @@
 
 import itertools
 from abc import ABC, abstractmethod
-from typing import Any, List, Optional, Tuple, TypeVar
 from collections.abc import Generator, Iterable
+from typing import Any, List, Optional, Tuple, TypeVar
 
 from airbyte_cdk.destinations.vector_db_based.document_processor import Chunk
 from airbyte_cdk.models import AirbyteMessage, ConfiguredAirbyteCatalog

@@ -5,8 +5,8 @@
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple, Union
 from collections.abc import Iterable, Mapping
+from typing import Any, Dict, List, Optional, Tuple, Union
 from urllib.parse import unquote
 
 import pyarrow as pa

@@ -3,9 +3,9 @@
 #
 
 import logging
+from collections.abc import Generator, MutableMapping
 from dataclasses import dataclass
 from typing import Any
-from collections.abc import Generator, MutableMapping
 
 import requests
 

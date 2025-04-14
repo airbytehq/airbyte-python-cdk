@@ -2,9 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 import time
+from collections.abc import Mapping
 from collections.abc import Mapping as ABCMapping
 from typing import Any, Optional
-from collections.abc import Mapping
 
 from airbyte_cdk.models import (
     AirbyteLogMessage,

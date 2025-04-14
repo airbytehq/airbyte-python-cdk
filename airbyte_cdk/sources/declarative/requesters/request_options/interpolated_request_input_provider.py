@@ -2,9 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass, field
 from typing import Any, Optional, Tuple, Type, Union
-from collections.abc import Mapping
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
@@ -23,9 +23,7 @@ class InterpolatedRequestInputProvider:
     _interpolator: InterpolatedString | InterpolatedMapping | None = field(
         init=False, repr=False, default=None
     )
-    _request_inputs: str | Mapping[str, str] | None = field(
-        init=False, repr=False, default=None
-    )
+    _request_inputs: str | Mapping[str, str] | None = field(init=False, repr=False, default=None)
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._request_inputs = self.request_inputs or {}

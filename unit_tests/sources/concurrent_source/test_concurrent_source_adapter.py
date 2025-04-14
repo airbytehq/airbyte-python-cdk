@@ -3,8 +3,8 @@
 #
 
 import logging
-from typing import Any, List, Optional, Tuple
 from collections.abc import Mapping
+from typing import Any, List, Optional, Tuple
 from unittest.mock import Mock
 
 import freezegun

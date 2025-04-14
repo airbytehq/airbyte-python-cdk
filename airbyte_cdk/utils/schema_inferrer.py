@@ -3,8 +3,8 @@
 #
 
 from collections import defaultdict
-from typing import Any, Dict, List, Optional
 from collections.abc import Mapping
+from typing import Any, Dict, List, Optional
 
 from genson import SchemaBuilder, SchemaNode
 from genson.schema.strategies.object import Object

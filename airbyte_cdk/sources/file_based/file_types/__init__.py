@@ -1,5 +1,5 @@
-from typing import Any, Type
 from collections.abc import Mapping
+from typing import Any, Type
 
 from airbyte_cdk.sources.file_based.config.avro_format import AvroFormat
 from airbyte_cdk.sources.file_based.config.csv_format import CsvFormat

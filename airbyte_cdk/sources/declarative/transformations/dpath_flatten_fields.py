@@ -1,6 +1,6 @@
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
 from typing import Any, Dict, List, Optional, Union
-from collections.abc import Mapping
 
 import dpath
 

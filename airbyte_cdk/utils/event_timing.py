@@ -5,10 +5,10 @@
 import datetime
 import logging
 import time
+from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Literal, Optional
-from collections.abc import Generator
 
 logger = logging.getLogger("airbyte")
 

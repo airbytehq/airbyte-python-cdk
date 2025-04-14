@@ -5,8 +5,8 @@
 import json
 import logging
 from abc import ABC
-from typing import Any, List, Optional, Tuple, Union
 from collections.abc import Iterable, Mapping
+from typing import Any, List, Optional, Tuple, Union
 
 import requests
 from requests.auth import AuthBase
@@ -32,9 +32,7 @@ class SourceTestFixture(AbstractSource):
     the need to load static files (ex. spec.yaml, config.json, configured_catalog.json) into the unit-test package.
     """
 
-    def __init__(
-        self, streams: list[Stream] | None = None, authenticator: AuthBase | None = None
-    ):
+    def __init__(self, streams: list[Stream] | None = None, authenticator: AuthBase | None = None):
         self._streams = streams
         self._authenticator = authenticator
 

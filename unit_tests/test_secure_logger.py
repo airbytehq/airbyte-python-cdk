@@ -5,8 +5,8 @@
 import logging
 import sys
 from argparse import Namespace
-from typing import Any
 from collections.abc import Iterable, Mapping, MutableMapping
+from typing import Any
 
 import pytest
 

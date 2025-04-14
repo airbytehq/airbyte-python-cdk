@@ -4,8 +4,8 @@
 
 from __future__ import annotations
 
-from typing import Any, List, Optional
 from collections.abc import ItemsView, Iterator, KeysView, Mapping, ValuesView
+from typing import Any, List, Optional
 
 from airbyte_cdk.utils.slice_hasher import SliceHasher
 

@@ -3,8 +3,8 @@
 #
 
 import logging
-from typing import Any, Generic, List, Optional, Tuple
 from collections.abc import Iterator, Mapping, MutableMapping
+from typing import Any, Generic, List, Optional, Tuple
 
 from airbyte_cdk.models import (
     AirbyteCatalog,

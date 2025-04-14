@@ -3,10 +3,10 @@
 #
 
 import logging
+from collections.abc import Iterable, MutableMapping
 from datetime import datetime, timedelta
 from threading import RLock
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
-from collections.abc import Iterable, MutableMapping
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, Type
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager

@@ -2,8 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Any, Optional
 from collections.abc import Mapping
+from typing import Any, Optional
 
 import pytest
 

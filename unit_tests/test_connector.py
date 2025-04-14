@@ -8,9 +8,9 @@ import logging
 import os
 import sys
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
-from collections.abc import Mapping
 
 import pytest
 import yaml

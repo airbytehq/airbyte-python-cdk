@@ -3,9 +3,9 @@
 #
 
 import logging
+from collections.abc import Generator, Mapping, MutableMapping
 from dataclasses import InitVar, dataclass
 from typing import Any
-from collections.abc import Generator, Mapping, MutableMapping
 from xml.parsers.expat import ExpatError
 
 import requests

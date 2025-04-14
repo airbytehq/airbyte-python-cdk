@@ -2,9 +2,9 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping
 from enum import Enum
 from typing import Any, List, Optional, Union
-from collections.abc import Mapping
 
 from pydantic.v1 import BaseModel, Field, validator
 
@@ -58,7 +58,9 @@ class FileBasedStreamConfig(BaseModel):
         description="When the state history of the file store is full, syncs will only read files that were last modified in the provided day range.",
         default=3,
     )
-    format: AvroFormat | CsvFormat | JsonlFormat | ParquetFormat | UnstructuredFormat | ExcelFormat = Field(
+    format: (
+        AvroFormat | CsvFormat | JsonlFormat | ParquetFormat | UnstructuredFormat | ExcelFormat
+    ) = Field(
         title="Format",
         description="The configuration options that are used to alter how to read incoming files that deviate from the standard formatting.",
     )

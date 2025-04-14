@@ -4,9 +4,9 @@
 
 import json
 import math
+from collections.abc import Mapping
 from pathlib import Path, PosixPath
 from typing import Any, Dict, List, Optional, Union
-from collections.abc import Mapping
 
 import pytest
 from _pytest.capture import CaptureFixture
@@ -287,9 +287,7 @@ def read_with_state(scenario: TestScenario[AbstractSource]) -> EntrypointOutput:
     )
 
 
-def make_file(
-    path: Path, file_contents: Mapping[str, Any] | list[Mapping[str, Any]] | None
-) -> str:
+def make_file(path: Path, file_contents: Mapping[str, Any] | list[Mapping[str, Any]] | None) -> str:
     path.write_text(json.dumps(file_contents))
     return str(path)
 

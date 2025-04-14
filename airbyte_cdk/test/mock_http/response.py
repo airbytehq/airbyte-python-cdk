@@ -1,8 +1,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 
+from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Union
-from collections.abc import Mapping
 
 
 class HttpResponse:

@@ -1,8 +1,8 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
+from collections.abc import Iterable, Mapping
 from dataclasses import InitVar, dataclass
 from typing import Any, Optional
-from collections.abc import Iterable, Mapping
 
 from airbyte_cdk.sources.declarative.incremental import DeclarativeCursor
 from airbyte_cdk.sources.declarative.types import Record, StreamSlice, StreamState

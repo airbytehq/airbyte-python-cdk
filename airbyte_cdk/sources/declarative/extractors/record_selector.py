@@ -2,9 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Iterable, Mapping
 from dataclasses import InitVar, dataclass, field
 from typing import Any, List, Optional, Union
-from collections.abc import Iterable, Mapping
 
 import requests
 

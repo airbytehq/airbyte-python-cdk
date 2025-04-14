@@ -5,9 +5,9 @@
 import numbers
 import re
 import time
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
 from typing import Any, Optional, Union
-from collections.abc import Mapping
 
 import requests
 

@@ -3,9 +3,9 @@
 #
 
 from abc import abstractmethod
+from collections.abc import Callable, Mapping, MutableMapping
 from enum import Enum
 from typing import Any, Optional, Union
-from collections.abc import Callable, Mapping, MutableMapping
 
 import requests
 

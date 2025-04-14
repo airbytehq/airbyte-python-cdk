@@ -5,10 +5,10 @@
 import argparse
 import io
 import json
+from collections.abc import Iterable, Mapping
 from os import PathLike
 from pathlib import Path
 from typing import Any, Dict, List, Union
-from collections.abc import Iterable, Mapping
 from unittest.mock import ANY
 
 import orjson
@@ -103,7 +103,11 @@ def write_file(path: PathLike, content: str | Mapping):
 
 
 def _wrapped(
-    msg: AirbyteRecordMessage | AirbyteStateMessage | AirbyteCatalog | ConnectorSpecification | AirbyteConnectionStatus,
+    msg: AirbyteRecordMessage
+    | AirbyteStateMessage
+    | AirbyteCatalog
+    | ConnectorSpecification
+    | AirbyteConnectionStatus,
 ) -> AirbyteMessage:
     if isinstance(msg, AirbyteRecordMessage):
         return AirbyteMessage(type=Type.RECORD, record=msg)

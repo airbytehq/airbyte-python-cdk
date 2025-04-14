@@ -3,9 +3,9 @@
 #
 
 import json
+from collections.abc import Iterable, Mapping
 from functools import partial
 from typing import Any, Optional
-from collections.abc import Iterable, Mapping
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -834,7 +834,7 @@ def test_given_initial_token_is_zero_when_read_records_then_pass_initial_token()
 
     response = requests.Response()
     response.status_code = 200
-    response._content = "{}".encode()
+    response._content = b"{}"
 
     with patch.object(
         SimpleRetriever,

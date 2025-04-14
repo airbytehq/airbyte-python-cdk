@@ -3,8 +3,8 @@
 #
 
 from abc import ABC, abstractmethod
-from typing import Any, Optional
 from collections.abc import Mapping
+from typing import Any, Optional
 
 
 class AbstractSchemaValidationPolicy(ABC):

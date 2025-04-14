@@ -4,8 +4,8 @@
 
 import json
 import logging
-from typing import Any, Dict, Optional, Tuple, Union
 from collections.abc import Iterable, Mapping
+from typing import Any, Dict, Optional, Tuple, Union
 
 import orjson
 

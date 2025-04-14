@@ -7,8 +7,8 @@ import importlib
 import json
 import os
 import pkgutil
-from typing import Any, ClassVar, Dict, List, Optional, Tuple
 from collections.abc import Mapping, MutableMapping
+from typing import Any, ClassVar, Dict, List, Optional, Tuple
 
 import jsonref
 from jsonschema import RefResolver, validate

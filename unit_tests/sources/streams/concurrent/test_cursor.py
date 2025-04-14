@@ -1,11 +1,11 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from collections.abc import Mapping
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from functools import partial
 from typing import Any, Optional
-from collections.abc import Mapping
 from unittest import TestCase
 from unittest.mock import Mock
 
@@ -55,9 +55,7 @@ _A_VERY_HIGH_CURSOR_VALUE = 1000000000
 _NO_LOOKBACK_WINDOW = timedelta(seconds=0)
 
 
-def _partition(
-    _slice: Mapping[str, Any] | None, _stream_name: str | None = Mock()
-) -> Partition:
+def _partition(_slice: Mapping[str, Any] | None, _stream_name: str | None = Mock()) -> Partition:
     partition = Mock(spec=Partition)
     partition.to_slice.return_value = _slice
     partition.stream_name.return_value = _stream_name

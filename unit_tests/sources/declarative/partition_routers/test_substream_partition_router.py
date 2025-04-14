@@ -3,9 +3,9 @@
 #
 
 import logging
+from collections.abc import Iterable, Mapping, MutableMapping
 from functools import partial
 from typing import Any, List, Optional, Union
-from collections.abc import Iterable, Mapping, MutableMapping
 
 import pytest as pytest
 

@@ -2,8 +2,8 @@
 
 
 import logging
-from typing import Any, List, Optional, Set, Tuple
 from collections.abc import Iterable, Mapping
+from typing import Any, List, Optional, Set, Tuple
 from unittest import TestCase, mock
 
 from airbyte_cdk import (

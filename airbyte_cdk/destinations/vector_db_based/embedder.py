@@ -284,7 +284,12 @@ embedder_map = {
 
 
 def create_from_config(
-    embedding_config: AzureOpenAIEmbeddingConfigModel | CohereEmbeddingConfigModel | FakeEmbeddingConfigModel | FromFieldEmbeddingConfigModel | OpenAIEmbeddingConfigModel | OpenAICompatibleEmbeddingConfigModel,
+    embedding_config: AzureOpenAIEmbeddingConfigModel
+    | CohereEmbeddingConfigModel
+    | FakeEmbeddingConfigModel
+    | FromFieldEmbeddingConfigModel
+    | OpenAIEmbeddingConfigModel
+    | OpenAICompatibleEmbeddingConfigModel,
     processing_config: ProcessingConfigModel,
 ) -> Embedder:
     if embedding_config.mode == "azure_openai" or embedding_config.mode == "openai":

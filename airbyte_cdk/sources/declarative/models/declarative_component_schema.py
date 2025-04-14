@@ -1746,7 +1746,16 @@ class UnlimitedCallRatePolicy(BaseModel):
 
 class DefaultErrorHandler(BaseModel):
     type: Literal["DefaultErrorHandler"]
-    backoff_strategies: list[ConstantBackoffStrategy | CustomBackoffStrategy | ExponentialBackoffStrategy | WaitTimeFromHeader | WaitUntilTimeFromHeader] | None = Field(
+    backoff_strategies: (
+        list[
+            ConstantBackoffStrategy
+            | CustomBackoffStrategy
+            | ExponentialBackoffStrategy
+            | WaitTimeFromHeader
+            | WaitUntilTimeFromHeader
+        ]
+        | None
+    ) = Field(
         None,
         description="List of backoff strategies to use to determine how long to wait before retrying a retryable request.",
         title="Backoff Strategies",
@@ -1767,7 +1776,9 @@ class DefaultErrorHandler(BaseModel):
 
 class DefaultPaginator(BaseModel):
     type: Literal["DefaultPaginator"]
-    pagination_strategy: CursorPagination | CustomPaginationStrategy | OffsetIncrement | PageIncrement = Field(
+    pagination_strategy: (
+        CursorPagination | CustomPaginationStrategy | OffsetIncrement | PageIncrement
+    ) = Field(
         ...,
         description="Strategy defining how records are paginated.",
         title="Pagination Strategy",
@@ -1998,7 +2009,15 @@ class SelectiveAuthenticator(BaseModel):
     )
     authenticators: dict[
         str,
-        ApiKeyAuthenticator | BasicHttpAuthenticator | BearerAuthenticator | CustomAuthenticator | OAuthAuthenticator | JwtAuthenticator | NoAuth | SessionTokenAuthenticator | LegacySessionTokenAuthenticator,
+        ApiKeyAuthenticator
+        | BasicHttpAuthenticator
+        | BearerAuthenticator
+        | CustomAuthenticator
+        | OAuthAuthenticator
+        | JwtAuthenticator
+        | NoAuth
+        | SessionTokenAuthenticator
+        | LegacySessionTokenAuthenticator,
     ] = Field(
         ...,
         description="Authenticators to select from.",
@@ -2026,7 +2045,9 @@ class DeclarativeStream(BaseModel):
         description="Component used to coordinate how records are extracted across stream slices and request pages.",
         title="Retriever",
     )
-    incremental_sync: CustomIncrementalSync | DatetimeBasedCursor | IncrementingCountCursor | None = Field(
+    incremental_sync: (
+        CustomIncrementalSync | DatetimeBasedCursor | IncrementingCountCursor | None
+    ) = Field(
         None,
         description="Component used to fetch data incrementally based on a time field in the data.",
         title="Incremental Sync",
@@ -2035,20 +2056,36 @@ class DeclarativeStream(BaseModel):
     primary_key: PrimaryKey | None = Field(
         "", description="The primary key of the stream.", title="Primary Key"
     )
-    schema_loader: DynamicSchemaLoader | InlineSchemaLoader | JsonFileSchemaLoader | CustomSchemaLoader | None = Field(
+    schema_loader: (
+        DynamicSchemaLoader | InlineSchemaLoader | JsonFileSchemaLoader | CustomSchemaLoader | None
+    ) = Field(
         None,
         description="Component used to retrieve the schema for the current stream.",
         title="Schema Loader",
     )
-    transformations: list[AddFields | CustomTransformation | RemoveFields | KeysToLower | KeysToSnakeCase | FlattenFields | DpathFlattenFields | KeysReplace] | None = Field(
+    transformations: (
+        list[
+            AddFields
+            | CustomTransformation
+            | RemoveFields
+            | KeysToLower
+            | KeysToSnakeCase
+            | FlattenFields
+            | DpathFlattenFields
+            | KeysReplace
+        ]
+        | None
+    ) = Field(
         None,
         description="A list of transformations to be applied to each output record.",
         title="Transformations",
     )
-    state_migrations: list[LegacyToPerPartitionStateMigration | CustomStateMigration] | None = Field(
-        [],
-        description="Array of state migrations to be applied on the input state",
-        title="State Migrations",
+    state_migrations: list[LegacyToPerPartitionStateMigration | CustomStateMigration] | None = (
+        Field(
+            [],
+            description="Array of state migrations to be applied on the input state",
+            title="State Migrations",
+        )
     )
     parameters: dict[str, Any] | None = Field(None, alias="$parameters")
 
@@ -2084,7 +2121,9 @@ class SessionTokenAuthenticator(BaseModel):
         examples=["PT1H", "P1D"],
         title="Expiration Duration",
     )
-    request_authentication: SessionTokenRequestApiKeyAuthenticator | SessionTokenRequestBearerAuthenticator = Field(
+    request_authentication: (
+        SessionTokenRequestApiKeyAuthenticator | SessionTokenRequestBearerAuthenticator
+    ) = Field(
         ...,
         description="Authentication method to use for requests sent to the API, specifying how to inject the session token.",
         title="Data Request Authentication",
@@ -2118,7 +2157,19 @@ class HttpRequester(BaseModel):
         ],
         title="URL Path",
     )
-    authenticator: ApiKeyAuthenticator | BasicHttpAuthenticator | BearerAuthenticator | CustomAuthenticator | OAuthAuthenticator | JwtAuthenticator | NoAuth | SessionTokenAuthenticator | LegacySessionTokenAuthenticator | SelectiveAuthenticator | None = Field(
+    authenticator: (
+        ApiKeyAuthenticator
+        | BasicHttpAuthenticator
+        | BearerAuthenticator
+        | CustomAuthenticator
+        | OAuthAuthenticator
+        | JwtAuthenticator
+        | NoAuth
+        | SessionTokenAuthenticator
+        | LegacySessionTokenAuthenticator
+        | SelectiveAuthenticator
+        | None
+    ) = Field(
         None,
         description="Authentication method to use for requests sent to the API.",
         title="Authenticator",
@@ -2186,7 +2237,19 @@ class DynamicSchemaLoader(BaseModel):
         description="Component used to coordinate how records are extracted across stream slices and request pages.",
         title="Retriever",
     )
-    schema_transformations: list[AddFields | CustomTransformation | RemoveFields | KeysToLower | KeysToSnakeCase | FlattenFields | DpathFlattenFields | KeysReplace] | None = Field(
+    schema_transformations: (
+        list[
+            AddFields
+            | CustomTransformation
+            | RemoveFields
+            | KeysToLower
+            | KeysToSnakeCase
+            | FlattenFields
+            | DpathFlattenFields
+            | KeysReplace
+        ]
+        | None
+    ) = Field(
         None,
         description="A list of transformations to be applied to the schema.",
         title="Schema Transformations",
@@ -2303,12 +2366,34 @@ class SimpleRetriever(BaseModel):
         False,
         description="If true, the partition router and incremental request options will be ignored when paginating requests. Request options set directly on the requester will not be ignored.",
     )
-    partition_router: CustomPartitionRouter | ListPartitionRouter | SubstreamPartitionRouter | GroupingPartitionRouter | list[CustomPartitionRouter | ListPartitionRouter | SubstreamPartitionRouter | GroupingPartitionRouter] | None = Field(
+    partition_router: (
+        CustomPartitionRouter
+        | ListPartitionRouter
+        | SubstreamPartitionRouter
+        | GroupingPartitionRouter
+        | list[
+            CustomPartitionRouter
+            | ListPartitionRouter
+            | SubstreamPartitionRouter
+            | GroupingPartitionRouter
+        ]
+        | None
+    ) = Field(
         [],
         description="PartitionRouter component that describes how to partition the stream, enabling incremental syncs and checkpointing.",
         title="Partition Router",
     )
-    decoder: CustomDecoder | CsvDecoder | GzipDecoder | JsonDecoder | JsonlDecoder | IterableDecoder | XmlDecoder | ZipfileDecoder | None = Field(
+    decoder: (
+        CustomDecoder
+        | CsvDecoder
+        | GzipDecoder
+        | JsonDecoder
+        | JsonlDecoder
+        | IterableDecoder
+        | XmlDecoder
+        | ZipfileDecoder
+        | None
+    ) = Field(
         None,
         description="Component decoding the response so records can be extracted.",
         title="Decoder",
@@ -2332,7 +2417,9 @@ class AsyncRetriever(BaseModel):
         ...,
         description="Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.",
     )
-    download_extractor: CustomRecordExtractor | DpathExtractor | ResponseToFileExtractor | None = Field(None, description="Responsible for fetching the records from provided urls.")
+    download_extractor: CustomRecordExtractor | DpathExtractor | ResponseToFileExtractor | None = (
+        Field(None, description="Responsible for fetching the records from provided urls.")
+    )
     creation_requester: CustomRequester | HttpRequester = Field(
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to create the async server-side job.",
@@ -2365,17 +2452,49 @@ class AsyncRetriever(BaseModel):
         None,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to delete a job once the records are extracted.",
     )
-    partition_router: CustomPartitionRouter | ListPartitionRouter | SubstreamPartitionRouter | GroupingPartitionRouter | list[CustomPartitionRouter | ListPartitionRouter | SubstreamPartitionRouter | GroupingPartitionRouter] | None = Field(
+    partition_router: (
+        CustomPartitionRouter
+        | ListPartitionRouter
+        | SubstreamPartitionRouter
+        | GroupingPartitionRouter
+        | list[
+            CustomPartitionRouter
+            | ListPartitionRouter
+            | SubstreamPartitionRouter
+            | GroupingPartitionRouter
+        ]
+        | None
+    ) = Field(
         [],
         description="PartitionRouter component that describes how to partition the stream, enabling incremental syncs and checkpointing.",
         title="Partition Router",
     )
-    decoder: CustomDecoder | CsvDecoder | GzipDecoder | JsonDecoder | JsonlDecoder | IterableDecoder | XmlDecoder | ZipfileDecoder | None = Field(
+    decoder: (
+        CustomDecoder
+        | CsvDecoder
+        | GzipDecoder
+        | JsonDecoder
+        | JsonlDecoder
+        | IterableDecoder
+        | XmlDecoder
+        | ZipfileDecoder
+        | None
+    ) = Field(
         None,
         description="Component decoding the response so records can be extracted.",
         title="Decoder",
     )
-    download_decoder: CustomDecoder | CsvDecoder | GzipDecoder | JsonDecoder | JsonlDecoder | IterableDecoder | XmlDecoder | ZipfileDecoder | None = Field(
+    download_decoder: (
+        CustomDecoder
+        | CsvDecoder
+        | GzipDecoder
+        | JsonDecoder
+        | JsonlDecoder
+        | IterableDecoder
+        | XmlDecoder
+        | ZipfileDecoder
+        | None
+    ) = Field(
         None,
         description="Component decoding the download response so records can be extracted.",
         title="Download Decoder",
@@ -2401,7 +2520,9 @@ class GroupingPartitionRouter(BaseModel):
         examples=[10, 50],
         title="Group Size",
     )
-    underlying_partition_router: CustomPartitionRouter | ListPartitionRouter | SubstreamPartitionRouter = Field(
+    underlying_partition_router: (
+        CustomPartitionRouter | ListPartitionRouter | SubstreamPartitionRouter
+    ) = Field(
         ...,
         description="The partition router whose output will be grouped. This can be any valid partition router component.",
         title="Underlying Partition Router",

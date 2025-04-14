@@ -8,6 +8,7 @@ import datetime
 import importlib
 import inspect
 import re
+from collections.abc import Callable, Mapping, MutableMapping
 from functools import partial
 from typing import (
     Any,
@@ -20,7 +21,6 @@ from typing import (
     get_origin,
     get_type_hints,
 )
-from collections.abc import Callable, Mapping, MutableMapping
 
 from isodate import parse_duration
 from pydantic.v1 import BaseModel
@@ -1648,10 +1648,8 @@ class ModelToComponentFactory:
                     raise ValueError(
                         f"Error creating component '{type_name}' with parent custom component {model.class_name}: Please provide "
                         + ", ".join(
-                            
-                                f"{type_name}.$parameters.{parameter}"
-                                for parameter in missing_parameters
-                            
+                            f"{type_name}.$parameters.{parameter}"
+                            for parameter in missing_parameters
                         )
                     )
                 raise TypeError(
@@ -2843,7 +2841,10 @@ class ModelToComponentFactory:
         stop_condition_on_cursor: bool = False,
         client_side_incremental_sync: dict[str, Any] | None = None,
         transformations: list[RecordTransformation],
-        incremental_sync: IncrementingCountCursorModel | DatetimeBasedCursorModel | CustomIncrementalSyncModel | None = None,
+        incremental_sync: IncrementingCountCursorModel
+        | DatetimeBasedCursorModel
+        | CustomIncrementalSyncModel
+        | None = None,
         use_cache: bool | None = None,
         **kwargs: Any,
     ) -> SimpleRetriever:
@@ -3090,7 +3091,10 @@ class ModelToComponentFactory:
         config: Config,
         *,
         name: str,
-        primary_key: str | list[str] | list[list[str]] | None,  # this seems to be needed to match create_simple_retriever
+        primary_key: str
+        | list[str]
+        | list[list[str]]
+        | None,  # this seems to be needed to match create_simple_retriever
         stream_slicer: StreamSlicer | None,
         client_side_incremental_sync: dict[str, Any] | None = None,
         transformations: list[RecordTransformation],

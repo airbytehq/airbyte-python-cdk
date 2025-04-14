@@ -3,8 +3,8 @@
 #
 
 import pkgutil
-from typing import Any, List, Optional
 from collections.abc import Mapping
+from typing import Any, List, Optional
 
 import yaml
 

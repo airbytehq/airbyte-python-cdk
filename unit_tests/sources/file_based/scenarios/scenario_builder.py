@@ -2,10 +2,10 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Generic, List, Optional, Set, Tuple, Type, TypeVar
-from collections.abc import Mapping
 
 from airbyte_cdk.models import (
     AirbyteAnalyticsTraceMessage,

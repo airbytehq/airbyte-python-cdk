@@ -6,10 +6,10 @@ import json
 import logging
 import os
 import sys
+from collections.abc import Mapping
 from copy import deepcopy
 from pathlib import Path
 from typing import Any, List
-from collections.abc import Mapping
 from unittest.mock import call, patch
 
 import pytest

@@ -3,10 +3,10 @@
 #
 
 import logging
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from io import IOBase
 from typing import Any, Dict, List, Optional, Set
-from collections.abc import Iterable, Mapping
 
 import pytest
 from pydantic.v1 import AnyUrl
@@ -376,10 +376,9 @@ def test_globs_and_prefixes_from_globs(
 ) -> None:
     reader = TestStreamReader()
     reader.config = TestSpec(**config)
-    assert (
-        {f.uri for f in reader.filter_files_by_globs_and_start_date(FILES, globs)}
-        == expected_matches
-    )
+    assert {
+        f.uri for f in reader.filter_files_by_globs_and_start_date(FILES, globs)
+    } == expected_matches
     assert set(reader.get_prefixes_from_globs(globs)) == expected_path_prefixes
 
 

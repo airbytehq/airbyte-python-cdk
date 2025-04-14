@@ -2,9 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 import logging
+from collections.abc import Iterable, Mapping, MutableMapping
 from dataclasses import InitVar, dataclass, field
 from typing import Any, List, Optional, Union
-from collections.abc import Iterable, Mapping, MutableMapping
 
 from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.declarative.incremental import (

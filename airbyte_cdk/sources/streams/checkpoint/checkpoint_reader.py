@@ -1,9 +1,9 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterable, Mapping
 from enum import Enum
 from typing import Any, Optional
-from collections.abc import Iterable, Mapping
 
 from airbyte_cdk.sources.types import StreamSlice
 

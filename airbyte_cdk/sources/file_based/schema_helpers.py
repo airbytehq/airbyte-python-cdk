@@ -3,11 +3,11 @@
 #
 
 import json
+from collections.abc import Mapping
 from copy import deepcopy
 from enum import Enum
 from functools import total_ordering
 from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union
-from collections.abc import Mapping
 
 from airbyte_cdk.sources.file_based.exceptions import (
     ConfigValidationError,

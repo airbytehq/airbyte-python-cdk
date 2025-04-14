@@ -5,10 +5,10 @@
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Generator, MutableMapping
 from dataclasses import dataclass
 from io import BufferedIOBase
 from typing import Any, Dict, List, Optional, Set, Tuple
-from collections.abc import Generator, MutableMapping
 
 logger = logging.getLogger("airbyte")
 

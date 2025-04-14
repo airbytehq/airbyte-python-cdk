@@ -1,9 +1,9 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 import copy
+from collections.abc import Mapping, MutableMapping
 from copy import deepcopy
 from datetime import datetime, timedelta
 from typing import Any, List, Optional, Union
-from collections.abc import Mapping, MutableMapping
 from unittest.mock import MagicMock, patch
 from urllib.parse import unquote
 

@@ -1,8 +1,8 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-from typing import Any, List, Optional, Tuple, Union
 from collections.abc import Iterable, Mapping
+from typing import Any, List, Optional, Tuple, Union
 
 from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.streams import Stream
