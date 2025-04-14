@@ -110,11 +110,16 @@ class TestReader:
         record_limit = self._check_record_limit(record_limit)
         # The connector builder currently only supports reading from a single stream at a time
         stream = source.streams(config)[0]
+
+        # get any deprecation warnings during the component creation
+        deprecation_warnings: List[AirbyteLogMessage] = source.deprecation_warnings()
+
         schema_inferrer = SchemaInferrer(
             self._pk_to_nested_and_composite_field(stream.primary_key),
             self._cursor_field_to_nested_and_composite_field(stream.cursor_field),
         )
         datetime_format_inferrer = DatetimeFormatInferrer()
+
         message_group = get_message_groups(
             self._read_stream(source, config, configured_catalog, state),
             schema_inferrer,
@@ -123,7 +128,7 @@ class TestReader:
         )
 
         slices, log_messages, auxiliary_requests, latest_config_update = self._categorise_groups(
-            message_group
+            message_group, deprecation_warnings
         )
         schema, log_messages = self._get_infered_schema(
             configured_catalog, schema_inferrer, log_messages
@@ -236,7 +241,11 @@ class TestReader:
 
         return record_limit
 
-    def _categorise_groups(self, message_groups: MESSAGE_GROUPS) -> GROUPED_MESSAGES:
+    def _categorise_groups(
+        self,
+        message_groups: MESSAGE_GROUPS,
+        deprecation_warnings: Optional[List[Any]] = None,
+    ) -> GROUPED_MESSAGES:
         """
         Categorizes a sequence of message groups into slices, log messages, auxiliary requests, and the latest configuration update.
 
@@ -267,6 +276,7 @@ class TestReader:
         auxiliary_requests = []
         latest_config_update: Optional[AirbyteControlMessage] = None
 
+        # process the message groups first
         for message_group in message_groups:
             match message_group:
                 case AirbyteLogMessage():
@@ -295,6 +305,17 @@ class TestReader:
                     slices.append(message_group)
                 case _:
                     raise ValueError(f"Unknown message group type: {type(message_group)}")
+
+        # process deprecation warnings, if present
+        if deprecation_warnings is not None:
+            for deprecation in deprecation_warnings:
+                match deprecation:
+                    case AirbyteLogMessage():
+                        log_messages.append(
+                            LogMessage(message=deprecation.message, level=deprecation.level.value)
+                        )
+                    case _:
+                        raise ValueError(f"Unknown message group type: {type(deprecation)}")
 
         return slices, log_messages, auxiliary_requests, latest_config_update
 

@@ -17,6 +17,7 @@ from packaging.version import InvalidVersion, Version
 
 from airbyte_cdk.models import (
     AirbyteConnectionStatus,
+    AirbyteLogMessage,
     AirbyteMessage,
     AirbyteStateMessage,
     ConfiguredAirbyteCatalog,
@@ -60,24 +61,6 @@ from airbyte_cdk.sources.utils.slice_logger import (
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
-def _get_declarative_component_schema() -> Dict[str, Any]:
-    try:
-        raw_component_schema = pkgutil.get_data(
-            "airbyte_cdk", "sources/declarative/declarative_component_schema.yaml"
-        )
-        if raw_component_schema is not None:
-            declarative_component_schema = yaml.load(raw_component_schema, Loader=yaml.SafeLoader)
-            return declarative_component_schema  # type: ignore
-        else:
-            raise RuntimeError(
-                "Failed to read manifest component json schema required for deduplication"
-            )
-    except FileNotFoundError as e:
-        raise FileNotFoundError(
-            f"Failed to read manifest component json schema required for deduplication: {e}"
-        )
-
-
 class ManifestDeclarativeSource(DeclarativeSource):
     """Declarative source defined by a manifest of low-code components that define source connector behavior"""
 
@@ -100,7 +83,6 @@ class ManifestDeclarativeSource(DeclarativeSource):
         """
         self.logger = logging.getLogger(f"airbyte.{self.name}")
 
-        self._declarative_component_schema = _get_declarative_component_schema()
         # For ease of use we don't require the type to be specified at the top level manifest, but it should be included during processing
         manifest = dict(source_config)
         if "type" not in manifest:
@@ -150,6 +132,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
         return self._dynamic_stream_configs(
             manifest=self._source_config, config=self._config, with_dynamic_stream_name=True
         )
+
+    def deprecation_warnings(self) -> List[AirbyteLogMessage]:
+        return self._constructor.get_model_deprecations() or []
 
     @property
     def connection_checker(self) -> ConnectionChecker:
