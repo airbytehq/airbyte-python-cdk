@@ -12,7 +12,6 @@ _DO_NOT_DELETE_ORIGIN_VALUE = False
 _DO_NOT_REPLACE_WITH_VALUE = False
 _NO_KEY_PREFIX = None
 _NO_KEY_SUFFIX = None
-_NO_CUSTOM_TRANSFORMATION = None
 _NO_KEY_TRANSFORMATIONS = None
 
 
@@ -152,38 +151,8 @@ _NO_KEY_TRANSFORMATIONS = None
             {},
             ["field2"],
             _DO_NOT_DELETE_ORIGIN_VALUE,
-            _DO_NOT_REPLACE_WITH_VALUE,
-            (_NO_KEY_PREFIX, _NO_KEY_SUFFIX, "field2_{{ key }}"),
-            {"field1": _ANY_VALUE, "field2": {"field3": _ANY_VALUE}, "field2_field3": _ANY_VALUE},
-            id="flatten by dpath, not delete origin value, add keys custom transformation",
-        ),
-        pytest.param(
-            {"field1": _ANY_VALUE, "field2": {"field3": _ANY_VALUE}},
-            {},
-            ["field2"],
-            _DELETE_ORIGIN_VALUE,
-            _DO_NOT_REPLACE_WITH_VALUE,
-            (_NO_KEY_PREFIX, _NO_KEY_SUFFIX, "field2_{{ key }}"),
-            {"field1": _ANY_VALUE, "field2_field3": _ANY_VALUE},
-            id="flatten by dpath, delete origin value, add keys custom transformation",
-        ),
-        pytest.param(
-            {"field1": _ANY_VALUE, "field2": {"field3": _ANY_VALUE}},
-            {},
-            ["field2"],
-            _DO_NOT_DELETE_ORIGIN_VALUE,
             _REPLACE_WITH_VALUE,
-            (_NO_KEY_PREFIX, _NO_KEY_SUFFIX, "field2_{{ key }}"),
-            {"field2_field3": _ANY_VALUE},
-            id="flatten by dpath, not delete origin value, replace record, add keys custom transformation",
-        ),
-        pytest.param(
-            {"field1": _ANY_VALUE, "field2": {"field3": _ANY_VALUE}},
-            {},
-            ["field2"],
-            _DO_NOT_DELETE_ORIGIN_VALUE,
-            _REPLACE_WITH_VALUE,
-            ("prefix_", _NO_KEY_SUFFIX, _NO_CUSTOM_TRANSFORMATION),
+            ("prefix_", _NO_KEY_SUFFIX),
             {"prefix_field3": _ANY_VALUE},
             id="flatten by dpath, not delete origin value, replace record, add keys prefix",
         ),
@@ -193,7 +162,7 @@ _NO_KEY_TRANSFORMATIONS = None
             ["field2"],
             _DO_NOT_DELETE_ORIGIN_VALUE,
             _REPLACE_WITH_VALUE,
-            (_NO_KEY_PREFIX, "_suffix", _NO_CUSTOM_TRANSFORMATION),
+            (_NO_KEY_PREFIX, "_suffix"),
             {"field3_suffix": _ANY_VALUE},
             id="flatten by dpath, not delete origin value, replace record, add keys suffix",
         ),
@@ -203,19 +172,9 @@ _NO_KEY_TRANSFORMATIONS = None
             ["field2"],
             _DO_NOT_DELETE_ORIGIN_VALUE,
             _REPLACE_WITH_VALUE,
-            ("prefix_", "_suffix", _NO_CUSTOM_TRANSFORMATION),
+            ("prefix_", "_suffix"),
             {"prefix_field3_suffix": _ANY_VALUE},
             id="flatten by dpath, not delete origin value, replace record, add keys prefix and suffix",
-        ),
-        pytest.param(
-            {"field1": _ANY_VALUE, "field2": {"field3": _ANY_VALUE}},
-            {},
-            ["field2"],
-            _DO_NOT_DELETE_ORIGIN_VALUE,
-            _REPLACE_WITH_VALUE,
-            ("prefix_", "_suffix", "{{ key|upper }}"),
-            {"PREFIX_FIELD3_SUFFIX": _ANY_VALUE},
-            id="flatten by dpath, not delete origin value, replace record, add keys prefix and suffix with custom to upper case",
         ),
     ],
 )
@@ -229,7 +188,7 @@ def test_dpath_flatten_lists(
     expected_record,
 ):
     if key_transformation:
-        key_transformation = KeyTransformation(*key_transformation)
+        key_transformation = KeyTransformation({}, *key_transformation)
 
     flattener = DpathFlattenFields(
         field_path=field_path,

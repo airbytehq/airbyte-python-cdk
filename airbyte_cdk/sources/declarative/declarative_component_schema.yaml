@@ -2328,12 +2328,6 @@ definitions:
         type: string
         examples:
           - _flattened
-      custom:
-        title: Custom Transformation for keys
-        description: Custom transformation. Can be used with {{ key }} as a original value for key name. If not provided original keys remain unchanged.
-        type: string
-        examples:
-          - flattened_{{ key }}
   DpathFlattenFields:
     title: Dpath Flatten Fields
     description: A transformation that flatten field values to the to top of the record.

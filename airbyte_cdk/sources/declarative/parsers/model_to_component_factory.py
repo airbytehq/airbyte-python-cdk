@@ -795,7 +795,7 @@ class ModelToComponentFactory:
             KeyTransformation(
                 prefix=model.key_transformation.prefix,
                 suffix=model.key_transformation.suffix,
-                custom=model.key_transformation.custom,
+                parameters=model.parameters or {},
             )
             if model.key_transformation is not None
             else None

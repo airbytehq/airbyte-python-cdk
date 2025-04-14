@@ -8,11 +8,15 @@ from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 
 
-@dataclass(frozen=True)
+@dataclass
 class KeyTransformation:
+    parameters: InitVar[Mapping[str, Any]]
     prefix: Union[InterpolatedString, str, None] = None
     suffix: Union[InterpolatedString, str, None] = None
-    custom: Union[InterpolatedString, str, None] = None
+
+    def __post_init__(self, parameters: Mapping[str, Any]) -> None:
+        self.prefix = InterpolatedString.create(self.prefix, parameters=parameters)
+        self.suffix = InterpolatedString.create(self.suffix, parameters=parameters)
 
 
 @dataclass
@@ -32,7 +36,7 @@ class DpathFlattenFields(RecordTransformation):
     parameters: InitVar[Mapping[str, Any]]
     delete_origin_value: bool = False
     replace_record: bool = False
-    key_transformation: Union[KeyTransformation, None] = None
+    key_transformation: Optional[KeyTransformation] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._parameters = parameters
@@ -48,25 +52,13 @@ class DpathFlattenFields(RecordTransformation):
     def _apply_key_transformation(self, extracted: Mapping[str, Any]) -> Mapping[str, Any]:
         if self.key_transformation:
             if self.key_transformation.prefix:
-                prefix = InterpolatedString.create(
-                    self.key_transformation.prefix, parameters=self._parameters
-                ).eval(config=self.config)
-                extracted = {f"{prefix}{key}": value for key, value in extracted.items()}
+                if prefix := self.key_transformation.prefix.eval(config=self.config):
+                    extracted = {f"{prefix}{key}": value for key, value in extracted.items()}
 
             if self.key_transformation.suffix:
-                suffix = InterpolatedString.create(
-                    self.key_transformation.suffix, parameters=self._parameters
-                ).eval(config=self.config)
-                extracted = {f"{key}{suffix}": value for key, value in extracted.items()}
+                if suffix := self.key_transformation.suffix.eval(config=self.config):
+                    extracted = {f"{key}{suffix}": value for key, value in extracted.items()}
 
-            if self.key_transformation.custom:
-                updated_extracted = {}
-                for key, value in extracted.items():
-                    updated_key = InterpolatedString.create(
-                        self.key_transformation.custom, parameters=self._parameters
-                    ).eval(key=key, config=self.config)
-                    updated_extracted[updated_key] = value
-                extracted = updated_extracted
         return extracted
 
     def transform(

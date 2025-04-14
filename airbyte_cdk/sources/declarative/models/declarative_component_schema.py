@@ -896,14 +896,6 @@ class KeyTransformation(BaseModel):
         ],
         title="Key Suffix",
     )
-    custom: Optional[Union[str, None]] = Field(
-        None,
-        description="Custom transformation. Can be used with {{ key }} as a original value for key name. If not provided original keys remain unchanged.",
-        examples=[
-            "flattened_{{ key }}",
-        ],
-        title="Custom Transformation for keys",
-    )
 
 
 class DpathFlattenFields(BaseModel):
