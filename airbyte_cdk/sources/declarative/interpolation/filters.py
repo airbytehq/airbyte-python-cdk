@@ -4,9 +4,10 @@
 
 import base64
 import hashlib
+import hmac as hmac_lib
 import json
 import re
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 
 def hash(value: Any, hash_type: str = "md5", salt: Optional[str] = None) -> str:
@@ -135,5 +136,51 @@ def regex_search(value: str, regex: str) -> str:
     return ""
 
 
-_filters_list = [hash, base64encode, base64decode, base64binascii_decode, string, regex_search]
+def hmac(value: Any, key: str, hash_type: str = "sha256") -> str:
+    """
+    Implementation of a custom Jinja2 hmac filter with SHA-256 support.
+
+    This filter creates a Hash-based Message Authentication Code (HMAC) using a cryptographic
+    hash function and a secret key. Currently only supports SHA-256, and returns hexdigest of the signature.
+
+    Example usage in a low code connector:
+
+    auth_headers:
+      $ref: "#/definitions/base_auth"
+      $parameters:
+        signature: "{{ 'message_to_sign' | hmac('my_secret_key') }}"
+
+    :param value: The message to be authenticated
+    :param key: The secret key for the HMAC
+    :param hash_type: Hash algorithm to use (default: sha256)
+    :return: HMAC digest as a hexadecimal string
+    """
+    # Define allowed hash functions
+    ALLOWED_HASH_TYPES: Dict[str, Any] = {
+        "sha256": hashlib.sha256,
+    }
+
+    if hash_type not in ALLOWED_HASH_TYPES:
+        raise ValueError(
+            f"Hash type '{hash_type}' is not allowed. Allowed types: {', '.join(ALLOWED_HASH_TYPES.keys())}"
+        )
+
+    hmac_obj = hmac_lib.new(
+        key=str(key).encode("utf-8"),
+        msg=str(value).encode("utf-8"),
+        digestmod=ALLOWED_HASH_TYPES[hash_type],
+    )
+
+    return hmac_obj.hexdigest()
+
+
+_filters_list = [
+    hash,
+    base64encode,
+    base64decode,
+    base64binascii_decode,
+    string,
+    regex_search,
+    hmac,
+]
 filters = {f.__name__: f for f in _filters_list}

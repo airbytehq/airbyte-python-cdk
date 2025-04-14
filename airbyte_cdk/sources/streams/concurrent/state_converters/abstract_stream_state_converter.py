@@ -71,6 +71,10 @@ class AbstractStreamStateConverter(ABC):
         for stream_slice in state.get("slices", []):
             stream_slice[self.START_KEY] = self._from_state_message(stream_slice[self.START_KEY])
             stream_slice[self.END_KEY] = self._from_state_message(stream_slice[self.END_KEY])
+            if self.MOST_RECENT_RECORD_KEY in stream_slice:
+                stream_slice[self.MOST_RECENT_RECORD_KEY] = self._from_state_message(
+                    stream_slice[self.MOST_RECENT_RECORD_KEY]
+                )
         return state
 
     def serialize(

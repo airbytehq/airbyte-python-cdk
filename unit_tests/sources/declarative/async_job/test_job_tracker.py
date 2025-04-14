@@ -45,3 +45,27 @@ class JobTrackerTest(TestCase):
 def test_given_limit_is_less_than_1_when_init_then_set_to_1(limit: int):
     tracker = JobTracker(limit)
     assert tracker._limit == 1
+
+
+@pytest.mark.parametrize(
+    ("limit", "config", "expected_limit"),
+    [
+        ("2", {}, 2),
+        (
+            "{{ config['max_concurrent_async_job_count'] }}",
+            {"max_concurrent_async_job_count": 2},
+            2,
+        ),
+    ],
+)
+def test_given_limit_as_string_when_init_then_interpolate_correctly(limit, config, expected_limit):
+    tracker = JobTracker(limit, config)
+    assert tracker._limit == expected_limit
+
+
+def test_given_interpolated_limit_and_empty_config_when_init_then_set_to_1():
+    tracker = JobTracker(
+        "{{ config['max_concurrent_async_job_count'] }}",
+        {"max_concurrent_async_job_count": "hello"},
+    )
+    assert tracker._limit == 1
