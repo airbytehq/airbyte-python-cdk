@@ -4,7 +4,8 @@
 
 
 import sys
-from typing import Any, List, Mapping, Optional, Tuple
+from typing import Any, List, Optional, Tuple
+from collections.abc import Mapping
 
 import orjson
 
@@ -31,8 +32,8 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
 def get_config_and_catalog_from_args(
-    args: List[str],
-) -> Tuple[str, Mapping[str, Any], Optional[ConfiguredAirbyteCatalog], Any]:
+    args: list[str],
+) -> tuple[str, Mapping[str, Any], ConfiguredAirbyteCatalog | None, Any]:
     # TODO: Add functionality for the `debug` logger.
     #  Currently, no one `debug` level log will be displayed during `read` a stream for a connector created through `connector-builder`.
     parsed_args = AirbyteEntrypoint.parse_args(args)
@@ -71,8 +72,8 @@ def handle_connector_builder_request(
     source: ManifestDeclarativeSource,
     command: str,
     config: Mapping[str, Any],
-    catalog: Optional[ConfiguredAirbyteCatalog],
-    state: List[AirbyteStateMessage],
+    catalog: ConfiguredAirbyteCatalog | None,
+    state: list[AirbyteStateMessage],
     limits: TestLimits,
 ) -> AirbyteMessage:
     if command == "resolve_manifest":
@@ -88,7 +89,7 @@ def handle_connector_builder_request(
         raise ValueError(f"Unrecognized command {command}.")
 
 
-def handle_request(args: List[str]) -> str:
+def handle_request(args: list[str]) -> str:
     command, config, catalog, state = get_config_and_catalog_from_args(args)
     limits = get_limits(config)
     source = create_source(config, limits)

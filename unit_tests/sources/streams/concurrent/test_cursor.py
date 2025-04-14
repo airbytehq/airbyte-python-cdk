@@ -4,7 +4,8 @@
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from functools import partial
-from typing import Any, Mapping, Optional
+from typing import Any, Optional
+from collections.abc import Mapping
 from unittest import TestCase
 from unittest.mock import Mock
 
@@ -55,7 +56,7 @@ _NO_LOOKBACK_WINDOW = timedelta(seconds=0)
 
 
 def _partition(
-    _slice: Optional[Mapping[str, Any]], _stream_name: Optional[str] = Mock()
+    _slice: Mapping[str, Any] | None, _stream_name: str | None = Mock()
 ) -> Partition:
     partition = Mock(spec=Partition)
     partition.to_slice.return_value = _slice
@@ -64,7 +65,7 @@ def _partition(
 
 
 def _record(
-    cursor_value: CursorValueType, partition: Optional[Partition] = Mock(spec=Partition)
+    cursor_value: CursorValueType, partition: Partition | None = Mock(spec=Partition)
 ) -> Record:
     return Record(
         data={_A_CURSOR_FIELD_KEY: cursor_value},
@@ -1015,7 +1016,7 @@ class ClampingIntegrationTest(TestCase):
         start: datetime,
         end_provider,
         slice_range: timedelta,
-        granularity: Optional[timedelta],
+        granularity: timedelta | None,
         clamping_strategy: ClampingStrategy,
     ) -> ConcurrentCursor:
         return ConcurrentCursor(

@@ -9,7 +9,8 @@ import time
 from collections import OrderedDict
 from copy import deepcopy
 from datetime import timedelta
-from typing import Any, Callable, Iterable, Mapping, MutableMapping, Optional
+from typing import Any, Optional
+from collections.abc import Callable, Iterable, Mapping, MutableMapping
 
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.incremental.global_substream_cursor import (
@@ -36,7 +37,7 @@ class ConcurrentCursorFactory:
         self._create_function = create_function
 
     def create(
-        self, stream_state: Mapping[str, Any], runtime_lookback_window: Optional[timedelta]
+        self, stream_state: Mapping[str, Any], runtime_lookback_window: timedelta | None
     ) -> ConcurrentCursor:
         return self._create_function(
             stream_state=stream_state, runtime_lookback_window=runtime_lookback_window
@@ -73,7 +74,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         cursor_factory: ConcurrentCursorFactory,
         partition_router: PartitionRouter,
         stream_name: str,
-        stream_namespace: Optional[str],
+        stream_namespace: str | None,
         stream_state: Any,
         message_repository: MessageRepository,
         connector_state_manager: ConnectorStateManager,
@@ -81,7 +82,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         cursor_field: CursorField,
         use_global_cursor: bool = False,
     ) -> None:
-        self._global_cursor: Optional[StreamState] = {}
+        self._global_cursor: StreamState | None = {}
         self._stream_name = stream_name
         self._stream_namespace = stream_namespace
         self._message_repository = message_repository
@@ -103,9 +104,9 @@ class ConcurrentPerPartitionCursor(Cursor):
         self._finished_partitions: set[str] = set()
         self._lock = threading.Lock()
         self._timer = Timer()
-        self._new_global_cursor: Optional[StreamState] = None
+        self._new_global_cursor: StreamState | None = None
         self._lookback_window: int = 0
-        self._parent_state: Optional[StreamState] = None
+        self._parent_state: StreamState | None = None
         self._number_of_partitions: int = 0
         self._use_global_cursor: bool = use_global_cursor
         self._partition_serializer = PerPartitionKeySerializer()
@@ -143,7 +144,7 @@ class ConcurrentPerPartitionCursor(Cursor):
 
     def close_partition(self, partition: Partition) -> None:
         # Attempt to retrieve the stream slice
-        stream_slice: Optional[StreamSlice] = partition.to_slice()  # type: ignore[assignment]
+        stream_slice: StreamSlice | None = partition.to_slice()  # type: ignore[assignment]
 
         # Ensure stream_slice is not None
         if stream_slice is None:
@@ -226,7 +227,7 @@ class ConcurrentPerPartitionCursor(Cursor):
             self._parent_state = self._partition_router.get_stream_state()
         self._emit_state_message(throttle=False)
 
-    def _throttle_state_message(self) -> Optional[float]:
+    def _throttle_state_message(self) -> float | None:
         """
         Throttles the state message emission to once every 60 seconds.
         """

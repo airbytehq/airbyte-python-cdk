@@ -3,7 +3,8 @@
 #
 
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union
+from collections.abc import Mapping
 
 import dpath
 
@@ -18,8 +19,8 @@ class AddedFieldDefinition:
     """Defines the field to add on a record"""
 
     path: FieldPointer
-    value: Union[InterpolatedString, str]
-    value_type: Optional[Type[Any]]
+    value: InterpolatedString | str
+    value_type: type[Any] | None
     parameters: InitVar[Mapping[str, Any]]
 
 
@@ -29,7 +30,7 @@ class ParsedAddFieldDefinition:
 
     path: FieldPointer
     value: InterpolatedString
-    value_type: Optional[Type[Any]]
+    value_type: type[Any] | None
     parameters: InitVar[Mapping[str, Any]]
 
 
@@ -85,10 +86,10 @@ class AddFields(RecordTransformation):
         fields (List[AddedFieldDefinition]): A list of transformations (path and corresponding value) that will be added to the record
     """
 
-    fields: List[AddedFieldDefinition]
+    fields: list[AddedFieldDefinition]
     parameters: InitVar[Mapping[str, Any]]
     condition: str = ""
-    _parsed_fields: List[ParsedAddFieldDefinition] = field(
+    _parsed_fields: list[ParsedAddFieldDefinition] = field(
         init=False, repr=False, default_factory=list
     )
 
@@ -127,10 +128,10 @@ class AddFields(RecordTransformation):
 
     def transform(
         self,
-        record: Dict[str, Any],
-        config: Optional[Config] = None,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
+        record: dict[str, Any],
+        config: Config | None = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
     ) -> None:
         if config is None:
             config = {}

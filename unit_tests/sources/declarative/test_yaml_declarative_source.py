@@ -37,7 +37,7 @@ class MockYamlDeclarativeSource(YamlDeclarativeSource):
         not mounted during runtime which prevents pkgutil.get_data() from being able to find the yaml file needed to generate
         # the declarative source. For tests we use open() which supports using an absolute path.
         """
-        with open(path_to_yaml_file, "r") as f:
+        with open(path_to_yaml_file) as f:
             config_content = f.read()
             parsed_config = YamlDeclarativeSource._parse(config_content)
             return parsed_config

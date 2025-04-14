@@ -400,8 +400,8 @@ class TestOauth2Authenticator:
     def test_parse_refresh_token_lifespan(
         self,
         mocker,
-        expires_in_response: Union[str, int],
-        token_expiry_date_format: Optional[str],
+        expires_in_response: str | int,
+        token_expiry_date_format: str | None,
         expected_token_expiry_date: AirbyteDateTime,
     ):
         oauth = Oauth2Authenticator(

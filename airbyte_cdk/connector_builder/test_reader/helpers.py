@@ -5,7 +5,8 @@
 import json
 from copy import deepcopy
 from json import JSONDecodeError
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Optional
+from collections.abc import Mapping
 
 from airbyte_cdk.connector_builder.models import (
     AuxiliaryRequest,
@@ -35,7 +36,7 @@ from .types import ASYNC_AUXILIARY_REQUEST_TYPES, LOG_MESSAGES_OUTPUT_TYPE
 # -------
 
 
-def airbyte_message_to_json(message: AirbyteMessage) -> Optional[Dict[str, JsonType]]:
+def airbyte_message_to_json(message: AirbyteMessage) -> dict[str, JsonType] | None:
     """
     Converts an AirbyteMessage to a JSON dictionary if its type is LOG.
 
@@ -64,7 +65,7 @@ def airbyte_message_to_json(message: AirbyteMessage) -> Optional[Dict[str, JsonT
     return None
 
 
-def clean_config(config: Dict[str, Any]) -> Dict[str, Any]:
+def clean_config(config: dict[str, Any]) -> dict[str, Any]:
     """
     Cleans the configuration dictionary by removing all keys that start with a double underscore.
 
@@ -85,7 +86,7 @@ def clean_config(config: Dict[str, Any]) -> Dict[str, Any]:
     return cleaned_config
 
 
-def create_request_from_log_message(json_http_message: Dict[str, Any]) -> HttpRequest:
+def create_request_from_log_message(json_http_message: dict[str, Any]) -> HttpRequest:
     """
     Creates an HttpRequest object from the provided JSON-formatted log message.
 
@@ -129,7 +130,7 @@ def create_request_from_log_message(json_http_message: Dict[str, Any]) -> HttpRe
     )
 
 
-def create_response_from_log_message(json_http_message: Dict[str, Any]) -> HttpResponse:
+def create_response_from_log_message(json_http_message: dict[str, Any]) -> HttpResponse:
     """
     Generate an HttpResponse instance from a JSON log message containing HTTP response details.
 
@@ -174,7 +175,7 @@ def parse_json(log_message: AirbyteLogMessage) -> JsonType:
         return None
 
 
-def parse_slice_description(log_message: str) -> Dict[str, Any]:
+def parse_slice_description(log_message: str) -> dict[str, Any]:
     """
     Parses a log message containing a JSON payload and returns it as a dictionary.
 
@@ -203,7 +204,7 @@ def parse_slice_description(log_message: str) -> Dict[str, Any]:
 def should_close_page(
     at_least_one_page_in_group: bool,
     message: AirbyteMessage,
-    json_message: Optional[Dict[str, Any]],
+    json_message: dict[str, Any] | None,
 ) -> bool:
     """
     Determines whether a page should be closed based on its content and state.
@@ -269,7 +270,7 @@ def should_close_page_for_slice(at_least_one_page_in_group: bool, message: Airby
     return at_least_one_page_in_group and should_process_slice_descriptor(message)
 
 
-def is_page_http_request(json_message: Optional[Dict[str, Any]]) -> bool:
+def is_page_http_request(json_message: dict[str, Any] | None) -> bool:
     """
     Determines whether a given JSON message represents a page HTTP request.
 
@@ -291,7 +292,7 @@ def is_page_http_request(json_message: Optional[Dict[str, Any]]) -> bool:
         return is_http_log(json_message) and not is_auxiliary_http_request(json_message)
 
 
-def is_http_log(message: Dict[str, JsonType]) -> bool:
+def is_http_log(message: dict[str, JsonType]) -> bool:
     """
     Determine if the provided log message represents an HTTP log.
 
@@ -308,7 +309,7 @@ def is_http_log(message: Dict[str, JsonType]) -> bool:
     return bool(message.get("http", False))
 
 
-def is_auxiliary_http_request(message: Optional[Dict[str, Any]]) -> bool:
+def is_auxiliary_http_request(message: dict[str, Any] | None) -> bool:
     """
     Determines if the provided message represents an auxiliary HTTP request.
 
@@ -415,10 +416,10 @@ def is_state_message(message: AirbyteMessage) -> bool:
 
 
 def handle_current_slice(
-    current_slice_pages: List[StreamReadPages],
-    current_slice_descriptor: Optional[Dict[str, Any]] = None,
-    latest_state_message: Optional[Dict[str, Any]] = None,
-    auxiliary_requests: Optional[List[AuxiliaryRequest]] = None,
+    current_slice_pages: list[StreamReadPages],
+    current_slice_descriptor: dict[str, Any] | None = None,
+    latest_state_message: dict[str, Any] | None = None,
+    auxiliary_requests: list[AuxiliaryRequest] | None = None,
 ) -> StreamReadSlices:
     """
     Handles the current slice by packaging its pages, descriptor, and state into a StreamReadSlices instance.
@@ -441,10 +442,10 @@ def handle_current_slice(
 
 
 def handle_current_page(
-    current_page_request: Optional[HttpRequest],
-    current_page_response: Optional[HttpResponse],
-    current_slice_pages: List[StreamReadPages],
-    current_page_records: List[Mapping[str, Any]],
+    current_page_request: HttpRequest | None,
+    current_page_response: HttpResponse | None,
+    current_slice_pages: list[StreamReadPages],
+    current_page_records: list[Mapping[str, Any]],
 ) -> tuple[None, None]:
     """
     Closes the current page by appending its request, response, and records
@@ -472,7 +473,7 @@ def handle_current_page(
     return None, None
 
 
-def handle_auxiliary_request(json_message: Dict[str, JsonType]) -> AuxiliaryRequest:
+def handle_auxiliary_request(json_message: dict[str, JsonType]) -> AuxiliaryRequest:
     """
     Parses the provided JSON message and constructs an AuxiliaryRequest object by extracting
     relevant fields from nested dictionaries.
@@ -517,10 +518,10 @@ def handle_auxiliary_request(json_message: Dict[str, JsonType]) -> AuxiliaryRequ
 
 def handle_log_message(
     message: AirbyteMessage,
-    json_message: Dict[str, JsonType] | None,
+    json_message: dict[str, JsonType] | None,
     at_least_one_page_in_group: bool,
-    current_page_request: Optional[HttpRequest],
-    current_page_response: Optional[HttpResponse],
+    current_page_request: HttpRequest | None,
+    current_page_response: HttpResponse | None,
 ) -> LOG_MESSAGES_OUTPUT_TYPE:
     """
     Process a log message by handling both HTTP-specific and auxiliary log entries.
@@ -571,7 +572,7 @@ def handle_record_message(
     schema_inferrer: SchemaInferrer,
     datetime_format_inferrer: DatetimeFormatInferrer,
     records_count: int,
-    current_page_records: List[Mapping[str, Any]],
+    current_page_records: list[Mapping[str, Any]],
 ) -> int:
     """
     Processes an Airbyte record message by updating the current batch and accumulating schema and datetime format information.
@@ -600,7 +601,7 @@ def handle_record_message(
 # -------
 
 
-def get_airbyte_cdk_from_message(json_message: Dict[str, JsonType]) -> dict:  # type: ignore
+def get_airbyte_cdk_from_message(json_message: dict[str, JsonType]) -> dict:  # type: ignore
     """
     Retrieves the "airbyte_cdk" dictionary from the provided JSON message.
 
@@ -658,7 +659,7 @@ def get_auxiliary_request_title_prefix(stream: dict) -> str:  # type: ignore
     return "Parent stream: " if stream.get("is_substream", False) else ""
 
 
-def get_http_property_from_message(json_message: Dict[str, JsonType]) -> dict:  # type: ignore
+def get_http_property_from_message(json_message: dict[str, JsonType]) -> dict:  # type: ignore
     """
     Retrieves the "http" dictionary from the provided JSON message.
 

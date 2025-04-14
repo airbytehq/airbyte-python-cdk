@@ -4,7 +4,8 @@
 
 import logging
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Iterable, List, MutableMapping, Optional
+from typing import TYPE_CHECKING, Any, List, Optional
+from collections.abc import Iterable, MutableMapping
 
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
@@ -29,7 +30,7 @@ class FileBasedFinalStateCursor(AbstractConcurrentFileBasedCursor):
         self,
         stream_config: FileBasedStreamConfig,
         message_repository: MessageRepository,
-        stream_namespace: Optional[str],
+        stream_namespace: str | None,
         **kwargs: Any,
     ):
         self._stream_name = stream_config.name
@@ -50,7 +51,7 @@ class FileBasedFinalStateCursor(AbstractConcurrentFileBasedCursor):
     def close_partition(self, partition: Partition) -> None:
         pass
 
-    def set_pending_partitions(self, partitions: List["FileBasedStreamPartition"]) -> None:
+    def set_pending_partitions(self, partitions: list["FileBasedStreamPartition"]) -> None:
         pass
 
     def add_file(self, file: RemoteFile) -> None:

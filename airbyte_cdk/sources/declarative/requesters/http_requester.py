@@ -5,7 +5,8 @@
 import logging
 import os
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Callable, Mapping, MutableMapping, Optional, Union
+from typing import Any, Optional, Union
+from collections.abc import Callable, Mapping, MutableMapping
 from urllib.parse import urljoin
 
 import requests
@@ -53,16 +54,16 @@ class HttpRequester(Requester):
     """
 
     name: str
-    url_base: Union[InterpolatedString, str]
+    url_base: InterpolatedString | str
     config: Config
     parameters: InitVar[Mapping[str, Any]]
 
-    path: Optional[Union[InterpolatedString, str]] = None
-    authenticator: Optional[DeclarativeAuthenticator] = None
-    http_method: Union[str, HttpMethod] = HttpMethod.GET
-    request_options_provider: Optional[InterpolatedRequestOptionsProvider] = None
-    error_handler: Optional[ErrorHandler] = None
-    api_budget: Optional[APIBudget] = None
+    path: InterpolatedString | str | None = None
+    authenticator: DeclarativeAuthenticator | None = None
+    http_method: str | HttpMethod = HttpMethod.GET
+    request_options_provider: InterpolatedRequestOptionsProvider | None = None
+    error_handler: ErrorHandler | None = None
+    api_budget: APIBudget | None = None
     disable_retries: bool = False
     message_repository: MessageRepository = NoopMessageRepository()
     use_cache: bool = False
@@ -123,9 +124,9 @@ class HttpRequester(Requester):
     def get_url_base(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> str:
         interpolation_context = get_interpolation_context(
             stream_state=stream_state,
@@ -137,9 +138,9 @@ class HttpRequester(Requester):
     def get_path(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> str:
         interpolation_context = get_interpolation_context(
             stream_state=stream_state,
@@ -155,9 +156,9 @@ class HttpRequester(Requester):
     def get_request_params(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> MutableMapping[str, Any]:
         return self._request_options_provider.get_request_params(
             stream_state=stream_state,
@@ -168,9 +169,9 @@ class HttpRequester(Requester):
     def get_request_headers(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return self._request_options_provider.get_request_headers(
             stream_state=stream_state,
@@ -182,10 +183,10 @@ class HttpRequester(Requester):
     def get_request_body_data(  # type: ignore
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Union[Mapping[str, Any], str]:
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any] | str:
         return (
             self._request_options_provider.get_request_body_data(
                 stream_state=stream_state,
@@ -199,10 +200,10 @@ class HttpRequester(Requester):
     def get_request_body_json(  # type: ignore
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Optional[Mapping[str, Any]]:
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any] | None:
         return self._request_options_provider.get_request_body_json(
             stream_state=stream_state,
             stream_slice=stream_slice,
@@ -215,13 +216,13 @@ class HttpRequester(Requester):
 
     def _get_request_options(
         self,
-        stream_state: Optional[StreamState],
-        stream_slice: Optional[StreamSlice],
-        next_page_token: Optional[Mapping[str, Any]],
-        requester_method: Callable[..., Optional[Union[Mapping[str, Any], str]]],
-        auth_options_method: Callable[..., Optional[Union[Mapping[str, Any], str]]],
-        extra_options: Optional[Union[Mapping[str, Any], str]] = None,
-    ) -> Union[Mapping[str, Any], str]:
+        stream_state: StreamState | None,
+        stream_slice: StreamSlice | None,
+        next_page_token: Mapping[str, Any] | None,
+        requester_method: Callable[..., Mapping[str, Any] | str | None],
+        auth_options_method: Callable[..., Mapping[str, Any] | str | None],
+        extra_options: Mapping[str, Any] | str | None = None,
+    ) -> Mapping[str, Any] | str:
         """
         Get the request_option from the requester, the authenticator and extra_options passed in.
         Raise a ValueError if there's a key collision
@@ -245,10 +246,10 @@ class HttpRequester(Requester):
 
     def _request_headers(
         self,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-        extra_headers: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
+        extra_headers: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         """
         Specifies request headers.
@@ -268,10 +269,10 @@ class HttpRequester(Requester):
 
     def _request_params(
         self,
-        stream_state: Optional[StreamState],
-        stream_slice: Optional[StreamSlice],
-        next_page_token: Optional[Mapping[str, Any]],
-        extra_params: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None,
+        stream_slice: StreamSlice | None,
+        next_page_token: Mapping[str, Any] | None,
+        extra_params: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         """
         Specifies the query parameters that should be set on an outgoing HTTP request given the inputs.
@@ -299,11 +300,11 @@ class HttpRequester(Requester):
 
     def _request_body_data(
         self,
-        stream_state: Optional[StreamState],
-        stream_slice: Optional[StreamSlice],
-        next_page_token: Optional[Mapping[str, Any]],
-        extra_body_data: Optional[Union[Mapping[str, Any], str]] = None,
-    ) -> Optional[Union[Mapping[str, Any], str]]:
+        stream_state: StreamState | None,
+        stream_slice: StreamSlice | None,
+        next_page_token: Mapping[str, Any] | None,
+        extra_body_data: Mapping[str, Any] | str | None = None,
+    ) -> Mapping[str, Any] | str | None:
         """
         Specifies how to populate the body of the request with a non-JSON payload.
 
@@ -325,11 +326,11 @@ class HttpRequester(Requester):
 
     def _request_body_json(
         self,
-        stream_state: Optional[StreamState],
-        stream_slice: Optional[StreamSlice],
-        next_page_token: Optional[Mapping[str, Any]],
-        extra_body_json: Optional[Mapping[str, Any]] = None,
-    ) -> Optional[Mapping[str, Any]]:
+        stream_state: StreamState | None,
+        stream_slice: StreamSlice | None,
+        next_page_token: Mapping[str, Any] | None,
+        extra_body_json: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any] | None:
         """
         Specifies how to populate the body of the request with a JSON payload.
 
@@ -387,16 +388,16 @@ class HttpRequester(Requester):
 
     def send_request(
         self,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-        path: Optional[str] = None,
-        request_headers: Optional[Mapping[str, Any]] = None,
-        request_params: Optional[Mapping[str, Any]] = None,
-        request_body_data: Optional[Union[Mapping[str, Any], str]] = None,
-        request_body_json: Optional[Mapping[str, Any]] = None,
-        log_formatter: Optional[Callable[[requests.Response], Any]] = None,
-    ) -> Optional[requests.Response]:
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
+        path: str | None = None,
+        request_headers: Mapping[str, Any] | None = None,
+        request_params: Mapping[str, Any] | None = None,
+        request_body_data: Mapping[str, Any] | str | None = None,
+        request_body_json: Mapping[str, Any] | None = None,
+        log_formatter: Callable[[requests.Response], Any] | None = None,
+    ) -> requests.Response | None:
         request, response = self._http_client.send_request(
             http_method=self.get_method().value,
             url=self._join_url(

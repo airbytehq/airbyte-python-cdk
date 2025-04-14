@@ -2,7 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Any, Callable, MutableMapping, Optional, Tuple
+from typing import Any, Optional, Tuple
+from collections.abc import Callable, MutableMapping
 
 from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (
@@ -26,8 +27,8 @@ class IncrementingCountStreamStateConverter(AbstractStreamStateConverter):
         self,
         cursor_field: "CursorField",  # to deprecate as it is only needed for sequential state
         stream_state: MutableMapping[str, Any],
-        start: Optional[Any],
-    ) -> Tuple[Any, MutableMapping[str, Any]]:
+        start: Any | None,
+    ) -> tuple[Any, MutableMapping[str, Any]]:
         """
         Convert the state message to the format required by the ConcurrentCursor.
 
@@ -78,10 +79,10 @@ class IncrementingCountStreamStateConverter(AbstractStreamStateConverter):
         self,
         cursor_field: CursorField,
         stream_state: MutableMapping[str, Any],
-        start: Optional[int],
+        start: int | None,
     ) -> int:
         sync_start = start if start is not None else self.zero_value
-        prev_sync_low_water_mark: Optional[int] = (
+        prev_sync_low_water_mark: int | None = (
             stream_state[cursor_field.cursor_field_key]
             if cursor_field.cursor_field_key in stream_state
             else None

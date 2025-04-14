@@ -1,7 +1,8 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 
 from dataclasses import InitVar, dataclass
-from typing import Any, Iterable, List, Mapping, Optional
+from typing import Any, List, Optional
+from collections.abc import Iterable, Mapping
 
 import dpath
 
@@ -17,7 +18,7 @@ class PropertiesFromEndpoint:
     API endpoint. The set retrieved can then be injected into the requests to extract records from an API source.
     """
 
-    property_field_path: List[str]
+    property_field_path: list[str]
     retriever: Retriever
     config: Config
     parameters: InitVar[Mapping[str, Any]]
@@ -28,7 +29,7 @@ class PropertiesFromEndpoint:
             for property_field in self.property_field_path
         ]
 
-    def get_properties_from_endpoint(self, stream_slice: Optional[StreamSlice]) -> Iterable[str]:
+    def get_properties_from_endpoint(self, stream_slice: StreamSlice | None) -> Iterable[str]:
         response_properties = self.retriever.read_records(
             records_schema={}, stream_slice=stream_slice
         )

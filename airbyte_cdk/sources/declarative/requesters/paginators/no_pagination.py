@@ -3,7 +3,8 @@
 #
 
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, MutableMapping, Optional, Union
+from typing import Any, Optional, Union
+from collections.abc import Mapping, MutableMapping
 
 import requests
 
@@ -21,56 +22,56 @@ class NoPagination(Paginator):
 
     def path(
         self,
-        next_page_token: Optional[Mapping[str, Any]],
-        stream_state: Optional[Mapping[str, Any]] = None,
-        stream_slice: Optional[StreamSlice] = None,
-    ) -> Optional[str]:
+        next_page_token: Mapping[str, Any] | None,
+        stream_state: Mapping[str, Any] | None = None,
+        stream_slice: StreamSlice | None = None,
+    ) -> str | None:
         return None
 
     def get_request_params(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> MutableMapping[str, Any]:
         return {}
 
     def get_request_headers(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, str]:
         return {}
 
     def get_request_body_data(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Union[Mapping[str, Any], str]:
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any] | str:
         return {}
 
     def get_request_body_json(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return {}
 
-    def get_initial_token(self) -> Optional[Any]:
+    def get_initial_token(self) -> Any | None:
         return None
 
     def next_page_token(
         self,
         response: requests.Response,
         last_page_size: int,
-        last_record: Optional[Record],
-        last_page_token_value: Optional[Any],
-    ) -> Optional[Mapping[str, Any]]:
+        last_record: Record | None,
+        last_page_token_value: Any | None,
+    ) -> Mapping[str, Any] | None:
         return {}

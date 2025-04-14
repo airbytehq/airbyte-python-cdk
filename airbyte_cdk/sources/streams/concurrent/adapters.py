@@ -5,8 +5,9 @@
 import copy
 import json
 import logging
-from functools import lru_cache
-from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Tuple, Union
+from functools import lru_cache, cache
+from typing import Any, List, Optional, Tuple, Union
+from collections.abc import Iterable, Mapping, MutableMapping
 
 from typing_extensions import deprecated
 
@@ -68,7 +69,7 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
         stream: Stream,
         source: AbstractSource,
         logger: logging.Logger,
-        state: Optional[MutableMapping[str, Any]],
+        state: MutableMapping[str, Any] | None,
         cursor: Cursor,
     ) -> Stream:
         """
@@ -155,9 +156,9 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
         try:
             yield from self._read_records()
@@ -187,22 +188,22 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
         return self._abstract_stream.name
 
     @property
-    def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
+    def primary_key(self) -> str | list[str] | list[list[str]] | None:
         # This method is not expected to be called directly. It is only implemented for backward compatibility with the old interface
         return self.as_airbyte_stream().source_defined_primary_key  # type: ignore # source_defined_primary_key is known to be an Optional[List[List[str]]]
 
     @property
-    def cursor_field(self) -> Union[str, List[str]]:
+    def cursor_field(self) -> str | list[str]:
         if self._abstract_stream.cursor_field is None:
             return []
         else:
             return self._abstract_stream.cursor_field
 
     @property
-    def cursor(self) -> Optional[Cursor]:  # type: ignore[override] # StreamFaced expects to use only airbyte_cdk.sources.streams.concurrent.cursor.Cursor
+    def cursor(self) -> Cursor | None:  # type: ignore[override] # StreamFaced expects to use only airbyte_cdk.sources.streams.concurrent.cursor.Cursor
         return self._cursor
 
-    @lru_cache(maxsize=None)
+    @cache
     def get_json_schema(self) -> Mapping[str, Any]:
         return self._abstract_stream.get_json_schema()
 
@@ -212,7 +213,7 @@ class StreamFacade(AbstractStreamFacade[DefaultStream], Stream):
 
     def check_availability(
         self, logger: logging.Logger, source: Optional["Source"] = None
-    ) -> Tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """
         Verifies the stream is available. Delegates to the underlying AbstractStream and ignores the parameters
         :param logger: (ignored)
@@ -254,11 +255,11 @@ class StreamPartition(Partition):
     def __init__(
         self,
         stream: Stream,
-        _slice: Optional[Mapping[str, Any]],
+        _slice: Mapping[str, Any] | None,
         message_repository: MessageRepository,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]],
-        state: Optional[MutableMapping[str, Any]],
+        cursor_field: list[str] | None,
+        state: MutableMapping[str, Any] | None,
     ):
         """
         :param stream: The stream to delegate to
@@ -319,7 +320,7 @@ class StreamPartition(Partition):
             else:
                 raise e
 
-    def to_slice(self) -> Optional[Mapping[str, Any]]:
+    def to_slice(self) -> Mapping[str, Any] | None:
         return self._slice
 
     def __hash__(self) -> int:
@@ -345,8 +346,8 @@ class StreamPartitionGenerator(PartitionGenerator):
         stream: Stream,
         message_repository: MessageRepository,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]],
-        state: Optional[MutableMapping[str, Any]],
+        cursor_field: list[str] | None,
+        state: MutableMapping[str, Any] | None,
     ):
         """
         :param stream: The stream to delegate to
@@ -382,7 +383,7 @@ class AvailabilityStrategyFacade(AvailabilityStrategy):
 
     def check_availability(
         self, stream: Stream, logger: logging.Logger, source: Optional["Source"] = None
-    ) -> Tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """
         Checks stream availability.
 

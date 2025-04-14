@@ -15,18 +15,18 @@ class FlattenFields(RecordTransformation):
 
     def transform(
         self,
-        record: Dict[str, Any],
-        config: Optional[Config] = None,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
+        record: dict[str, Any],
+        config: Config | None = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
     ) -> None:
         transformed_record = self.flatten_record(record)
         record.clear()
         record.update(transformed_record)
 
-    def flatten_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
+    def flatten_record(self, record: dict[str, Any]) -> dict[str, Any]:
         stack = [(record, "_")]
-        transformed_record: Dict[str, Any] = {}
+        transformed_record: dict[str, Any] = {}
         force_with_parent_name = False
 
         while stack:

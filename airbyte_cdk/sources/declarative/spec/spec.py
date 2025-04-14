@@ -3,7 +3,8 @@
 #
 
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional
+from typing import Any, Optional
+from collections.abc import Mapping
 
 from airbyte_cdk.models import (
     AdvancedAuth,
@@ -25,8 +26,8 @@ class Spec:
 
     connection_specification: Mapping[str, Any]
     parameters: InitVar[Mapping[str, Any]]
-    documentation_url: Optional[str] = None
-    advanced_auth: Optional[AuthFlow] = None
+    documentation_url: str | None = None
+    advanced_auth: AuthFlow | None = None
 
     def generate_spec(self) -> ConnectorSpecification:
         """

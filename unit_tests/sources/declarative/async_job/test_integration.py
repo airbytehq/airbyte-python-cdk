@@ -2,7 +2,8 @@
 
 
 import logging
-from typing import Any, Iterable, List, Mapping, Optional, Set, Tuple
+from typing import Any, List, Optional, Set, Tuple
+from collections.abc import Iterable, Mapping
 from unittest import TestCase, mock
 
 from airbyte_cdk import (
@@ -40,7 +41,7 @@ class MockAsyncJobRepository(AsyncJobRepository):
     def start(self, stream_slice: StreamSlice) -> AsyncJob:
         return AsyncJob("a_job_id", stream_slice)
 
-    def update_jobs_status(self, jobs: Set[AsyncJob]) -> None:
+    def update_jobs_status(self, jobs: set[AsyncJob]) -> None:
         for job in jobs:
             job.update_status(AsyncJobStatus.COMPLETED)
 
@@ -55,19 +56,19 @@ class MockAsyncJobRepository(AsyncJobRepository):
 
 
 class MockSource(AbstractSource):
-    def __init__(self, stream_slicer: Optional[StreamSlicer] = None) -> None:
+    def __init__(self, stream_slicer: StreamSlicer | None = None) -> None:
         self._stream_slicer = SinglePartitionRouter({}) if stream_slicer is None else stream_slicer
         self._message_repository = NoopMessageRepository()
 
     def check_connection(
         self, logger: logging.Logger, config: Mapping[str, Any]
-    ) -> Tuple[bool, Optional[Any]]:
+    ) -> tuple[bool, Any | None]:
         return True, None
 
     def spec(self, logger: logging.Logger) -> ConnectorSpecification:
         return ConnectorSpecification(connectionSpecification={})
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> list[Stream]:
         noop_record_selector = RecordSelector(
             extractor=_EXTRACTOR_NOT_USED,
             config={},

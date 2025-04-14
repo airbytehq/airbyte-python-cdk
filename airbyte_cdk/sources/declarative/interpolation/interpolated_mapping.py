@@ -4,7 +4,8 @@
 
 
 from dataclasses import InitVar, dataclass
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Optional
+from collections.abc import Mapping
 
 from airbyte_cdk.sources.declarative.interpolation.jinja import JinjaInterpolation
 from airbyte_cdk.sources.types import Config
@@ -22,11 +23,11 @@ class InterpolatedMapping:
     mapping: Mapping[str, str]
     parameters: InitVar[Mapping[str, Any]]
 
-    def __post_init__(self, parameters: Optional[Mapping[str, Any]]) -> None:
+    def __post_init__(self, parameters: Mapping[str, Any] | None) -> None:
         self._interpolation = JinjaInterpolation()
         self._parameters = parameters
 
-    def eval(self, config: Config, **additional_parameters: Any) -> Dict[str, Any]:
+    def eval(self, config: Config, **additional_parameters: Any) -> dict[str, Any]:
         """
         Wrapper around a Mapping[str, str] that allows for both keys and values to be interpolated.
 

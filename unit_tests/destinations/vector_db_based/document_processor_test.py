@@ -2,7 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Any, List, Mapping, Optional
+from typing import Any, List, Optional
+from collections.abc import Mapping
 from unittest.mock import MagicMock
 
 import pytest
@@ -501,7 +502,7 @@ def test_text_splitter_check(label, split_config, has_error_message):
     ],
 )
 def test_rename_metadata_fields(
-    mappings: Optional[List[FieldNameMappingConfigModel]],
+    mappings: list[FieldNameMappingConfigModel] | None,
     fields: Mapping[str, Any],
     expected_chunk_metadata: Mapping[str, Any],
 ):
@@ -556,7 +557,7 @@ def test_rename_metadata_fields(
 def test_process_multiple_chunks_with_dedupe_mode(
     primary_key_value: Mapping[str, Any],
     stringified_primary_key: str,
-    primary_key: List[List[str]],
+    primary_key: list[list[str]],
 ):
     processor = initialize_processor()
 

@@ -15,4 +15,4 @@ class RemoteFile(BaseModel):
 
     uri: str
     last_modified: datetime
-    mime_type: Optional[str] = None
+    mime_type: str | None = None

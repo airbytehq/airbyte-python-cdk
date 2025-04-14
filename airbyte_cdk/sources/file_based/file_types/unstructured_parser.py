@@ -6,7 +6,8 @@ import os
 import traceback
 from datetime import datetime
 from io import BytesIO, IOBase
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
+from collections.abc import Iterable, Mapping
 
 import backoff
 import dpath
@@ -73,7 +74,7 @@ except LookupError:
     nltk.download("averaged_perceptron_tagger_eng", download_dir=nltk_data_dir, quiet=True)
 
 
-def optional_decode(contents: Union[str, bytes]) -> str:
+def optional_decode(contents: str | bytes) -> str:
     if isinstance(contents, bytes):
         return contents.decode("utf-8")
     return contents
@@ -110,20 +111,20 @@ CLOUD_DEPLOYMENT_MODE = "cloud"
 
 class UnstructuredParser(FileTypeParser):
     @property
-    def parser_max_n_files_for_schema_inference(self) -> Optional[int]:
+    def parser_max_n_files_for_schema_inference(self) -> int | None:
         """
         Just check one file as the schema is static
         """
         return 1
 
     @property
-    def parser_max_n_files_for_parsability(self) -> Optional[int]:
+    def parser_max_n_files_for_parsability(self) -> int | None:
         """
         Do not check any files for parsability because it might be an expensive operation and doesn't give much confidence whether the sync will succeed.
         """
         return 0
 
-    def get_parser_defined_primary_key(self, config: FileBasedStreamConfig) -> Optional[str]:
+    def get_parser_defined_primary_key(self, config: FileBasedStreamConfig) -> str | None:
         """
         Return the document_key field as the primary key.
 
@@ -168,8 +169,8 @@ class UnstructuredParser(FileTypeParser):
         file: RemoteFile,
         stream_reader: AbstractFileBasedStreamReader,
         logger: logging.Logger,
-        discovered_schema: Optional[Mapping[str, SchemaType]],
-    ) -> Iterable[Dict[str, Any]]:
+        discovered_schema: Mapping[str, SchemaType] | None,
+    ) -> Iterable[dict[str, Any]]:
         format = _extract_format(config)
         with stream_reader.open_file(file, self.file_read_mode, None, logger) as file_handle:
             try:
@@ -256,9 +257,9 @@ class UnstructuredParser(FileTypeParser):
             return result
 
     def _params_to_dict(
-        self, params: Optional[List[APIParameterConfigModel]], strategy: str
-    ) -> Dict[str, Union[str, List[str]]]:
-        result_dict: Dict[str, Union[str, List[str]]] = {"strategy": strategy}
+        self, params: list[APIParameterConfigModel] | None, strategy: str
+    ) -> dict[str, str | list[str]]:
+        result_dict: dict[str, str | list[str]] = {"strategy": strategy}
         if params is None:
             return result_dict
         for item in params:
@@ -277,7 +278,7 @@ class UnstructuredParser(FileTypeParser):
 
         return result_dict
 
-    def check_config(self, config: FileBasedStreamConfig) -> Tuple[bool, Optional[str]]:
+    def check_config(self, config: FileBasedStreamConfig) -> tuple[bool, str | None]:
         """
         Perform a connection check for the parser config:
         - Verify that encryption is enabled if the API is hosted on a cloud instance.
@@ -396,7 +397,7 @@ class UnstructuredParser(FileTypeParser):
             FileBasedSourceError.ERROR_PARSING_RECORD, filename=remote_file.uri, message=message
         )
 
-    def _get_filetype(self, file: IOBase, remote_file: RemoteFile) -> Optional[FileType]:
+    def _get_filetype(self, file: IOBase, remote_file: RemoteFile) -> FileType | None:
         """
         Detect the file type based on the file name and the file content.
 
@@ -439,7 +440,7 @@ class UnstructuredParser(FileTypeParser):
 
         return None
 
-    def _supported_file_types(self) -> List[Any]:
+    def _supported_file_types(self) -> list[Any]:
         return [FileType.MD, FileType.PDF, FileType.DOCX, FileType.PPTX, FileType.TXT]
 
     def _get_file_type_error_message(
@@ -449,10 +450,10 @@ class UnstructuredParser(FileTypeParser):
         supported_file_types = ", ".join([str(type) for type in self._supported_file_types()])
         return f"File type {file_type or 'None'!s} is not supported. Supported file types are {supported_file_types}"
 
-    def _render_markdown(self, elements: List[Any]) -> str:
-        return "\n\n".join((self._convert_to_markdown(el) for el in elements))
+    def _render_markdown(self, elements: list[Any]) -> str:
+        return "\n\n".join(self._convert_to_markdown(el) for el in elements)
 
-    def _convert_to_markdown(self, el: Dict[str, Any]) -> str:
+    def _convert_to_markdown(self, el: dict[str, Any]) -> str:
         if dpath.get(el, "type") == "Title":
             category_depth = dpath.get(el, "metadata/category_depth", default=1) or 1
             if not isinstance(category_depth, int):

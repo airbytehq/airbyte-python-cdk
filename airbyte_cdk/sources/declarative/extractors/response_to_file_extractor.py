@@ -7,7 +7,8 @@ import uuid
 import zlib
 from contextlib import closing
 from dataclasses import InitVar, dataclass
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
+from collections.abc import Iterable, Mapping
 
 import pandas as pd
 import requests
@@ -34,7 +35,7 @@ class ResponseToFileExtractor(RecordExtractor):
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.logger = logging.getLogger("airbyte")
 
-    def _get_response_encoding(self, headers: Dict[str, Any]) -> str:
+    def _get_response_encoding(self, headers: dict[str, Any]) -> str:
         """
         Get the encoding of the response based on the provided headers. This method is heavily inspired by the requests library
         implementation.
@@ -77,7 +78,7 @@ class ResponseToFileExtractor(RecordExtractor):
             )
         return res
 
-    def _save_to_file(self, response: requests.Response) -> Tuple[str, str]:
+    def _save_to_file(self, response: requests.Response) -> tuple[str, str]:
         """
         Saves the binary data from the given response to a temporary file and returns the filepath and response encoding.
 
@@ -135,7 +136,7 @@ class ResponseToFileExtractor(RecordExtractor):
         """
 
         try:
-            with open(path, "r", encoding=file_encoding) as data:
+            with open(path, encoding=file_encoding) as data:
                 chunks = pd.read_csv(
                     data, chunksize=chunk_size, iterator=True, dialect="unix", dtype=object
                 )
@@ -146,14 +147,14 @@ class ResponseToFileExtractor(RecordExtractor):
         except pd.errors.EmptyDataError as e:
             self.logger.info(f"Empty data received. {e}")
             yield from []
-        except IOError as ioe:
+        except OSError as ioe:
             raise ValueError(f"The IO/Error occured while reading tmp data. Called: {path}", ioe)
         finally:
             # remove binary tmp file, after data is read
             os.remove(path)
 
     def extract_records(
-        self, response: Optional[requests.Response] = None
+        self, response: requests.Response | None = None
     ) -> Iterable[Mapping[str, Any]]:
         """
         Extracts records from the given response by:

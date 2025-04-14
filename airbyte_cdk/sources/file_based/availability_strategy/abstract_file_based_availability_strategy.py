@@ -28,8 +28,8 @@ class AbstractFileBasedAvailabilityStrategy(AvailabilityStrategy):
         self,
         stream: Stream,
         logger: logging.Logger,
-        _: Optional[Source],
-    ) -> Tuple[bool, Optional[str]]:
+        _: Source | None,
+    ) -> tuple[bool, str | None]:
         """
         Perform a connection check for the stream.
 
@@ -42,8 +42,8 @@ class AbstractFileBasedAvailabilityStrategy(AvailabilityStrategy):
         self,
         stream: AbstractFileBasedStream,
         logger: logging.Logger,
-        _: Optional[Source],
-    ) -> Tuple[bool, Optional[str]]:
+        _: Source | None,
+    ) -> tuple[bool, str | None]:
         """
         Performs a connection check for the stream, as well as additional checks that
         verify that the connection is working as expected.
@@ -67,7 +67,7 @@ class AbstractFileBasedAvailabilityStrategyWrapper(AbstractAvailabilityStrategy)
 
     def check_availability_and_parsability(
         self, logger: logging.Logger
-    ) -> Tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         return self.stream.availability_strategy.check_availability_and_parsability(
             self.stream, logger, None
         )

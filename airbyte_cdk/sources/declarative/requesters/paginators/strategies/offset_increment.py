@@ -3,7 +3,8 @@
 #
 
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Optional, Union
+from collections.abc import Mapping
 
 import requests
 
@@ -44,7 +45,7 @@ class OffsetIncrement(PaginationStrategy):
     """
 
     config: Config
-    page_size: Optional[Union[str, int]]
+    page_size: str | int | None
     parameters: InitVar[Mapping[str, Any]]
     decoder: Decoder = field(
         default_factory=lambda: PaginationDecoderDecorator(decoder=JsonDecoder(parameters={}))
@@ -54,14 +55,14 @@ class OffsetIncrement(PaginationStrategy):
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         page_size = str(self.page_size) if isinstance(self.page_size, int) else self.page_size
         if page_size:
-            self._page_size: Optional[InterpolatedString] = InterpolatedString(
+            self._page_size: InterpolatedString | None = InterpolatedString(
                 page_size, parameters=parameters
             )
         else:
             self._page_size = None
 
     @property
-    def initial_token(self) -> Optional[Any]:
+    def initial_token(self) -> Any | None:
         if self.inject_on_first_request:
             return 0
         return None
@@ -70,9 +71,9 @@ class OffsetIncrement(PaginationStrategy):
         self,
         response: requests.Response,
         last_page_size: int,
-        last_record: Optional[Record],
-        last_page_token_value: Optional[Any] = None,
-    ) -> Optional[Any]:
+        last_record: Record | None,
+        last_page_token_value: Any | None = None,
+    ) -> Any | None:
         decoded_response = next(self.decoder.decode(response))
 
         # Stop paginating when there are fewer records than the page size or the current page has no records
@@ -92,7 +93,7 @@ class OffsetIncrement(PaginationStrategy):
         else:
             return last_page_token_value + last_page_size
 
-    def get_page_size(self) -> Optional[int]:
+    def get_page_size(self) -> int | None:
         if self._page_size:
             page_size = self._page_size.eval(self.config)
             if not isinstance(page_size, int):

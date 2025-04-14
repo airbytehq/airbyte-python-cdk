@@ -15,5 +15,5 @@ class RecordMergeStrategy(ABC):
     """
 
     @abstractmethod
-    def get_group_key(self, record: Record) -> Optional[str]:
+    def get_group_key(self, record: Record) -> str | None:
         pass

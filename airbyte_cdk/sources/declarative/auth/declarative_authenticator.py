@@ -3,7 +3,8 @@
 #
 
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Union
+from typing import Any, Union
+from collections.abc import Mapping
 
 from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_token import (
     AbstractHeaderAuthenticator,
@@ -20,7 +21,7 @@ class DeclarativeAuthenticator(AbstractHeaderAuthenticator):
         """HTTP request parameter to add to the requests"""
         return {}
 
-    def get_request_body_data(self) -> Union[Mapping[str, Any], str]:
+    def get_request_body_data(self) -> Mapping[str, Any] | str:
         """Form-encoded body data to set on the requests"""
         return {}
 

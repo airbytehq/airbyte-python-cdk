@@ -15,7 +15,7 @@ class ErrorHandler(ABC):
 
     @property
     @abstractmethod
-    def max_retries(self) -> Optional[int]:
+    def max_retries(self) -> int | None:
         """
         The maximum number of retries to attempt before giving up.
         """
@@ -23,7 +23,7 @@ class ErrorHandler(ABC):
 
     @property
     @abstractmethod
-    def max_time(self) -> Optional[int]:
+    def max_time(self) -> int | None:
         """
         The maximum amount of time in seconds to retry before giving up.
         """
@@ -31,7 +31,7 @@ class ErrorHandler(ABC):
 
     @abstractmethod
     def interpret_response(
-        self, response: Optional[Union[requests.Response, Exception]]
+        self, response: requests.Response | Exception | None
     ) -> ErrorResolution:
         """
         Interpret the response or exception and return the corresponding response action, failure type, and error message.

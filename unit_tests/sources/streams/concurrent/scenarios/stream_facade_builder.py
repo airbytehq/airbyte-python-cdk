@@ -4,7 +4,8 @@
 
 import concurrent
 import logging
-from typing import Any, List, Mapping, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
+from collections.abc import Mapping
 
 from airbyte_cdk.models import (
     AirbyteStateMessage,
@@ -41,11 +42,11 @@ class StreamFacadeConcurrentConnectorStateConverter(EpochValueConcurrentStreamSt
 class StreamFacadeSource(ConcurrentSourceAdapter):
     def __init__(
         self,
-        streams: List[Stream],
+        streams: list[Stream],
         threadpool: concurrent.futures.ThreadPoolExecutor,
-        cursor_field: Optional[CursorField] = None,
-        cursor_boundaries: Optional[Tuple[str, str]] = None,
-        input_state: Optional[List[Mapping[str, Any]]] = _NO_STATE,
+        cursor_field: CursorField | None = None,
+        cursor_boundaries: tuple[str, str] | None = None,
+        input_state: list[Mapping[str, Any]] | None = _NO_STATE,
     ):
         self._message_repository = InMemoryMessageRepository()
         threadpool_manager = ThreadPoolManager(threadpool, streams[0].logger)
@@ -61,10 +62,10 @@ class StreamFacadeSource(ConcurrentSourceAdapter):
 
     def check_connection(
         self, logger: logging.Logger, config: Mapping[str, Any]
-    ) -> Tuple[bool, Optional[Any]]:
+    ) -> tuple[bool, Any | None]:
         return True, None
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> list[Stream]:
         state_manager = ConnectorStateManager(
             state=self._state,
         )  # The input values into the AirbyteStream are dummy values; the connector state manager only uses `name` and `namespace`
@@ -88,7 +89,7 @@ class StreamFacadeSource(ConcurrentSourceAdapter):
         ]
 
     @property
-    def message_repository(self) -> Union[None, MessageRepository]:
+    def message_repository(self) -> None | MessageRepository:
         return self._message_repository
 
     def spec(self, logger: logging.Logger) -> ConnectorSpecification:
@@ -117,7 +118,7 @@ class StreamFacadeSourceBuilder(SourceBuilder[StreamFacadeSource]):
         self._input_state = None
         self._raw_input_state = None
 
-    def set_streams(self, streams: List[Stream]) -> "StreamFacadeSourceBuilder":
+    def set_streams(self, streams: list[Stream]) -> "StreamFacadeSourceBuilder":
         self._streams = streams
         return self
 
@@ -126,21 +127,21 @@ class StreamFacadeSourceBuilder(SourceBuilder[StreamFacadeSource]):
         return self
 
     def set_incremental(
-        self, cursor_field: CursorField, cursor_boundaries: Optional[Tuple[str, str]]
+        self, cursor_field: CursorField, cursor_boundaries: tuple[str, str] | None
     ) -> "StreamFacadeSourceBuilder":
         self._cursor_field = cursor_field
         self._cursor_boundaries = cursor_boundaries
         return self
 
-    def set_input_state(self, state: List[Mapping[str, Any]]) -> "StreamFacadeSourceBuilder":
+    def set_input_state(self, state: list[Mapping[str, Any]]) -> "StreamFacadeSourceBuilder":
         self._input_state = state
         return self
 
     def build(
         self,
-        configured_catalog: Optional[Mapping[str, Any]],
-        config: Optional[Mapping[str, Any]],
-        state: Optional[TState],
+        configured_catalog: Mapping[str, Any] | None,
+        config: Mapping[str, Any] | None,
+        state: TState | None,
     ) -> StreamFacadeSource:
         threadpool = concurrent.futures.ThreadPoolExecutor(
             max_workers=self._max_workers, thread_name_prefix="workerpool"

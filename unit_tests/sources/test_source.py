@@ -6,7 +6,8 @@ import json
 import logging
 import tempfile
 from contextlib import nullcontext as does_not_raise
-from typing import Any, List, Mapping, MutableMapping, Optional, Tuple, Union
+from typing import Any, List, Optional, Tuple, Union
+from collections.abc import Mapping, MutableMapping
 
 import orjson
 import pytest
@@ -49,13 +50,13 @@ class MockSource(Source):
 
 
 class MockAbstractSource(AbstractSource):
-    def __init__(self, streams: Optional[List[Stream]] = None):
+    def __init__(self, streams: list[Stream] | None = None):
         self._streams = streams
 
-    def check_connection(self, *args, **kwargs) -> Tuple[bool, Optional[Any]]:
+    def check_connection(self, *args, **kwargs) -> tuple[bool, Any | None]:
         return True, ""
 
-    def streams(self, *args, **kwargs) -> List[Stream]:
+    def streams(self, *args, **kwargs) -> list[Stream]:
         if self._streams:
             return self._streams
         return []
@@ -105,7 +106,7 @@ def abstract_source(mocker):
         _state = {}
 
         @property
-        def cursor_field(self) -> Union[str, List[str]]:
+        def cursor_field(self) -> str | list[str]:
             return ["updated_at"]
 
         def get_backoff_strategy(self):

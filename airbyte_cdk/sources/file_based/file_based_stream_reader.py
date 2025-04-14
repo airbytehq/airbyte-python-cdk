@@ -8,7 +8,8 @@ from datetime import datetime
 from enum import Enum
 from io import IOBase
 from os import makedirs, path
-from typing import Any, Dict, Iterable, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
+from collections.abc import Iterable
 
 from wcmatch.glob import GLOBSTAR, globmatch
 
@@ -33,7 +34,7 @@ class AbstractFileBasedStreamReader(ABC):
         self._config = None
 
     @property
-    def config(self) -> Optional[AbstractFileBasedSpec]:
+    def config(self) -> AbstractFileBasedSpec | None:
         return self._config
 
     @config.setter
@@ -52,7 +53,7 @@ class AbstractFileBasedStreamReader(ABC):
 
     @abstractmethod
     def open_file(
-        self, file: RemoteFile, mode: FileReadMode, encoding: Optional[str], logger: logging.Logger
+        self, file: RemoteFile, mode: FileReadMode, encoding: str | None, logger: logging.Logger
     ) -> IOBase:
         """
         Return a file handle for reading.
@@ -68,8 +69,8 @@ class AbstractFileBasedStreamReader(ABC):
     @abstractmethod
     def get_matching_files(
         self,
-        globs: List[str],
-        prefix: Optional[str],
+        globs: list[str],
+        prefix: str | None,
         logger: logging.Logger,
     ) -> Iterable[RemoteFile]:
         """
@@ -89,7 +90,7 @@ class AbstractFileBasedStreamReader(ABC):
         ...
 
     def filter_files_by_globs_and_start_date(
-        self, files: List[RemoteFile], globs: List[str]
+        self, files: list[RemoteFile], globs: list[str]
     ) -> Iterable[RemoteFile]:
         """
         Utility method for filtering files based on globs.
@@ -118,13 +119,13 @@ class AbstractFileBasedStreamReader(ABC):
         ...
 
     @staticmethod
-    def file_matches_globs(file: RemoteFile, globs: List[str]) -> bool:
+    def file_matches_globs(file: RemoteFile, globs: list[str]) -> bool:
         # Use the GLOBSTAR flag to enable recursive ** matching
         # (https://facelessuser.github.io/wcmatch/wcmatch/#globstar)
         return any(globmatch(file.uri, g, flags=GLOBSTAR) for g in globs)
 
     @staticmethod
-    def get_prefixes_from_globs(globs: List[str]) -> Set[str]:
+    def get_prefixes_from_globs(globs: list[str]) -> set[str]:
         """
         Utility method for extracting prefixes from the globs.
         """
@@ -150,7 +151,7 @@ class AbstractFileBasedStreamReader(ABC):
     @abstractmethod
     def get_file(
         self, file: RemoteFile, local_directory: str, logger: logging.Logger
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         This is required for connectors that will support writing to
         files. It will handle the logic to download,get,read,acquire or
@@ -171,7 +172,7 @@ class AbstractFileBasedStreamReader(ABC):
         """
         ...
 
-    def _get_file_transfer_paths(self, file: RemoteFile, local_directory: str) -> List[str]:
+    def _get_file_transfer_paths(self, file: RemoteFile, local_directory: str) -> list[str]:
         preserve_directory_structure = self.preserve_directory_structure()
         if preserve_directory_structure:
             # Remove left slashes from source path format to make relative path for writing locally

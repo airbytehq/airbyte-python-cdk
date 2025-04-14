@@ -4,7 +4,8 @@
 
 from abc import ABC, abstractmethod
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, List, MutableMapping, Optional, Tuple
+from typing import TYPE_CHECKING, Any, List, Optional, Tuple
+from collections.abc import Callable, MutableMapping
 
 if TYPE_CHECKING:
     from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
@@ -51,7 +52,7 @@ class AbstractStreamStateConverter(ABC):
         else:
             return self.serialize(stream_state, ConcurrencyCompatibleStateType.date_range)
 
-    def _get_latest_complete_time(self, slices: List[MutableMapping[str, Any]]) -> Any:
+    def _get_latest_complete_time(self, slices: list[MutableMapping[str, Any]]) -> Any:
         """
         Get the latest time before which all records have been processed.
         """
@@ -107,8 +108,8 @@ class AbstractStreamStateConverter(ABC):
         self,
         cursor_field: "CursorField",  # to deprecate as it is only needed for sequential state
         stream_state: MutableMapping[str, Any],
-        start: Optional[Any],
-    ) -> Tuple[Any, MutableMapping[str, Any]]:
+        start: Any | None,
+    ) -> tuple[Any, MutableMapping[str, Any]]:
         """
         Convert the state message to the format required by the ConcurrentCursor.
 
@@ -137,8 +138,8 @@ class AbstractStreamStateConverter(ABC):
         ...
 
     def merge_intervals(
-        self, intervals: List[MutableMapping[str, Any]]
-    ) -> List[MutableMapping[str, Any]]:
+        self, intervals: list[MutableMapping[str, Any]]
+    ) -> list[MutableMapping[str, Any]]:
         """
         Compute and return a list of merged intervals.
 

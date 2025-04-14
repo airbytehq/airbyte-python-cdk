@@ -55,10 +55,10 @@ class RequestBuilder:
 
     def __init__(self, resource: str) -> None:
         self._resource = resource
-        self._start_date: Optional[datetime] = None
-        self._end_date: Optional[datetime] = None
-        self._category: Optional[str] = None
-        self._page: Optional[int] = None
+        self._start_date: datetime | None = None
+        self._end_date: datetime | None = None
+        self._category: str | None = None
+        self._page: int | None = None
 
     def with_start_date(self, start_date: datetime) -> "RequestBuilder":
         self._start_date = start_date
@@ -93,7 +93,7 @@ class RequestBuilder:
         )
 
 
-def _create_catalog(names_and_sync_modes: List[tuple[str, SyncMode]]) -> ConfiguredAirbyteCatalog:
+def _create_catalog(names_and_sync_modes: list[tuple[str, SyncMode]]) -> ConfiguredAirbyteCatalog:
     catalog_builder = CatalogBuilder()
     for stream_name, sync_mode in names_and_sync_modes:
         catalog_builder.with_stream(name=stream_name, sync_mode=sync_mode)

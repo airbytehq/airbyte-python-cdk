@@ -7,15 +7,12 @@ import logging
 from abc import ABC, abstractmethod
 from typing import (
     Any,
-    Callable,
-    Iterable,
     List,
-    Mapping,
-    MutableMapping,
     Optional,
     Tuple,
     Union,
 )
+from collections.abc import Callable, Iterable, Mapping, MutableMapping
 
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository
@@ -32,7 +29,7 @@ from airbyte_cdk.sources.types import Record, StreamSlice
 LOGGER = logging.getLogger("airbyte")
 
 
-def _extract_value(mapping: Mapping[str, Any], path: List[str]) -> Any:
+def _extract_value(mapping: Mapping[str, Any], path: list[str]) -> Any:
     return functools.reduce(lambda a, b: a[b], path, mapping)
 
 
@@ -88,7 +85,7 @@ class FinalStateCursor(Cursor):
     def __init__(
         self,
         stream_name: str,
-        stream_namespace: Optional[str],
+        stream_namespace: str | None,
         message_repository: MessageRepository,
     ) -> None:
         self._stream_name = stream_name
@@ -131,18 +128,18 @@ class ConcurrentCursor(Cursor):
     def __init__(
         self,
         stream_name: str,
-        stream_namespace: Optional[str],
+        stream_namespace: str | None,
         stream_state: Any,
         message_repository: MessageRepository,
         connector_state_manager: ConnectorStateManager,
         connector_state_converter: AbstractStreamStateConverter,
         cursor_field: CursorField,
-        slice_boundary_fields: Optional[Tuple[str, str]],
-        start: Optional[CursorValueType],
+        slice_boundary_fields: tuple[str, str] | None,
+        start: CursorValueType | None,
         end_provider: Callable[[], CursorValueType],
-        lookback_window: Optional[GapType] = None,
-        slice_range: Optional[GapType] = None,
-        cursor_granularity: Optional[GapType] = None,
+        lookback_window: GapType | None = None,
+        slice_range: GapType | None = None,
+        cursor_granularity: GapType | None = None,
         clamping_strategy: ClampingStrategy = NoClamping(),
     ) -> None:
         self._stream_name = stream_name
@@ -159,7 +156,7 @@ class ConcurrentCursor(Cursor):
         self._lookback_window = lookback_window
         self._slice_range = slice_range
         self._most_recent_cursor_value_per_partition: MutableMapping[
-            Union[StreamSlice, Mapping[str, Any], None], Any
+            StreamSlice | Mapping[str, Any] | None, Any
         ] = {}
         self._has_closed_at_least_one_slice = False
         self._cursor_granularity = cursor_granularity
@@ -178,7 +175,7 @@ class ConcurrentCursor(Cursor):
         return self._cursor_field
 
     @property
-    def _slice_boundary_fields_wrapper(self) -> Tuple[str, str]:
+    def _slice_boundary_fields_wrapper(self) -> tuple[str, str]:
         return (
             self._slice_boundary_fields
             if self._slice_boundary_fields
@@ -190,7 +187,7 @@ class ConcurrentCursor(Cursor):
 
     def _get_concurrent_state(
         self, state: MutableMapping[str, Any]
-    ) -> Tuple[CursorValueType, MutableMapping[str, Any]]:
+    ) -> tuple[CursorValueType, MutableMapping[str, Any]]:
         if self._connector_state_converter.is_state_message_compatible(state):
             return (
                 self._start or self._connector_state_converter.zero_value,

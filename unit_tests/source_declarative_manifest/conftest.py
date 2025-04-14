@@ -34,13 +34,13 @@ def invalid_local_manifest():
 
 @pytest.fixture
 def valid_local_manifest_yaml(valid_local_manifest):
-    with open(valid_local_manifest, "r") as file:
+    with open(valid_local_manifest) as file:
         return yaml.safe_load(file)
 
 
 @pytest.fixture
 def invalid_local_manifest_yaml(invalid_local_manifest):
-    with open(invalid_local_manifest, "r") as file:
+    with open(invalid_local_manifest) as file:
         return yaml.safe_load(file)
 
 

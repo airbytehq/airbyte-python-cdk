@@ -4,7 +4,8 @@
 
 # mypy: ignore-errors
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable, Mapping
+from typing import Any
+from collections.abc import Iterable, Mapping
 
 import freezegun
 import pytest

@@ -4,7 +4,8 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional
+from typing import Any, Optional
+from collections.abc import Mapping
 
 import requests
 
@@ -24,7 +25,7 @@ class Paginator(ABC, RequestOptionsProvider):
     """
 
     @abstractmethod
-    def get_initial_token(self) -> Optional[Any]:
+    def get_initial_token(self) -> Any | None:
         """
         Get the page token that should be included in the request to get the first page of records
         """
@@ -34,9 +35,9 @@ class Paginator(ABC, RequestOptionsProvider):
         self,
         response: requests.Response,
         last_page_size: int,
-        last_record: Optional[Record],
-        last_page_token_value: Optional[Any],
-    ) -> Optional[Mapping[str, Any]]:
+        last_record: Record | None,
+        last_page_token_value: Any | None,
+    ) -> Mapping[str, Any] | None:
         """
         Returns the next_page_token to use to fetch the next page of records.
 
@@ -51,10 +52,10 @@ class Paginator(ABC, RequestOptionsProvider):
     @abstractmethod
     def path(
         self,
-        next_page_token: Optional[Mapping[str, Any]],
-        stream_state: Optional[Mapping[str, Any]] = None,
-        stream_slice: Optional[StreamSlice] = None,
-    ) -> Optional[str]:
+        next_page_token: Mapping[str, Any] | None,
+        stream_state: Mapping[str, Any] | None = None,
+        stream_slice: StreamSlice | None = None,
+    ) -> str | None:
         """
         Returns the URL path to hit to fetch the next page of records
 

@@ -3,7 +3,8 @@
 #
 
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Optional
+from collections.abc import Iterable, Mapping
 
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
@@ -29,7 +30,7 @@ class GroupingPartitionRouter(PartitionRouter):
     deduplicate: bool = True
 
     def __post_init__(self) -> None:
-        self._state: Optional[Mapping[str, StreamState]] = {}
+        self._state: Mapping[str, StreamState] | None = {}
 
     def stream_slices(self) -> Iterable[StreamSlice]:
         """
@@ -110,33 +111,33 @@ class GroupingPartitionRouter(PartitionRouter):
 
     def get_request_params(
         self,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return {}
 
     def get_request_headers(
         self,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return {}
 
     def get_request_body_data(
         self,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return {}
 
     def get_request_body_json(
         self,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return {}
 
@@ -145,6 +146,6 @@ class GroupingPartitionRouter(PartitionRouter):
         self.underlying_partition_router.set_initial_state(stream_state)
         self._state = self.underlying_partition_router.get_stream_state()
 
-    def get_stream_state(self) -> Optional[Mapping[str, StreamState]]:
+    def get_stream_state(self) -> Mapping[str, StreamState] | None:
         """Delegate state retrieval to the underlying partition router."""
         return self._state

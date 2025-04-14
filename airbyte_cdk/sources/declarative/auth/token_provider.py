@@ -6,7 +6,8 @@
 import datetime
 from abc import abstractmethod
 from dataclasses import InitVar, dataclass, field
-from typing import Any, List, Mapping, Optional, Union
+from typing import Any, List, Optional, Union
+from collections.abc import Mapping
 
 import dpath
 from isodate import Duration
@@ -31,14 +32,14 @@ class TokenProvider:
 @dataclass
 class SessionTokenProvider(TokenProvider):
     login_requester: Requester
-    session_token_path: List[str]
-    expiration_duration: Optional[Union[datetime.timedelta, Duration]]
+    session_token_path: list[str]
+    expiration_duration: datetime.timedelta | Duration | None
     parameters: InitVar[Mapping[str, Any]]
     message_repository: MessageRepository = NoopMessageRepository()
     decoder: Decoder = field(default_factory=lambda: JsonDecoder(parameters={}))
 
-    _next_expiration_time: Optional[AirbyteDateTime] = None
-    _token: Optional[str] = None
+    _next_expiration_time: AirbyteDateTime | None = None
+    _token: str | None = None
 
     def get_token(self) -> str:
         self._refresh_if_necessary()
@@ -72,7 +73,7 @@ class SessionTokenProvider(TokenProvider):
 @dataclass
 class InterpolatedStringTokenProvider(TokenProvider):
     config: Config
-    api_token: Union[InterpolatedString, str]
+    api_token: InterpolatedString | str
     parameters: Mapping[str, Any]
 
     def __post_init__(self) -> None:

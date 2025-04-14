@@ -18,10 +18,10 @@ class RecordTransformation:
     @abstractmethod
     def transform(
         self,
-        record: Dict[str, Any],
-        config: Optional[Config] = None,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
+        record: dict[str, Any],
+        config: Config | None = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
     ) -> None:
         """
         Transform a record by adding, deleting, or mutating fields directly from the record reference passed in argument.

@@ -2,7 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 from dataclasses import InitVar, dataclass
-from typing import Any, Iterable, Mapping, Optional, Union
+from typing import Any, Optional, Union
+from collections.abc import Iterable, Mapping
 
 from airbyte_cdk.sources.declarative.incremental import (
     DatetimeBasedCursor,
@@ -35,8 +36,8 @@ class RecordFilter:
         self,
         records: Iterable[Mapping[str, Any]],
         stream_state: StreamState,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         kwargs = {
             "stream_state": stream_state,
@@ -59,7 +60,7 @@ class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
 
     def __init__(
         self,
-        cursor: Union[DatetimeBasedCursor, PerPartitionWithGlobalCursor, GlobalSubstreamCursor],
+        cursor: DatetimeBasedCursor | PerPartitionWithGlobalCursor | GlobalSubstreamCursor,
         **kwargs: Any,
     ):
         super().__init__(**kwargs)
@@ -69,8 +70,8 @@ class ClientSideIncrementalRecordFilterDecorator(RecordFilter):
         self,
         records: Iterable[Mapping[str, Any]],
         stream_state: StreamState,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         records = (
             record

@@ -2,7 +2,8 @@
 import copy
 from copy import deepcopy
 from datetime import datetime, timedelta
-from typing import Any, List, Mapping, MutableMapping, Optional, Union
+from typing import Any, List, Optional, Union
+from collections.abc import Mapping, MutableMapping
 from unittest.mock import MagicMock, patch
 from urllib.parse import unquote
 
@@ -372,7 +373,7 @@ def _run_read(
     manifest: Mapping[str, Any],
     config: Mapping[str, Any],
     stream_name: str,
-    state: Optional[Union[List[AirbyteStateMessage], MutableMapping[str, Any]]] = None,
+    state: list[AirbyteStateMessage] | MutableMapping[str, Any] | None = None,
 ) -> EntrypointOutput:
     source = ConcurrentDeclarativeSource(
         source_config=manifest, config=config, catalog=None, state=state

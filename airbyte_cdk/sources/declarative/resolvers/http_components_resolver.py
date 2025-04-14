@@ -4,7 +4,8 @@
 
 from copy import deepcopy
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Dict, Iterable, List, Mapping
+from typing import Any, Dict, List
+from collections.abc import Iterable, Mapping
 
 import dpath
 from typing_extensions import deprecated
@@ -35,9 +36,9 @@ class HttpComponentsResolver(ComponentsResolver):
 
     retriever: Retriever
     config: Config
-    components_mapping: List[ComponentMappingDefinition]
+    components_mapping: list[ComponentMappingDefinition]
     parameters: InitVar[Mapping[str, Any]]
-    _resolved_components: List[ResolvedComponentMappingDefinition] = field(
+    _resolved_components: list[ResolvedComponentMappingDefinition] = field(
         init=False, repr=False, default_factory=list
     )
 
@@ -75,8 +76,8 @@ class HttpComponentsResolver(ComponentsResolver):
                 )
 
     def resolve_components(
-        self, stream_template_config: Dict[str, Any]
-    ) -> Iterable[Dict[str, Any]]:
+        self, stream_template_config: dict[str, Any]
+    ) -> Iterable[dict[str, Any]]:
         """
         Resolves components in the stream template configuration by populating values.
 

@@ -3,7 +3,8 @@
 #
 
 from dataclasses import InitVar, dataclass
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Optional
+from collections.abc import Mapping
 
 import dpath
 import dpath.exceptions
@@ -40,7 +41,7 @@ class RemoveFields(RecordTransformation):
         field_pointers (List[FieldPointer]): pointers to the fields that should be removed
     """
 
-    field_pointers: List[FieldPointer]
+    field_pointers: list[FieldPointer]
     parameters: InitVar[Mapping[str, Any]]
     condition: str = ""
 
@@ -51,10 +52,10 @@ class RemoveFields(RecordTransformation):
 
     def transform(
         self,
-        record: Dict[str, Any],
-        config: Optional[Config] = None,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
+        record: dict[str, Any],
+        config: Config | None = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
     ) -> None:
         """
         :param record: The record to be transformed

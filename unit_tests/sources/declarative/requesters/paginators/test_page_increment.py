@@ -94,7 +94,7 @@ def test_page_increment_paginator_strategy_malformed_page_size(page_size):
     ],
 )
 def test_page_increment_paginator_strategy_initial_token(
-    inject_on_first_request: bool, start_from_page: int, expected_initial_token: Optional[Any]
+    inject_on_first_request: bool, start_from_page: int, expected_initial_token: Any | None
 ):
     paginator_strategy = PageIncrement(
         page_size=20,

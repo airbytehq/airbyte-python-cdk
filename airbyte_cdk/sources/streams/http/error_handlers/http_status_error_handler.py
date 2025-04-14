@@ -4,7 +4,8 @@
 
 import logging
 from datetime import timedelta
-from typing import Mapping, Optional, Union
+from typing import Optional, Union
+from collections.abc import Mapping
 
 import requests
 
@@ -23,7 +24,7 @@ class HttpStatusErrorHandler(ErrorHandler):
     def __init__(
         self,
         logger: logging.Logger,
-        error_mapping: Optional[Mapping[Union[int, str, type[Exception]], ErrorResolution]] = None,
+        error_mapping: Mapping[int | str | type[Exception], ErrorResolution] | None = None,
         max_retries: int = 5,
         max_time: timedelta = timedelta(seconds=600),
     ) -> None:
@@ -38,15 +39,15 @@ class HttpStatusErrorHandler(ErrorHandler):
         self._max_time = int(max_time.total_seconds())
 
     @property
-    def max_retries(self) -> Optional[int]:
+    def max_retries(self) -> int | None:
         return self._max_retries
 
     @property
-    def max_time(self) -> Optional[int]:
+    def max_time(self) -> int | None:
         return self._max_time
 
     def interpret_response(
-        self, response_or_exception: Optional[Union[requests.Response, Exception]] = None
+        self, response_or_exception: requests.Response | Exception | None = None
     ) -> ErrorResolution:
         """
         Interpret the response and return the corresponding response action, failure type, and error message.
@@ -56,7 +57,7 @@ class HttpStatusErrorHandler(ErrorHandler):
         """
 
         if isinstance(response_or_exception, Exception):
-            mapped_error: Optional[ErrorResolution] = self._error_mapping.get(
+            mapped_error: ErrorResolution | None = self._error_mapping.get(
                 response_or_exception.__class__
             )
 

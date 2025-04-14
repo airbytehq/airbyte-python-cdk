@@ -3,7 +3,8 @@
 import json
 import logging
 import os
-from typing import Any, Iterator, List, Mapping, Optional
+from typing import Any, List, Optional
+from collections.abc import Iterator, Mapping
 from unittest import TestCase
 from unittest.mock import Mock, patch
 
@@ -113,7 +114,7 @@ _A_STATE = StateBuilder().with_stream_state(_A_STREAM_NAME, {"state_key": "state
 _A_LOG_MESSAGE = "a log message"
 
 
-def _to_entrypoint_output(messages: List[AirbyteMessage]) -> Iterator[str]:
+def _to_entrypoint_output(messages: list[AirbyteMessage]) -> Iterator[str]:
     return (orjson.dumps(AirbyteMessageSerializer.dump(message)).decode() for message in messages)
 
 
@@ -135,8 +136,8 @@ def _validate_tmp_catalog(expected, file_path) -> None:
 def _create_tmp_file_validation(
     entrypoint,
     expected_config,
-    expected_catalog: Optional[Any] = None,
-    expected_state: Optional[Any] = None,
+    expected_catalog: Any | None = None,
+    expected_state: Any | None = None,
 ):
     def _validate_tmp_files(self):
         _validate_tmp_json_file(expected_config, entrypoint.parse_args.call_args.args[0][2])

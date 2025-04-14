@@ -6,7 +6,8 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from collections import deque
-from typing import Callable, Deque, Iterable, List, Optional
+from typing import Deque, List, Optional
+from collections.abc import Callable, Iterable
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, Type
 from airbyte_cdk.sources.utils.types import JsonType
@@ -73,7 +74,7 @@ class NoopMessageRepository(MessageRepository):
 
 class InMemoryMessageRepository(MessageRepository):
     def __init__(self, log_level: Level = Level.INFO) -> None:
-        self._message_queue: Deque[AirbyteMessage] = deque()
+        self._message_queue: deque[AirbyteMessage] = deque()
         self._log_level = log_level
 
     def emit_message(self, message: AirbyteMessage) -> None:
@@ -119,7 +120,7 @@ class LogAppenderMessageRepositoryDecorator(MessageRepository):
         return self._decorated.consume_queue()
 
     def _append_second_to_first(
-        self, first: LogMessage, second: LogMessage, path: Optional[List[str]] = None
+        self, first: LogMessage, second: LogMessage, path: list[str] | None = None
     ) -> LogMessage:
         if path is None:
             path = []

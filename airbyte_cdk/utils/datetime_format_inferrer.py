@@ -15,7 +15,7 @@ class DatetimeFormatInferrer:
 
     def __init__(self) -> None:
         self._parser = DatetimeParser()
-        self._datetime_candidates: Optional[Dict[str, str]] = None
+        self._datetime_candidates: dict[str, str] | None = None
         self._formats = [
             "%Y-%m-%d",
             "%Y-%m-%d %H:%M:%S",
@@ -86,7 +86,7 @@ class DatetimeFormatInferrer:
         """Analyzes the record and updates the internal state of candidate datetime fields"""
         self._initialize(record) if self._datetime_candidates is None else self._validate(record)
 
-    def get_inferred_datetime_formats(self) -> Dict[str, str]:
+    def get_inferred_datetime_formats(self) -> dict[str, str]:
         """
         Returns the list of candidate datetime fields - the keys are the field names and the values are the inferred datetime formats.
         For these fields the format was consistent across all visited records.

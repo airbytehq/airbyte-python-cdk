@@ -4,7 +4,8 @@
 
 import ast
 from functools import cache
-from typing import Any, Mapping, Optional, Set, Tuple, Type
+from typing import Any, Optional, Set, Tuple, Type
+from collections.abc import Mapping
 
 from jinja2 import meta
 from jinja2.environment import Template
@@ -86,8 +87,8 @@ class JinjaInterpolation(Interpolation):
         self,
         input_str: str,
         config: Config,
-        default: Optional[str] = None,
-        valid_types: Optional[Tuple[Type[Any]]] = None,
+        default: str | None = None,
+        valid_types: tuple[type[Any]] | None = None,
         **additional_parameters: Any,
     ) -> Any:
         context = {"config": config, **additional_parameters}
@@ -122,7 +123,7 @@ class JinjaInterpolation(Interpolation):
         # If result is empty or resulted in an undefined error, evaluate and return the default string
         return self._literal_eval(self._eval(default, context), valid_types)
 
-    def _literal_eval(self, result: Optional[str], valid_types: Optional[Tuple[Type[Any]]]) -> Any:
+    def _literal_eval(self, result: str | None, valid_types: tuple[type[Any]] | None) -> Any:
         try:
             evaluated = ast.literal_eval(result)  # type: ignore # literal_eval is able to handle None
         except (ValueError, SyntaxError):
@@ -131,7 +132,7 @@ class JinjaInterpolation(Interpolation):
             return evaluated
         return result
 
-    def _eval(self, s: Optional[str], context: Mapping[str, Any]) -> Optional[str]:
+    def _eval(self, s: str | None, context: Mapping[str, Any]) -> str | None:
         try:
             undeclared = self._find_undeclared_variables(s)
             undeclared_not_in_context = {var for var in undeclared if var not in context}
@@ -146,7 +147,7 @@ class JinjaInterpolation(Interpolation):
             return s
 
     @cache
-    def _find_undeclared_variables(self, s: Optional[str]) -> Set[str]:
+    def _find_undeclared_variables(self, s: str | None) -> set[str]:
         """
         Find undeclared variables and cache them
         """

@@ -12,7 +12,7 @@ from airbyte_cdk.models import (
 )
 
 
-def create_analytics_message(type: str, value: Optional[Any]) -> AirbyteMessage:
+def create_analytics_message(type: str, value: Any | None) -> AirbyteMessage:
     return AirbyteMessage(
         type=Type.TRACE,
         trace=AirbyteTraceMessage(
