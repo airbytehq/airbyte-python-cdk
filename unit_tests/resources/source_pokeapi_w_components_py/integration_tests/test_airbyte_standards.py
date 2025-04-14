@@ -1,5 +1,5 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
-from pathlib import Path
+"""FAST Airbyte Standard Tests for the source_pokeapi_w_components source."""
 
 from airbyte_cdk.test.declarative.test_suites import (
     DeclarativeSourceTestSuite,

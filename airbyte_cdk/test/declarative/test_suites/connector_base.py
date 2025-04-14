@@ -8,13 +8,12 @@ import inspect
 import sys
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import cast
 
 import pytest
 import yaml
 from boltons.typeutils import classproperty
 
-from airbyte_cdk import Connector
 from airbyte_cdk.models import (
     AirbyteMessage,
     Type,

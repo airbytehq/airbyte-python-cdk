@@ -153,7 +153,7 @@ check-lockfile = {cmd = "poetry check", help = "Check the poetry lock file."}
 lint-fix = { cmd = "poetry run ruff check --fix .", help = "Auto-fix any lint issues that Ruff can automatically resolve (excluding 'unsafe' fixes)." }
 lint-fix-unsafe = { cmd = "poetry run ruff check --fix --unsafe-fixes .", help = "Lint-fix modified files, including 'unsafe' fixes. It is recommended to first commit any pending changes and then always manually review any unsafe changes applied." }
 
-# ruff fix everything
+# ruff fix everything (ignoring non-Python fixes)
 ruff-fix = { sequence = ["lint-fix", "_format-fix-ruff"] , help = "Lint-fix and format-fix all code." }
 
 # Combined Check and Fix tasks

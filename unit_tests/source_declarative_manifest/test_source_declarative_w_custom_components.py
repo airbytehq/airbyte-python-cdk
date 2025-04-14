@@ -96,7 +96,6 @@ def get_py_components_config_dict(
         "components.py" if not failing_components else "components_failing.py"
     )
     config_yaml_path: Path = connector_dir / "valid_config.yaml"
-    # secrets_yaml_path: Path = connector_dir / "secrets.yaml"
 
     manifest_dict = yaml.safe_load(manifest_yaml_path.read_text())
     assert manifest_dict, "Failed to load the manifest file."
@@ -266,8 +265,8 @@ def test_sync_with_injected_py_components(
             streams=[
                 ConfiguredAirbyteStream(
                     stream=stream,
-                    sync_mode="full_refresh",
-                    destination_sync_mode="overwrite",
+                    sync_mode="full_refresh",  # type: ignore (intentional bad value)
+                    destination_sync_mode="overwrite",  # type: ignore (intentional bad value)
                 )
                 for stream in catalog.streams
             ]
