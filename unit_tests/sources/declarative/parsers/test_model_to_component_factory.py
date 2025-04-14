@@ -5,13 +5,14 @@
 # mypy: ignore-errors
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Mapping
+from unittest.mock import Mock
 
 import freezegun
 import pytest
 import requests
 from pydantic.v1 import ValidationError
 
-from airbyte_cdk import AirbyteTracedException
+from airbyte_cdk import AirbyteTracedException, InMemoryMessageRepository
 from airbyte_cdk.models import (
     AirbyteStateBlob,
     AirbyteStateMessage,
@@ -42,6 +43,7 @@ from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
 from airbyte_cdk.sources.declarative.incremental import (
+    ConcurrentPerPartitionCursor,
     CursorFactory,
     DatetimeBasedCursor,
     PerPartitionCursor,
@@ -164,7 +166,7 @@ from airbyte_cdk.sources.streams.concurrent.clamping import (
     MonthClampingStrategy,
     WeekClampingStrategy,
 )
-from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
+from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
 )
@@ -185,7 +187,7 @@ resolver = ManifestReferenceResolver()
 
 transformer = ManifestComponentTransformer()
 
-input_config = {"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"]}
+input_config = {"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"], "start_time": "2025-01-01T00:00:00.000+00:00"}
 
 
 def test_create_check_stream():
@@ -904,18 +906,12 @@ list_stream:
 
     assert isinstance(stream, DeclarativeStream)
     assert isinstance(stream.retriever, SimpleRetriever)
-    assert isinstance(stream.retriever.stream_slicer, PerPartitionWithGlobalCursor)
+    assert isinstance(stream.retriever.stream_slicer, ConcurrentPerPartitionCursor)
 
     datetime_stream_slicer = (
-        stream.retriever.stream_slicer._per_partition_cursor._cursor_factory.create()
+        stream.retriever.stream_slicer._cursor_factory.create({}, None)
     )
-    assert isinstance(datetime_stream_slicer, DatetimeBasedCursor)
-    assert isinstance(datetime_stream_slicer._start_datetime, MinMaxDatetime)
-    assert datetime_stream_slicer._start_datetime.datetime.string == "{{ config['start_time'] }}"
-    assert isinstance(datetime_stream_slicer._end_datetime, MinMaxDatetime)
-    assert datetime_stream_slicer._end_datetime.datetime.string == "{{ config['end_time'] }}"
-    assert datetime_stream_slicer.step == "P10D"
-    assert datetime_stream_slicer.cursor_field.string == "created"
+    assert isinstance(datetime_stream_slicer, ConcurrentCursor)
 
     list_stream_slicer = stream.retriever.stream_slicer._partition_router
     assert isinstance(list_stream_slicer, ListPartitionRouter)
@@ -1032,8 +1028,7 @@ spec:
 
     assert isinstance(stream.retriever.record_selector, RecordSelector)
 
-    assert isinstance(stream.retriever.stream_slicer, ResumableFullRefreshCursor)
-    assert isinstance(stream.retriever.cursor, ResumableFullRefreshCursor)
+    assert isinstance(stream.retriever.stream_slicer, SinglePartitionRouter)
 
     assert isinstance(stream.retriever.paginator, DefaultPaginator)
     assert isinstance(stream.retriever.paginator.decoder, PaginationDecoderDecorator)
@@ -1292,7 +1287,7 @@ list_stream:
     assert stream.retriever.record_selector.transform_before_filtering == True
     assert isinstance(
         stream.retriever.record_selector.record_filter._cursor,
-        PerPartitionWithGlobalCursor,
+        ConcurrentPerPartitionCursor,
     )
 
 
@@ -1864,7 +1859,7 @@ def test_create_default_paginator():
             "subcomponent_field_with_hint",
             DpathExtractor(
                 field_path=[],
-                config={"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"]},
+                config={"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"], "start_time": "2025-01-01T00:00:00.000+00:00"},
                 decoder=JsonDecoder(parameters={}),
                 parameters={},
             ),
@@ -1880,7 +1875,7 @@ def test_create_default_paginator():
             "subcomponent_field_with_hint",
             DpathExtractor(
                 field_path=[],
-                config={"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"]},
+                config={"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"], "start_time": "2025-01-01T00:00:00.000+00:00"},
                 parameters={},
             ),
             None,
@@ -1968,11 +1963,11 @@ def test_create_default_paginator():
             DefaultPaginator(
                 pagination_strategy=OffsetIncrement(
                     page_size=10,
-                    config={"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"]},
+                    config={"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"], "start_time": "2025-01-01T00:00:00.000+00:00"},
                     parameters={},
                 ),
                 url_base="https://physical_100.com",
-                config={"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"]},
+                config={"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"], "start_time": "2025-01-01T00:00:00.000+00:00"},
                 parameters={"decoder": {"type": "JsonDecoder"}},
             ),
             None,
@@ -2448,7 +2443,7 @@ class TestCreateTransformations:
                 "cursor_granularity": "PT0.000001S",
             },
             None,
-            DatetimeBasedCursor,
+            ConcurrentCursor,
             id="test_create_simple_retriever_with_incremental",
         ),
         pytest.param(
@@ -2458,7 +2453,7 @@ class TestCreateTransformations:
                 "values": "{{config['repos']}}",
                 "cursor_field": "a_key",
             },
-            PerPartitionCursor,
+            ListPartitionRouter,
             id="test_create_simple_retriever_with_partition_router",
         ),
         pytest.param(
@@ -2476,7 +2471,7 @@ class TestCreateTransformations:
                 "values": "{{config['repos']}}",
                 "cursor_field": "a_key",
             },
-            PerPartitionWithGlobalCursor,
+            ConcurrentPerPartitionCursor,
             id="test_create_simple_retriever_with_incremental_and_partition_router",
         ),
         pytest.param(
@@ -2501,7 +2496,7 @@ class TestCreateTransformations:
                     "cursor_field": "b_key",
                 },
             ],
-            PerPartitionWithGlobalCursor,
+            ConcurrentPerPartitionCursor,
             id="test_create_simple_retriever_with_partition_routers_multiple_components",
         ),
         pytest.param(
@@ -2548,7 +2543,7 @@ def test_merge_incremental_and_partition_router(incremental, partition_router, e
     assert isinstance(stream.retriever.stream_slicer, expected_type)
 
     if incremental and partition_router:
-        assert isinstance(stream.retriever.stream_slicer, PerPartitionWithGlobalCursor)
+        assert isinstance(stream.retriever.stream_slicer, ConcurrentPerPartitionCursor)
         if isinstance(partition_router, list) and len(partition_router) > 1:
             assert isinstance(
                 stream.retriever.stream_slicer._partition_router, CartesianProductStreamSlicer
@@ -2556,9 +2551,6 @@ def test_merge_incremental_and_partition_router(incremental, partition_router, e
             assert len(stream.retriever.stream_slicer._partition_router.stream_slicers) == len(
                 partition_router
             )
-    elif partition_router and isinstance(partition_router, list) and len(partition_router) > 1:
-        assert isinstance(stream.retriever.stream_slicer, PerPartitionWithGlobalCursor)
-        assert len(stream.retriever.stream_slicer.stream_slicerS) == len(partition_router)
 
 
 def test_simple_retriever_emit_log_messages():
@@ -2885,15 +2877,17 @@ def test_use_request_options_provider_for_datetime_based_cursor():
         },
     }
 
-    datetime_based_cursor = DatetimeBasedCursor(
-        start_datetime=MinMaxDatetime(datetime="{{ config.start_time }}", parameters={}),
-        step="P5D",
-        cursor_field="updated_at",
-        datetime_format="%Y-%m-%dT%H:%M:%S.%f%z",
-        cursor_granularity="PT1S",
-        is_compare_strictly=True,
-        config=config,
-        parameters={},
+    datetime_based_cursor = ConcurrentCursor(
+        stream_name="a_stream_name",
+        stream_namespace="a_stream_namespace",
+        stream_state=None,
+        message_repository=InMemoryMessageRepository(),
+        connector_state_manager=Mock(),
+        connector_state_converter=Mock(),
+        cursor_field=CursorField("updated_at"),
+        slice_boundary_fields=("start","end"),
+        start=datetime.now(),
+        end_provider=datetime.now(),
     )
 
     datetime_based_request_options_provider = DatetimeBasedRequestOptionsProvider(
@@ -2927,8 +2921,7 @@ def test_use_request_options_provider_for_datetime_based_cursor():
     assert retriever.primary_key == "id"
     assert retriever.name == "Test"
 
-    assert isinstance(retriever.cursor, DatetimeBasedCursor)
-    assert isinstance(retriever.stream_slicer, DatetimeBasedCursor)
+    assert isinstance(retriever.stream_slicer, ConcurrentCursor)
 
     assert isinstance(retriever.request_option_provider, DatetimeBasedRequestOptionsProvider)
     assert (

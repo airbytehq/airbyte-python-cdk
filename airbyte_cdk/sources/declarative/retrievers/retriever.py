@@ -5,9 +5,8 @@
 from abc import abstractmethod
 from typing import Any, Iterable, Mapping, Optional
 
-from airbyte_cdk.sources.declarative.incremental.per_partition_cursor import StreamSlice
 from airbyte_cdk.sources.streams.core import StreamData
-from airbyte_cdk.sources.types import StreamState
+from airbyte_cdk.sources.types import StreamSlice, StreamState
 
 
 class Retriever:

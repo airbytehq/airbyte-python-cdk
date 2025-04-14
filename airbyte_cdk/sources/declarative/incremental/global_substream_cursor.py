@@ -1,7 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-
+import logging
 import threading
 import time
 from typing import Any, Callable, Iterable, Mapping, Optional, TypeVar, Union
@@ -12,7 +12,7 @@ from airbyte_cdk.sources.declarative.partition_routers.partition_router import P
 from airbyte_cdk.sources.types import Record, StreamSlice, StreamState
 
 T = TypeVar("T")
-
+logger = logging.getLogger(__name__)
 
 def iterate_with_last_flag_and_state(
     generator: Iterable[T], get_stream_state_func: Callable[[], Optional[Mapping[str, StreamState]]]
@@ -40,6 +40,7 @@ def iterate_with_last_flag_and_state(
         return  # Return an empty iterator
 
     for next_item in iterator:
+        logger.info(f"slice: {current}, state: {state}")
         yield current, False, state
         current = next_item
         state = get_stream_state_func()
