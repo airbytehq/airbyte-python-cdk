@@ -39,7 +39,7 @@ jobs:
             Build
             tests
             Tests
-            
+
       - name: Check for "do not merge" in PR title
         if: ${{ github.event.pull_request.draft == false }}
         uses: actions/github-script@v6
