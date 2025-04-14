@@ -5,7 +5,6 @@ from typing import Any
 
 import pytest
 
-from airbyte_cdk.sources.concurrent_source.concurrent_source import ConcurrentSource
 from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
 from airbyte_cdk.sources.source import Source
 from airbyte_cdk.test.declarative.utils.job_runner import IConnector
