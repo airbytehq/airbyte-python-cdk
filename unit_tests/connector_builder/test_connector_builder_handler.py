@@ -979,7 +979,7 @@ def test_get_limits(
     assert limits.max_slices == expected_max_slices
 
 
-def test_create_source() -> None:
+def test_create_source():
     max_records = 3
     max_pages_per_slice = 2
     max_slices = 1
