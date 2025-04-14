@@ -1,3 +1,7 @@
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+"""Job runner for Airbyte Standard Tests."""
+
+import logging
 import tempfile
 import uuid
 from dataclasses import asdict
@@ -19,11 +23,15 @@ from airbyte_cdk.test.declarative.models import (
 
 @runtime_checkable
 class IConnector(Protocol):
-    """A connector that can be run in a test scenario."""
+    """A connector that can be run in a test scenario.
 
-    def launch(self, args: list[str] | None) -> None:
-        """Launch the connector with the given arguments."""
-        ...
+    Note: We currently use 'spec' to determine if we have a connector object.
+    In the future, it would be preferred to leverage a 'launch' method instead,
+    directly on the connector (which doesn't yet exist).
+    """
+
+    def spec(self, logger: logging.Logger) -> Any:
+        """Connectors should have a `spec` method."""
 
 
 def run_test_job(
@@ -45,13 +53,7 @@ def run_test_job(
     if isinstance(connector, type) or callable(connector):
         # If the connector is a class or a factory lambda, instantiate it.
         connector_obj = connector()
-    elif (
-        isinstance(
-            connector,
-            IConnector,
-        )
-        or True
-    ):  # TODO: Get a valid protocol check here
+    elif isinstance(connector, IConnector):  # TODO: Get a valid protocol check here
         connector_obj = connector
     else:
         raise ValueError(
