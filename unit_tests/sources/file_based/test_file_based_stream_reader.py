@@ -440,7 +440,9 @@ def test_preserve_sub_directories_scenarios(
     """
     reader = TestStreamReader()
     reader.config = TestSpec(**config)
-    file_paths = reader._get_file_transfer_paths(source_file_path, "/tmp/transfer-files/")
+    file_paths = reader._get_file_transfer_paths(
+        source_file_path, staging_directory="/tmp/transfer-files/"
+    )
 
     assert (
         file_paths[AbstractFileBasedStreamReader.FILE_RELATIVE_PATH] == expected_file_relative_path

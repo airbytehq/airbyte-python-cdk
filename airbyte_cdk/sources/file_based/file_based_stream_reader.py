@@ -33,7 +33,6 @@ class AbstractFileBasedStreamReader(ABC):
     FILE_RELATIVE_PATH = "file_relative_path"
     FILE_NAME = "file_name"
     LOCAL_FILE_PATH = "local_file_path"
-    SOURCE_FILE_URI = "source_file_relative_path"
     FILE_FOLDER = "file_folder"
 
     def __init__(self) -> None:
@@ -177,8 +176,16 @@ class AbstractFileBasedStreamReader(ABC):
         ...
 
     def _get_file_transfer_paths(
-        self, source_file_relative_path: str, local_directory: str
+        self, source_file_relative_path: str, staging_directory: str
     ) -> MutableMapping[str, Any]:
+        """
+        This method is used to get the file transfer paths for a given source file relative path and local directory.
+        It returns a dictionary with the following keys:
+            - FILE_RELATIVE_PATH: The relative path to file in reference to the staging directory.
+            - LOCAL_FILE_PATH: The absolute path to the file.
+            - FILE_NAME: The name of the referenced file.
+            - FILE_FOLDER: The folder of the referenced file.
+        """
         preserve_directory_structure = self.preserve_directory_structure()
 
         file_name = path.basename(source_file_relative_path)
@@ -188,7 +195,7 @@ class AbstractFileBasedStreamReader(ABC):
             file_relative_path = source_file_relative_path.lstrip("/")
         else:
             file_relative_path = file_name
-        local_file_path = path.join(local_directory, file_relative_path)
+        local_file_path = path.join(staging_directory, file_relative_path)
         # Ensure the local directory exists
         makedirs(path.dirname(local_file_path), exist_ok=True)
 
