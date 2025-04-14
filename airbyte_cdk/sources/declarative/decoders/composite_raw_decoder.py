@@ -120,8 +120,7 @@ class CsvParser(Parser):
         """
         text_data = TextIOWrapper(data, encoding=self.encoding)  # type: ignore
         reader = csv.DictReader(text_data, delimiter=self._get_delimiter() or ",")
-        for row in reader:
-            yield row
+        yield from reader
 
 
 class CompositeRawDecoder(Decoder):

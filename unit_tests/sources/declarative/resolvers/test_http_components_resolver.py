@@ -513,9 +513,9 @@ def test_dynamic_streams_read_with_http_components_resolver():
         ]
 
     assert len(actual_catalog.streams) == 2
-    assert set([stream.name for stream in actual_catalog.streams]) == expected_stream_names
+    assert {stream.name for stream in actual_catalog.streams} == expected_stream_names
     assert len(records) == 2
-    assert set([record.stream for record in records]) == expected_stream_names
+    assert {record.stream for record in records} == expected_stream_names
 
 
 def test_duplicated_dynamic_streams_read_with_http_components_resolver():

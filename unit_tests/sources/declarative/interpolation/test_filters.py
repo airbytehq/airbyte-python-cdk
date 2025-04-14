@@ -42,7 +42,7 @@ def test_hash_md5_with_salt() -> None:
     input_string = "test_input_string"
     input_salt = "test_input_salt"
 
-    s = "{{ '%s' | hash('md5', '%s' ) }}" % (input_string, input_salt)
+    s = "{{{{ '{}' | hash('md5', '{}' ) }}}}".format(input_string, input_salt)
     filter_hash = interpolation.eval(s, config={})
 
     # compute expected value calling hashlib directly
@@ -112,7 +112,7 @@ def test_hmac_sha256_default() -> None:
     message = "test_message"
     secret_key = "test_secret_key"
 
-    s = "{{ '%s' | hmac('%s') }}" % (message, secret_key)
+    s = "{{{{ '{}' | hmac('{}') }}}}".format(message, secret_key)
     filter_hmac = interpolation.eval(s, config={})
 
     # compute expected hmac using the hmac library directly
@@ -128,7 +128,7 @@ def test_hmac_sha256_explicit() -> None:
     message = "test_message"
     secret_key = "test_secret_key"
 
-    s = "{{ '%s' | hmac('%s', 'sha256') }}" % (message, secret_key)
+    s = "{{{{ '{}' | hmac('{}', 'sha256') }}}}".format(message, secret_key)
     filter_hmac = interpolation.eval(s, config={})
 
     # compute expected hmac using the hmac library directly
@@ -160,7 +160,7 @@ def test_hmac_with_invalid_hash_type() -> None:
     message = "test_message"
     secret_key = "test_secret_key"
 
-    s = "{{ '%s' | hmac('%s', 'md5') }}" % (message, secret_key)
+    s = "{{{{ '{}' | hmac('{}', 'md5') }}}}".format(message, secret_key)
 
     with pytest.raises(ValueError):
         interpolation.eval(s, config={})

@@ -142,8 +142,7 @@ class ResponseToFileExtractor(RecordExtractor):
                 )
                 for chunk in chunks:
                     chunk = chunk.replace({nan: None}).to_dict(orient="records")
-                    for row in chunk:
-                        yield row
+                    yield from chunk
         except pd.errors.EmptyDataError as e:
             self.logger.info(f"Empty data received. {e}")
             yield from []

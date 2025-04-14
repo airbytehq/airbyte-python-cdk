@@ -142,9 +142,9 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         # the concurrent streams must be saved so that they can be removed from the catalog before starting
         # synchronous streams
         if len(concurrent_streams) > 0:
-            concurrent_stream_names = set(
-                [concurrent_stream.name for concurrent_stream in concurrent_streams]
-            )
+            concurrent_stream_names = {
+                concurrent_stream.name for concurrent_stream in concurrent_streams
+            }
 
             selected_concurrent_streams = self._select_streams(
                 streams=concurrent_streams, configured_catalog=catalog
