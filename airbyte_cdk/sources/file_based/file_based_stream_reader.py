@@ -177,9 +177,7 @@ class AbstractFileBasedStreamReader(ABC):
         ...
 
     def _get_file_transfer_paths(
-        self,
-        source_file_relative_path: str,
-        local_directory: str
+        self, source_file_relative_path: str, local_directory: str
     ) -> MutableMapping[str, Any]:
         preserve_directory_structure = self.preserve_directory_structure()
 
@@ -198,6 +196,6 @@ class AbstractFileBasedStreamReader(ABC):
             self.FILE_RELATIVE_PATH: file_relative_path,
             self.LOCAL_FILE_PATH: local_file_path,
             self.FILE_NAME: file_name,
-            self.FILE_FOLDER: file_folder
+            self.FILE_FOLDER: file_folder,
         }
         return file_paths
