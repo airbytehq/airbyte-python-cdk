@@ -18,11 +18,25 @@ from airbyte_cdk.test.declarative.utils.job_runner import IConnector
 
 
 def md5_checksum(file_path: Path) -> str:
+    """Helper function to calculate the MD5 checksum of a file.
+
+    This is used to calculate the checksum of the `components.py` file, if it exists.
+    """
     with open(file_path, "rb") as file:
         return md5(file.read()).hexdigest()
 
 
 class DeclarativeSourceTestSuite(SourceTestSuiteBase):
+    """Declarative source test suite.
+
+    This inherits from the Python-based source test suite and implements the
+    `create_connector` method to create a declarative source object instead of
+    requiring a custom Python source object.
+
+    The class also automatically locates the `manifest.yaml` file and the
+    `components.py` file (if it exists) in the connector's directory.
+    """
+
     @classproperty
     def manifest_yaml_path(cls) -> Path:
         """Get the path to the manifest.yaml file."""
@@ -37,7 +51,10 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
 
     @classproperty
     def components_py_path(cls) -> Path | None:
-        """Get the path to the components.py file."""
+        """Get the path to the `components.py` file, if one exists.
+
+        If not `components.py` file exists, return None.
+        """
         result = cls.get_connector_root_dir() / "components.py"
         if result.exists():
             return result
@@ -49,11 +66,14 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
         cls,
         scenario: ConnectorTestScenario,
     ) -> IConnector:
-        """Create a connector instance for the test suite."""
+        """Create a connector scenario for the test suite.
+
+        This overrides `create_connector` from the create a declarative source object
+        instead of requiring a custom python source object.
+
+        Subclasses should not need to override this method.
+        """
         config: dict[str, Any] = scenario.get_config_dict()
-        # catalog = scenario.get_catalog()
-        # state = scenario.get_state()
-        # source_config = scenario.get_source_config()
 
         manifest_dict = yaml.safe_load(cls.manifest_yaml_path.read_text())
         if cls.components_py_path and cls.components_py_path.exists():

@@ -17,9 +17,9 @@ from pydantic import BaseModel
 
 
 class ConnectorTestScenario(BaseModel):
-    """Acceptance test instance, as a Pydantic model.
+    """Acceptance test scenario, as a Pydantic model.
 
-    This class represents an acceptance test instance, which is a single test case
+    This class represents an acceptance test scenario, which is a single test case
     that can be run against a connector. It is used to deserialize and validate the
     acceptance test configuration file.
     """

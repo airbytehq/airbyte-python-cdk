@@ -29,11 +29,11 @@ class IConnector(Protocol):
 def run_test_job(
     connector: IConnector | type[IConnector] | Callable[[], IConnector],
     verb: Literal["read", "check", "discover"],
-    test_instance: ConnectorTestScenario,
+    test_scenario: ConnectorTestScenario,
     *,
     catalog: ConfiguredAirbyteCatalog | dict[str, Any] | None = None,
 ) -> entrypoint_wrapper.EntrypointOutput:
-    """Run a test job from provided CLI args and return the result."""
+    """Run a test scenario from provided CLI args and return the result."""
     if not connector:
         raise ValueError("Connector is required")
 
@@ -59,14 +59,14 @@ def run_test_job(
         )
 
     args: list[str] = [verb]
-    if test_instance.config_path:
-        args += ["--config", str(test_instance.config_path)]
-    elif test_instance.config_dict:
+    if test_scenario.config_path:
+        args += ["--config", str(test_scenario.config_path)]
+    elif test_scenario.config_dict:
         config_path = (
             Path(tempfile.gettempdir()) / "airbyte-test" / f"temp_config_{uuid.uuid4().hex}.json"
         )
         config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(orjson.dumps(test_instance.config_dict).decode())
+        config_path.write_text(orjson.dumps(test_scenario.config_dict).decode())
         args += ["--config", str(config_path)]
 
     catalog_path: Path | None = None
@@ -81,21 +81,21 @@ def run_test_job(
             )
             catalog_path.parent.mkdir(parents=True, exist_ok=True)
             catalog_path.write_text(orjson.dumps(catalog).decode())
-        elif test_instance.configured_catalog_path:
-            catalog_path = Path(test_instance.configured_catalog_path)
+        elif test_scenario.configured_catalog_path:
+            catalog_path = Path(test_scenario.configured_catalog_path)
 
         if catalog_path:
             args += ["--catalog", str(catalog_path)]
 
     # This is a bit of a hack because the source needs the catalog early.
-    # Because it *also* can fail, we have ot redundantly wrap it in a try/except block.
+    # Because it *also* can fail, we have to redundantly wrap it in a try/except block.
 
     result: entrypoint_wrapper.EntrypointOutput = entrypoint_wrapper._run_command(  # noqa: SLF001  # Non-public API
         source=connector_obj,  # type: ignore [arg-type]
         args=args,
-        expecting_exception=test_instance.expect_exception,
+        expecting_exception=test_scenario.expect_exception,
     )
-    if result.errors and not test_instance.expect_exception:
+    if result.errors and not test_scenario.expect_exception:
         raise AssertionError(
             "\n\n".join(
                 [str(err.trace.error).replace("\\n", "\n") for err in result.errors if err.trace],
@@ -114,7 +114,7 @@ def run_test_job(
             f"{len(result.connection_status_messages)}:\n"
             + "\n".join([str(msg) for msg in result.connection_status_messages])
         )
-        if test_instance.expect_exception:
+        if test_scenario.expect_exception:
             conn_status = result.connection_status_messages[0].connectionStatus
             assert conn_status, (
                 "Expected CONNECTION_STATUS message to be present. Got: \n"
@@ -128,7 +128,7 @@ def run_test_job(
         return result
 
     # For all other verbs, we assert check that an exception is raised (or not).
-    if test_instance.expect_exception:
+    if test_scenario.expect_exception:
         if not result.errors:
             raise AssertionError("Expected exception but got none.")
 

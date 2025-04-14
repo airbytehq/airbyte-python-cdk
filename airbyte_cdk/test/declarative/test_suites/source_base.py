@@ -31,13 +31,18 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
 
     def test_check(
         self,
-        instance: ConnectorTestScenario,
+        scenario: ConnectorTestScenario,
     ) -> None:
-        """Run `connection` acceptance tests."""
+        """Run standard `check` tests on the connector.
+
+        Assert that the connector returns a single CONNECTION_STATUS message.
+        This test is designed to validate the connector's ability to establish a connection
+        and return its status with the expected message type.
+        """
         result: entrypoint_wrapper.EntrypointOutput = run_test_job(
-            self.create_connector(instance),
+            self.create_connector(scenario),
             "check",
-            test_instance=instance,
+            test_scenario=scenario,
         )
         conn_status_messages: list[AirbyteMessage] = [
             msg for msg in result._messages if msg.type == Type.CONNECTION_STATUS
@@ -50,15 +55,21 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
 
     def test_basic_read(
         self,
-        instance: ConnectorTestScenario,
+        scenario: ConnectorTestScenario,
     ) -> None:
-        """Run acceptance tests."""
+        """Run standard `read` test on the connector.
+
+        This test is designed to validate the connector's ability to read data
+        from the source and return records. It first runs a `discover` job to
+        obtain the catalog of streams, and then it runs a `read` job to fetch
+        records from those streams.
+        """
         discover_result = run_test_job(
-            self.create_connector(instance),
+            self.create_connector(scenario),
             "discover",
-            test_instance=instance,
+            test_scenario=scenario,
         )
-        if instance.expect_exception:
+        if scenario.expect_exception:
             assert discover_result.errors, "Expected exception but got none."
             return
 
@@ -73,20 +84,20 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             ]
         )
         result = run_test_job(
-            self.create_connector(instance),
+            self.create_connector(scenario),
             "read",
-            test_instance=instance,
+            test_scenario=scenario,
             catalog=configured_catalog,
         )
 
         if not result.records:
             raise AssertionError("Expected records but got none.")  # noqa: TRY003
 
-    def test_fail_with_bad_catalog(
+    def test_fail_read_with_bad_catalog(
         self,
-        instance: ConnectorTestScenario,
+        scenario: ConnectorTestScenario,
     ) -> None:
-        """Test that a bad catalog fails."""
+        """Standard test for `read` when passed a bad catalog file."""
         invalid_configured_catalog = ConfiguredAirbyteCatalog(
             streams=[
                 # Create ConfiguredAirbyteStream which is deliberately invalid
@@ -107,10 +118,11 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             ]
         )
         # Set expected status to "failed" to ensure the test fails if the connector.
-        instance.status = "failed"
-        result = self.run_test_scenario(
+        scenario.status = "failed"
+        result: entrypoint_wrapper.EntrypointOutput = run_test_job(
+            self.create_connector(scenario),
             "read",
-            test_scenario=instance,
+            test_scenario=scenario,
             catalog=asdict(invalid_configured_catalog),
         )
         assert result.errors, "Expected errors but got none."
@@ -118,11 +130,11 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
 
     def test_discover(
         self,
-        instance: ConnectorTestScenario,
+        scenario: ConnectorTestScenario,
     ) -> None:
-        """Run acceptance tests."""
+        """Standard test for `discover`."""
         run_test_job(
-            self.create_connector(instance),
-            "check",
-            test_instance=instance,
+            self.create_connector(scenario),
+            "discover",
+            test_scenario=scenario,
         )

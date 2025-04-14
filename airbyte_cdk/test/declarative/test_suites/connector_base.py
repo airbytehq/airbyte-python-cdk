@@ -29,27 +29,12 @@ ACCEPTANCE_TEST_CONFIG = "acceptance-test-config.yml"
 MANIFEST_YAML = "manifest.yaml"
 
 
-class JavaClass(str):
-    """A string that represents a Java class."""
-
-
-class DockerImage(str):
-    """A string that represents a Docker image."""
-
-
-class RunnableConnector(abc.ABC):
-    """A connector that can be run in a test scenario."""
-
-    @abc.abstractmethod
-    def launch(cls, args: list[str] | None) -> None: ...
-
-
 def generate_tests(metafunc: pytest.Metafunc) -> None:
     """
     A helper for pytest_generate_tests hook.
 
     If a test method (in a class subclassed from our base class)
-    declares an argument 'instance', this function retrieves the
+    declares an argument 'scenario', this function retrieves the
     'scenarios' attribute from the test class and parametrizes that
     test with the values from 'scenarios'.
 
@@ -69,8 +54,8 @@ def generate_tests(metafunc: pytest.Metafunc) -> None:
 
     ```
     """
-    # Check if the test function requires an 'instance' argument
-    if "instance" in metafunc.fixturenames:
+    # Check if the test function requires an 'scenario' argument
+    if "scenario" in metafunc.fixturenames:
         # Retrieve the test class
         test_class = metafunc.cls
         if test_class is None:
@@ -85,14 +70,14 @@ def generate_tests(metafunc: pytest.Metafunc) -> None:
 
         scenarios = test_class.get_scenarios()
         ids = [str(scenario) for scenario in scenarios]
-        metafunc.parametrize("instance", scenarios, ids=ids)
+        metafunc.parametrize("scenario", scenarios, ids=ids)
 
 
 class ConnectorTestSuiteBase(abc.ABC):
     """Base class for connector test suites."""
 
     connector: type[IConnector] | Callable[[], IConnector] | None = None
-    """The connector class or a factory function that returns an instance of IConnector."""
+    """The connector class or a factory function that returns an scenario of IConnector."""
 
     @classmethod
     def get_test_class_dir(cls) -> Path:
@@ -120,31 +105,17 @@ class ConnectorTestSuiteBase(abc.ABC):
             "override `cls.create_connector()` to define a custom initialization process."
         )
 
-    def run_test_scenario(
-        self,
-        verb: Literal["read", "check", "discover"],
-        test_scenario: ConnectorTestScenario,
-        *,
-        catalog: dict[str, Any] | None = None,
-    ) -> entrypoint_wrapper.EntrypointOutput:
-        """Run a test job from provided CLI args and return the result."""
-        return run_test_job(
-            self.create_connector(test_scenario),
-            verb,
-            test_instance=test_scenario,
-            catalog=catalog,
-        )
-
     # Test Definitions
 
     def test_check(
         self,
-        instance: ConnectorTestScenario,
+        scenario: ConnectorTestScenario,
     ) -> None:
         """Run `connection` acceptance tests."""
-        result = self.run_test_scenario(
+        result: entrypoint_wrapper.EntrypointOutput = run_test_job(
+            self.create_connector(scenario),
             "check",
-            test_scenario=instance,
+            test_scenario=scenario,
         )
         conn_status_messages: list[AirbyteMessage] = [
             msg for msg in result._messages if msg.type == Type.CONNECTION_STATUS
