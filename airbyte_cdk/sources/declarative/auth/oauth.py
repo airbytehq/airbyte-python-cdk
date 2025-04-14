@@ -125,7 +125,7 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         )
         try:
             if (
-                isinstance(self.token_expiry_date, (int, str))
+                isinstance(self.token_expiry_date, int | str)
                 and str(self.token_expiry_date).isdigit()
             ):
                 self._token_expiry_date = ab_datetime_parse(self.token_expiry_date)

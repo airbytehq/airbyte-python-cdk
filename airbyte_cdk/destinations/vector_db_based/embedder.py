@@ -252,7 +252,7 @@ class FromFieldEmbedder(Embedder):
                     message=f"Record {str(data)[:250]}... in stream {document.record.stream}  does not contain embedding vector field {self.config.field_name}. Please check your embedding configuration, the embedding vector field has to be set correctly on every record.",
                 )
             field = data[self.config.field_name]
-            if not isinstance(field, list) or not all(isinstance(x, (int, float)) for x in field):
+            if not isinstance(field, list) or not all(isinstance(x, int | float) for x in field):
                 raise AirbyteTracedException(
                     internal_message="Embedding vector field not a list of numbers",
                     failure_type=FailureType.config_error,

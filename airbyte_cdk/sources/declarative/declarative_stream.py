@@ -230,7 +230,7 @@ class DeclarativeStream(Stream):
         checkpoint_mode = self._checkpoint_mode
 
         if isinstance(
-            cursor, (GlobalSubstreamCursor, PerPartitionCursor, PerPartitionWithGlobalCursor)
+            cursor, GlobalSubstreamCursor | PerPartitionCursor | PerPartitionWithGlobalCursor
         ):
             self.has_multiple_slices = True
             return CursorBasedCheckpointReader(

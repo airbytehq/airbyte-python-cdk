@@ -50,7 +50,7 @@ class HttpComponentsResolver(ComponentsResolver):
             parameters (Mapping[str, Any]): Parameters for interpolation.
         """
         for component_mapping in self.components_mapping:
-            if isinstance(component_mapping.value, (str, InterpolatedString)):
+            if isinstance(component_mapping.value, str | InterpolatedString):
                 interpolated_value = (
                     InterpolatedString.create(component_mapping.value, parameters=parameters)
                     if isinstance(component_mapping.value, str)

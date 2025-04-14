@@ -39,7 +39,7 @@ class DatetimeFormatInferrer:
         This is the case if the value is a string or an integer between 1_000_000_000 and 2_000_000_000 for seconds
         or between 1_000_000_000_000 and 2_000_000_000_000 for milliseconds.
         This is separate from the format check for performance reasons"""
-        if isinstance(value, (str, int)):
+        if isinstance(value, str | int):
             try:
                 value_as_int = int(value)
                 for timestamp_range in self._timestamp_heuristic_ranges:

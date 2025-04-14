@@ -14,7 +14,7 @@ interpolation = JinjaInterpolation()
 
 def test_hash_md5_no_salt() -> None:
     input_string = "abcd"
-    s = "{{ '%s' | hash('md5') }}" % input_string
+    s = f"{{{{ '{input_string}' | hash('md5') }}}}"
     filter_hash = interpolation.eval(s, config={})
 
     # compute expected hash calling hashlib directly
@@ -27,7 +27,7 @@ def test_hash_md5_no_salt() -> None:
 
 def test_hash_md5_on_numeric_value() -> None:
     input_value = 123.456
-    s = "{{ %f | hash('md5') }}" % input_value
+    s = f"{{{{ {input_value:f} | hash('md5') }}}}"
     filter_hash = interpolation.eval(s, config={})
 
     # compute expected hash calling hashlib directly
@@ -58,7 +58,7 @@ def test_hash_md5_with_salt() -> None:
     ["test_input_client_id", "some_client_secret_1", "12345", "775.78"],
 )
 def test_base64encode(input_string: str) -> None:
-    s = "{{ '%s' | base64encode }}" % input_string
+    s = f"{{{{ '{input_string}' | base64encode }}}}"
     filter_base64encode = interpolation.eval(s, config={})
 
     # compute expected base64encode calling base64 library directly
@@ -76,7 +76,7 @@ def test_base64encode(input_string: str) -> None:
     ],
 )
 def test_base64decode(input_string: str, expected_string: str) -> None:
-    s = "{{ '%s' | base64decode }}" % input_string
+    s = f"{{{{ '{input_string}' | base64decode }}}}"
     filter_base64decode = interpolation.eval(s, config={})
 
     assert filter_base64decode == expected_string

@@ -52,4 +52,4 @@ def format_http_message(
 
 
 def _normalize_body_string(body_str: str | bytes | None) -> str | None:
-    return body_str.decode() if isinstance(body_str, (bytes, bytearray)) else body_str
+    return body_str.decode() if isinstance(body_str, bytes | bytearray) else body_str
