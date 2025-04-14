@@ -361,7 +361,7 @@ class SimpleRetriever(Retriever):
         pagination_complete = False
         initial_token = self._paginator.get_initial_token()
         next_page_token: Mapping[str, Any] | None = (
-            {"next_page_token": initial_token} if initial_token else None
+            {"next_page_token": initial_token} if initial_token is not None else None
         )
         while not pagination_complete:
             response = self._fetch_next_page(stream_state, stream_slice, next_page_token)
