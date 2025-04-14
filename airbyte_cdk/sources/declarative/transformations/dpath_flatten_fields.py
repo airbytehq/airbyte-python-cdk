@@ -17,9 +17,13 @@ class KeyTransformation:
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if self.prefix is not None:
-            self.prefix = InterpolatedString.create(self.prefix, parameters=parameters).eval(self.config)
+            self.prefix = InterpolatedString.create(self.prefix, parameters=parameters).eval(
+                self.config
+            )
         if self.suffix is not None:
-            self.suffix = InterpolatedString.create(self.suffix, parameters=parameters).eval(self.config)
+            self.suffix = InterpolatedString.create(self.suffix, parameters=parameters).eval(
+                self.config
+            )
 
 
 @dataclass
@@ -55,10 +59,16 @@ class DpathFlattenFields(RecordTransformation):
     def _apply_key_transformation(self, extracted: Mapping[str, Any]) -> Mapping[str, Any]:
         if self.key_transformation:
             if self.key_transformation.prefix:
-                extracted = {f"{self.key_transformation.prefix}{key}": value for key, value in extracted.items()}
+                extracted = {
+                    f"{self.key_transformation.prefix}{key}": value
+                    for key, value in extracted.items()
+                }
 
             if self.key_transformation.suffix:
-                extracted = {f"{key}{self.key_transformation.suffix}": value for key, value in extracted.items()}
+                extracted = {
+                    f"{key}{self.key_transformation.suffix}": value
+                    for key, value in extracted.items()
+                }
 
         return extracted
 
