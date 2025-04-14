@@ -841,7 +841,9 @@ def test_given_initial_token_is_zero_when_read_records_then_pass_initial_token()
         return_value=response,
     ) as fetch_next_page_mock:
         list(retriever.read_records(stream_slice=stream_slice, records_schema={}))
-        fetch_next_page_mock.assert_called_once_with(cursor.get_stream_state(), stream_slice, {"next_page_token": 0})
+        fetch_next_page_mock.assert_called_once_with(
+            cursor.get_stream_state(), stream_slice, {"next_page_token": 0}
+        )
 
 
 def _generate_slices(number_of_slices):
