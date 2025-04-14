@@ -56,9 +56,12 @@ class InterpolatedString:
         )
 
     def __eq__(self, other: Any) -> bool:
-        if not isinstance(other, InterpolatedString):
+        if isinstance(other, InterpolatedString):
+            return self.string == other.string and self.default == other.default
+        try:
+            return self.string == str(other)
+        except (ValueError, TypeError):
             return False
-        return self.string == other.string and self.default == other.default
 
     @classmethod
     def create(
