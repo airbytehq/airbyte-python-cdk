@@ -793,6 +793,7 @@ class ModelToComponentFactory:
         model_field_path: List[Union[InterpolatedString, str]] = [x for x in model.field_path]
         key_transformation = (
             KeyTransformation(
+                config=config,
                 prefix=model.key_transformation.prefix,
                 suffix=model.key_transformation.suffix,
                 parameters=model.parameters or {},

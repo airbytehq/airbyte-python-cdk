@@ -188,7 +188,7 @@ def test_dpath_flatten_lists(
     expected_record,
 ):
     if key_transformation:
-        key_transformation = KeyTransformation({}, *key_transformation)
+        key_transformation = KeyTransformation(config, {}, *key_transformation)
 
     flattener = DpathFlattenFields(
         field_path=field_path,

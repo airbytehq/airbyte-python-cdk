@@ -10,13 +10,16 @@ from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 
 @dataclass
 class KeyTransformation:
+    config: Config
     parameters: InitVar[Mapping[str, Any]]
     prefix: Union[InterpolatedString, str, None] = None
     suffix: Union[InterpolatedString, str, None] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        self.prefix = InterpolatedString.create(self.prefix, parameters=parameters)
-        self.suffix = InterpolatedString.create(self.suffix, parameters=parameters)
+        if self.prefix is not None:
+            self.prefix = InterpolatedString.create(self.prefix, parameters=parameters).eval(self.config)
+        if self.suffix is not None:
+            self.suffix = InterpolatedString.create(self.suffix, parameters=parameters).eval(self.config)
 
 
 @dataclass
@@ -52,12 +55,10 @@ class DpathFlattenFields(RecordTransformation):
     def _apply_key_transformation(self, extracted: Mapping[str, Any]) -> Mapping[str, Any]:
         if self.key_transformation:
             if self.key_transformation.prefix:
-                if prefix := self.key_transformation.prefix.eval(config=self.config):
-                    extracted = {f"{prefix}{key}": value for key, value in extracted.items()}
+                extracted = {f"{self.key_transformation.prefix}{key}": value for key, value in extracted.items()}
 
             if self.key_transformation.suffix:
-                if suffix := self.key_transformation.suffix.eval(config=self.config):
-                    extracted = {f"{key}{suffix}": value for key, value in extracted.items()}
+                extracted = {f"{key}{self.key_transformation.suffix}": value for key, value in extracted.items()}
 
         return extracted
 
