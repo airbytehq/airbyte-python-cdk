@@ -24,10 +24,11 @@ file_transfer_schema = {
     "properties": {
         "folder": {"type": "string"},
         "file_name": {"type": "string"},
+        "source_uri": {"type": "string"},
         "bytes": {"type": "integer"},
         "id": {"type": ["null", "string"]},
         "updated_at": {"type": ["null", "string"]},
-        "mime_type": {"type": ["null", "string"]},
+        "mime_type": {"type": ["null", "string"]}
     },
 }
 
