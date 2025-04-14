@@ -287,6 +287,7 @@ class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
         folder="/absolute/path/",
         filename="file.csv",
         bytes=10,
+        source_uri="file:///absolute/path/file.csv",
     )
     _A_FILE_REFERENCE_MESSAGE = AirbyteRecordMessageFileReference(
         file_size_bytes=10,
@@ -338,6 +339,7 @@ class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
                     "bytes": 10,
                     "filename": "file.csv",
                     "folder": "/absolute/path/",
+                    "source_uri": "file:///absolute/path/file.csv",
                 }
             ]
 

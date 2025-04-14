@@ -28,7 +28,7 @@ file_transfer_schema = {
         "bytes": {"type": "integer"},
         "id": {"type": ["null", "string"]},
         "updated_at": {"type": ["null", "string"]},
-        "mime_type": {"type": ["null", "string"]}
+        "mime_type": {"type": ["null", "string"]},
     },
 }
 
