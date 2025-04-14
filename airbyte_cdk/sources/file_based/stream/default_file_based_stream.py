@@ -56,6 +56,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
     airbyte_columns = [ab_last_mod_col, ab_file_name_col]
     use_file_transfer = False
     preserve_directory_structure = True
+    _file_transfer = FileTransfer()
 
     def __init__(self, **kwargs: Any):
         if self.FILE_TRANSFER_KW in kwargs:
@@ -92,14 +93,6 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         return self.config.primary_key or self.get_parser().get_parser_defined_primary_key(
             self.config
         )
-
-    def _filter_schema_invalid_properties(
-        self, configured_catalog_json_schema: Dict[str, Any]
-    ) -> Dict[str, Any]:
-        if self.use_file_transfer:
-            return file_transfer_schema
-        else:
-            return super()._filter_schema_invalid_properties(configured_catalog_json_schema)
 
     def _duplicated_files_names(
         self, slices: List[dict[str, List[RemoteFile]]]
@@ -151,7 +144,6 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
             raise MissingSchemaError(FileBasedSourceError.MISSING_SCHEMA, stream=self.name)
         # The stream only supports a single file type, so we can use the same parser for all files
         parser = self.get_parser()
-        file_transfer = FileTransfer()
         for file in stream_slice["files"]:
             # only serialize the datetime once
             file_datetime_string = file.last_modified.strftime(self.DATE_TIME_FORMAT)
@@ -159,7 +151,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
 
             try:
                 if self.use_file_transfer:
-                    for file_record_data, file_reference in file_transfer.upload(
+                    for file_record_data, file_reference in self._file_transfer.upload(
                         file=file, stream_reader=self.stream_reader, logger=self.logger
                     ):
                         yield stream_data_to_airbyte_message(
