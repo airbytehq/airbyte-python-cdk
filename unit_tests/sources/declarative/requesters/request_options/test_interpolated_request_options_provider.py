@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
 import pytest
@@ -7,6 +7,7 @@ import pytest
 from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_request_options_provider import (
     InterpolatedRequestOptionsProvider,
 )
+from airbyte_cdk.sources.types import StreamSlice
 
 state = {"date": "2021-01-01"}
 stream_slice = {"start_date": "2020-01-01"}
@@ -178,3 +179,54 @@ def test_error_on_create_for_both_request_json_and_data():
             request_body_data=request_data,
             parameters={},
         )
+
+
+@pytest.mark.parametrize(
+    "incoming_stream_slice,expected_query_params,expected_error",
+    [
+        pytest.param(
+            StreamSlice(
+                cursor_slice={}, partition={}, extra_fields={"query_properties": ["id", "name"]}
+            ),
+            {"predicate": "OPTION", "properties": "id,name"},
+            None,
+            id="test_include_query_properties",
+        ),
+        pytest.param(None, None, ValueError, id="test_raise_error_on_no_stream_slice"),
+        pytest.param(
+            StreamSlice(cursor_slice={}, partition={}, extra_fields={}),
+            None,
+            ValueError,
+            id="test_raise_error_on_no_query_properties",
+        ),
+        pytest.param(
+            StreamSlice(cursor_slice={}, partition={}, extra_fields={"query_properties": None}),
+            None,
+            ValueError,
+            id="test_raise_error_on_query_properties_is_none",
+        ),
+        pytest.param(
+            StreamSlice(cursor_slice={}, partition={}, extra_fields={"query_properties": 404}),
+            None,
+            ValueError,
+            id="test_raise_error_on_query_properties_is_not_a_list_of_properties",
+        ),
+    ],
+)
+def test_property_error_on_invalid_stream_slice(
+    incoming_stream_slice, expected_query_params, expected_error
+):
+    request_options_provider = InterpolatedRequestOptionsProvider(
+        request_parameters={"predicate": "{{ config['option'] }}"},
+        query_properties_key="properties",
+        config=config,
+        parameters={},
+    )
+    if expected_error:
+        with pytest.raises(expected_error):
+            request_options_provider.get_request_params(stream_slice=incoming_stream_slice)
+    else:
+        request_parameters = request_options_provider.get_request_params(
+            stream_slice=incoming_stream_slice
+        )
+        assert request_parameters == expected_query_params

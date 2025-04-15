@@ -363,9 +363,9 @@ def run_mocked_test(
             request_count = len(
                 [req for req in m.request_history if unquote(req.url) == unquote(url)]
             )
-            assert (
-                request_count == 1
-            ), f"URL {url} was called {request_count} times, expected exactly once."
+            assert request_count == 1, (
+                f"URL {url} was called {request_count} times, expected exactly once."
+            )
 
 
 def _run_read(
@@ -855,10 +855,11 @@ def run_incremental_parent_state_test(
             expected_records_set = list(
                 {orjson.dumps(record): record for record in expected_records}.values()
             )
-            assert (
-                sorted(cumulative_records_state_deduped, key=lambda x: x["id"])
-                == sorted(expected_records_set, key=lambda x: x["id"])
-            ), f"Records mismatch with intermediate state {state}. Expected {expected_records}, got {cumulative_records_state_deduped}"
+            assert sorted(cumulative_records_state_deduped, key=lambda x: x["id"]) == sorted(
+                expected_records_set, key=lambda x: x["id"]
+            ), (
+                f"Records mismatch with intermediate state {state}. Expected {expected_records}, got {cumulative_records_state_deduped}"
+            )
 
             # Store the final state after each intermediate read
             final_state_intermediate = [
@@ -869,9 +870,9 @@ def run_incremental_parent_state_test(
 
         # Assert that the final state matches the expected state for all runs
         for i, final_state in enumerate(final_states):
-            assert (
-                final_state in expected_states
-            ), f"Final state mismatch at run {i + 1}. Expected {expected_states}, got {final_state}"
+            assert final_state in expected_states, (
+                f"Final state mismatch at run {i + 1}. Expected {expected_states}, got {final_state}"
+            )
 
 
 @pytest.mark.parametrize(
@@ -1300,8 +1301,7 @@ STATE_MIGRATION_GLOBAL_EXPECTED_STATE["use_global_cursor"] = True
                             {"id": 11, "post_id": 1, "updated_at": COMMENT_11_UPDATED_AT},
                         ],
                         "next_page": (
-                            "https://api.example.com/community/posts/1/comments"
-                            "?per_page=100&page=2"
+                            "https://api.example.com/community/posts/1/comments?per_page=100&page=2"
                         ),
                     },
                 ),
@@ -1346,8 +1346,7 @@ STATE_MIGRATION_GLOBAL_EXPECTED_STATE["use_global_cursor"] = True
                     {
                         "comments": [{"id": 20, "post_id": 2, "updated_at": COMMENT_20_UPDATED_AT}],
                         "next_page": (
-                            "https://api.example.com/community/posts/2/comments"
-                            "?per_page=100&page=2"
+                            "https://api.example.com/community/posts/2/comments?per_page=100&page=2"
                         ),
                     },
                 ),

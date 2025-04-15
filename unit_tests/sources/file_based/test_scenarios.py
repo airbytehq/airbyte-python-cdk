@@ -122,9 +122,9 @@ def _verify_read_output(output: EntrypointOutput, scenario: TestScenario[Abstrac
 
     expected_states = list(filter(lambda e: "data" not in e, expected_records))
     states = list(filter(lambda r: r.state, records_and_state_messages))
-    assert (
-        len(states) > 0
-    ), "No state messages emitted. Successful syncs should emit at least one stream state."
+    assert len(states) > 0, (
+        "No state messages emitted. Successful syncs should emit at least one stream state."
+    )
     _verify_state_record_counts(sorted_records, states)
 
     if hasattr(scenario.source, "cursor_cls") and issubclass(
@@ -182,9 +182,9 @@ def _verify_analytics(
     expected_analytics: Optional[List[AirbyteAnalyticsTraceMessage]],
 ) -> None:
     if expected_analytics:
-        assert (
-            len(analytics) == len(expected_analytics)
-        ), f"Number of actual analytics messages ({len(analytics)}) did not match expected ({len(expected_analytics)})"
+        assert len(analytics) == len(expected_analytics), (
+            f"Number of actual analytics messages ({len(analytics)}) did not match expected ({len(expected_analytics)})"
+        )
         for actual, expected in zip(analytics, expected_analytics):
             actual_type, actual_value = actual.trace.analytics.type, actual.trace.analytics.value
             expected_type = expected.type

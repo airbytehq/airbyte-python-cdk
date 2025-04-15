@@ -10,7 +10,7 @@ import orjson
 
 from airbyte_cdk.connector import BaseConnector
 from airbyte_cdk.connector_builder.connector_builder_handler import (
-    TestReadLimits,
+    TestLimits,
     create_source,
     full_resolve_manifest,
     get_limits,
@@ -73,17 +73,17 @@ def handle_connector_builder_request(
     config: Mapping[str, Any],
     catalog: Optional[ConfiguredAirbyteCatalog],
     state: List[AirbyteStateMessage],
-    limits: TestReadLimits,
+    limits: TestLimits,
 ) -> AirbyteMessage:
     if command == "resolve_manifest":
         return resolve_manifest(source)
     elif command == "test_read":
-        assert (
-            catalog is not None
-        ), "`test_read` requires a valid `ConfiguredAirbyteCatalog`, got None."
+        assert catalog is not None, (
+            "`test_read` requires a valid `ConfiguredAirbyteCatalog`, got None."
+        )
         return read_stream(source, config, catalog, state, limits)
     elif command == "full_resolve_manifest":
-        return full_resolve_manifest(source)
+        return full_resolve_manifest(source, limits)
     else:
         raise ValueError(f"Unrecognized command {command}.")
 

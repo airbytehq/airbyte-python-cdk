@@ -51,7 +51,7 @@ jobs:
           - \`/test\` - Runs the test suite
           - \`/poetry-lock\` - Re-locks dependencies and updates the poetry.lock file
           - \`/help\` - Shows this help message"
-          
+
           if [[ "${{ github.event.comment.body }}" == "/help" ]]; then
             echo "body=$HELP_TEXT" >> $GITHUB_OUTPUT
           else

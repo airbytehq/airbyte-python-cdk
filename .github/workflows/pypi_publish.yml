@@ -5,7 +5,7 @@
 # Note: We may want to rename this file at some point. However, if we rename the workflow file name,
 # we have to also update the Trusted Publisher settings on PyPI.
 
-name: Packaging and Publishing
+name: CDK Publish
 
 on:
   push:
@@ -14,7 +14,12 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Note that this workflow is intended for prereleases. For public-facing stable releases, please use the GitHub Releases workflow instead: https://github.com/airbytehq/airbyte-python-cdk/blob/main/docs/RELEASES.md. If running this workflow from main or from a dev branch, please enter the desired version number here, for instance 1.2.3dev0 or 1.2.3rc1."
+        description: >
+          Note that this workflow is intended for prereleases. For public-facing stable releases,
+          please use the GitHub Releases workflow instead:
+          https://github.com/airbytehq/airbyte-python-cdk/blob/main/docs/RELEASES.md.
+          For prereleases, please leave the version blank to use the detected version. Alternatively,
+          you can override the dynamic versioning for special use cases.
         required: false
       publish_to_pypi:
         description: "Publish to PyPI. If true, the workflow will publish to PyPI."
@@ -37,17 +42,29 @@ jobs:
     name: Build Python Package
     runs-on: ubuntu-24.04
     steps:
-      - name: Detect Release Tag Version
+      - name: Checkout CDK Repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect Prerelease Version using Dunamai
+        uses: mtkennerly/dunamai-action@v1
+        with:
+          args: --format "{base}.post{distance}.dev${{ github.run_id }}"
+          env-var: DETECTED_VERSION
+
+      - name: Detect Release Tag Version from git ref ('${{ github.ref_name }}')
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
+          echo "Overriding Dunamai detected version: '${{ env.DETECTED_VERSION || 'none' }}'"
+          # Extract the version from the git ref
           DETECTED_VERSION=${{ github.ref_name }}
-          echo "Version ref set to '${DETECTED_VERSION}'"
           # Remove the 'v' prefix if it exists
           DETECTED_VERSION="${DETECTED_VERSION#v}"
-          echo "Setting version to '$DETECTED_VERSION'"
+          echo "Setting detected version to '$DETECTED_VERSION'"
           echo "DETECTED_VERSION=${DETECTED_VERSION}" >> $GITHUB_ENV
 
-      - name: Validate and set VERSION from git ref ('${{ github.ref_name }}') and input (${{ github.event.inputs.version || 'none' }})
+      - name: Validate and set VERSION (detected='${{ env.DETECTED_VERSION }}', input='${{ github.event.inputs.version || 'none' }}')
         id: set_version
         run: |
           INPUT_VERSION=${{ github.event.inputs.version }}
@@ -62,8 +79,8 @@ jobs:
           INPUT_VERSION="${INPUT_VERSION#v}"
           # Fail if detected version is non-empty and different from the input version
           if [ -n "${DETECTED_VERSION:-}" ] && [ -n "${INPUT_VERSION:-}" ] && [ "${DETECTED_VERSION}" != "${INPUT_VERSION}" ]; then
-            echo "Error: Version input '${INPUT_VERSION}' does not match detected version '${DETECTED_VERSION}'."
-            exit 1
+            echo "Warning: Version input '${INPUT_VERSION}' does not match detected version '${DETECTED_VERSION}'."
+            echo "Using input version '${INPUT_VERSION}' instead."
           fi
           # Set the version to the input version if non-empty, otherwise the detected version
           VERSION="${INPUT_VERSION:-$DETECTED_VERSION}"
@@ -83,10 +100,6 @@ jobs:
             echo "IS_PRERELEASE=true" >> $GITHUB_ENV
             echo "IS_PRERELEASE=true" >> $GITHUB_OUTPUT
           fi
-
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - uses: hynek/build-and-inspect-python-package@v2
         env:

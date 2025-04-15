@@ -4,7 +4,7 @@
 
 import copy
 import typing
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 PARAMETERS_STR = "$parameters"
 
@@ -94,6 +94,7 @@ class ManifestComponentTransformer:
         parent_field_identifier: str,
         declarative_component: Mapping[str, Any],
         parent_parameters: Mapping[str, Any],
+        use_parent_parameters: Optional[bool] = None,
     ) -> Mapping[str, Any]:
         """
         Recursively transforms the specified declarative component and subcomponents to propagate parameters and insert the
@@ -103,6 +104,7 @@ class ManifestComponentTransformer:
         :param declarative_component: The current component that is having type and parameters added
         :param parent_field_identifier: The name of the field of the current component coming from the parent component
         :param parent_parameters: The parameters set on parent components defined before the current component
+        :param use_parent_parameters: If set, parent parameters will be used as the source of truth when key names are the same
         :return: A deep copy of the transformed component with types and parameters persisted to it
         """
         propagated_component = dict(copy.deepcopy(declarative_component))
@@ -130,7 +132,11 @@ class ManifestComponentTransformer:
         # level take precedence
         current_parameters = dict(copy.deepcopy(parent_parameters))
         component_parameters = propagated_component.pop(PARAMETERS_STR, {})
-        current_parameters = {**current_parameters, **component_parameters}
+        current_parameters = (
+            {**component_parameters, **current_parameters}
+            if use_parent_parameters
+            else {**current_parameters, **component_parameters}
+        )
 
         # Parameters should be applied to the current component fields with the existing field taking precedence over parameters if
         # both exist
@@ -145,7 +151,10 @@ class ManifestComponentTransformer:
                 excluded_parameter = current_parameters.pop(field_name, None)
                 parent_type_field_identifier = f"{propagated_component.get('type')}.{field_name}"
                 propagated_component[field_name] = self.propagate_types_and_parameters(
-                    parent_type_field_identifier, field_value, current_parameters
+                    parent_type_field_identifier,
+                    field_value,
+                    current_parameters,
+                    use_parent_parameters=use_parent_parameters,
                 )
                 if excluded_parameter:
                     current_parameters[field_name] = excluded_parameter
@@ -158,7 +167,10 @@ class ManifestComponentTransformer:
                             f"{propagated_component.get('type')}.{field_name}"
                         )
                         field_value[i] = self.propagate_types_and_parameters(
-                            parent_type_field_identifier, element, current_parameters
+                            parent_type_field_identifier,
+                            element,
+                            current_parameters,
+                            use_parent_parameters=use_parent_parameters,
                         )
                 if excluded_parameter:
                     current_parameters[field_name] = excluded_parameter
