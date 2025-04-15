@@ -66,6 +66,7 @@ from airbyte_cdk.sources.declarative.models import CustomSchemaLoader as CustomS
 from airbyte_cdk.sources.declarative.models import DatetimeBasedCursor as DatetimeBasedCursorModel
 from airbyte_cdk.sources.declarative.models import DeclarativeStream as DeclarativeStreamModel
 from airbyte_cdk.sources.declarative.models import DefaultPaginator as DefaultPaginatorModel
+from airbyte_cdk.sources.declarative.models import DpathExtractor as DpathExtractorModel
 from airbyte_cdk.sources.declarative.models import (
     GroupingPartitionRouter as GroupingPartitionRouterModel,
 )
@@ -1831,6 +1832,7 @@ def test_create_default_paginator():
         component_definition=paginator_manifest,
         config=input_config,
         url_base="https://airbyte.io",
+        extractor_model=DpathExtractor(field_path=["results"], config=input_config, parameters={}),
         decoder=JsonDecoder(parameters={}),
     )
 
@@ -1968,6 +1970,7 @@ def test_create_default_paginator():
             DefaultPaginator(
                 pagination_strategy=OffsetIncrement(
                     page_size=10,
+                    extractor=None,
                     config={"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"]},
                     parameters={},
                 ),
@@ -2641,17 +2644,30 @@ def test_create_offset_increment():
         page_size=10,
         inject_on_first_request=True,
     )
+
+    expected_extractor = DpathExtractor(field_path=["results"], config=input_config, parameters={})
+    extractor_model = DpathExtractorModel(
+        type="DpathExtractor", field_path=expected_extractor.field_path
+    )
+
     expected_strategy = OffsetIncrement(
-        page_size=10, inject_on_first_request=True, parameters={}, config=input_config
+        page_size=10,
+        inject_on_first_request=True,
+        extractor=expected_extractor,
+        parameters={},
+        config=input_config,
     )
 
     strategy = factory.create_offset_increment(
-        model, input_config, decoder=JsonDecoder(parameters={})
+        model, input_config, extractor_model=extractor_model, decoder=JsonDecoder(parameters={})
     )
 
     assert strategy.page_size == expected_strategy.page_size
     assert strategy.inject_on_first_request == expected_strategy.inject_on_first_request
     assert strategy.config == input_config
+
+    assert isinstance(strategy.extractor, DpathExtractor)
+    assert strategy.extractor.field_path == expected_extractor.field_path
 
 
 class MyCustomSchemaLoader(SchemaLoader):
