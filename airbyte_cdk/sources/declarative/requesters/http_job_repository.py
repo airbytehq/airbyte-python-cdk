@@ -241,7 +241,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         if not self.abort_requester:
             return
 
-        abort_response = self.abort_requester.send_request(
+        self.abort_requester.send_request(
             stream_slice=self._get_create_job_stream_slice(job),
             log_formatter=lambda abort_response: format_http_message(
                 response=abort_response,
@@ -257,7 +257,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         if not self.delete_requester:
             return
 
-        delete_job_reponse = self.delete_requester.send_request(
+        self.delete_requester.send_request(
             stream_slice=self._get_create_job_stream_slice(job),
             log_formatter=lambda delete_job_reponse: format_http_message(
                 response=delete_job_reponse,

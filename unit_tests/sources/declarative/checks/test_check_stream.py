@@ -673,7 +673,7 @@ def test_check_stream_missing_fields():
         },
     }
     with pytest.raises(ValidationError):
-        source = ConcurrentDeclarativeSource(
+        ConcurrentDeclarativeSource(
             source_config=manifest,
             config=_CONFIG,
             catalog=None,
