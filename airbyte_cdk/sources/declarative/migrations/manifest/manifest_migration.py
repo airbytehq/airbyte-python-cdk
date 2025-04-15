@@ -113,7 +113,7 @@ class ManifestMigration:
         :param manifest: The manifest to get the version from
         :return: The manifest version
         """
-        return manifest.get("version", "0.0.0")
+        return str(manifest.get("version", "0.0.0"))
 
     def _get_migration_version(self) -> str:
         """

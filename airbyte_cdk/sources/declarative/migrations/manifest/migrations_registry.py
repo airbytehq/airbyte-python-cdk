@@ -16,12 +16,12 @@ for _, module_name, is_pkg in pkgutil.iter_modules(migrations_pkg.__path__):
         importlib.import_module(f"{migrations_pkg.__name__}.{module_name}")
 
 
-def _migration_order_key(cls):
+def _migration_order_key(cls: object) -> int:
     # Extract the migration order from the module name, e.g., 0_v6_45_2_http_requester_url_base_to_url_migration
     # The order is the integer at the start of the module name, before the first underscore
     module_name = cls.__module__.split(".")[-1]
     match = re.match(r"(\d+)_", module_name)
-    return int(match.group(1)) if match else float("inf")
+    return int(match.group(1)) if match else 0
 
 
 def _discover_migrations() -> List[Type[ManifestMigration]]:
