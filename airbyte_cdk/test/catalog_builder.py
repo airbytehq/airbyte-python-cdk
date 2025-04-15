@@ -1,6 +1,6 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 
-from typing import Any, Dict, List, Union, overload
+from typing import Any, overload
 
 from airbyte_cdk.models import (
     ConfiguredAirbyteCatalog,

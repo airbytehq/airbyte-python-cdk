@@ -8,7 +8,7 @@ import zlib
 from collections.abc import Iterable, Mapping
 from contextlib import closing
 from dataclasses import InitVar, dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import pandas as pd
 import requests

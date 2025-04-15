@@ -2,7 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import List, Literal, Optional, Union
+from typing import Literal
 
 from pydantic.v1 import BaseModel, Field
 

@@ -2,7 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 from airbyte_cdk.models import AirbyteRecordMessage
 from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser

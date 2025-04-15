@@ -6,7 +6,7 @@
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping
-from typing import Any, Generic, List, Optional, TypeVar
+from typing import Any, Generic, TypeVar
 
 from airbyte_cdk.connector import BaseConnector, DefaultConnectorMixin, TConfig
 from airbyte_cdk.models import (

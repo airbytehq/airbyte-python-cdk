@@ -7,7 +7,7 @@ import logging
 import tempfile
 from collections.abc import Mapping, MutableMapping
 from contextlib import nullcontext as does_not_raise
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any
 
 import orjson
 import pytest

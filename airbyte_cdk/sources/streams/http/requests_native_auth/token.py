@@ -4,7 +4,6 @@
 
 import base64
 from itertools import cycle
-from typing import List
 
 from airbyte_cdk.sources.streams.http.requests_native_auth.abstract_token import (
     AbstractHeaderAuthenticator,

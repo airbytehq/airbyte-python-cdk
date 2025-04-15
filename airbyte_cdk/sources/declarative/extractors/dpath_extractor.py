@@ -4,7 +4,7 @@
 
 from collections.abc import Iterable, Mapping, MutableMapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, List, Union
+from typing import Any
 
 import dpath
 import requests

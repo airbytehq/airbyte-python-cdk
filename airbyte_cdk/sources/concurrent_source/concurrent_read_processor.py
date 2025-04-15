@@ -3,7 +3,6 @@
 #
 import logging
 from collections.abc import Iterable
-from typing import Dict, List, Optional, Set
 
 from airbyte_cdk.exception_handler import generate_failed_streams_error_message
 from airbyte_cdk.models import AirbyteMessage, AirbyteStreamStatus, FailureType, StreamDescriptor

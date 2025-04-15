@@ -6,7 +6,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from datetime import timedelta
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any
 from urllib.parse import urljoin
 
 import requests

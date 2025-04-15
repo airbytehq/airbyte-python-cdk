@@ -5,7 +5,6 @@ import gzip
 import json
 import zipfile
 from io import BytesIO
-from typing import Union
 
 import pytest
 import requests

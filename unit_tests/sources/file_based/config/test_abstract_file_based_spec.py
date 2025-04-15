@@ -2,7 +2,6 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Type
 
 import pytest
 from jsonschema import ValidationError, validate

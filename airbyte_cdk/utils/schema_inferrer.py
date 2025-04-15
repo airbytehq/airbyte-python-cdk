@@ -4,7 +4,7 @@
 
 from collections import defaultdict
 from collections.abc import Mapping
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from genson import SchemaBuilder, SchemaNode
 from genson.schema.strategies.object import Object

@@ -4,7 +4,7 @@
 
 from abc import abstractmethod
 from collections.abc import Iterable, Mapping
-from typing import Any, Optional
+from typing import Any
 
 from airbyte_cdk.sources.declarative.incremental.per_partition_cursor import StreamSlice
 from airbyte_cdk.sources.streams.core import StreamData

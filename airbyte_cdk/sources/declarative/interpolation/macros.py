@@ -5,7 +5,6 @@
 import builtins
 import datetime
 import typing
-from typing import Optional, Union
 
 import isodate
 import pytz

@@ -4,7 +4,7 @@
 
 from collections.abc import Mapping
 from copy import deepcopy
-from typing import Any, Optional, Type
+from typing import Any
 
 from airbyte_cdk.sources.file_based.availability_strategy.abstract_file_based_availability_strategy import (
     AbstractFileBasedAvailabilityStrategy,

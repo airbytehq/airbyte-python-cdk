@@ -1,12 +1,10 @@
 #
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
-import gzip
 import json
 import os
 
 import pytest
-import requests
 
 from airbyte_cdk import YamlDeclarativeSource
 from airbyte_cdk.models import SyncMode

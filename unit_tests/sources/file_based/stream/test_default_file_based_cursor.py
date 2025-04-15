@@ -4,7 +4,7 @@
 
 from collections.abc import Mapping
 from datetime import datetime, timedelta
-from typing import Any, List
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest

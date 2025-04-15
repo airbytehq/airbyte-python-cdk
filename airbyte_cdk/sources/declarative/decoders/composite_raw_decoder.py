@@ -9,7 +9,7 @@ import json
 import logging
 from dataclasses import dataclass
 from io import BufferedIOBase, TextIOWrapper
-from typing import Any, Optional
+from typing import Any
 
 import orjson
 import requests
@@ -60,7 +60,7 @@ class JsonParser(Parser):
         if body_json is None:
             raise AirbyteTracedException(
                 message="Response JSON data failed to be parsed. See logs for more information.",
-                internal_message=f"Response JSON data failed to be parsed.",
+                internal_message="Response JSON data failed to be parsed.",
                 failure_type=FailureType.system_error,
             )
 

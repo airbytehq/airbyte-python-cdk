@@ -1,6 +1,5 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 
 class Timer:

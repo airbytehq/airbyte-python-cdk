@@ -5,7 +5,7 @@
 
 import copy
 from collections.abc import Mapping
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,

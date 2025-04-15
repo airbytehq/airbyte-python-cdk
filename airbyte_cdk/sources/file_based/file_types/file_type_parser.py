@@ -5,7 +5,7 @@
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.file_based_stream_reader import (

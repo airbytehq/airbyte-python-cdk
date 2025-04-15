@@ -6,7 +6,7 @@ import json
 import logging
 from collections.abc import Iterable, Mapping
 from copy import deepcopy
-from typing import Any, Optional
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest

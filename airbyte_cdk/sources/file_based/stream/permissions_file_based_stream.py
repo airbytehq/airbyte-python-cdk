@@ -4,7 +4,7 @@
 
 import traceback
 from collections.abc import Iterable
-from typing import Any, Dict
+from typing import Any
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level
 from airbyte_cdk.models import Type as MessageType

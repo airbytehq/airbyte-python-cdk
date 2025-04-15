@@ -2,10 +2,10 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from collections.abc import Mapping, MutableMapping
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, List, Optional, Union
+from typing import Any
 
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean

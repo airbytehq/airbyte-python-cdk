@@ -3,10 +3,9 @@
 #
 
 import logging
-import os
 from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Optional, Union
+from typing import Any
 from urllib.parse import urljoin
 
 import requests

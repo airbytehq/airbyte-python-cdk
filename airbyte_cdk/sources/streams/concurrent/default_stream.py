@@ -3,9 +3,9 @@
 #
 
 from collections.abc import Iterable, Mapping
-from functools import cache, lru_cache
+from functools import cache
 from logging import Logger
-from typing import Any, List, Optional
+from typing import Any
 
 from airbyte_cdk.models import AirbyteStream, SyncMode
 from airbyte_cdk.sources.streams.concurrent.abstract_stream import AbstractStream

@@ -2,7 +2,7 @@
 
 import copy
 from collections.abc import Mapping, MutableMapping
-from typing import Any, List, Optional, Union
+from typing import Any
 from unittest.mock import MagicMock
 
 import orjson

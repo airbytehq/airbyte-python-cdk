@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.streams.checkpoint import Cursor

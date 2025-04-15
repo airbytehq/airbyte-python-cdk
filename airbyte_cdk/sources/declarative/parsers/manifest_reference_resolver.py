@@ -4,7 +4,7 @@
 
 import re
 from collections.abc import Mapping
-from typing import Any, Set, Tuple, Union
+from typing import Any
 
 from airbyte_cdk.sources.declarative.parsers.custom_exceptions import (
     CircularReferenceException,

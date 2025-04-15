@@ -4,7 +4,7 @@
 
 from collections.abc import Iterable, Mapping, MutableMapping
 from dataclasses import InitVar, dataclass
-from typing import Any, List, Optional, Union
+from typing import Any
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter

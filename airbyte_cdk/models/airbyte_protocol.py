@@ -4,7 +4,7 @@
 
 from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
-from typing import Annotated, Any, Dict, List, Optional, Union
+from typing import Annotated, Any
 
 from airbyte_protocol_dataclasses.models import *  # noqa: F403  # Allow '*'
 from serpyco_rs.metadata import Alias

@@ -5,7 +5,7 @@
 
 import logging
 from collections.abc import Iterator, Mapping
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from airbyte_cdk.connector_builder.models import (
     AuxiliaryRequest,

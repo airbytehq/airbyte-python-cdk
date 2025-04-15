@@ -3,7 +3,7 @@
 #
 import time
 import traceback
-from typing import Any, Optional
+from typing import Any
 
 import orjson
 

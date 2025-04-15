@@ -4,7 +4,7 @@
 
 import codecs
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any
 
 from pydantic.v1 import BaseModel, Field, root_validator, validator
 from pydantic.v1.error_wrappers import ValidationError

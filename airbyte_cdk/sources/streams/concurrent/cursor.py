@@ -8,10 +8,6 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from typing import (
     Any,
-    List,
-    Optional,
-    Tuple,
-    Union,
 )
 
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager

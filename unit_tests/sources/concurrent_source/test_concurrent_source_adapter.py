@@ -4,7 +4,7 @@
 
 import logging
 from collections.abc import Mapping
-from typing import Any, List, Optional, Tuple
+from typing import Any
 from unittest.mock import Mock
 
 import freezegun

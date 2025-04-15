@@ -5,7 +5,6 @@
 
 from collections import defaultdict
 from collections.abc import Iterable
-from typing import Dict, List, Tuple
 
 from airbyte_cdk.destinations.vector_db_based.config import ProcessingConfigModel
 from airbyte_cdk.destinations.vector_db_based.document_processor import Chunk, DocumentProcessor

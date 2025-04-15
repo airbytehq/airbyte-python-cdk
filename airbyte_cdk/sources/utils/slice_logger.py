@@ -6,7 +6,7 @@ import json
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
-from typing import Any, Optional
+from typing import Any
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level
 from airbyte_cdk.models import Type as MessageType

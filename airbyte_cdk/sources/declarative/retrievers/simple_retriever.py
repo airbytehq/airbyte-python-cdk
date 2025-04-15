@@ -10,11 +10,6 @@ from functools import partial
 from itertools import islice
 from typing import (
     Any,
-    List,
-    Optional,
-    Set,
-    Tuple,
-    Union,
 )
 
 import requests

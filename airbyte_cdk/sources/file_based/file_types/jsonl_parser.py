@@ -5,7 +5,7 @@
 import json
 import logging
 from collections.abc import Iterable, Mapping
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any
 
 import orjson
 

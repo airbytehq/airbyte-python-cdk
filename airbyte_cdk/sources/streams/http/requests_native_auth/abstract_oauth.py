@@ -7,7 +7,7 @@ from abc import abstractmethod
 from collections.abc import Mapping, MutableMapping
 from datetime import timedelta
 from json import JSONDecodeError
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any
 
 import backoff
 import requests

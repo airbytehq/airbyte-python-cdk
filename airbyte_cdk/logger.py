@@ -6,7 +6,7 @@ import json
 import logging
 import logging.config
 from collections.abc import Callable, Mapping
-from typing import Any, Optional, Tuple
+from typing import Any
 
 import orjson
 

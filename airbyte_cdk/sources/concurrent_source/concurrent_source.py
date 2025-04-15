@@ -5,7 +5,6 @@ import concurrent
 import logging
 from collections.abc import Iterable, Iterator
 from queue import Queue
-from typing import List
 
 from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.sources.concurrent_source.concurrent_read_processor import ConcurrentReadProcessor

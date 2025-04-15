@@ -4,7 +4,7 @@
 
 from collections.abc import Mapping, MutableMapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, List, Optional, Union
+from typing import Any, Union
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_nested_mapping import NestedMapping
 from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_nested_request_input_provider import (

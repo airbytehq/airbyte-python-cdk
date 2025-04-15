@@ -3,7 +3,7 @@
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from airbyte_cdk.sources.types import StreamSlice
 

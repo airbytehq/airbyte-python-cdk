@@ -5,7 +5,7 @@ import logging
 import threading
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
-from typing import Any, List, Optional
+from typing import Any
 
 
 class ThreadPoolManager:

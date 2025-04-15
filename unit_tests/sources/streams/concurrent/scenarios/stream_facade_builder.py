@@ -5,7 +5,7 @@
 import concurrent
 import logging
 from collections.abc import Mapping
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any
 
 from airbyte_cdk.models import (
     AirbyteStateMessage,

@@ -5,7 +5,7 @@
 import json
 from collections.abc import Iterable, Mapping
 from functools import partial
-from typing import Any, Optional
+from typing import Any
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest

@@ -4,7 +4,7 @@
 
 from collections.abc import Mapping, Sequence
 from datetime import timedelta
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any
 
 import dpath
 

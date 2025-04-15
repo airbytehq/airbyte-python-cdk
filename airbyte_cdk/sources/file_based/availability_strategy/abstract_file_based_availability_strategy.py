@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 from abc import abstractmethod
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING
 
 from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.streams.availability_strategy import AvailabilityStrategy

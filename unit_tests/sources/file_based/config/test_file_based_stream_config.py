@@ -3,7 +3,7 @@
 #
 
 from collections.abc import Mapping
-from typing import Any, Type
+from typing import Any
 
 import pytest as pytest
 from pydantic.v1.error_wrappers import ValidationError

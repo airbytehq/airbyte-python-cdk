@@ -4,7 +4,7 @@
 
 # mypy: ignore-errors
 from collections.abc import Iterable, Mapping
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone
 from typing import Any
 
 import freezegun

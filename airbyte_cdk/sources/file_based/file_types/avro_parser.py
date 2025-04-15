@@ -4,7 +4,7 @@
 
 import logging
 from collections.abc import Iterable, Mapping
-from typing import Any, Dict, Optional, Tuple, cast
+from typing import Any, cast
 
 import fastavro
 

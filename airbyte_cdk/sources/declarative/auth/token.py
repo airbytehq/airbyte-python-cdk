@@ -6,7 +6,7 @@ import base64
 import logging
 from collections.abc import Mapping, MutableMapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Union
+from typing import Any
 
 import requests
 from cachetools import TTLCache, cached

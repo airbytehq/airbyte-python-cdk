@@ -2,7 +2,6 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Optional, Union
 
 import requests
 

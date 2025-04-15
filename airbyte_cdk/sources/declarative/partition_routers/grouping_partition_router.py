@@ -4,7 +4,7 @@
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState

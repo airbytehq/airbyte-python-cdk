@@ -5,7 +5,7 @@
 import asyncio
 import io
 import json
-from typing import Any, Dict
+from typing import Any
 from unittest.mock import MagicMock, Mock
 
 import pytest

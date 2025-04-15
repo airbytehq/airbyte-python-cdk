@@ -3,7 +3,7 @@
 from collections.abc import Iterable, Mapping
 from dataclasses import InitVar, dataclass
 from enum import Enum
-from typing import Any, List, Optional
+from typing import Any
 
 from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import GroupByKey
 from airbyte_cdk.sources.declarative.requesters.query_properties.strategies.merge_strategy import (

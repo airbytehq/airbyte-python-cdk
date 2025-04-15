@@ -2,7 +2,7 @@
 
 from collections.abc import Iterable, Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Optional
+from typing import Any
 
 from airbyte_cdk.sources.declarative.incremental import DeclarativeCursor
 from airbyte_cdk.sources.declarative.types import Record, StreamSlice, StreamState

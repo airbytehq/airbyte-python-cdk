@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from functools import partial
-from typing import Any, Optional
+from typing import Any
 from unittest import TestCase
 from unittest.mock import Mock
 

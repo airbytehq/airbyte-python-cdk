@@ -6,7 +6,7 @@ import logging
 import sys
 from collections.abc import Mapping
 from types import TracebackType
-from typing import Any, List, Optional
+from typing import Any
 
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException

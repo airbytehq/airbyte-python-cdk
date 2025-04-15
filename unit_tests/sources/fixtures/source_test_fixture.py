@@ -6,7 +6,7 @@ import json
 import logging
 from abc import ABC
 from collections.abc import Iterable, Mapping
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any
 
 import requests
 from requests.auth import AuthBase

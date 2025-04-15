@@ -30,7 +30,6 @@ Type Aliases:
 """
 
 from collections.abc import Iterable
-from typing import Any, List
 
 from airbyte_cdk.connector_builder.models import (
     AuxiliaryRequest,

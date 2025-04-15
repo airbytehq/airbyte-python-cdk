@@ -4,7 +4,7 @@
 import logging
 from collections.abc import Iterable, Mapping, MutableMapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, List, Optional, Union
+from typing import Any
 
 from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.declarative.incremental import (

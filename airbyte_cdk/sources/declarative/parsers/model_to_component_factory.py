@@ -12,11 +12,6 @@ from collections.abc import Callable, Mapping, MutableMapping
 from functools import partial
 from typing import (
     Any,
-    Dict,
-    List,
-    Optional,
-    Type,
-    Union,
     get_args,
     get_origin,
     get_type_hints,
@@ -104,7 +99,6 @@ from airbyte_cdk.sources.declarative.migrations.legacy_to_per_partition_state_mi
 )
 from airbyte_cdk.sources.declarative.models import (
     CustomStateMigration,
-    GzipDecoder,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     AddedFieldDefinition as AddedFieldDefinitionModel,
@@ -401,10 +395,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ZipfileDecoder as ZipfileDecoderModel,
-)
-from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
-    COMPONENTS_MODULE_NAME,
-    SDM_COMPONENTS_MODULE_NAME,
 )
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,

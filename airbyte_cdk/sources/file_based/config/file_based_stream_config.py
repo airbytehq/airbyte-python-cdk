@@ -4,7 +4,7 @@
 
 from collections.abc import Mapping
 from enum import Enum
-from typing import Any, List, Optional, Union
+from typing import Any, Optional
 
 from pydantic.v1 import BaseModel, Field, validator
 

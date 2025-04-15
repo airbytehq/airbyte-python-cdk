@@ -5,7 +5,7 @@
 import logging
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Mapping
-from typing import Any, Optional, Union
+from typing import Any
 
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
 from airbyte_cdk.sources.declarative.partition_routers.partition_router import PartitionRouter

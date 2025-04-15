@@ -3,7 +3,6 @@
 #
 
 from abc import ABC, abstractmethod
-from typing import Optional
 
 import requests
 

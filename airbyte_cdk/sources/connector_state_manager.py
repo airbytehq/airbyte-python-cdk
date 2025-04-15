@@ -5,7 +5,7 @@
 import copy
 from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass
-from typing import Any, List, Optional, Tuple, Union, cast
+from typing import Any, cast
 
 from airbyte_cdk.models import (
     AirbyteMessage,

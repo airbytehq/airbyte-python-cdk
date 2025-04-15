@@ -4,7 +4,6 @@
 
 import numbers
 from re import Pattern
-from typing import Optional
 
 import requests
 

@@ -3,7 +3,6 @@
 #
 
 from dataclasses import dataclass, field
-from typing import List, Optional
 
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor
 from airbyte_cdk.sources.declarative.partition_routers import SubstreamPartitionRouter

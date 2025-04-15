@@ -3,7 +3,7 @@
 #
 
 from collections.abc import Callable, MutableMapping
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from airbyte_cdk.sources.streams.concurrent.cursor import CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_state_converter import (

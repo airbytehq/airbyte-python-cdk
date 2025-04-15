@@ -6,7 +6,7 @@ import asyncio
 import datetime
 import math
 from collections.abc import Mapping
-from typing import Any, Union
+from typing import Any
 from unittest.mock import Mock
 
 import pyarrow as pa

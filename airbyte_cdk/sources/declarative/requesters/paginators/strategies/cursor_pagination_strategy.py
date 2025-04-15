@@ -4,7 +4,7 @@
 
 from collections.abc import Mapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 import requests
 

@@ -4,7 +4,7 @@
 
 import logging
 import typing
-from typing import Optional, Tuple
+from typing import Optional
 
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.availability_strategy import AvailabilityStrategy

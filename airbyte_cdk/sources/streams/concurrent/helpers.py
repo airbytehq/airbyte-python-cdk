@@ -1,6 +1,5 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 
-from typing import List, Optional, Union
 
 from airbyte_cdk.sources.streams import Stream
 

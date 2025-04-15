@@ -5,7 +5,7 @@
 import logging
 from collections.abc import Iterable, MutableMapping
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, List, Optional
+from typing import TYPE_CHECKING, Any
 
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig

@@ -4,7 +4,7 @@ import functools
 import json
 from abc import ABC, abstractmethod
 from pathlib import Path as FilePath
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from airbyte_cdk.test.mock_http.response import HttpResponse
 from airbyte_cdk.test.utils.data import get_unit_test_folder

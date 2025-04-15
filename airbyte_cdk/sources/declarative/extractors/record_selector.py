@@ -4,7 +4,7 @@
 
 from collections.abc import Iterable, Mapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, List, Optional, Union
+from typing import Any
 
 import requests
 
@@ -15,7 +15,6 @@ from airbyte_cdk.sources.declarative.extractors.type_transformer import (
     TypeTransformer as DeclarativeTypeTransformer,
 )
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
-from airbyte_cdk.sources.declarative.models import SchemaNormalization
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from airbyte_cdk.sources.utils.transform import TypeTransformer

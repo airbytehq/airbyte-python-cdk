@@ -1,7 +1,6 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 from abc import ABC, abstractmethod
-from typing import Optional, Union
 
 import requests
 

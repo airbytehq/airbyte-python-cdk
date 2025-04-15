@@ -1,7 +1,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 from collections.abc import Mapping
-from typing import Any, Optional, Type, Union
+from typing import Any
 
 import pytest
 

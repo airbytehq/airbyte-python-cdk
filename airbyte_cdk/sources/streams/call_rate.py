@@ -11,7 +11,7 @@ import time
 from collections.abc import Mapping
 from datetime import timedelta
 from threading import RLock
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 from urllib import parse
 
 import requests

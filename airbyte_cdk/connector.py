@@ -9,7 +9,7 @@ import os
 import pkgutil
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
-from typing import Any, Generic, Optional, Protocol, TypeVar
+from typing import Any, Generic, Protocol, TypeVar
 
 import yaml
 

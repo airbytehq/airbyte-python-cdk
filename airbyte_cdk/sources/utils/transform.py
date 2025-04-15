@@ -5,7 +5,7 @@
 import logging
 from collections.abc import Callable, Generator, Mapping
 from enum import Flag, auto
-from typing import Any, Dict, Optional, cast
+from typing import Any, cast
 
 from jsonschema import Draft7Validator, RefResolver, ValidationError, Validator, validators
 

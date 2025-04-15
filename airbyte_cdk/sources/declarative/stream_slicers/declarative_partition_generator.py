@@ -1,7 +1,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 from collections.abc import Iterable, Mapping
-from typing import Any, Optional
+from typing import Any
 
 from airbyte_cdk.sources.declarative.retrievers import Retriever
 from airbyte_cdk.sources.message import MessageRepository

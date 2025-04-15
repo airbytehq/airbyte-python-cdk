@@ -6,7 +6,7 @@ import logging
 from collections.abc import Iterable, Mapping
 from datetime import datetime
 from io import IOBase
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 import pytest
 from pydantic.v1 import AnyUrl

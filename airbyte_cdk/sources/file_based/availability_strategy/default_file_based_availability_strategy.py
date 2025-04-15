@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 import traceback
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING
 
 from airbyte_cdk import AirbyteTracedException
 from airbyte_cdk.sources import Source

@@ -4,7 +4,7 @@
 
 import logging
 from collections.abc import Iterable, Mapping, MutableMapping
-from typing import Any, List, Optional
+from typing import Any
 from unittest import mock
 
 import pytest

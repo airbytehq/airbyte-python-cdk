@@ -10,7 +10,7 @@ from collections import OrderedDict
 from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from copy import deepcopy
 from datetime import timedelta
-from typing import Any, Optional
+from typing import Any
 
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.incremental.global_substream_cursor import (

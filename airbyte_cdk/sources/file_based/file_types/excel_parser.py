@@ -6,7 +6,7 @@ import logging
 from collections.abc import Iterable, Mapping
 from io import IOBase
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any
 
 import orjson
 import pandas as pd

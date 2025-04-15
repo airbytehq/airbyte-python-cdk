@@ -2,7 +2,7 @@
 
 import json
 from collections.abc import Mapping
-from typing import Any, List, Optional, Union
+from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 
 ANY_QUERY_PARAMS = "any query_parameters"

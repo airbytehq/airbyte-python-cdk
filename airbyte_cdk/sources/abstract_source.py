@@ -7,11 +7,6 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator, Mapping, MutableMapping
 from typing import (
     Any,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Union,
 )
 
 from airbyte_cdk.exception_handler import generate_failed_streams_error_message

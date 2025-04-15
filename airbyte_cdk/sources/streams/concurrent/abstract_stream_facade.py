@@ -1,7 +1,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 
 from abc import ABC, abstractmethod
-from typing import Generic, Optional, TypeVar
+from typing import Generic, TypeVar
 
 from airbyte_cdk.sources.streams.concurrent.exceptions import ExceptionWithDisplayMessage
 

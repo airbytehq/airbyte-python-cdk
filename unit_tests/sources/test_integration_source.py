@@ -5,7 +5,7 @@
 import json
 import os
 from collections.abc import Mapping
-from typing import Any, List
+from typing import Any
 from unittest import mock
 from unittest.mock import patch
 

@@ -6,7 +6,7 @@ import json
 from collections.abc import Mapping
 from copy import deepcopy
 from json import JSONDecodeError
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from airbyte_cdk.connector_builder.models import (
     AuxiliaryRequest,

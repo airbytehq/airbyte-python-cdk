@@ -7,7 +7,7 @@ import json
 from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
 from datetime import datetime
-from typing import Any, Optional, Union
+from typing import Any
 
 import jwt
 

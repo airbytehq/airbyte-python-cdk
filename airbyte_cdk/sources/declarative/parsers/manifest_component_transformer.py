@@ -3,9 +3,8 @@
 #
 
 import copy
-import typing
 from collections.abc import Mapping
-from typing import Any, Optional
+from typing import Any
 
 PARAMETERS_STR = "$parameters"
 

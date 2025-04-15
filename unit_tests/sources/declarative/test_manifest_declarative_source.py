@@ -9,7 +9,7 @@ import sys
 from collections.abc import Mapping
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, List
+from typing import Any
 from unittest.mock import call, patch
 
 import pytest
@@ -17,7 +17,6 @@ import requests
 import yaml
 from jsonschema.exceptions import ValidationError
 
-import unit_tests.sources.declarative.external_component  # Needed for dynamic imports to work
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
@@ -109,7 +108,7 @@ class TestManifestDeclarativeSource:
                 },
                 "schema_loader": {
                     "name": "{{ parameters.stream_name }}",
-                    "file_path": f"./source_sendgrid/schemas/{{{{ parameters.name }}}}.yaml",
+                    "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
                 },
                 "retriever": {
                     "paginator": {

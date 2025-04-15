@@ -5,7 +5,7 @@
 import logging
 from collections.abc import Iterable, Mapping, MutableMapping
 from copy import deepcopy
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 from unittest.mock import Mock
 
 import pytest

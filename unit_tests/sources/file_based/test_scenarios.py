@@ -6,7 +6,7 @@ import json
 import math
 from collections.abc import Mapping
 from pathlib import Path, PosixPath
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 import pytest
 from _pytest.capture import CaptureFixture

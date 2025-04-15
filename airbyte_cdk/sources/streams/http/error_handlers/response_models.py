@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Union
 
 import requests
 from requests import HTTPError

@@ -6,7 +6,7 @@ import logging
 import typing
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 
 from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.streams.core import Stream, StreamData

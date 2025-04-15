@@ -6,7 +6,7 @@ import tempfile
 import time
 from collections.abc import Iterable, Mapping
 from datetime import datetime, timedelta
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 import requests

@@ -8,11 +8,6 @@ import logging
 from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from typing import (
     Any,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Union,
 )
 from unittest.mock import Mock
 

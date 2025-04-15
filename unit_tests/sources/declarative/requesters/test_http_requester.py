@@ -3,8 +3,7 @@
 #
 
 from collections.abc import Mapping
-from datetime import timedelta
-from typing import Any, Optional
+from typing import Any
 from unittest import mock
 from unittest.mock import MagicMock
 from urllib.parse import parse_qs, urlparse
@@ -16,7 +15,6 @@ from requests import PreparedRequest
 
 from airbyte_cdk.sources.declarative.auth.declarative_authenticator import DeclarativeAuthenticator
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
-from airbyte_cdk.sources.declarative.requesters.error_handlers import HttpResponseFilter
 from airbyte_cdk.sources.declarative.requesters.error_handlers.backoff_strategies import (
     ConstantBackoffStrategy,
     ExponentialBackoffStrategy,
@@ -31,12 +29,8 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
 )
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.call_rate import (
-    AbstractAPIBudget,
     HttpAPIBudget,
-    MovingWindowCallRatePolicy,
-    Rate,
 )
-from airbyte_cdk.sources.streams.http.error_handlers.response_models import ResponseAction
 from airbyte_cdk.sources.streams.http.exceptions import (
     RequestBodyException,
     UserDefinedBackoffException,

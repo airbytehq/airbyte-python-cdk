@@ -9,7 +9,7 @@ from collections.abc import Iterator, Mapping
 from copy import deepcopy
 from importlib import metadata
 from types import ModuleType
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 import yaml
 from jsonschema.exceptions import ValidationError

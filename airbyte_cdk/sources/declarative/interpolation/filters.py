@@ -7,7 +7,7 @@ import hashlib
 import hmac as hmac_lib
 import json
 import re
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 def hash(value: Any, hash_type: str = "md5", salt: str | None = None) -> str:

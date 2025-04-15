@@ -7,7 +7,7 @@ import traceback
 from abc import ABC
 from collections import Counter
 from collections.abc import Iterator, Mapping
-from typing import Any, List, Optional, Tuple, Type, Union
+from typing import Any
 
 from pydantic.v1.error_wrappers import ValidationError
 

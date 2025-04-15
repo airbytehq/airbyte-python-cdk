@@ -4,7 +4,7 @@
 import time
 from collections.abc import Mapping
 from collections.abc import Mapping as ABCMapping
-from typing import Any, Optional
+from typing import Any
 
 from airbyte_cdk.models import (
     AirbyteLogMessage,

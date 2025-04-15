@@ -6,7 +6,6 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable
 from enum import Enum
 from types import TracebackType
-from typing import Dict, List, Optional, Union
 
 import requests_mock
 

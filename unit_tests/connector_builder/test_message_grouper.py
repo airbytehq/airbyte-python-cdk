@@ -4,7 +4,7 @@
 
 import json
 from collections.abc import Iterator, Mapping
-from typing import Any, List
+from typing import Any
 from unittest.mock import MagicMock, Mock, patch
 
 import orjson

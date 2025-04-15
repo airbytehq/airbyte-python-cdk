@@ -10,7 +10,7 @@ import tempfile
 from collections.abc import Iterable, Mapping
 from datetime import datetime
 from io import IOBase
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import avro.io as ai
 import avro.schema as avro_schema

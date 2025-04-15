@@ -3,7 +3,6 @@
 #
 
 from collections.abc import Mapping
-from typing import Type, Union
 
 from requests.exceptions import InvalidSchema, InvalidURL, RequestException
 

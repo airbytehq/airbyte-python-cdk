@@ -5,7 +5,7 @@
 import datetime as dt
 from collections.abc import Mapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Optional, Union
+from typing import Any, Union
 
 from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString

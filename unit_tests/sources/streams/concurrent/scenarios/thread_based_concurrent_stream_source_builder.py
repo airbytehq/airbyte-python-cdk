@@ -4,7 +4,7 @@
 import json
 import logging
 from collections.abc import Iterable, Mapping
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any
 
 from airbyte_cdk.models import (
     ConfiguredAirbyteCatalog,

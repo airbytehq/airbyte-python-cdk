@@ -3,8 +3,6 @@
 #
 
 
-from typing import Optional, Union
-
 import requests
 
 

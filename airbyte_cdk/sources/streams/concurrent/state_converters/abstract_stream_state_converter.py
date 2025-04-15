@@ -3,9 +3,9 @@
 #
 
 from abc import ABC, abstractmethod
-from collections.abc import Callable, MutableMapping
+from collections.abc import MutableMapping
 from enum import Enum
-from typing import TYPE_CHECKING, Any, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from airbyte_cdk.sources.streams.concurrent.cursor import CursorField

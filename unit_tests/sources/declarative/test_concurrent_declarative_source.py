@@ -7,7 +7,7 @@ import json
 import math
 from collections.abc import Iterable, Mapping
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any
 from unittest.mock import patch
 
 import freezegun

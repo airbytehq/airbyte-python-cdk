@@ -5,7 +5,6 @@ import time
 from io import StringIO
 from threading import RLock
 from types import TracebackType
-from typing import Optional
 
 
 class PrintBuffer:

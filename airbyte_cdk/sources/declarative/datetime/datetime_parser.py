@@ -3,7 +3,6 @@
 #
 
 import datetime
-from typing import Union
 
 
 class DatetimeParser:

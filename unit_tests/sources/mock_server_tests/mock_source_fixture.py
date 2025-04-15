@@ -6,7 +6,7 @@ import logging
 from abc import ABC
 from collections.abc import Iterable, Mapping, MutableMapping
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import requests
 from requests import HTTPError

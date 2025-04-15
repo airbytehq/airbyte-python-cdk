@@ -4,7 +4,7 @@ import uuid
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Any, Dict, Optional
+from typing import Any
 
 import requests
 from requests import Response

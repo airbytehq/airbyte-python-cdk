@@ -6,7 +6,7 @@ import logging
 import traceback
 from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from airbyte_cdk import AbstractSource
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker

@@ -9,7 +9,7 @@ from __future__ import (  # Used to evaluate type hints at runtime, a NameError:
 import time
 from collections.abc import MutableMapping
 from copy import copy
-from typing import Any, List
+from typing import Any
 
 import orjson
 

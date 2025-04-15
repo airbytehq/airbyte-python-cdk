@@ -6,7 +6,7 @@ import json
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import dpath
 from langchain.text_splitter import Language, RecursiveCharacterTextSplitter

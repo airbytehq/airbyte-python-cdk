@@ -1,5 +1,5 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
-from typing import Any, Dict
+from typing import Any
 
 from serpyco_rs import CustomType, Serializer
 

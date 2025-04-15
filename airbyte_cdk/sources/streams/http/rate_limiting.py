@@ -6,7 +6,7 @@ import logging
 import sys
 import time
 from collections.abc import Callable, Mapping
-from typing import Any, Optional
+from typing import Any
 
 import backoff
 from requests import PreparedRequest, RequestException, Response, codes, exceptions

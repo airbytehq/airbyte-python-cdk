@@ -2,7 +2,6 @@
 
 
 from datetime import timedelta
-from typing import Optional
 
 from airbyte_cdk.sources.declarative.async_job.timer import Timer
 from airbyte_cdk.sources.types import StreamSlice

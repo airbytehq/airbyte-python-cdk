@@ -5,7 +5,7 @@
 from collections.abc import Iterable, Mapping
 from copy import deepcopy
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Dict, List, Union
+from typing import Any
 
 import dpath
 from typing_extensions import deprecated

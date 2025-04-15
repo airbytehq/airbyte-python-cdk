@@ -5,7 +5,7 @@
 import ast
 from collections.abc import Mapping
 from functools import cache
-from typing import Any, Optional, Set, Tuple, Type
+from typing import Any
 
 from jinja2 import meta
 from jinja2.environment import Template

@@ -6,7 +6,7 @@ import json
 import logging
 from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from http import HTTPStatus
-from typing import Any, List, Optional, Tuple, Union
+from typing import Any
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest

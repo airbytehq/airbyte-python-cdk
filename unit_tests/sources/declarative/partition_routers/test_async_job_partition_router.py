@@ -2,7 +2,6 @@
 
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import (
     AsyncJobOrchestrator,
-    AsyncPartition,
 )
 from airbyte_cdk.sources.declarative.async_job.job_tracker import JobTracker
 from airbyte_cdk.sources.declarative.async_job.status import AsyncJobStatus

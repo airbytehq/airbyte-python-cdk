@@ -5,7 +5,6 @@
 import logging
 from collections.abc import Mapping
 from datetime import timedelta
-from typing import Optional, Union
 
 import requests
 

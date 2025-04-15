@@ -14,7 +14,7 @@ import tempfile
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from functools import wraps
-from typing import Any, DefaultDict, List, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 import orjson

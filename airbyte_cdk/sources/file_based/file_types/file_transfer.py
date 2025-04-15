@@ -4,7 +4,7 @@
 import logging
 import os
 from collections.abc import Iterable
-from typing import Any, Dict
+from typing import Any
 
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader

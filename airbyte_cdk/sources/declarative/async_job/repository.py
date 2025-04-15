@@ -2,7 +2,7 @@
 
 from abc import abstractmethod
 from collections.abc import Iterable, Mapping
-from typing import Any, Set
+from typing import Any
 
 from airbyte_cdk.sources.declarative.async_job.job import AsyncJob
 from airbyte_cdk.sources.types import StreamSlice

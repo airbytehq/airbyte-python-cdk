@@ -2,7 +2,6 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Optional
 from unittest.mock import ANY, MagicMock, call
 
 import pytest

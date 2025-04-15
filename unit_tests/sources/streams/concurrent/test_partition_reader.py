@@ -4,7 +4,6 @@
 import unittest
 from collections.abc import Callable, Iterable
 from queue import Queue
-from typing import List
 from unittest.mock import Mock
 
 import pytest

@@ -3,7 +3,6 @@
 #
 
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
 from unittest import TestCase
 
 import freezegun
@@ -21,7 +20,7 @@ from airbyte_cdk.test.mock_http.response_builder import (
     create_response_builder,
 )
 from airbyte_cdk.test.state_builder import StateBuilder
-from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime
 from unit_tests.sources.mock_server_tests.mock_source_fixture import SourceFixture
 from unit_tests.sources.mock_server_tests.test_helpers import (
     emits_successful_sync_status_messages,

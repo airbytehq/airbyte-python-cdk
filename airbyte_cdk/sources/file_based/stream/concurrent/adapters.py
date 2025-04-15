@@ -5,8 +5,8 @@
 import copy
 import logging
 from collections.abc import Iterable, Mapping, MutableMapping
-from functools import cache, lru_cache
-from typing import TYPE_CHECKING, Any, List, Optional, Union
+from functools import cache
+from typing import TYPE_CHECKING, Any
 
 from typing_extensions import deprecated
 

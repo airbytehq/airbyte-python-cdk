@@ -1,7 +1,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 from airbyte_cdk.sources.streams.checkpoint import Cursor
 from airbyte_cdk.sources.types import Record, StreamSlice, StreamState

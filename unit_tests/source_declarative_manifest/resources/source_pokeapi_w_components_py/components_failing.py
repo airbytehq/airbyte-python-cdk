@@ -3,9 +3,8 @@
 #
 """A sample implementation of custom components that does nothing but will cause syncs to fail if missing."""
 
-from collections.abc import Iterable, Mapping, MutableMapping
-from dataclasses import InitVar, dataclass
-from typing import Any, Optional, Union
+from collections.abc import Iterable, MutableMapping
+from typing import Any
 
 import requests
 

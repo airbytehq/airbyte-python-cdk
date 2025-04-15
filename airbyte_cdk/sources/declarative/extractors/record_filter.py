@@ -3,7 +3,7 @@
 #
 from collections.abc import Iterable, Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Optional, Union
+from typing import Any
 
 from airbyte_cdk.sources.declarative.incremental import (
     DatetimeBasedCursor,

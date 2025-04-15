@@ -5,7 +5,7 @@
 import itertools
 import traceback
 from collections.abc import Iterable, Iterator
-from typing import Any, Tuple, Union
+from typing import Any
 
 from airbyte_cdk.models import AirbyteRecordMessage, AirbyteStream
 

@@ -4,8 +4,7 @@
 
 import json
 import logging
-from datetime import timedelta, timezone
-from typing import Optional, Union
+from datetime import timedelta
 from unittest.mock import Mock
 
 import freezegun
