@@ -3,7 +3,8 @@
 #
 import logging
 import os
-from typing import Any, Dict, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
@@ -27,7 +28,7 @@ class FileTransfer:
         file: RemoteFile,
         stream_reader: AbstractFileBasedStreamReader,
         logger: logging.Logger,
-    ) -> Iterable[Dict[str, Any]]:
+    ) -> Iterable[dict[str, Any]]:
         try:
             yield stream_reader.get_file(
                 file=file, local_directory=self._local_directory, logger=logger

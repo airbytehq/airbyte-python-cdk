@@ -1,9 +1,10 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 import logging
 import uuid
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from datetime import timedelta
-from typing import Any, Dict, Iterable, Mapping, Optional
+from typing import Any
 
 import requests
 from requests import Response
@@ -39,25 +40,25 @@ class AsyncHttpJobRepository(AsyncJobRepository):
     creation_requester: Requester
     polling_requester: Requester
     download_retriever: SimpleRetriever
-    abort_requester: Optional[Requester]
-    delete_requester: Optional[Requester]
+    abort_requester: Requester | None
+    delete_requester: Requester | None
     status_extractor: DpathExtractor
     status_mapping: Mapping[str, AsyncJobStatus]
     download_target_extractor: DpathExtractor
 
     # timeout for the job to be completed, passed from `polling_job_timeout`
-    job_timeout: Optional[timedelta] = None
+    job_timeout: timedelta | None = None
 
     record_extractor: RecordExtractor = field(
         init=False, repr=False, default_factory=lambda: ResponseToFileExtractor({})
     )
-    download_target_requester: Optional[Requester] = (
+    download_target_requester: Requester | None = (
         None  # use it in case polling_requester provides some <id> and extra request is needed to obtain list of urls to download from
     )
 
     def __post_init__(self) -> None:
-        self._create_job_response_by_id: Dict[str, Response] = {}
-        self._polling_job_response_by_id: Dict[str, Response] = {}
+        self._create_job_response_by_id: dict[str, Response] = {}
+        self._polling_job_response_by_id: dict[str, Response] = {}
 
     def _get_validated_polling_response(self, stream_slice: StreamSlice) -> requests.Response:
         """
@@ -73,7 +74,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
             AirbyteTracedException: If the polling request returns an empty response.
         """
 
-        polling_response: Optional[requests.Response] = self.polling_requester.send_request(
+        polling_response: requests.Response | None = self.polling_requester.send_request(
             stream_slice=stream_slice,
             log_formatter=lambda polling_response: format_http_message(
                 response=polling_response,
@@ -128,7 +129,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
             AirbyteTracedException: If no response is received from the creation requester.
         """
 
-        response: Optional[requests.Response] = self.creation_requester.send_request(
+        response: requests.Response | None = self.creation_requester.send_request(
             stream_slice=stream_slice,
             log_formatter=lambda response: format_http_message(
                 response=response,
@@ -229,7 +230,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
                 elif isinstance(message, AirbyteMessage):
                     if message.type == Type.RECORD:
                         yield message.record.data  # type: ignore  # message.record won't be None here as the message is a record
-                elif isinstance(message, (dict, Mapping)):
+                elif isinstance(message, dict | Mapping):
                     yield message
                 else:
                     raise TypeError(f"Unknown type `{type(message)}` for message")
@@ -240,7 +241,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         if not self.abort_requester:
             return
 
-        abort_response = self.abort_requester.send_request(
+        self.abort_requester.send_request(
             stream_slice=self._get_create_job_stream_slice(job),
             log_formatter=lambda abort_response: format_http_message(
                 response=abort_response,
@@ -256,7 +257,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         if not self.delete_requester:
             return
 
-        delete_job_reponse = self.delete_requester.send_request(
+        self.delete_requester.send_request(
             stream_slice=self._get_create_job_stream_slice(job),
             log_formatter=lambda delete_job_reponse: format_http_message(
                 response=delete_job_reponse,
@@ -273,7 +274,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         del self._create_job_response_by_id[job_id]
         del self._polling_job_response_by_id[job_id]
 
-    def _get_creation_response_interpolation_context(self, job: AsyncJob) -> Dict[str, Any]:
+    def _get_creation_response_interpolation_context(self, job: AsyncJob) -> dict[str, Any]:
         """
         Returns the interpolation context for the creation response.
 
@@ -296,7 +297,7 @@ class AsyncHttpJobRepository(AsyncJobRepository):
             ].request
         return creation_response_context
 
-    def _get_polling_response_interpolation_context(self, job: AsyncJob) -> Dict[str, Any]:
+    def _get_polling_response_interpolation_context(self, job: AsyncJob) -> dict[str, Any]:
         """
         Returns the interpolation context for the polling response.
 

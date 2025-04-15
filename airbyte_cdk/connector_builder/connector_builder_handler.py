@@ -3,8 +3,9 @@
 #
 
 
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Mapping
+from typing import Any
 
 from airbyte_cdk.connector_builder.test_reader import TestReader
 from airbyte_cdk.models import (
@@ -74,7 +75,7 @@ def read_stream(
     source: DeclarativeSource,
     config: Mapping[str, Any],
     configured_catalog: ConfiguredAirbyteCatalog,
-    state: List[AirbyteStateMessage],
+    state: list[AirbyteStateMessage],
     limits: TestLimits,
 ) -> AirbyteMessage:
     try:
@@ -128,7 +129,7 @@ def full_resolve_manifest(source: ManifestDeclarativeSource, limits: TestLimits)
         for stream in streams:
             stream["dynamic_stream_name"] = None
 
-        mapped_streams: Dict[str, List[Dict[str, Any]]] = {}
+        mapped_streams: dict[str, list[dict[str, Any]]] = {}
         for stream in source.dynamic_streams:
             generated_streams = mapped_streams.setdefault(stream["dynamic_stream_name"], [])
 

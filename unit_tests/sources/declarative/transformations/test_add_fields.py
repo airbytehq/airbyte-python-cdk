@@ -2,7 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Any, List, Mapping, Optional, Tuple
+from collections.abc import Mapping
+from typing import Any
 
 import pytest
 
@@ -198,9 +199,9 @@ from airbyte_cdk.sources.types import FieldPointer
 )
 def test_add_fields(
     input_record: Mapping[str, Any],
-    field: List[Tuple[FieldPointer, str]],
-    field_type: Optional[str],
-    condition: Optional[str],
+    field: list[tuple[FieldPointer, str]],
+    field_type: str | None,
+    condition: str | None,
     kwargs: Mapping[str, Any],
     expected: Mapping[str, Any],
 ):

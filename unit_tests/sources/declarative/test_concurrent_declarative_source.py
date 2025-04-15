@@ -5,8 +5,9 @@
 import copy
 import json
 import math
+from collections.abc import Iterable, Mapping
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
+from typing import Any
 from unittest.mock import patch
 
 import freezegun
@@ -614,7 +615,7 @@ class DeclarativeStreamDecorator(Stream):
     def __init__(
         self,
         declarative_stream: DeclarativeStream,
-        slice_to_records_mapping: Mapping[tuple[str, str], List[Mapping[str, Any]]],
+        slice_to_records_mapping: Mapping[tuple[str, str], list[Mapping[str, Any]]],
     ):
         self._declarative_stream = declarative_stream
         self._slice_to_records_mapping = slice_to_records_mapping
@@ -624,15 +625,15 @@ class DeclarativeStreamDecorator(Stream):
         return self._declarative_stream.name
 
     @property
-    def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
+    def primary_key(self) -> str | list[str] | list[list[str]] | None:
         return self._declarative_stream.primary_key
 
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         if isinstance(stream_slice, StreamSlice):
             slice_key = (stream_slice.get("start_time"), stream_slice.get("end_time"))
@@ -656,7 +657,7 @@ class DeclarativeStreamDecorator(Stream):
     def get_json_schema(self) -> Mapping[str, Any]:
         return self._declarative_stream.get_json_schema()
 
-    def get_cursor(self) -> Optional[Cursor]:
+    def get_cursor(self) -> Cursor | None:
         return self._declarative_stream.get_cursor()
 
 
@@ -891,8 +892,8 @@ def test_discover():
 def _mock_requests(
     http_mocker: HttpMocker,
     url: str,
-    query_params: List[Dict[str, str]],
-    responses: List[HttpResponse],
+    query_params: list[dict[str, str]],
+    responses: list[HttpResponse],
 ) -> None:
     assert len(query_params) == len(responses), "Expecting as many slices as response"
 
@@ -901,7 +902,7 @@ def _mock_requests(
 
 
 def _mock_party_members_requests(
-    http_mocker: HttpMocker, slices_and_responses: List[Tuple[Dict[str, str], HttpResponse]]
+    http_mocker: HttpMocker, slices_and_responses: list[tuple[dict[str, str], HttpResponse]]
 ) -> None:
     slices = list(map(lambda slice_and_response: slice_and_response[0], slices_and_responses))
     responses = list(map(lambda slice_and_response: slice_and_response[1], slices_and_responses))
@@ -914,7 +915,7 @@ def _mock_party_members_requests(
     )
 
 
-def _mock_locations_requests(http_mocker: HttpMocker, slices: List[Dict[str, str]]) -> None:
+def _mock_locations_requests(http_mocker: HttpMocker, slices: list[dict[str, str]]) -> None:
     locations_query_params = list(
         map(lambda _slice: _slice | {"m": "active", "i": "1", "g": "country"}, slices)
     )
@@ -1884,7 +1885,7 @@ def create_wrapped_stream(stream: DeclarativeStream) -> Stream:
     )
 
 
-def get_mocked_read_records_output(stream_name: str) -> Mapping[tuple[str, str], List[StreamData]]:
+def get_mocked_read_records_output(stream_name: str) -> Mapping[tuple[str, str], list[StreamData]]:
     match stream_name:
         case "locations":
             slices = [
@@ -2010,8 +2011,8 @@ def get_mocked_read_records_output(stream_name: str) -> Mapping[tuple[str, str],
 
 
 def get_records_for_stream(
-    stream_name: str, messages: List[AirbyteMessage]
-) -> List[AirbyteRecordMessage]:
+    stream_name: str, messages: list[AirbyteMessage]
+) -> list[AirbyteRecordMessage]:
     return [
         message.record
         for message in messages
@@ -2020,8 +2021,8 @@ def get_records_for_stream(
 
 
 def get_states_for_stream(
-    stream_name: str, messages: List[AirbyteMessage]
-) -> List[AirbyteStateMessage]:
+    stream_name: str, messages: list[AirbyteMessage]
+) -> list[AirbyteStateMessage]:
     return [
         message.state
         for message in messages

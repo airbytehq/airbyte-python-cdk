@@ -2,8 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping, MutableMapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, List, Mapping, MutableMapping, Optional, Union
+from typing import Any
 
 import requests
 
@@ -95,12 +96,12 @@ class DefaultErrorHandler(ErrorHandler):
 
     parameters: InitVar[Mapping[str, Any]]
     config: Config
-    response_filters: Optional[List[HttpResponseFilter]] = None
-    max_retries: Optional[int] = 5
+    response_filters: list[HttpResponseFilter] | None = None
+    max_retries: int | None = 5
     max_time: int = 60 * 10
     _max_retries: int = field(init=False, repr=False, default=5)
     _max_time: int = field(init=False, repr=False, default=60 * 10)
-    backoff_strategies: Optional[List[BackoffStrategy]] = None
+    backoff_strategies: list[BackoffStrategy] | None = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if not self.response_filters:
@@ -109,7 +110,7 @@ class DefaultErrorHandler(ErrorHandler):
         self._last_request_to_attempt_count: MutableMapping[requests.PreparedRequest, int] = {}
 
     def interpret_response(
-        self, response_or_exception: Optional[Union[requests.Response, Exception]]
+        self, response_or_exception: requests.Response | Exception | None
     ) -> ErrorResolution:
         if self.response_filters:
             for response_filter in self.response_filters:
@@ -133,9 +134,9 @@ class DefaultErrorHandler(ErrorHandler):
 
     def backoff_time(
         self,
-        response_or_exception: Optional[Union[requests.Response, requests.RequestException]],
+        response_or_exception: requests.Response | requests.RequestException | None,
         attempt_count: int = 0,
-    ) -> Optional[float]:
+    ) -> float | None:
         backoff = None
         if self.backoff_strategies:
             for backoff_strategy in self.backoff_strategies:

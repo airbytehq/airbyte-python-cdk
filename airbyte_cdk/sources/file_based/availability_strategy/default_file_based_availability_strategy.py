@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 import traceback
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING
 
 from airbyte_cdk import AirbyteTracedException
 from airbyte_cdk.sources import Source
@@ -34,8 +34,8 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
         self,
         stream: AbstractFileBasedStream,
         logger: logging.Logger,
-        _: Optional[Source],
-    ) -> Tuple[bool, Optional[str]]:
+        _: Source | None,
+    ) -> tuple[bool, str | None]:
         """
         Perform a connection check for the stream (verify that we can list files from the stream).
 
@@ -52,8 +52,8 @@ class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy
         self,
         stream: AbstractFileBasedStream,
         logger: logging.Logger,
-        _: Optional[Source],
-    ) -> Tuple[bool, Optional[str]]:
+        _: Source | None,
+    ) -> tuple[bool, str | None]:
         """
         Perform a connection check for the stream.
 

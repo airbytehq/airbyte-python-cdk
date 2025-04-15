@@ -111,7 +111,7 @@ class TestJwtAuthenticator:
     @pytest.mark.parametrize(
         "base64_encode_secret_key, secret_key, expected",
         [
-            (True, "test", base64.b64encode("test".encode()).decode()),
+            (True, "test", base64.b64encode(b"test").decode()),
             (False, "test", "test"),
         ],
     )

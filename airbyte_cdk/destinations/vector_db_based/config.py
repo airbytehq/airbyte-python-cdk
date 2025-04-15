@@ -2,7 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, Literal, Union
 
 import dpath
 from pydantic.v1 import BaseModel, Field
@@ -13,7 +13,7 @@ from airbyte_cdk.utils.spec_schema_transformations import resolve_refs
 
 class SeparatorSplitterConfigModel(BaseModel):
     mode: Literal["separator"] = Field("separator", const=True)
-    separators: List[str] = Field(
+    separators: list[str] = Field(
         default=['"\\n\\n"', '"\\n"', '" "', '""'],
         title="Separators",
         description='List of separator strings to split text fields by. The separator itself needs to be wrapped in double quotes, e.g. to split by the dot character, use ".". To split by a newline, use "\\n".',
@@ -102,14 +102,14 @@ class ProcessingConfigModel(BaseModel):
         description="Size of overlap between chunks in tokens to store in vector store to better capture relevant context",
         default=0,
     )
-    text_fields: Optional[List[str]] = Field(
+    text_fields: list[str] | None = Field(
         default=[],
         title="Text fields to embed",
         description="List of fields in the record that should be used to calculate the embedding. The field list is applied to all streams in the same way and non-existing fields are ignored. If none are defined, all fields are considered text fields. When specifying text fields, you can access nested fields in the record by using dot notation, e.g. `user.name` will access the `name` field in the `user` object. It's also possible to use wildcards to access all fields in an object, e.g. `users.*.name` will access all `names` fields in all entries of the `users` array.",
         always_show=True,
         examples=["text", "user.name", "users.*.name"],
     )
-    metadata_fields: Optional[List[str]] = Field(
+    metadata_fields: list[str] | None = Field(
         default=[],
         title="Fields to store as metadata",
         description="List of fields in the record that should be stored as metadata. The field list is applied to all streams in the same way and non-existing fields are ignored. If none are defined, all fields are considered metadata fields. When specifying text fields, you can access nested fields in the record by using dot notation, e.g. `user.name` will access the `name` field in the `user` object. It's also possible to use wildcards to access all fields in an object, e.g. `users.*.name` will access all `names` fields in all entries of the `users` array. When specifying nested paths, all matching values are flattened into an array set to a field named by the path.",
@@ -123,7 +123,7 @@ class ProcessingConfigModel(BaseModel):
         type="object",
         description="Split text fields into chunks based on the specified method.",
     )
-    field_name_mappings: Optional[List[FieldNameMappingConfigModel]] = Field(
+    field_name_mappings: list[FieldNameMappingConfigModel] | None = Field(
         default=[],
         title="Field name mappings",
         description="List of fields to rename. Not applicable for nested fields, but can be used to rename fields already flattened via dot notation.",
@@ -251,13 +251,13 @@ class VectorDBConfigModel(BaseModel):
     Processing, embedding and advanced configuration are provided by this base class, while the indexing configuration is provided by the destination connector in the sub class.
     """
 
-    embedding: Union[
-        OpenAIEmbeddingConfigModel,
-        CohereEmbeddingConfigModel,
-        FakeEmbeddingConfigModel,
-        AzureOpenAIEmbeddingConfigModel,
-        OpenAICompatibleEmbeddingConfigModel,
-    ] = Field(
+    embedding: (
+        OpenAIEmbeddingConfigModel
+        | CohereEmbeddingConfigModel
+        | FakeEmbeddingConfigModel
+        | AzureOpenAIEmbeddingConfigModel
+        | OpenAICompatibleEmbeddingConfigModel
+    ) = Field(
         ...,
         title="Embedding",
         description="Embedding configuration",
@@ -285,14 +285,14 @@ class VectorDBConfigModel(BaseModel):
         }
 
     @staticmethod
-    def remove_discriminator(schema: Dict[str, Any]) -> None:
+    def remove_discriminator(schema: dict[str, Any]) -> None:
         """pydantic adds "discriminator" to the schema for oneOfs, which is not treated right by the platform as we inline all references"""
         dpath.delete(schema, "properties/**/discriminator")
 
     @classmethod
-    def schema(cls, by_alias: bool = True, ref_template: str = "") -> Dict[str, Any]:
+    def schema(cls, by_alias: bool = True, ref_template: str = "") -> dict[str, Any]:
         """we're overriding the schema classmethod to enable some post-processing"""
-        schema: Dict[str, Any] = super().schema()
+        schema: dict[str, Any] = super().schema()
         schema = resolve_refs(schema)
         cls.remove_discriminator(schema)
         return schema

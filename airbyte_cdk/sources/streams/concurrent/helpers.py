@@ -1,13 +1,12 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 
-from typing import List, Optional, Union
 
 from airbyte_cdk.sources.streams import Stream
 
 
 def get_primary_key_from_stream(
-    stream_primary_key: Optional[Union[str, List[str], List[List[str]]]],
-) -> List[str]:
+    stream_primary_key: str | list[str] | list[list[str]] | None,
+) -> list[str]:
     if stream_primary_key is None:
         return []
     elif isinstance(stream_primary_key, str):
@@ -28,7 +27,7 @@ def get_primary_key_from_stream(
         raise ValueError(f"Invalid type for primary key: {stream_primary_key}")
 
 
-def get_cursor_field_from_stream(stream: Stream) -> Optional[str]:
+def get_cursor_field_from_stream(stream: Stream) -> str | None:
     if isinstance(stream.cursor_field, list):
         if len(stream.cursor_field) > 1:
             raise ValueError(

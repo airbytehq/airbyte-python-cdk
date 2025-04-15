@@ -3,9 +3,10 @@
 #
 
 import logging
+from collections.abc import Iterable, Mapping
 from io import IOBase
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, Optional, Tuple, Union
+from typing import Any
 
 import orjson
 import pandas as pd
@@ -34,7 +35,7 @@ from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
 class ExcelParser(FileTypeParser):
     ENCODING = None
 
-    def check_config(self, config: FileBasedStreamConfig) -> Tuple[bool, Optional[str]]:
+    def check_config(self, config: FileBasedStreamConfig) -> tuple[bool, str | None]:
         """
         ExcelParser does not require config checks, implicit pydantic validation is enough.
         """
@@ -63,7 +64,7 @@ class ExcelParser(FileTypeParser):
         # Validate the format of the config
         self.validate_format(config.format, logger)
 
-        fields: Dict[str, str] = {}
+        fields: dict[str, str] = {}
 
         with stream_reader.open_file(file, self.file_read_mode, self.ENCODING, logger) as fp:
             df = self.open_and_parse_file(fp)
@@ -91,8 +92,8 @@ class ExcelParser(FileTypeParser):
         file: RemoteFile,
         stream_reader: AbstractFileBasedStreamReader,
         logger: logging.Logger,
-        discovered_schema: Optional[Mapping[str, SchemaType]] = None,
-    ) -> Iterable[Dict[str, Any]]:
+        discovered_schema: Mapping[str, SchemaType] | None = None,
+    ) -> Iterable[dict[str, Any]]:
         """
         Parses records from an Excel file based on the provided configuration.
 
@@ -140,7 +141,7 @@ class ExcelParser(FileTypeParser):
 
     @staticmethod
     def dtype_to_json_type(
-        current_type: Optional[str],
+        current_type: str | None,
         dtype: dtype_,  # type: ignore [type-arg]
     ) -> str:
         """
@@ -183,7 +184,7 @@ class ExcelParser(FileTypeParser):
             raise ConfigValidationError(FileBasedSourceError.CONFIG_VALIDATION_ERROR)
 
     @staticmethod
-    def open_and_parse_file(fp: Union[IOBase, str, Path]) -> pd.DataFrame:
+    def open_and_parse_file(fp: IOBase | str | Path) -> pd.DataFrame:
         """
         Opens and parses the Excel file.
 

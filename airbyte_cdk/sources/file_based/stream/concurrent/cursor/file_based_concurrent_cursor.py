@@ -3,9 +3,10 @@
 #
 
 import logging
+from collections.abc import Iterable, MutableMapping
 from datetime import datetime, timedelta
 from threading import RLock
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List, MutableMapping, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level, Type
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
@@ -41,7 +42,7 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
         self,
         stream_config: FileBasedStreamConfig,
         stream_name: str,
-        stream_namespace: Optional[str],
+        stream_namespace: str | None,
         stream_state: MutableMapping[str, Any],
         message_repository: MessageRepository,
         connector_state_manager: ConnectorStateManager,
@@ -60,7 +61,7 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
         )
         self._state_lock = RLock()
         self._pending_files_lock = RLock()
-        self._pending_files: Optional[Dict[str, RemoteFile]] = None
+        self._pending_files: dict[str, RemoteFile] | None = None
         self._file_to_datetime_history = stream_state.get("history", {}) if stream_state else {}
         self._prev_cursor_value = self._compute_prev_sync_cursor(stream_state)
         self._sync_start = self._compute_start_time()
@@ -79,7 +80,7 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
                     "Expected pending partitions to be set but it was not. This is unexpected. Please contact Support."
                 )
 
-    def set_pending_partitions(self, partitions: List["FileBasedStreamPartition"]) -> None:
+    def set_pending_partitions(self, partitions: list["FileBasedStreamPartition"]) -> None:
         with self._pending_files_lock:
             self._pending_files = {}
             for partition in partitions:
@@ -93,7 +94,7 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
                         )
                 self._pending_files.update({file.uri: file})
 
-    def _compute_prev_sync_cursor(self, value: Optional[StreamState]) -> Tuple[datetime, str]:
+    def _compute_prev_sync_cursor(self, value: StreamState | None) -> tuple[datetime, str]:
         if not value:
             return self.zero_value, ""
         prev_cursor_str = value.get(self._cursor_field.cursor_field_key) or self.zero_cursor_value
@@ -112,12 +113,12 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
         cursor_dt, cursor_uri = cursor_str.split("_", 1)
         return datetime.strptime(cursor_dt, self.DATE_TIME_FORMAT), cursor_uri
 
-    def _get_cursor_key_from_file(self, file: Optional[RemoteFile]) -> str:
+    def _get_cursor_key_from_file(self, file: RemoteFile | None) -> str:
         if file:
             return f"{datetime.strftime(file.last_modified, self.DATE_TIME_FORMAT)}_{file.uri}"
         return self.zero_cursor_value
 
-    def _compute_earliest_file_in_history(self) -> Optional[RemoteFile]:
+    def _compute_earliest_file_in_history(self) -> RemoteFile | None:
         with self._state_lock:
             if self._file_to_datetime_history:
                 filename, last_modified = min(
@@ -196,13 +197,13 @@ class FileBasedConcurrentCursor(AbstractConcurrentFileBasedCursor):
                 else:
                     return f"{self.zero_value.strftime(self.DATE_TIME_FORMAT)}_"
 
-    def _compute_earliest_pending_file(self) -> Optional[RemoteFile]:
+    def _compute_earliest_pending_file(self) -> RemoteFile | None:
         if self._pending_files:
             return min(self._pending_files.values(), key=lambda x: x.last_modified)
         else:
             return None
 
-    def _compute_latest_file_in_history(self) -> Optional[RemoteFile]:
+    def _compute_latest_file_in_history(self) -> RemoteFile | None:
         with self._state_lock:
             if self._file_to_datetime_history:
                 filename, last_modified = max(

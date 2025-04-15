@@ -1,7 +1,8 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-from typing import Any, Iterable, Mapping, MutableMapping, Optional, Union
+from collections.abc import Iterable, Mapping, MutableMapping
+from typing import Any
 
 from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
@@ -76,11 +77,11 @@ class PerPartitionWithGlobalCursor(DeclarativeCursor):
         self._per_partition_cursor = PerPartitionCursor(cursor_factory, partition_router)
         self._global_cursor = GlobalSubstreamCursor(stream_cursor, partition_router)
         self._use_global_cursor = False
-        self._current_partition: Optional[Mapping[str, Any]] = None
+        self._current_partition: Mapping[str, Any] | None = None
         self._last_slice: bool = False
-        self._parent_state: Optional[Mapping[str, Any]] = None
+        self._parent_state: Mapping[str, Any] | None = None
 
-    def _get_active_cursor(self) -> Union[PerPartitionCursor, GlobalSubstreamCursor]:
+    def _get_active_cursor(self) -> PerPartitionCursor | GlobalSubstreamCursor:
         return self._global_cursor if self._use_global_cursor else self._per_partition_cursor
 
     def stream_slices(self) -> Iterable[StreamSlice]:
@@ -138,15 +139,15 @@ class PerPartitionWithGlobalCursor(DeclarativeCursor):
 
         return final_state
 
-    def select_state(self, stream_slice: Optional[StreamSlice] = None) -> Optional[StreamState]:
+    def select_state(self, stream_slice: StreamSlice | None = None) -> StreamState | None:
         return self._get_active_cursor().select_state(stream_slice)
 
     def get_request_params(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return self._get_active_cursor().get_request_params(
             stream_state=stream_state,
@@ -157,9 +158,9 @@ class PerPartitionWithGlobalCursor(DeclarativeCursor):
     def get_request_headers(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return self._get_active_cursor().get_request_headers(
             stream_state=stream_state,
@@ -170,10 +171,10 @@ class PerPartitionWithGlobalCursor(DeclarativeCursor):
     def get_request_body_data(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Union[Mapping[str, Any], str]:
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any] | str:
         return self._get_active_cursor().get_request_body_data(
             stream_state=stream_state,
             stream_slice=stream_slice,
@@ -183,9 +184,9 @@ class PerPartitionWithGlobalCursor(DeclarativeCursor):
     def get_request_body_json(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return self._get_active_cursor().get_request_body_json(
             stream_state=stream_state,

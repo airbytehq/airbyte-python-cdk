@@ -2,7 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Any, List, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 import pytest
 
@@ -162,7 +163,7 @@ from airbyte_cdk.sources.types import FieldPointer
 )
 def test_remove_fields(
     input_record: Mapping[str, Any],
-    field_pointers: List[FieldPointer],
+    field_pointers: list[FieldPointer],
     condition: str,
     expected: Mapping[str, Any],
 ):

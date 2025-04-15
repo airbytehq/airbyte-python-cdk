@@ -4,7 +4,6 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Optional
 
 from typing_extensions import deprecated
 
@@ -19,7 +18,7 @@ class StreamAvailability(ABC):
         """
 
     @abstractmethod
-    def message(self) -> Optional[str]:
+    def message(self) -> str | None:
         """
         :return: A message describing why the stream is not available. If the stream is available, this should return None.
         """
@@ -29,7 +28,7 @@ class StreamAvailable(StreamAvailability):
     def is_available(self) -> bool:
         return True
 
-    def message(self) -> Optional[str]:
+    def message(self) -> str | None:
         return None
 
 
@@ -40,7 +39,7 @@ class StreamUnavailable(StreamAvailability):
     def is_available(self) -> bool:
         return False
 
-    def message(self) -> Optional[str]:
+    def message(self) -> str | None:
         return self._message
 
 

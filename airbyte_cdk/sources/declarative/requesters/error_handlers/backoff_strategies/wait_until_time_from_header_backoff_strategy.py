@@ -5,8 +5,9 @@
 import numbers
 import re
 import time
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional, Union
+from typing import Any
 
 import requests
 
@@ -32,11 +33,11 @@ class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
         regex (Optional[str]): optional regex to apply on the header to extract its value
     """
 
-    header: Union[InterpolatedString, str]
+    header: InterpolatedString | str
     parameters: InitVar[Mapping[str, Any]]
     config: Config
-    min_wait: Optional[Union[float, InterpolatedString, str]] = None
-    regex: Optional[Union[InterpolatedString, str]] = None
+    min_wait: float | InterpolatedString | str | None = None
+    regex: InterpolatedString | str | None = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.header = InterpolatedString.create(self.header, parameters=parameters)
@@ -48,9 +49,9 @@ class WaitUntilTimeFromHeaderBackoffStrategy(BackoffStrategy):
 
     def backoff_time(
         self,
-        response_or_exception: Optional[Union[requests.Response, requests.RequestException]],
+        response_or_exception: requests.Response | requests.RequestException | None,
         attempt_count: int,
-    ) -> Optional[float]:
+    ) -> float | None:
         now = time.time()
         header = self.header.eval(self.config)  # type: ignore # header is always cast to an interpolated string
         if self.regex:

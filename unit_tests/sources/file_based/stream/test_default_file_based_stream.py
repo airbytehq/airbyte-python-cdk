@@ -4,9 +4,10 @@
 
 import traceback
 import unittest
+from collections.abc import Iterable, Iterator, Mapping
 from copy import deepcopy
 from datetime import datetime, timezone
-from typing import Any, Iterable, Iterator, Mapping
+from typing import Any
 from unittest import mock
 from unittest.mock import Mock
 

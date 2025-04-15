@@ -3,7 +3,8 @@
 #
 
 import logging
-from typing import Any, List, Mapping, Optional, Tuple
+from collections.abc import Mapping
+from typing import Any
 from unittest.mock import Mock
 
 import freezegun
@@ -45,10 +46,10 @@ class _MockSource(ConcurrentSourceAdapter):
 
     def check_connection(
         self, logger: logging.Logger, config: Mapping[str, Any]
-    ) -> Tuple[bool, Optional[Any]]:
+    ) -> tuple[bool, Any | None]:
         raise NotImplementedError
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> list[Stream]:
         return [
             self.convert_to_concurrent_stream(self._logger, s, Mock()) if is_concurrent else s
             for s, is_concurrent in self._streams_to_is_concurrent.items()
@@ -139,7 +140,7 @@ def _mock_stream(name: str, data=[], available: bool = True):
     return s
 
 
-def _configured_catalog(streams: List[Stream]):
+def _configured_catalog(streams: list[Stream]):
     return ConfiguredAirbyteCatalog(
         streams=[
             ConfiguredAirbyteStream(

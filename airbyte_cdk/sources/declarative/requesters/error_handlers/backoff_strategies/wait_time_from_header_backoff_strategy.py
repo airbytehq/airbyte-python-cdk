@@ -3,8 +3,9 @@
 #
 
 import re
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional, Union
+from typing import Any
 
 import requests
 
@@ -31,11 +32,11 @@ class WaitTimeFromHeaderBackoffStrategy(BackoffStrategy):
         max_waiting_time_in_seconds: (Optional[float]): given the value extracted from the header is greater than this value, stop the stream
     """
 
-    header: Union[InterpolatedString, str]
+    header: InterpolatedString | str
     parameters: InitVar[Mapping[str, Any]]
     config: Config
-    regex: Optional[Union[InterpolatedString, str]] = None
-    max_waiting_time_in_seconds: Optional[float] = None
+    regex: InterpolatedString | str | None = None
+    max_waiting_time_in_seconds: float | None = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.regex = (
@@ -45,9 +46,9 @@ class WaitTimeFromHeaderBackoffStrategy(BackoffStrategy):
 
     def backoff_time(
         self,
-        response_or_exception: Optional[Union[requests.Response, requests.RequestException]],
+        response_or_exception: requests.Response | requests.RequestException | None,
         attempt_count: int,
-    ) -> Optional[float]:
+    ) -> float | None:
         header = self.header.eval(config=self.config)  # type: ignore  # header is always cast to an interpolated stream
         if self.regex:
             evaled_regex = self.regex.eval(self.config)  # type: ignore # header is always cast to an interpolated string

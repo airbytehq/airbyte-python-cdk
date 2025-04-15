@@ -3,7 +3,8 @@
 #
 
 import pkgutil
-from typing import Any, List, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any
 
 import yaml
 
@@ -14,16 +15,16 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
 from airbyte_cdk.sources.types import ConnectionDefinition
 
 
-class YamlDeclarativeSource(ConcurrentDeclarativeSource[List[AirbyteStateMessage]]):
+class YamlDeclarativeSource(ConcurrentDeclarativeSource[list[AirbyteStateMessage]]):
     """Declarative source defined by a yaml file"""
 
     def __init__(
         self,
         path_to_yaml: str,
         debug: bool = False,
-        catalog: Optional[ConfiguredAirbyteCatalog] = None,
-        config: Optional[Mapping[str, Any]] = None,
-        state: Optional[List[AirbyteStateMessage]] = None,
+        catalog: ConfiguredAirbyteCatalog | None = None,
+        config: Mapping[str, Any] | None = None,
+        state: list[AirbyteStateMessage] | None = None,
     ) -> None:
         """
         :param path_to_yaml: Path to the yaml file describing the source
@@ -41,7 +42,7 @@ class YamlDeclarativeSource(ConcurrentDeclarativeSource[List[AirbyteStateMessage
     def _read_and_parse_yaml_file(self, path_to_yaml_file: str) -> ConnectionDefinition:
         try:
             # For testing purposes, we want to allow to just pass a file
-            with open(path_to_yaml_file, "r") as f:
+            with open(path_to_yaml_file) as f:
                 return yaml.safe_load(f)  # type: ignore  # we assume the yaml represents a ConnectionDefinition
         except FileNotFoundError:
             # Running inside the container, the working directory during an operation is not structured the same as the static files

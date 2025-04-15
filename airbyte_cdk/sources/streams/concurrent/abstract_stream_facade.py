@@ -1,7 +1,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 
 from abc import ABC, abstractmethod
-from typing import Generic, Optional, TypeVar
+from typing import Generic, TypeVar
 
 from airbyte_cdk.sources.streams.concurrent.exceptions import ExceptionWithDisplayMessage
 
@@ -21,7 +21,7 @@ class AbstractStreamFacade(Generic[StreamType], ABC):
         # Streams must be aware of their cursor at instantiation time
         return True
 
-    def get_error_display_message(self, exception: BaseException) -> Optional[str]:
+    def get_error_display_message(self, exception: BaseException) -> str | None:
         """
         Retrieves the user-friendly display message that corresponds to an exception.
         This will be called when encountering an exception while reading records from the stream, and used to build the AirbyteTraceMessage.

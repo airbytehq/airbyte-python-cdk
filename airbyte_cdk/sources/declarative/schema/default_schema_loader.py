@@ -3,8 +3,9 @@
 #
 
 import logging
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping
+from typing import Any
 
 from airbyte_cdk.sources.declarative.schema.json_file_schema_loader import JsonFileSchemaLoader
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader

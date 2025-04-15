@@ -2,7 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Any, Dict
+from typing import Any
 
 from pydantic.v1 import BaseModel
 
@@ -18,7 +18,7 @@ class BaseConfig(BaseModel):
     """
 
     @classmethod
-    def schema(cls, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+    def schema(cls, *args: Any, **kwargs: Any) -> dict[str, Any]:
         """We're overriding the schema classmethod to enable some post-processing"""
         schema = super().schema(*args, **kwargs)
         rename_key(schema, old_key="anyOf", new_key="oneOf")  # UI supports only oneOf

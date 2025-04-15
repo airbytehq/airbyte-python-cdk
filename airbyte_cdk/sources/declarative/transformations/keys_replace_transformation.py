@@ -2,8 +2,9 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Dict, Mapping, Optional
+from typing import Any
 
 from airbyte_cdk import InterpolatedString
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
@@ -34,10 +35,10 @@ class KeysReplaceTransformation(RecordTransformation):
 
     def transform(
         self,
-        record: Dict[str, Any],
-        config: Optional[Config] = None,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
+        record: dict[str, Any],
+        config: Config | None = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
     ) -> None:
         if config is None:
             config = {}
@@ -46,7 +47,7 @@ class KeysReplaceTransformation(RecordTransformation):
         old_key = str(self._old.eval(config, **kwargs))
         new_key = str(self._new.eval(config, **kwargs))
 
-        def _transform(data: Dict[str, Any]) -> Dict[str, Any]:
+        def _transform(data: dict[str, Any]) -> dict[str, Any]:
             result = {}
             for key, value in data.items():
                 updated_key = key.replace(old_key, new_key)

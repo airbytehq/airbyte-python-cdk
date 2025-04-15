@@ -4,9 +4,10 @@
 
 import base64
 import json
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
 from datetime import datetime
-from typing import Any, Mapping, Optional, Union
+from typing import Any
 
 import jwt
 
@@ -61,19 +62,19 @@ class JwtAuthenticator(DeclarativeAuthenticator):
 
     config: Mapping[str, Any]
     parameters: InitVar[Mapping[str, Any]]
-    secret_key: Union[InterpolatedString, str]
-    algorithm: Union[str, JwtAlgorithm]
-    token_duration: Optional[int]
-    base64_encode_secret_key: Optional[Union[InterpolatedBoolean, str, bool]] = False
-    header_prefix: Optional[Union[InterpolatedString, str]] = None
-    kid: Optional[Union[InterpolatedString, str]] = None
-    typ: Optional[Union[InterpolatedString, str]] = None
-    cty: Optional[Union[InterpolatedString, str]] = None
-    iss: Optional[Union[InterpolatedString, str]] = None
-    sub: Optional[Union[InterpolatedString, str]] = None
-    aud: Optional[Union[InterpolatedString, str]] = None
-    additional_jwt_headers: Optional[Mapping[str, Any]] = None
-    additional_jwt_payload: Optional[Mapping[str, Any]] = None
+    secret_key: InterpolatedString | str
+    algorithm: str | JwtAlgorithm
+    token_duration: int | None
+    base64_encode_secret_key: InterpolatedBoolean | str | bool | None = False
+    header_prefix: InterpolatedString | str | None = None
+    kid: InterpolatedString | str | None = None
+    typ: InterpolatedString | str | None = None
+    cty: InterpolatedString | str | None = None
+    iss: InterpolatedString | str | None = None
+    sub: InterpolatedString | str | None = None
+    aud: InterpolatedString | str | None = None
+    additional_jwt_headers: Mapping[str, Any] | None = None
+    additional_jwt_payload: Mapping[str, Any] | None = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._secret_key = InterpolatedString.create(self.secret_key, parameters=parameters)
@@ -160,7 +161,7 @@ class JwtAuthenticator(DeclarativeAuthenticator):
             else secret_key
         )
 
-    def _get_signed_token(self) -> Union[str, Any]:
+    def _get_signed_token(self) -> str | Any:
         """
         Signed the JWT using the provided secret key and algorithm and the generated headers and payload. For additional information on PyJWT see: https://pyjwt.readthedocs.io/en/stable/
         """
@@ -174,7 +175,7 @@ class JwtAuthenticator(DeclarativeAuthenticator):
         except Exception as e:
             raise ValueError(f"Failed to sign token: {e}")
 
-    def _get_header_prefix(self) -> Union[str, None]:
+    def _get_header_prefix(self) -> str | None:
         """
         Returns the header prefix to be used when attaching the token to the request.
         """

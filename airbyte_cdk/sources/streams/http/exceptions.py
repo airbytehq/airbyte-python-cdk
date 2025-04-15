@@ -3,8 +3,6 @@
 #
 
 
-from typing import Optional, Union
-
 import requests
 
 
@@ -12,7 +10,7 @@ class BaseBackoffException(requests.exceptions.HTTPError):
     def __init__(
         self,
         request: requests.PreparedRequest,
-        response: Optional[Union[requests.Response, Exception]],
+        response: requests.Response | Exception | None,
         error_message: str = "",
     ):
         if isinstance(response, requests.Response):
@@ -39,9 +37,9 @@ class UserDefinedBackoffException(BaseBackoffException):
 
     def __init__(
         self,
-        backoff: Union[int, float],
+        backoff: int | float,
         request: requests.PreparedRequest,
-        response: Optional[Union[requests.Response, Exception]],
+        response: requests.Response | Exception | None,
         error_message: str = "",
     ):
         """

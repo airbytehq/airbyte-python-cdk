@@ -3,7 +3,8 @@
 #
 
 import sys
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 from airbyte_cdk.entrypoint import launch
 from airbyte_cdk.sources.declarative.yaml_declarative_source import (

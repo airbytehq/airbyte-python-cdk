@@ -5,7 +5,8 @@
 import json
 import logging
 import logging.config
-from typing import Any, Callable, Mapping, Optional, Tuple
+from collections.abc import Callable, Mapping
+from typing import Any
 
 import orjson
 
@@ -40,7 +41,7 @@ LOGGING_CONFIG = {
 }
 
 
-def init_logger(name: Optional[str] = None) -> logging.Logger:
+def init_logger(name: str | None = None) -> logging.Logger:
     """Initial set up of logger"""
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
@@ -94,7 +95,7 @@ class AirbyteLogFormatter(logging.Formatter):
         return {k: str(getattr(record, k)) for k in extra_keys if hasattr(record, k)}
 
 
-def log_by_prefix(msg: str, default_level: str) -> Tuple[int, str]:
+def log_by_prefix(msg: str, default_level: str) -> tuple[int, str]:
     """Custom method, which takes log level from first word of message"""
     valid_log_types = ["FATAL", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"]
     split_line = msg.split()

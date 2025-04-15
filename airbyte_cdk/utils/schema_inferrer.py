@@ -3,7 +3,8 @@
 #
 
 from collections import defaultdict
-from typing import Any, Dict, List, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any
 
 from genson import SchemaBuilder, SchemaNode
 from genson.schema.strategies.object import Object
@@ -31,7 +32,7 @@ class NoRequiredObj(Object):
     """
 
     def to_schema(self) -> Mapping[str, Any]:
-        schema: Dict[str, Any] = super(NoRequiredObj, self).to_schema()
+        schema: dict[str, Any] = super().to_schema()
         schema.pop("required", None)
         return schema
 
@@ -51,13 +52,13 @@ class NoRequiredSchemaBuilder(SchemaBuilder):
 
 
 # This type is inferred from the genson lib, but there is no alias provided for it - creating it here for type safety
-InferredSchema = Dict[str, Any]
+InferredSchema = dict[str, Any]
 
 
 class SchemaValidationException(Exception):
     @classmethod
     def merge_exceptions(
-        cls, exceptions: List["SchemaValidationException"]
+        cls, exceptions: list["SchemaValidationException"]
     ) -> "SchemaValidationException":
         # We assume the schema is the same for all SchemaValidationException
         return SchemaValidationException(
@@ -65,7 +66,7 @@ class SchemaValidationException(Exception):
             [x for exception in exceptions for x in exception._validation_errors],
         )
 
-    def __init__(self, schema: InferredSchema, validation_errors: List[Exception]):
+    def __init__(self, schema: InferredSchema, validation_errors: list[Exception]):
         self._schema = schema
         self._validation_errors = validation_errors
 
@@ -74,7 +75,7 @@ class SchemaValidationException(Exception):
         return self._schema
 
     @property
-    def validation_errors(self) -> List[str]:
+    def validation_errors(self) -> list[str]:
         return list(map(lambda error: str(error), self._validation_errors))
 
 
@@ -88,10 +89,10 @@ class SchemaInferrer:
 
     """
 
-    stream_to_builder: Dict[str, SchemaBuilder]
+    stream_to_builder: dict[str, SchemaBuilder]
 
     def __init__(
-        self, pk: Optional[List[List[str]]] = None, cursor_field: Optional[List[List[str]]] = None
+        self, pk: list[list[str]] | None = None, cursor_field: list[list[str]] | None = None
     ) -> None:
         self.stream_to_builder = defaultdict(NoRequiredSchemaBuilder)
         self._pk = [] if pk is None else pk
@@ -184,11 +185,11 @@ class SchemaInferrer:
 
         return node
 
-    def _add_fields_as_required(self, node: InferredSchema, composite_key: List[List[str]]) -> None:
+    def _add_fields_as_required(self, node: InferredSchema, composite_key: list[list[str]]) -> None:
         """
         Take a list of nested keys (this list represents a composite key) and travel the schema to mark every node as required.
         """
-        errors: List[Exception] = []
+        errors: list[Exception] = []
 
         for path in composite_key:
             try:
@@ -200,7 +201,7 @@ class SchemaInferrer:
             raise SchemaValidationException(node, errors)
 
     def _add_field_as_required(
-        self, node: InferredSchema, path: List[str], traveled_path: Optional[List[str]] = None
+        self, node: InferredSchema, path: list[str], traveled_path: list[str] | None = None
     ) -> None:
         """
         Take a nested key and travel the schema to mark every node as required.
@@ -247,7 +248,7 @@ class SchemaInferrer:
         traveled_path.append(next_node)
         self._add_field_as_required(node[_PROPERTIES][next_node], path[1:], traveled_path)
 
-    def _is_leaf(self, path: List[str]) -> bool:
+    def _is_leaf(self, path: list[str]) -> bool:
         return len(path) == 0
 
     def _remove_null_from_type(self, node: InferredSchema) -> None:
@@ -257,7 +258,7 @@ class SchemaInferrer:
             if len(node[_TYPE]) == 1:
                 node[_TYPE] = node[_TYPE][0]
 
-    def get_stream_schema(self, stream_name: str) -> Optional[InferredSchema]:
+    def get_stream_schema(self, stream_name: str) -> InferredSchema | None:
         """
         Returns the inferred JSON schema for the specified stream. Might be `None` if there were no records for the given stream name.
         """

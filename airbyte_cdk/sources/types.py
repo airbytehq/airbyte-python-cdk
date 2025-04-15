@@ -4,17 +4,18 @@
 
 from __future__ import annotations
 
-from typing import Any, ItemsView, Iterator, KeysView, List, Mapping, Optional, ValuesView
+from collections.abc import ItemsView, Iterator, KeysView, Mapping, ValuesView
+from typing import Any
 
 from airbyte_cdk.utils.slice_hasher import SliceHasher
 
 # A FieldPointer designates a path to a field inside a mapping. For example, retrieving ["k1", "k1.2"] in the object {"k1" :{"k1.2":
 # "hello"}] returns "hello"
-FieldPointer = List[str]
+FieldPointer = list[str]
 Config = Mapping[str, Any]
 ConnectionDefinition = Mapping[str, Any]
 StreamState = Mapping[str, Any]
-EmptyString = str()
+EmptyString = ""
 
 
 class Record(Mapping[str, Any]):
@@ -22,7 +23,7 @@ class Record(Mapping[str, Any]):
         self,
         data: Mapping[str, Any],
         stream_name: str,
-        associated_slice: Optional[StreamSlice] = None,
+        associated_slice: StreamSlice | None = None,
         is_file_transfer_message: bool = False,
     ):
         self._data = data
@@ -35,7 +36,7 @@ class Record(Mapping[str, Any]):
         return self._data
 
     @property
-    def associated_slice(self) -> Optional[StreamSlice]:
+    def associated_slice(self) -> StreamSlice | None:
         return self._associated_slice
 
     def __repr__(self) -> str:
@@ -69,7 +70,7 @@ class StreamSlice(Mapping[str, Any]):
         *,
         partition: Mapping[str, Any],
         cursor_slice: Mapping[str, Any],
-        extra_fields: Optional[Mapping[str, Any]] = None,
+        extra_fields: Mapping[str, Any] | None = None,
     ) -> None:
         """
         :param partition: The partition keys representing a unique partition in the stream.
@@ -134,7 +135,7 @@ class StreamSlice(Mapping[str, Any]):
     def values(self) -> ValuesView[Any]:
         return self._stream_slice.values()
 
-    def get(self, key: str, default: Any = None) -> Optional[Any]:
+    def get(self, key: str, default: Any = None) -> Any | None:
         return self._stream_slice.get(key, default)
 
     def __eq__(self, other: Any) -> bool:

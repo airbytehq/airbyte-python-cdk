@@ -5,7 +5,6 @@
 import builtins
 import datetime
 import typing
-from typing import Optional, Union
 
 import isodate
 import pytz
@@ -49,7 +48,7 @@ def today_with_timezone(timezone: str) -> datetime.date:
     return datetime.datetime.now(tz=pytz.timezone(timezone)).date()
 
 
-def timestamp(dt: Union[float, str]) -> Union[int, float]:
+def timestamp(dt: float | str) -> int | float:
     """
     Converts a number or a string to a timestamp
 
@@ -62,7 +61,7 @@ def timestamp(dt: Union[float, str]) -> Union[int, float]:
     :param dt: datetime to convert to timestamp
     :return: unix timestamp
     """
-    if isinstance(dt, (int, float)):
+    if isinstance(dt, int | float):
         return int(dt)
     else:
         return str_to_datetime(dt).astimezone(pytz.utc).timestamp()
@@ -145,7 +144,7 @@ def day_delta(num_days: int, format: str = "%Y-%m-%dT%H:%M:%S.%f%z") -> str:
     ).strftime(format)
 
 
-def duration(datestring: str) -> Union[datetime.timedelta, isodate.Duration]:
+def duration(datestring: str) -> datetime.timedelta | isodate.Duration:
     """
     Converts ISO8601 duration to datetime.timedelta
 
@@ -156,7 +155,7 @@ def duration(datestring: str) -> Union[datetime.timedelta, isodate.Duration]:
 
 
 def format_datetime(
-    dt: Union[str, datetime.datetime, int], format: str, input_format: Optional[str] = None
+    dt: str | datetime.datetime | int, format: str, input_format: str | None = None
 ) -> str:
     """
     Converts datetime to another format

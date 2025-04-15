@@ -1,9 +1,5 @@
 """A sample implementation of custom components that does nothing but will cause syncs to fail if missing."""
 
-from typing import Any, Mapping
-
-import requests
-
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor
 
 

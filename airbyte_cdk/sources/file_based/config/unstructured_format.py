@@ -2,7 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import List, Literal, Optional, Union
+from typing import Literal
 
 from pydantic.v1 import BaseModel, Field
 
@@ -50,7 +50,7 @@ class APIProcessingConfigModel(BaseModel):
         examples=["https://api.unstructured.com"],
     )
 
-    parameters: Optional[List[APIParameterConfigModel]] = Field(
+    parameters: list[APIParameterConfigModel] | None = Field(
         default=[],
         always_show=True,
         title="Additional URL Parameters",
@@ -90,10 +90,7 @@ class UnstructuredFormat(BaseModel):
         description="The strategy used to parse documents. `fast` extracts text directly from the document which doesn't work for all files. `ocr_only` is more reliable, but slower. `hi_res` is the most reliable, but requires an API key and a hosted instance of unstructured and can't be used with local mode. See the unstructured.io documentation for more details: https://unstructured-io.github.io/unstructured/core/partition.html#partition-pdf",
     )
 
-    processing: Union[
-        LocalProcessingConfigModel,
-        APIProcessingConfigModel,
-    ] = Field(
+    processing: LocalProcessingConfigModel | APIProcessingConfigModel = Field(
         default=LocalProcessingConfigModel(mode="local"),
         title="Processing",
         description="Processing configuration",

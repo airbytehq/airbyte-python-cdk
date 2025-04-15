@@ -4,8 +4,9 @@
 
 import logging
 import sys
+from collections.abc import Mapping
 from types import TracebackType
-from typing import Any, List, Mapping, Optional
+from typing import Any
 
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -28,7 +29,7 @@ def init_uncaught_exception_handler(logger: logging.Logger) -> None:
     def hook_fn(
         exception_type: type[BaseException],
         exception_value: BaseException,
-        traceback_: Optional[TracebackType],
+        traceback_: TracebackType | None,
     ) -> Any:
         # For developer ergonomics, we want to see the stack trace in the logs when we do a ctrl-c
         if issubclass(exception_type, KeyboardInterrupt):
@@ -45,7 +46,7 @@ def init_uncaught_exception_handler(logger: logging.Logger) -> None:
     sys.excepthook = hook_fn
 
 
-def generate_failed_streams_error_message(stream_failures: Mapping[str, List[Exception]]) -> str:
+def generate_failed_streams_error_message(stream_failures: Mapping[str, list[Exception]]) -> str:
     failures = "\n".join(
         [
             f"{stream}: {filter_secrets(exception.__repr__())}"

@@ -4,9 +4,10 @@
 
 import logging
 from abc import abstractmethod
+from collections.abc import Mapping, MutableMapping
 from datetime import timedelta
 from json import JSONDecodeError
-from typing import Any, List, Mapping, MutableMapping, Optional, Tuple, Union
+from typing import Any
 
 import backoff
 import requests
@@ -43,9 +44,9 @@ class AbstractOauth2Authenticator(AuthBase):
 
     def __init__(
         self,
-        refresh_token_error_status_codes: Tuple[int, ...] = (),
+        refresh_token_error_status_codes: tuple[int, ...] = (),
         refresh_token_error_key: str = "",
-        refresh_token_error_values: Tuple[str, ...] = (),
+        refresh_token_error_values: tuple[str, ...] = (),
     ) -> None:
         """
         If all of refresh_token_error_status_codes, refresh_token_error_key, and refresh_token_error_values are set,
@@ -73,7 +74,7 @@ class AbstractOauth2Authenticator(AuthBase):
         return False
 
     @property
-    def token_expiry_date_format(self) -> Optional[str]:
+    def token_expiry_date_format(self) -> str | None:
         """
         Format of the datetime; exists it if expires_in is returned as the expiration datetime instead of seconds until it expires
         """
@@ -130,7 +131,7 @@ class AbstractOauth2Authenticator(AuthBase):
         headers = self.get_refresh_request_headers()
         return headers if headers else None
 
-    def refresh_access_token(self) -> Tuple[str, Union[str, int]]:
+    def refresh_access_token(self) -> tuple[str, str | int]:
         """
         Returns the refresh token and its expiration datetime
 
@@ -255,7 +256,7 @@ class AbstractOauth2Authenticator(AuthBase):
         except ResponseKeysMaxRecurtionReached as e:
             raise e
 
-    def _parse_token_expiration_date(self, value: Union[str, int]) -> AirbyteDateTime:
+    def _parse_token_expiration_date(self, value: str | int) -> AirbyteDateTime:
         """
         Return the expiration datetime of the refresh token
 
@@ -374,7 +375,7 @@ class AbstractOauth2Authenticator(AuthBase):
         return None
 
     @property
-    def _message_repository(self) -> Optional[MessageRepository]:
+    def _message_repository(self) -> MessageRepository | None:
         """
         The implementation can define a message_repository if it wants debugging logs for HTTP requests
         """
@@ -405,7 +406,7 @@ class AbstractOauth2Authenticator(AuthBase):
     # ----------------
 
     @abstractmethod
-    def get_token_refresh_endpoint(self) -> Optional[str]:
+    def get_token_refresh_endpoint(self) -> str | None:
         """Returns the endpoint to refresh the access token"""
 
     @abstractmethod
@@ -429,11 +430,11 @@ class AbstractOauth2Authenticator(AuthBase):
         """The refresh token name to authenticate"""
 
     @abstractmethod
-    def get_refresh_token(self) -> Optional[str]:
+    def get_refresh_token(self) -> str | None:
         """The token used to refresh the access token when it expires"""
 
     @abstractmethod
-    def get_scopes(self) -> List[str]:
+    def get_scopes(self) -> list[str]:
         """List of requested scopes"""
 
     @abstractmethod
@@ -441,7 +442,7 @@ class AbstractOauth2Authenticator(AuthBase):
         """Expiration date of the access token"""
 
     @abstractmethod
-    def set_token_expiry_date(self, value: Union[str, int]) -> None:
+    def set_token_expiry_date(self, value: str | int) -> None:
         """Setter for access token expiration date"""
 
     @abstractmethod

@@ -8,9 +8,10 @@ import datetime
 import logging
 import re
 import time
+from collections.abc import Mapping
 from datetime import timedelta
 from threading import RLock
-from typing import TYPE_CHECKING, Any, Mapping, Optional
+from typing import TYPE_CHECKING, Any
 from urllib import parse
 
 import requests
@@ -77,9 +78,7 @@ class AbstractCallRatePolicy(abc.ABC):
         """
 
     @abc.abstractmethod
-    def update(
-        self, available_calls: Optional[int], call_reset_ts: Optional[datetime.datetime]
-    ) -> None:
+    def update(self, available_calls: int | None, call_reset_ts: datetime.datetime | None) -> None:
         """Update call rate counting with current values
 
         :param available_calls:
@@ -104,10 +103,10 @@ class HttpRequestMatcher(RequestMatcher):
 
     def __init__(
         self,
-        method: Optional[str] = None,
-        url: Optional[str] = None,
-        params: Optional[Mapping[str, Any]] = None,
-        headers: Optional[Mapping[str, Any]] = None,
+        method: str | None = None,
+        url: str | None = None,
+        params: Mapping[str, Any] | None = None,
+        headers: Mapping[str, Any] | None = None,
     ):
         """Constructor
 
@@ -161,11 +160,11 @@ class HttpRequestRegexMatcher(RequestMatcher):
 
     def __init__(
         self,
-        method: Optional[str] = None,
-        url_base: Optional[str] = None,
-        url_path_pattern: Optional[str] = None,
-        params: Optional[Mapping[str, Any]] = None,
-        headers: Optional[Mapping[str, Any]] = None,
+        method: str | None = None,
+        url_base: str | None = None,
+        url_path_pattern: str | None = None,
+        params: Mapping[str, Any] | None = None,
+        headers: Mapping[str, Any] | None = None,
     ):
         """
         :param method: HTTP method (e.g. "GET", "POST"); compared case-insensitively.
@@ -293,9 +292,7 @@ class UnlimitedCallRatePolicy(BaseCallRatePolicy):
     def try_acquire(self, request: Any, weight: int) -> None:
         """Do nothing"""
 
-    def update(
-        self, available_calls: Optional[int], call_reset_ts: Optional[datetime.datetime]
-    ) -> None:
+    def update(self, available_calls: int | None, call_reset_ts: datetime.datetime | None) -> None:
         """Do nothing"""
 
 
@@ -355,9 +352,7 @@ class FixedWindowCallRatePolicy(BaseCallRatePolicy):
             f"matchers=[{matcher_str}])"
         )
 
-    def update(
-        self, available_calls: Optional[int], call_reset_ts: Optional[datetime.datetime]
-    ) -> None:
+    def update(self, available_calls: int | None, call_reset_ts: datetime.datetime | None) -> None:
         """Update call rate counters, by default, only reacts to decreasing updates of available_calls and changes to call_reset_ts.
         We ignore updates with available_calls > current_available_calls to support call rate limits that are lower than API limits.
 
@@ -439,9 +434,7 @@ class MovingWindowCallRatePolicy(BaseCallRatePolicy):
                     time_to_wait=timedelta(milliseconds=time_to_wait),
                 )
 
-    def update(
-        self, available_calls: Optional[int], call_reset_ts: Optional[datetime.datetime]
-    ) -> None:
+    def update(self, available_calls: int | None, call_reset_ts: datetime.datetime | None) -> None:
         """Adjust call bucket to reflect the state of the API server
 
         :param available_calls:
@@ -486,9 +479,7 @@ class AbstractAPIBudget(abc.ABC):
     """
 
     @abc.abstractmethod
-    def acquire_call(
-        self, request: Any, block: bool = True, timeout: Optional[float] = None
-    ) -> None:
+    def acquire_call(self, request: Any, block: bool = True, timeout: float | None = None) -> None:
         """Try to get a call from budget, will block by default
 
         :param request:
@@ -498,7 +489,7 @@ class AbstractAPIBudget(abc.ABC):
         """
 
     @abc.abstractmethod
-    def get_matching_policy(self, request: Any) -> Optional[AbstractCallRatePolicy]:
+    def get_matching_policy(self, request: Any) -> AbstractCallRatePolicy | None:
         """Find matching call rate policy for specific request"""
 
     @abc.abstractmethod
@@ -543,15 +534,13 @@ class APIBudget(AbstractAPIBudget):
             return endpoint
         return "unknown endpoint"
 
-    def get_matching_policy(self, request: Any) -> Optional[AbstractCallRatePolicy]:
+    def get_matching_policy(self, request: Any) -> AbstractCallRatePolicy | None:
         for policy in self._policies:
             if policy.matches(request):
                 return policy
         return None
 
-    def acquire_call(
-        self, request: Any, block: bool = True, timeout: Optional[float] = None
-    ) -> None:
+    def acquire_call(self, request: Any, block: bool = True, timeout: float | None = None) -> None:
         """Try to get a call from budget, will block by default.
         Matchers will be called sequentially in the same order they were added.
         The first matcher that returns True will
@@ -581,7 +570,7 @@ class APIBudget(AbstractAPIBudget):
         pass
 
     def _do_acquire(
-        self, request: Any, policy: AbstractCallRatePolicy, block: bool, timeout: Optional[float]
+        self, request: Any, policy: AbstractCallRatePolicy, block: bool, timeout: float | None
     ) -> None:
         """Internal method to try to acquire a call credit.
 
@@ -658,16 +647,14 @@ class HttpAPIBudget(APIBudget):
             reset_ts = self.get_reset_ts_from_response(response)
             policy.update(available_calls=available_calls, call_reset_ts=reset_ts)
 
-    def get_reset_ts_from_response(
-        self, response: requests.Response
-    ) -> Optional[datetime.datetime]:
+    def get_reset_ts_from_response(self, response: requests.Response) -> datetime.datetime | None:
         if response.headers.get(self._ratelimit_reset_header):
             return datetime.datetime.fromtimestamp(
                 int(response.headers[self._ratelimit_reset_header])
             )
         return None
 
-    def get_calls_left_from_response(self, response: requests.Response) -> Optional[int]:
+    def get_calls_left_from_response(self, response: requests.Response) -> int | None:
         if response.headers.get(self._ratelimit_remaining_header):
             return int(response.headers[self._ratelimit_remaining_header])
 

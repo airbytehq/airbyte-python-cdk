@@ -1,6 +1,5 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
-from typing import List
 from unittest import TestCase
 from unittest.mock import Mock
 
@@ -77,7 +76,7 @@ class StreamSlicerPartitionGeneratorTest(TestCase):
         message_repository.emit_message.assert_called_once_with(_AIRBYTE_LOG_MESSAGE)
 
     @staticmethod
-    def _mock_retriever(read_return_value: List[StreamData]) -> Mock:
+    def _mock_retriever(read_return_value: list[StreamData]) -> Mock:
         retriever = Mock(spec=Retriever)
         retriever.read_records.return_value = iter(read_return_value)
         return retriever

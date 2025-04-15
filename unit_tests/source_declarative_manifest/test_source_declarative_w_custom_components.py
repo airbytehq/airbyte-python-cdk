@@ -96,7 +96,7 @@ def get_py_components_config_dict(
         "components.py" if not failing_components else "components_failing.py"
     )
     config_yaml_path: Path = connector_dir / "valid_config.yaml"
-    secrets_yaml_path: Path = connector_dir / "secrets.yaml"
+    connector_dir / "secrets.yaml"
 
     manifest_dict = yaml.safe_load(manifest_yml_path.read_text())
     assert manifest_dict, "Failed to load the manifest file."
@@ -136,7 +136,7 @@ def test_missing_checksum_fails_to_run(
         Path(temp_config_file.name).write_text(json_str)
         temp_config_file.flush()
         with pytest.raises(ValueError):
-            source = create_declarative_source(
+            create_declarative_source(
                 ["check", "--config", temp_config_file.name],
             )
 
@@ -168,7 +168,7 @@ def test_invalid_checksum_fails_to_run(
         Path(temp_config_file.name).write_text(json_str)
         temp_config_file.flush()
         with pytest.raises(AirbyteCodeTamperedError):
-            source = create_declarative_source(
+            create_declarative_source(
                 ["check", "--config", temp_config_file.name],
             )
 

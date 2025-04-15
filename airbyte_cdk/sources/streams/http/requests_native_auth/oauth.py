@@ -2,8 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping, Sequence
 from datetime import timedelta
-from typing import Any, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any
 
 import dpath
 
@@ -38,7 +39,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         client_id_name: str = "client_id",
         client_secret_name: str = "client_secret",
         refresh_token_name: str = "refresh_token",
-        scopes: List[str] | None = None,
+        scopes: list[str] | None = None,
         token_expiry_date: AirbyteDateTime | None = None,
         token_expiry_date_format: str | None = None,
         access_token_name: str = "access_token",
@@ -48,9 +49,9 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         grant_type_name: str = "grant_type",
         grant_type: str = "refresh_token",
         token_expiry_is_time_of_expiration: bool = False,
-        refresh_token_error_status_codes: Tuple[int, ...] = (),
+        refresh_token_error_status_codes: tuple[int, ...] = (),
         refresh_token_error_key: str = "",
-        refresh_token_error_values: Tuple[str, ...] = (),
+        refresh_token_error_values: tuple[str, ...] = (),
     ) -> None:
         self._token_refresh_endpoint = token_refresh_endpoint
         self._client_secret_name = client_secret_name
@@ -120,7 +121,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
     def get_token_expiry_date(self) -> AirbyteDateTime:
         return self._token_expiry_date
 
-    def set_token_expiry_date(self, value: Union[str, int]) -> None:
+    def set_token_expiry_date(self, value: str | int) -> None:
         self._token_expiry_date = self._parse_token_expiration_date(value)
 
     @property
@@ -128,7 +129,7 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
         return self._token_expiry_is_time_of_expiration
 
     @property
-    def token_expiry_date_format(self) -> Optional[str]:
+    def token_expiry_date_format(self) -> str | None:
         return self._token_expiry_date_format
 
     @property
@@ -154,7 +155,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         self,
         connector_config: Mapping[str, Any],
         token_refresh_endpoint: str,
-        scopes: List[str] | None = None,
+        scopes: list[str] | None = None,
         access_token_name: str = "access_token",
         expires_in_name: str = "expires_in",
         refresh_token_name: str = "refresh_token",
@@ -163,18 +164,18 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         grant_type_name: str = "grant_type",
         grant_type: str = "refresh_token",
         client_id_name: str = "client_id",
-        client_id: Optional[str] = None,
+        client_id: str | None = None,
         client_secret_name: str = "client_secret",
-        client_secret: Optional[str] = None,
+        client_secret: str | None = None,
         access_token_config_path: Sequence[str] = ("credentials", "access_token"),
         refresh_token_config_path: Sequence[str] = ("credentials", "refresh_token"),
         token_expiry_date_config_path: Sequence[str] = ("credentials", "token_expiry_date"),
-        token_expiry_date_format: Optional[str] = None,
+        token_expiry_date_format: str | None = None,
         message_repository: MessageRepository = NoopMessageRepository(),
         token_expiry_is_time_of_expiration: bool = False,
-        refresh_token_error_status_codes: Tuple[int, ...] = (),
+        refresh_token_error_status_codes: tuple[int, ...] = (),
         refresh_token_error_key: str = "",
-        refresh_token_error_values: Tuple[str, ...] = (),
+        refresh_token_error_values: tuple[str, ...] = (),
     ) -> None:
         """
         Args:
@@ -355,7 +356,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             self._emit_control_message()
         return self.access_token
 
-    def refresh_access_token(self) -> Tuple[str, str, str]:  # type: ignore[override]
+    def refresh_access_token(self) -> tuple[str, str, str]:  # type: ignore[override]
         """
         Refreshes the access token by making a handled request and extracting the necessary token information.
 
@@ -369,7 +370,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             self._extract_refresh_token(response_json),
         )
 
-    def _set_config_value_by_path(self, config_path: Union[str, Sequence[str]], value: Any) -> None:
+    def _set_config_value_by_path(self, config_path: str | Sequence[str], value: Any) -> None:
         """
         Set a value in the connector configuration at the specified path.
 
@@ -384,7 +385,7 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         dpath.new(self._connector_config, config_path, value)  # type: ignore[arg-type]
 
     def _get_config_value_by_path(
-        self, config_path: Union[str, Sequence[str]], default: Optional[str] = None
+        self, config_path: str | Sequence[str], default: str | None = None
     ) -> str | Any:
         """
         Retrieve a value from the connector configuration using a specified path.

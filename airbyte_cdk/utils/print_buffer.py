@@ -5,7 +5,6 @@ import time
 from io import StringIO
 from threading import RLock
 from types import TracebackType
-from typing import Optional
 
 
 class PrintBuffer:
@@ -67,9 +66,9 @@ class PrintBuffer:
 
     def __exit__(
         self,
-        exc_type: Optional[BaseException],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType],
+        exc_type: BaseException | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
     ) -> None:
         self.flush()
         sys.stdout, sys.stderr = self.old_stdout, self.old_stderr

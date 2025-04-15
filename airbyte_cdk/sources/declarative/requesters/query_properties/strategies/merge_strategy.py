@@ -2,7 +2,6 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
 
 from airbyte_cdk.sources.types import Record
 
@@ -15,5 +14,5 @@ class RecordMergeStrategy(ABC):
     """
 
     @abstractmethod
-    def get_group_key(self, record: Record) -> Optional[str]:
+    def get_group_key(self, record: Record) -> str | None:
         pass

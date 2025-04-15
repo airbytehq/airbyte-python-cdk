@@ -5,9 +5,7 @@ import os
 import sys
 from collections.abc import Mapping
 from types import ModuleType
-from typing import Any, cast
-
-from typing_extensions import Literal
+from typing import Any, Literal, cast
 
 ChecksumType = Literal["md5", "sha256"]
 CHECKSUM_FUNCTIONS = {

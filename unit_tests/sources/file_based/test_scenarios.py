@@ -4,8 +4,9 @@
 
 import json
 import math
+from collections.abc import Mapping
 from pathlib import Path, PosixPath
-from typing import Any, Dict, List, Mapping, Optional, Union
+from typing import Any
 
 import pytest
 from _pytest.capture import CaptureFixture
@@ -153,7 +154,7 @@ def _verify_read_output(output: EntrypointOutput, scenario: TestScenario[Abstrac
 
 
 def _verify_state_record_counts(
-    records: List[AirbyteMessage], states: List[AirbyteMessage]
+    records: list[AirbyteMessage], states: list[AirbyteMessage]
 ) -> None:
     actual_record_counts = {}
     for record in records:
@@ -178,8 +179,8 @@ def _verify_state_record_counts(
 
 
 def _verify_analytics(
-    analytics: List[AirbyteMessage],
-    expected_analytics: Optional[List[AirbyteAnalyticsTraceMessage]],
+    analytics: list[AirbyteMessage],
+    expected_analytics: list[AirbyteAnalyticsTraceMessage] | None,
 ) -> None:
     if expected_analytics:
         assert len(analytics) == len(expected_analytics), (
@@ -194,7 +195,7 @@ def _verify_analytics(
 
 
 def _verify_expected_logs(
-    logs: List[AirbyteLogMessage], expected_logs: Optional[List[Mapping[str, Any]]]
+    logs: list[AirbyteLogMessage], expected_logs: list[Mapping[str, Any]] | None
 ) -> None:
     if expected_logs:
         for actual, expected in zip(logs, expected_logs):
@@ -237,7 +238,7 @@ def spec(capsys: CaptureFixture[str], scenario: TestScenario[AbstractSource]) ->
 
 def check(
     capsys: CaptureFixture[str], tmp_path: PosixPath, scenario: TestScenario[AbstractSource]
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     launch(
         scenario.source,
         ["check", "--config", make_file(tmp_path / "config.json", scenario.config)],
@@ -246,7 +247,7 @@ def check(
     return _find_connection_status(captured.out.splitlines())
 
 
-def _find_connection_status(output: List[str]) -> Mapping[str, Any]:
+def _find_connection_status(output: list[str]) -> Mapping[str, Any]:
     for line in output:
         json_line = json.loads(line)
         if "connectionStatus" in json_line:
@@ -256,7 +257,7 @@ def _find_connection_status(output: List[str]) -> Mapping[str, Any]:
 
 def discover(
     capsys: CaptureFixture[str], tmp_path: PosixPath, scenario: TestScenario[AbstractSource]
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     launch(
         scenario.source,
         ["discover", "--config", make_file(tmp_path / "config.json", scenario.config)],
@@ -286,9 +287,7 @@ def read_with_state(scenario: TestScenario[AbstractSource]) -> EntrypointOutput:
     )
 
 
-def make_file(
-    path: Path, file_contents: Optional[Union[Mapping[str, Any], List[Mapping[str, Any]]]]
-) -> str:
+def make_file(path: Path, file_contents: Mapping[str, Any] | list[Mapping[str, Any]] | None) -> str:
     path.write_text(json.dumps(file_contents))
     return str(path)
 

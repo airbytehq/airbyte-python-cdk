@@ -1,7 +1,6 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 from abc import ABC, abstractmethod
-from typing import Optional, Union
 
 import requests
 
@@ -15,7 +14,7 @@ class ErrorHandler(ABC):
 
     @property
     @abstractmethod
-    def max_retries(self) -> Optional[int]:
+    def max_retries(self) -> int | None:
         """
         The maximum number of retries to attempt before giving up.
         """
@@ -23,16 +22,14 @@ class ErrorHandler(ABC):
 
     @property
     @abstractmethod
-    def max_time(self) -> Optional[int]:
+    def max_time(self) -> int | None:
         """
         The maximum amount of time in seconds to retry before giving up.
         """
         pass
 
     @abstractmethod
-    def interpret_response(
-        self, response: Optional[Union[requests.Response, Exception]]
-    ) -> ErrorResolution:
+    def interpret_response(self, response: requests.Response | Exception | None) -> ErrorResolution:
         """
         Interpret the response or exception and return the corresponding response action, failure type, and error message.
 

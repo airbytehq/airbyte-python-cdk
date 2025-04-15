@@ -3,7 +3,7 @@
 #
 
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 from airbyte_cdk.sources.types import Record, StreamSlice, StreamState
 
@@ -69,7 +69,7 @@ class Cursor(ABC):
         """
 
     @abstractmethod
-    def select_state(self, stream_slice: Optional[StreamSlice] = None) -> Optional[StreamState]:
+    def select_state(self, stream_slice: StreamSlice | None = None) -> StreamState | None:
         """
         Get the state value of a specific stream_slice. For incremental or resumable full refresh cursors which only manage state in
         a single dimension this is the entire state object. For per-partition cursors used by substreams, this returns the state of

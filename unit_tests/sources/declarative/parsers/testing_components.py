@@ -3,7 +3,6 @@
 #
 
 from dataclasses import dataclass, field
-from typing import List, Optional
 
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor
 from airbyte_cdk.sources.declarative.partition_routers import SubstreamPartitionRouter
@@ -25,8 +24,8 @@ class TestingSomeComponent(DefaultErrorHandler):
         default_factory=lambda: DpathExtractor(field_path=[], config={}, parameters={})
     )
     basic_field: str = ""
-    optional_subcomponent_field: Optional[RequestOption] = None
-    list_of_subcomponents: List[RequestOption] = None
+    optional_subcomponent_field: RequestOption | None = None
+    list_of_subcomponents: list[RequestOption] = None
     without_hint = None
     paginator: DefaultPaginator = None
 

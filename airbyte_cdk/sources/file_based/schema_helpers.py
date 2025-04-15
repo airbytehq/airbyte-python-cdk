@@ -3,10 +3,11 @@
 #
 
 import json
+from collections.abc import Mapping
 from copy import deepcopy
 from enum import Enum
 from functools import total_ordering
-from typing import Any, Dict, List, Literal, Mapping, Optional, Tuple, Type, Union
+from typing import Any, Literal, Union
 
 from airbyte_cdk.sources.file_based.exceptions import (
     ConfigValidationError,
@@ -14,7 +15,7 @@ from airbyte_cdk.sources.file_based.exceptions import (
     SchemaInferenceError,
 )
 
-JsonSchemaSupportedType = Union[List[str], Literal["string"], str]
+JsonSchemaSupportedType = Union[list[str], Literal["string"], str]
 SchemaType = Mapping[str, Mapping[str, JsonSchemaSupportedType]]
 
 schemaless_schema = {"type": "object", "properties": {"data": {"type": "object"}}}
@@ -40,7 +41,7 @@ class ComparableType(Enum):
             return NotImplemented
 
 
-TYPE_PYTHON_MAPPING: Mapping[str, Tuple[str, Optional[Type[Any]]]] = {
+TYPE_PYTHON_MAPPING: Mapping[str, tuple[str, type[Any] | None]] = {
     "null": ("null", None),
     "array": ("array", list),
     "boolean": ("boolean", bool),
@@ -53,7 +54,7 @@ TYPE_PYTHON_MAPPING: Mapping[str, Tuple[str, Optional[Type[Any]]]] = {
 PYTHON_TYPE_MAPPING = {t: k for k, (_, t) in TYPE_PYTHON_MAPPING.items()}
 
 
-def get_comparable_type(value: Any) -> Optional[ComparableType]:
+def get_comparable_type(value: Any) -> ComparableType | None:
     if value == "null":
         return ComparableType.NULL
     if value == "boolean":
@@ -70,7 +71,7 @@ def get_comparable_type(value: Any) -> Optional[ComparableType]:
         return None
 
 
-def get_inferred_type(value: Any) -> Optional[ComparableType]:
+def get_inferred_type(value: Any) -> ComparableType | None:
     if value is None:
         return ComparableType.NULL
     if isinstance(value, bool):
@@ -107,7 +108,7 @@ def merge_schemas(schema1: SchemaType, schema2: SchemaType) -> SchemaType:
         if not isinstance(t, dict) or "type" not in t or not _is_valid_type(t["type"]):
             raise SchemaInferenceError(FileBasedSourceError.UNRECOGNIZED_TYPE, key=k, type=t)
 
-    merged_schema: Dict[str, Any] = deepcopy(schema1)  # type: ignore  # as of 2023-08-08, deepcopy can copy Mapping
+    merged_schema: dict[str, Any] = deepcopy(schema1)  # type: ignore  # as of 2023-08-08, deepcopy can copy Mapping
     for k2, t2 in schema2.items():
         t1 = merged_schema.get(k2)
         if t1 is None:
@@ -216,7 +217,7 @@ def conforms_to_schema(record: Mapping[str, Any], schema: Mapping[str, Any]) -> 
     return True
 
 
-def _parse_json_input(input_schema: Union[str, Mapping[str, str]]) -> Optional[Mapping[str, str]]:
+def _parse_json_input(input_schema: str | Mapping[str, str]) -> Mapping[str, str] | None:
     try:
         if isinstance(input_schema, str):
             schema: Mapping[str, str] = json.loads(input_schema)
@@ -235,8 +236,8 @@ def _parse_json_input(input_schema: Union[str, Mapping[str, str]]) -> Optional[M
 
 
 def type_mapping_to_jsonschema(
-    input_schema: Optional[Union[str, Mapping[str, str]]],
-) -> Optional[Mapping[str, Any]]:
+    input_schema: str | Mapping[str, str] | None,
+) -> Mapping[str, Any] | None:
     """
     Return the user input schema (type mapping), transformed to JSON Schema format.
 

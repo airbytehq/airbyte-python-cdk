@@ -5,7 +5,8 @@
 import json
 import logging
 import os
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
+from collections.abc import Iterable, Mapping
+from typing import Any
 from urllib.parse import unquote
 
 import pyarrow as pa
@@ -33,7 +34,7 @@ from airbyte_cdk.sources.file_based.schema_helpers import SchemaType
 class ParquetParser(FileTypeParser):
     ENCODING = None
 
-    def check_config(self, config: FileBasedStreamConfig) -> Tuple[bool, Optional[str]]:
+    def check_config(self, config: FileBasedStreamConfig) -> tuple[bool, str | None]:
         """
         ParquetParser does not require config checks, implicit pydantic validation is enough.
         """
@@ -74,8 +75,8 @@ class ParquetParser(FileTypeParser):
         file: RemoteFile,
         stream_reader: AbstractFileBasedStreamReader,
         logger: logging.Logger,
-        discovered_schema: Optional[Mapping[str, SchemaType]],
-    ) -> Iterable[Dict[str, Any]]:
+        discovered_schema: Mapping[str, SchemaType] | None,
+    ) -> Iterable[dict[str, Any]]:
         parquet_format = config.format
         if not isinstance(parquet_format, ParquetFormat):
             logger.info(f"Expected ParquetFormat, got {parquet_format}")
@@ -109,7 +110,7 @@ class ParquetParser(FileTypeParser):
             ) from exc
 
     @staticmethod
-    def _extract_partitions(filepath: str) -> List[str]:
+    def _extract_partitions(filepath: str) -> list[str]:
         return [unquote(partition) for partition in filepath.split(os.sep) if "=" in partition]
 
     @property
@@ -118,7 +119,7 @@ class ParquetParser(FileTypeParser):
 
     @staticmethod
     def _to_output_value(
-        parquet_value: Union[Scalar, DictionaryArray], parquet_format: ParquetFormat
+        parquet_value: Scalar | DictionaryArray, parquet_format: ParquetFormat
     ) -> Any:
         """
         Convert an entry in a pyarrow table to a value that can be output by the source.
@@ -182,7 +183,7 @@ class ParquetParser(FileTypeParser):
             return parquet_value.as_py()
 
     @staticmethod
-    def _dictionary_array_to_python_value(parquet_value: DictionaryArray) -> Dict[str, Any]:
+    def _dictionary_array_to_python_value(parquet_value: DictionaryArray) -> dict[str, Any]:
         """
         Convert a pyarrow dictionary array to a value that can be output by the source.
 

@@ -5,18 +5,11 @@ import threading
 import time
 import traceback
 import uuid
+from collections.abc import Generator, Iterable, Mapping
 from datetime import timedelta
 from typing import (
     Any,
-    Generator,
     Generic,
-    Iterable,
-    List,
-    Mapping,
-    Optional,
-    Set,
-    Tuple,
-    Type,
     TypeVar,
 )
 
@@ -47,7 +40,7 @@ class AsyncPartition:
     _DEFAULT_MAX_JOB_RETRY = 3
 
     def __init__(
-        self, jobs: List[AsyncJob], stream_slice: StreamSlice, job_max_retry: Optional[int] = None
+        self, jobs: list[AsyncJob], stream_slice: StreamSlice, job_max_retry: int | None = None
     ) -> None:
         self._attempts_per_job = {job: 1 for job in jobs}
         self._stream_slice = stream_slice
@@ -63,7 +56,7 @@ class AsyncPartition:
             )
         )
 
-    def replace_job(self, job_to_replace: AsyncJob, new_jobs: List[AsyncJob]) -> None:
+    def replace_job(self, job_to_replace: AsyncJob, new_jobs: list[AsyncJob]) -> None:
         current_attempt_count = self._attempts_per_job.pop(job_to_replace, None)
         if current_attempt_count is None:
             raise ValueError("Could not find job to replace")
@@ -116,7 +109,7 @@ T = TypeVar("T")
 class LookaheadIterator(Generic[T]):
     def __init__(self, iterable: Iterable[T]) -> None:
         self._iterator = iter(iterable)
-        self._buffer: List[T] = []
+        self._buffer: list[T] = []
 
     def __iter__(self) -> "LookaheadIterator[T]":
         return self
@@ -158,9 +151,9 @@ class AsyncJobOrchestrator:
         slices: Iterable[StreamSlice],
         job_tracker: JobTracker,
         message_repository: MessageRepository,
-        exceptions_to_break_on: Iterable[Type[Exception]] = tuple(),
+        exceptions_to_break_on: Iterable[type[Exception]] = tuple(),
         has_bulk_parent: bool = False,
-        job_max_retry: Optional[int] = None,
+        job_max_retry: int | None = None,
     ) -> None:
         """
         If the stream slices provided as a parameters relies on a async job streams that relies on the same JobTracker, `has_bulk_parent`
@@ -176,14 +169,14 @@ class AsyncJobOrchestrator:
 
         self._job_repository: AsyncJobRepository = job_repository
         self._slice_iterator = LookaheadIterator(slices)
-        self._running_partitions: List[AsyncPartition] = []
+        self._running_partitions: list[AsyncPartition] = []
         self._job_tracker = job_tracker
         self._message_repository = message_repository
-        self._exceptions_to_break_on: Tuple[Type[Exception], ...] = tuple(exceptions_to_break_on)
+        self._exceptions_to_break_on: tuple[type[Exception], ...] = tuple(exceptions_to_break_on)
         self._has_bulk_parent = has_bulk_parent
         self._job_max_retry = job_max_retry
 
-        self._non_breaking_exceptions: List[Exception] = []
+        self._non_breaking_exceptions: list[Exception] = []
 
     def _replace_failed_jobs(self, partition: AsyncPartition) -> None:
         failed_status_jobs = (AsyncJobStatus.FAILED, AsyncJobStatus.TIMED_OUT)
@@ -232,7 +225,7 @@ class AsyncJobOrchestrator:
                 "Waiting before creating more jobs as the limit of concurrent jobs has been reached. Will try again later..."
             )
 
-    def _start_job(self, _slice: StreamSlice, previous_job_id: Optional[str] = None) -> AsyncJob:
+    def _start_job(self, _slice: StreamSlice, previous_job_id: str | None = None) -> AsyncJob:
         if previous_job_id:
             id_to_replace = previous_job_id
             lazy_log(LOGGER, logging.DEBUG, lambda: f"Attempting to replace job {id_to_replace}...")
@@ -278,7 +271,7 @@ class AsyncJobOrchestrator:
         job.update_status(AsyncJobStatus.FAILED)
         return job
 
-    def _get_running_jobs(self) -> Set[AsyncJob]:
+    def _get_running_jobs(self) -> set[AsyncJob]:
         """
         Returns a set of running AsyncJob objects.
 
@@ -353,7 +346,7 @@ class AsyncJobOrchestrator:
         Raises:
             Any: Any exception raised during processing.
         """
-        current_running_partitions: List[AsyncPartition] = []
+        current_running_partitions: list[AsyncPartition] = []
         for partition in self._running_partitions:
             match partition.status:
                 case AsyncJobStatus.COMPLETED:
@@ -408,7 +401,7 @@ class AsyncJobOrchestrator:
 
     def _reallocate_partition(
         self,
-        current_running_partitions: List[AsyncPartition],
+        current_running_partitions: list[AsyncPartition],
         partition: AsyncPartition,
     ) -> None:
         """

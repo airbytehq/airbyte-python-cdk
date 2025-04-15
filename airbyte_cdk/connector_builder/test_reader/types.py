@@ -29,7 +29,7 @@ Type Aliases:
             - An optional AirbyteControlMessage that, if present, governs control flow in message processing.
 """
 
-from typing import Any, Iterable, List
+from collections.abc import Iterable
 
 from airbyte_cdk.connector_builder.models import (
     AuxiliaryRequest,
@@ -57,13 +57,13 @@ MESSAGE_GROUPS = Iterable[
 
 INFERRED_SCHEMA_OUTPUT_TYPE = tuple[
     InferredSchema | None,
-    List[LogMessage],
+    list[LogMessage],
 ]
 
 GROUPED_MESSAGES = tuple[
-    List[StreamReadSlices],
-    List[LogMessage],
-    List[AuxiliaryRequest],
+    list[StreamReadSlices],
+    list[LogMessage],
+    list[AuxiliaryRequest],
     AirbyteControlMessage | None,
 ]
 

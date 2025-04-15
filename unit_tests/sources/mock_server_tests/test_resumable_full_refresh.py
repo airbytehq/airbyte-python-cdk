@@ -3,7 +3,7 @@
 #
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 from unittest import TestCase
 
 import freezegun
@@ -44,7 +44,7 @@ class RequestBuilder:
 
     def __init__(self, resource: str) -> None:
         self._resource = resource
-        self._page: Optional[int] = None
+        self._page: int | None = None
 
     def with_page(self, page: int) -> "RequestBuilder":
         self._page = page
@@ -62,7 +62,7 @@ class RequestBuilder:
 
 
 def _create_catalog(
-    names_and_sync_modes: List[tuple[str, SyncMode, Dict[str, Any]]],
+    names_and_sync_modes: list[tuple[str, SyncMode, dict[str, Any]]],
 ) -> ConfiguredAirbyteCatalog:
     stream_builder = ConfiguredAirbyteStreamBuilder()
     streams = []

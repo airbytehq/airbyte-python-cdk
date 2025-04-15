@@ -3,7 +3,7 @@
 #
 
 import json
-from typing import Any, Optional
+from typing import Any
 
 import pytest
 import requests
@@ -92,7 +92,7 @@ def test_offset_increment_paginator_strategy_rises():
     ],
 )
 def test_offset_increment_paginator_strategy_initial_token(
-    inject_on_first_request: bool, expected_initial_token: Optional[Any]
+    inject_on_first_request: bool, expected_initial_token: Any | None
 ):
     paginator_strategy = OffsetIncrement(
         page_size=20, parameters={}, config={}, inject_on_first_request=inject_on_first_request

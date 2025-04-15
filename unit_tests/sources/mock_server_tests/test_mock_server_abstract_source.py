@@ -3,7 +3,6 @@
 #
 
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
 from unittest import TestCase
 
 import freezegun
@@ -21,7 +20,7 @@ from airbyte_cdk.test.mock_http.response_builder import (
     create_response_builder,
 )
 from airbyte_cdk.test.state_builder import StateBuilder
-from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now
+from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime
 from unit_tests.sources.mock_server_tests.mock_source_fixture import SourceFixture
 from unit_tests.sources.mock_server_tests.test_helpers import (
     emits_successful_sync_status_messages,
@@ -55,10 +54,10 @@ class RequestBuilder:
 
     def __init__(self, resource: str) -> None:
         self._resource = resource
-        self._start_date: Optional[datetime] = None
-        self._end_date: Optional[datetime] = None
-        self._category: Optional[str] = None
-        self._page: Optional[int] = None
+        self._start_date: datetime | None = None
+        self._end_date: datetime | None = None
+        self._category: str | None = None
+        self._page: int | None = None
 
     def with_start_date(self, start_date: datetime) -> "RequestBuilder":
         self._start_date = start_date
@@ -93,7 +92,7 @@ class RequestBuilder:
         )
 
 
-def _create_catalog(names_and_sync_modes: List[tuple[str, SyncMode]]) -> ConfiguredAirbyteCatalog:
+def _create_catalog(names_and_sync_modes: list[tuple[str, SyncMode]]) -> ConfiguredAirbyteCatalog:
     catalog_builder = CatalogBuilder()
     for stream_name, sync_mode in names_and_sync_modes:
         catalog_builder.with_stream(name=stream_name, sync_mode=sync_mode)

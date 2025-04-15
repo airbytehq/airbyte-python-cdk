@@ -2,7 +2,6 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Optional
 from unittest.mock import ANY, MagicMock, call
 
 import pytest
@@ -21,7 +20,7 @@ from airbyte_cdk.models import (
 
 
 def _generate_record_message(
-    index: int, stream: str = "example_stream", namespace: Optional[str] = None
+    index: int, stream: str = "example_stream", namespace: str | None = None
 ):
     return AirbyteMessage(
         type=Type.RECORD,
@@ -37,7 +36,7 @@ def _generate_record_message(
 BATCH_SIZE = 32
 
 
-def generate_stream(name: str = "example_stream", namespace: Optional[str] = None):
+def generate_stream(name: str = "example_stream", namespace: str | None = None):
     return {
         "stream": {
             "name": name,

@@ -2,14 +2,13 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
-from typing import List
 
 import pytest
 
 from airbyte_cdk.models import AirbyteMessage, AirbyteStreamStatus, Type
 
 
-def emits_successful_sync_status_messages(status_messages: List[AirbyteStreamStatus]) -> bool:
+def emits_successful_sync_status_messages(status_messages: list[AirbyteStreamStatus]) -> bool:
     return (
         len(status_messages) == 3
         and status_messages[0] == AirbyteStreamStatus.STARTED
@@ -18,7 +17,7 @@ def emits_successful_sync_status_messages(status_messages: List[AirbyteStreamSta
     )
 
 
-def validate_message_order(expected_message_order: List[Type], messages: List[AirbyteMessage]):
+def validate_message_order(expected_message_order: list[Type], messages: list[AirbyteMessage]):
     if len(expected_message_order) != len(messages):
         pytest.fail(
             f"Expected message order count {len(expected_message_order)} did not match actual messages {len(messages)}"

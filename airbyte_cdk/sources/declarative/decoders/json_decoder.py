@@ -1,13 +1,11 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-import codecs
 import logging
+from collections.abc import Generator, Mapping, MutableMapping
 from dataclasses import InitVar, dataclass
-from gzip import decompress
-from typing import Any, Generator, List, Mapping, MutableMapping, Optional
+from typing import Any
 
-import orjson
 import requests
 
 from airbyte_cdk.sources.declarative.decoders import CompositeRawDecoder, JsonParser

@@ -2,7 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Any, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any
 
 import pytest
 
@@ -354,7 +355,7 @@ def test_comparable_types() -> None:
     ],
 )
 def test_merge_schemas(
-    schema1: SchemaType, schema2: SchemaType, expected_result: Optional[SchemaType]
+    schema1: SchemaType, schema2: SchemaType, expected_result: SchemaType | None
 ) -> None:
     if expected_result is not None:
         assert merge_schemas(schema1, schema2) == expected_result
@@ -433,8 +434,8 @@ def test_merge_schemas(
 )
 def test_type_mapping_to_jsonschema(
     type_mapping: Mapping[str, Any],
-    expected_schema: Optional[Mapping[str, Any]],
-    expected_exc_msg: Optional[str],
+    expected_schema: Mapping[str, Any] | None,
+    expected_exc_msg: str | None,
 ) -> None:
     if expected_exc_msg:
         with pytest.raises(ConfigValidationError) as exc:

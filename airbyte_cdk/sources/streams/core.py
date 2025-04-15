@@ -6,9 +6,10 @@ import inspect
 import itertools
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Iterable, Iterator, Mapping, MutableMapping
 from dataclasses import dataclass
-from functools import cached_property, lru_cache
-from typing import Any, Dict, Iterable, Iterator, List, Mapping, MutableMapping, Optional, Union
+from functools import cache, cached_property
+from typing import Any, Union
 
 from typing_extensions import deprecated
 
@@ -120,7 +121,7 @@ class Stream(ABC):
     Base abstract class for an Airbyte Stream. Makes no assumption of the Stream's underlying transport protocol.
     """
 
-    _configured_json_schema: Optional[Dict[str, Any]] = None
+    _configured_json_schema: dict[str, Any] | None = None
     _exit_on_rate_limit: bool = False
 
     # Use self.logger in subclasses to log any messages
@@ -131,7 +132,7 @@ class Stream(ABC):
     # TypeTransformer object to perform output data transformation
     transformer: TypeTransformer = TypeTransformer(TransformConfig.NoTransform)
 
-    cursor: Optional[Cursor] = None
+    cursor: Cursor | None = None
 
     has_multiple_slices = False
 
@@ -142,7 +143,7 @@ class Stream(ABC):
         """
         return casing.camel_to_snake(self.__class__.__name__)
 
-    def get_error_display_message(self, exception: BaseException) -> Optional[str]:
+    def get_error_display_message(self, exception: BaseException) -> str | None:
         """
         Retrieves the user-friendly display message that corresponds to an exception.
         This will be called when encountering an exception while reading records from the stream, and used to build the AirbyteTraceMessage.
@@ -252,7 +253,7 @@ class Stream(ABC):
             airbyte_state_message = self._checkpoint_state(checkpoint, state_manager=state_manager)
             yield airbyte_state_message
 
-    def read_only_records(self, state: Optional[Mapping[str, Any]] = None) -> Iterable[StreamData]:
+    def read_only_records(self, state: Mapping[str, Any] | None = None) -> Iterable[StreamData]:
         """
         Helper method that performs a read on a stream with an optional state and emits records. If the parent stream supports
         incremental, this operation does not update the stream's internal state (if it uses the modern state setter/getter)
@@ -284,15 +285,15 @@ class Stream(ABC):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
         """
         This method should be overridden by subclasses to read records based on the inputs
         """
 
-    @lru_cache(maxsize=None)
+    @cache
     def get_json_schema(self) -> Mapping[str, Any]:
         """
         :return: A dict of the JSON schema representing this stream.
@@ -356,11 +357,11 @@ class Stream(ABC):
             # the stream's get_updated_state() differs from the Stream class and therefore has been overridden
             return type(self).get_updated_state != Stream.get_updated_state
 
-    def _wrapped_cursor_field(self) -> List[str]:
+    def _wrapped_cursor_field(self) -> list[str]:
         return [self.cursor_field] if isinstance(self.cursor_field, str) else self.cursor_field
 
     @property
-    def cursor_field(self) -> Union[str, List[str]]:
+    def cursor_field(self) -> str | list[str]:
         """
         Override to return the default cursor field used by this stream e.g: an API entity might always use created_at as the cursor field.
         :return: The name of the field used as a cursor. If the cursor is nested, return an array consisting of the path to the cursor.
@@ -368,7 +369,7 @@ class Stream(ABC):
         return []
 
     @property
-    def namespace(self) -> Optional[str]:
+    def namespace(self) -> str | None:
         """
         Override to return the namespace of this stream, e.g. the Postgres schema which this stream will emit records for.
         :return: A string containing the name of the namespace.
@@ -394,7 +395,7 @@ class Stream(ABC):
 
     @property
     @abstractmethod
-    def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
+    def primary_key(self) -> str | list[str] | list[list[str]] | None:
         """
         :return: string if single primary key, list of strings if composite primary key, list of list of strings if composite primary key consisting of nested fields.
           If the stream has no primary keys, return None.
@@ -404,9 +405,9 @@ class Stream(ABC):
         self,
         *,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
-    ) -> Iterable[Optional[Mapping[str, Any]]]:
+        cursor_field: list[str] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
+    ) -> Iterable[Mapping[str, Any] | None]:
         """
         Override to define the slices for this stream. See the stream slicing section of the docs for more information.
 
@@ -418,7 +419,7 @@ class Stream(ABC):
         yield StreamSlice(partition={}, cursor_slice={})
 
     @property
-    def state_checkpoint_interval(self) -> Optional[int]:
+    def state_checkpoint_interval(self) -> int | None:
         """
         Decides how often to checkpoint state (i.e: emit a STATE message). E.g: if this returns a value of 100, then state is persisted after reading
         100 records, then 200, 300, etc.. A good default value is 1000 although your mileage may vary depending on the underlying data source.
@@ -455,7 +456,7 @@ class Stream(ABC):
         """
         return {}
 
-    def get_cursor(self) -> Optional[Cursor]:
+    def get_cursor(self) -> Cursor | None:
         """
         A Cursor is an interface that a stream can implement to manage how its internal state is read and updated while
         reading records. Historically, Python connectors had no concept of a cursor to manage state. Python streams need
@@ -466,7 +467,7 @@ class Stream(ABC):
     def _get_checkpoint_reader(
         self,
         logger: logging.Logger,
-        cursor_field: Optional[List[str]],
+        cursor_field: list[str] | None,
         sync_mode: SyncMode,
         stream_state: MutableMapping[str, Any],
     ) -> CheckpointReader:
@@ -533,7 +534,7 @@ class Stream(ABC):
 
     @staticmethod
     def _classify_stream(
-        mappings_or_slices: Iterator[Optional[Union[Mapping[str, Any], StreamSlice]]],
+        mappings_or_slices: Iterator[Mapping[str, Any] | StreamSlice | None],
     ) -> StreamClassification:
         """
         This is a bit of a crazy solution, but also the only way we can detect certain attributes about the stream since Python
@@ -601,8 +602,8 @@ class Stream(ABC):
 
     @staticmethod
     def _wrapped_primary_key(
-        keys: Optional[Union[str, List[str], List[List[str]]]],
-    ) -> Optional[List[List[str]]]:
+        keys: str | list[str] | list[list[str]] | None,
+    ) -> list[list[str]] | None:
         """
         :return: wrap the primary_key property in a list of list of strings required by the Airbyte Stream object.
         """
@@ -625,7 +626,7 @@ class Stream(ABC):
             raise ValueError(f"Element must be either list or str. Got: {type(keys)}")
 
     def _observe_state(
-        self, checkpoint_reader: CheckpointReader, stream_state: Optional[Mapping[str, Any]] = None
+        self, checkpoint_reader: CheckpointReader, stream_state: Mapping[str, Any] | None = None
     ) -> None:
         """
         Convenience method that attempts to read the Stream's state using the recommended way of connector's managing their
@@ -660,7 +661,7 @@ class Stream(ABC):
         return state_manager.create_state_message(self.name, self.namespace)  # type: ignore [no-any-return]
 
     @property
-    def configured_json_schema(self) -> Optional[Dict[str, Any]]:
+    def configured_json_schema(self) -> dict[str, Any] | None:
         """
         This property is set from the read method.
 
@@ -669,12 +670,12 @@ class Stream(ABC):
         return self._configured_json_schema
 
     @configured_json_schema.setter
-    def configured_json_schema(self, json_schema: Dict[str, Any]) -> None:
+    def configured_json_schema(self, json_schema: dict[str, Any]) -> None:
         self._configured_json_schema = self._filter_schema_invalid_properties(json_schema)
 
     def _filter_schema_invalid_properties(
-        self, configured_catalog_json_schema: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, configured_catalog_json_schema: dict[str, Any]
+    ) -> dict[str, Any]:
         """
         Filters the properties in json_schema that are not present in the stream schema.
         Configured Schemas can have very old fields, so we need to housekeeping ourselves.

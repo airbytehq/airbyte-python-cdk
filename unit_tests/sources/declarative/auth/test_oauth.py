@@ -5,7 +5,7 @@
 import base64
 import json
 import logging
-from datetime import timedelta, timezone
+from datetime import timedelta
 from unittest.mock import Mock
 
 import freezegun

@@ -3,9 +3,10 @@
 #
 
 import logging
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from io import IOBase
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Set
+from typing import Any
 
 import pytest
 from pydantic.v1 import AnyUrl
@@ -63,14 +64,14 @@ DEFAULT_CONFIG = {
 
 class TestStreamReader(AbstractFileBasedStreamReader):
     @property
-    def config(self) -> Optional[AbstractFileBasedSpec]:
+    def config(self) -> AbstractFileBasedSpec | None:
         return self._config
 
     @config.setter
     def config(self, value: AbstractFileBasedSpec) -> None:
         self._config = value
 
-    def get_matching_files(self, globs: List[str]) -> Iterable[RemoteFile]:
+    def get_matching_files(self, globs: list[str]) -> Iterable[RemoteFile]:
         pass
 
     def open_file(self, file: RemoteFile) -> IOBase:
@@ -81,21 +82,21 @@ class TestStreamReader(AbstractFileBasedStreamReader):
 
     def get_file(
         self, file: RemoteFile, local_directory: str, logger: logging.Logger
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return {}
 
-    def get_file_acl_permissions(self, file: RemoteFile, logger: logging.Logger) -> Dict[str, Any]:
+    def get_file_acl_permissions(self, file: RemoteFile, logger: logging.Logger) -> dict[str, Any]:
         return {}
 
-    def load_identity_groups(self, logger: logging.Logger) -> Iterable[Dict[str, Any]]:
+    def load_identity_groups(self, logger: logging.Logger) -> Iterable[dict[str, Any]]:
         return [{}]
 
     @property
-    def file_permissions_schema(self) -> Dict[str, Any]:
+    def file_permissions_schema(self) -> dict[str, Any]:
         return {"type": "object", "properties": {}}
 
     @property
-    def identities_schema(self) -> Dict[str, Any]:
+    def identities_schema(self) -> dict[str, Any]:
         return {"type": "object", "properties": {}}
 
 
@@ -368,17 +369,16 @@ class TestSpec(AbstractFileBasedSpec):
     ],
 )
 def test_globs_and_prefixes_from_globs(
-    globs: List[str],
+    globs: list[str],
     config: Mapping[str, Any],
-    expected_matches: Set[str],
-    expected_path_prefixes: Set[str],
+    expected_matches: set[str],
+    expected_path_prefixes: set[str],
 ) -> None:
     reader = TestStreamReader()
     reader.config = TestSpec(**config)
-    assert (
-        set([f.uri for f in reader.filter_files_by_globs_and_start_date(FILES, globs)])
-        == expected_matches
-    )
+    assert {
+        f.uri for f in reader.filter_files_by_globs_and_start_date(FILES, globs)
+    } == expected_matches
     assert set(reader.get_prefixes_from_globs(globs)) == expected_path_prefixes
 
 

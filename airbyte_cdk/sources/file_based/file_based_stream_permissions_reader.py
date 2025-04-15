@@ -4,7 +4,8 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Iterable, Optional
+from collections.abc import Iterable
+from typing import Any
 
 from airbyte_cdk.sources.file_based import AbstractFileBasedSpec
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
@@ -19,7 +20,7 @@ class AbstractFileBasedStreamPermissionsReader(ABC):
         self._config = None
 
     @property
-    def config(self) -> Optional[AbstractFileBasedSpec]:
+    def config(self) -> AbstractFileBasedSpec | None:
         return self._config
 
     @config.setter
@@ -37,7 +38,7 @@ class AbstractFileBasedStreamPermissionsReader(ABC):
         ...
 
     @abstractmethod
-    def get_file_acl_permissions(self, file: RemoteFile, logger: logging.Logger) -> Dict[str, Any]:
+    def get_file_acl_permissions(self, file: RemoteFile, logger: logging.Logger) -> dict[str, Any]:
         """
         This function should return the allow list for a given file, i.e. the list of all identities and their permission levels associated with it
 
@@ -54,7 +55,7 @@ class AbstractFileBasedStreamPermissionsReader(ABC):
         ...
 
     @abstractmethod
-    def load_identity_groups(self, logger: logging.Logger) -> Iterable[Dict[str, Any]]:
+    def load_identity_groups(self, logger: logging.Logger) -> Iterable[dict[str, Any]]:
         """
         This function should return the Identities in a determined "space" or "domain" where the file metadata (ACLs) are fetched and ACLs items (Identities) exists.
 
@@ -77,7 +78,7 @@ class AbstractFileBasedStreamPermissionsReader(ABC):
 
     @property
     @abstractmethod
-    def file_permissions_schema(self) -> Dict[str, Any]:
+    def file_permissions_schema(self) -> dict[str, Any]:
         """
         This function should return the permissions schema for file permissions stream.
 
@@ -101,7 +102,7 @@ class AbstractFileBasedStreamPermissionsReader(ABC):
 
     @property
     @abstractmethod
-    def identities_schema(self) -> Dict[str, Any]:
+    def identities_schema(self) -> dict[str, Any]:
         """
         This function should return the identities schema for file identity stream.
 

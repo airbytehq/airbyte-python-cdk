@@ -2,8 +2,9 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Iterable, Mapping, MutableMapping
 from functools import cache
-from typing import Any, Dict, Iterable, Mapping, MutableMapping, Optional
+from typing import Any
 
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import PrimaryKeyType
 from airbyte_cdk.sources.file_based.discovery_policy import AbstractDiscoveryPolicy
@@ -25,7 +26,7 @@ class FileIdentitiesStream(IdentitiesStream):
 
     def __init__(
         self,
-        catalog_schema: Optional[Mapping[str, Any]],
+        catalog_schema: Mapping[str, Any] | None,
         stream_permissions_reader: AbstractFileBasedStreamPermissionsReader,
         discovery_policy: AbstractDiscoveryPolicy,
         errors_collector: FileBasedErrorsCollector,
@@ -41,7 +42,7 @@ class FileIdentitiesStream(IdentitiesStream):
     def primary_key(self) -> PrimaryKeyType:
         return None
 
-    def load_identity_groups(self) -> Iterable[Dict[str, Any]]:
+    def load_identity_groups(self) -> Iterable[dict[str, Any]]:
         return self.stream_permissions_reader.load_identity_groups(logger=self.logger)
 
     @cache

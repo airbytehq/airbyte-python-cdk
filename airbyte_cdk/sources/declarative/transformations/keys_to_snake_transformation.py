@@ -4,7 +4,7 @@
 
 import re
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import anyascii
 
@@ -20,16 +20,16 @@ class KeysToSnakeCaseTransformation(RecordTransformation):
 
     def transform(
         self,
-        record: Dict[str, Any],
-        config: Optional[Config] = None,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
+        record: dict[str, Any],
+        config: Config | None = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
     ) -> None:
         transformed_record = self._transform_record(record)
         record.clear()
         record.update(transformed_record)
 
-    def _transform_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
+    def _transform_record(self, record: dict[str, Any]) -> dict[str, Any]:
         transformed_record = {}
         for key, value in record.items():
             transformed_key = self.process_key(key)
@@ -50,19 +50,19 @@ class KeysToSnakeCaseTransformation(RecordTransformation):
     def normalize_key(self, key: str) -> str:
         return str(anyascii.anyascii(key))
 
-    def tokenize_key(self, key: str) -> List[str]:
+    def tokenize_key(self, key: str) -> list[str]:
         tokens = []
         for match in self.token_pattern.finditer(key):
             token = match.group(0) if match.group("NoToken") is None else ""
             tokens.append(token)
         return tokens
 
-    def filter_tokens(self, tokens: List[str]) -> List[str]:
+    def filter_tokens(self, tokens: list[str]) -> list[str]:
         if len(tokens) >= 3:
             tokens = tokens[:1] + [t for t in tokens[1:-1] if t] + tokens[-1:]
         if tokens and tokens[0].isdigit():
             tokens.insert(0, "")
         return tokens
 
-    def tokens_to_snake_case(self, tokens: List[str]) -> str:
+    def tokens_to_snake_case(self, tokens: list[str]) -> str:
         return "_".join(token.lower() for token in tokens)

@@ -4,8 +4,9 @@
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Iterable, MutableMapping
 from datetime import datetime
-from typing import Any, Iterable, MutableMapping
+from typing import Any
 
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile

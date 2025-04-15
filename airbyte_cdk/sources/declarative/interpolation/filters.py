@@ -7,10 +7,10 @@ import hashlib
 import hmac as hmac_lib
 import json
 import re
-from typing import Any, Dict, Optional
+from typing import Any
 
 
-def hash(value: Any, hash_type: str = "md5", salt: Optional[str] = None) -> str:
+def hash(value: Any, hash_type: str = "md5", salt: str | None = None) -> str:
     """
       Implementation of a custom Jinja2 hash filter
       Hash type defaults to 'md5' if one is not specified.
@@ -51,7 +51,7 @@ def hash(value: Any, hash_type: str = "md5", salt: Optional[str] = None) -> str:
             hash_obj.update(str(salt).encode("utf-8"))
         computed_hash: str = hash_obj.hexdigest()
     else:
-        raise AttributeError("No hashing function named {hname}".format(hname=hash_type))
+        raise AttributeError(f"No hashing function named {hash_type}")
 
     return computed_hash
 
@@ -156,7 +156,7 @@ def hmac(value: Any, key: str, hash_type: str = "sha256") -> str:
     :return: HMAC digest as a hexadecimal string
     """
     # Define allowed hash functions
-    ALLOWED_HASH_TYPES: Dict[str, Any] = {
+    ALLOWED_HASH_TYPES: dict[str, Any] = {
         "sha256": hashlib.sha256,
     }
 

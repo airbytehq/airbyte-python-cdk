@@ -7,8 +7,9 @@ from __future__ import (  # Used to evaluate type hints at runtime, a NameError:
 )
 
 import time
+from collections.abc import MutableMapping
 from copy import copy
-from typing import Any, List, MutableMapping
+from typing import Any
 
 import orjson
 
@@ -38,7 +39,7 @@ class ObservedDict(dict):  # type: ignore # disallow_any_generics is set to True
                 non_observed_mapping[item] = ObservedDict(value, observer)
 
             # Observe nested list of dicts
-            if isinstance(value, List):
+            if isinstance(value, list):
                 for i, sub_value in enumerate(value):
                     if isinstance(sub_value, MutableMapping):
                         value[i] = ObservedDict(sub_value, observer)
@@ -52,11 +53,11 @@ class ObservedDict(dict):  # type: ignore # disallow_any_generics is set to True
         previous_value = self.get(item)
         if isinstance(value, MutableMapping):
             value = ObservedDict(value, self.observer)
-        if isinstance(value, List):
+        if isinstance(value, list):
             for i, sub_value in enumerate(value):
                 if isinstance(sub_value, MutableMapping):
                     value[i] = ObservedDict(sub_value, self.observer)
-        super(ObservedDict, self).__setitem__(item, value)
+        super().__setitem__(item, value)
         if self.update_on_unchanged_value or value != previous_value:
             self.observer.update()
 

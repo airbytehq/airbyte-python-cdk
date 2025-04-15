@@ -3,7 +3,8 @@
 #
 
 from abc import ABC, abstractmethod
-from typing import Any, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any
 
 
 class AbstractSchemaValidationPolicy(ABC):
@@ -12,7 +13,7 @@ class AbstractSchemaValidationPolicy(ABC):
 
     @abstractmethod
     def record_passes_validation_policy(
-        self, record: Mapping[str, Any], schema: Optional[Mapping[str, Any]]
+        self, record: Mapping[str, Any], schema: Mapping[str, Any] | None
     ) -> bool:
         """
         Return True if the record passes the user's validation policy.

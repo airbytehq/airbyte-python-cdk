@@ -2,8 +2,9 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping, MutableMapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, List, Mapping, MutableMapping, Optional, Union
+from typing import Any, Union
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_nested_mapping import NestedMapping
 from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_nested_request_input_provider import (
@@ -36,11 +37,11 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
 
     parameters: InitVar[Mapping[str, Any]]
     config: Config = field(default_factory=dict)
-    request_parameters: Optional[RequestInput] = None
-    request_headers: Optional[RequestInput] = None
-    request_body_data: Optional[RequestInput] = None
-    request_body_json: Optional[NestedMapping] = None
-    query_properties_key: Optional[str] = None
+    request_parameters: RequestInput | None = None
+    request_headers: RequestInput | None = None
+    request_body_data: RequestInput | None = None
+    request_body_json: NestedMapping | None = None
+    query_properties_key: str | None = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if self.request_parameters is None:
@@ -73,9 +74,9 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
     def get_request_params(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> MutableMapping[str, Any]:
         interpolated_value = self._parameter_interpolator.eval_request_inputs(
             stream_slice,
@@ -96,7 +97,7 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
                     raise ValueError(
                         "QueryProperties component is defined but stream_partition does not contain query_properties. Please contact Airbyte Support"
                     )
-                elif not isinstance(stream_slice.extra_fields.get("query_properties"), List):
+                elif not isinstance(stream_slice.extra_fields.get("query_properties"), list):
                     raise ValueError(
                         "QueryProperties component is defined but stream_slice.extra_fields.query_properties is not a List. Please contact Airbyte Support"
                     )
@@ -112,19 +113,19 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
     def get_request_headers(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return self._headers_interpolator.eval_request_inputs(stream_slice, next_page_token)
 
     def get_request_body_data(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Union[Mapping[str, Any], str]:
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any] | str:
         return self._body_data_interpolator.eval_request_inputs(
             stream_slice,
             next_page_token,
@@ -135,8 +136,8 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
     def get_request_body_json(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         return self._body_json_interpolator.eval_request_inputs(stream_slice, next_page_token)

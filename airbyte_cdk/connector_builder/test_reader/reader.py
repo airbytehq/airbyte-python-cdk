@@ -4,7 +4,8 @@
 
 
 import logging
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Union
+from collections.abc import Iterator, Mapping
+from typing import Any
 
 from airbyte_cdk.connector_builder.models import (
     AuxiliaryRequest,
@@ -83,8 +84,8 @@ class TestReader:
         source: DeclarativeSource,
         config: Mapping[str, Any],
         configured_catalog: ConfiguredAirbyteCatalog,
-        state: List[AirbyteStateMessage],
-        record_limit: Optional[int] = None,
+        state: list[AirbyteStateMessage],
+        record_limit: int | None = None,
     ) -> StreamRead:
         """
         Run a test read for the connector by reading from a single stream and inferring schema and datetime formats.
@@ -140,8 +141,8 @@ class TestReader:
         )
 
     def _pk_to_nested_and_composite_field(
-        self, field: Optional[Union[str, List[str], List[List[str]]]]
-    ) -> List[List[str]]:
+        self, field: str | list[str] | list[list[str]] | None
+    ) -> list[list[str]]:
         """
         Converts a primary key definition into a nested list representation.
 
@@ -173,8 +174,8 @@ class TestReader:
         return field  # type: ignore  # the type of field is expected to be List[List[str]] here
 
     def _cursor_field_to_nested_and_composite_field(
-        self, field: Union[str, List[str]]
-    ) -> List[List[str]]:
+        self, field: str | list[str]
+    ) -> list[list[str]]:
         """
         Transforms the cursor field input into a nested list format suitable for further processing.
 
@@ -208,7 +209,7 @@ class TestReader:
 
         raise ValueError(f"Unknown type for cursor field `{field}")
 
-    def _check_record_limit(self, record_limit: Optional[int] = None) -> int:
+    def _check_record_limit(self, record_limit: int | None = None) -> int:
         """
         Checks and adjusts the provided record limit to ensure it falls within the valid range.
 
@@ -265,7 +266,7 @@ class TestReader:
         slices = []
         log_messages = []
         auxiliary_requests = []
-        latest_config_update: Optional[AirbyteControlMessage] = None
+        latest_config_update: AirbyteControlMessage | None = None
 
         for message_group in message_groups:
             match message_group:
@@ -302,7 +303,7 @@ class TestReader:
         self,
         configured_catalog: ConfiguredAirbyteCatalog,
         schema_inferrer: SchemaInferrer,
-        log_messages: List[LogMessage],
+        log_messages: list[LogMessage],
     ) -> INFERRED_SCHEMA_OUTPUT_TYPE:
         """
         Retrieves the inferred schema from the given configured catalog using the provided schema inferrer.
@@ -337,7 +338,7 @@ class TestReader:
     def _get_latest_config_update(
         self,
         latest_config_update: AirbyteControlMessage | None,
-    ) -> Dict[str, Any] | None:
+    ) -> dict[str, Any] | None:
         """
         Retrieves a cleaned configuration from the latest Airbyte control message.
 
@@ -362,7 +363,7 @@ class TestReader:
         source: DeclarativeSource,
         config: Mapping[str, Any],
         configured_catalog: ConfiguredAirbyteCatalog,
-        state: List[AirbyteStateMessage],
+        state: list[AirbyteStateMessage],
     ) -> Iterator[AirbyteMessage]:
         """
         Reads messages from the given DeclarativeSource using an AirbyteEntrypoint.
@@ -407,7 +408,7 @@ class TestReader:
                 e, message=error_message
             ).as_airbyte_message()
 
-    def _has_reached_limit(self, slices: List[StreamReadSlices]) -> bool:
+    def _has_reached_limit(self, slices: list[StreamReadSlices]) -> bool:
         """
         Determines whether the provided collection of slices has reached any defined limits.
 

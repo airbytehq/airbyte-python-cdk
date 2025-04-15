@@ -2,9 +2,10 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Iterable, Mapping
 from copy import deepcopy
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Dict, Iterable, List, Mapping, Union
+from typing import Any
 
 import dpath
 from typing_extensions import deprecated
@@ -26,7 +27,7 @@ class StreamConfig:
     Identifies stream config details for dynamic schema extraction and processing.
     """
 
-    configs_pointer: List[Union[InterpolatedString, str]]
+    configs_pointer: list[InterpolatedString | str]
     parameters: InitVar[Mapping[str, Any]]
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
@@ -50,9 +51,9 @@ class ConfigComponentsResolver(ComponentsResolver):
 
     stream_config: StreamConfig
     config: Config
-    components_mapping: List[ComponentMappingDefinition]
+    components_mapping: list[ComponentMappingDefinition]
     parameters: InitVar[Mapping[str, Any]]
-    _resolved_components: List[ResolvedComponentMappingDefinition] = field(
+    _resolved_components: list[ResolvedComponentMappingDefinition] = field(
         init=False, repr=False, default_factory=list
     )
 
@@ -65,7 +66,7 @@ class ConfigComponentsResolver(ComponentsResolver):
         """
 
         for component_mapping in self.components_mapping:
-            if isinstance(component_mapping.value, (str, InterpolatedString)):
+            if isinstance(component_mapping.value, str | InterpolatedString):
                 interpolated_value = (
                     InterpolatedString.create(component_mapping.value, parameters=parameters)
                     if isinstance(component_mapping.value, str)
@@ -104,8 +105,8 @@ class ConfigComponentsResolver(ComponentsResolver):
         return stream_config
 
     def resolve_components(
-        self, stream_template_config: Dict[str, Any]
-    ) -> Iterable[Dict[str, Any]]:
+        self, stream_template_config: dict[str, Any]
+    ) -> Iterable[dict[str, Any]]:
         """
         Resolves components in the stream template configuration by populating values.
 

@@ -2,8 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 import logging
+from collections.abc import Iterable, Mapping, MutableMapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Iterable, List, Mapping, MutableMapping, Optional, Union
+from typing import Any
 
 from airbyte_cdk.models import SyncMode
 from airbyte_cdk.sources.declarative.incremental import (
@@ -47,12 +48,12 @@ class DeclarativeStream(Stream):
     config: Config
     parameters: InitVar[Mapping[str, Any]]
     name: str
-    primary_key: Optional[Union[str, List[str], List[List[str]]]]
-    state_migrations: List[StateMigration] = field(repr=True, default_factory=list)
-    schema_loader: Optional[SchemaLoader] = None
+    primary_key: str | list[str] | list[list[str]] | None
+    state_migrations: list[StateMigration] = field(repr=True, default_factory=list)
+    schema_loader: SchemaLoader | None = None
     _name: str = field(init=False, repr=False, default="")
     _primary_key: str = field(init=False, repr=False, default="")
-    stream_cursor_field: Optional[Union[InterpolatedString, str]] = None
+    stream_cursor_field: InterpolatedString | str | None = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._stream_cursor_field = (
@@ -67,7 +68,7 @@ class DeclarativeStream(Stream):
         )
 
     @property  # type: ignore
-    def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
+    def primary_key(self) -> str | list[str] | list[list[str]] | None:
         return self._primary_key
 
     @primary_key.setter
@@ -121,7 +122,7 @@ class DeclarativeStream(Stream):
         return self.state
 
     @property
-    def cursor_field(self) -> Union[str, List[str]]:
+    def cursor_field(self) -> str | list[str]:
         """
         Override to return the default cursor field used by this stream e.g: an API entity might always use created_at as the cursor field.
         :return: The name of the field used as a cursor. If the cursor is nested, return an array consisting of the path to the cursor.
@@ -138,9 +139,9 @@ class DeclarativeStream(Stream):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         """
         :param: stream_state We knowingly avoid using stream_state as we want cursors to manage their own state.
@@ -173,9 +174,9 @@ class DeclarativeStream(Stream):
         self,
         *,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
-    ) -> Iterable[Optional[StreamSlice]]:
+        cursor_field: list[str] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
+    ) -> Iterable[StreamSlice | None]:
         """
         Override to define the slices for this stream. See the stream slicing section of the docs for more information.
 
@@ -187,7 +188,7 @@ class DeclarativeStream(Stream):
         return self.retriever.stream_slices()
 
     @property
-    def state_checkpoint_interval(self) -> Optional[int]:
+    def state_checkpoint_interval(self) -> int | None:
         """
         We explicitly disable checkpointing here. There are a couple reasons for that and not all are documented here but:
         * In the case where records are not ordered, the granularity of what is ordered is the slice. Therefore, we will only update the
@@ -197,7 +198,7 @@ class DeclarativeStream(Stream):
         """
         return None
 
-    def get_cursor(self) -> Optional[Cursor]:
+    def get_cursor(self) -> Cursor | None:
         if self.retriever and isinstance(self.retriever, SimpleRetriever):
             return self.retriever.cursor
         return None
@@ -205,7 +206,7 @@ class DeclarativeStream(Stream):
     def _get_checkpoint_reader(
         self,
         logger: logging.Logger,
-        cursor_field: Optional[List[str]],
+        cursor_field: list[str] | None,
         sync_mode: SyncMode,
         stream_state: MutableMapping[str, Any],
     ) -> CheckpointReader:
@@ -229,7 +230,7 @@ class DeclarativeStream(Stream):
         checkpoint_mode = self._checkpoint_mode
 
         if isinstance(
-            cursor, (GlobalSubstreamCursor, PerPartitionCursor, PerPartitionWithGlobalCursor)
+            cursor, GlobalSubstreamCursor | PerPartitionCursor | PerPartitionWithGlobalCursor
         ):
             self.has_multiple_slices = True
             return CursorBasedCheckpointReader(

@@ -3,8 +3,9 @@
 #
 
 import json
+from collections.abc import Iterable, Mapping
 from functools import partial
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
@@ -833,7 +834,7 @@ def test_given_initial_token_is_zero_when_read_records_then_pass_initial_token()
 
     response = requests.Response()
     response.status_code = 200
-    response._content = "{}".encode()
+    response._content = b"{}"
 
     with patch.object(
         SimpleRetriever,
@@ -957,7 +958,7 @@ def test_retriever_last_page_size_for_page_increment():
         Record(data={"id": "4d", "name": "Investment Banking Division"}, stream_name="departments"),
     ]
 
-    def mock_parse_records(response: Optional[requests.Response]) -> Iterable[Record]:
+    def mock_parse_records(response: requests.Response | None) -> Iterable[Record]:
         yield from expected_records
 
     actual_records = list(
@@ -1007,7 +1008,7 @@ def test_retriever_last_record_for_page_increment():
         ),
     ]
 
-    def mock_parse_records(response: Optional[requests.Response]) -> Iterable[Record]:
+    def mock_parse_records(response: requests.Response | None) -> Iterable[Record]:
         yield from expected_records
 
     actual_records = list(
@@ -1055,8 +1056,8 @@ def test_retriever_is_stateless():
     ).encode("utf-8")
 
     def mock_send_request(
-        next_page_token: Optional[Mapping[str, Any]] = None, **kwargs
-    ) -> Optional[requests.Response]:
+        next_page_token: Mapping[str, Any] | None = None, **kwargs
+    ) -> requests.Response | None:
         page_number = next_page_token.get("next_page_token") if next_page_token else None
         if page_number is None:
             return page_response_1

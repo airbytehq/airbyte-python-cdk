@@ -82,11 +82,10 @@ assert not ab_datetime_try_parse("foo")                    # Invalid: not parsab
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional, Union, overload
+from typing import Any, Union, overload
 
 from dateutil import parser
-from typing_extensions import Never
-from whenever import Instant, LocalDateTime, ZonedDateTime
+from whenever import Instant
 
 
 class AirbyteDateTime(datetime):
@@ -263,7 +262,7 @@ class AirbyteDateTime(datetime):
             result = super().__sub__(other)  # type: ignore[call-overload]
             if isinstance(result, datetime):
                 return AirbyteDateTime.from_datetime(result)
-        elif isinstance(other, (datetime, AirbyteDateTime)):
+        elif isinstance(other, datetime | AirbyteDateTime):
             result = super().__sub__(other)  # type: ignore[call-overload]
             if isinstance(result, timedelta):
                 return result
@@ -462,7 +461,7 @@ def ab_datetime_try_parse(dt_str: str) -> AirbyteDateTime | None:
 
 
 def ab_datetime_format(
-    dt: Union[datetime, AirbyteDateTime],
+    dt: datetime | AirbyteDateTime,
     format: str | None = None,
 ) -> str:
     """Formats a datetime object as an ISO8601/RFC3339 string with 'T' delimiter and timezone.

@@ -5,7 +5,8 @@
 import io
 import json
 import logging
-from typing import Any, Iterable, Mapping, Optional
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 import pytest
 import requests
@@ -24,7 +25,7 @@ class MockHttpStream(HttpStream):
         super().__init__(**kwargs)
         self.resp_counter = 1
 
-    def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+    def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
         return None
 
     def path(self, **kwargs) -> str:

@@ -2,7 +2,6 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import List, Union
 
 from pydantic.v1 import BaseModel, Field
 
@@ -24,15 +23,15 @@ class Choice1(BaseModel):
 class Choice2(BaseModel):
     selected_strategy = Field("option2", const=True)
 
-    sequence: List[str]
+    sequence: list[str]
 
 
 class SomeSourceConfig(BaseConfig):
     class Config:
         title = "Some Source"
 
-    items: List[InnerClass]
-    choice: Union[Choice1, Choice2]
+    items: list[InnerClass]
+    choice: Choice1 | Choice2
 
 
 class TestBaseConfig:

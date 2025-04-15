@@ -3,8 +3,8 @@
 #
 import concurrent
 import logging
+from collections.abc import Iterable, Iterator
 from queue import Queue
-from typing import Iterable, Iterator, List
 
 from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.sources.concurrent_source.concurrent_read_processor import ConcurrentReadProcessor
@@ -93,7 +93,7 @@ class ConcurrentSource:
 
     def read(
         self,
-        streams: List[AbstractStream],
+        streams: list[AbstractStream],
     ) -> Iterator[AirbyteMessage]:
         self._logger.info("Starting syncing")
 

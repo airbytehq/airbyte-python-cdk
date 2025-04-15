@@ -4,7 +4,8 @@
 
 import traceback
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional
+from collections.abc import Iterable, Mapping, MutableMapping
+from typing import Any
 
 from airbyte_protocol_dataclasses.models import SyncMode
 
@@ -42,9 +43,9 @@ class IdentitiesStream(Stream, ABC):
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[Mapping[str, Any] | AirbyteMessage]:
         try:
             identity_groups = self.load_identity_groups()
@@ -64,12 +65,12 @@ class IdentitiesStream(Stream, ABC):
             )
 
     @abstractmethod
-    def load_identity_groups(self) -> Iterable[Dict[str, Any]]:
+    def load_identity_groups(self) -> Iterable[dict[str, Any]]:
         raise NotImplementedError("Implement this method to read identity records")
 
     @property
     def name(self) -> str:
         return self.IDENTITIES_STREAM_NAME
 
-    def get_cursor(self) -> Optional[Cursor]:
+    def get_cursor(self) -> Cursor | None:
         return None

@@ -1,10 +1,11 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from collections.abc import Mapping
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from functools import partial
-from typing import Any, Mapping, Optional
+from typing import Any
 from unittest import TestCase
 from unittest.mock import Mock
 
@@ -54,9 +55,7 @@ _A_VERY_HIGH_CURSOR_VALUE = 1000000000
 _NO_LOOKBACK_WINDOW = timedelta(seconds=0)
 
 
-def _partition(
-    _slice: Optional[Mapping[str, Any]], _stream_name: Optional[str] = Mock()
-) -> Partition:
+def _partition(_slice: Mapping[str, Any] | None, _stream_name: str | None = Mock()) -> Partition:
     partition = Mock(spec=Partition)
     partition.to_slice.return_value = _slice
     partition.stream_name.return_value = _stream_name
@@ -64,7 +63,7 @@ def _partition(
 
 
 def _record(
-    cursor_value: CursorValueType, partition: Optional[Partition] = Mock(spec=Partition)
+    cursor_value: CursorValueType, partition: Partition | None = Mock(spec=Partition)
 ) -> Record:
     return Record(
         data={_A_CURSOR_FIELD_KEY: cursor_value},
@@ -1015,7 +1014,7 @@ class ClampingIntegrationTest(TestCase):
         start: datetime,
         end_provider,
         slice_range: timedelta,
-        granularity: Optional[timedelta],
+        granularity: timedelta | None,
         clamping_strategy: ClampingStrategy,
     ) -> ConcurrentCursor:
         return ConcurrentCursor(

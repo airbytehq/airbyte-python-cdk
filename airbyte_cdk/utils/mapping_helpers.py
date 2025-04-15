@@ -4,7 +4,8 @@
 
 
 import copy
-from typing import Any, Dict, List, Mapping, Optional, Union
+from collections.abc import Mapping
+from typing import Any
 
 from airbyte_cdk.sources.declarative.requesters.request_option import (
     RequestOption,
@@ -14,9 +15,9 @@ from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 
 
 def _merge_mappings(
-    target: Dict[str, Any],
+    target: dict[str, Any],
     source: Mapping[str, Any],
-    path: Optional[List[str]] = None,
+    path: list[str] | None = None,
     allow_same_value_merge: bool = False,
 ) -> None:
     """
@@ -56,9 +57,9 @@ def _merge_mappings(
 
 
 def combine_mappings(
-    mappings: List[Optional[Union[Mapping[str, Any], str]]],
+    mappings: list[Mapping[str, Any] | str | None],
     allow_same_value_merge: bool = False,
-) -> Union[Mapping[str, Any], str]:
+) -> Mapping[str, Any] | str:
     """
     Combine multiple mappings into a single mapping.
 
@@ -106,7 +107,7 @@ def combine_mappings(
         return next(m for m in non_empty_mappings if isinstance(m, str))
 
     # Start with an empty result and merge each mapping into it
-    result: Dict[str, Any] = {}
+    result: dict[str, Any] = {}
     for mapping in non_empty_mappings:
         if mapping and isinstance(mapping, Mapping):
             _merge_mappings(result, mapping, allow_same_value_merge=allow_same_value_merge)
@@ -115,13 +116,13 @@ def combine_mappings(
 
 
 def _validate_component_request_option_paths(
-    config: Config, *request_options: Optional[RequestOption]
+    config: Config, *request_options: RequestOption | None
 ) -> None:
     """
     Validates that a component with multiple request options does not have conflicting paths.
     Uses dummy values for validation since actual values might not be available at init time.
     """
-    grouped_options: Dict[RequestOptionType, List[RequestOption]] = {}
+    grouped_options: dict[RequestOptionType, list[RequestOption]] = {}
     for option in request_options:
         if option:
             grouped_options.setdefault(option.inject_into, []).append(option)
@@ -130,9 +131,9 @@ def _validate_component_request_option_paths(
         if len(options) <= 1:
             continue
 
-        option_dicts: List[Optional[Union[Mapping[str, Any], str]]] = []
+        option_dicts: list[Mapping[str, Any] | str | None] = []
         for i, option in enumerate(options):
-            option_dict: Dict[str, Any] = {}
+            option_dict: dict[str, Any] = {}
             # Use indexed dummy values to ensure we catch conflicts
             option.inject_into_request(option_dict, f"dummy_value_{i}", config)
             option_dicts.append(option_dict)
@@ -146,9 +147,9 @@ def _validate_component_request_option_paths(
 
 
 def get_interpolation_context(
-    stream_state: Optional[StreamState] = None,
-    stream_slice: Optional[StreamSlice] = None,
-    next_page_token: Optional[Mapping[str, Any]] = None,
+    stream_state: StreamState | None = None,
+    stream_slice: StreamSlice | None = None,
+    next_page_token: Mapping[str, Any] | None = None,
 ) -> Mapping[str, Any]:
     return {
         "stream_slice": stream_slice,

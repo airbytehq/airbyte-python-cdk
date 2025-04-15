@@ -3,7 +3,6 @@
 #
 
 import datetime
-from typing import Union
 
 
 class DatetimeParser:
@@ -18,7 +17,7 @@ class DatetimeParser:
 
     _UNIX_EPOCH = datetime.datetime(1970, 1, 1, tzinfo=datetime.timezone.utc)
 
-    def parse(self, date: Union[str, int], format: str) -> datetime.datetime:
+    def parse(self, date: str | int, format: str) -> datetime.datetime:
         # "%s" is a valid (but unreliable) directive for formatting, but not for parsing
         # It is defined as
         # The number of seconds since the Epoch, 1970-01-01 00:00:00+0000 (UTC). https://man7.org/linux/man-pages/man3/strptime.3.html

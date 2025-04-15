@@ -4,8 +4,9 @@
 
 import json
 import logging
+from collections.abc import Iterable, Mapping
 from copy import deepcopy
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -133,7 +134,7 @@ def test_check_http_stream_via_availability_strategy(
             super().__init__(**kwargs)
             self.resp_counter = 1
 
-        def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
+        def next_page_token(self, response: requests.Response) -> Mapping[str, Any] | None:
             return None
 
         def path(self, **kwargs) -> str:
@@ -672,7 +673,7 @@ def test_check_stream_missing_fields():
         },
     }
     with pytest.raises(ValidationError):
-        source = ConcurrentDeclarativeSource(
+        ConcurrentDeclarativeSource(
             source_config=manifest,
             config=_CONFIG,
             catalog=None,

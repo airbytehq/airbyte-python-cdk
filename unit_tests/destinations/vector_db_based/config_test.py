@@ -2,7 +2,6 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Union
 
 import dpath
 from pydantic.v1 import BaseModel, Field
@@ -29,13 +28,13 @@ class IndexingModel(BaseModel):
 class ConfigModel(BaseModel):
     indexing: IndexingModel
 
-    embedding: Union[
-        OpenAIEmbeddingConfigModel,
-        CohereEmbeddingConfigModel,
-        FakeEmbeddingConfigModel,
-        AzureOpenAIEmbeddingConfigModel,
-        OpenAICompatibleEmbeddingConfigModel,
-    ] = Field(
+    embedding: (
+        OpenAIEmbeddingConfigModel
+        | CohereEmbeddingConfigModel
+        | FakeEmbeddingConfigModel
+        | AzureOpenAIEmbeddingConfigModel
+        | OpenAICompatibleEmbeddingConfigModel
+    ) = Field(
         ...,
         title="Embedding",
         description="Embedding configuration",

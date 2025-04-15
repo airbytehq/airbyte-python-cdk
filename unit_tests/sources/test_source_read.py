@@ -2,7 +2,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 import logging
-from typing import Any, Iterable, List, Mapping, Optional, Tuple, Union
+from collections.abc import Iterable, Mapping
+from typing import Any
 from unittest.mock import Mock
 
 import freezegun
@@ -37,7 +38,7 @@ from unit_tests.sources.streams.concurrent.scenarios.thread_based_concurrent_str
 
 
 class _MockStream(Stream):
-    def __init__(self, slice_to_records: Mapping[str, List[Mapping[str, Any]]], name: str):
+    def __init__(self, slice_to_records: Mapping[str, list[Mapping[str, Any]]], name: str):
         self._slice_to_records = slice_to_records
         self._name = name
 
@@ -46,25 +47,25 @@ class _MockStream(Stream):
         return self._name
 
     @property
-    def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
+    def primary_key(self) -> str | list[str] | list[list[str]] | None:
         return None
 
     def stream_slices(
         self,
         *,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
-    ) -> Iterable[Optional[Mapping[str, Any]]]:
+        cursor_field: list[str] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
+    ) -> Iterable[Mapping[str, Any] | None]:
         for partition in self._slice_to_records.keys():
             yield {"partition": partition}
 
     def read_records(
         self,
         sync_mode: SyncMode,
-        cursor_field: Optional[List[str]] = None,
-        stream_slice: Optional[Mapping[str, Any]] = None,
-        stream_state: Optional[Mapping[str, Any]] = None,
+        cursor_field: list[str] | None = None,
+        stream_slice: Mapping[str, Any] | None = None,
+        stream_state: Mapping[str, Any] | None = None,
     ) -> Iterable[StreamData]:
         for record_or_exception in self._slice_to_records[stream_slice["partition"]]:
             if isinstance(record_or_exception, Exception):
@@ -81,13 +82,13 @@ class _MockSource(AbstractSource):
 
     def check_connection(
         self, logger: logging.Logger, config: Mapping[str, Any]
-    ) -> Tuple[bool, Optional[Any]]:
+    ) -> tuple[bool, Any | None]:
         pass
 
     def set_streams(self, streams):
         self._streams = streams
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> list[Stream]:
         return self._streams
 
 
@@ -102,13 +103,13 @@ class _MockConcurrentSource(ConcurrentSourceAdapter):
 
     def check_connection(
         self, logger: logging.Logger, config: Mapping[str, Any]
-    ) -> Tuple[bool, Optional[Any]]:
+    ) -> tuple[bool, Any | None]:
         pass
 
     def set_streams(self, streams):
         self._streams = streams
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> list[Stream]:
         return self._streams
 
 

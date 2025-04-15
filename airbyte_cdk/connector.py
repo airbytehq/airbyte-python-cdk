@@ -8,7 +8,8 @@ import logging
 import os
 import pkgutil
 from abc import ABC, abstractmethod
-from typing import Any, Generic, Mapping, Optional, Protocol, TypeVar
+from collections.abc import Mapping
+from typing import Any, Generic, Protocol, TypeVar
 
 import yaml
 
@@ -19,7 +20,7 @@ from airbyte_cdk.models import (
 )
 
 
-def load_optional_package_file(package: str, filename: str) -> Optional[bytes]:
+def load_optional_package_file(package: str, filename: str) -> bytes | None:
     """Gets a resource from a package, returning None if it does not exist"""
     try:
         return pkgutil.get_data(package, filename)
@@ -52,7 +53,7 @@ class BaseConnector(ABC, Generic[TConfig]):
 
     @staticmethod
     def _read_json_file(file_path: str) -> Any:
-        with open(file_path, "r") as file:
+        with open(file_path) as file:
             contents = file.read()
 
         try:

@@ -9,7 +9,7 @@ import json
 import logging
 from dataclasses import dataclass
 from io import BufferedIOBase, TextIOWrapper
-from typing import Any, Optional
+from typing import Any
 
 import orjson
 import requests
@@ -60,7 +60,7 @@ class JsonParser(Parser):
         if body_json is None:
             raise AirbyteTracedException(
                 message="Response JSON data failed to be parsed. See logs for more information.",
-                internal_message=f"Response JSON data failed to be parsed.",
+                internal_message="Response JSON data failed to be parsed.",
                 failure_type=FailureType.system_error,
             )
 
@@ -69,7 +69,7 @@ class JsonParser(Parser):
         else:
             yield from [body_json]
 
-    def _parse_orjson(self, raw_data: bytes) -> Optional[Any]:
+    def _parse_orjson(self, raw_data: bytes) -> Any | None:
         try:
             return orjson.loads(raw_data.decode(self.encoding))
         except Exception as exc:
@@ -78,7 +78,7 @@ class JsonParser(Parser):
             )
             return None
 
-    def _parse_json(self, raw_data: bytes) -> Optional[Any]:
+    def _parse_json(self, raw_data: bytes) -> Any | None:
         try:
             return json.loads(raw_data.decode(self.encoding))
         except Exception as exc:
@@ -88,7 +88,7 @@ class JsonParser(Parser):
 
 @dataclass
 class JsonLineParser(Parser):
-    encoding: Optional[str] = "utf-8"
+    encoding: str | None = "utf-8"
 
     def parse(self, data: BufferedIOBase) -> PARSER_OUTPUT_TYPE:
         for line in data:
@@ -101,10 +101,10 @@ class JsonLineParser(Parser):
 @dataclass
 class CsvParser(Parser):
     # TODO: migrate implementation to re-use file-base classes
-    encoding: Optional[str] = "utf-8"
-    delimiter: Optional[str] = ","
+    encoding: str | None = "utf-8"
+    delimiter: str | None = ","
 
-    def _get_delimiter(self) -> Optional[str]:
+    def _get_delimiter(self) -> str | None:
         """
         Get delimiter from the configuration. Check for the escape character and decode it.
         """
@@ -120,8 +120,7 @@ class CsvParser(Parser):
         """
         text_data = TextIOWrapper(data, encoding=self.encoding)  # type: ignore
         reader = csv.DictReader(text_data, delimiter=self._get_delimiter() or ",")
-        for row in reader:
-            yield row
+        yield from reader
 
 
 class CompositeRawDecoder(Decoder):

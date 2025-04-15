@@ -1,13 +1,13 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 @dataclass
 class AirbyteFileTransferRecordMessage:
     stream: str
-    file: Dict[str, Any]
+    file: dict[str, Any]
     emitted_at: int
-    namespace: Optional[str] = None
-    data: Optional[Dict[str, Any]] = None
+    namespace: str | None = None
+    data: dict[str, Any] | None = None

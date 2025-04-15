@@ -4,7 +4,8 @@
 
 import itertools
 import traceback
-from typing import Any, Iterable, Iterator, Tuple, Union
+from collections.abc import Iterable, Iterator
+from typing import Any
 
 from airbyte_cdk.models import AirbyteRecordMessage, AirbyteStream
 
@@ -17,7 +18,7 @@ def format_exception(exception: Exception) -> str:
     )
 
 
-def create_chunks(iterable: Iterable[Any], batch_size: int) -> Iterator[Tuple[Any, ...]]:
+def create_chunks(iterable: Iterable[Any], batch_size: int) -> Iterator[tuple[Any, ...]]:
     """A helper function to break an iterable into chunks of size batch_size."""
     it = iter(iterable)
     chunk = tuple(itertools.islice(it, batch_size))
@@ -26,7 +27,7 @@ def create_chunks(iterable: Iterable[Any], batch_size: int) -> Iterator[Tuple[An
         chunk = tuple(itertools.islice(it, batch_size))
 
 
-def create_stream_identifier(stream: Union[AirbyteStream, AirbyteRecordMessage]) -> str:
+def create_stream_identifier(stream: AirbyteStream | AirbyteRecordMessage) -> str:
     if isinstance(stream, AirbyteStream):
         return str(stream.name if stream.namespace is None else f"{stream.namespace}_{stream.name}")
     else:

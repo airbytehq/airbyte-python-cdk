@@ -3,7 +3,8 @@
 #
 
 import traceback
-from typing import Any, Dict, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level
 from airbyte_cdk.models import Type as MessageType
@@ -36,8 +37,8 @@ class PermissionsFileBasedStream(DefaultFileBasedStream):
         self.stream_permissions_reader = stream_permissions_reader
 
     def _filter_schema_invalid_properties(
-        self, configured_catalog_json_schema: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, configured_catalog_json_schema: dict[str, Any]
+    ) -> dict[str, Any]:
         return self.stream_permissions_reader.file_permissions_schema
 
     def read_records_from_slice(self, stream_slice: StreamSlice) -> Iterable[AirbyteMessage]:

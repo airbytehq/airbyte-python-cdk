@@ -4,7 +4,7 @@
 
 
 from abc import ABC, abstractmethod
-from typing import Any, Optional
+from typing import Any
 
 from airbyte_cdk.sources.types import Config
 
@@ -19,7 +19,7 @@ class Interpolation(ABC):
         self,
         input_str: str,
         config: Config,
-        default: Optional[str] = None,
+        default: str | None = None,
         **additional_options: Any,
     ) -> Any:
         """

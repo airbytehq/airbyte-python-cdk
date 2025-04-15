@@ -26,7 +26,7 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies.page_incre
     PageIncrement,
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
-from airbyte_cdk.sources.declarative.types import Record, StreamSlice, StreamState
+from airbyte_cdk.sources.declarative.types import Record, StreamSlice
 
 
 @pytest.mark.parametrize(

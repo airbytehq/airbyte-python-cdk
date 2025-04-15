@@ -3,8 +3,9 @@
 #
 
 from abc import ABC, abstractmethod
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Dict, Mapping
+from typing import Any
 
 
 @dataclass
@@ -35,7 +36,7 @@ class TypeTransformer(ABC):
     @abstractmethod
     def transform(
         self,
-        record: Dict[str, Any],
+        record: dict[str, Any],
         schema: Mapping[str, Any],
     ) -> None:
         """

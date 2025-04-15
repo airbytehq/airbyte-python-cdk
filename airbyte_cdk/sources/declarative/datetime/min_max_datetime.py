@@ -3,8 +3,9 @@
 #
 
 import datetime as dt
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Union
 
 from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
@@ -28,14 +29,14 @@ class MinMaxDatetime:
         max_datetime (Union[InterpolatedString, str]): Represents the maximum allowed datetime value.
     """
 
-    datetime: Union[InterpolatedString, str]
+    datetime: InterpolatedString | str
     parameters: InitVar[Mapping[str, Any]]
     # datetime_format is a unique case where we inherit it from the parent if it is not specified before using the default value
     # which is why we need dedicated getter/setter methods and private dataclass field
     datetime_format: str
     _datetime_format: str = field(init=False, repr=False, default="")
-    min_datetime: Union[InterpolatedString, str] = ""
-    max_datetime: Union[InterpolatedString, str] = ""
+    min_datetime: InterpolatedString | str = ""
+    max_datetime: InterpolatedString | str = ""
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.datetime = InterpolatedString.create(self.datetime, parameters=parameters or {})
@@ -104,7 +105,7 @@ class MinMaxDatetime:
     def create(
         cls,
         interpolated_string_or_min_max_datetime: Union[InterpolatedString, str, "MinMaxDatetime"],
-        parameters: Optional[Mapping[str, Any]] = None,
+        parameters: Mapping[str, Any] | None = None,
     ) -> "MinMaxDatetime":
         if parameters is None:
             parameters = {}

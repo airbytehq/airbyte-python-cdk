@@ -3,8 +3,9 @@
 #
 
 import copy
+from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass
-from typing import Any, List, Mapping, MutableMapping, Optional, Tuple, Union, cast
+from typing import Any, cast
 
 from airbyte_cdk.models import (
     AirbyteMessage,
@@ -26,7 +27,7 @@ class HashableStreamDescriptor:
     """
 
     name: str
-    namespace: Optional[str] = None
+    namespace: str | None = None
 
 
 class ConnectorStateManager:
@@ -35,7 +36,7 @@ class ConnectorStateManager:
     interface. It also provides methods to extract and update state
     """
 
-    def __init__(self, state: Optional[List[AirbyteStateMessage]] = None):
+    def __init__(self, state: list[AirbyteStateMessage] | None = None):
         shared_state, per_stream_states = self._extract_from_state_message(state)
 
         # We explicitly throw an error if we receive a GLOBAL state message that contains a shared_state because API sources are
@@ -50,9 +51,7 @@ class ConnectorStateManager:
             )
         self.per_stream_states = per_stream_states
 
-    def get_stream_state(
-        self, stream_name: str, namespace: Optional[str]
-    ) -> MutableMapping[str, Any]:
+    def get_stream_state(self, stream_name: str, namespace: str | None) -> MutableMapping[str, Any]:
         """
         Retrieves the state of a given stream based on its descriptor (name + namespace).
         :param stream_name: Name of the stream being fetched
@@ -67,7 +66,7 @@ class ConnectorStateManager:
         return {}
 
     def update_state_for_stream(
-        self, stream_name: str, namespace: Optional[str], value: Mapping[str, Any]
+        self, stream_name: str, namespace: str | None, value: Mapping[str, Any]
     ) -> None:
         """
         Overwrites the state blob of a specific stream based on the provided stream name and optional namespace
@@ -78,7 +77,7 @@ class ConnectorStateManager:
         stream_descriptor = HashableStreamDescriptor(name=stream_name, namespace=namespace)
         self.per_stream_states[stream_descriptor] = AirbyteStateBlob(value)
 
-    def create_state_message(self, stream_name: str, namespace: Optional[str]) -> AirbyteMessage:
+    def create_state_message(self, stream_name: str, namespace: str | None) -> AirbyteMessage:
         """
         Generates an AirbyteMessage using the current per-stream state of a specified stream
         :param stream_name: The name of the stream for the message that is being created
@@ -102,10 +101,10 @@ class ConnectorStateManager:
     @classmethod
     def _extract_from_state_message(
         cls,
-        state: Optional[List[AirbyteStateMessage]],
-    ) -> Tuple[
-        Optional[AirbyteStateBlob],
-        MutableMapping[HashableStreamDescriptor, Optional[AirbyteStateBlob]],
+        state: list[AirbyteStateMessage] | None,
+    ) -> tuple[
+        AirbyteStateBlob | None,
+        MutableMapping[HashableStreamDescriptor, AirbyteStateBlob | None],
     ]:
         """
         Takes an incoming list of state messages or a global state message and extracts state attributes according to
@@ -146,9 +145,9 @@ class ConnectorStateManager:
             return None, streams
 
     @staticmethod
-    def _is_global_state(state: Union[List[AirbyteStateMessage], MutableMapping[str, Any]]) -> bool:
+    def _is_global_state(state: list[AirbyteStateMessage] | MutableMapping[str, Any]) -> bool:
         return (
-            isinstance(state, List)
+            isinstance(state, list)
             and len(state) == 1
             and isinstance(state[0], AirbyteStateMessage)
             and state[0].type == AirbyteStateType.GLOBAL
@@ -156,6 +155,6 @@ class ConnectorStateManager:
 
     @staticmethod
     def _is_per_stream_state(
-        state: Union[List[AirbyteStateMessage], MutableMapping[str, Any]],
+        state: list[AirbyteStateMessage] | MutableMapping[str, Any],
     ) -> bool:
-        return isinstance(state, List)
+        return isinstance(state, list)

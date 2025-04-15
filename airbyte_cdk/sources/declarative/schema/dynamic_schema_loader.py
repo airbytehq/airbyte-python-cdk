@@ -3,9 +3,10 @@
 #
 
 
+from collections.abc import Mapping, MutableMapping
 from copy import deepcopy
 from dataclasses import InitVar, dataclass, field
-from typing import Any, List, Mapping, MutableMapping, Optional, Union
+from typing import Any, Union
 
 import dpath
 from typing_extensions import deprecated
@@ -53,7 +54,7 @@ class ComplexFieldType:
     """
 
     field_type: str
-    items: Optional[Union[str, "ComplexFieldType"]] = None
+    items: Union[str, "ComplexFieldType"] | None = None
 
     def __post_init__(self) -> None:
         """
@@ -71,9 +72,9 @@ class TypesMap:
     Represents a mapping between a current type and its corresponding target type.
     """
 
-    target_type: Union[List[str], str, ComplexFieldType]
-    current_type: Union[List[str], str]
-    condition: Optional[str]
+    target_type: list[str] | str | ComplexFieldType
+    current_type: list[str] | str
+    condition: str | None
 
 
 @deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)
@@ -83,11 +84,11 @@ class SchemaTypeIdentifier:
     Identifies schema details for dynamic schema extraction and processing.
     """
 
-    key_pointer: List[Union[InterpolatedString, str]]
+    key_pointer: list[InterpolatedString | str]
     parameters: InitVar[Mapping[str, Any]]
-    type_pointer: Optional[List[Union[InterpolatedString, str]]] = None
-    types_mapping: Optional[List[TypesMap]] = None
-    schema_pointer: Optional[List[Union[InterpolatedString, str]]] = None
+    type_pointer: list[InterpolatedString | str] | None = None
+    types_mapping: list[TypesMap] | None = None
+    schema_pointer: list[InterpolatedString | str] | None = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.schema_pointer = (
@@ -100,8 +101,8 @@ class SchemaTypeIdentifier:
 
     @staticmethod
     def _update_pointer(
-        pointer: Optional[List[Union[InterpolatedString, str]]], parameters: Mapping[str, Any]
-    ) -> Optional[List[Union[InterpolatedString, str]]]:
+        pointer: list[InterpolatedString | str] | None, parameters: Mapping[str, Any]
+    ) -> list[InterpolatedString | str] | None:
         return (
             [
                 InterpolatedString.create(path, parameters=parameters)
@@ -125,7 +126,7 @@ class DynamicSchemaLoader(SchemaLoader):
     config: Config
     parameters: InitVar[Mapping[str, Any]]
     schema_type_identifier: SchemaTypeIdentifier
-    schema_transformations: List[RecordTransformation] = field(default_factory=lambda: [])
+    schema_transformations: list[RecordTransformation] = field(default_factory=lambda: [])
 
     def get_json_schema(self) -> Mapping[str, Any]:
         """
@@ -164,7 +165,7 @@ class DynamicSchemaLoader(SchemaLoader):
         self,
         properties: Mapping[str, Any],
         stream_state: StreamState,
-        stream_slice: Optional[StreamSlice] = None,
+        stream_slice: StreamSlice | None = None,
     ) -> Mapping[str, Any]:
         for transformation in self.schema_transformations:
             transformation.transform(
@@ -176,7 +177,7 @@ class DynamicSchemaLoader(SchemaLoader):
     def _get_key(
         self,
         raw_schema: MutableMapping[str, Any],
-        field_key_path: List[Union[InterpolatedString, str]],
+        field_key_path: list[InterpolatedString | str],
     ) -> str:
         """
         Extracts the key field from the schema using the specified path.
@@ -189,8 +190,8 @@ class DynamicSchemaLoader(SchemaLoader):
     def _get_type(
         self,
         raw_schema: MutableMapping[str, Any],
-        field_type_path: Optional[List[Union[InterpolatedString, str]]],
-    ) -> Union[Mapping[str, Any], List[Mapping[str, Any]]]:
+        field_type_path: list[InterpolatedString | str] | None,
+    ) -> Mapping[str, Any] | list[Mapping[str, Any]]:
         """
         Determines the JSON Schema type for a field, supporting nullable and combined types.
         """
@@ -236,9 +237,9 @@ class DynamicSchemaLoader(SchemaLoader):
 
     def _replace_type_if_not_valid(
         self,
-        field_type: Union[List[str], str],
+        field_type: list[str] | str,
         raw_schema: MutableMapping[str, Any],
-    ) -> Union[List[str], str, ComplexFieldType]:
+    ) -> list[str] | str | ComplexFieldType:
         """
         Replaces a field type if it matches a type mapping in `types_map`.
         """
@@ -267,7 +268,7 @@ class DynamicSchemaLoader(SchemaLoader):
     def _extract_data(
         self,
         body: Mapping[str, Any],
-        extraction_path: Optional[List[Union[InterpolatedString, str]]] = None,
+        extraction_path: list[InterpolatedString | str] | None = None,
         default: Any = None,
     ) -> Any:
         """

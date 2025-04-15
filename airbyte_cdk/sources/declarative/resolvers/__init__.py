@@ -2,7 +2,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
-from typing import Mapping
+from collections.abc import Mapping
 
 from pydantic.v1 import BaseModel
 

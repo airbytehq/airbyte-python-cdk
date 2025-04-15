@@ -4,8 +4,9 @@
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Iterable, MutableMapping
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Iterable, List, MutableMapping
+from typing import TYPE_CHECKING, Any
 
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.stream.cursor import AbstractFileBasedCursor
@@ -33,7 +34,7 @@ class AbstractConcurrentFileBasedCursor(Cursor, AbstractFileBasedCursor, ABC):
     def close_partition(self, partition: Partition) -> None: ...
 
     @abstractmethod
-    def set_pending_partitions(self, partitions: List["FileBasedStreamPartition"]) -> None: ...
+    def set_pending_partitions(self, partitions: list["FileBasedStreamPartition"]) -> None: ...
 
     @abstractmethod
     def add_file(self, file: RemoteFile) -> None: ...

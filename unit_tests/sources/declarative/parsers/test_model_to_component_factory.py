@@ -3,8 +3,9 @@
 #
 
 # mypy: ignore-errors
-from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable, Mapping
+from collections.abc import Iterable, Mapping
+from datetime import timedelta, timezone
+from typing import Any
 
 import freezegun
 import pytest

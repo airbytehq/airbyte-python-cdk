@@ -1,7 +1,8 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 
 import json
-from typing import Any, List, Mapping, Optional, Union
+from collections.abc import Mapping
+from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 
 ANY_QUERY_PARAMS = "any query_parameters"
@@ -15,9 +16,9 @@ class HttpRequest:
     def __init__(
         self,
         url: str,
-        query_params: Optional[Union[str, Mapping[str, Union[str, List[str]]]]] = None,
-        headers: Optional[Mapping[str, str]] = None,
-        body: Optional[Union[str, bytes, Mapping[str, Any]]] = None,
+        query_params: str | Mapping[str, str | list[str]] | None = None,
+        headers: Mapping[str, str] | None = None,
+        body: str | bytes | Mapping[str, Any] | None = None,
     ) -> None:
         self._parsed_url = urlparse(url)
         self._query_params = query_params
@@ -32,7 +33,7 @@ class HttpRequest:
         self._body = body
 
     @staticmethod
-    def _encode_qs(query_params: Union[str, Mapping[str, Union[str, List[str]]]]) -> str:
+    def _encode_qs(query_params: str | Mapping[str, str | list[str]]) -> str:
         if isinstance(query_params, str):
             return query_params
         return urlencode(query_params, doseq=True)
@@ -65,8 +66,8 @@ class HttpRequest:
 
     @staticmethod
     def _to_mapping(
-        body: Optional[Union[str, bytes, Mapping[str, Any]]],
-    ) -> Optional[Mapping[str, Any]]:
+        body: str | bytes | Mapping[str, Any] | None,
+    ) -> Mapping[str, Any] | None:
         if isinstance(body, Mapping):
             return body
         elif isinstance(body, bytes):
@@ -76,7 +77,7 @@ class HttpRequest:
         return None
 
     @staticmethod
-    def _to_bytes(body: Optional[Union[str, bytes]]) -> bytes:
+    def _to_bytes(body: str | bytes | None) -> bytes:
         if isinstance(body, bytes):
             return body
         elif isinstance(body, str):

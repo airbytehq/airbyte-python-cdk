@@ -8,8 +8,9 @@ import logging
 import os
 import sys
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import pytest
 import yaml
@@ -68,7 +69,7 @@ def test_read_non_json_config(nonjson_file, integration: Connector):
 def test_write_config(integration, mock_config):
     config_path = Path(tempfile.gettempdir()) / "config.json"
     integration.write_config(mock_config, str(config_path))
-    with open(config_path, "r") as actual:
+    with open(config_path) as actual:
         assert json.loads(actual.read()) == mock_config
 
 

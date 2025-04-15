@@ -1,6 +1,7 @@
 import hashlib
 import json
-from typing import Any, Final, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any, Final
 
 
 class SliceEncoder(json.JSONEncoder):
@@ -19,7 +20,7 @@ class SliceHasher:
     def hash(
         cls,
         stream_name: str = "<stream name not provided>",
-        stream_slice: Optional[Mapping[str, Any]] = None,
+        stream_slice: Mapping[str, Any] | None = None,
     ) -> int:
         """
         Note that streams partition with the same slicing value but with different names might collapse if stream name is not provided

@@ -4,7 +4,8 @@
 
 import threading
 import time
-from typing import Any, Callable, Iterable, Mapping, Optional, TypeVar, Union
+from collections.abc import Callable, Iterable, Mapping
+from typing import Any, TypeVar
 
 from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
 from airbyte_cdk.sources.declarative.incremental.declarative_cursor import DeclarativeCursor
@@ -15,7 +16,7 @@ T = TypeVar("T")
 
 
 def iterate_with_last_flag_and_state(
-    generator: Iterable[T], get_stream_state_func: Callable[[], Optional[Mapping[str, StreamState]]]
+    generator: Iterable[T], get_stream_state_func: Callable[[], Mapping[str, StreamState] | None]
 ) -> Iterable[tuple[T, bool, Any]]:
     """
     Iterates over the given generator, yielding tuples containing the element, a flag
@@ -53,7 +54,7 @@ class Timer:
     """
 
     def __init__(self) -> None:
-        self._start: Optional[int] = None
+        self._start: int | None = None
 
     def start(self) -> None:
         self._start = time.perf_counter_ns()
@@ -91,10 +92,10 @@ class GlobalSubstreamCursor(DeclarativeCursor):
             0
         )  # Start with 0, indicating no slices being tracked
         self._all_slices_yielded = False
-        self._lookback_window: Optional[int] = None
-        self._current_partition: Optional[Mapping[str, Any]] = None
+        self._lookback_window: int | None = None
+        self._current_partition: Mapping[str, Any] | None = None
         self._last_slice: bool = False
-        self._parent_state: Optional[Mapping[str, Any]] = None
+        self._parent_state: Mapping[str, Any] | None = None
 
     def start_slices_generation(self) -> None:
         self._timer.start()
@@ -251,16 +252,16 @@ class GlobalSubstreamCursor(DeclarativeCursor):
 
         return state
 
-    def select_state(self, stream_slice: Optional[StreamSlice] = None) -> Optional[StreamState]:
+    def select_state(self, stream_slice: StreamSlice | None = None) -> StreamState | None:
         # stream_slice is ignored as cursor is global
         return self._stream_cursor.get_stream_state()
 
     def get_request_params(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         if stream_slice:
             return self._partition_router.get_request_params(  # type: ignore # this always returns a mapping
@@ -278,9 +279,9 @@ class GlobalSubstreamCursor(DeclarativeCursor):
     def get_request_headers(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         if stream_slice:
             return self._partition_router.get_request_headers(  # type: ignore # this always returns a mapping
@@ -298,10 +299,10 @@ class GlobalSubstreamCursor(DeclarativeCursor):
     def get_request_body_data(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Union[Mapping[str, Any], str]:
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
+    ) -> Mapping[str, Any] | str:
         if stream_slice:
             return self._partition_router.get_request_body_data(  # type: ignore # this always returns a mapping
                 stream_state=stream_state,
@@ -318,9 +319,9 @@ class GlobalSubstreamCursor(DeclarativeCursor):
     def get_request_body_json(
         self,
         *,
-        stream_state: Optional[StreamState] = None,
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_state: StreamState | None = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Mapping[str, Any]:
         if stream_slice:
             return self._partition_router.get_request_body_json(  # type: ignore # this always returns a mapping

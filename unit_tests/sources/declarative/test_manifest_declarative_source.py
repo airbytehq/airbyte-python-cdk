@@ -6,9 +6,10 @@ import json
 import logging
 import os
 import sys
+from collections.abc import Mapping
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, List, Mapping
+from typing import Any
 from unittest.mock import call, patch
 
 import pytest
@@ -16,7 +17,6 @@ import requests
 import yaml
 from jsonschema.exceptions import ValidationError
 
-import unit_tests.sources.declarative.external_component  # Needed for dynamic imports to work
 from airbyte_cdk.models import (
     AirbyteLogMessage,
     AirbyteMessage,
@@ -108,7 +108,7 @@ class TestManifestDeclarativeSource:
                 },
                 "schema_loader": {
                     "name": "{{ parameters.stream_name }}",
-                    "file_path": f"./source_sendgrid/schemas/{{{{ parameters.name }}}}.yaml",
+                    "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
                 },
                 "retriever": {
                     "paginator": {
@@ -1940,7 +1940,7 @@ def test_only_parent_streams_use_cache():
     assert not streams[2].retriever.requester.use_cache
 
 
-def _run_read(manifest: Mapping[str, Any], stream_name: str) -> List[AirbyteMessage]:
+def _run_read(manifest: Mapping[str, Any], stream_name: str) -> list[AirbyteMessage]:
     source = ManifestDeclarativeSource(source_config=manifest)
     catalog = ConfiguredAirbyteCatalog(
         streams=[
@@ -1958,10 +1958,10 @@ def _run_read(manifest: Mapping[str, Any], stream_name: str) -> List[AirbyteMess
 
 def test_declarative_component_schema_valid_ref_links():
     def load_yaml(file_path) -> Mapping[str, Any]:
-        with open(file_path, "r") as file:
+        with open(file_path) as file:
             return yaml.safe_load(file)
 
-    def extract_refs(data, base_path="#") -> List[str]:
+    def extract_refs(data, base_path="#") -> list[str]:
         refs = []
         if isinstance(data, dict):
             for key, value in data.items():
@@ -1986,7 +1986,7 @@ def test_declarative_component_schema_valid_ref_links():
         except (KeyError, TypeError):
             return False
 
-    def validate_refs(yaml_file: str) -> List[str]:
+    def validate_refs(yaml_file: str) -> list[str]:
         data = load_yaml(yaml_file)
         refs = extract_refs(data)
         invalid_refs = [ref for ref in refs if not resolve_pointer(data, ref.replace("#", ""))]

@@ -5,10 +5,11 @@
 import json
 import logging
 import pkgutil
+from collections.abc import Iterator, Mapping
 from copy import deepcopy
 from importlib import metadata
 from types import ModuleType
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Set
+from typing import Any
 
 import yaml
 from jsonschema.exceptions import ValidationError
@@ -67,7 +68,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         config: Mapping[str, Any] | None = None,
         debug: bool = False,
         emit_connector_builder_messages: bool = False,
-        component_factory: Optional[ModelToComponentFactory] = None,
+        component_factory: ModelToComponentFactory | None = None,
     ):
         """
         Args:
@@ -118,7 +119,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         return self._message_repository
 
     @property
-    def dynamic_streams(self) -> List[Dict[str, Any]]:
+    def dynamic_streams(self) -> list[dict[str, Any]]:
         return self._dynamic_stream_configs(
             manifest=self._source_config, config=self._config, with_dynamic_stream_name=True
         )
@@ -141,7 +142,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
                 f"Expected to generate a ConnectionChecker component, but received {check_stream.__class__}"
             )
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> list[Stream]:
         self._emit_manifest_debug_message(
             extra_args={"source_name": self.name, "parsed_config": json.dumps(self._source_config)}
         )
@@ -170,8 +171,8 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
     @staticmethod
     def _initialize_cache_for_parent_streams(
-        stream_configs: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        stream_configs: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
         parent_streams = set()
 
         def update_with_cache_parent_configs(parent_configs: list[dict[str, Any]]) -> None:
@@ -250,7 +251,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         logger: logging.Logger,
         config: Mapping[str, Any],
         catalog: ConfiguredAirbyteCatalog,
-        state: Optional[List[AirbyteStateMessage]] = None,
+        state: list[AirbyteStateMessage] | None = None,
     ) -> Iterator[AirbyteMessage]:
         self._configure_logger_level(logger)
         yield from super().read(logger, config, catalog, state)
@@ -346,9 +347,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
             # No exception
             return parsed_version
 
-    def _stream_configs(self, manifest: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    def _stream_configs(self, manifest: Mapping[str, Any]) -> list[dict[str, Any]]:
         # This has a warning flag for static, but after we finish part 4 we'll replace manifest with self._source_config
-        stream_configs: List[Dict[str, Any]] = manifest.get("streams", [])
+        stream_configs: list[dict[str, Any]] = manifest.get("streams", [])
         for s in stream_configs:
             if "type" not in s:
                 s["type"] = "DeclarativeStream"
@@ -358,11 +359,11 @@ class ManifestDeclarativeSource(DeclarativeSource):
         self,
         manifest: Mapping[str, Any],
         config: Mapping[str, Any],
-        with_dynamic_stream_name: Optional[bool] = None,
-    ) -> List[Dict[str, Any]]:
-        dynamic_stream_definitions: List[Dict[str, Any]] = manifest.get("dynamic_streams", [])
-        dynamic_stream_configs: List[Dict[str, Any]] = []
-        seen_dynamic_streams: Set[str] = set()
+        with_dynamic_stream_name: bool | None = None,
+    ) -> list[dict[str, Any]]:
+        dynamic_stream_definitions: list[dict[str, Any]] = manifest.get("dynamic_streams", [])
+        dynamic_stream_configs: list[dict[str, Any]] = []
+        seen_dynamic_streams: set[str] = set()
 
         for dynamic_definition_index, dynamic_definition in enumerate(dynamic_stream_definitions):
             components_resolver_config = dynamic_definition["components_resolver"]

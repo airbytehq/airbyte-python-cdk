@@ -2,8 +2,9 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Iterable, Mapping
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Iterable, List, Mapping, Optional, Union
+from typing import Any
 
 import requests
 
@@ -14,7 +15,6 @@ from airbyte_cdk.sources.declarative.extractors.type_transformer import (
     TypeTransformer as DeclarativeTypeTransformer,
 )
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
-from airbyte_cdk.sources.declarative.models import SchemaNormalization
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from airbyte_cdk.sources.utils.transform import TypeTransformer
@@ -36,11 +36,11 @@ class RecordSelector(HttpSelector):
     extractor: RecordExtractor
     config: Config
     parameters: InitVar[Mapping[str, Any]]
-    schema_normalization: Union[TypeTransformer, DeclarativeTypeTransformer]
+    schema_normalization: TypeTransformer | DeclarativeTypeTransformer
     name: str
-    _name: Union[InterpolatedString, str] = field(init=False, repr=False, default="")
-    record_filter: Optional[RecordFilter] = None
-    transformations: List[RecordTransformation] = field(default_factory=lambda: [])
+    _name: InterpolatedString | str = field(init=False, repr=False, default="")
+    record_filter: RecordFilter | None = None
+    transformations: list[RecordTransformation] = field(default_factory=lambda: [])
     transform_before_filtering: bool = False
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
@@ -72,8 +72,8 @@ class RecordSelector(HttpSelector):
         response: requests.Response,
         stream_state: StreamState,
         records_schema: Mapping[str, Any],
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Record]:
         """
         Selects records from the response
@@ -94,8 +94,8 @@ class RecordSelector(HttpSelector):
         all_data: Iterable[Mapping[str, Any]],
         stream_state: StreamState,
         records_schema: Mapping[str, Any],
-        stream_slice: Optional[StreamSlice] = None,
-        next_page_token: Optional[Mapping[str, Any]] = None,
+        stream_slice: StreamSlice | None = None,
+        next_page_token: Mapping[str, Any] | None = None,
     ) -> Iterable[Record]:
         """
         There is an issue with the selector as of 2024-08-30: it does technology-agnostic processing like filtering, transformation and
@@ -120,7 +120,7 @@ class RecordSelector(HttpSelector):
             yield Record(data=data, stream_name=self.name, associated_slice=stream_slice)
 
     def _normalize_by_schema(
-        self, records: Iterable[Mapping[str, Any]], schema: Optional[Mapping[str, Any]]
+        self, records: Iterable[Mapping[str, Any]], schema: Mapping[str, Any] | None
     ) -> Iterable[Mapping[str, Any]]:
         if schema:
             # record has type Mapping[str, Any], but dict[str, Any] expected
@@ -135,8 +135,8 @@ class RecordSelector(HttpSelector):
         self,
         records: Iterable[Mapping[str, Any]],
         stream_state: StreamState,
-        stream_slice: Optional[StreamSlice],
-        next_page_token: Optional[Mapping[str, Any]],
+        stream_slice: StreamSlice | None,
+        next_page_token: Mapping[str, Any] | None,
     ) -> Iterable[Mapping[str, Any]]:
         if self.record_filter:
             yield from self.record_filter.filter_records(
@@ -152,7 +152,7 @@ class RecordSelector(HttpSelector):
         self,
         records: Iterable[Mapping[str, Any]],
         stream_state: StreamState,
-        stream_slice: Optional[StreamSlice] = None,
+        stream_slice: StreamSlice | None = None,
     ) -> Iterable[Mapping[str, Any]]:
         for record in records:
             for transformation in self.transformations:

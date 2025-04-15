@@ -5,7 +5,6 @@ import gzip
 import json
 import zipfile
 from io import BytesIO
-from typing import Union
 
 import pytest
 import requests
@@ -13,7 +12,7 @@ import requests
 from airbyte_cdk.sources.declarative.decoders import GzipParser, JsonParser, ZipfileDecoder
 
 
-def create_zip_from_dict(data: Union[dict, list]) -> bytes:
+def create_zip_from_dict(data: dict | list) -> bytes:
     zip_buffer = BytesIO()
     with zipfile.ZipFile(zip_buffer, mode="w") as zip_file:
         zip_file.writestr("data.json", data)

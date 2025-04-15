@@ -7,7 +7,8 @@ import io
 import logging
 import sys
 from abc import ABC, abstractmethod
-from typing import Any, Iterable, List, Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any
 
 import orjson
 
@@ -68,7 +69,7 @@ class Destination(Connector, ABC):
         )
         logger.info("Writing complete.")
 
-    def parse_args(self, args: List[str]) -> argparse.Namespace:
+    def parse_args(self, args: list[str]) -> argparse.Namespace:
         """
         :param args: commandline arguments
         :return:
@@ -146,7 +147,7 @@ class Destination(Connector, ABC):
                 input_stream=wrapped_stdin,
             )
 
-    def run(self, args: List[str]) -> None:
+    def run(self, args: list[str]) -> None:
         init_uncaught_exception_handler(logger)
         parsed_args = self.parse_args(args)
         output_messages = self.run_cmd(parsed_args)

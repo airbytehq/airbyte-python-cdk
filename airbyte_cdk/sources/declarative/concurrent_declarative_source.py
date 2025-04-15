@@ -3,7 +3,8 @@
 #
 
 import logging
-from typing import Any, Generic, Iterator, List, Mapping, MutableMapping, Optional, Tuple
+from collections.abc import Iterator, Mapping, MutableMapping
+from typing import Any, Generic
 
 from airbyte_cdk.models import (
     AirbyteCatalog,
@@ -63,13 +64,13 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
     def __init__(
         self,
-        catalog: Optional[ConfiguredAirbyteCatalog],
-        config: Optional[Mapping[str, Any]],
+        catalog: ConfiguredAirbyteCatalog | None,
+        config: Mapping[str, Any] | None,
         state: TState,
         source_config: ConnectionDefinition,
         debug: bool = False,
         emit_connector_builder_messages: bool = False,
-        component_factory: Optional[ModelToComponentFactory] = None,
+        component_factory: ModelToComponentFactory | None = None,
         **kwargs: Any,
     ) -> None:
         # todo: We could remove state from initialization. Now that streams are grouped during the read(), a source
@@ -133,7 +134,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         logger: logging.Logger,
         config: Mapping[str, Any],
         catalog: ConfiguredAirbyteCatalog,
-        state: Optional[List[AirbyteStateMessage]] = None,
+        state: list[AirbyteStateMessage] | None = None,
     ) -> Iterator[AirbyteMessage]:
         concurrent_streams, _ = self._group_streams(config=config)
 
@@ -141,9 +142,9 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         # the concurrent streams must be saved so that they can be removed from the catalog before starting
         # synchronous streams
         if len(concurrent_streams) > 0:
-            concurrent_stream_names = set(
-                [concurrent_stream.name for concurrent_stream in concurrent_streams]
-            )
+            concurrent_stream_names = {
+                concurrent_stream.name for concurrent_stream in concurrent_streams
+            }
 
             selected_concurrent_streams = self._select_streams(
                 streams=concurrent_streams, configured_catalog=catalog
@@ -176,7 +177,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             ]
         )
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> list[Stream]:
         """
         The `streams` method is used as part of the AbstractSource in the following cases:
         * ConcurrentDeclarativeSource.check -> ManifestDeclarativeSource.check -> AbstractSource.check -> DeclarativeSource.check_connection -> CheckStream.check_connection -> streams
@@ -189,9 +190,9 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
     def _group_streams(
         self, config: Mapping[str, Any]
-    ) -> Tuple[List[AbstractStream], List[Stream]]:
-        concurrent_streams: List[AbstractStream] = []
-        synchronous_streams: List[Stream] = []
+    ) -> tuple[list[AbstractStream], list[Stream]]:
+        concurrent_streams: list[AbstractStream] = []
+        synchronous_streams: list[Stream] = []
 
         # Combine streams and dynamic_streams. Note: both cannot be empty at the same time,
         # and this is validated during the initialization of the source.
@@ -482,10 +483,10 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
     @staticmethod
     def _select_streams(
-        streams: List[AbstractStream], configured_catalog: ConfiguredAirbyteCatalog
-    ) -> List[AbstractStream]:
+        streams: list[AbstractStream], configured_catalog: ConfiguredAirbyteCatalog
+    ) -> list[AbstractStream]:
         stream_name_to_instance: Mapping[str, AbstractStream] = {s.name: s for s in streams}
-        abstract_streams: List[AbstractStream] = []
+        abstract_streams: list[AbstractStream] = []
         for configured_stream in configured_catalog.streams:
             stream_instance = stream_name_to_instance.get(configured_stream.stream.name)
             if stream_instance:

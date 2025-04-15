@@ -4,7 +4,8 @@
 
 import json
 import os
-from typing import Any, List, Mapping
+from collections.abc import Mapping
+from typing import Any
 from unittest import mock
 from unittest.mock import patch
 
@@ -145,7 +146,7 @@ def test_external_oauth_request_source(
             launch(source, args)
 
 
-def contains_error_trace_message(messages: List[Mapping[str, Any]], expected_error: str) -> bool:
+def contains_error_trace_message(messages: list[Mapping[str, Any]], expected_error: str) -> bool:
     for message in messages:
         if message.get("type") != "TRACE":
             continue

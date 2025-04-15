@@ -6,10 +6,11 @@ import asyncio
 import itertools
 import traceback
 from collections import defaultdict
+from collections.abc import Iterable, Mapping, MutableMapping
 from copy import deepcopy
 from functools import cache
 from os import path
-from typing import Any, Dict, Iterable, List, Mapping, MutableMapping, Optional, Set, Tuple, Union
+from typing import Any
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, FailureType, Level
 from airbyte_cdk.models import Type as MessageType
@@ -76,7 +77,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         self._cursor.set_initial_state(value)
 
     @property  # type: ignore # mypy complains wrong type, but AbstractFileBasedCursor is parent of file-based cursors
-    def cursor(self) -> Optional[AbstractFileBasedCursor]:
+    def cursor(self) -> AbstractFileBasedCursor | None:
         return self._cursor
 
     @cursor.setter
@@ -94,8 +95,8 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         )
 
     def _filter_schema_invalid_properties(
-        self, configured_catalog_json_schema: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        self, configured_catalog_json_schema: dict[str, Any]
+    ) -> dict[str, Any]:
         if self.use_file_transfer:
             return {
                 "type": "object",
@@ -109,9 +110,9 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
             return super()._filter_schema_invalid_properties(configured_catalog_json_schema)
 
     def _duplicated_files_names(
-        self, slices: List[dict[str, List[RemoteFile]]]
-    ) -> List[dict[str, List[str]]]:
-        seen_file_names: Dict[str, List[str]] = defaultdict(list)
+        self, slices: list[dict[str, list[RemoteFile]]]
+    ) -> list[dict[str, list[str]]]:
+        seen_file_names: dict[str, list[str]] = defaultdict(list)
         for file_slice in slices:
             for file_found in file_slice[self.FILES_KEY]:
                 file_name = path.basename(file_found.uri)
@@ -120,7 +121,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
             {file_name: paths} for file_name, paths in seen_file_names.items() if len(paths) > 1
         ]
 
-    def compute_slices(self) -> Iterable[Optional[Mapping[str, Any]]]:
+    def compute_slices(self) -> Iterable[Mapping[str, Any] | None]:
         # Sort files by last_modified, uri and return them grouped by last_modified
         all_files = self.list_files()
         files_to_read = self._cursor.get_files_to_sync(all_files, self.logger)
@@ -250,7 +251,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
                     )
 
     @property
-    def cursor_field(self) -> Union[str, List[str]]:
+    def cursor_field(self) -> str | list[str]:
         """
         Override to return the default cursor field used by this stream e.g: an API entity might always use created_at as the cursor field.
         :return: The name of the field used as a cursor. If the cursor is nested, return an array consisting of the path to the cursor.
@@ -341,7 +342,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
             self.config.globs or [], self.config.legacy_prefix, self.logger
         )
 
-    def infer_schema(self, files: List[RemoteFile]) -> Mapping[str, Any]:
+    def infer_schema(self, files: list[RemoteFile]) -> Mapping[str, Any]:
         loop = asyncio.get_event_loop()
         schema = loop.run_until_complete(self._infer_schema(files))
         # as infer schema returns a Mapping that is assumed to be immutable, we need to create a deepcopy to avoid modifying the reference
@@ -356,7 +357,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
                         if "null" not in v:
                             schema[k] = ["null"] + v
                     elif v != "null":
-                        if isinstance(v, (str, list)):
+                        if isinstance(v, str | list):
                             schema[k] = ["null", v]
                         else:
                             DefaultFileBasedStream._fill_nulls(v)
@@ -367,7 +368,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
                 DefaultFileBasedStream._fill_nulls(item)
         return schema
 
-    async def _infer_schema(self, files: List[RemoteFile]) -> Mapping[str, Any]:
+    async def _infer_schema(self, files: list[RemoteFile]) -> Mapping[str, Any]:
         """
         Infer the schema for a stream.
 
@@ -375,7 +376,7 @@ class DefaultFileBasedStream(AbstractFileBasedStream, IncrementalMixin):
         Dispatch on file type.
         """
         base_schema: SchemaType = {}
-        pending_tasks: Set[asyncio.tasks.Task[SchemaType]] = set()
+        pending_tasks: set[asyncio.tasks.Task[SchemaType]] = set()
 
         n_started, n_files = 0, len(files)
         files_iterator = iter(files)

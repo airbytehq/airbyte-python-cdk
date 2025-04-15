@@ -7,9 +7,10 @@ import io
 import json
 import logging
 import tempfile
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from io import IOBase
-from typing import Any, Dict, Iterable, List, Mapping, Optional
+from typing import Any
 
 import avro.io as ai
 import avro.schema as avro_schema
@@ -54,16 +55,16 @@ class InMemoryFilesSource(FileBasedSource):
         self,
         files: Mapping[str, Any],
         file_type: str,
-        availability_strategy: Optional[AbstractFileBasedAvailabilityStrategy],
-        discovery_policy: Optional[AbstractDiscoveryPolicy],
+        availability_strategy: AbstractFileBasedAvailabilityStrategy | None,
+        discovery_policy: AbstractDiscoveryPolicy | None,
         validation_policies: Mapping[str, AbstractSchemaValidationPolicy],
         parsers: Mapping[str, FileTypeParser],
-        stream_reader: Optional[AbstractFileBasedStreamReader],
-        catalog: Optional[Mapping[str, Any]],
-        config: Optional[Mapping[str, Any]],
-        state: Optional[TState],
+        stream_reader: AbstractFileBasedStreamReader | None,
+        catalog: Mapping[str, Any] | None,
+        config: Mapping[str, Any] | None,
+        state: TState | None,
         file_write_options: Mapping[str, Any],
-        cursor_cls: Optional[AbstractFileBasedCursor],
+        cursor_cls: AbstractFileBasedCursor | None,
     ):
         # Attributes required for test purposes
         self.files = files
@@ -104,7 +105,7 @@ class InMemoryFilesStreamReader(AbstractFileBasedStreamReader):
         self,
         files: Mapping[str, Mapping[str, Any]],
         file_type: str,
-        file_write_options: Optional[Mapping[str, Any]] = None,
+        file_write_options: Mapping[str, Any] | None = None,
     ):
         self.files = files
         self.file_type = file_type
@@ -112,7 +113,7 @@ class InMemoryFilesStreamReader(AbstractFileBasedStreamReader):
         super().__init__()
 
     @property
-    def config(self) -> Optional[AbstractFileBasedSpec]:
+    def config(self) -> AbstractFileBasedSpec | None:
         return self._config
 
     @config.setter
@@ -121,8 +122,8 @@ class InMemoryFilesStreamReader(AbstractFileBasedStreamReader):
 
     def get_matching_files(
         self,
-        globs: List[str],
-        prefix: Optional[str],
+        globs: list[str],
+        prefix: str | None,
         logger: logging.Logger,
     ) -> Iterable[RemoteFile]:
         yield from self.filter_files_by_globs_and_start_date(
@@ -142,25 +143,25 @@ class InMemoryFilesStreamReader(AbstractFileBasedStreamReader):
 
     def get_file(
         self, file: RemoteFile, local_directory: str, logger: logging.Logger
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         return {}
 
-    def get_file_acl_permissions(self, file: RemoteFile, logger: logging.Logger) -> Dict[str, Any]:
+    def get_file_acl_permissions(self, file: RemoteFile, logger: logging.Logger) -> dict[str, Any]:
         return {}
 
-    def load_identity_groups(self, logger: logging.Logger) -> Iterable[Dict[str, Any]]:
+    def load_identity_groups(self, logger: logging.Logger) -> Iterable[dict[str, Any]]:
         return [{}]
 
     @property
-    def file_permissions_schema(self) -> Dict[str, Any]:
+    def file_permissions_schema(self) -> dict[str, Any]:
         return {"type": "object", "properties": {}}
 
     @property
-    def identities_schema(self) -> Dict[str, Any]:
+    def identities_schema(self) -> dict[str, Any]:
         return {"type": "object", "properties": {}}
 
     def open_file(
-        self, file: RemoteFile, mode: FileReadMode, encoding: Optional[str], logger: logging.Logger
+        self, file: RemoteFile, mode: FileReadMode, encoding: str | None, logger: logging.Logger
     ) -> IOBase:
         if self.file_type == "csv":
             return self._make_csv_file_contents(file.uri)
@@ -224,7 +225,7 @@ class TemporaryParquetFilesStreamReader(InMemoryFilesStreamReader):
     """
 
     def open_file(
-        self, file: RemoteFile, mode: FileReadMode, encoding: Optional[str], logger: logging.Logger
+        self, file: RemoteFile, mode: FileReadMode, encoding: str | None, logger: logging.Logger
     ) -> IOBase:
         return io.BytesIO(self._create_file(file.uri))
 
@@ -247,7 +248,7 @@ class TemporaryAvroFilesStreamReader(InMemoryFilesStreamReader):
     """
 
     def open_file(
-        self, file: RemoteFile, mode: FileReadMode, encoding: Optional[str], logger: logging.Logger
+        self, file: RemoteFile, mode: FileReadMode, encoding: str | None, logger: logging.Logger
     ) -> IOBase:
         return io.BytesIO(self._make_file_contents(file.uri))
 
@@ -273,7 +274,7 @@ class TemporaryExcelFilesStreamReader(InMemoryFilesStreamReader):
     """
 
     def open_file(
-        self, file: RemoteFile, mode: FileReadMode, encoding: Optional[str], logger: logging.Logger
+        self, file: RemoteFile, mode: FileReadMode, encoding: str | None, logger: logging.Logger
     ) -> IOBase:
         return io.BytesIO(self._make_file_contents(file.uri))
 

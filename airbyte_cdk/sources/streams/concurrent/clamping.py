@@ -1,7 +1,7 @@
 from abc import ABC
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Callable
 
 from airbyte_cdk.sources.streams.concurrent.cursor_types import CursorValueType
 

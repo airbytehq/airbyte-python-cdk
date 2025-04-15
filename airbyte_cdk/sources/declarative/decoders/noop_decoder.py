@@ -1,7 +1,8 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
 import logging
-from typing import Any, Generator, Mapping
+from collections.abc import Generator, Mapping
+from typing import Any
 
 import requests
 

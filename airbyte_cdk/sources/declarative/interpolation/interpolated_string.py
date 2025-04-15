@@ -2,8 +2,9 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional, Union
+from typing import Any, Union
 
 from airbyte_cdk.sources.declarative.interpolation.jinja import JinjaInterpolation
 from airbyte_cdk.sources.types import Config
@@ -22,7 +23,7 @@ class InterpolatedString:
 
     string: str
     parameters: InitVar[Mapping[str, Any]]
-    default: Optional[str] = None
+    default: str | None = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.default = self.default or self.string
@@ -55,9 +56,12 @@ class InterpolatedString:
         )
 
     def __eq__(self, other: Any) -> bool:
-        if not isinstance(other, InterpolatedString):
+        if isinstance(other, InterpolatedString):
+            return self.string == other.string and self.default == other.default
+        try:
+            return self.string == str(other)
+        except (ValueError, TypeError):
             return False
-        return self.string == other.string and self.default == other.default
 
     @classmethod
     def create(

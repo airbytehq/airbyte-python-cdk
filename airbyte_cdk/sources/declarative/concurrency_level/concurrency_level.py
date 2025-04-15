@@ -2,8 +2,9 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
+from collections.abc import Mapping
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional, Union
+from typing import Any
 
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.types import Config
@@ -19,14 +20,14 @@ class ConcurrencyLevel:
         max_concurrency (Optional[int]): The maximum number of worker threads to use when the default_concurrency is exceeded
     """
 
-    default_concurrency: Union[int, str]
-    max_concurrency: Optional[int]
+    default_concurrency: int | str
+    max_concurrency: int | None
     config: Config
     parameters: InitVar[Mapping[str, Any]]
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if isinstance(self.default_concurrency, int):
-            self._default_concurrency: Union[int, InterpolatedString] = self.default_concurrency
+            self._default_concurrency: int | InterpolatedString = self.default_concurrency
         elif "config" in self.default_concurrency and not self.max_concurrency:
             raise ValueError(
                 "ConcurrencyLevel requires that max_concurrency be defined if the default_concurrency can be used-specified"

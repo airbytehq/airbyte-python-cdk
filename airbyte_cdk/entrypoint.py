@@ -12,8 +12,9 @@ import socket
 import sys
 import tempfile
 from collections import defaultdict
+from collections.abc import Iterable, Mapping
 from functools import wraps
-from typing import Any, DefaultDict, Iterable, List, Mapping, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 import orjson
@@ -50,7 +51,7 @@ CLOUD_DEPLOYMENT_MODE = "cloud"
 _HAS_LOGGED_FOR_SERIALIZATION_ERROR = False
 
 
-class AirbyteEntrypoint(object):
+class AirbyteEntrypoint:
     def __init__(self, source: Source):
         init_uncaught_exception_handler(logger)
 
@@ -62,7 +63,7 @@ class AirbyteEntrypoint(object):
         self.logger = logging.getLogger(f"airbyte.{getattr(source, 'name', '')}")
 
     @staticmethod
-    def parse_args(args: List[str]) -> argparse.Namespace:
+    def parse_args(args: list[str]) -> argparse.Namespace:
         # set up parent parsers
         parent_parser = argparse.ArgumentParser(add_help=False)
         parent_parser.add_argument(
@@ -240,7 +241,7 @@ class AirbyteEntrypoint(object):
             self.validate_connection(source_spec, config)
 
         # The Airbyte protocol dictates that counts be expressed as float/double to better protect against integer overflows
-        stream_message_counter: DefaultDict[HashableStreamDescriptor, float] = defaultdict(float)
+        stream_message_counter: defaultdict[HashableStreamDescriptor, float] = defaultdict(float)
         for message in self.source.read(self.logger, config, catalog, state):
             yield self.handle_record_counts(message, stream_message_counter)
         for message in self._emit_queued_messages(self.source):
@@ -248,7 +249,7 @@ class AirbyteEntrypoint(object):
 
     @staticmethod
     def handle_record_counts(
-        message: AirbyteMessage, stream_message_count: DefaultDict[HashableStreamDescriptor, float]
+        message: AirbyteMessage, stream_message_count: defaultdict[HashableStreamDescriptor, float]
     ) -> AirbyteMessage:
         match message.type:
             case Type.RECORD:
@@ -306,21 +307,21 @@ class AirbyteEntrypoint(object):
             return json.dumps(serialized_message)
 
     @classmethod
-    def extract_state(cls, args: List[str]) -> Optional[Any]:
+    def extract_state(cls, args: list[str]) -> Any | None:
         parsed_args = cls.parse_args(args)
         if hasattr(parsed_args, "state"):
             return parsed_args.state
         return None
 
     @classmethod
-    def extract_catalog(cls, args: List[str]) -> Optional[Any]:
+    def extract_catalog(cls, args: list[str]) -> Any | None:
         parsed_args = cls.parse_args(args)
         if hasattr(parsed_args, "catalog"):
             return parsed_args.catalog
         return None
 
     @classmethod
-    def extract_config(cls, args: List[str]) -> Optional[Any]:
+    def extract_config(cls, args: list[str]) -> Any | None:
         parsed_args = cls.parse_args(args)
         if hasattr(parsed_args, "config"):
             return parsed_args.config
@@ -332,7 +333,7 @@ class AirbyteEntrypoint(object):
         return
 
 
-def launch(source: Source, args: List[str]) -> None:
+def launch(source: Source, args: list[str]) -> None:
     source_entrypoint = AirbyteEntrypoint(source)
     parsed_args = source_entrypoint.parse_args(args)
     # temporarily removes the PrintBuffer because we're seeing weird print behavior for concurrent syncs

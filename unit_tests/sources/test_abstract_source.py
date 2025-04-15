@@ -5,17 +5,9 @@
 import copy
 import datetime
 import logging
+from collections.abc import Callable, Iterable, Mapping, MutableMapping
 from typing import (
     Any,
-    Callable,
-    Dict,
-    Iterable,
-    List,
-    Mapping,
-    MutableMapping,
-    Optional,
-    Tuple,
-    Union,
 )
 from unittest.mock import Mock
 
@@ -62,8 +54,8 @@ logger = logging.getLogger("airbyte")
 class MockSource(AbstractSource):
     def __init__(
         self,
-        check_lambda: Callable[[], Tuple[bool, Optional[Any]]] = None,
-        streams: List[Stream] = None,
+        check_lambda: Callable[[], tuple[bool, Any | None]] = None,
+        streams: list[Stream] = None,
         message_repository: MessageRepository = None,
         exception_on_missing_stream: bool = True,
         stop_sync_on_stream_failure: bool = False,
@@ -76,12 +68,12 @@ class MockSource(AbstractSource):
 
     def check_connection(
         self, logger: logging.Logger, config: Mapping[str, Any]
-    ) -> Tuple[bool, Optional[Any]]:
+    ) -> tuple[bool, Any | None]:
         if self.check_lambda:
             return self.check_lambda()
         return False, "Missing callable."
 
-    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> list[Stream]:
         if not self._streams:
             raise Exception("Stream is not set")
         return self._streams
@@ -177,8 +169,8 @@ def test_raising_check(mocker):
 class MockStream(Stream):
     def __init__(
         self,
-        inputs_and_mocked_outputs: List[
-            Tuple[Mapping[str, Any], Iterable[Mapping[str, Any]]]
+        inputs_and_mocked_outputs: list[
+            tuple[Mapping[str, Any], Iterable[Mapping[str, Any]]]
         ] = None,
         name: str = None,
     ):
@@ -202,11 +194,11 @@ class MockStream(Stream):
         )
 
     @property
-    def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
+    def primary_key(self) -> str | list[str] | list[list[str]] | None:
         return "pk"
 
     @property
-    def cursor_field(self) -> Union[str, List[str]]:
+    def cursor_field(self) -> str | list[str]:
         return ["updated_at"]
 
 
@@ -215,7 +207,7 @@ class MockStreamWithCursor(MockStream):
 
     def __init__(
         self,
-        inputs_and_mocked_outputs: List[Tuple[Mapping[str, Any], Iterable[Mapping[str, Any]]]],
+        inputs_and_mocked_outputs: list[tuple[Mapping[str, Any], Iterable[Mapping[str, Any]]]],
         name: str,
     ):
         super().__init__(inputs_and_mocked_outputs, name)
@@ -224,7 +216,7 @@ class MockStreamWithCursor(MockStream):
 class MockStreamWithState(MockStreamWithCursor):
     def __init__(
         self,
-        inputs_and_mocked_outputs: List[Tuple[Mapping[str, Any], Iterable[Mapping[str, Any]]]],
+        inputs_and_mocked_outputs: list[tuple[Mapping[str, Any], Iterable[Mapping[str, Any]]]],
         name: str,
         state=None,
     ):
@@ -243,7 +235,7 @@ class MockStreamWithState(MockStreamWithCursor):
 class MockStreamEmittingAirbyteMessages(MockStreamWithState):
     def __init__(
         self,
-        inputs_and_mocked_outputs: List[Tuple[Mapping[str, Any], Iterable[AirbyteMessage]]] = None,
+        inputs_and_mocked_outputs: list[tuple[Mapping[str, Any], Iterable[AirbyteMessage]]] = None,
         name: str = None,
         state=None,
     ):
@@ -256,7 +248,7 @@ class MockStreamEmittingAirbyteMessages(MockStreamWithState):
         return self._name
 
     @property
-    def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
+    def primary_key(self) -> str | list[str] | list[list[str]] | None:
         return "pk"
 
     @property
@@ -271,7 +263,7 @@ class MockStreamEmittingAirbyteMessages(MockStreamWithState):
 class MockResumableFullRefreshStream(Stream):
     def __init__(
         self,
-        inputs_and_mocked_outputs: List[Tuple[Mapping[str, Any], Mapping[str, Any]]] = None,
+        inputs_and_mocked_outputs: list[tuple[Mapping[str, Any], Mapping[str, Any]]] = None,
         name: str = None,
     ):
         self._inputs_and_mocked_outputs = inputs_and_mocked_outputs
@@ -304,7 +296,7 @@ class MockResumableFullRefreshStream(Stream):
         yield from output
 
     @property
-    def primary_key(self) -> Optional[Union[str, List[str], List[List[str]]]]:
+    def primary_key(self) -> str | list[str] | list[list[str]] | None:
         return "id"
 
     @property
@@ -455,14 +447,14 @@ def test_read_stream_with_error_gets_display_message(mocker):
 GLOBAL_EMITTED_AT = 1
 
 
-def _as_record(stream: str, data: Dict[str, Any]) -> AirbyteMessage:
+def _as_record(stream: str, data: dict[str, Any]) -> AirbyteMessage:
     return AirbyteMessage(
         type=Type.RECORD,
         record=AirbyteRecordMessage(stream=stream, data=data, emitted_at=GLOBAL_EMITTED_AT),
     )
 
 
-def _as_records(stream: str, data: List[Dict[str, Any]]) -> List[AirbyteMessage]:
+def _as_records(stream: str, data: list[dict[str, Any]]) -> list[AirbyteMessage]:
     return [_as_record(stream, datum) for datum in data]
 
 
@@ -480,7 +472,7 @@ def _as_stream_status(stream: str, status: AirbyteStreamStatus) -> AirbyteMessag
     return AirbyteMessage(type=MessageType.TRACE, trace=trace_message)
 
 
-def _as_state(stream_name: str = "", per_stream_state: Dict[str, Any] = None):
+def _as_state(stream_name: str = "", per_stream_state: dict[str, Any] = None):
     return AirbyteMessage(
         type=Type.STATE,
         state=AirbyteStateMessage(
@@ -496,9 +488,9 @@ def _as_state(stream_name: str = "", per_stream_state: Dict[str, Any] = None):
 def _as_error_trace(
     stream: str,
     error_message: str,
-    internal_message: Optional[str],
-    failure_type: Optional[FailureType],
-    stack_trace: Optional[str],
+    internal_message: str | None,
+    failure_type: FailureType | None,
+    stack_trace: str | None,
 ) -> AirbyteMessage:
     trace_message = AirbyteTraceMessage(
         emitted_at=datetime.datetime.now().timestamp() * 1000.0,
@@ -523,7 +515,7 @@ def _configured_stream(stream: Stream, sync_mode: SyncMode):
     )
 
 
-def _fix_emitted_at(messages: List[AirbyteMessage]) -> List[AirbyteMessage]:
+def _fix_emitted_at(messages: list[AirbyteMessage]) -> list[AirbyteMessage]:
     for msg in messages:
         if msg.type == Type.RECORD and msg.record:
             msg.record.emitted_at = GLOBAL_EMITTED_AT
