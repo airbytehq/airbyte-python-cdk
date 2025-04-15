@@ -1,5 +1,6 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 
+import re
 from abc import abstractmethod
 from typing import Any, Dict
 
@@ -34,6 +35,15 @@ class ManifestMigration:
         :param kwargs: Additional arguments for migration
         """
 
+    @property
+    def migration_version(self) -> str:
+        """
+        Get the migration version.
+
+        :return: The migration version as a string
+        """
+        return self._get_migration_version()
+
     def _is_component(self, obj: Dict[str, Any]) -> bool:
         """
         Check if the object is a component.
@@ -45,12 +55,16 @@ class ManifestMigration:
 
     def _is_migratable(self, obj: Dict[str, Any]) -> bool:
         """
-        Check if the object is a migratable component.
+        Check if the object is a migratable component,
+        based on the Type of the component and the migration version.
 
         :param obj: The object to check
         :return: True if the object is a migratable component, False otherwise
         """
-        return obj[TYPE_TAG] not in NON_MIGRATABLE_TYPES
+        return (
+            obj[TYPE_TAG] not in NON_MIGRATABLE_TYPES
+            and self._get_manifest_version(obj) <= self.migration_version
+        )
 
     def _process_manifest(self, obj: Any) -> None:
         """
@@ -91,3 +105,33 @@ class ManifestMigration:
             # Process all items in the list
             for item in obj:
                 self._process_manifest(item)
+
+    def _get_manifest_version(self, manifest: ManifestType) -> str:
+        """
+        Get the manifest version from the manifest.
+
+        :param manifest: The manifest to get the version from
+        :return: The manifest version
+        """
+        return manifest.get("version", "0.0.0")
+
+    def _get_migration_version(self) -> str:
+        """
+        Get the migration version from the class name.
+        The migration version is extracted from the class name using a regular expression.
+        The expected format is "V_<major>_<minor>_<patch>_<migration_name>".
+
+        For example, "V_6_45_2_ManifestMigration_HttpRequesterPathToUrl" -> "6.45.2"
+
+        :return: The migration version as a string in the format "major.minor.patch"
+        :raises ValueError: If the class name does not match the expected format
+        """
+
+        class_name = self.__class__.__name__
+        migration_version = re.search(r"V_(\d+_\d+_\d+)", class_name)
+        if migration_version:
+            return migration_version.group(1).replace("_", ".")
+        else:
+            raise ValueError(
+                f"Invalid migration class name, make sure the class name has the version (e.g `V_0_0_0_`): {class_name}"
+            )

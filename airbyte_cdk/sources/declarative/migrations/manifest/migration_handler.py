@@ -13,7 +13,7 @@ from airbyte_cdk.sources.declarative.migrations.manifest.manifest_migration impo
     ManifestType,
 )
 from airbyte_cdk.sources.declarative.migrations.manifest.migrations_registry import (
-    migrations_registry,
+    MIGRATIONS,
 )
 
 
@@ -39,8 +39,8 @@ class ManifestMigrationHandler:
                           manifest if any migration failed.
         """
         try:
-            for migration_class in migrations_registry:
-                self._handle_migration(migration_class)
+            for migration_cls in MIGRATIONS:
+                self._handle_migration(migration_cls)
             return self._migrated_manifest
         except ManifestMigrationException:
             # if any errors occur we return the original resolved manifest
