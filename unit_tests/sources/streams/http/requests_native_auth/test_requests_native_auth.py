@@ -668,9 +668,10 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
         message_repository = Mock()
         authenticator = SingleUseRefreshTokenOauth2Authenticator(
             connector_config,
-            token_refresh_endpoint="foobar",
+            token_refresh_endpoint="https://refresh_endpoint.com",
             client_id=connector_config["credentials"]["client_id"],
             client_secret=connector_config["credentials"]["client_secret"],
+            token_expiry_is_time_of_expiration=True,
             token_expiry_date_format="YYYY-MM-DD",
             message_repository=message_repository,
         )
@@ -681,9 +682,6 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
         )
         mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
         
-        # authenticator.refresh_access_token = mocker.Mock(
-        #     return_value=("new_access_token", "2023-04-04", "new_refresh_token")
-        # )
         authenticator.token_has_expired = mocker.Mock(return_value=True)
 
         authenticator.get_access_token()
@@ -744,21 +742,26 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
     def test_refresh_access_token(self, mocker, connector_config):
         authenticator = SingleUseRefreshTokenOauth2Authenticator(
             connector_config,
-            token_refresh_endpoint="foobar",
+            token_refresh_endpoint="https://refresh_endpoint.com",
             client_id=connector_config["credentials"]["client_id"],
             client_secret=connector_config["credentials"]["client_secret"],
         )
-
-        authenticator._make_handled_request = mocker.Mock(
+        
+        # Mock the response from the refresh token endpoint
+        resp.status_code = 200
+        mocker.patch.object(
+            resp, "json", 
             return_value={
                 authenticator.get_access_token_name(): "new_access_token",
                 authenticator.get_expires_in_name(): "42",
                 authenticator.get_refresh_token_name(): "new_refresh_token",
             }
         )
+        mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
+
         assert authenticator.refresh_access_token() == (
             "new_access_token",
-            "42",
+            ab_datetime_now().add(timedelta(seconds=42)),
             "new_refresh_token",
         )
 
