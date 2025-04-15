@@ -282,9 +282,9 @@ class FileBasedSource(ConcurrentSourceAdapter, ABC):
                     and hasattr(self, "_concurrency_level")
                     and self._concurrency_level is not None
                 ):
-                    assert (
-                        state_manager is not None
-                    ), "No ConnectorStateManager was created, but it is required for incremental syncs. This is unexpected. Please contact Support."
+                    assert state_manager is not None, (
+                        "No ConnectorStateManager was created, but it is required for incremental syncs. This is unexpected. Please contact Support."
+                    )
 
                     cursor = self.cursor_cls(
                         stream_config,
