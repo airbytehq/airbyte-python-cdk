@@ -361,7 +361,7 @@ class AbstractOauth2Authenticator(AuthBase):
         """
         if current_depth > max_depth:
             # this is needed to avoid an inf loop, possible with a very deep nesting observed.
-            message = f"The maximum level of recursion is reached. Couldn't find the speficied `{key_name}` in the response."
+            message = f"The maximum level of recursion is reached. Couldn't find the specified `{key_name}` in the response."
             raise ResponseKeysMaxRecurtionReached(
                 internal_message=message, message=message, failure_type=FailureType.config_error
             )
