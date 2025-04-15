@@ -327,15 +327,15 @@ class AbstractOauth2Authenticator(AuthBase):
         expires_in = self._find_and_get_value_from_response(
             response_data, self.get_expires_in_name()
         )
-        # If the access token expires in is None, we do not know when the token will expire
-        if expires_in is None:
-            # If the token expiry date is set and the token is not expired, continue using the existing token expiry date
-            if self.get_token_expiry_date() and not self.token_has_expired():
-                return self.get_token_expiry_date()
-            else:
-                return self._default_token_expiry_date()
-        else:
+        if expires_in is not None:
             return self._parse_token_expiration_date(expires_in)
+        
+        # expires_in is None
+        existing_expiry_date = self.get_token_expiry_date()
+        if existing_expiry_date and not self.token_has_expired():
+            return existing_expiry_date
+        
+        return self._default_token_expiry_date()
 
     def _find_and_get_value_from_response(
         self,
