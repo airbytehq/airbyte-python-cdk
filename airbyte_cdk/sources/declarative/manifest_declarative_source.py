@@ -91,7 +91,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         debug: bool = False,
         emit_connector_builder_messages: bool = False,
         component_factory: Optional[ModelToComponentFactory] = None,
-        post_resolve_manifest: Optional[bool] = False,
+        normalize_manifest: Optional[bool] = False,
     ) -> None:
         """
         Args:
@@ -100,6 +100,8 @@ class ManifestDeclarativeSource(DeclarativeSource):
             debug: True if debug mode is enabled.
             emit_connector_builder_messages: True if messages should be emitted to the connector builder.
             component_factory: optional factory if ModelToComponentFactory's default behavior needs to be tweaked.
+            normalize_manifest: Optional flag to indicate if the manifest should be normalized.
+            post_resolve_manifest: Optional flag to indicate if the manifest should be resolved after normalization.
         """
         self.logger = logging.getLogger(f"airbyte.{self.name}")
 
@@ -119,23 +121,15 @@ class ManifestDeclarativeSource(DeclarativeSource):
             "", resolved_source_config, {}
         )
 
-        if emit_connector_builder_messages:
-            # Connector Builder Ui rendering requires the manifest to be in a specific format.
+        if normalize_manifest:
+            # Connector Builder UI rendering requires the manifest to be in a specific format.
             # 1) references have been resolved
-            # 2) deprecated fields have been migrated
-            # 3) the commonly used definitions are extracted to the `definitions.shared.*`
-            # 4) ! the normalized manifest could be validated after the additional UI post-processing.
+            # 2) the commonly used definitions are extracted to the `definitions.shared.*`
+            # 3) ! the normalized manifest could be validated only after the additional UI post-processing.
             propagated_source_config = ManifestNormalizer(
                 propagated_source_config,
                 self._declarative_component_schema,
             ).normalize()
-
-            # The manifest is now in a format that the Connector Builder UI can use.
-            # however, the local tests may depend on the completely resolved manifest.
-            if post_resolve_manifest:
-                propagated_source_config = ManifestReferenceResolver().preprocess_manifest(
-                    propagated_source_config
-                )
 
         self._source_config = propagated_source_config
         self._debug = debug

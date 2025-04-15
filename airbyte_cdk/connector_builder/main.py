@@ -88,10 +88,10 @@ def handle_connector_builder_request(
         raise ValueError(f"Unrecognized command {command}.")
 
 
-def handle_request(args: List[str], post_resolve_manifest: Optional[bool] = False) -> str:
+def handle_request(args: List[str]) -> str:
     command, config, catalog, state = get_config_and_catalog_from_args(args)
     limits = get_limits(config)
-    source = create_source(config, limits, post_resolve_manifest=post_resolve_manifest)
+    source = create_source(config, limits)
     return orjson.dumps(
         AirbyteMessageSerializer.dump(
             handle_connector_builder_request(source, command, config, catalog, state, limits)

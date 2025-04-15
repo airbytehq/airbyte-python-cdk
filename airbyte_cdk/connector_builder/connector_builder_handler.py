@@ -4,7 +4,7 @@
 
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, ClassVar, Dict, List, Mapping, Optional
+from typing import Any, ClassVar, Dict, List, Mapping
 
 from airbyte_cdk.connector_builder.test_reader import TestReader
 from airbyte_cdk.models import (
@@ -55,6 +55,7 @@ def get_limits(config: Mapping[str, Any]) -> TestLimits:
     max_streams = command_config.get(MAX_STREAMS_KEY) or DEFAULT_MAXIMUM_STREAMS
     return TestLimits(max_records, max_pages_per_slice, max_slices, max_streams)
 
+
 def normalize_manifest(config: Mapping[str, Any]) -> bool:
     """
     Check if the manifest should be normalized.
@@ -63,13 +64,6 @@ def normalize_manifest(config: Mapping[str, Any]) -> bool:
     """
     return config.get("__requires_normalization", False)
 
-def post_resolve_manifest(config: Mapping[str, Any]) -> bool:
-    """
-    Check if the manifest should be post-resolved.
-    :param config: The configuration to check
-    :return: True if the manifest should be post-resolved, False otherwise.
-    """
-    return config.get("__post_resolve_manifest", False)
 
 def create_source(
     config: Mapping[str, Any],
@@ -81,7 +75,6 @@ def create_source(
         emit_connector_builder_messages=True,
         source_config=manifest,
         normalize_manifest=normalize_manifest(config),
-        post_resolve_manifest=post_resolve_manifest(config),
         component_factory=ModelToComponentFactory(
             emit_connector_builder_messages=True,
             limit_pages_fetched_per_slice=limits.max_pages_per_slice,

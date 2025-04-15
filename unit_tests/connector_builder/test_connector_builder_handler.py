@@ -504,7 +504,6 @@ def test_handle_resolve_manifest(valid_resolve_manifest_config_file, dummy_catal
                 "--catalog",
                 str(dummy_catalog),
             ],
-            post_resolve_manifest=True,
         )
         assert patched_handle.call_count == 1
 
@@ -523,7 +522,6 @@ def test_handle_test_read(valid_read_config_file, configured_catalog):
                 "--catalog",
                 str(configured_catalog),
             ],
-            post_resolve_manifest=True,
         )
         assert patch.call_count == 1
 
@@ -875,7 +873,7 @@ def test_handle_429_response():
 
     config = TEST_READ_CONFIG
     limits = TestLimits()
-    source = create_source(config, limits, post_resolve_manifest=True)
+    source = create_source(config, limits)
 
     with patch("requests.Session.send", return_value=response) as mock_send:
         response = handle_connector_builder_request(
@@ -934,7 +932,6 @@ def test_invalid_config_command(invalid_config_file, dummy_catalog):
                 "--catalog",
                 str(dummy_catalog),
             ],
-            post_resolve_manifest=True,
         )
 
 
@@ -1002,7 +999,7 @@ def test_create_source():
 
     config = {"__injected_declarative_manifest": MANIFEST}
 
-    source = create_source(config, limits, post_resolve_manifest=True)
+    source = create_source(config, limits)
 
     assert isinstance(source, ManifestDeclarativeSource)
     assert source._constructor._limit_pages_fetched_per_slice == limits.max_pages_per_slice
@@ -1096,7 +1093,7 @@ def test_read_source(mock_http_stream):
 
     config = {"__injected_declarative_manifest": MANIFEST}
 
-    source = create_source(config, limits, post_resolve_manifest=True)
+    source = create_source(config, limits)
 
     output_data = read_stream(source, config, catalog, _A_PER_PARTITION_STATE, limits).record.data
     slices = output_data["slices"]
@@ -1143,7 +1140,7 @@ def test_read_source_single_page_single_slice(mock_http_stream):
 
     config = {"__injected_declarative_manifest": MANIFEST}
 
-    source = create_source(config, limits, post_resolve_manifest=True)
+    source = create_source(config, limits)
 
     output_data = read_stream(source, config, catalog, _A_PER_PARTITION_STATE, limits).record.data
     slices = output_data["slices"]
@@ -1229,7 +1226,7 @@ def test_handle_read_external_requests(deployment_mode, url_base, expected_error
     test_manifest["streams"][0]["$parameters"]["url_base"] = url_base
     config = {"__injected_declarative_manifest": test_manifest}
 
-    source = create_source(config, limits, post_resolve_manifest=True)
+    source = create_source(config, limits)
 
     with mock.patch.dict(os.environ, {"DEPLOYMENT_MODE": deployment_mode}, clear=False):
         output_data = read_stream(
@@ -1325,7 +1322,7 @@ def test_handle_read_external_oauth_request(deployment_mode, token_url, expected
     )
     config = {"__injected_declarative_manifest": test_manifest}
 
-    source = create_source(config, limits, post_resolve_manifest=True)
+    source = create_source(config, limits)
 
     with mock.patch.dict(os.environ, {"DEPLOYMENT_MODE": deployment_mode}, clear=False):
         output_data = read_stream(
