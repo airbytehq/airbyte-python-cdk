@@ -502,6 +502,7 @@ from airbyte_cdk.sources.declarative.transformations import (
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
 from airbyte_cdk.sources.declarative.transformations.dpath_flatten_fields import (
     DpathFlattenFields,
+    KeyTransformation,
 )
 from airbyte_cdk.sources.declarative.transformations.flatten_fields import (
     FlattenFields,
@@ -814,6 +815,16 @@ class ModelToComponentFactory:
         self, model: DpathFlattenFieldsModel, config: Config, **kwargs: Any
     ) -> DpathFlattenFields:
         model_field_path: List[Union[InterpolatedString, str]] = [x for x in model.field_path]
+        key_transformation = (
+            KeyTransformation(
+                config=config,
+                prefix=model.key_transformation.prefix,
+                suffix=model.key_transformation.suffix,
+                parameters=model.parameters or {},
+            )
+            if model.key_transformation is not None
+            else None
+        )
         return DpathFlattenFields(
             config=config,
             field_path=model_field_path,
@@ -821,6 +832,7 @@ class ModelToComponentFactory:
             if model.delete_origin_value is not None
             else False,
             replace_record=model.replace_record if model.replace_record is not None else False,
+            key_transformation=key_transformation,
             parameters=model.parameters or {},
         )
 
