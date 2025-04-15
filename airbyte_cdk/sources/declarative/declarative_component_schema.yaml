@@ -47,7 +47,12 @@ properties:
   max_concurrent_async_job_count:
     title: Maximum Concurrent Asynchronous Jobs
     description: Maximum number of concurrent asynchronous jobs to run. This property is only relevant for sources/streams that support asynchronous job execution through the AsyncRetriever (e.g. a report-based stream that initiates a job, polls the job status, and then fetches the job results). This is often set by the API's maximum number of concurrent jobs on the account level. Refer to the API's documentation for this information.
-    type: integer
+    type:
+      - integer
+      - string
+    examples:
+      - 3
+      - "{{ config['max_concurrent_async_job_count'] }}"
   metadata:
     type: object
     description: For internal Airbyte use only - DO NOT modify manually. Used by consumers of declarative manifests for storing related metadata.
@@ -311,7 +316,6 @@ definitions:
     type: object
     required:
       - type
-      - stream_names
     properties:
       type:
         type: string
@@ -325,6 +329,28 @@ definitions:
         examples:
           - ["users"]
           - ["users", "contacts"]
+      dynamic_streams_check_configs:
+        type: array
+        items:
+          "$ref": "#/definitions/DynamicStreamCheckConfig"
+  DynamicStreamCheckConfig:
+    type: object
+    required:
+      - type
+      - dynamic_stream_name
+    properties:
+      type:
+        type: string
+        enum: [DynamicStreamCheckConfig]
+      dynamic_stream_name:
+        title: Dynamic Stream Name
+        description: The dynamic stream name.
+        type: string
+      stream_count:
+        title: Stream Count
+        description: The number of streams to attempt reading from during a check operation. If `stream_count` exceeds the total number of available streams, the minimum of the two values will be used.
+        type: integer
+        default: 0
   CheckDynamicStream:
     title: Dynamic Streams to Check
     description: (This component is experimental. Use at your own risk.) Defines the dynamic streams to try reading when running a check operation.
@@ -1762,6 +1788,30 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  GroupByKeyMergeStrategy:
+    title: Group by Key
+    description: Record merge strategy that combines records according to fields on the record.
+    required:
+      - type
+      - key
+    properties:
+      type:
+        type: string
+        enum: [GroupByKeyMergeStrategy]
+      key:
+        title: Key
+        description: The name of the field on the record whose value will be used to group properties that were retrieved through multiple API requests.
+        anyOf:
+          - type: string
+          - type: array
+            items:
+              type: string
+        examples:
+          - "id"
+          - ["parent_id", "end_date"]
+      $parameters:
+        type: object
+        additionalProperties: true
   SessionTokenAuthenticator:
     type: object
     required:
@@ -1981,7 +2031,9 @@ definitions:
           - type: string
           - type: object
             additionalProperties:
-              type: string
+              anyOf:
+                - type: string
+                - $ref": "#/definitions/QueryProperties"
         interpolation_context:
           - next_page_token
           - stream_interval
@@ -2228,7 +2280,8 @@ definitions:
         type: object
         additionalProperties: true
   JsonDecoder:
-    title: Json Decoder
+    title: JSON
+    description: Select 'JSON' if the response is formatted as a JSON object.
     type: object
     required:
       - type
@@ -2237,8 +2290,8 @@ definitions:
         type: string
         enum: [JsonDecoder]
   JsonlDecoder:
-    title: JSONL Decoder
-    description: Use this if the response consists of JSON objects separated by new lines (`\n`) in JSONL format.
+    title: JSON Lines
+    description: Select 'JSON Lines' if the response consists of JSON objects separated by new lines ('\n') in JSONL format.
     type: object
     required:
       - type
@@ -2290,6 +2343,27 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  KeyTransformation:
+    title: Transformation to apply for extracted object keys by Dpath Flatten Fields
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [ KeyTransformation ]
+      prefix:
+        title: Key Prefix
+        description: Prefix to add for object keys. If not provided original keys remain unchanged.
+        type: string
+        examples:
+          - flattened_
+      suffix:
+        title: Key Suffix
+        description: Suffix to add for object keys. If not provided original keys remain unchanged.
+        type: string
+        examples:
+          - _flattened
   DpathFlattenFields:
     title: Dpath Flatten Fields
     description: A transformation that flatten field values to the to top of the record.
@@ -2318,6 +2392,11 @@ definitions:
         title: Replace Origin Record
         description: Whether to replace the origin record or not. Default is False.
         type: boolean
+      key_transformation:
+        title: Key transformation
+        description: Transformation for object keys. If not provided, original key will be used.
+        type: object
+        "$ref": "#/definitions/KeyTransformation"
       $parameters:
         type: object
         additionalProperties: true
@@ -2363,8 +2442,8 @@ definitions:
         type: object
         additionalProperties: true
   IterableDecoder:
-    title: Iterable Decoder
-    description: Use this if the response consists of strings separated by new lines (`\n`). The Decoder will wrap each row into a JSON object with the `record` key.
+    title: Iterable
+    description: Select 'Iterable' if the response consists of strings separated by new lines (`\n`). The string will then be wrapped into a JSON object with the `record` key.
     type: object
     required:
       - type
@@ -2373,8 +2452,8 @@ definitions:
         type: string
         enum: [IterableDecoder]
   XmlDecoder:
-    title: XML Decoder
-    description: Use this if the response is XML.
+    title: XML
+    description: Select 'XML' if the response consists of XML-formatted data.
     type: object
     required:
       - type
@@ -2405,8 +2484,8 @@ definitions:
         type: object
         additionalProperties: true
   ZipfileDecoder:
-    title: Zipfile Decoder
-    description: Decoder for response data that is returned as zipfile(s).
+    title: ZIP File
+    description: Select 'ZIP file' for response data that is returned as a zipfile. Requires specifying an inner data type/decoder to parse the unzipped data.
     type: object
     additionalProperties: true
     required:
@@ -2930,7 +3009,7 @@ definitions:
         title: Lazy Read Pointer
         description: If set, this will enable lazy reading, using the initial read of parent records to extract child records.
         type: array
-        default: [ ]
+        default: []
         items:
           - type: string
         interpolation_context:
@@ -2998,6 +3077,96 @@ definitions:
     examples:
       - id
       - ["code", "type"]
+  PropertiesFromEndpoint:
+    title: Properties from Endpoint
+    description: Defines the behavior for fetching the list of properties from an API that will be loaded into the requests to extract records.
+    type: object
+    required:
+      - type
+      - property_field_path
+      - retriever
+    properties:
+      type:
+        type: string
+        enum: [PropertiesFromEndpoint]
+      property_field_path:
+        description: Describes the path to the field that should be extracted
+        type: array
+        items:
+          type: string
+        examples:
+          - ["name"]
+        interpolation_context:
+          - config
+          - parameters
+      retriever:
+        description: Requester component that describes how to fetch the properties to query from a remote API endpoint.
+        anyOf:
+          - "$ref": "#/definitions/CustomRetriever"
+          - "$ref": "#/definitions/SimpleRetriever"
+      $parameters:
+        type: object
+        additionalProperties: true
+  PropertyChunking:
+    title: Property Chunking
+    description: For APIs with restrictions on the amount of properties that can be requester per request, property chunking can be applied to make multiple requests with a subset of the properties.
+    type: object
+    required:
+      - type
+      - property_limit_type
+    properties:
+      type:
+        type: string
+        enum: [PropertyChunking]
+      property_limit_type:
+        title: Property Limit Type
+        description: The type used to determine the maximum number of properties per chunk
+        enum:
+          - characters
+          - property_count
+      property_limit:
+        title: Property Limit
+        description: The maximum amount of properties that can be retrieved per request according to the limit type.
+        type: integer
+      record_merge_strategy:
+        title: Record Merge Strategy
+        description: Dictates how to records that require multiple requests to get all properties should be emitted to the destination
+        "$ref": "#/definitions/GroupByKeyMergeStrategy"
+      $parameters:
+        type: object
+        additionalProperties: true
+  QueryProperties:
+    title: Query Properties
+    description: For APIs that require explicit specification of the properties to query for, this component specifies which property fields and how they are supplied to outbound requests.
+    type: object
+    required:
+      - type
+      - property_list
+    properties:
+      type:
+        type: string
+        enum: [QueryProperties]
+      property_list:
+        title: Property List
+        description: The set of properties that will be queried for in the outbound request. This can either be statically defined or dynamic based on an API endpoint
+        anyOf:
+          - type: array
+            items:
+              type: string
+          - "$ref": "#/definitions/PropertiesFromEndpoint"
+      always_include_properties:
+        title: Always Include Properties
+        description: The list of properties that should be included in every set of properties when multiple chunks of properties are being requested.
+        type: array
+        items:
+          type: string
+      property_chunking:
+        title: Property Chunking
+        description: Defines how query properties will be grouped into smaller sets for APIs with limitations on the number of properties fetched per API request.
+        "$ref": "#/definitions/PropertyChunking"
+      $parameters:
+        type: object
+        additionalProperties: true
   RecordFilter:
     title: Record Filter
     description: Filter applied on a list of records.
@@ -3235,7 +3404,7 @@ definitions:
     properties:
       type:
         type: string
-        enum: [ StateDelegatingStream ]
+        enum: [StateDelegatingStream]
       name:
         title: Name
         description: The stream name.
@@ -3290,12 +3459,14 @@ definitions:
           - "$ref": "#/definitions/CustomPartitionRouter"
           - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/SubstreamPartitionRouter"
+          - "$ref": "#/definitions/GroupingPartitionRouter"
           - type: array
             items:
               anyOf:
                 - "$ref": "#/definitions/CustomPartitionRouter"
                 - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/SubstreamPartitionRouter"
+                - "$ref": "#/definitions/GroupingPartitionRouter"
       decoder:
         title: Decoder
         description: Component decoding the response so records can be extracted.
@@ -3312,6 +3483,8 @@ definitions:
         type: object
         additionalProperties: true
   GzipDecoder:
+    title: gzip
+    description: Select 'gzip' for response data that is compressed with gzip. Requires specifying an inner data type/decoder to parse the decompressed data.
     type: object
     required:
       - type
@@ -3327,6 +3500,8 @@ definitions:
           - "$ref": "#/definitions/JsonDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
   CsvDecoder:
+    title: CSV
+    description: "Select 'CSV' for response data that is formatted as CSV (comma-separated values). Can specify an encoding (default: 'utf-8') and a delimiter (default: ',')."
     type: object
     required:
       - type
@@ -3457,12 +3632,14 @@ definitions:
           - "$ref": "#/definitions/CustomPartitionRouter"
           - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/SubstreamPartitionRouter"
+          - "$ref": "#/definitions/GroupingPartitionRouter"
           - type: array
             items:
               anyOf:
                 - "$ref": "#/definitions/CustomPartitionRouter"
                 - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/SubstreamPartitionRouter"
+                - "$ref": "#/definitions/GroupingPartitionRouter"
       decoder:
         title: Decoder
         description: Component decoding the response so records can be extracted.
@@ -3576,6 +3753,44 @@ definitions:
         type: number
         examples:
           - 3600
+      $parameters:
+        type: object
+        additionalProperties: true
+  GroupingPartitionRouter:
+    title: Grouping Partition Router
+    description: >
+      A decorator on top of a partition router that groups partitions into batches of a specified size.
+      This is useful for APIs that support filtering by multiple partition keys in a single request.
+      Note that per-partition incremental syncs may not work as expected because the grouping
+      of partitions might change between syncs, potentially leading to inconsistent state tracking.
+    type: object
+    required:
+      - type
+      - group_size
+      - underlying_partition_router
+    properties:
+      type:
+        type: string
+        enum: [GroupingPartitionRouter]
+      group_size:
+        title: Group Size
+        description: The number of partitions to include in each group. This determines how many partition values are batched together in a single slice.
+        type: integer
+        examples:
+          - 10
+          - 50
+      underlying_partition_router:
+        title: Underlying Partition Router
+        description: The partition router whose output will be grouped. This can be any valid partition router component.
+        anyOf:
+          - "$ref": "#/definitions/CustomPartitionRouter"
+          - "$ref": "#/definitions/ListPartitionRouter"
+          - "$ref": "#/definitions/SubstreamPartitionRouter"
+      deduplicate:
+        title: Deduplicate Partitions
+        description: If true, ensures that partitions are unique within each group by removing duplicates based on the partition key.
+        type: boolean
+        default: true
       $parameters:
         type: object
         additionalProperties: true
@@ -3750,6 +3965,13 @@ definitions:
       type:
         type: string
         enum: [DynamicDeclarativeStream]
+      name:
+        title: Name
+        description: The dynamic stream name.
+        type: string
+        default: ""
+        example:
+          - "Tables"
       stream_template:
         title: Stream Template
         description: Reference to the stream template.

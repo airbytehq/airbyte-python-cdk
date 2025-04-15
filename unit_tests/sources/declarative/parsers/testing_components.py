@@ -3,7 +3,7 @@
 #
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import ClassVar, List, Optional
 
 from airbyte_cdk.sources.declarative.extractors import DpathExtractor
 from airbyte_cdk.sources.declarative.partition_routers import SubstreamPartitionRouter
@@ -21,6 +21,8 @@ class TestingSomeComponent(DefaultErrorHandler):
     A basic test class with various field permutations used to test manifests with custom components
     """
 
+    __test__: ClassVar[bool] = False  # Tell Pytest this is not a Pytest class, despite its name
+
     subcomponent_field_with_hint: DpathExtractor = field(
         default_factory=lambda: DpathExtractor(field_path=[], config={}, parameters={})
     )
@@ -36,6 +38,8 @@ class TestingCustomSubstreamPartitionRouter(SubstreamPartitionRouter):
     """
     A test class based on a SubstreamPartitionRouter used for testing manifests that use custom components.
     """
+
+    __test__: ClassVar[bool] = False  # Tell Pytest this is not a Pytest class, despite its name
 
     custom_field: str
     custom_pagination_strategy: PaginationStrategy

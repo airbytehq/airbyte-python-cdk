@@ -57,9 +57,12 @@ _MANIFEST = {
     "dynamic_streams": [
         {
             "type": "DynamicDeclarativeStream",
+            "name": "TestDynamicStream",
             "stream_template": {
                 "type": "DeclarativeStream",
-                "name": "",
+                "$parameters": {
+                    "name": "",
+                },
                 "primary_key": [],
                 "schema_loader": {
                     "type": "InlineSchemaLoader",
@@ -145,7 +148,9 @@ _MANIFEST_WITH_DUPLICATES = {
             "type": "DynamicDeclarativeStream",
             "stream_template": {
                 "type": "DeclarativeStream",
-                "name": "",
+                "$parameters": {
+                    "name": "",
+                },
                 "primary_key": [],
                 "schema_loader": {
                     "type": "InlineSchemaLoader",
@@ -231,7 +236,9 @@ _MANIFEST_WITH_HTTP_COMPONENT_RESOLVER_WITH_RETRIEVER_WITH_PARENT_STREAM = {
             "type": "DynamicDeclarativeStream",
             "stream_template": {
                 "type": "DeclarativeStream",
-                "name": "",
+                "$parameters": {
+                    "name": "",
+                },
                 "primary_key": [],
                 "schema_loader": {
                     "type": "InlineSchemaLoader",
@@ -281,9 +288,21 @@ _MANIFEST_WITH_HTTP_COMPONENT_RESOLVER_WITH_RETRIEVER_WITH_PARENT_STREAM = {
                     },
                     "record_selector": {
                         "type": "RecordSelector",
-                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                        "extractor": {"type": "DpathExtractor", "field_path": ["data"]},
                     },
-                    "paginator": {"type": "NoPagination"},
+                    "paginator": {
+                        "type": "DefaultPaginator",
+                        "page_token_option": {
+                            "type": "RequestOption",
+                            "inject_into": "request_parameter",
+                            "field_name": "page_cursor",
+                        },
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ response.get('next_cursor') }}",
+                            "stop_condition": "{{ not response.get('has_more', False) }}",
+                        },
+                    },
                     "partition_router": {
                         "type": "SubstreamPartitionRouter",
                         "parent_stream_configs": [
@@ -331,7 +350,7 @@ _MANIFEST_WITH_HTTP_COMPONENT_RESOLVER_WITH_RETRIEVER_WITH_PARENT_STREAM = {
                 "components_mapping": [
                     {
                         "type": "ComponentMappingDefinition",
-                        "field_path": ["name"],
+                        "field_path": ["$parameters", "name"],
                         "value": "parent_{{stream_slice['parent_id']}}_{{components_values['name']}}",
                     },
                     {
@@ -543,10 +562,26 @@ def test_dynamic_streams_with_http_components_resolver_retriever_with_parent_str
                 HttpRequest(url=f"https://api.test.com/parent/{parent_id}/items"),
                 HttpResponse(
                     body=json.dumps(
-                        [
-                            {"id": 1, "name": "item_1"},
-                            {"id": 2, "name": "item_2"},
-                        ]
+                        {
+                            "data": [
+                                {"id": 1, "name": "item_1"},
+                            ],
+                            "has_more": True,
+                            "next_cursor": 1,
+                        }
+                    )
+                ),
+            )
+            http_mocker.get(
+                HttpRequest(url=f"https://api.test.com/parent/{parent_id}/items?page_cursor=1"),
+                HttpResponse(
+                    body=json.dumps(
+                        {
+                            "data": [
+                                {"id": 2, "name": "item_2"},
+                            ],
+                            "has_more": False,
+                        }
                     )
                 ),
             )
@@ -563,6 +598,10 @@ def test_dynamic_streams_with_http_components_resolver_retriever_with_parent_str
             catalog=None,
             state=None,
         )
+        dynamic_streams = source._dynamic_stream_configs(source.resolved_manifest, _CONFIG)
+
+        assert len(dynamic_streams) == 4
+        assert dynamic_streams[0]["retriever"]["name"] == "parent_1_item_1"
 
         actual_catalog = source.discover(logger=source.logger, config=_CONFIG)
 

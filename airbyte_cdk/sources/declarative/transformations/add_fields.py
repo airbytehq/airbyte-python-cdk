@@ -139,7 +139,9 @@ class AddFields(RecordTransformation):
             valid_types = (parsed_field.value_type,) if parsed_field.value_type else None
             value = parsed_field.value.eval(config, valid_types=valid_types, **kwargs)
             is_empty_condition = not self.condition
-            if is_empty_condition or self._filter_interpolator.eval(config, value=value, **kwargs):
+            if is_empty_condition or self._filter_interpolator.eval(
+                config, value=value, path=parsed_field.path, **kwargs
+            ):
                 dpath.new(record, parsed_field.path, value)
 
     def __eq__(self, other: Any) -> bool:

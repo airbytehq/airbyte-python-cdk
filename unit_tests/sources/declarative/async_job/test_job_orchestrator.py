@@ -144,10 +144,14 @@ class AsyncJobOrchestratorTest(TestCase):
         )
         orchestrator = self._orchestrator([_A_STREAM_SLICE], job_tracker)
 
-        with pytest.raises(AirbyteTracedException) as error:
+        with pytest.raises(AirbyteTracedException):
             list(orchestrator.create_and_get_completed_partitions())
 
-        assert "Job an api job id has timed out" in str(error.value)
+        assert job_tracker.try_to_get_intent()
+        assert (
+            self._job_repository.start.call_args_list
+            == [call(_A_STREAM_SLICE)] * _MAX_NUMBER_OF_ATTEMPTS
+        )
 
     @mock.patch(sleep_mock_target)
     def test_given_failure_when_create_and_get_completed_partitions_then_raise_exception(

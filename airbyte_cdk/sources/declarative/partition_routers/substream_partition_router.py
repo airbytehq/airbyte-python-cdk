@@ -374,7 +374,11 @@ class SubstreamPartitionRouter(PartitionRouter):
         # Ignore per-partition states or invalid formats.
         if isinstance(substream_state, (list, dict)) or len(substream_state_values) != 1:
             # If a global state is present under the key "state", use its first value.
-            if "state" in stream_state and isinstance(stream_state["state"], dict):
+            if (
+                "state" in stream_state
+                and isinstance(stream_state["state"], dict)
+                and stream_state["state"] != {}
+            ):
                 substream_state = list(stream_state["state"].values())[0]
             else:
                 return {}

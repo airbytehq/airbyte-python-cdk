@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
 from __future__ import annotations
@@ -54,7 +54,11 @@ from airbyte_cdk.sources.declarative.auth.token_provider import (
     SessionTokenProvider,
     TokenProvider,
 )
-from airbyte_cdk.sources.declarative.checks import CheckDynamicStream, CheckStream
+from airbyte_cdk.sources.declarative.checks import (
+    CheckDynamicStream,
+    CheckStream,
+    DynamicStreamCheckConfig,
+)
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
 from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
@@ -218,6 +222,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     DynamicSchemaLoader as DynamicSchemaLoaderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    DynamicStreamCheckConfig as DynamicStreamCheckConfigModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ExponentialBackoffStrategy as ExponentialBackoffStrategyModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -228,6 +235,12 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     FlattenFields as FlattenFieldsModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    GroupByKeyMergeStrategy as GroupByKeyMergeStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    GroupingPartitionRouter as GroupingPartitionRouterModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     GzipDecoder as GzipDecoderModel,
@@ -317,6 +330,18 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     ParentStreamConfig as ParentStreamConfigModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    PropertiesFromEndpoint as PropertiesFromEndpointModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    PropertyChunking as PropertyChunkingModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    PropertyLimitType as PropertyLimitTypeModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    QueryProperties as QueryPropertiesModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     Rate as RateModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -387,6 +412,7 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
 )
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
+    GroupingPartitionRouter,
     ListPartitionRouter,
     PartitionRouter,
     SinglePartitionRouter,
@@ -422,6 +448,17 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     OffsetIncrement,
     PageIncrement,
     StopConditionPaginationStrategyDecorator,
+)
+from airbyte_cdk.sources.declarative.requesters.query_properties import (
+    PropertiesFromEndpoint,
+    PropertyChunking,
+    QueryProperties,
+)
+from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunking import (
+    PropertyLimitType,
+)
+from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import (
+    GroupByKey,
 )
 from airbyte_cdk.sources.declarative.requesters.request_option import RequestOptionType
 from airbyte_cdk.sources.declarative.requesters.request_options import (
@@ -464,6 +501,7 @@ from airbyte_cdk.sources.declarative.transformations import (
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
 from airbyte_cdk.sources.declarative.transformations.dpath_flatten_fields import (
     DpathFlattenFields,
+    KeyTransformation,
 )
 from airbyte_cdk.sources.declarative.transformations.flatten_fields import (
     FlattenFields,
@@ -558,6 +596,7 @@ class ModelToComponentFactory:
             BasicHttpAuthenticatorModel: self.create_basic_http_authenticator,
             BearerAuthenticatorModel: self.create_bearer_authenticator,
             CheckStreamModel: self.create_check_stream,
+            DynamicStreamCheckConfigModel: self.create_dynamic_stream_check_config,
             CheckDynamicStreamModel: self.create_check_dynamic_stream,
             CompositeErrorHandlerModel: self.create_composite_error_handler,
             ConcurrencyLevelModel: self.create_concurrency_level,
@@ -587,6 +626,7 @@ class ModelToComponentFactory:
             ResponseToFileExtractorModel: self.create_response_to_file_extractor,
             ExponentialBackoffStrategyModel: self.create_exponential_backoff_strategy,
             SessionTokenAuthenticatorModel: self.create_session_token_authenticator,
+            GroupByKeyMergeStrategyModel: self.create_group_by_key,
             HttpRequesterModel: self.create_http_requester,
             HttpResponseFilterModel: self.create_http_response_filter,
             InlineSchemaLoaderModel: self.create_inline_schema_loader,
@@ -616,6 +656,9 @@ class ModelToComponentFactory:
             OffsetIncrementModel: self.create_offset_increment,
             PageIncrementModel: self.create_page_increment,
             ParentStreamConfigModel: self.create_parent_stream_config,
+            PropertiesFromEndpointModel: self.create_properties_from_endpoint,
+            PropertyChunkingModel: self.create_property_chunking,
+            QueryPropertiesModel: self.create_query_properties,
             RecordFilterModel: self.create_record_filter,
             RecordSelectorModel: self.create_record_selector,
             RemoveFieldsModel: self.create_remove_fields,
@@ -642,6 +685,7 @@ class ModelToComponentFactory:
             UnlimitedCallRatePolicyModel: self.create_unlimited_call_rate_policy,
             RateModel: self.create_rate,
             HttpRequestRegexMatcherModel: self.create_http_request_matcher,
+            GroupingPartitionRouterModel: self.create_grouping_partition_router,
         }
 
         # Needed for the case where we need to perform a second parse on the fields of a custom component
@@ -751,6 +795,16 @@ class ModelToComponentFactory:
         self, model: DpathFlattenFieldsModel, config: Config, **kwargs: Any
     ) -> DpathFlattenFields:
         model_field_path: List[Union[InterpolatedString, str]] = [x for x in model.field_path]
+        key_transformation = (
+            KeyTransformation(
+                config=config,
+                prefix=model.key_transformation.prefix,
+                suffix=model.key_transformation.suffix,
+                parameters=model.parameters or {},
+            )
+            if model.key_transformation is not None
+            else None
+        )
         return DpathFlattenFields(
             config=config,
             field_path=model_field_path,
@@ -758,6 +812,7 @@ class ModelToComponentFactory:
             if model.delete_origin_value is not None
             else False,
             replace_record=model.replace_record if model.replace_record is not None else False,
+            key_transformation=key_transformation,
             parameters=model.parameters or {},
         )
 
@@ -935,8 +990,36 @@ class ModelToComponentFactory:
         )
 
     @staticmethod
-    def create_check_stream(model: CheckStreamModel, config: Config, **kwargs: Any) -> CheckStream:
-        return CheckStream(stream_names=model.stream_names, parameters={})
+    def create_dynamic_stream_check_config(
+        model: DynamicStreamCheckConfigModel, config: Config, **kwargs: Any
+    ) -> DynamicStreamCheckConfig:
+        return DynamicStreamCheckConfig(
+            dynamic_stream_name=model.dynamic_stream_name,
+            stream_count=model.stream_count or 0,
+        )
+
+    def create_check_stream(
+        self, model: CheckStreamModel, config: Config, **kwargs: Any
+    ) -> CheckStream:
+        if model.dynamic_streams_check_configs is None and model.stream_names is None:
+            raise ValueError(
+                "Expected either stream_names or dynamic_streams_check_configs to be set for CheckStream"
+            )
+
+        dynamic_streams_check_configs = (
+            [
+                self._create_component_from_model(model=dynamic_stream_check_config, config=config)
+                for dynamic_stream_check_config in model.dynamic_streams_check_configs
+            ]
+            if model.dynamic_streams_check_configs
+            else []
+        )
+
+        return CheckStream(
+            stream_names=model.stream_names or [],
+            dynamic_streams_check_configs=dynamic_streams_check_configs,
+            parameters={},
+        )
 
     @staticmethod
     def create_check_dynamic_stream(
@@ -1359,6 +1442,9 @@ class ModelToComponentFactory:
         )
         stream_state = self.apply_stream_state_migrations(stream_state_migrations, stream_state)
 
+        # Per-partition state doesn't make sense for GroupingPartitionRouter, so force the global state
+        use_global_cursor = isinstance(partition_router, GroupingPartitionRouter)
+
         # Return the concurrent cursor and state converter
         return ConcurrentPerPartitionCursor(
             cursor_factory=cursor_factory,
@@ -1370,6 +1456,7 @@ class ModelToComponentFactory:
             connector_state_manager=state_manager,
             connector_state_converter=connector_state_converter,
             cursor_field=cursor_field,
+            use_global_cursor=use_global_cursor,
         )
 
     @staticmethod
@@ -1989,6 +2076,7 @@ class ModelToComponentFactory:
         config: Config,
         *,
         url_base: str,
+        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
         decoder: Optional[Decoder] = None,
         cursor_used_for_stop_condition: Optional[DeclarativeCursor] = None,
     ) -> Union[DefaultPaginator, PaginatorTestReadDecorator]:
@@ -2010,7 +2098,10 @@ class ModelToComponentFactory:
             else None
         )
         pagination_strategy = self._create_component_from_model(
-            model=model.pagination_strategy, config=config, decoder=decoder_to_use
+            model=model.pagination_strategy,
+            config=config,
+            decoder=decoder_to_use,
+            extractor_model=extractor_model,
         )
         if cursor_used_for_stop_condition:
             pagination_strategy = StopConditionPaginationStrategyDecorator(
@@ -2048,8 +2139,8 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
+    @staticmethod
     def create_response_to_file_extractor(
-        self,
         model: ResponseToFileExtractorModel,
         **kwargs: Any,
     ) -> ResponseToFileExtractor:
@@ -2063,11 +2154,17 @@ class ModelToComponentFactory:
             factor=model.factor or 5, parameters=model.parameters or {}, config=config
         )
 
+    @staticmethod
+    def create_group_by_key(model: GroupByKeyMergeStrategyModel, config: Config) -> GroupByKey:
+        return GroupByKey(model.key, config=config, parameters=model.parameters or {})
+
     def create_http_requester(
         self,
         model: HttpRequesterModel,
         config: Config,
         decoder: Decoder = JsonDecoder(parameters={}),
+        query_properties_key: Optional[str] = None,
+        use_cache: Optional[bool] = None,
         *,
         name: str,
     ) -> HttpRequester:
@@ -2100,6 +2197,7 @@ class ModelToComponentFactory:
             request_body_json=model.request_body_json,
             request_headers=model.request_headers,
             request_parameters=model.request_parameters,
+            query_properties_key=query_properties_key,
             config=config,
             parameters=model.parameters or {},
         )
@@ -2107,7 +2205,7 @@ class ModelToComponentFactory:
         assert model.use_cache is not None  # for mypy
         assert model.http_method is not None  # for mypy
 
-        use_cache = model.use_cache and not self._disable_cache
+        should_use_cache = (model.use_cache or bool(use_cache)) and not self._disable_cache
 
         return HttpRequester(
             name=name,
@@ -2122,7 +2220,7 @@ class ModelToComponentFactory:
             disable_retries=self._disable_retries,
             parameters=model.parameters or {},
             message_repository=self._message_repository,
-            use_cache=use_cache,
+            use_cache=should_use_cache,
             decoder=decoder,
             stream_response=decoder.is_stream_response() if decoder else False,
         )
@@ -2226,10 +2324,11 @@ class ModelToComponentFactory:
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
-            name="",
+            name="dynamic_properties",
             primary_key=None,
             stream_slicer=combined_slicers,
             transformations=[],
+            use_cache=True,
         )
         schema_type_identifier = self._create_component_from_model(
             model.schema_type_identifier, config=config, parameters=model.parameters or {}
@@ -2499,7 +2598,12 @@ class ModelToComponentFactory:
         )
 
     def create_offset_increment(
-        self, model: OffsetIncrementModel, config: Config, decoder: Decoder, **kwargs: Any
+        self,
+        model: OffsetIncrementModel,
+        config: Config,
+        decoder: Decoder,
+        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        **kwargs: Any,
     ) -> OffsetIncrement:
         if isinstance(decoder, PaginationDecoderDecorator):
             inner_decoder = decoder.decoder
@@ -2514,10 +2618,24 @@ class ModelToComponentFactory:
                 self._UNSUPPORTED_DECODER_ERROR.format(decoder_type=type(inner_decoder))
             )
 
+        # Ideally we would instantiate the runtime extractor from highest most level (in this case the SimpleRetriever)
+        # so that it can be shared by OffSetIncrement and RecordSelector. However, due to how we instantiate the
+        # decoder with various decorators here, but not in create_record_selector, it is simpler to retain existing
+        # behavior by having two separate extractors with identical behavior since they use the same extractor model.
+        # When we have more time to investigate we can look into reusing the same component.
+        extractor = (
+            self._create_component_from_model(
+                model=extractor_model, config=config, decoder=decoder_to_use
+            )
+            if extractor_model
+            else None
+        )
+
         return OffsetIncrement(
             page_size=model.page_size,
             config=config,
             decoder=decoder_to_use,
+            extractor=extractor,
             inject_on_first_request=model.inject_on_first_request or False,
             parameters=model.parameters or {},
         )
@@ -2565,6 +2683,79 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
             extra_fields=model.extra_fields,
             lazy_read_pointer=model_lazy_read_pointer,
+        )
+
+    def create_properties_from_endpoint(
+        self, model: PropertiesFromEndpointModel, config: Config, **kwargs: Any
+    ) -> PropertiesFromEndpoint:
+        retriever = self._create_component_from_model(
+            model=model.retriever,
+            config=config,
+            name="dynamic_properties",
+            primary_key=None,
+            stream_slicer=None,
+            transformations=[],
+            use_cache=True,  # Enable caching on the HttpRequester/HttpClient because the properties endpoint will be called for every slice being processed, and it is highly unlikely for the response to different
+        )
+        return PropertiesFromEndpoint(
+            property_field_path=model.property_field_path,
+            retriever=retriever,
+            config=config,
+            parameters=model.parameters or {},
+        )
+
+    def create_property_chunking(
+        self, model: PropertyChunkingModel, config: Config, **kwargs: Any
+    ) -> PropertyChunking:
+        record_merge_strategy = (
+            self._create_component_from_model(
+                model=model.record_merge_strategy, config=config, **kwargs
+            )
+            if model.record_merge_strategy
+            else None
+        )
+
+        property_limit_type: PropertyLimitType
+        match model.property_limit_type:
+            case PropertyLimitTypeModel.property_count:
+                property_limit_type = PropertyLimitType.property_count
+            case PropertyLimitTypeModel.characters:
+                property_limit_type = PropertyLimitType.characters
+            case _:
+                raise ValueError(f"Invalid PropertyLimitType {property_limit_type}")
+
+        return PropertyChunking(
+            property_limit_type=property_limit_type,
+            property_limit=model.property_limit,
+            record_merge_strategy=record_merge_strategy,
+            config=config,
+            parameters=model.parameters or {},
+        )
+
+    def create_query_properties(
+        self, model: QueryPropertiesModel, config: Config, **kwargs: Any
+    ) -> QueryProperties:
+        if isinstance(model.property_list, list):
+            property_list = model.property_list
+        else:
+            property_list = self._create_component_from_model(
+                model=model.property_list, config=config, **kwargs
+            )
+
+        property_chunking = (
+            self._create_component_from_model(
+                model=model.property_chunking, config=config, **kwargs
+            )
+            if model.property_chunking
+            else None
+        )
+
+        return QueryProperties(
+            property_list=property_list,
+            always_include_properties=model.always_include_properties,
+            property_chunking=property_chunking,
+            config=config,
+            parameters=model.parameters or {},
         )
 
     @staticmethod
@@ -2715,15 +2906,13 @@ class ModelToComponentFactory:
                 IncrementingCountCursorModel, DatetimeBasedCursorModel, CustomIncrementalSyncModel
             ]
         ] = None,
+        use_cache: Optional[bool] = None,
         **kwargs: Any,
     ) -> SimpleRetriever:
         decoder = (
             self._create_component_from_model(model=model.decoder, config=config)
             if model.decoder
             else JsonDecoder(parameters={})
-        )
-        requester = self._create_component_from_model(
-            model=model.requester, decoder=decoder, config=config, name=name
         )
         record_selector = self._create_component_from_model(
             model=model.record_selector,
@@ -2733,6 +2922,57 @@ class ModelToComponentFactory:
             transformations=transformations,
             client_side_incremental_sync=client_side_incremental_sync,
             file_uploader=file_uploader,
+        )
+
+        query_properties: Optional[QueryProperties] = None
+        query_properties_key: Optional[str] = None
+        if (
+            hasattr(model.requester, "request_parameters")
+            and model.requester.request_parameters
+            and isinstance(model.requester.request_parameters, Mapping)
+        ):
+            query_properties_definitions = []
+            for key, request_parameter in model.requester.request_parameters.items():
+                # When translating JSON schema into Pydantic models, enforcing types for arrays containing both
+                # concrete string complex object definitions like QueryProperties would get resolved to Union[str, Any].
+                # This adds the extra validation that we couldn't get for free in Pydantic model generation
+                if (
+                    isinstance(request_parameter, Mapping)
+                    and request_parameter.get("type") == "QueryProperties"
+                ):
+                    query_properties_key = key
+                    query_properties_definitions.append(request_parameter)
+                elif not isinstance(request_parameter, str):
+                    raise ValueError(
+                        f"Each element of request_parameters should be of type str or QueryProperties, but received {request_parameter.get('type')}"
+                    )
+
+            if len(query_properties_definitions) > 1:
+                raise ValueError(
+                    f"request_parameters only supports defining one QueryProperties field, but found {len(query_properties_definitions)} usages"
+                )
+
+            if len(query_properties_definitions) == 1:
+                query_properties = self.create_component(
+                    model_type=QueryPropertiesModel,
+                    component_definition=query_properties_definitions[0],
+                    config=config,
+                )
+
+            # Removes QueryProperties components from the interpolated mappings because it will be resolved in
+            # the provider from the slice directly instead of through jinja interpolation
+            if isinstance(model.requester.request_parameters, Mapping):
+                model.requester.request_parameters = self._remove_query_properties(
+                    model.requester.request_parameters
+                )
+
+        requester = self._create_component_from_model(
+            model=model.requester,
+            decoder=decoder,
+            name=name,
+            query_properties_key=query_properties_key,
+            use_cache=use_cache,
+            config=config,
         )
         url_base = (
             model.requester.url_base
@@ -2763,6 +3003,7 @@ class ModelToComponentFactory:
                 model=model.paginator,
                 config=config,
                 url_base=url_base,
+                extractor_model=model.record_selector.extractor,
                 decoder=decoder,
                 cursor_used_for_stop_condition=cursor_used_for_stop_condition,
             )
@@ -2839,8 +3080,20 @@ class ModelToComponentFactory:
             cursor=cursor,
             config=config,
             ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
+            additional_query_properties=query_properties,
             parameters=model.parameters or {},
         )
+
+    @staticmethod
+    def _remove_query_properties(
+        request_parameters: Mapping[str, Union[Any, str]],
+    ) -> Mapping[str, Union[Any, str]]:
+        return {
+            parameter_field: request_parameter
+            for parameter_field, request_parameter in request_parameters.items()
+            if not isinstance(request_parameter, Mapping)
+            or not request_parameter.get("type") == "QueryProperties"
+        }
 
     def create_state_delegating_stream(
         self,
@@ -3087,8 +3340,11 @@ class ModelToComponentFactory:
                 stream_slices,
                 self._job_tracker,
                 self._message_repository,
-                has_bulk_parent=False,
                 # FIXME work would need to be done here in order to detect if a stream as a parent stream that is bulk
+                has_bulk_parent=False,
+                # set the `job_max_retry` to 1 for the `Connector Builder`` use-case.
+                # `None` == default retry is set to 3 attempts, under the hood.
+                job_max_retry=1 if self._emit_connector_builder_messages else None,
             ),
             stream_slicer=stream_slicer,
             config=config,
@@ -3404,4 +3660,35 @@ class ModelToComponentFactory:
     def set_api_budget(self, component_definition: ComponentDefinition, config: Config) -> None:
         self._api_budget = self.create_component(
             model_type=HTTPAPIBudgetModel, component_definition=component_definition, config=config
+        )
+
+    def create_grouping_partition_router(
+        self, model: GroupingPartitionRouterModel, config: Config, **kwargs: Any
+    ) -> GroupingPartitionRouter:
+        underlying_router = self._create_component_from_model(
+            model=model.underlying_partition_router, config=config
+        )
+        if model.group_size < 1:
+            raise ValueError(f"Group size must be greater than 0, got {model.group_size}")
+
+        # Request options in underlying partition routers are not supported for GroupingPartitionRouter
+        # because they are specific to individual partitions and cannot be aggregated or handled
+        # when grouping, potentially leading to incorrect API calls. Any request customization
+        # should be managed at the stream level through the requester's configuration.
+        if isinstance(underlying_router, SubstreamPartitionRouter):
+            if any(
+                parent_config.request_option
+                for parent_config in underlying_router.parent_stream_configs
+            ):
+                raise ValueError("Request options are not supported for GroupingPartitionRouter.")
+
+        if isinstance(underlying_router, ListPartitionRouter):
+            if underlying_router.request_option:
+                raise ValueError("Request options are not supported for GroupingPartitionRouter.")
+
+        return GroupingPartitionRouter(
+            group_size=model.group_size,
+            underlying_partition_router=underlying_router,
+            deduplicate=model.deduplicate if model.deduplicate is not None else True,
+            config=config,
         )

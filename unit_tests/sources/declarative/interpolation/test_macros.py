@@ -83,6 +83,36 @@ def test_macros_export(test_name, fn_name, found_in_macros):
             "%Y-%m-%dT%H:%M:%SZ",
             "1640998861000000",
         ),
+        (
+            1683729087,
+            "%Y-%m-%dT%H:%M:%SZ",
+            None,
+            "2023-05-10T14:31:27Z",
+        ),
+        (
+            1640998861000000,
+            "%Y-%m-%dT%H:%M:%SZ",
+            "%epoch_microseconds",
+            "2022-01-01T01:01:01Z",
+        ),
+        (
+            1640998861000,
+            "%Y-%m-%dT%H:%M:%SZ",
+            "%ms",
+            "2022-01-01T01:01:01Z",
+        ),
+        (
+            "2022-01-01T01:01:01+0100",
+            "%Y-%m-%dT%H:%M:%S.%f%z",
+            None,
+            "2022-01-01T00:01:01.000000+0000",
+        ),
+        (
+            "2022-01-01T01:01:01",
+            "%Y-%m-%dT%H:%M:%S.%f%z",
+            None,
+            "2022-01-01T01:01:01.000000+0000",
+        ),
     ],
     ids=[
         "test_datetime_string_to_date",
@@ -96,6 +126,11 @@ def test_macros_export(test_name, fn_name, found_in_macros):
         "test_datetime_string_to_rfc2822_date",
         "test_datetime_string_to_timestamp_in_seconds",
         "test_datetime_string_to_timestamp_in_microseconds",
+        "test_timestamp_to_format_string",
+        "test_timestamp_epoch_microseconds_to_format_string",
+        "test_timestamp_ms_to_format_string",
+        "test_datetime_with_timezone",
+        "test_datetime_without_timezone_then_utc_is_inferred",
     ],
 )
 def test_format_datetime(input_value, format, input_format, expected_output):

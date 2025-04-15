@@ -4,7 +4,7 @@
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any, Generic, List, Mapping, Optional, Set, Tuple, Type, TypeVar
+from typing import Any, ClassVar, Generic, List, Mapping, Optional, Set, Tuple, Type, TypeVar
 
 from airbyte_cdk.models import (
     AirbyteAnalyticsTraceMessage,
@@ -42,6 +42,8 @@ class SourceBuilder(ABC, Generic[SourceType]):
 
 
 class TestScenario(Generic[SourceType]):
+    __test__: ClassVar[bool] = False  # Tell Pytest this is not a Pytest class, despite its name
+
     def __init__(
         self,
         name: str,
@@ -238,21 +240,21 @@ class TestScenarioBuilder(Generic[SourceType]):
             state,
         )
         return TestScenario(
-            self._name,
-            self._config,
-            source,
-            self._expected_spec,
-            self._expected_check_status,
-            self._expected_catalog,
-            self._expected_logs,
-            self._expected_records,
-            self._expected_check_error,
-            self._expected_discover_error,
-            self._expected_read_error,
-            self._incremental_scenario_config,
-            self._expected_analytics,
-            self._log_levels,
-            self._catalog,
+            name=self._name,
+            config=self._config,
+            source=source,
+            expected_spec=self._expected_spec,
+            expected_check_status=self._expected_check_status,
+            expected_catalog=self._expected_catalog,
+            expected_logs=self._expected_logs,
+            expected_records=self._expected_records,
+            expected_check_error=self._expected_check_error,
+            expected_discover_error=self._expected_discover_error,
+            expected_read_error=self._expected_read_error,
+            incremental_scenario_config=self._incremental_scenario_config,
+            expected_analytics=self._expected_analytics,
+            log_levels=self._log_levels,
+            catalog=self._catalog,
         )
 
     def _configured_catalog(self, sync_mode: SyncMode) -> Optional[Mapping[str, Any]]:

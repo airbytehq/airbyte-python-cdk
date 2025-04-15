@@ -76,7 +76,7 @@ def test_existing_exception_as_airbyte_message(raised_exception):
     assert airbyte_message.trace.error.internal_message == "an error has occurred"
     assert airbyte_message.trace.error.stack_trace.startswith("Traceback (most recent call last):")
     assert airbyte_message.trace.error.stack_trace.endswith(
-        'raise RuntimeError("an error has occurred")\n' "RuntimeError: an error has occurred\n"
+        'raise RuntimeError("an error has occurred")\nRuntimeError: an error has occurred\n'
     )
 
 

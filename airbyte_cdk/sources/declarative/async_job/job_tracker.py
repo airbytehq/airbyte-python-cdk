@@ -3,9 +3,11 @@
 import logging
 import threading
 import uuid
-from typing import Set
+from dataclasses import dataclass, field
+from typing import Any, Mapping, Set, Union
 
 from airbyte_cdk.logger import lazy_log
+from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 
 LOGGER = logging.getLogger("airbyte")
 
@@ -14,15 +16,29 @@ class ConcurrentJobLimitReached(Exception):
     pass
 
 
+@dataclass
 class JobTracker:
-    def __init__(self, limit: int):
+    limit: Union[int, str]
+    config: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
         self._jobs: Set[str] = set()
-        if limit < 1:
-            LOGGER.warning(
-                f"The `max_concurrent_async_job_count` property is less than 1: {limit}. Setting to 1. Please update the source manifest to set a valid value."
-            )
-        self._limit = 1 if limit < 1 else limit
         self._lock = threading.Lock()
+        if isinstance(self.limit, str):
+            try:
+                self.limit = int(
+                    InterpolatedString(self.limit, parameters={}).eval(config=self.config)
+                )
+            except Exception as e:
+                LOGGER.warning(
+                    f"Error interpolating max job count: {self.limit}. Setting to 1. {e}"
+                )
+                self.limit = 1
+        if self.limit < 1:
+            LOGGER.warning(
+                f"The `max_concurrent_async_job_count` property is less than 1: {self.limit}. Setting to 1. Please update the source manifest to set a valid value."
+            )
+        self._limit = self.limit if self.limit >= 1 else 1
 
     def try_to_get_intent(self) -> str:
         lazy_log(

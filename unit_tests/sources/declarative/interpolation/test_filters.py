@@ -3,6 +3,7 @@
 #
 import base64
 import hashlib
+import hmac as hmac_lib
 
 import pytest
 
@@ -105,3 +106,61 @@ def test_regex_search_no_match() -> None:
     val = interpolation.eval(expression_with_regex, {})
 
     assert val is None
+
+
+def test_hmac_sha256_default() -> None:
+    message = "test_message"
+    secret_key = "test_secret_key"
+
+    s = "{{ '%s' | hmac('%s') }}" % (message, secret_key)
+    filter_hmac = interpolation.eval(s, config={})
+
+    # compute expected hmac using the hmac library directly
+    hmac_obj = hmac_lib.new(
+        key=secret_key.encode("utf-8"), msg=message.encode("utf-8"), digestmod=hashlib.sha256
+    )
+    expected_hmac = hmac_obj.hexdigest()
+
+    assert filter_hmac == expected_hmac
+
+
+def test_hmac_sha256_explicit() -> None:
+    message = "test_message"
+    secret_key = "test_secret_key"
+
+    s = "{{ '%s' | hmac('%s', 'sha256') }}" % (message, secret_key)
+    filter_hmac = interpolation.eval(s, config={})
+
+    # compute expected hmac using the hmac library directly
+    hmac_obj = hmac_lib.new(
+        key=secret_key.encode("utf-8"), msg=message.encode("utf-8"), digestmod=hashlib.sha256
+    )
+    expected_hmac = hmac_obj.hexdigest()
+
+    assert filter_hmac == expected_hmac
+
+
+def test_hmac_with_numeric_value() -> None:
+    message = 12345
+    secret_key = "test_secret_key"
+
+    s = "{{ %d | hmac('%s') }}" % (message, secret_key)
+    filter_hmac = interpolation.eval(s, config={})
+
+    # compute expected hmac using the hmac library directly
+    hmac_obj = hmac_lib.new(
+        key=secret_key.encode("utf-8"), msg=str(message).encode("utf-8"), digestmod=hashlib.sha256
+    )
+    expected_hmac = hmac_obj.hexdigest()
+
+    assert filter_hmac == expected_hmac
+
+
+def test_hmac_with_invalid_hash_type() -> None:
+    message = "test_message"
+    secret_key = "test_secret_key"
+
+    s = "{{ '%s' | hmac('%s', 'md5') }}" % (message, secret_key)
+
+    with pytest.raises(ValueError):
+        interpolation.eval(s, config={})
