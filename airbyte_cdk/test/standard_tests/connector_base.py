@@ -28,7 +28,6 @@ ACCEPTANCE_TEST_CONFIG = "acceptance-test-config.yml"
 MANIFEST_YAML = "manifest.yaml"
 
 
-
 class ConnectorTestSuiteBase(abc.ABC):
     """Base class for connector test suites."""
 
