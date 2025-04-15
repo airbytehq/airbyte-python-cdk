@@ -8,7 +8,7 @@ import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from io import BytesIO, StringIO
 from threading import Thread
-from typing import Iterable
+from typing import ClassVar, Iterable
 from unittest.mock import Mock, patch
 
 import pytest
@@ -259,6 +259,8 @@ def test_composite_raw_decoder_csv_parser_values(requests_mock, encoding: str, d
 
 
 class TestServer(BaseHTTPRequestHandler):
+    __test__: ClassVar[bool] = False  # Tell Pytest this is not a Pytest class, despite its name
+
     def do_GET(self) -> None:
         self.send_response(200)
         self.end_headers()

@@ -810,6 +810,42 @@ def test_given_stream_data_is_not_record_when_read_records_then_update_slice_wit
         cursor.close_slice.assert_called_once_with(stream_slice, None)
 
 
+def test_given_initial_token_is_zero_when_read_records_then_pass_initial_token():
+    record_selector = MagicMock()
+    record_selector.select_records.return_value = []
+    cursor = MagicMock(spec=DeclarativeCursor)
+    paginator = MagicMock()
+    paginator.get_initial_token.return_value = 0
+    paginator.next_page_token.return_value = None
+
+    retriever = SimpleRetriever(
+        name="stream_name",
+        primary_key=primary_key,
+        requester=MagicMock(),
+        paginator=paginator,
+        record_selector=record_selector,
+        stream_slicer=cursor,
+        cursor=cursor,
+        parameters={},
+        config={},
+    )
+    stream_slice = StreamSlice(cursor_slice={}, partition={})
+
+    response = requests.Response()
+    response.status_code = 200
+    response._content = "{}".encode()
+
+    with patch.object(
+        SimpleRetriever,
+        "_fetch_next_page",
+        return_value=response,
+    ) as fetch_next_page_mock:
+        list(retriever.read_records(stream_slice=stream_slice, records_schema={}))
+        fetch_next_page_mock.assert_called_once_with(
+            cursor.get_stream_state(), stream_slice, {"next_page_token": 0}
+        )
+
+
 def _generate_slices(number_of_slices):
     return [{"date": f"2022-01-0{day + 1}"} for day in range(number_of_slices)]
 
