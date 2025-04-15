@@ -101,7 +101,6 @@ class ManifestDeclarativeSource(DeclarativeSource):
             emit_connector_builder_messages: True if messages should be emitted to the connector builder.
             component_factory: optional factory if ModelToComponentFactory's default behavior needs to be tweaked.
             normalize_manifest: Optional flag to indicate if the manifest should be normalized.
-            post_resolve_manifest: Optional flag to indicate if the manifest should be resolved after normalization.
         """
         self.logger = logging.getLogger(f"airbyte.{self.name}")
 
