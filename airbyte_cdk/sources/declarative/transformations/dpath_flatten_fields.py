@@ -12,8 +12,8 @@ from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 class KeyTransformation:
     config: Config
     parameters: InitVar[Mapping[str, Any]]
-    prefix: Union[InterpolatedString, str, None] = None
-    suffix: Union[InterpolatedString, str, None] = None
+    prefix: Optional[str] = None
+    suffix: Optional[str] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if self.prefix is not None:
