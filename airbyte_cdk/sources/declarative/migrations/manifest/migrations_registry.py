@@ -17,10 +17,10 @@ for _, module_name, is_pkg in pkgutil.iter_modules(migrations_pkg.__path__):
 
 
 def _migration_order_key(cls: object) -> int:
-    # Extract the migration order from the module name, e.g., 0_v6_45_2_http_requester_url_base_to_url_migration
-    # The order is the integer at the start of the module name, before the first underscore
+    # Extract the migration order from the module name, e.g., http_requester_url_base_to_url_v6_45_2__0
+    # The order is the integer after the double underscore at the end of the module name
     module_name = cls.__module__.split(".")[-1]
-    match = re.match(r"(\d+)_", module_name)
+    match = re.search(r"__(\d+)$", module_name)
     return int(match.group(1)) if match else 0
 
 
