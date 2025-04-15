@@ -1,7 +1,7 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 """Base class for destination test suites."""
 
-from airbyte_cdk.test.declarative.test_suites.connector_base import ConnectorTestSuiteBase
+from airbyte_cdk.test.standard_tests.connector_base import ConnectorTestSuiteBase
 
 
 class DestinationTestSuiteBase(ConnectorTestSuiteBase):

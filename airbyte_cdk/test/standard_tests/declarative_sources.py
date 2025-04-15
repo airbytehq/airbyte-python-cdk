@@ -10,11 +10,9 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
 from airbyte_cdk.test.declarative.models import ConnectorTestScenario
-from airbyte_cdk.test.declarative.test_suites.connector_base import MANIFEST_YAML
-from airbyte_cdk.test.declarative.test_suites.source_base import (
-    SourceTestSuiteBase,
-)
 from airbyte_cdk.test.declarative.utils.job_runner import IConnector
+from airbyte_cdk.test.standard_tests.connector_base import MANIFEST_YAML
+from airbyte_cdk.test.standard_tests.source_base import SourceTestSuiteBase
 
 
 def md5_checksum(file_path: Path) -> str:

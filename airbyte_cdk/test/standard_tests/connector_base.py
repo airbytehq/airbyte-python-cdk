@@ -28,49 +28,6 @@ ACCEPTANCE_TEST_CONFIG = "acceptance-test-config.yml"
 MANIFEST_YAML = "manifest.yaml"
 
 
-def generate_tests(metafunc: pytest.Metafunc) -> None:
-    """
-    A helper for pytest_generate_tests hook.
-
-    If a test method (in a class subclassed from our base class)
-    declares an argument 'scenario', this function retrieves the
-    'scenarios' attribute from the test class and parametrizes that
-    test with the values from 'scenarios'.
-
-    ## Usage
-
-    ```python
-    from airbyte_cdk.test.declarative.test_suites.connector_base import (
-        generate_tests,
-        ConnectorTestSuiteBase,
-    )
-
-    def pytest_generate_tests(metafunc):
-        generate_tests(metafunc)
-
-    class TestMyConnector(ConnectorTestSuiteBase):
-        ...
-
-    ```
-    """
-    # Check if the test function requires an 'scenario' argument
-    if "scenario" in metafunc.fixturenames:
-        # Retrieve the test class
-        test_class = metafunc.cls
-        if test_class is None:
-            raise ValueError("Expected a class here.")
-        # Get the 'scenarios' attribute from the class
-        scenarios_attr = getattr(test_class, "get_scenarios", None)
-        if scenarios_attr is None:
-            raise ValueError(
-                f"Test class {test_class} does not have a 'scenarios' attribute. "
-                "Please define the 'scenarios' attribute in the test class."
-            )
-
-        scenarios = test_class.get_scenarios()
-        ids = [str(scenario) for scenario in scenarios]
-        metafunc.parametrize("scenario", scenarios, ids=ids)
-
 
 class ConnectorTestSuiteBase(abc.ABC):
     """Base class for connector test suites."""

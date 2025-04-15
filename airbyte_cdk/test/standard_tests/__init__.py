@@ -4,16 +4,15 @@
 Here we have base classes for a robust set of declarative connector test suites.
 """
 
-from airbyte_cdk.test.declarative.test_suites.connector_base import (
+from airbyte_cdk.test.standard_tests.connector_base import (
     ConnectorTestScenario,
     ConnectorTestSuiteBase,
-    generate_tests,
 )
-from airbyte_cdk.test.declarative.test_suites.declarative_sources import (
+from airbyte_cdk.test.standard_tests.declarative_sources import (
     DeclarativeSourceTestSuite,
 )
-from airbyte_cdk.test.declarative.test_suites.destination_base import DestinationTestSuiteBase
-from airbyte_cdk.test.declarative.test_suites.source_base import SourceTestSuiteBase
+from airbyte_cdk.test.standard_tests.destination_base import DestinationTestSuiteBase
+from airbyte_cdk.test.standard_tests.source_base import SourceTestSuiteBase
 
 __all__ = [
     "ConnectorTestScenario",
@@ -21,5 +20,4 @@ __all__ = [
     "DeclarativeSourceTestSuite",
     "DestinationTestSuiteBase",
     "SourceTestSuiteBase",
-    "generate_tests",
 ]

@@ -16,10 +16,10 @@ from airbyte_cdk.test import entrypoint_wrapper
 from airbyte_cdk.test.declarative.models import (
     ConnectorTestScenario,
 )
-from airbyte_cdk.test.declarative.test_suites.connector_base import (
+from airbyte_cdk.test.declarative.utils.job_runner import run_test_job
+from airbyte_cdk.test.standard_tests.connector_base import (
     ConnectorTestSuiteBase,
 )
-from airbyte_cdk.test.declarative.utils.job_runner import run_test_job
 
 
 class SourceTestSuiteBase(ConnectorTestSuiteBase):

@@ -1,14 +1,11 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 """FAST Airbyte Standard Tests for the source_pokeapi_w_components source."""
 
-from airbyte_cdk.test.declarative.test_suites import (
-    DeclarativeSourceTestSuite,
-    generate_tests,
-)
+from airbyte_cdk.test.standard_tests import DeclarativeSourceTestSuite
 
-
-def pytest_generate_tests(metafunc) -> None:
-    generate_tests(metafunc)
+pytest_plugins = [
+    "airbyte_cdk.test.standard_tests.pytest_hooks",
+]
 
 
 class TestSuiteSourcePokeAPI(DeclarativeSourceTestSuite):
