@@ -340,13 +340,15 @@ class TestOauth2Authenticator:
                     url="https://refresh_endpoint.com/",
                     body="grant_type=client&client_id=some_client_id&client_secret=some_client_secret&refresh_token=some_refresh_token",
                 ),
-                HttpResponse(body=json.dumps({"access_token": "new_access_token", "expires_in": 1000})),
+                HttpResponse(
+                    body=json.dumps({"access_token": "new_access_token", "expires_in": 1000})
+                ),
             )
             oauth.get_access_token()
 
         assert oauth.access_token == "new_access_token"
         assert oauth._token_expiry_date == ab_datetime_now() + timedelta(seconds=1000)
-        
+
     @freezegun.freeze_time("2022-01-01")
     @pytest.mark.parametrize(
         "initial_expiry_date_delta, expected_new_expiry_date_delta, expected_access_token",
@@ -355,7 +357,11 @@ class TestOauth2Authenticator:
             (timedelta(days=-1), timedelta(hours=1), "new_access_token"),
             (None, timedelta(hours=1), "new_access_token"),
         ],
-        ids=["initial_expiry_date_in_future", "initial_expiry_date_in_past", "no_initial_expiry_date"],
+        ids=[
+            "initial_expiry_date_in_future",
+            "initial_expiry_date_in_past",
+            "no_initial_expiry_date",
+        ],
     )
     def test_no_expiry_date_provided_by_auth_server(
         self,
@@ -363,7 +369,11 @@ class TestOauth2Authenticator:
         expected_new_expiry_date_delta,
         expected_access_token,
     ) -> None:
-        initial_expiry_date = ab_datetime_now().add(initial_expiry_date_delta).isoformat() if initial_expiry_date_delta else None
+        initial_expiry_date = (
+            ab_datetime_now().add(initial_expiry_date_delta).isoformat()
+            if initial_expiry_date_delta
+            else None
+        )
         expected_new_expiry_date = ab_datetime_now().add(expected_new_expiry_date_delta)
         oauth = DeclarativeOauth2Authenticator(
             token_refresh_endpoint="https://refresh_endpoint.com/",

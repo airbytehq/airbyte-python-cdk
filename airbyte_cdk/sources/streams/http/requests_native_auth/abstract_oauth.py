@@ -153,7 +153,7 @@ class AbstractOauth2Authenticator(AuthBase):
         Returns the default token expiry date
         """
         # 1 hour was chosen as a middle ground to avoid unnecessary frequent refreshes and token expiration
-        default_token_expiry_duration_hours = 1 # 1 hour
+        default_token_expiry_duration_hours = 1  # 1 hour
         return ab_datetime_now() + timedelta(hours=default_token_expiry_duration_hours)
 
     def _wrap_refresh_token_exception(
@@ -315,7 +315,7 @@ class AbstractOauth2Authenticator(AuthBase):
     def _extract_token_expiry_date(self, response_data: Mapping[str, Any]) -> AirbyteDateTime:
         """
         Extracts the token_expiry_date, like `expires_in` or `expires_at`, etc from the given response data.
-        
+
         If the token_expiry_date is not found, it will return an existing token expiry date if set, or a default token expiry date.
 
         Args:
