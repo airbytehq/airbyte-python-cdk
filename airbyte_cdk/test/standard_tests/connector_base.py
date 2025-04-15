@@ -10,7 +10,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
-import pytest
 import yaml
 from boltons.typeutils import classproperty
 

@@ -53,6 +53,17 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             + "\n".join([str(m) for m in result._messages])
         )
 
+    def test_discover(
+        self,
+        scenario: ConnectorTestScenario,
+    ) -> None:
+        """Standard test for `discover`."""
+        run_test_job(
+            self.create_connector(scenario),
+            "discover",
+            test_scenario=scenario,
+        )
+
     def test_basic_read(
         self,
         scenario: ConnectorTestScenario,
@@ -127,14 +138,3 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         )
         assert result.errors, "Expected errors but got none."
         assert result.trace_messages, "Expected trace messages but got none."
-
-    def test_discover(
-        self,
-        scenario: ConnectorTestScenario,
-    ) -> None:
-        """Standard test for `discover`."""
-        run_test_job(
-            self.create_connector(scenario),
-            "discover",
-            test_scenario=scenario,
-        )
