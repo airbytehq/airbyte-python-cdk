@@ -111,3 +111,4 @@ class BaseModelWithDeprecations(BaseModel):
                 message=f"Component type: `{self.__class__.__name__}`. Field '{field_name}' is deprecated. {message}",
             ),
         )
+        # dummy change to trigger CI tests.
