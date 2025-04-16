@@ -235,10 +235,10 @@ jobs:
 
   connectors_ci_summary:
     # This job simply asserts that nothing failed in the matrix.
-    # This allows us to make this step required while the preceeding
+    # This allows us to make this step required while the preceding
     # dynamic steps do not need to be individually reported if they
     # are skipped.
-    name: Connectors Tests Check (Matrix Summary)
+    name: Connector Tests Completion Check
     needs: [connectors_ci]
     runs-on: ubuntu-22.04
     steps:
