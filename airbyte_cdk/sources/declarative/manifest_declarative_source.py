@@ -125,7 +125,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         )
 
     def deprecation_warnings(self) -> List[AirbyteLogMessage]:
-        return self._constructor.get_model_deprecations() or []
+        return self._constructor.get_model_deprecations()
 
     @property
     def connection_checker(self) -> ConnectionChecker:

@@ -589,7 +589,7 @@ class ModelToComponentFactory:
         self._api_budget: Optional[Union[APIBudget, HttpAPIBudget]] = None
         self._job_tracker: JobTracker = JobTracker(max_concurrent_async_job_count or 1)
         # placeholder for deprecation warnings
-        self._deprecation_logs: List[AirbyteLogMessage] = []
+        self._collected_deprecation_logs: List[AirbyteLogMessage] = []
 
     def _init_mappings(self) -> None:
         self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Mapping[Type[BaseModel], Callable[..., Any]] = {
@@ -747,14 +747,22 @@ class ModelToComponentFactory:
         """
         Returns the deprecation warnings that were collected during the creation of components.
         """
-        return self._deprecation_logs
+        return self._collected_deprecation_logs
 
     def _collect_model_deprecations(self, model: BaseModelWithDeprecations) -> None:
+        """
+        Collects deprecation logs from the given model and appends any new logs to the internal collection.
+
+        This method checks if the provided model has deprecation logs (identified by the presence of the DEPRECATION_LOGS_TAG attribute and a non-None `_deprecation_logs` property). It iterates through each deprecation log in the model and appends it to the `_collected_deprecation_logs` list if it has not already been collected, ensuring that duplicate logs are avoided.
+
+        Args:
+            model (BaseModelWithDeprecations): The model instance from which to collect deprecation logs.
+        """
         if hasattr(model, DEPRECATION_LOGS_TAG) and model._deprecation_logs is not None:
             for log in model._deprecation_logs:
                 # avoid duplicates for deprecation logs observed.
-                if log not in self._deprecation_logs:
-                    self._deprecation_logs.append(log)
+                if log not in self._collected_deprecation_logs:
+                    self._collected_deprecation_logs.append(log)
 
     @staticmethod
     def create_added_field_definition(

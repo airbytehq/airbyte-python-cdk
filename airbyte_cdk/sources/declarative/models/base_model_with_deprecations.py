@@ -31,8 +31,8 @@ class BaseModelWithDeprecations(BaseModel):
     This class is used to create models that can have deprecated fields
     and show warnings when those fields are accessed or initialized.
 
-    The `_deprecation_logs` attribute is storred in the model itself.
-    The collected deprecation warnings are further proparated to the Airbyte log messages,
+    The `_deprecation_logs` attribute is stored in the model itself.
+    The collected deprecation warnings are further propagated to the Airbyte log messages,
     during the component creation process, in `model_to_component._collect_model_deprecations()`.
 
     The component implementation is not responsible for handling the deprecation warnings,
@@ -46,14 +46,14 @@ class BaseModelWithDeprecations(BaseModel):
 
         extra = "allow"
 
-    _deprecation_logs: List[AirbyteLogMessage] = []
-
     def __init__(self, **data: Any) -> None:
         """
         Show warnings for deprecated fields during component initialization.
         """
-        model_fields = self.__fields__
 
+        self._deprecation_logs: List[AirbyteLogMessage] = []
+
+        model_fields = self.__fields__
         for field_name in data:
             if field_name in model_fields:
                 is_deprecated_field = model_fields[field_name].field_info.extra.get(
@@ -74,7 +74,6 @@ class BaseModelWithDeprecations(BaseModel):
         """
 
         value = super().__getattribute__(name)
-
         try:
             model_fields = super().__getattribute__(FIELDS_TAG)
             field_info = model_fields.get(name)
