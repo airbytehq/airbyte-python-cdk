@@ -50,7 +50,7 @@ class BaseModelWithDeprecations(BaseModel):
         """
         Show warnings for deprecated fields during component initialization.
         """
-
+        # placeholder for deprecation logs
         self._deprecation_logs: List[AirbyteLogMessage] = []
 
         model_fields = self.__fields__
@@ -81,7 +81,7 @@ class BaseModelWithDeprecations(BaseModel):
                 field_info.field_info.extra.get(DEPRECATED, False) if field_info else False
             )
             if is_deprecated_field:
-                deprecation_message = field_info.extra.get(DEPRECATION_MESSAGE, "")
+                deprecation_message = field_info.field_info.extra.get(DEPRECATION_MESSAGE, "")
                 self._deprecated_warning(name, deprecation_message)
         except (AttributeError, KeyError):
             pass
@@ -96,17 +96,13 @@ class BaseModelWithDeprecations(BaseModel):
             message (str): Warning message to be displayed.
         """
 
+        message = f"Component type: `{self.__class__.__name__}`. Field '{field_name}' is deprecated. {message}"
+
         # Emit a warning message for deprecated fields (to stdout) (Python Default behavior)
-        warnings.warn(
-            f"Component type: `{self.__class__.__name__}`. Field '{field_name}' is deprecated. {message}",
-            DeprecationWarning,
-        )
+        warnings.warn(message, DeprecationWarning)
 
         # Add the deprecation message to the Airbyte log messages,
         # this logs are displayed in the Connector Builder.
         self._deprecation_logs.append(
-            AirbyteLogMessage(
-                level=Level.WARN,
-                message=f"Component type: `{self.__class__.__name__}`. Field '{field_name}' is deprecated. {message}",
-            ),
+            AirbyteLogMessage(level=Level.WARN, message=message),
         )
