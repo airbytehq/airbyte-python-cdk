@@ -55,6 +55,9 @@ from airbyte_cdk.sources.utils.slice_logger import (
     SliceLogger,
 )
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
+from manifest_migrations.migration_handler import (
+    ManifestMigrationHandler,
+)
 
 
 class ManifestDeclarativeSource(DeclarativeSource):
@@ -68,16 +71,19 @@ class ManifestDeclarativeSource(DeclarativeSource):
         debug: bool = False,
         emit_connector_builder_messages: bool = False,
         component_factory: Optional[ModelToComponentFactory] = None,
-    ):
+        migrate_manifest: Optional[bool] = False,
+    ) -> None:
         """
         Args:
             config: The provided config dict.
             source_config: The manifest of low-code components that describe the source connector.
-            debug: True if debug mode is enabled.
-            emit_connector_builder_messages: True if messages should be emitted to the connector builder.
-            component_factory: optional factory if ModelToComponentFactory's default behavior needs to be tweaked.
+            debug: bool True if debug mode is enabled.
+            emit_connector_builder_messages: Optional[bool] True if messages should be emitted to the connector builder.
+            component_factory: Optional factory if ModelToComponentFactory's default behavior needs to be tweaked.
+            migrate_manifest: Optional[bool] if the manifest should be migrated to pick up the latest declarative component schema changes at runtime.
         """
         self.logger = logging.getLogger(f"airbyte.{self.name}")
+
         # For ease of use we don't require the type to be specified at the top level manifest, but it should be included during processing
         manifest = dict(source_config)
         if "type" not in manifest:
@@ -90,6 +96,12 @@ class ManifestDeclarativeSource(DeclarativeSource):
         propagated_source_config = ManifestComponentTransformer().propagate_types_and_parameters(
             "", resolved_source_config, {}
         )
+
+        if migrate_manifest:
+            propagated_source_config = ManifestMigrationHandler(
+                propagated_source_config
+            ).apply_migrations()
+
         self._source_config = propagated_source_config
         self._debug = debug
         self._emit_connector_builder_messages = emit_connector_builder_messages
