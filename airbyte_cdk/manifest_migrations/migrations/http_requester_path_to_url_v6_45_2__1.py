@@ -25,7 +25,7 @@ class V_6_45_2_HttpRequesterPathToUrl(ManifestMigration):
         )
 
     def migrate(self, manifest: ManifestType) -> None:
-        original_key_value = manifest[self.original_key].lstrip("/")
+        original_key_value = manifest.get(self.original_key, EmptyString).lstrip("/")
         replacement_key_value = manifest[self.replacement_key]
 
         # return a full-url if provided directly from interpolation context
