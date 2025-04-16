@@ -121,7 +121,7 @@ class ManifestMigration:
         The migration version is extracted from the class name using a regular expression.
         The expected format is "V_<major>_<minor>_<patch>_<migration_name>".
 
-        For example, "V_6_45_2_ManifestMigration_HttpRequesterPathToUrl" -> "6.45.2"
+        For example, "V_6_45_2_HttpRequesterPathToUrl" -> "6.45.2"
 
         :return: The migration version as a string in the format "major.minor.patch"
         :raises ValueError: If the class name does not match the expected format
@@ -133,5 +133,5 @@ class ManifestMigration:
             return migration_version.group(1).replace("_", ".")
         else:
             raise ValueError(
-                f"Invalid migration class name, make sure the class name has the version (e.g `V_0_0_0_`): {class_name}"
+                f"Invalid migration class name, make sure the class name has the version (e.g `V_<major>_<minor>_<patch>_<migration_name>`): {class_name}"
             )

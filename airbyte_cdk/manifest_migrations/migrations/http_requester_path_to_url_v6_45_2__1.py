@@ -8,7 +8,7 @@ from airbyte_cdk.manifest_migrations.manifest_migration import (
 from airbyte_cdk.sources.types import EmptyString
 
 
-class V_6_45_2_ManifestMigration_HttpRequesterPathToUrl(ManifestMigration):
+class V_6_45_2_HttpRequesterPathToUrl(ManifestMigration):
     """
     This migration is responsible for migrating the `path` key to `url` in the HttpRequester component.
     The `path` key is expected to be a relative path, and the `url` key is expected to be a full URL.
