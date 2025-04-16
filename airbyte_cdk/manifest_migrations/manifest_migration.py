@@ -4,6 +4,8 @@ import re
 from abc import abstractmethod
 from typing import Any, Dict
 
+from packaging.version import Version
+
 ManifestType = Dict[str, Any]
 
 
@@ -36,13 +38,13 @@ class ManifestMigration:
         """
 
     @property
-    def migration_version(self) -> str:
+    def migration_version(self) -> Version:
         """
         Get the migration version.
 
-        :return: The migration version as a string
+        :return: The migration version as a Version object
         """
-        return self._get_migration_version()
+        return Version(self._get_migration_version())
 
     def _is_component(self, obj: Dict[str, Any]) -> bool:
         """
@@ -53,7 +55,7 @@ class ManifestMigration:
         """
         return TYPE_TAG in obj.keys()
 
-    def _is_migratable(self, obj: Dict[str, Any]) -> bool:
+    def _is_migratable_type(self, obj: Dict[str, Any]) -> bool:
         """
         Check if the object is a migratable component,
         based on the Type of the component and the migration version.
@@ -61,10 +63,7 @@ class ManifestMigration:
         :param obj: The object to check
         :return: True if the object is a migratable component, False otherwise
         """
-        return (
-            obj[TYPE_TAG] not in NON_MIGRATABLE_TYPES
-            and self._get_manifest_version(obj) <= self.migration_version
-        )
+        return obj[TYPE_TAG] not in NON_MIGRATABLE_TYPES
 
     def _process_manifest(self, obj: Any) -> None:
         """
@@ -89,7 +88,7 @@ class ManifestMigration:
             # Check if the object is a component
             if self._is_component(obj):
                 # Check if the object is allowed to be migrated
-                if not self._is_migratable(obj):
+                if not self._is_migratable_type(obj):
                     return
 
                 # Check if the object should be migrated
@@ -105,15 +104,6 @@ class ManifestMigration:
             # Process all items in the list
             for item in obj:
                 self._process_manifest(item)
-
-    def _get_manifest_version(self, manifest: ManifestType) -> str:
-        """
-        Get the manifest version from the manifest.
-
-        :param manifest: The manifest to get the version from
-        :return: The manifest version
-        """
-        return str(manifest.get("version", "0.0.0"))
 
     def _get_migration_version(self) -> str:
         """

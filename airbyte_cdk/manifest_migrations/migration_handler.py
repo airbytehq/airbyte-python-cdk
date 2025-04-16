@@ -3,7 +3,10 @@
 #
 
 import copy
+import logging
 from typing import Type
+
+from packaging.version import Version
 
 from airbyte_cdk.manifest_migrations.exceptions import (
     ManifestMigrationException,
@@ -16,6 +19,8 @@ from airbyte_cdk.manifest_migrations.migrations_registry import (
     MIGRATIONS,
 )
 
+LOGGER = logging.getLogger("airbyte.cdk.manifest_migrations")
+
 
 class ManifestMigrationHandler:
     """
@@ -25,6 +30,7 @@ class ManifestMigrationHandler:
     def __init__(self, manifest: ManifestType) -> None:
         self._manifest = manifest
         self._migrated_manifest: ManifestType = copy.deepcopy(self._manifest)
+        self._manifest_version: Version = self._get_manifest_version()
 
     def apply_migrations(self) -> ManifestType:
         """
@@ -57,6 +63,22 @@ class ManifestMigrationHandler:
             ManifestMigrationException: If the migration process encounters any errors.
         """
         try:
-            migration_class()._process_manifest(self._migrated_manifest)
+            migration_instance = migration_class()
+            # check if the migration is supported for the given manifest version
+            if self._manifest_version <= migration_instance.migration_version:
+                migration_instance._process_manifest(self._migrated_manifest)
+            else:
+                LOGGER.info(
+                    f"Manifest migration: `{migration_class.__name__}` is not supported for the given manifest version `{self._manifest_version}`.",
+                )
         except Exception as e:
-            raise ManifestMigrationException(f"Failed to migrate the manifest: {e}") from e
+            raise ManifestMigrationException(str(e)) from e
+
+    def _get_manifest_version(self) -> Version:
+        """
+        Get the manifest version from the manifest.
+
+        :param manifest: The manifest to get the version from
+        :return: The manifest version
+        """
+        return Version(str(self._migrated_manifest.get("version", "0.0.0")))
