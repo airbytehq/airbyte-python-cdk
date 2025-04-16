@@ -21,6 +21,26 @@ from airbyte_cdk.test.declarative.models import (
 )
 
 
+def _errors_to_str(
+    entrypoint_output: entrypoint_wrapper.EntrypointOutput,
+) -> str:
+    """Convert errors from entrypoint output to a string."""
+    if not entrypoint_output.errors:
+        # If there are no errors, return an empty string.
+        return ""
+
+    return "\n" + "\n".join(
+        [
+            str(error.trace.error).replace(
+                "\\n",
+                "\n",
+            )
+            for error in entrypoint_output.errors
+            if error.trace
+        ],
+    )
+
+
 @runtime_checkable
 class IConnector(Protocol):
     """A connector that can be run in a test scenario.
@@ -53,7 +73,7 @@ def run_test_job(
     if isinstance(connector, type) or callable(connector):
         # If the connector is a class or a factory lambda, instantiate it.
         connector_obj = connector()
-    elif isinstance(connector, IConnector):  # TODO: Get a valid protocol check here
+    elif isinstance(connector, IConnector):
         connector_obj = connector
     else:
         raise ValueError(
@@ -99,22 +119,18 @@ def run_test_job(
     )
     if result.errors and not test_scenario.expect_exception:
         raise AssertionError(
-            "\n\n".join(
-                [str(err.trace.error).replace("\\n", "\n") for err in result.errors if err.trace],
-            )
+            f"Expected no errors but got {len(result.errors)}: \n" + _errors_to_str(result)
         )
 
     if verb == "check":
         # Check is expected to fail gracefully without an exception.
         # Instead, we assert that we have a CONNECTION_STATUS message with
         # a failure status.
-        assert not result.errors, "Expected no errors from check. Got:\n" + "\n".join(
-            [str(error) for error in result.errors]
-        )
         assert len(result.connection_status_messages) == 1, (
             "Expected exactly one CONNECTION_STATUS message. Got "
             f"{len(result.connection_status_messages)}:\n"
             + "\n".join([str(msg) for msg in result.connection_status_messages])
+            + _errors_to_str(result)
         )
         if test_scenario.expect_exception:
             conn_status = result.connection_status_messages[0].connectionStatus
@@ -135,18 +151,9 @@ def run_test_job(
             raise AssertionError("Expected exception but got none.")
 
         return result
-    if result.errors:
-        raise AssertionError(
-            "\n\n".join(
-                [
-                    str(err.trace.error).replace(
-                        "\\n",
-                        "\n",
-                    )
-                    for err in result.errors
-                    if err.trace
-                ],
-            )
-        )
+
+    assert not result.errors, (
+        f"Expected no errors but got {len(result.errors)}: \n" + _errors_to_str(result)
+    )
 
     return result
