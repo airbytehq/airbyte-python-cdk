@@ -18,10 +18,10 @@ from airbyte_cdk.models import (
     Type,
 )
 from airbyte_cdk.test import entrypoint_wrapper
-from airbyte_cdk.test.declarative.models import (
+from airbyte_cdk.test.standard_tests._job_runner import IConnector, run_test_job
+from airbyte_cdk.test.standard_tests.models import (
     ConnectorTestScenario,
 )
-from airbyte_cdk.test.declarative.utils.job_runner import IConnector, run_test_job
 
 ACCEPTANCE_TEST_CONFIG = "acceptance-test-config.yml"
 MANIFEST_YAML = "manifest.yaml"
