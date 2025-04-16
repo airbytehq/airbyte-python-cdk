@@ -232,3 +232,16 @@ jobs:
         with:
           name: ${{matrix.connector}}-job-output
           path: airbyte/airbyte-ci/connectors/pipelines/pipeline_reports
+
+  connectors_ci_summary:
+    # This job simply asserts that nothing failed in the matrix.
+    # This allows us to make this step required while the preceeding
+    # dynamic steps do not need to be individually reported if they
+    # are skipped.
+    name: Connectors Tests Check (Matrix Summary)
+    needs: [connectors_ci]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Success
+        run: |
+          echo "If this job runs, it means the matrix job succeeded! 🙌"
