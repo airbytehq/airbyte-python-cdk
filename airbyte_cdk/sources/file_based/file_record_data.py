@@ -18,5 +18,6 @@ class FileRecordData(BaseModel):
     bytes: int
     source_uri: str
     id: Optional[str] = None
+    created_at: Optional[str] = None
     updated_at: Optional[str] = None
     mime_type: Optional[str] = None

@@ -27,6 +27,7 @@ file_transfer_schema = {
         "source_uri": {"type": "string"},
         "bytes": {"type": "integer"},
         "id": {"type": ["null", "string"]},
+        "created_at": {"type": ["null", "string"]},
         "updated_at": {"type": ["null", "string"]},
         "mime_type": {"type": ["null", "string"]},
     },
