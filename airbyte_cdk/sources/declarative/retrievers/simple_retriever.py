@@ -367,7 +367,7 @@ class SimpleRetriever(Retriever):
             {"next_page_token": initial_token} if initial_token is not None else None
         )
         while not pagination_complete:
-            property_chunks = (
+            property_chunks: List[List[str]] = (
                 list(
                     self.additional_query_properties.get_request_property_chunks(
                         stream_slice=stream_slice
@@ -375,17 +375,16 @@ class SimpleRetriever(Retriever):
                 )
                 if self.additional_query_properties
                 else [
-                    None
-                ]  # A single None property chunk represents the case where property chunking is not configured
+                    []
+                ]  # A single empty property chunk represents the case where property chunking is not configured
             )
 
-            records_without_merge_key = []
             merged_records: MutableMapping[str, Any] = defaultdict(dict)
             last_page_size = 0
             last_record: Optional[Record] = None
             response: Optional[requests.Response] = None
             for properties in property_chunks:
-                if properties:
+                if len(properties) > 0:
                     stream_slice = StreamSlice(
                         partition=stream_slice.partition or {},
                         cursor_slice=stream_slice.cursor_slice or {},
