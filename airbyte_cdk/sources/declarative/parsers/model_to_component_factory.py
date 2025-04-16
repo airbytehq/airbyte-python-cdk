@@ -498,6 +498,7 @@ from airbyte_cdk.sources.declarative.transformations import (
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
 from airbyte_cdk.sources.declarative.transformations.dpath_flatten_fields import (
     DpathFlattenFields,
+    KeyTransformation,
 )
 from airbyte_cdk.sources.declarative.transformations.flatten_fields import (
     FlattenFields,
@@ -790,6 +791,16 @@ class ModelToComponentFactory:
         self, model: DpathFlattenFieldsModel, config: Config, **kwargs: Any
     ) -> DpathFlattenFields:
         model_field_path: List[Union[InterpolatedString, str]] = [x for x in model.field_path]
+        key_transformation = (
+            KeyTransformation(
+                config=config,
+                prefix=model.key_transformation.prefix,
+                suffix=model.key_transformation.suffix,
+                parameters=model.parameters or {},
+            )
+            if model.key_transformation is not None
+            else None
+        )
         return DpathFlattenFields(
             config=config,
             field_path=model_field_path,
@@ -797,6 +808,7 @@ class ModelToComponentFactory:
             if model.delete_origin_value is not None
             else False,
             replace_record=model.replace_record if model.replace_record is not None else False,
+            key_transformation=key_transformation,
             parameters=model.parameters or {},
         )
 
@@ -2054,6 +2066,7 @@ class ModelToComponentFactory:
         config: Config,
         *,
         url_base: str,
+        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
         decoder: Optional[Decoder] = None,
         cursor_used_for_stop_condition: Optional[DeclarativeCursor] = None,
     ) -> Union[DefaultPaginator, PaginatorTestReadDecorator]:
@@ -2075,7 +2088,10 @@ class ModelToComponentFactory:
             else None
         )
         pagination_strategy = self._create_component_from_model(
-            model=model.pagination_strategy, config=config, decoder=decoder_to_use
+            model=model.pagination_strategy,
+            config=config,
+            decoder=decoder_to_use,
+            extractor_model=extractor_model,
         )
         if cursor_used_for_stop_condition:
             pagination_strategy = StopConditionPaginationStrategyDecorator(
@@ -2572,7 +2588,12 @@ class ModelToComponentFactory:
         )
 
     def create_offset_increment(
-        self, model: OffsetIncrementModel, config: Config, decoder: Decoder, **kwargs: Any
+        self,
+        model: OffsetIncrementModel,
+        config: Config,
+        decoder: Decoder,
+        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        **kwargs: Any,
     ) -> OffsetIncrement:
         if isinstance(decoder, PaginationDecoderDecorator):
             inner_decoder = decoder.decoder
@@ -2587,10 +2608,24 @@ class ModelToComponentFactory:
                 self._UNSUPPORTED_DECODER_ERROR.format(decoder_type=type(inner_decoder))
             )
 
+        # Ideally we would instantiate the runtime extractor from highest most level (in this case the SimpleRetriever)
+        # so that it can be shared by OffSetIncrement and RecordSelector. However, due to how we instantiate the
+        # decoder with various decorators here, but not in create_record_selector, it is simpler to retain existing
+        # behavior by having two separate extractors with identical behavior since they use the same extractor model.
+        # When we have more time to investigate we can look into reusing the same component.
+        extractor = (
+            self._create_component_from_model(
+                model=extractor_model, config=config, decoder=decoder_to_use
+            )
+            if extractor_model
+            else None
+        )
+
         return OffsetIncrement(
             page_size=model.page_size,
             config=config,
             decoder=decoder_to_use,
+            extractor=extractor,
             inject_on_first_request=model.inject_on_first_request or False,
             parameters=model.parameters or {},
         )
@@ -2954,6 +2989,7 @@ class ModelToComponentFactory:
                 model=model.paginator,
                 config=config,
                 url_base=url_base,
+                extractor_model=model.record_selector.extractor,
                 decoder=decoder,
                 cursor_used_for_stop_condition=cursor_used_for_stop_condition,
             )
