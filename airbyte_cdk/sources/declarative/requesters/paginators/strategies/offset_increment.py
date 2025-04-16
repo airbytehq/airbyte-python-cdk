@@ -12,6 +12,7 @@ from airbyte_cdk.sources.declarative.decoders import (
     JsonDecoder,
     PaginationDecoderDecorator,
 )
+from airbyte_cdk.sources.declarative.extractors.dpath_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.requesters.paginators.strategies.pagination_strategy import (
     PaginationStrategy,
@@ -46,6 +47,7 @@ class OffsetIncrement(PaginationStrategy):
     config: Config
     page_size: Optional[Union[str, int]]
     parameters: InitVar[Mapping[str, Any]]
+    extractor: Optional[RecordExtractor]
     decoder: Decoder = field(
         default_factory=lambda: PaginationDecoderDecorator(decoder=JsonDecoder(parameters={}))
     )
@@ -74,6 +76,14 @@ class OffsetIncrement(PaginationStrategy):
         last_page_token_value: Optional[Any] = None,
     ) -> Optional[Any]:
         decoded_response = next(self.decoder.decode(response))
+
+        if self.extractor:
+            page_size_from_response = len(list(self.extractor.extract_records(response=response)))
+            # The extractor could return 0 records which is valid, but evaluates to False. Our fallback in other
+            # cases as the best effort option is to use the incoming last_page_size
+            last_page_size = (
+                page_size_from_response if page_size_from_response is not None else last_page_size
+            )
 
         # Stop paginating when there are fewer records than the page size or the current page has no records
         if (

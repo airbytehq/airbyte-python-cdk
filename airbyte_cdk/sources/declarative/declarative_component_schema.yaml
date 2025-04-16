@@ -2307,6 +2307,27 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  KeyTransformation:
+    title: Transformation to apply for extracted object keys by Dpath Flatten Fields
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [ KeyTransformation ]
+      prefix:
+        title: Key Prefix
+        description: Prefix to add for object keys. If not provided original keys remain unchanged.
+        type: string
+        examples:
+          - flattened_
+      suffix:
+        title: Key Suffix
+        description: Suffix to add for object keys. If not provided original keys remain unchanged.
+        type: string
+        examples:
+          - _flattened
   DpathFlattenFields:
     title: Dpath Flatten Fields
     description: A transformation that flatten field values to the to top of the record.
@@ -2335,6 +2356,11 @@ definitions:
         title: Replace Origin Record
         description: Whether to replace the origin record or not. Default is False.
         type: boolean
+      key_transformation:
+        title: Key transformation
+        description: Transformation for object keys. If not provided, original key will be used.
+        type: object
+        "$ref": "#/definitions/KeyTransformation"
       $parameters:
         type: object
         additionalProperties: true

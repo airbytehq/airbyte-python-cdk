@@ -879,6 +879,25 @@ class FlattenFields(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class KeyTransformation(BaseModel):
+    prefix: Optional[Union[str, None]] = Field(
+        None,
+        description="Prefix to add for object keys. If not provided original keys remain unchanged.",
+        examples=[
+            "flattened_",
+        ],
+        title="Key Prefix",
+    )
+    suffix: Optional[Union[str, None]] = Field(
+        None,
+        description="Suffix to add for object keys. If not provided original keys remain unchanged.",
+        examples=[
+            "_flattened",
+        ],
+        title="Key Suffix",
+    )
+
+
 class DpathFlattenFields(BaseModel):
     type: Literal["DpathFlattenFields"]
     field_path: List[str] = Field(
@@ -896,6 +915,11 @@ class DpathFlattenFields(BaseModel):
         None,
         description="Whether to replace the origin record or not. Default is False.",
         title="Replace Origin Record",
+    )
+    key_transformation: Optional[Union[KeyTransformation, None]] = Field(
+        None,
+        description="Transformation for object keys. If not provided, original key will be used.",
+        title="Key transformation",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
