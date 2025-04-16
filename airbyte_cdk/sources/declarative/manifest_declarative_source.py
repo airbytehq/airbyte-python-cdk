@@ -15,6 +15,9 @@ from jsonschema.exceptions import ValidationError
 from jsonschema.validators import validate
 from packaging.version import InvalidVersion, Version
 
+from airbyte_cdk.manifest_migrations.migration_handler import (
+    ManifestMigrationHandler,
+)
 from airbyte_cdk.models import (
     AirbyteConnectionStatus,
     AirbyteMessage,
@@ -55,9 +58,6 @@ from airbyte_cdk.sources.utils.slice_logger import (
     SliceLogger,
 )
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
-from manifest_migrations.migration_handler import (
-    ManifestMigrationHandler,
-)
 
 
 class ManifestDeclarativeSource(DeclarativeSource):

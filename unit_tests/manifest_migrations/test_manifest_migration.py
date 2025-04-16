@@ -3,11 +3,12 @@
 #
 
 
+from airbyte_cdk.manifest_migrations.migration_handler import (
+    ManifestMigrationHandler,
+)
+from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import (
     ManifestReferenceResolver,
-)
-from manifest_migrations.migration_handler import (
-    ManifestMigrationHandler,
 )
 
 resolver = ManifestReferenceResolver()

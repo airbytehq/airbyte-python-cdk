@@ -5,8 +5,8 @@ import re
 import sys
 from typing import List, Type
 
-import manifest_migrations.migrations as migrations_pkg
-from manifest_migrations.manifest_migration import (
+import airbyte_cdk.manifest_migrations.migrations as migrations_pkg
+from airbyte_cdk.manifest_migrations.manifest_migration import (
     ManifestMigration,
 )
 

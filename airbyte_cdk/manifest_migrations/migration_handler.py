@@ -5,14 +5,14 @@
 import copy
 from typing import Type
 
-from manifest_migrations.exceptions import (
+from airbyte_cdk.manifest_migrations.exceptions import (
     ManifestMigrationException,
 )
-from manifest_migrations.manifest_migration import (
+from airbyte_cdk.manifest_migrations.manifest_migration import (
     ManifestMigration,
     ManifestType,
 )
-from manifest_migrations.migrations_registry import (
+from airbyte_cdk.manifest_migrations.migrations_registry import (
     MIGRATIONS,
 )
 

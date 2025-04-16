@@ -1,4 +1,4 @@
-from manifest_migrations.manifest_migration import (
+from airbyte_cdk.manifest_migrations.manifest_migration import (
     TYPE_TAG,
     ManifestMigration,
     ManifestType,

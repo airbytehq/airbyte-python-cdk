@@ -1,11 +1,11 @@
 from urllib.parse import urljoin
 
-from airbyte_cdk.sources.types import EmptyString
-from manifest_migrations.manifest_migration import (
+from airbyte_cdk.manifest_migrations.manifest_migration import (
     TYPE_TAG,
     ManifestMigration,
     ManifestType,
 )
+from airbyte_cdk.sources.types import EmptyString
 
 
 class V_6_45_2_ManifestMigration_HttpRequesterPathToUrl(ManifestMigration):
