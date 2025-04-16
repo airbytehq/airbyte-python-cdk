@@ -27,7 +27,7 @@ from typing import (
 from isodate import parse_duration
 from pydantic.v1 import BaseModel
 
-from airbyte_cdk.models import FailureType, Level
+from airbyte_cdk.models import AirbyteLogMessage, FailureType, Level
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator
 from airbyte_cdk.sources.declarative.async_job.job_tracker import JobTracker
@@ -107,6 +107,10 @@ from airbyte_cdk.sources.declarative.migrations.legacy_to_per_partition_state_mi
 from airbyte_cdk.sources.declarative.models import (
     CustomStateMigration,
     GzipDecoder,
+)
+from airbyte_cdk.sources.declarative.models.base_model_with_deprecations import (
+    DEPRECATION_LOGS_TAG,
+    BaseModelWithDeprecations,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     AddedFieldDefinition as AddedFieldDefinitionModel,
@@ -584,6 +588,8 @@ class ModelToComponentFactory:
         self._connector_state_manager = connector_state_manager or ConnectorStateManager()
         self._api_budget: Optional[Union[APIBudget, HttpAPIBudget]] = None
         self._job_tracker: JobTracker = JobTracker(max_concurrent_async_job_count or 1)
+        # placeholder for deprecation warnings
+        self._deprecation_logs: List[AirbyteLogMessage] = []
 
     def _init_mappings(self) -> None:
         self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Mapping[Type[BaseModel], Callable[..., Any]] = {
@@ -730,7 +736,25 @@ class ModelToComponentFactory:
         component_constructor = self.PYDANTIC_MODEL_TO_CONSTRUCTOR.get(model.__class__)
         if not component_constructor:
             raise ValueError(f"Could not find constructor for {model.__class__}")
+
+        # collect deprecation warnings for supported models.
+        if isinstance(model, BaseModelWithDeprecations):
+            self._collect_model_deprecations(model)
+
         return component_constructor(model=model, config=config, **kwargs)
+
+    def get_model_deprecations(self) -> List[Any]:
+        """
+        Returns the deprecation warnings that were collected during the creation of components.
+        """
+        return self._deprecation_logs
+
+    def _collect_model_deprecations(self, model: BaseModelWithDeprecations) -> None:
+        if hasattr(model, DEPRECATION_LOGS_TAG) and model._deprecation_logs is not None:
+            for log in model._deprecation_logs:
+                # avoid duplicates for deprecation logs observed.
+                if log not in self._deprecation_logs:
+                    self._deprecation_logs.append(log)
 
     @staticmethod
     def create_added_field_definition(

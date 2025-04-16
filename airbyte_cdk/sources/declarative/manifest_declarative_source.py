@@ -17,6 +17,7 @@ from packaging.version import InvalidVersion, Version
 
 from airbyte_cdk.models import (
     AirbyteConnectionStatus,
+    AirbyteLogMessage,
     AirbyteMessage,
     AirbyteStateMessage,
     ConfiguredAirbyteCatalog,
@@ -122,6 +123,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
         return self._dynamic_stream_configs(
             manifest=self._source_config, config=self._config, with_dynamic_stream_name=True
         )
+
+    def deprecation_warnings(self) -> List[AirbyteLogMessage]:
+        return self._constructor.get_model_deprecations() or []
 
     @property
     def connection_checker(self) -> ConnectionChecker:
