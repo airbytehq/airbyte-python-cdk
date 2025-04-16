@@ -2194,7 +2194,7 @@ class ModelToComponentFactory:
             self._create_component_from_model(
                 model=model.authenticator,
                 config=config,
-                url_base=model.url_base,
+                url_base=model.url or model.url_base,
                 name=name,
                 decoder=decoder,
             )
@@ -2231,6 +2231,7 @@ class ModelToComponentFactory:
 
         return HttpRequester(
             name=name,
+            url=model.url,
             url_base=model.url_base,
             path=model.path,
             authenticator=authenticator,
@@ -2928,6 +2929,25 @@ class ModelToComponentFactory:
         use_cache: Optional[bool] = None,
         **kwargs: Any,
     ) -> SimpleRetriever:
+        def _get_url() -> str:
+            """
+            Closure to get the URL from the requester. This is used to get the URL in the case of a lazy retriever.
+            This is needed because the URL is not set until the requester is created.
+            """
+
+            _url = (
+                model.requester.url
+                if hasattr(model.requester, "url") and model.requester.url is not None
+                else requester.get_url()
+            )
+            _url_base = (
+                model.requester.url_base
+                if hasattr(model.requester, "url_base") and model.requester.url_base is not None
+                else requester.get_url_base()
+            )
+
+            return _url or _url_base
+
         decoder = (
             self._create_component_from_model(model=model.decoder, config=config)
             if model.decoder
@@ -2992,11 +3012,6 @@ class ModelToComponentFactory:
             use_cache=use_cache,
             config=config,
         )
-        url_base = (
-            model.requester.url_base
-            if hasattr(model.requester, "url_base")
-            else requester.get_url_base()
-        )
 
         # Define cursor only if per partition or common incremental support is needed
         cursor = stream_slicer if isinstance(stream_slicer, DeclarativeCursor) else None
@@ -3020,7 +3035,7 @@ class ModelToComponentFactory:
             self._create_component_from_model(
                 model=model.paginator,
                 config=config,
-                url_base=url_base,
+                url_base=_get_url(),
                 extractor_model=model.record_selector.extractor,
                 decoder=decoder,
                 cursor_used_for_stop_condition=cursor_used_for_stop_condition,

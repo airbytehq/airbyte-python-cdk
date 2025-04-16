@@ -46,15 +46,39 @@ class BaseModelWithDeprecations(BaseModel):
 
         extra = "allow"
 
-    def __init__(self, **data: Any) -> None:
+    def __init__(self, **model_data: Any) -> None:
         """
         Show warnings for deprecated fields during component initialization.
         """
-        # placeholder for deprecation logs
+
+        # call the parent constructor first to initialize Pydantic internals
+        super().__init__(**model_data)
+
+        # set the placeholder for the deprecation logs
         self._deprecation_logs: List[AirbyteLogMessage] = []
 
+        # process deprecated fields, if present
+        self._process_fields(model_data)
+
+        # set the deprecation logs attribute to the model
+        self._set_deprecation_logs_attr_to_model()
+
+    def _process_fields(self, model_data: Any) -> None:
+        """
+        Processes the fields in the provided model data, checking for deprecated fields.
+
+        For each field in the input `model_data`, this method checks if the field exists in the model's defined fields.
+        If the field is marked as deprecated (using the `DEPRECATED` flag in its metadata), it triggers a deprecation warning
+        by calling the `_deprecated_warning` method with the field name and an optional deprecation message.
+
+        Args:
+            model_data (Any): The data containing fields to be processed.
+
+        Returns:
+            None
+        """
         model_fields = self.__fields__
-        for field_name in data:
+        for field_name in model_data.keys():
             if field_name in model_fields:
                 is_deprecated_field = model_fields[field_name].field_info.extra.get(
                     DEPRECATED, False
@@ -65,28 +89,18 @@ class BaseModelWithDeprecations(BaseModel):
                     )
                     self._deprecated_warning(field_name, deprecation_message)
 
-        # Call the parent constructor
-        super().__init__(**data)
-
-    def __getattribute__(self, name: str) -> Any:
+    def _set_deprecation_logs_attr_to_model(self) -> None:
         """
-        Show warnings for deprecated fields during field usage.
+        Sets the deprecation logs attribute on the model instance.
+
+        This method attaches the current instance's deprecation logs to the model by setting
+        an attribute named by `DEPRECATION_LOGS_TAG` to the value of `self._deprecation_logs`.
+        This is typically used to track or log deprecated features or configurations within the model.
+
+        Returns:
+            None
         """
-
-        value = super().__getattribute__(name)
-        try:
-            model_fields = super().__getattribute__(FIELDS_TAG)
-            field_info = model_fields.get(name)
-            is_deprecated_field = (
-                field_info.field_info.extra.get(DEPRECATED, False) if field_info else False
-            )
-            if is_deprecated_field:
-                deprecation_message = field_info.field_info.extra.get(DEPRECATION_MESSAGE, "")
-                self._deprecated_warning(name, deprecation_message)
-        except (AttributeError, KeyError):
-            pass
-
-        return value
+        setattr(self, DEPRECATION_LOGS_TAG, self._deprecation_logs)
 
     def _deprecated_warning(self, field_name: str, message: str) -> None:
         """
@@ -97,12 +111,12 @@ class BaseModelWithDeprecations(BaseModel):
         """
 
         message = f"Component type: `{self.__class__.__name__}`. Field '{field_name}' is deprecated. {message}"
-
         # Emit a warning message for deprecated fields (to stdout) (Python Default behavior)
         warnings.warn(message, DeprecationWarning)
-
+        # Create an Airbyte deprecation log message
+        deprecation_log_message = AirbyteLogMessage(level=Level.WARN, message=message)
         # Add the deprecation message to the Airbyte log messages,
         # this logs are displayed in the Connector Builder.
-        self._deprecation_logs.append(
-            AirbyteLogMessage(level=Level.WARN, message=message),
-        )
+        if deprecation_log_message not in self._deprecation_logs:
+            # Avoid duplicates in the deprecation logs
+            self._deprecation_logs.append(deprecation_log_message)
