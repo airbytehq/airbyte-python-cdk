@@ -44,7 +44,7 @@ CONFIG = {}
             None,
             PropertyLimitType.characters,
             10,
-            [["kate", "laurie"], ["jaclyn"]],
+            [["kate"], ["laurie"], ["jaclyn"]],
             id="test_property_chunking_limit_characters",
         ),
         pytest.param(

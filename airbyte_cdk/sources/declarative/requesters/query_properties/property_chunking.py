@@ -52,8 +52,9 @@ class PropertyChunking:
         chunk_size = 0
         for property_field in property_fields:
             # If property_limit_type is not defined, we default to property_count which is just an incrementing count
+            # +2 for the comma ToDo: Add possibility to specify parameter representation and take it into account in property_field_size
             property_field_size = (
-                len(property_field)
+                len(property_field) + 2
                 if self.property_limit_type == PropertyLimitType.characters
                 else 1
             )
