@@ -5,7 +5,6 @@
 import datetime
 import json
 import logging
-import os
 import sys
 import types
 from collections.abc import Callable, Mapping
@@ -33,6 +32,7 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     custom_code_execution_permitted,
     register_components_module_from_string,
 )
+from airbyte_cdk.test.standard_tests.connector_base import MANIFEST_YAML
 
 SAMPLE_COMPONENTS_PY_TEXT = """
 def sample_function() -> str:
@@ -44,8 +44,8 @@ class SimpleClass:
 """
 
 
-def get_fixture_path(file_name) -> str:
-    return os.path.join(os.path.dirname(__file__), file_name)
+def get_resource_path(file_name) -> str:
+    return Path(__file__).parent.parent / "resources" / file_name
 
 
 def test_components_module_from_string() -> None:
@@ -90,15 +90,14 @@ def get_py_components_config_dict(
     *,
     failing_components: bool = False,
 ) -> dict[str, Any]:
-    connector_dir = Path(get_fixture_path("resources/source_pokeapi_w_components_py"))
-    manifest_yml_path: Path = connector_dir / "manifest.yaml"
+    connector_dir = Path(get_resource_path("source_pokeapi_w_components_py"))
+    manifest_yaml_path: Path = connector_dir / MANIFEST_YAML
     custom_py_code_path: Path = connector_dir / (
         "components.py" if not failing_components else "components_failing.py"
     )
     config_yaml_path: Path = connector_dir / "valid_config.yaml"
-    secrets_yaml_path: Path = connector_dir / "secrets.yaml"
 
-    manifest_dict = yaml.safe_load(manifest_yml_path.read_text())
+    manifest_dict = yaml.safe_load(manifest_yaml_path.read_text())
     assert manifest_dict, "Failed to load the manifest file."
     assert isinstance(manifest_dict, Mapping), (
         f"Manifest file is type {type(manifest_dict).__name__}, not a mapping: {manifest_dict}"
@@ -266,8 +265,8 @@ def test_sync_with_injected_py_components(
             streams=[
                 ConfiguredAirbyteStream(
                     stream=stream,
-                    sync_mode="full_refresh",
-                    destination_sync_mode="overwrite",
+                    sync_mode="full_refresh",  # type: ignore (intentional bad value)
+                    destination_sync_mode="overwrite",  # type: ignore (intentional bad value)
                 )
                 for stream in catalog.streams
             ]

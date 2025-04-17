@@ -130,7 +130,7 @@ class AbstractOauth2Authenticator(AuthBase):
         headers = self.get_refresh_request_headers()
         return headers if headers else None
 
-    def refresh_access_token(self) -> Tuple[str, Union[str, int]]:
+    def refresh_access_token(self) -> Tuple[str, AirbyteDateTime]:
         """
         Returns the refresh token and its expiration datetime
 
@@ -147,6 +147,14 @@ class AbstractOauth2Authenticator(AuthBase):
     # ----------------
     # PRIVATE METHODS
     # ----------------
+
+    def _default_token_expiry_date(self) -> AirbyteDateTime:
+        """
+        Returns the default token expiry date
+        """
+        # 1 hour was chosen as a middle ground to avoid unnecessary frequent refreshes and token expiration
+        default_token_expiry_duration_hours = 1  # 1 hour
+        return ab_datetime_now() + timedelta(hours=default_token_expiry_duration_hours)
 
     def _wrap_refresh_token_exception(
         self, exception: requests.exceptions.RequestException
@@ -257,14 +265,10 @@ class AbstractOauth2Authenticator(AuthBase):
 
     def _parse_token_expiration_date(self, value: Union[str, int]) -> AirbyteDateTime:
         """
-        Return the expiration datetime of the refresh token
+        Parse a string or integer token expiration date into a datetime object
 
         :return: expiration datetime
         """
-        if not value and not self.token_has_expired():
-            # No expiry token was provided but the previous one is not expired so it's fine
-            return self.get_token_expiry_date()
-
         if self.token_expiry_is_time_of_expiration:
             if not self.token_expiry_date_format:
                 raise ValueError(
@@ -308,17 +312,30 @@ class AbstractOauth2Authenticator(AuthBase):
         """
         return self._find_and_get_value_from_response(response_data, self.get_refresh_token_name())
 
-    def _extract_token_expiry_date(self, response_data: Mapping[str, Any]) -> Any:
+    def _extract_token_expiry_date(self, response_data: Mapping[str, Any]) -> AirbyteDateTime:
         """
         Extracts the token_expiry_date, like `expires_in` or `expires_at`, etc from the given response data.
+
+        If the token_expiry_date is not found, it will return an existing token expiry date if set, or a default token expiry date.
 
         Args:
             response_data (Mapping[str, Any]): The response data from which to extract the token_expiry_date.
 
         Returns:
-            str: The extracted token_expiry_date.
+            The extracted token_expiry_date or None if not found.
         """
-        return self._find_and_get_value_from_response(response_data, self.get_expires_in_name())
+        expires_in = self._find_and_get_value_from_response(
+            response_data, self.get_expires_in_name()
+        )
+        if expires_in is not None:
+            return self._parse_token_expiration_date(expires_in)
+
+        # expires_in is None
+        existing_expiry_date = self.get_token_expiry_date()
+        if existing_expiry_date and not self.token_has_expired():
+            return existing_expiry_date
+
+        return self._default_token_expiry_date()
 
     def _find_and_get_value_from_response(
         self,
@@ -344,7 +361,7 @@ class AbstractOauth2Authenticator(AuthBase):
         """
         if current_depth > max_depth:
             # this is needed to avoid an inf loop, possible with a very deep nesting observed.
-            message = f"The maximum level of recursion is reached. Couldn't find the speficied `{key_name}` in the response."
+            message = f"The maximum level of recursion is reached. Couldn't find the specified `{key_name}` in the response."
             raise ResponseKeysMaxRecurtionReached(
                 internal_message=message, message=message, failure_type=FailureType.config_error
             )
@@ -441,7 +458,7 @@ class AbstractOauth2Authenticator(AuthBase):
         """Expiration date of the access token"""
 
     @abstractmethod
-    def set_token_expiry_date(self, value: Union[str, int]) -> None:
+    def set_token_expiry_date(self, value: AirbyteDateTime) -> None:
         """Setter for access token expiration date"""
 
     @abstractmethod
