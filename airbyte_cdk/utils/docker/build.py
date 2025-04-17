@@ -328,6 +328,15 @@ ENTRYPOINT ["python", "/airbyte/integration_code/{get_main_file_name(connector_d
         dockerignore_temp_path.write_text(dockerignore_content)
         logger.debug(f"Created temporary .dockerignore at {dockerignore_temp_path}")
 
+        root_dockerignore_path = connector_dir / ".dockerignore"
+        original_dockerignore = None
+        if root_dockerignore_path.exists():
+            original_dockerignore = root_dockerignore_path.read_text()
+            logger.debug(f"Backing up original .dockerignore at {root_dockerignore_path}")
+        
+        root_dockerignore_path.write_text(dockerignore_content)
+        logger.debug(f"Temporarily replaced .dockerignore at {root_dockerignore_path}")
+
         try:
             execute_build_customization_hooks(connector_dir, "post_connector_install")
         except subprocess.CalledProcessError:
@@ -347,14 +356,20 @@ ENTRYPOINT ["python", "/airbyte/integration_code/{get_main_file_name(connector_d
             f"io.airbyte.name={metadata.dockerRepository}",
             "-f",
             str(dockerfile_temp_path),
-            "--ignorefile",
-            str(dockerignore_temp_path),
             str(connector_dir),
         ]
 
-        run_docker_command(build_cmd)
-        logger.info(f"Successfully built image: {full_image_name}")
-        return full_image_name
+        try:
+            run_docker_command(build_cmd)
+            logger.info(f"Successfully built image: {full_image_name}")
+            return full_image_name
+        finally:
+            if original_dockerignore is not None:
+                root_dockerignore_path.write_text(original_dockerignore)
+                logger.debug(f"Restored original .dockerignore at {root_dockerignore_path}")
+            elif root_dockerignore_path.exists():
+                root_dockerignore_path.unlink()
+                logger.debug(f"Removed temporary .dockerignore at {root_dockerignore_path}")
 
     except Exception as e:
         logger.error(f"Failed to build image: {e}")
