@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .file_uploader import BaseFileWriter
 
+
 class NoopFileWriter(BaseFileWriter):
     def write(self, file_path: Path, content: bytes) -> int:
         """
