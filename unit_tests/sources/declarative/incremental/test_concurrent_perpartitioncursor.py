@@ -295,8 +295,9 @@ SUBSTREAM_MANIFEST: MutableMapping[str, Any] = {
 }
 
 STREAM_NAME = "post_comment_votes"
+START_DATE = "2024-01-01T00:00:01Z"
 CONFIG = {
-    "start_date": "2024-01-01T00:00:01Z",
+    "start_date": START_DATE,
     "credentials": {"email": "email", "api_token": "api_token"},
 }
 
@@ -388,7 +389,6 @@ def _run_read(
 
 
 # Existing Constants for Dates
-START_DATE = "2024-01-01T00:00:01Z"  # Start of the sync
 POST_1_UPDATED_AT = "2024-01-30T00:00:00Z"  # Latest update date for post 1
 POST_2_UPDATED_AT = "2024-01-29T00:00:00Z"  # Latest update date for post 2
 POST_3_UPDATED_AT = "2024-01-28T00:00:00Z"  # Latest update date for post 3
@@ -907,6 +907,11 @@ def run_incremental_parent_state_test(
                 (
                     f"https://api.example.com/community/posts?per_page=100&start_time={PARENT_POSTS_CURSOR}&page=2",
                     {"posts": [{"id": 3, "updated_at": POST_3_UPDATED_AT}]},
+                ),
+                # Once state is updated, we might fetch the most recent record
+                (
+                    f"https://api.example.com/community/posts?per_page=100&start_time={POST_1_UPDATED_AT}",
+                    {"posts": [{"id": 1, "updated_at": POST_1_UPDATED_AT}]},
                 ),
                 # Fetch the first page of comments for post 1
                 (
@@ -1572,12 +1577,12 @@ def test_incremental_parent_state_migration(
                         "states": [
                             {
                                 "partition": {"id": 1, "parent_slice": {}},
-                                "cursor": {"updated_at": PARENT_COMMENT_CURSOR_PARTITION_1},
+                                "cursor": {"updated_at": START_DATE},  # interesting thing is that the concurrent cursor takes the max between the state and the start
                             }
                         ],
-                        "state": {},
                         "use_global_cursor": False,
                         "parent_state": {"posts": {"updated_at": PARENT_POSTS_CURSOR}},
+                        "lookback_window": 1,
                     }
                 },
                 "states": [

@@ -25,7 +25,7 @@ class DefaultStream(AbstractStream):
         json_schema: Mapping[str, Any],
         availability_strategy: AbstractAvailabilityStrategy,
         primary_key: List[str],
-        cursor_field: Optional[str],
+        cursor_field: Optional[str],  # FIXME can't we deduce this from self._cursor? 
         logger: Logger,
         cursor: Cursor,
         namespace: Optional[str] = None,

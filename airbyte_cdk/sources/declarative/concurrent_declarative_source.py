@@ -369,20 +369,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     )
                     stream_state = self._migrate_state(declarative_stream, stream_state)
 
-                    partition_router = declarative_stream.retriever.stream_slicer._partition_router
-
-                    perpartition_cursor = (
-                        self._constructor.create_concurrent_cursor_from_perpartition_cursor(
-                            state_manager=self._connector_state_manager,
-                            model_type=DatetimeBasedCursorModel,
-                            component_definition=incremental_sync_component_definition,
-                            stream_name=declarative_stream.name,
-                            stream_namespace=declarative_stream.namespace,
-                            config=config or {},
-                            stream_state=stream_state,
-                            partition_router=partition_router,
-                        )
-                    )
+                    perpartition_cursor = declarative_stream.retriever.stream_slicer
 
                     retriever = self._get_retriever(declarative_stream, stream_state)
 
@@ -464,15 +451,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             if retriever.cursor:
                 retriever.cursor.set_initial_state(stream_state=stream_state)
 
-            # Similar to above, the ClientSideIncrementalRecordFilterDecorator cursor is a separate instance
-            # from the one initialized on the SimpleRetriever, so it also must also have state initialized
-            # for semi-incremental streams using is_client_side_incremental to filter properly
-            if isinstance(retriever.record_selector, RecordSelector) and isinstance(
-                retriever.record_selector.record_filter, ClientSideIncrementalRecordFilterDecorator
-            ):
-                retriever.record_selector.record_filter._cursor.set_initial_state(
-                    stream_state=stream_state
-                )  # type: ignore  # After non-concurrent cursors are deprecated we can remove these cursor workarounds
+            # FIXME comment: Removing this as the concurrent state should already have the information
 
             # We zero it out here, but since this is a cursor reference, the state is still properly
             # instantiated for the other components that reference it

@@ -7,6 +7,7 @@ from __future__ import annotations
 import datetime
 import importlib
 import inspect
+import logging
 import re
 from functools import partial
 from typing import (
@@ -495,6 +496,10 @@ from airbyte_cdk.sources.declarative.schema import (
 )
 from airbyte_cdk.sources.declarative.spec import Spec
 from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicer
+from airbyte_cdk.sources.declarative.stream_slicers.declarative_partition_generator import (
+    DeclarativePartitionFactory,
+    StreamSlicerPartitionGenerator,
+)
 from airbyte_cdk.sources.declarative.transformations import (
     AddFields,
     RecordTransformation,
@@ -531,6 +536,9 @@ from airbyte_cdk.sources.streams.call_rate import (
     Rate,
     UnlimitedCallRatePolicy,
 )
+from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
+    AlwaysAvailableAvailabilityStrategy,
+)
 from airbyte_cdk.sources.streams.concurrent.clamping import (
     ClampingEndProvider,
     ClampingStrategy,
@@ -540,7 +548,14 @@ from airbyte_cdk.sources.streams.concurrent.clamping import (
     WeekClampingStrategy,
     Weekday,
 )
-from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, Cursor, CursorField
+from airbyte_cdk.sources.streams.concurrent.cursor import (
+    ConcurrentCursor,
+    Cursor,
+    CursorField,
+    FinalStateCursor,
+)
+from airbyte_cdk.sources.streams.concurrent.default_stream import DefaultStream
+from airbyte_cdk.sources.streams.concurrent.helpers import get_primary_key_from_stream
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
     DateTimeStreamStateConverter,
@@ -1386,6 +1401,7 @@ class ModelToComponentFactory:
                 f"Expected manifest component of type {model_type.__name__}, but received {component_type} instead"
             )
 
+        component_definition["$parameters"] = component_definition.get("parameters", {})
         datetime_based_cursor_model = model_type.parse_obj(component_definition)
 
         if not isinstance(datetime_based_cursor_model, DatetimeBasedCursorModel):
@@ -1733,7 +1749,10 @@ class ModelToComponentFactory:
 
     def create_declarative_stream(
         self, model: DeclarativeStreamModel, config: Config, **kwargs: Any
-    ) -> DeclarativeStream:
+    ) -> Union[DeclarativeStream, DefaultStream]:
+        """
+        As a transition period, the stream returned can either be a DeclarativeStream or a DefaultStream depending on kwargs["concurrent"] which is a bool
+        """
         # When constructing a declarative stream, we assemble the incremental_sync component and retriever's partition_router field
         # components if they exist into a single CartesianProductStreamSlicer. This is then passed back as an argument when constructing the
         # Retriever. This is done in the declarative stream not the retriever to support custom retrievers. The custom create methods in
@@ -1851,6 +1870,30 @@ class ModelToComponentFactory:
                 options["name"] = model.name
             schema_loader = DefaultSchemaLoader(config=config, parameters=options)
 
+        if "concurrent" in kwargs and kwargs["concurrent"]:
+            stream_name = model.name or ""
+            cursor = combined_slicers if combined_slicers and isinstance(combined_slicers, Cursor) else FinalStateCursor(stream_name, None,
+                                                                                                                         self._message_repository)
+            partition_generator = StreamSlicerPartitionGenerator(
+                DeclarativePartitionFactory(
+                    stream_name,
+                    schema_loader.get_json_schema(),
+                    retriever,
+                    self._message_repository,
+                ),
+                cursor,
+            )
+
+            return DefaultStream(
+                partition_generator=partition_generator,
+                name=stream_name,
+                json_schema=schema_loader.get_json_schema(),
+                availability_strategy=AlwaysAvailableAvailabilityStrategy(),  # FIXME it seems this is what we do in the ConcurrentDeclarativeSource but it feels wrong
+                primary_key=get_primary_key_from_stream(primary_key),
+                cursor_field=cursor.cursor_field.cursor_field_key if hasattr(cursor, "cursor_field") else "",  # FIXME we should have the cursor field has part of the interface of cursor
+                logger=logging.getLogger(f"airbyte.{stream_name}"),  # FIXME this is a breaking change compared to the old implementation,
+                cursor=cursor,
+            )
         return DeclarativeStream(
             name=model.name or "",
             primary_key=primary_key,
@@ -2550,7 +2593,7 @@ class ModelToComponentFactory:
         self, model: ParentStreamConfigModel, config: Config, **kwargs: Any
     ) -> ParentStreamConfig:
         declarative_stream = self._create_component_from_model(
-            model.stream, config=config, **kwargs
+            model.stream, config=config, concurrent=True, **kwargs
         )
         request_option = (
             self._create_component_from_model(model.request_option, config=config)
@@ -3279,8 +3322,30 @@ class ModelToComponentFactory:
     def _create_message_repository_substream_wrapper(
         self, model: ParentStreamConfigModel, config: Config, **kwargs: Any
     ) -> Any:
-        if model.incremental_dependency:
-            parent_state = ConcurrentPerPartitionCursor.get_parent_state(self._connector_state_manager.get_stream_state(kwargs["stream_name"], None), model.stream.name)
+        # getting the parent state
+        child_state = self._connector_state_manager.get_stream_state(kwargs["stream_name"], None)
+        if model.incremental_dependency and child_state:
+            parent_stream_name = model.stream.name or ""
+            parent_state = ConcurrentPerPartitionCursor.get_parent_state(child_state, parent_stream_name)
+
+            if model.incremental_dependency and not parent_state:
+                # there are two migration cases: state value from child stream or from global state
+                parent_state = ConcurrentPerPartitionCursor.get_global_state(child_state, parent_stream_name)
+
+                if not parent_state and not isinstance(parent_state, dict):
+                    cursor_field = InterpolatedString.create(
+                        model.stream.incremental_sync.cursor_field,
+                        parameters=model.stream.incremental_sync.parameters or {},
+                    ).eval(config)
+                    cursor_values = child_state.values()
+                    if cursor_values:
+                        parent_state = AirbyteStateMessage(
+                            type=AirbyteStateType.STREAM,
+                            stream=AirbyteStreamState(
+                                stream_descriptor=StreamDescriptor(name=parent_stream_name, namespace=None),
+                                stream_state=AirbyteStateBlob({cursor_field: list(cursor_values)[0]}),
+                            ),
+                        )
             connector_state_manager = ConnectorStateManager([parent_state] if parent_state else [])
         else:
             connector_state_manager = ConnectorStateManager([])

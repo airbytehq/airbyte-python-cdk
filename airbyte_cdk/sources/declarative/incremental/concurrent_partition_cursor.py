@@ -157,6 +157,7 @@ class ConcurrentPerPartitionCursor(Cursor):
             raise ValueError("stream_slice cannot be None")
 
         partition_key = self._to_partition_key(stream_slice.partition)
+        logger.warning(f"close_partition... Semaphore for {partition_key}")
         with self._lock:
             self._semaphore_per_partition[partition_key].acquire()
             if not self._use_global_cursor:
@@ -211,6 +212,7 @@ class ConcurrentPerPartitionCursor(Cursor):
             for p_key in list(self._semaphore_per_partition.keys()):
                 sem = self._semaphore_per_partition[p_key]
                 if p_key in self._finished_partitions and sem._value == 0:
+                    logger.warning(f"_check_and_update_parent_state delete semaphore for {p_key}")
                     del self._semaphore_per_partition[p_key]
                     logger.debug(f"Deleted finished semaphore for partition {p_key} with value 0")
                 if p_key == earliest_key:
@@ -305,6 +307,7 @@ class ConcurrentPerPartitionCursor(Cursor):
             lambda: None,
         ):
             self._semaphore_per_partition[partition_key].release()
+            logger.warning(f"Generating... Semaphore for {partition_key} is {self._semaphore_per_partition[partition_key]._value}")
             if is_last_slice:
                 self._finished_partitions.add(partition_key)
             yield StreamSlice(
@@ -427,7 +430,7 @@ class ConcurrentPerPartitionCursor(Cursor):
             self._parent_state = stream_state["parent_state"]
 
         # Set parent state for partition routers based on parent streams
-        self._partition_router.set_initial_state(stream_state)
+        self._partition_router.set_initial_state(stream_state)  # FIXME can we remove this thing? this would probably be a breaking change though...
 
     def _set_global_state(self, stream_state: Mapping[str, Any]) -> None:
         """
@@ -498,7 +501,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         partition_key = self._to_partition_key(record.associated_slice.partition)
         if partition_key not in self._cursor_per_partition:
             raise ValueError(
-                "Invalid state as stream slices that are emitted should refer to an existing cursor"
+                f"Invalid state as stream slices that are emitted should refer to an existing cursor but {partition_key} is unknown"
             )
         cursor = self._cursor_per_partition[partition_key]
         return cursor
@@ -514,4 +517,15 @@ class ConcurrentPerPartitionCursor(Cursor):
                 stream_descriptor=StreamDescriptor(parent_stream_name, None),
                 stream_state=AirbyteStateBlob(stream_state["parent_state"][parent_stream_name])
             )
-        ) if stream_state else None
+        ) if stream_state and "parent_state" in stream_state else None
+
+    @staticmethod
+    def get_global_state(stream_state: Optional[StreamState], parent_stream_name: str) -> Optional[AirbyteStateMessage]:
+        return AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(parent_stream_name, None),
+                stream_state=AirbyteStateBlob(stream_state["state"])
+            )
+        ) if stream_state and "state" in stream_state else None
+

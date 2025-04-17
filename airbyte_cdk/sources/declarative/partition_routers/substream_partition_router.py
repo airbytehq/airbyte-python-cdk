@@ -7,7 +7,17 @@ import copy
 import json
 import logging
 from dataclasses import InitVar, dataclass
-from typing import TYPE_CHECKING, Any, Iterable, List, Mapping, MutableMapping, Optional, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Iterable,
+    List,
+    Mapping,
+    MutableMapping,
+    Optional,
+    TypeVar,
+    Union,
+)
 
 import dpath
 import requests
@@ -25,11 +35,10 @@ from airbyte_cdk.sources.streams.concurrent.partitions.partition import Partitio
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from airbyte_cdk.utils import AirbyteTracedException
 
-if TYPE_CHECKING:
-    from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
+T = TypeVar("T")
 
 
-def iterate_with_last_flag(generator: Iterable[StreamSlice]) -> Iterable[tuple[StreamSlice, bool]]:
+def iterate_with_last_flag(generator: Iterable[T]) -> Iterable[tuple[T, bool]]:
 
     iterator = iter(generator)
 
@@ -82,7 +91,7 @@ class ParentStreamConfig:
     incremental_dependency (bool): Indicates if the parent stream should be read incrementally.
     """
 
-    stream: "DeclarativeStream"  # Parent streams must be DeclarativeStream because we can't know which part of the stream slice is a partition for regular Stream
+    stream: "DefaultStream"
     parent_key: Union[InterpolatedString, str]
     partition_field: Union[InterpolatedString, str]
     config: Config
@@ -218,52 +227,45 @@ class SubstreamPartitionRouter(PartitionRouter):
                         for field_path in parent_stream_config.extra_fields
                     ]
 
-                for _slice, is_last_slice in iterate_with_last_flag(parent_stream.retriever.stream_slices()):
-                    for parent_record, is_last_record_in_slice in iterate_with_last_flag(parent_stream.retriever.read_records({}, _slice)):
-                        if hasattr(parent_stream.retriever.stream_slicer, "observe"):  # FIXME it seems like a dumb way to access the method
-                            parent_stream.retriever.stream_slicer.observe(parent_record)
-                        parent_partition = None
+                for partition, is_last_slice in iterate_with_last_flag(parent_stream.generate_partitions()):
+                    for parent_record, is_last_record_in_slice in iterate_with_last_flag(partition.read()):
+                        self.logger.warning(f"Parent record is {parent_record}")
+
+                        parent_stream.cursor.observe(parent_record)
+
                         # Skip non-records (eg AirbyteLogMessage)
-                        if isinstance(parent_record, AirbyteMessage):
-                            self.logger.warning(
-                                f"Parent stream {parent_stream.name} returns records of type AirbyteMessage. This SubstreamPartitionRouter is not able to checkpoint incremental parent state."
-                            )
-                            if parent_record.type == MessageType.RECORD:
-                                parent_record = parent_record.record.data  # type: ignore[union-attr, assignment]  # record is always a Record
-                            else:
-                                continue
-                        elif isinstance(parent_record, Record):
-                            parent_partition = (
-                                parent_record.associated_slice.partition
-                                if parent_record.associated_slice
-                                else {}
-                            )
-                            parent_record = parent_record.data
-                        elif not isinstance(parent_record, Mapping):
-                            # The parent_record should only take the form of a Record, AirbyteMessage, or Mapping. Anything else is invalid
-                            raise AirbyteTracedException(
-                                message=f"Parent stream returned records as invalid type {type(parent_record)}"
-                            )
+                        parent_partition = (
+                            parent_record.associated_slice.partition
+                            if parent_record.associated_slice
+                            else {}
+                        )
+                        record_data = parent_record.data
+
                         try:
                             partition_value = dpath.get(
-                                parent_record,  # type: ignore [arg-type]
+                                record_data,  # type: ignore [arg-type]
                                 parent_field,
                             )
                         except KeyError:
+                            # FIXME a log here would go a long way for debugging
                             continue
 
                         # Add extra fields
-                        extracted_extra_fields = self._extract_extra_fields(parent_record, extra_fields)
+                        extracted_extra_fields = self._extract_extra_fields(record_data, extra_fields)
 
                         if parent_stream_config.lazy_read_pointer:
                             extracted_extra_fields = {
                                 "child_response": self._extract_child_response(
-                                    parent_record,
+                                    record_data,
                                     parent_stream_config.lazy_read_pointer,  # type: ignore[arg-type]  # lazy_read_pointer type handeled in __post_init__ of parent_stream_config
                                 ),
                                 **extracted_extra_fields,
                             }
 
+                        if is_last_record_in_slice:
+                            parent_stream.cursor.close_partition(partition)
+                            #if is_last_slice:
+                            #    parent_stream.cursor.ensure_at_least_one_state_emitted()
                         yield StreamSlice(
                             partition={
                                 partition_field: partition_value,
@@ -272,10 +274,8 @@ class SubstreamPartitionRouter(PartitionRouter):
                             cursor_slice={},
                             extra_fields=extracted_extra_fields,
                         )
+                parent_stream.cursor.ensure_at_least_one_state_emitted()
 
-                    if is_last_record_in_slice and hasattr(parent_stream.retriever.stream_slicer, "close_partition"):  # FIXME it seems like a dumb way to access the method
-                        parent_stream.retriever.stream_slicer.close_partition(InMemoryPartition(parent_stream.name, _slice))
-                parent_stream.retriever.stream_slicer.ensure_at_least_one_state_emitted()
 
     def _extract_child_response(
         self, parent_record: Mapping[str, Any] | AirbyteMessage, pointer: List[InterpolatedString]
@@ -461,7 +461,7 @@ class SubstreamPartitionRouter(PartitionRouter):
         parent_state = {}
         for parent_config in self.parent_stream_configs:
             if parent_config.incremental_dependency:
-                parent_state[parent_config.stream.name] = copy.deepcopy(parent_config.stream.retriever.stream_slicer.state)  # FIXME move to default stream
+                parent_state[parent_config.stream.name] = copy.deepcopy(parent_config.stream.cursor.state)
         return parent_state
 
     @property
