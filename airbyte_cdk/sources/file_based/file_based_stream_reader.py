@@ -186,6 +186,9 @@ class AbstractFileBasedStreamReader(ABC):
             - FILE_NAME: The name of the referenced file.
             - FILE_FOLDER: The folder of the referenced file.
         """
+        if not path.exists(staging_directory):
+            raise ValueError(f"Staging directory '{staging_directory}' does not exist")
+        
         preserve_directory_structure = self.preserve_directory_structure()
 
         file_name = path.basename(source_file_relative_path)
