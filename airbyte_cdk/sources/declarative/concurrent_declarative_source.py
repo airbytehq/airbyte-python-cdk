@@ -364,7 +364,8 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     == DatetimeBasedCursorModel.__name__
                     and hasattr(declarative_stream.retriever, "stream_slicer")
                     and isinstance(
-                        declarative_stream.retriever.stream_slicer, (GlobalSubstreamCursor, PerPartitionWithGlobalCursor)
+                        declarative_stream.retriever.stream_slicer,
+                        (GlobalSubstreamCursor, PerPartitionWithGlobalCursor),
                     )
                 ):
                     stream_state = self._connector_state_manager.get_stream_state(
