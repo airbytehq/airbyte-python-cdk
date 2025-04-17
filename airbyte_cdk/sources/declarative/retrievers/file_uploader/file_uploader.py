@@ -28,7 +28,6 @@ from .base_file_writer import BaseFileWriter
 logger = logging.getLogger("airbyte")
 
 
-
 @dataclass
 class FileUploader(BaseFileUploader):
     """
@@ -36,6 +35,7 @@ class FileUploader(BaseFileUploader):
     Handles the upload logic: fetching the download target, making the request via its requester, determining the file path, and calling self.file_writer.write()
     Different types of file_writer:BaseFileWriter can be injected to handle different file writing strategies.
     """
+
     requester: Requester
     download_target_extractor: RecordExtractor
     config: Config
@@ -99,6 +99,3 @@ class FileUploader(BaseFileUploader):
                 source_file_relative_path=str(file_relative_path),
                 file_size_bytes=file_size_bytes,
             )
-
-
-

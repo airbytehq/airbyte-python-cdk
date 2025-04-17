@@ -34,7 +34,7 @@ def _source(
     config: Dict[str, Any],
     state: Optional[List[AirbyteStateMessage]] = None,
     yaml_file: Optional[str] = None,
-    emit_connector_builder_messages: Optional[bool] = False
+    emit_connector_builder_messages: Optional[bool] = False,
 ) -> YamlDeclarativeSource:
     if not yaml_file:
         yaml_file = "file_stream_manifest.yaml"
@@ -43,7 +43,7 @@ def _source(
         catalog=catalog,
         config=config,
         state=state,
-        emit_connector_builder_messages=emit_connector_builder_messages
+        emit_connector_builder_messages=emit_connector_builder_messages,
     )
 
 
@@ -53,12 +53,16 @@ def read(
     state_builder: Optional[StateBuilder] = None,
     expecting_exception: bool = False,
     yaml_file: Optional[str] = None,
-    emit_connector_builder_messages: Optional[bool] = False
+    emit_connector_builder_messages: Optional[bool] = False,
 ) -> EntrypointOutput:
     config = config_builder.build()
     state = state_builder.build() if state_builder else StateBuilder().build()
     return entrypoint_read(
-        _source(catalog, config, state, yaml_file, emit_connector_builder_messages), config, catalog, state, expecting_exception
+        _source(catalog, config, state, yaml_file, emit_connector_builder_messages),
+        config,
+        catalog,
+        state,
+        expecting_exception,
     )
 
 
@@ -232,7 +236,9 @@ class FileStreamTest(TestCase):
             # Assert file reference fields are copied to record data
             record_data = output.records[0].record.data
             assert record_data["staging_file_url"] == file_reference.staging_file_url
-            assert record_data["source_file_relative_path"] == file_reference.source_file_relative_path 
+            assert (
+                record_data["source_file_relative_path"] == file_reference.source_file_relative_path
+            )
             assert record_data["file_size_bytes"] == file_reference.file_size_bytes
 
     def test_discover_article_attachments(self) -> None:

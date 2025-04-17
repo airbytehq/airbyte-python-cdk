@@ -8,7 +8,6 @@ from airbyte_cdk.sources.declarative.retrievers.file_uploader import BaseFileWri
 
 
 class FileWriter(BaseFileWriter):
-
     def write(self, file_path: Path, content: bytes) -> int:
         """
         Writes the file to the specified location
