@@ -481,7 +481,8 @@ from airbyte_cdk.sources.declarative.retrievers import (
     SimpleRetriever,
     SimpleRetrieverTestReadDecorator,
 )
-from airbyte_cdk.sources.declarative.retrievers.file_uploader import FileUploader
+from airbyte_cdk.sources.declarative.retrievers.file_uploader import FileUploader, FileWriter, NoopFileWriter, \
+    ConnectorBuilderFileUploader, BaseFileUploader
 from airbyte_cdk.sources.declarative.schema import (
     ComplexFieldType,
     DefaultSchemaLoader,
@@ -3590,7 +3591,7 @@ class ModelToComponentFactory:
 
     def create_file_uploader(
         self, model: FileUploaderModel, config: Config, **kwargs: Any
-    ) -> FileUploader:
+    ) -> BaseFileUploader:
         name = "File Uploader"
         requester = self._create_component_from_model(
             model=model.requester,
@@ -3604,13 +3605,17 @@ class ModelToComponentFactory:
             name=name,
             **kwargs,
         )
-        return FileUploader(
+        emit_connector_builder_messages = self._emit_connector_builder_messages
+        file_uploader = FileUploader(
             requester=requester,
             download_target_extractor=download_target_extractor,
             config=config,
+            file_writer=NoopFileWriter() if emit_connector_builder_messages else FileWriter(),
             parameters=model.parameters or {},
             filename_extractor=model.filename_extractor if model.filename_extractor else None,
         )
+
+        return ConnectorBuilderFileUploader(file_uploader) if emit_connector_builder_messages else file_uploader
 
     def create_moving_window_call_rate_policy(
         self, model: MovingWindowCallRatePolicyModel, config: Config, **kwargs: Any

@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from unittest import TestCase
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 from airbyte_cdk.models import AirbyteStateMessage, ConfiguredAirbyteCatalog, Status
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
@@ -34,6 +34,7 @@ def _source(
     config: Dict[str, Any],
     state: Optional[List[AirbyteStateMessage]] = None,
     yaml_file: Optional[str] = None,
+    emit_connector_builder_messages: Optional[bool] = False
 ) -> YamlDeclarativeSource:
     if not yaml_file:
         yaml_file = "file_stream_manifest.yaml"
@@ -42,6 +43,7 @@ def _source(
         catalog=catalog,
         config=config,
         state=state,
+        emit_connector_builder_messages=emit_connector_builder_messages
     )
 
 
@@ -51,11 +53,12 @@ def read(
     state_builder: Optional[StateBuilder] = None,
     expecting_exception: bool = False,
     yaml_file: Optional[str] = None,
+    emit_connector_builder_messages: Optional[bool] = False
 ) -> EntrypointOutput:
     config = config_builder.build()
     state = state_builder.build() if state_builder else StateBuilder().build()
     return entrypoint_read(
-        _source(catalog, config, state, yaml_file), config, catalog, state, expecting_exception
+        _source(catalog, config, state, yaml_file, emit_connector_builder_messages), config, catalog, state, expecting_exception
     )
 
 
@@ -189,6 +192,48 @@ class FileStreamTest(TestCase):
                 r"^article_attachments/[0-9a-fA-F-]{36}$", file_reference.source_file_relative_path
             )
             assert file_reference.file_size_bytes
+
+    def test_get_article_attachments_messages_for_connector_builder(self) -> None:
+        with HttpMocker() as http_mocker:
+            http_mocker.get(
+                HttpRequest(url=STREAM_URL),
+                HttpResponse(json.dumps(find_template("file_api/articles", __file__)), 200),
+            )
+            http_mocker.get(
+                HttpRequest(url=STREAM_ATTACHMENTS_URL),
+                HttpResponse(
+                    json.dumps(find_template("file_api/article_attachments", __file__)), 200
+                ),
+            )
+            http_mocker.get(
+                HttpRequest(url=STREAM_ATTACHMENT_CONTENT_URL),
+                HttpResponse(
+                    find_binary_response("file_api/article_attachment_content.png", __file__), 200
+                ),
+            )
+
+            output = read(
+                self._config(),
+                CatalogBuilder()
+                .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments"))
+                .build(),
+                yaml_file="test_file_stream_with_filename_extractor.yaml",
+                emit_connector_builder_messages=True,
+            )
+
+            assert len(output.records) == 1
+            file_reference = output.records[0].record.file_reference
+            assert file_reference
+            assert file_reference.staging_file_url
+            assert file_reference.source_file_relative_path
+            # because we didn't write the file, the size is 0
+            assert file_reference.file_size_bytes == 0
+
+            # Assert file reference fields are copied to record data
+            record_data = output.records[0].record.data
+            assert record_data["staging_file_url"] == file_reference.staging_file_url
+            assert record_data["source_file_relative_path"] == file_reference.source_file_relative_path 
+            assert record_data["file_size_bytes"] == file_reference.file_size_bytes
 
     def test_discover_article_attachments(self) -> None:
         output = discover(self._config())
