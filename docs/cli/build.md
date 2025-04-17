@@ -24,9 +24,6 @@ airbyte-cdk image build /path/to/connector
 # With custom tag
 airbyte-cdk image build /path/to/connector --tag custom_tag
 
-# Build for a specific platform
-airbyte-cdk image build /path/to/connector --platform linux/arm64
-
 # Skip verification
 airbyte-cdk image build /path/to/connector --no-verify
 
@@ -38,7 +35,7 @@ airbyte-cdk image build /path/to/connector --verbose
 
 - `connector_dir`: Path to the connector directory (required)
 - `--tag`: Tag to apply to the built image (default: "dev")
-- `--platform`: Platform to build for (choices: "linux/amd64", "linux/arm64", default: "linux/amd64")
+
 - `--no-verify`: Skip verification of the built image
 - `--verbose`, `-v`: Enable verbose logging
 

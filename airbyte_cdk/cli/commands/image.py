@@ -27,19 +27,14 @@ def image() -> None:
     "connector_dir", type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path)
 )
 @click.option("--tag", default="dev", help="Tag to apply to the built image (default: dev)")
-@click.option(
-    "--platform",
-    type=click.Choice(["linux/amd64", "linux/arm64"]),
-    default="linux/amd64",
-    help="Platform to build for (default: linux/amd64)",
-)
 @click.option("--no-verify", is_flag=True, help="Skip verification of the built image")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
-def build(connector_dir: Path, tag: str, platform: str, no_verify: bool, verbose: bool) -> None:
+def build(connector_dir: Path, tag: str, no_verify: bool, verbose: bool) -> None:
     """Build a connector Docker image.
 
     This command builds a Docker image for a connector, using either
     the connector's Dockerfile or a base image specified in the metadata.
+    The image is built for both AMD64 and ARM64 architectures.
     """
     set_up_logging(verbose)
 
@@ -56,11 +51,14 @@ def build(connector_dir: Path, tag: str, platform: str, no_verify: bool, verbose
 
         language = infer_connector_language(metadata, connector_dir)
         click.echo(f"Detected connector language: {language}")
+        
+        platforms = "linux/amd64,linux/arm64"
+        click.echo(f"Building for platforms: {platforms}")
 
         if metadata.connectorBuildOptions and metadata.connectorBuildOptions.baseImage:
-            image_name = build_from_base_image(connector_dir, metadata, tag, platform)
+            image_name = build_from_base_image(connector_dir, metadata, tag, platforms)
         else:
-            image_name = build_from_dockerfile(connector_dir, metadata, tag, platform)
+            image_name = build_from_dockerfile(connector_dir, metadata, tag, platforms)
 
         if not no_verify:
             if verify_image(image_name):

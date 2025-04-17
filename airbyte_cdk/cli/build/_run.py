@@ -44,13 +44,6 @@ def parse_args(args: List[str]) -> argparse.Namespace:
         "--tag", type=str, default="dev", help="Tag to apply to the built image (default: dev)"
     )
     parser.add_argument(
-        "--platform",
-        type=str,
-        choices=["linux/amd64", "linux/arm64"],
-        default="linux/amd64",
-        help="Platform to build for (default: linux/amd64)",
-    )
-    parser.add_argument(
         "--no-verify", action="store_true", help="Skip verification of the built image"
     )
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
@@ -178,7 +171,7 @@ def build_from_dockerfile(
     connector_dir: Path,
     metadata: ConnectorMetadata,
     tag: str,
-    platform: str,
+    platforms: str = "linux/amd64,linux/arm64",
 ) -> str:
     """Build a Docker image for the connector using its Dockerfile.
 
@@ -186,7 +179,7 @@ def build_from_dockerfile(
         connector_dir: Path to the connector directory.
         metadata: The connector metadata.
         tag: The tag to apply to the built image.
-        platform: The platform to build for (e.g., linux/amd64).
+        platforms: The platforms to build for (default: "linux/amd64,linux/arm64").
 
     Returns:
         The full image name with tag.
@@ -202,22 +195,24 @@ def build_from_dockerfile(
     image_name = metadata.dockerRepository
     full_image_name = f"{image_name}:{tag}"
 
-    logger.info(f"Building Docker image from Dockerfile: {full_image_name} for platform {platform}")
+    logger.info(f"Building Docker image from Dockerfile: {full_image_name} for platforms {platforms}")
     logger.warning(
         "Building from Dockerfile is deprecated. Consider using a base image in metadata.yaml."
     )
 
     build_cmd = [
         "docker",
+        "buildx",
         "build",
         "--platform",
-        platform,
+        platforms,
         "-t",
         full_image_name,
         "--label",
         f"io.airbyte.version={metadata.dockerImageTag}",
         "--label",
         f"io.airbyte.name={metadata.dockerRepository}",
+        "--load",  # Load the image into the local Docker daemon
         str(connector_dir),
     ]
 
@@ -234,7 +229,7 @@ def build_from_base_image(
     connector_dir: Path,
     metadata: ConnectorMetadata,
     tag: str,
-    platform: str,
+    platforms: str = "linux/amd64,linux/arm64",
 ) -> str:
     """Build a Docker image for the connector using a base image.
 
@@ -242,7 +237,7 @@ def build_from_base_image(
         connector_dir: Path to the connector directory.
         metadata: The connector metadata.
         tag: The tag to apply to the built image.
-        platform: The platform to build for (e.g., linux/amd64).
+        platforms: The platforms to build for (default: "linux/amd64,linux/arm64").
 
     Returns:
         The full image name with tag.
@@ -259,7 +254,7 @@ def build_from_base_image(
     full_image_name = f"{image_name}:{tag}"
 
     logger.info(
-        f"Building Docker image from base image {base_image}: {full_image_name} for platform {platform}"
+        f"Building Docker image from base image {base_image}: {full_image_name} for platforms {platforms}"
     )
 
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -271,6 +266,8 @@ FROM {base_image}
 WORKDIR /airbyte/integration_code
 
 COPY . .
+
+RUN pip install .
 
 ENV AIRBYTE_ENTRYPOINT "python /airbyte/integration_code/{get_main_file_name(connector_dir)}"
 ENTRYPOINT ["python", "/airbyte/integration_code/{get_main_file_name(connector_dir)}"]
@@ -287,15 +284,17 @@ ENTRYPOINT ["python", "/airbyte/integration_code/{get_main_file_name(connector_d
 
         build_cmd = [
             "docker",
+            "buildx",
             "build",
             "--platform",
-            platform,
+            platforms,
             "-t",
             full_image_name,
             "--label",
             f"io.airbyte.version={metadata.dockerImageTag}",
             "--label",
             f"io.airbyte.name={metadata.dockerRepository}",
+            "--load",  # Load the image into the local Docker daemon
             str(temp_dir_path),
         ]
 
@@ -377,13 +376,16 @@ def run_command(args: List[str]) -> int:
         logger.info(f"Detected connector language: {language}")
 
         try:
+            platforms = "linux/amd64,linux/arm64"
+            logger.info(f"Building for platforms: {platforms}")
+            
             if metadata.connectorBuildOptions and metadata.connectorBuildOptions.baseImage:
                 image_name = build_from_base_image(
-                    connector_dir, metadata, parsed_args.tag, parsed_args.platform
+                    connector_dir, metadata, parsed_args.tag, platforms
                 )
             else:
                 image_name = build_from_dockerfile(
-                    connector_dir, metadata, parsed_args.tag, parsed_args.platform
+                    connector_dir, metadata, parsed_args.tag, platforms
                 )
 
             if not parsed_args.no_verify:
