@@ -120,7 +120,7 @@ def manifest_with_multiple_url_base() -> Dict[str, Any]:
                 },
             },
             # dummy requesters to be resolved and deduplicated
-            # to the shared `url_base` in the `definitions.shared` section
+            # to the linked `url_base` in the `definitions.linked` section
             "requester_A": {
                 "type": "HttpRequester",
                 "url_base": "https://example.com/v1/",
@@ -176,7 +176,7 @@ def manifest_with_multiple_url_base() -> Dict[str, Any]:
 def expected_manifest_with_multiple_url_base_normalized() -> Dict[str, Any]:
     return {
         "type": "DeclarativeSource",
-        "definitions": {"shared": {"HttpRequester": {"url_base": "https://example.com/v2/"}}},
+        "definitions": {"linked": {"HttpRequester": {"url_base": "https://example.com/v2/"}}},
         "streams": [
             {
                 "type": "DeclarativeStream",
@@ -207,7 +207,7 @@ def expected_manifest_with_multiple_url_base_normalized() -> Dict[str, Any]:
                     "type": "SimpleRetriever",
                     "requester": {
                         "type": "HttpRequester",
-                        "url_base": {"$ref": "#/definitions/shared/HttpRequester/url_base"},
+                        "url_base": {"$ref": "#/definitions/linked/HttpRequester/url_base"},
                         "path": "B",
                         "http_method": "GET",
                     },
@@ -251,7 +251,7 @@ def expected_manifest_with_multiple_url_base_normalized() -> Dict[str, Any]:
                     "type": "SimpleRetriever",
                     "requester": {
                         "type": "HttpRequester",
-                        "url_base": {"$ref": "#/definitions/shared/HttpRequester/url_base"},
+                        "url_base": {"$ref": "#/definitions/linked/HttpRequester/url_base"},
                         "path": "D",
                         "http_method": "GET",
                     },
@@ -273,7 +273,7 @@ def expected_manifest_with_multiple_url_base_normalized() -> Dict[str, Any]:
                     "type": "SimpleRetriever",
                     "requester": {
                         "type": "HttpRequester",
-                        "url_base": {"$ref": "#/definitions/shared/HttpRequester/url_base"},
+                        "url_base": {"$ref": "#/definitions/linked/HttpRequester/url_base"},
                         "path": "E",
                         "http_method": "GET",
                     },
@@ -325,11 +325,11 @@ def expected_manifest_with_multiple_url_base_normalized() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def manifest_with_url_base_shared_definition() -> Dict[str, Any]:
+def manifest_with_url_base_linked_definition() -> Dict[str, Any]:
     return {
         "type": "DeclarativeSource",
         "definitions": {
-            "shared": {"HttpRequester": {"url_base": "https://example.com/v2/"}},
+            "linked": {"HttpRequester": {"url_base": "https://example.com/v2/"}},
             "streams": {
                 "A": {
                     "type": "DeclarativeStream",
@@ -438,14 +438,14 @@ def manifest_with_url_base_shared_definition() -> Dict[str, Any]:
                 },
             },
             # dummy requesters to be resolved and deduplicated
-            # to the shared `url_base` in the `definitions.shared` section
+            # to the linked `url_base` in the `definitions.linked` section
             "requester_A": {
                 "type": "HttpRequester",
                 "url_base": "https://example.com/v1/",
             },
             "requester_B": {
                 "type": "HttpRequester",
-                "url_base": {"$ref": "#/definitions/shared/HttpRequester/url_base"},
+                "url_base": {"$ref": "#/definitions/linked/HttpRequester/url_base"},
             },
         },
         "streams": [
@@ -491,10 +491,10 @@ def manifest_with_url_base_shared_definition() -> Dict[str, Any]:
 
 
 @pytest.fixture
-def expected_manifest_with_url_base_shared_definition_normalized() -> Dict[str, Any]:
+def expected_manifest_with_url_base_linked_definition_normalized() -> Dict[str, Any]:
     return {
         "type": "DeclarativeSource",
-        "definitions": {"shared": {"HttpRequester": {"url_base": "https://example.com/v2/"}}},
+        "definitions": {"linked": {"HttpRequester": {"url_base": "https://example.com/v2/"}}},
         "streams": [
             {
                 "type": "DeclarativeStream",
@@ -525,7 +525,7 @@ def expected_manifest_with_url_base_shared_definition_normalized() -> Dict[str, 
                     "type": "SimpleRetriever",
                     "requester": {
                         "type": "HttpRequester",
-                        "url_base": {"$ref": "#/definitions/shared/HttpRequester/url_base"},
+                        "url_base": {"$ref": "#/definitions/linked/HttpRequester/url_base"},
                         "path": "B",
                         "http_method": "GET",
                     },
@@ -569,7 +569,7 @@ def expected_manifest_with_url_base_shared_definition_normalized() -> Dict[str, 
                     "type": "SimpleRetriever",
                     "requester": {
                         "type": "HttpRequester",
-                        "url_base": {"$ref": "#/definitions/shared/HttpRequester/url_base"},
+                        "url_base": {"$ref": "#/definitions/linked/HttpRequester/url_base"},
                         "path": "D",
                         "http_method": "GET",
                     },
@@ -591,7 +591,7 @@ def expected_manifest_with_url_base_shared_definition_normalized() -> Dict[str, 
                     "type": "SimpleRetriever",
                     "requester": {
                         "type": "HttpRequester",
-                        "url_base": {"$ref": "#/definitions/shared/HttpRequester/url_base"},
+                        "url_base": {"$ref": "#/definitions/linked/HttpRequester/url_base"},
                         "path": "E",
                         "http_method": "GET",
                     },

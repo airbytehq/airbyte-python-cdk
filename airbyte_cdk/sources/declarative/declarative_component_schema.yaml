@@ -1869,7 +1869,7 @@ definitions:
         type: string
         enum: [HttpRequester]
       url_base:
-        sharable: true
+        linkable: true
         title: API Base URL
         description: The Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
         type: string
@@ -1905,7 +1905,7 @@ definitions:
           - "/quotes/{{ stream_partition['id'] }}/quote_line_groups"
           - "/trades/{{ config['symbol_id'] }}/history"
       authenticator:
-        sharable: true
+        linkable: true
         title: Authenticator
         description: Authentication method to use for requests sent to the API.
         anyOf:

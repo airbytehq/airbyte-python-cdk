@@ -19,53 +19,54 @@ DuplicatesType = DefaultDict[str, DuplicateOccurancesType]
 
 # Configuration constants
 N_OCCURANCES = 2
+
 DEF_TAG = "definitions"
-STREAMS_TAG = "streams"
-SHARED_TAG = "shared"
-SHARABLE_TAG = "sharable"
-SCHEMA_LOADER_TAG = "schema_loader"
-SCHEMAS_TAG = "schemas"
-SCHEMA_TAG = "schema"
+LINKABLE_TAG = "linkable"
+LINKED_TAG = "linked"
 PROPERTIES_TAG = "properties"
+SCHEMA_LOADER_TAG = "schema_loader"
+SCHEMA_TAG = "schema"
+SCHEMAS_TAG = "schemas"
+STREAMS_TAG = "streams"
 
 
-def _get_sharable_schema_tags(schema: DefinitionsType) -> List[str]:
+def _get_linkable_schema_tags(schema: DefinitionsType) -> List[str]:
     """
-    Extracts sharable tags from schema definitions.
-    This function identifies properties within a schema's definitions that are marked as sharable.
+    Extracts linkable tags from schema definitions.
+    This function identifies properties within a schema's definitions that are marked as linkable.
     It traverses through each definition in the schema, examines its properties, and collects
-    the keys of properties that contain the SHARABLE_TAG.
+    the keys of properties that contain the LINKABLE_TAG.
 
     Args:
         schema (DefinitionsType): The schema definition dictionary to process
 
     Returns:
-        List[str]: A deduplicated list of property keys that are marked as sharable
+        List[str]: A deduplicated list of property keys that are marked as linkable
     """
 
-    # the sharable scope: ['definitions.*']
+    # the linkable scope: ['definitions.*']
     schema_definitions = schema.get(DEF_TAG, {})
 
-    sharable_tags: List[str] = []
-    # Extract sharable keys from properties
+    linkable_tags: List[str] = []
+    # Extract linkable keys from properties
 
-    extract_sharable_keys: Callable[[Dict[str, Dict[str, Any]]], List[str]] = lambda properties: [
-        key for key, value in properties.items() if SHARABLE_TAG in value.keys()
+    extract_linkable_keys: Callable[[Dict[str, Dict[str, Any]]], List[str]] = lambda properties: [
+        key for key, value in properties.items() if LINKABLE_TAG in value.keys()
     ]
 
-    # Process each root value to get its sharable keys
-    process_root: Callable[[Dict[str, Any]], List[str]] = lambda root_value: extract_sharable_keys(
+    # Process each root value to get its linkable keys
+    process_root: Callable[[Dict[str, Any]], List[str]] = lambda root_value: extract_linkable_keys(
         root_value.get(PROPERTIES_TAG, {})
     )
 
     # Map the process_root function over all schema values and flatten the results
-    all_sharable_tags = chain.from_iterable(map(process_root, schema_definitions.values()))
+    all_linkable_tags = chain.from_iterable(map(process_root, schema_definitions.values()))
 
-    # Add all found sharable tags to the tags list
-    sharable_tags.extend(all_sharable_tags)
+    # Add all found linkable tags to the tags list
+    linkable_tags.extend(all_linkable_tags)
 
     # return unique tags only
-    return list(set(sharable_tags))
+    return list(set(linkable_tags))
 
 
 class ManifestNormalizer:
@@ -85,8 +86,8 @@ class ManifestNormalizer:
         self._resolved_manifest = resolved_manifest
         self._declarative_schema = declarative_schema
         self._normalized_manifest: ManifestType = copy.deepcopy(self._resolved_manifest)
-        # get the tags marked as `sharable` in the component schema
-        self._sharable_tags = _get_sharable_schema_tags(self._declarative_schema)
+        # get the tags marked as `linkable` in the component schema
+        self._linkable_tags = _get_linkable_schema_tags(self._declarative_schema)
 
     def to_json_str(self) -> str:
         return json.dumps(self._normalized_manifest, indent=2)
@@ -152,13 +153,13 @@ class ManifestNormalizer:
         if not DEF_TAG in self._normalized_manifest:
             self._normalized_manifest[DEF_TAG] = {}
 
-        # Check if the shared tag exists
-        if not SHARED_TAG in self._normalized_manifest[DEF_TAG]:
-            self._normalized_manifest[DEF_TAG][SHARED_TAG] = {}
+        # Check if the linked tag exists
+        if not LINKED_TAG in self._normalized_manifest[DEF_TAG]:
+            self._normalized_manifest[DEF_TAG][LINKED_TAG] = {}
 
-        # remove everything from definitions tag except of `shared`, after processing
+        # remove everything from definitions tag except of `linked`, after processing
         for key in list(self._normalized_manifest[DEF_TAG].keys()):
-            if key != SHARED_TAG:
+            if key != LINKED_TAG:
                 self._normalized_manifest[DEF_TAG].pop(key, None)
 
     def _reference_schemas(self) -> None:
@@ -189,19 +190,19 @@ class ManifestNormalizer:
 
         for _, occurrences in duplicates.items():
             type_key, key, value = self._get_occurance_samples(occurrences)
-            is_shared_def = self._is_shared_definition(type_key, key)
+            is_linked_def = self._is_linked_definition(type_key, key)
 
             # Add to definitions if not there already
-            if not is_shared_def:
-                self._add_to_shared_definitions(type_key, key, value)
+            if not is_linked_def:
+                self._add_to_linked_definitions(type_key, key, value)
 
             # Replace occurrences with references
             for _, parent_obj, value in occurrences:
-                if is_shared_def:
-                    if value == self._get_shared_definition_value(type_key, key):
-                        parent_obj[key] = self._create_shared_definition_ref(type_key, key)
+                if is_linked_def:
+                    if value == self._get_linked_definition_value(type_key, key):
+                        parent_obj[key] = self._create_linked_definition_ref(type_key, key)
                 else:
-                    parent_obj[key] = self._create_shared_definition_ref(type_key, key)
+                    parent_obj[key] = self._create_linked_definition_ref(type_key, key)
 
     def _handle_duplicates(self, duplicates: DuplicatesType) -> None:
         """
@@ -241,25 +242,25 @@ class ManifestNormalizer:
         value_to_hash = {key: value} if key is not None else value
         duplicates[self._hash_object(value_to_hash)].append((current_path, obj, value))
 
-    def _add_to_shared_definitions(
+    def _add_to_linked_definitions(
         self,
         type_key: str,
         key: str,
         value: Any,
     ) -> None:
         """
-        Add a value to the shared definitions under the specified key.
+        Add a value to the linked definitions under the specified key.
 
         Args:
             definitions: The definitions dictionary to modify
             key: The key to use
             value: The value to add
         """
-        if type_key not in self._normalized_manifest[DEF_TAG][SHARED_TAG].keys():
-            self._normalized_manifest[DEF_TAG][SHARED_TAG][type_key] = {}
+        if type_key not in self._normalized_manifest[DEF_TAG][LINKED_TAG].keys():
+            self._normalized_manifest[DEF_TAG][LINKED_TAG][type_key] = {}
 
-        if key not in self._normalized_manifest[DEF_TAG][SHARED_TAG][type_key].keys():
-            self._normalized_manifest[DEF_TAG][SHARED_TAG][type_key][key] = value
+        if key not in self._normalized_manifest[DEF_TAG][LINKED_TAG][type_key].keys():
+            self._normalized_manifest[DEF_TAG][LINKED_TAG][type_key][key] = value
 
     def _collect_duplicates(self) -> DuplicatesType:
         """
@@ -297,13 +298,13 @@ class ManifestNormalizer:
                     # First process nested dictionaries
                     _collect(value, current_path)
                     # Process allowed-only component tags
-                    if key in self._sharable_tags:
+                    if key in self._linkable_tags:
                         self._add_duplicate(duplicates, current_path, obj, value)
 
                 # handle primitive types
                 elif isinstance(value, (str, int, float, bool)):
                     # Process allowed-only field tags
-                    if key in self._sharable_tags:
+                    if key in self._linkable_tags:
                         self._add_duplicate(duplicates, current_path, obj, value, key)
 
                 # handle list cases
@@ -313,7 +314,7 @@ class ManifestNormalizer:
 
         duplicates: DuplicatesType = defaultdict(list, {})
         try:
-            if self._sharable_tags:
+            if self._linkable_tags:
                 _collect(self._normalized_manifest)
                 # clean non-duplicates and sort based on the count of occurrences
                 return self._clean_and_sort_duplicates(duplicates)
@@ -360,42 +361,42 @@ class ManifestNormalizer:
         # Sort keys to ensure consistent hash for same content
         return hashlib.md5(json.dumps(obj, sort_keys=True).encode()).hexdigest()
 
-    def _is_shared_definition(self, type_key: str, key: str) -> bool:
+    def _is_linked_definition(self, type_key: str, key: str) -> bool:
         """
-        Check if the key already exists in the shared definitions.
+        Check if the key already exists in the linked definitions.
 
         Args:
             key: The key to check
             definitions: The definitions dictionary with definitions
 
         Returns:
-            True if the key exists in the shared definitions, False otherwise
+            True if the key exists in the linked definitions, False otherwise
         """
 
-        if type_key in self._normalized_manifest[DEF_TAG][SHARED_TAG].keys():
-            # Check if the key exists in the shared definitions
-            if key in self._normalized_manifest[DEF_TAG][SHARED_TAG][type_key].keys():
+        if type_key in self._normalized_manifest[DEF_TAG][LINKED_TAG].keys():
+            # Check if the key exists in the linked definitions
+            if key in self._normalized_manifest[DEF_TAG][LINKED_TAG][type_key].keys():
                 return True
 
         return False
 
-    def _get_shared_definition_value(self, type_key: str, key: str) -> Any:
+    def _get_linked_definition_value(self, type_key: str, key: str) -> Any:
         """
-        Get the value of a shared definition by its key.
+        Get the value of a linked definition by its key.
 
         Args:
             key: The key to check
             definitions: The definitions dictionary with definitions
 
         Returns:
-            The value of the shared definition
+            The value of the linked definition
         """
-        if type_key in self._normalized_manifest[DEF_TAG][SHARED_TAG].keys():
-            if key in self._normalized_manifest[DEF_TAG][SHARED_TAG][type_key].keys():
-                return self._normalized_manifest[DEF_TAG][SHARED_TAG][type_key][key]
+        if type_key in self._normalized_manifest[DEF_TAG][LINKED_TAG].keys():
+            if key in self._normalized_manifest[DEF_TAG][LINKED_TAG][type_key].keys():
+                return self._normalized_manifest[DEF_TAG][LINKED_TAG][type_key][key]
         else:
             raise ManifestNormalizationException(
-                f"Key {key} not found in shared definitions. Please check the manifest."
+                f"Key {key} not found in linked definitions. Please check the manifest."
             )
 
     def _get_occurance_samples(self, occurrences: DuplicateOccurancesType) -> Tuple[str, str, Any]:
@@ -417,9 +418,9 @@ class ManifestNormalizer:
             value,
         )  # Return the component's name as the last part of its path
 
-    def _create_shared_definition_ref(self, type_key: str, key: str) -> Dict[str, str]:
+    def _create_linked_definition_ref(self, type_key: str, key: str) -> Dict[str, str]:
         """
-        Create a reference object for the shared definitions using the specified key.
+        Create a reference object for the linked definitions using the specified key.
 
         Args:
             ref_key: The reference key to use
@@ -428,7 +429,7 @@ class ManifestNormalizer:
             A reference object in the proper format
         """
 
-        return {"$ref": f"#/{DEF_TAG}/{SHARED_TAG}/{type_key}/{key}"}
+        return {"$ref": f"#/{DEF_TAG}/{LINKED_TAG}/{type_key}/{key}"}
 
     def _create_schema_ref(self, ref_key: str) -> Dict[str, str]:
         """

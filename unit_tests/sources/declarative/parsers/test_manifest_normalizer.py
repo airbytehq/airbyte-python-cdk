@@ -33,8 +33,8 @@ def test_deduplicate_manifest_when_multiple_url_base_are_resolved_and_most_frequ
 
 
 def test_deduplicate_manifest_with_shared_definitions_url_base_are_present(
-    manifest_with_url_base_shared_definition,
-    expected_manifest_with_url_base_shared_definition_normalized,
+    manifest_with_url_base_linked_definition,
+    expected_manifest_with_url_base_linked_definition_normalized,
 ) -> None:
     """
     This test is to check that the manifest is normalized when the `url_base` is shared
@@ -42,7 +42,7 @@ def test_deduplicate_manifest_with_shared_definitions_url_base_are_present(
     """
 
     schema = _get_declarative_component_schema()
-    resolved_manifest = resolver.preprocess_manifest(manifest_with_url_base_shared_definition)
+    resolved_manifest = resolver.preprocess_manifest(manifest_with_url_base_linked_definition)
     normalized_manifest = ManifestNormalizer(resolved_manifest, schema).normalize()
 
-    assert normalized_manifest == expected_manifest_with_url_base_shared_definition_normalized
+    assert normalized_manifest == expected_manifest_with_url_base_linked_definition_normalized
