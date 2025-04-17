@@ -195,7 +195,9 @@ def build_from_dockerfile(
     image_name = metadata.dockerRepository
     full_image_name = f"{image_name}:{tag}"
 
-    logger.info(f"Building Docker image from Dockerfile: {full_image_name} for platforms {platforms}")
+    logger.info(
+        f"Building Docker image from Dockerfile: {full_image_name} for platforms {platforms}"
+    )
     logger.warning(
         "Building from Dockerfile is deprecated. Consider using a base image in metadata.yaml."
     )
@@ -378,7 +380,7 @@ def run_command(args: List[str]) -> int:
         try:
             platforms = "linux/amd64,linux/arm64"
             logger.info(f"Building for platforms: {platforms}")
-            
+
             if metadata.connectorBuildOptions and metadata.connectorBuildOptions.baseImage:
                 image_name = build_from_base_image(
                     connector_dir, metadata, parsed_args.tag, platforms

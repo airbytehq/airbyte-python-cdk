@@ -51,7 +51,7 @@ def build(connector_dir: Path, tag: str, no_verify: bool, verbose: bool) -> None
 
         language = infer_connector_language(metadata, connector_dir)
         click.echo(f"Detected connector language: {language}")
-        
+
         platforms = "linux/amd64,linux/arm64"
         click.echo(f"Building for platforms: {platforms}")
 
