@@ -2,9 +2,9 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from abc import ABC, abstractmethod
 from airbyte_cdk.sources.declarative.types import Record
 
 

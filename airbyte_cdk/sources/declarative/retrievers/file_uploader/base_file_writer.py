@@ -2,9 +2,9 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
+from abc import ABC, abstractmethod
 from pathlib import Path
 
-from abc import ABC, abstractmethod
 
 class BaseFileWriter(ABC):
     """

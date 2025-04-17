@@ -24,7 +24,7 @@ class YamlDeclarativeSource(ConcurrentDeclarativeSource[List[AirbyteStateMessage
         catalog: Optional[ConfiguredAirbyteCatalog] = None,
         config: Optional[Mapping[str, Any]] = None,
         state: Optional[List[AirbyteStateMessage]] = None,
-        emit_connector_builder_messages: Optional[bool] = False
+        emit_connector_builder_messages: Optional[bool] = False,
     ) -> None:
         """
         :param path_to_yaml: Path to the yaml file describing the source
@@ -37,7 +37,7 @@ class YamlDeclarativeSource(ConcurrentDeclarativeSource[List[AirbyteStateMessage
             config=config or {},
             state=state or [],
             source_config=source_config,
-            emit_connector_builder_messages=emit_connector_builder_messages
+            emit_connector_builder_messages=emit_connector_builder_messages,
         )
 
     def _read_and_parse_yaml_file(self, path_to_yaml_file: str) -> ConnectionDefinition:
