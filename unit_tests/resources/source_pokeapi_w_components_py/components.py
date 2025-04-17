@@ -1,11 +1,7 @@
-#
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
-#
 """A sample implementation of custom components that does nothing but will cause syncs to fail if missing."""
 
 from collections.abc import Iterable, MutableMapping
-from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional, Union
+from typing import Any
 
 import requests
 
@@ -17,8 +13,20 @@ class IntentionalException(Exception):
 
 
 class MyCustomExtractor(DpathExtractor):
+    """Dummy class, directly implements DPatchExtractor.
+
+    Used to prove that SDM can find the custom class by name.
+    """
+
+    pass
+
+
+class MyCustomFailingExtractor(DpathExtractor):
+    """Dummy class, intentionally raises an exception when extract_records is called."""
+
     def extract_records(
         self,
         response: requests.Response,
     ) -> Iterable[MutableMapping[Any, Any]]:
-        raise IntentionalException
+        """Raise an exception when called."""
+        raise IntentionalException("This is an intentional failure for testing purposes.")
