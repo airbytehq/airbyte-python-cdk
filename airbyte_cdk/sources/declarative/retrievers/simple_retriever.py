@@ -405,7 +405,7 @@ class SimpleRetriever(Retriever):
                             )
                         )
                         if merge_key:
-                            deep_merge(merged_records[merge_key], current_record)
+                            _deep_merge(merged_records[merge_key], current_record)
                         else:
                             # We should still emit records even if the record did not have a merge key
                             last_page_size += 1
@@ -624,7 +624,9 @@ class SimpleRetriever(Retriever):
         return json.dumps(to_serialize, indent=None, separators=(",", ":"), sort_keys=True)
 
 
-def deep_merge(target: Dict[str, Any], source: Union[Record, Dict[str, Any]]) -> None:
+def _deep_merge(
+    target: MutableMapping[str, Any], source: Union[Record, MutableMapping[str, Any]]
+) -> None:
     """
     Recursively merge two dictionaries, combining nested dictionaries instead of overwriting them.
 
@@ -632,8 +634,12 @@ def deep_merge(target: Dict[str, Any], source: Union[Record, Dict[str, Any]]) ->
     :param source: The dictionary to merge from
     """
     for key, value in source.items():
-        if key in target and isinstance(target[key], dict) and isinstance(value, dict):
-            deep_merge(target[key], value)
+        if (
+            key in target
+            and isinstance(target[key], MutableMapping)
+            and isinstance(value, MutableMapping)
+        ):
+            _deep_merge(target[key], value)
         else:
             target[key] = value
 
