@@ -324,6 +324,8 @@ ENTRYPOINT ["python", "/airbyte/integration_code/{get_main_file_name(connector_d
 !main.py
 !source.py
 !destination.py
+!source_*
+!destination_*
 """
         dockerignore_temp_path.write_text(dockerignore_content)
         logger.debug(f"Created temporary .dockerignore at {dockerignore_temp_path}")
