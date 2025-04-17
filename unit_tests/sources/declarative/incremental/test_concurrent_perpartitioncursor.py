@@ -3456,6 +3456,7 @@ def test_given_global_state_when_read_then_state_is_not_per_partition() -> None:
     manifest["definitions"]["post_comments_stream"]["incremental_sync"][
         "global_substream_cursor"
     ] = True
+    manifest["streams"].remove({"$ref": "#/definitions/post_comment_votes_stream"})
     record = {
         "id": 9,
         "post_id": 1,
@@ -3478,6 +3479,7 @@ def test_given_global_state_when_read_then_state_is_not_per_partition() -> None:
             },
         ),
     ]
+    
     run_mocked_test(
         mock_requests,
         manifest,
@@ -3489,5 +3491,6 @@ def test_given_global_state_when_read_then_state_is_not_per_partition() -> None:
             "lookback_window": 1,
             "parent_state": {"posts": {"updated_at": "2024-01-30T00:00:00Z"}},
             "state": {"updated_at": "2024-01-25T00:00:00Z"},
+            "use_global_cursor": True  # ensures that it is running the Concurrent CDK version as this is not populated in the declarative implementation
         },  # this state does have per partition which would be under `states`
     )
