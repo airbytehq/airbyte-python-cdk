@@ -10,7 +10,7 @@ This guide explains how to install and use the Source Declarative Manifest (SDM)
 pipx install airbyte-cdk
 ```
 
-If you encounter an error related to a missing `distutils` module, very that you are running Python version `<=3.11` and try running:
+If you encounter an error related to a missing `distutils` module, verify that you are running Python version `<=3.11` and try running:
 
 ```bash
 python -m pipx install airbyte-cdk
