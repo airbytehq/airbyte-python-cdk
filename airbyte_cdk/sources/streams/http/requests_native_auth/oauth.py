@@ -120,8 +120,8 @@ class Oauth2Authenticator(AbstractOauth2Authenticator):
     def get_token_expiry_date(self) -> AirbyteDateTime:
         return self._token_expiry_date
 
-    def set_token_expiry_date(self, value: Union[str, int]) -> None:
-        self._token_expiry_date = self._parse_token_expiration_date(value)
+    def set_token_expiry_date(self, value: AirbyteDateTime) -> None:
+        self._token_expiry_date = value
 
     @property
     def token_expiry_is_time_of_expiration(self) -> bool:
@@ -316,26 +316,6 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
         """Returns True if the token is expired"""
         return ab_datetime_now() > self.get_token_expiry_date()
 
-    @staticmethod
-    def get_new_token_expiry_date(
-        access_token_expires_in: str,
-        token_expiry_date_format: str | None = None,
-    ) -> AirbyteDateTime:
-        """
-        Calculate the new token expiry date based on the provided expiration duration or format.
-
-        Args:
-            access_token_expires_in (str): The duration (in seconds) until the access token expires, or the expiry date in a specific format.
-            token_expiry_date_format (str | None, optional): The format of the expiry date if provided. Defaults to None.
-
-        Returns:
-            AirbyteDateTime: The calculated expiry date of the access token.
-        """
-        if token_expiry_date_format:
-            return ab_datetime_parse(access_token_expires_in)
-        else:
-            return ab_datetime_now() + timedelta(seconds=int(access_token_expires_in))
-
     def get_access_token(self) -> str:
         """Retrieve new access and refresh token if the access token has expired.
         The new refresh token is persisted with the set_refresh_token function
@@ -346,16 +326,13 @@ class SingleUseRefreshTokenOauth2Authenticator(Oauth2Authenticator):
             new_access_token, access_token_expires_in, new_refresh_token = (
                 self.refresh_access_token()
             )
-            new_token_expiry_date: AirbyteDateTime = self.get_new_token_expiry_date(
-                access_token_expires_in, self._token_expiry_date_format
-            )
             self.access_token = new_access_token
             self.set_refresh_token(new_refresh_token)
-            self.set_token_expiry_date(new_token_expiry_date)
+            self.set_token_expiry_date(access_token_expires_in)
             self._emit_control_message()
         return self.access_token
 
-    def refresh_access_token(self) -> Tuple[str, str, str]:  # type: ignore[override]
+    def refresh_access_token(self) -> Tuple[str, AirbyteDateTime, str]:  # type: ignore[override]
         """
         Refreshes the access token by making a handled request and extracting the necessary token information.
 
