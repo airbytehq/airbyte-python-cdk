@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .base_file_writer import BaseFileWriter
 
+
 class FileWriter(BaseFileWriter):
     def write(self, file_path: Path, content: bytes) -> int:
         """
