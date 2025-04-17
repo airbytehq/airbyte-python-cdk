@@ -4,8 +4,7 @@
 
 from pathlib import Path
 
-from airbyte_cdk.sources.declarative.retrievers.file_uploader import BaseFileWriter
-
+from .base_file_writer import BaseFileWriter
 
 class FileWriter(BaseFileWriter):
     def write(self, file_path: Path, content: bytes) -> int:

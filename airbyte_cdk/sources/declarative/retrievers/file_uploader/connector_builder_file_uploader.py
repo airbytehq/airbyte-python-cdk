@@ -4,9 +4,9 @@
 
 from dataclasses import dataclass
 
-from airbyte_cdk.sources.declarative.retrievers.file_uploader import BaseFileUploader, FileUploader
 from airbyte_cdk.sources.declarative.types import Record
-
+from .base_file_uploader import BaseFileUploader
+from .file_uploader import FileUploader
 
 @dataclass
 class ConnectorBuilderFileUploader(BaseFileUploader):
