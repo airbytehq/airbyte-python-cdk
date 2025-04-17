@@ -65,10 +65,7 @@ def should_normalize_manifest(config: Mapping[str, Any]) -> bool:
     return config.get("__should_normalize", False)
 
 
-def create_source(
-    config: Mapping[str, Any],
-    limits: TestLimits,
-) -> ManifestDeclarativeSource:
+def create_source(config: Mapping[str, Any], limits: TestLimits) -> ManifestDeclarativeSource:
     manifest = config["__injected_declarative_manifest"]
     return ManifestDeclarativeSource(
         config=config,
