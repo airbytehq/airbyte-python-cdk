@@ -10,12 +10,9 @@ This guide explains how to install and use the Source Declarative Manifest (SDM)
 pipx install airbyte-cdk
 ```
 
-### Alternative Installation (If encountering distutils errors)
-
-If you encounter errors related to missing distutils module, try using this alternative approach:
+If you encounter an error related to a missing `distutils` module, very that you are running Python version `<=3.11` and try running:
 
 ```bash
-python -m pip install --user pipx
 python -m pipx install airbyte-cdk
 ```
 
@@ -58,8 +55,9 @@ Example:
 }
 ```
 
-2. Run the command with your config file
+2. Run the command against your config file
 
 ```bash
-source-declarative-manifest check --config /relative/path/to/your/config.json
+source-declarative-manifest check --config /relative/path/to/config.json
+source-declarative-manifest read --config /relative/path/to/config.json --catalog /relative/path/to/catalog.json
 ```
