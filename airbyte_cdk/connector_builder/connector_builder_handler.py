@@ -55,14 +55,16 @@ def get_limits(config: Mapping[str, Any]) -> TestLimits:
     max_streams = command_config.get(MAX_STREAMS_KEY) or DEFAULT_MAXIMUM_STREAMS
     return TestLimits(max_records, max_pages_per_slice, max_slices, max_streams)
 
+
 def should_migrate_manifest(config: Mapping[str, Any]) -> bool:
     """
     Determines whether the manifest should be migrated,
     based on the presence of the "__should_migrate" key in the config.
-    
+
     This flag is set by the UI.
     """
     return config.get("__should_migrate", False)
+
 
 def create_source(config: Mapping[str, Any], limits: TestLimits) -> ManifestDeclarativeSource:
     manifest = config["__injected_declarative_manifest"]
