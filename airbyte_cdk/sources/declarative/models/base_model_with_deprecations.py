@@ -46,48 +46,57 @@ class BaseModelWithDeprecations(BaseModel):
 
         extra = "allow"
 
-    def __init__(self, **model_data: Any) -> None:
+    def __init__(self, **model_fields: Any) -> None:
         """
         Show warnings for deprecated fields during component initialization.
         """
-
         # call the parent constructor first to initialize Pydantic internals
-        super().__init__(**model_data)
-
+        super().__init__(**model_fields)
         # set the placeholder for the deprecation logs
         self._deprecation_logs: List[AirbyteLogMessage] = []
-
         # process deprecated fields, if present
-        self._process_fields(model_data)
-
+        self._process_fields(model_fields)
         # set the deprecation logs attribute to the model
         self._set_deprecation_logs_attr_to_model()
 
-    def _process_fields(self, model_data: Any) -> None:
+    def _is_deprecated_field(self, field_name: str) -> bool:
+        return (
+            self.__fields__[field_name].field_info.extra.get(DEPRECATED, False)
+            if field_name in self.__fields__.keys()
+            else False
+        )
+
+    def _get_deprecation_message(self, field_name: str) -> str:
+        return (
+            self.__fields__[field_name].field_info.extra.get(
+                DEPRECATION_MESSAGE, "<missing_deprecation_message>"
+            )
+            if field_name in self.__fields__.keys()
+            else "<missing_deprecation_message>"
+        )
+
+    def _process_fields(self, model_fields: Any) -> None:
         """
         Processes the fields in the provided model data, checking for deprecated fields.
 
-        For each field in the input `model_data`, this method checks if the field exists in the model's defined fields.
+        For each field in the input `model_fields`, this method checks if the field exists in the model's defined fields.
         If the field is marked as deprecated (using the `DEPRECATED` flag in its metadata), it triggers a deprecation warning
-        by calling the `_deprecated_warning` method with the field name and an optional deprecation message.
+        by calling the `_create_warning` method with the field name and an optional deprecation message.
 
         Args:
-            model_data (Any): The data containing fields to be processed.
+            model_fields (Any): The data containing fields to be processed.
 
         Returns:
             None
         """
-        model_fields = self.__fields__
-        for field_name in model_data.keys():
-            if field_name in model_fields:
-                is_deprecated_field = model_fields[field_name].field_info.extra.get(
-                    DEPRECATED, False
-                )
-                if is_deprecated_field:
-                    deprecation_message = model_fields[field_name].field_info.extra.get(
-                        DEPRECATION_MESSAGE, ""
+
+        if hasattr(self, FIELDS_TAG):
+            for field_name in model_fields.keys():
+                if self._is_deprecated_field(field_name):
+                    self._create_warning(
+                        field_name,
+                        self._get_deprecation_message(field_name),
                     )
-                    self._deprecated_warning(field_name, deprecation_message)
 
     def _set_deprecation_logs_attr_to_model(self) -> None:
         """
@@ -102,7 +111,7 @@ class BaseModelWithDeprecations(BaseModel):
         """
         setattr(self, DEPRECATION_LOGS_TAG, self._deprecation_logs)
 
-    def _deprecated_warning(self, field_name: str, message: str) -> None:
+    def _create_warning(self, field_name: str, message: str) -> None:
         """
         Show a warning message for deprecated fields (to stdout).
         Args:
