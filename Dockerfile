@@ -34,5 +34,6 @@ RUN rm -rf dist/ pyproject.toml poetry.lock README.md
 RUN chown -R 1000:1000 /airbyte
 
 # Set the entrypoint to use the source-declarative-manifest CLI
+ENV AIRBYTE_ENTRYPOINT="source-declarative-manifest"
 ENTRYPOINT ["source-declarative-manifest"]
 USER airbyte
