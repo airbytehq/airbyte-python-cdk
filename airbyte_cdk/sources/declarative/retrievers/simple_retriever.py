@@ -10,6 +10,7 @@ from itertools import islice
 from typing import (
     Any,
     Callable,
+    Dict,
     Iterable,
     List,
     Mapping,
@@ -404,7 +405,7 @@ class SimpleRetriever(Retriever):
                             )
                         )
                         if merge_key:
-                            merged_records[merge_key].update(current_record)
+                            deep_merge(merged_records[merge_key], current_record)
                         else:
                             # We should still emit records even if the record did not have a merge key
                             last_page_size += 1
@@ -621,6 +622,20 @@ class SimpleRetriever(Retriever):
     def _to_partition_key(to_serialize: Any) -> str:
         # separators have changed in Python 3.4. To avoid being impacted by further change, we explicitly specify our own value
         return json.dumps(to_serialize, indent=None, separators=(",", ":"), sort_keys=True)
+
+
+def deep_merge(target: Dict[str, Any], source: Union[Record, Dict[str, Any]]) -> None:
+    """
+    Recursively merge two dictionaries, combining nested dictionaries instead of overwriting them.
+
+    :param target: The dictionary to merge into (modified in place)
+    :param source: The dictionary to merge from
+    """
+    for key, value in source.items():
+        if key in target and isinstance(target[key], dict) and isinstance(value, dict):
+            deep_merge(target[key], value)
+        else:
+            target[key] = value
 
 
 @dataclass

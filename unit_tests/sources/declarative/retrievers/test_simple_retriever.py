@@ -1148,6 +1148,10 @@ def test_simple_retriever_with_additional_query_properties():
                 "last_name": "hongou",
                 "nonary": "second",
                 "bracelet": "1",
+                "dict_field": {
+                    "key1": "value1",
+                    "key2": "value2",
+                },
             },
             associated_slice=None,
             stream_name=stream_name,
@@ -1216,7 +1220,12 @@ def test_simple_retriever_with_additional_query_properties():
     record_selector.select_records.side_effect = [
         [
             Record(
-                data={"id": "a", "first_name": "gentarou", "last_name": "hongou"},
+                data={
+                    "id": "a",
+                    "first_name": "gentarou",
+                    "last_name": "hongou",
+                    "dict_field": {"key1": "value1"},
+                },
                 associated_slice=None,
                 stream_name=stream_name,
             ),
@@ -1263,7 +1272,12 @@ def test_simple_retriever_with_additional_query_properties():
                 stream_name=stream_name,
             ),
             Record(
-                data={"id": "a", "nonary": "second", "bracelet": "1"},
+                data={
+                    "id": "a",
+                    "nonary": "second",
+                    "bracelet": "1",
+                    "dict_field": {"key2": "value2"},
+                },
                 associated_slice=None,
                 stream_name=stream_name,
             ),
