@@ -59,7 +59,7 @@ def test() -> None:
     click.echo("Connector test command executed.")
 
 @click.group(
-    help=USAGE.replace("\n", "\n\n"),
+    help=USAGE.replace("\n", "\n\n"),  # Workaround to format help text correctly
 )
 def cli() -> None:
     """Airbyte CDK CLI.
