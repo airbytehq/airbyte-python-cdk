@@ -14,9 +14,11 @@ from pydantic.v1 import AnyUrl
 from airbyte_cdk.sources.file_based.config.abstract_file_based_spec import AbstractFileBasedSpec
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
+from airbyte_cdk.sources.utils.files_directory import get_files_directory
 from unit_tests.sources.file_based.helpers import make_remote_files
 
 reader = AbstractFileBasedStreamReader
+files_directory = get_files_directory()
 
 """
 The rules are:
@@ -402,7 +404,7 @@ def test_globs_and_prefixes_from_globs(
             },
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
-            "/tmp/transfer-files/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
+            f"{files_directory}/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             id="preserve_directories_present_and_true",
         ),
         pytest.param(
@@ -415,21 +417,21 @@ def test_globs_and_prefixes_from_globs(
             },
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "monthly-kickoff-202402.mpeg",
-            "/tmp/transfer-files/monthly-kickoff-202402.mpeg",
+            f"{files_directory}/monthly-kickoff-202402.mpeg",
             id="preserve_directories_present_and_false",
         ),
         pytest.param(
             {"streams": [], "delivery_method": {"delivery_type": "use_file_transfer"}},
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
-            "/tmp/transfer-files/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
+            f"{files_directory}/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             id="preserve_directories_not_present_defaults_true",
         ),
         pytest.param(
             {"streams": []},
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             "mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
-            "/tmp/transfer-files/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
+            f"{files_directory}/mirror_paths_testing/not_duplicates/data/jan/monthly-kickoff-202402.mpeg",
             id="file_transfer_flag_not_present_defaults_true",
         ),
     ],
@@ -447,7 +449,7 @@ def test_preserve_sub_directories_scenarios(
     reader = TestStreamReader()
     reader.config = TestSpec(**config)
     file_paths = reader._get_file_transfer_paths(
-        source_file_path, staging_directory="/tmp/transfer-files/"
+        source_file_path, staging_directory=f"{files_directory}/"
     )
 
     assert (
