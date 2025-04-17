@@ -9,7 +9,6 @@ from dataclasses import InitVar, dataclass, field
 from pathlib import Path
 from typing import Any, Mapping, Optional, Union
 
-from abc import ABC, abstractmethod
 from airbyte_cdk.models import AirbyteRecordMessageFileReference
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import (
@@ -23,54 +22,20 @@ from airbyte_cdk.sources.declarative.types import Record, StreamSlice
 from airbyte_cdk.sources.types import Config
 from airbyte_cdk.sources.utils.files_directory import get_files_directory
 
+from .base_file_uploader import BaseFileUploader
+from .base_file_writer import BaseFileWriter
+
 logger = logging.getLogger("airbyte")
 
-@dataclass
-class BaseFileUploader(ABC):
-    """
-    Base class for file uploader
-    """
 
-    @abstractmethod
-    def upload(self, record: Record) -> None:
-        """
-        Uploads the file to the specified location
-        """
-        ...
-
-class BaseFileWriter(ABC):
-    """
-    Base File writer class
-    """
-
-    @abstractmethod
-    def write(self, file_path: Path, content: bytes) -> int:
-        """
-        Writes the file to the specified location
-        """
-        ...
-
-class FileWriter(BaseFileWriter):
-
-    def write(self, file_path: Path, content: bytes) -> int:
-        """
-        Writes the file to the specified location
-        """
-        with open(str(file_path), "wb") as f:
-            f.write(content)
-
-        return file_path.stat().st_size
-
-class NoopFileWriter(BaseFileWriter):
-
-    def write(self, file_path: Path, content: bytes) -> int:
-        """
-        Noop file writer
-        """
-        return 0
 
 @dataclass
 class FileUploader(BaseFileUploader):
+    """
+    File uploader class
+    Handles the upload logic: fetching the download target, making the request via its requester, determining the file path, and calling self.file_writer.write()
+    Different types of file_writer:BaseFileWriter can be injected to handle different file writing strategies.
+    """
     requester: Requester
     download_target_extractor: RecordExtractor
     config: Config
@@ -136,11 +101,4 @@ class FileUploader(BaseFileUploader):
             )
 
 
-@dataclass
-class ConnectorBuilderFileUploader(BaseFileUploader):
-    file_uploader: FileUploader
 
-    def upload(self, record: Record) -> None:
-        self.file_uploader.upload(record=record)
-        for file_reference_attribute in [file_reference_attribute for file_reference_attribute in record.file_reference.__dict__ if not file_reference_attribute.startswith('_')]:
-            record.data[file_reference_attribute] = getattr(record.file_reference, file_reference_attribute)
