@@ -6,7 +6,7 @@ from airbyte_cdk.cli.commands.image import image
 
 
 @click.group()
-def cli():
+def cli() -> None:
     """Airbyte CDK command-line interface."""
     pass
 
