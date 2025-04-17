@@ -49,7 +49,7 @@ class FileUploader:
         if not download_targets:
             raise ValueError("No download targets found")
 
-        download_target = download_targets[0] # we just expect one download target
+        download_target = download_targets[0]  # we just expect one download target
         if not isinstance(download_target, str):
             raise ValueError(
                 f"download_target is expected to be a str but was {type(download_target)}: {download_target}"
