@@ -60,9 +60,6 @@ def read_metadata(connector_dir: Path) -> ConnectorMetadata:
     return metadata_file.data
 
 
-
-
-
 def run_docker_command(cmd: List[str], check: bool = True) -> Tuple[int, str, str]:
     """Run a Docker command as a subprocess.
 
@@ -244,6 +241,34 @@ ENTRYPOINT ["python", "/airbyte/integration_code/{main_file}"]
 """
 
         dockerignore_content = """
+*
+
+!**/*.py
+!**/*.yaml
+!**/*.yml
+!**/*.json
+!**/*.md
+!**/*.txt
+!**/*.sh
+!**/*.sql
+!**/*.csv
+!**/*.tsv
+!**/*.ini
+!**/*.toml
+!**/*.lock
+!**/*.cfg
+!**/*.conf
+!**/*.properties
+!LICENSE
+!NOTICE
+!requirements.txt
+!setup.py
+!pyproject.toml
+!poetry.lock
+!poetry.toml
+!Dockerfile
+!.dockerignore
+
 **/__pycache__
 **/.pytest_cache
 **/.venv
@@ -381,13 +406,9 @@ def run_command(connector_dir: Path, tag: str, no_verify: bool, verbose: bool) -
             logger.info(f"Building for platforms: {platforms}")
 
             if metadata.connectorBuildOptions and metadata.connectorBuildOptions.baseImage:
-                image_name = build_from_base_image(
-                    connector_dir, metadata, tag, platforms
-                )
+                image_name = build_from_base_image(connector_dir, metadata, tag, platforms)
             else:
-                image_name = build_from_dockerfile(
-                    connector_dir, metadata, tag, platforms
-                )
+                image_name = build_from_dockerfile(connector_dir, metadata, tag, platforms)
 
             if not no_verify:
                 if verify_image(image_name):
@@ -416,21 +437,27 @@ def run_command(connector_dir: Path, tag: str, no_verify: bool, verbose: bool) -
 def run() -> None:
     """Entry point for the airbyte-cdk build command."""
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="Build connector Docker images")
     parser.add_argument("connector_dir", type=str, help="Path to the connector directory")
-    parser.add_argument("--tag", type=str, default="dev", help="Tag to apply to the built image (default: dev)")
-    parser.add_argument("--no-verify", action="store_true", help="Skip verification of the built image")
+    parser.add_argument(
+        "--tag", type=str, default="dev", help="Tag to apply to the built image (default: dev)"
+    )
+    parser.add_argument(
+        "--no-verify", action="store_true", help="Skip verification of the built image"
+    )
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
-    
+
     args = parser.parse_args(sys.argv[1:])
-    
-    sys.exit(run_command(
-        connector_dir=Path(args.connector_dir),
-        tag=args.tag,
-        no_verify=args.no_verify,
-        verbose=args.verbose
-    ))
+
+    sys.exit(
+        run_command(
+            connector_dir=Path(args.connector_dir),
+            tag=args.tag,
+            no_verify=args.no_verify,
+            verbose=args.verbose,
+        )
+    )
 
 
 if __name__ == "__main__":
