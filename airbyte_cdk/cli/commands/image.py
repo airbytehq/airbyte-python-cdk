@@ -8,7 +8,6 @@ import click
 from airbyte_cdk.cli.build._run import (
     build_from_base_image,
     build_from_dockerfile,
-    infer_connector_language,
     read_metadata,
     set_up_logging,
     verify_docker_installation,
@@ -49,8 +48,10 @@ def build(connector_dir: Path, tag: str, no_verify: bool, verbose: bool) -> None
         click.echo(f"Connector: {metadata.dockerRepository}")
         click.echo(f"Version: {metadata.dockerImageTag}")
 
-        language = infer_connector_language(metadata, connector_dir)
-        click.echo(f"Detected connector language: {language}")
+        if metadata.language:
+            click.echo(f"Connector language from metadata: {metadata.language}")
+        else:
+            click.echo("Connector language not specified in metadata")
 
         platforms = "linux/amd64,linux/arm64"
         click.echo(f"Building for platforms: {platforms}")

@@ -6,7 +6,6 @@ requiring the full Airbyte CI pipeline, which uses Dagger.
 
 from __future__ import annotations
 
-import argparse
 import json
 import logging
 import os
@@ -15,11 +14,11 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import yaml
 
-from airbyte_cdk.cli.build.models import ConnectorLanguage, ConnectorMetadata, MetadataFile
+from airbyte_cdk.cli.build.models import ConnectorMetadata, MetadataFile
 
 logger = logging.getLogger("airbyte-cdk.cli.build")
 
@@ -32,23 +31,6 @@ def set_up_logging(verbose: bool = False) -> None:
         format="%(asctime)s [%(levelname)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-
-
-def parse_args(args: List[str]) -> argparse.Namespace:
-    """Parse command line arguments for the build command."""
-    parser = argparse.ArgumentParser(
-        description="Build connector Docker images using the host Docker daemon"
-    )
-    parser.add_argument("connector_dir", type=str, help="Path to the connector directory")
-    parser.add_argument(
-        "--tag", type=str, default="dev", help="Tag to apply to the built image (default: dev)"
-    )
-    parser.add_argument(
-        "--no-verify", action="store_true", help="Skip verification of the built image"
-    )
-    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
-
-    return parser.parse_args(args)
 
 
 def read_metadata(connector_dir: Path) -> ConnectorMetadata:
@@ -78,30 +60,7 @@ def read_metadata(connector_dir: Path) -> ConnectorMetadata:
     return metadata_file.data
 
 
-def infer_connector_language(metadata: ConnectorMetadata, connector_dir: Path) -> ConnectorLanguage:
-    """Infer the connector language from metadata and the file structure.
 
-    Args:
-        metadata: The connector metadata.
-        connector_dir: Path to the connector directory.
-
-    Returns:
-        The inferred connector language.
-    """
-    if metadata.language is not None:
-        return metadata.language
-
-    if (connector_dir / "setup.py").exists() or (connector_dir / "pyproject.toml").exists():
-        return ConnectorLanguage.PYTHON
-
-    if (connector_dir / "build.gradle").exists():
-        return ConnectorLanguage.JAVA
-
-    if any((connector_dir / f).exists() for f in ["manifest.yaml", "spec.yaml", "spec.json"]):
-        return ConnectorLanguage.LOW_CODE
-
-    logger.warning("Could not determine connector language, using UNKNOWN.")
-    return ConnectorLanguage.UNKNOWN
 
 
 def run_docker_command(cmd: List[str], check: bool = True) -> Tuple[int, str, str]:
@@ -259,8 +218,17 @@ def build_from_base_image(
         f"Building Docker image from base image {base_image}: {full_image_name} for platforms {platforms}"
     )
 
-    with tempfile.TemporaryDirectory() as temp_dir:
-        temp_dir_path = Path(temp_dir)
+    docker_dir = connector_dir / "build" / "docker"
+    docker_dir.mkdir(parents=True, exist_ok=True)
+
+    dockerfile_path = docker_dir / "Dockerfile"
+    dockerignore_path = docker_dir / ".dockerignore"
+
+    os.environ["DOCKER_BUILDKIT"] = "1"
+
+    try:
+        main_file = get_main_file_name(connector_dir)
+        logger.info(f"Using main file: {main_file}")
 
         dockerfile_content = f"""
 FROM {base_image}
@@ -271,18 +239,26 @@ COPY . .
 
 RUN pip install .
 
-ENV AIRBYTE_ENTRYPOINT "python /airbyte/integration_code/{get_main_file_name(connector_dir)}"
-ENTRYPOINT ["python", "/airbyte/integration_code/{get_main_file_name(connector_dir)}"]
+ENV AIRBYTE_ENTRYPOINT "python /airbyte/integration_code/{main_file}"
+ENTRYPOINT ["python", "/airbyte/integration_code/{main_file}"]
 """
 
-        dockerfile_path = temp_dir_path / "Dockerfile"
-        dockerfile_path.write_text(dockerfile_content)
+        dockerignore_content = """
+**/__pycache__
+**/.pytest_cache
+**/.venv
+**/.coverage
+**/venv
+**/.idea
+**/.vscode
+**/.DS_Store
+**/node_modules
+**/.git
+build/docker
+"""
 
-        for item in connector_dir.iterdir():
-            if item.is_dir():
-                shutil.copytree(item, temp_dir_path / item.name)
-            else:
-                shutil.copy2(item, temp_dir_path / item.name)
+        dockerfile_path.write_text(dockerfile_content)
+        dockerignore_path.write_text(dockerignore_content)
 
         build_cmd = [
             "docker",
@@ -296,8 +272,12 @@ ENTRYPOINT ["python", "/airbyte/integration_code/{get_main_file_name(connector_d
             f"io.airbyte.version={metadata.dockerImageTag}",
             "--label",
             f"io.airbyte.name={metadata.dockerRepository}",
+            "--file",
+            str(dockerfile_path),
+            "--ignorefile",
+            str(dockerignore_path),
             "--load",  # Load the image into the local Docker daemon
-            str(temp_dir_path),
+            str(connector_dir),
         ]
 
         try:
@@ -307,6 +287,26 @@ ENTRYPOINT ["python", "/airbyte/integration_code/{get_main_file_name(connector_d
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to build image: {e}")
             raise
+    finally:
+        if dockerfile_path.exists():
+            try:
+                dockerfile_path.unlink()
+                logger.debug(f"Cleaned up temporary file: {dockerfile_path}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up temporary file {dockerfile_path}: {e}")
+
+        if dockerignore_path.exists():
+            try:
+                dockerignore_path.unlink()
+                logger.debug(f"Cleaned up temporary file: {dockerignore_path}")
+            except Exception as e:
+                logger.warning(f"Failed to clean up temporary file {dockerignore_path}: {e}")
+
+        try:
+            docker_dir.rmdir()
+            logger.debug(f"Removed empty directory: {docker_dir}")
+        except Exception:
+            pass
 
 
 def verify_image(image_name: str) -> bool:
@@ -341,18 +341,20 @@ def verify_image(image_name: str) -> bool:
         return True
 
 
-def run_command(args: List[str]) -> int:
+def run_command(connector_dir: Path, tag: str, no_verify: bool, verbose: bool) -> int:
     """Run the build command with the given arguments.
 
     Args:
-        args: Command line arguments.
+        connector_dir: Path to the connector directory.
+        tag: Tag to apply to the built image.
+        no_verify: Whether to skip verification of the built image.
+        verbose: Whether to enable verbose logging.
 
     Returns:
         Exit code (0 for success, non-zero for failure).
     """
     try:
-        parsed_args = parse_args(args)
-        set_up_logging(parsed_args.verbose)
+        set_up_logging(verbose)
 
         if not verify_docker_installation():
             logger.error(
@@ -360,7 +362,7 @@ def run_command(args: List[str]) -> int:
             )
             return 1
 
-        connector_dir = Path(parsed_args.connector_dir).absolute()
+        connector_dir = connector_dir.absolute()
 
         if not connector_dir.exists():
             logger.error(f"Connector directory not found: {connector_dir}")
@@ -374,23 +376,20 @@ def run_command(args: List[str]) -> int:
             logger.error(f"Error reading connector metadata: {e}")
             return 1
 
-        language = infer_connector_language(metadata, connector_dir)
-        logger.info(f"Detected connector language: {language}")
-
         try:
             platforms = "linux/amd64,linux/arm64"
             logger.info(f"Building for platforms: {platforms}")
 
             if metadata.connectorBuildOptions and metadata.connectorBuildOptions.baseImage:
                 image_name = build_from_base_image(
-                    connector_dir, metadata, parsed_args.tag, platforms
+                    connector_dir, metadata, tag, platforms
                 )
             else:
                 image_name = build_from_dockerfile(
-                    connector_dir, metadata, parsed_args.tag, platforms
+                    connector_dir, metadata, tag, platforms
                 )
 
-            if not parsed_args.no_verify:
+            if not no_verify:
                 if verify_image(image_name):
                     logger.info(f"Build completed successfully: {image_name}")
                     return 0
@@ -407,7 +406,7 @@ def run_command(args: List[str]) -> int:
 
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
-        if parsed_args and parsed_args.verbose:
+        if verbose:
             import traceback
 
             logger.error(traceback.format_exc())
@@ -416,7 +415,22 @@ def run_command(args: List[str]) -> int:
 
 def run() -> None:
     """Entry point for the airbyte-cdk build command."""
-    sys.exit(run_command(sys.argv[1:]))
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Build connector Docker images")
+    parser.add_argument("connector_dir", type=str, help="Path to the connector directory")
+    parser.add_argument("--tag", type=str, default="dev", help="Tag to apply to the built image (default: dev)")
+    parser.add_argument("--no-verify", action="store_true", help="Skip verification of the built image")
+    parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
+    
+    args = parser.parse_args(sys.argv[1:])
+    
+    sys.exit(run_command(
+        connector_dir=Path(args.connector_dir),
+        tag=args.tag,
+        no_verify=args.no_verify,
+        verbose=args.verbose
+    ))
 
 
 if __name__ == "__main__":
