@@ -2,34 +2,34 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
-import os
+from pathlib import Path
 
 import pytest
 import yaml
 
 
-def get_fixture_path(file_name):
-    return os.path.join(os.path.dirname(__file__), file_name)
+def get_resource_path(file_name) -> str:
+    return Path(__file__).parent.parent / "resources" / file_name
 
 
 @pytest.fixture
 def valid_remote_config():
-    return get_fixture_path("resources/valid_remote_config.json")
+    return get_resource_path("valid_remote_config.json")
 
 
 @pytest.fixture
 def invalid_remote_config():
-    return get_fixture_path("resources/invalid_remote_config.json")
+    return get_resource_path("invalid_remote_config.json")
 
 
 @pytest.fixture
 def valid_local_manifest():
-    return get_fixture_path("resources/valid_local_manifest.yaml")
+    return get_resource_path("valid_local_manifest.yaml")
 
 
 @pytest.fixture
 def invalid_local_manifest():
-    return get_fixture_path("resources/invalid_local_manifest.yaml")
+    return get_resource_path("invalid_local_manifest.yaml")
 
 
 @pytest.fixture
@@ -46,9 +46,9 @@ def invalid_local_manifest_yaml(invalid_local_manifest):
 
 @pytest.fixture
 def valid_local_config_file():
-    return get_fixture_path("resources/valid_local_pokeapi_config.json")
+    return get_resource_path("valid_local_pokeapi_config.json")
 
 
 @pytest.fixture
 def invalid_local_config_file():
-    return get_fixture_path("resources/invalid_local_pokeapi_config.json")
+    return get_resource_path("invalid_local_pokeapi_config.json")

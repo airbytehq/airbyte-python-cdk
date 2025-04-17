@@ -308,6 +308,19 @@ html5lib = ["html5lib"]
 lxml = ["lxml"]
 
 [[package]]
+name = "boltons"
+version = "25.0.0"
+description = "When they're not builtins, they're boltons."
+optional = false
+python-versions = ">=3.7"
+groups = ["main"]
+markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
+files = [
+    {file = "boltons-25.0.0-py3-none-any.whl", hash = "sha256:dc9fb38bf28985715497d1b54d00b62ea866eca3938938ea9043e254a3a6ca62"},
+    {file = "boltons-25.0.0.tar.gz", hash = "sha256:e110fbdc30b7b9868cb604e3f71d4722dd8f4dcb4a5ddd06028ba8f1ab0b5ace"},
+]
+
+[[package]]
 name = "bracex"
 version = "2.5.post1"
 description = "Bash style brace expander."
@@ -5507,4 +5520,4 @@ vector-db-based = ["cohere", "langchain", "openai", "tiktoken"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.13"
-content-hash = "08cd7b4f8a9e5cc0fdf400cabafd6aaea7705e460422dbbccf212468d69eaea9"
+content-hash = "9854ff162fb8407d116438ded5068bb03510e5692c62d81059c376c30c417948"
