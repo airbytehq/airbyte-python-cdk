@@ -15,20 +15,23 @@ pipx run airbyte-cdk-build [arguments]
 ## Usage
 
 ```bash
-# Basic usage
+# Legacy entry point (still supported)
 airbyte-cdk-build /path/to/connector
 
+# New CLI interface
+airbyte-cdk image build /path/to/connector
+
 # With custom tag
-airbyte-cdk-build /path/to/connector --tag custom_tag
+airbyte-cdk image build /path/to/connector --tag custom_tag
 
 # Build for a specific platform
-airbyte-cdk-build /path/to/connector --platform linux/arm64
+airbyte-cdk image build /path/to/connector --platform linux/arm64
 
 # Skip verification
-airbyte-cdk-build /path/to/connector --no-verify
+airbyte-cdk image build /path/to/connector --no-verify
 
 # Enable verbose logging
-airbyte-cdk-build /path/to/connector --verbose
+airbyte-cdk image build /path/to/connector --verbose
 ```
 
 ## Options
