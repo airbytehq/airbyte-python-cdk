@@ -5,7 +5,7 @@ from pathlib import Path
 
 import click
 
-from airbyte_cdk.cli.build._run import (
+from airbyte_cdk.utils.docker.build import (
     build_from_base_image,
     build_from_dockerfile,
     read_metadata,
