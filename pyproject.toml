@@ -52,6 +52,8 @@ PyYAML = "^6.0.1"
 rapidfuzz = "^3.10.1" # TODO: Remove if unused
 requests = "*"
 requests_cache = "*"
+rich = "^14.0.0"
+rich-click = "^1.8.8"
 typing-extensions = "*"  # Transitive dependency used directly in code
 wcmatch = "10.0"
 # Extras depedencies
@@ -115,7 +117,7 @@ sql = ["sqlalchemy"]
 [tool.poetry.scripts]
 
 source-declarative-manifest = "airbyte_cdk.cli.source_declarative_manifest:run"
-airbyte-cdk = "airbyte_cdk.cli.devtools:run"
+airbyte-cdk = "airbyte_cdk.cli.airbyte_cdk._run:main"
 
 [tool.isort]
 skip = ["__init__.py"]  # TODO: Remove after this is fixed: https://github.com/airbytehq/airbyte-python-cdk/issues/12
@@ -155,7 +157,7 @@ lint-fix = { cmd = "poetry run ruff check --fix .", help = "Auto-fix any lint is
 lint-fix-unsafe = { cmd = "poetry run ruff check --fix --unsafe-fixes .", help = "Lint-fix modified files, including 'unsafe' fixes. It is recommended to first commit any pending changes and then always manually review any unsafe changes applied." }
 
 # ruff fix everything (ignoring non-Python fixes)
-ruff-fix = { sequence = ["lint-fix", "_format-fix-ruff"] , help = "Lint-fix and format-fix all code." }
+ruff-fix = { sequence = ["lint-fix", "_format-fix-ruff"],  help = "Lint-fix and format-fix all code." }
 
 # Combined Check and Fix tasks
 
