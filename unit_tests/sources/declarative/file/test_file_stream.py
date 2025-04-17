@@ -1,3 +1,4 @@
+import json
 import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -10,6 +11,8 @@ from airbyte_cdk.test.catalog_builder import CatalogBuilder, ConfiguredAirbyteSt
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.entrypoint_wrapper import discover as entrypoint_discover
 from airbyte_cdk.test.entrypoint_wrapper import read as entrypoint_read
+from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
+from airbyte_cdk.test.mock_http.response_builder import find_binary_response, find_template
 from airbyte_cdk.test.state_builder import StateBuilder
 
 
@@ -21,7 +24,7 @@ class ConfigBuilder:
             "credentials": {
                 "credentials": "api_token",
                 "email": "integration-test@airbyte.io",
-                "api_token": "fake token",
+                "api_token": "fake_token",
             },
         }
 
@@ -63,71 +66,129 @@ def discover(config_builder: ConfigBuilder, expecting_exception: bool = False) -
     )
 
 
+SERVER_URL = "https://d3v-airbyte.zendesk.com"
+STREAM_URL = f"{SERVER_URL}/api/v2/help_center/incremental/articles?start_time=1672531200"
+STREAM_ATTACHMENTS_URL = (
+    f"{SERVER_URL}/api/v2/help_center/articles/12138789487375/attachments?per_page=100&=1672531200"
+)
+STREAM_ATTACHMENT_CONTENT_URL = f"{SERVER_URL}/hc/article_attachments/12138758717583"
+
+
 class FileStreamTest(TestCase):
     def _config(self) -> ConfigBuilder:
         return ConfigBuilder()
 
     def test_check(self) -> None:
-        source = _source(
-            CatalogBuilder()
-            .with_stream(ConfiguredAirbyteStreamBuilder().with_name("articles"))
-            .build(),
-            self._config().build(),
-        )
+        with HttpMocker() as http_mocker:
+            http_mocker.get(
+                HttpRequest(url=STREAM_URL),
+                HttpResponse(json.dumps(find_template("file_api/articles", __file__)), 200),
+            )
 
-        check_result = source.check(Mock(), self._config().build())
+            source = _source(
+                CatalogBuilder()
+                .with_stream(ConfiguredAirbyteStreamBuilder().with_name("articles"))
+                .build(),
+                self._config().build(),
+            )
 
-        assert check_result.status == Status.SUCCEEDED
+            check_result = source.check(Mock(), self._config().build())
+
+            assert check_result.status == Status.SUCCEEDED
 
     def test_get_articles(self) -> None:
-        output = read(
-            self._config(),
-            CatalogBuilder()
-            .with_stream(ConfiguredAirbyteStreamBuilder().with_name("articles"))
-            .build(),
-        )
+        with HttpMocker() as http_mocker:
+            http_mocker.get(
+                HttpRequest(url=STREAM_URL),
+                HttpResponse(json.dumps(find_template("file_api/articles", __file__)), 200),
+            )
+            output = read(
+                self._config(),
+                CatalogBuilder()
+                .with_stream(ConfiguredAirbyteStreamBuilder().with_name("articles"))
+                .build(),
+            )
 
-        assert output.records
+            assert output.records
 
     def test_get_article_attachments(self) -> None:
-        output = read(
-            self._config(),
-            CatalogBuilder()
-            .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments"))
-            .build(),
-        )
+        with HttpMocker() as http_mocker:
+            http_mocker.get(
+                HttpRequest(url=STREAM_URL),
+                HttpResponse(json.dumps(find_template("file_api/articles", __file__)), 200),
+            )
+            http_mocker.get(
+                HttpRequest(url=STREAM_ATTACHMENTS_URL),
+                HttpResponse(
+                    json.dumps(find_template("file_api/article_attachments", __file__)), 200
+                ),
+            )
+            http_mocker.get(
+                HttpRequest(url=STREAM_ATTACHMENT_CONTENT_URL),
+                HttpResponse(
+                    find_binary_response("file_api/article_attachment_content.png", __file__), 200
+                ),
+            )
 
-        assert output.records
-        file_reference = output.records[0].record.file_reference
-        assert file_reference
-        assert file_reference.file_url
-        assert re.match(r"^.*/article_attachments/[0-9a-fA-F-]{36}$", file_reference.file_url)
-        assert file_reference.file_relative_path
-        assert re.match(
-            r"^article_attachments/[0-9a-fA-F-]{36}$", file_reference.file_relative_path
-        )
-        assert file_reference.file_size_bytes
+            output = read(
+                self._config(),
+                CatalogBuilder()
+                .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments"))
+                .build(),
+            )
+
+            assert output.records
+            file_reference = output.records[0].record.file_reference
+            assert file_reference
+            assert file_reference.staging_file_url
+            assert re.match(
+                r"^.*/article_attachments/[0-9a-fA-F-]{36}$", file_reference.staging_file_url
+            )
+            assert file_reference.source_file_relative_path
+            assert re.match(
+                r"^article_attachments/[0-9a-fA-F-]{36}$", file_reference.source_file_relative_path
+            )
+            assert file_reference.file_size_bytes
 
     def test_get_article_attachments_with_filename_extractor(self) -> None:
-        output = read(
-            self._config(),
-            CatalogBuilder()
-            .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments"))
-            .build(),
-            yaml_file="test_file_stream_with_filename_extractor.yaml",
-        )
+        with HttpMocker() as http_mocker:
+            http_mocker.get(
+                HttpRequest(url=STREAM_URL),
+                HttpResponse(json.dumps(find_template("file_api/articles", __file__)), 200),
+            )
+            http_mocker.get(
+                HttpRequest(url=STREAM_ATTACHMENTS_URL),
+                HttpResponse(
+                    json.dumps(find_template("file_api/article_attachments", __file__)), 200
+                ),
+            )
+            http_mocker.get(
+                HttpRequest(url=STREAM_ATTACHMENT_CONTENT_URL),
+                HttpResponse(
+                    find_binary_response("file_api/article_attachment_content.png", __file__), 200
+                ),
+            )
 
-        assert output.records
-        file_reference = output.records[0].record.file_reference
-        assert file_reference
-        assert file_reference.file_url
-        # todo: once we finally mock the response update to check file name
-        assert not re.match(r"^.*/article_attachments/[0-9a-fA-F-]{36}$", file_reference.file_url)
-        assert file_reference.file_relative_path
-        assert not re.match(
-            r"^article_attachments/[0-9a-fA-F-]{36}$", file_reference.file_relative_path
-        )
-        assert file_reference.file_size_bytes
+            output = read(
+                self._config(),
+                CatalogBuilder()
+                .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments"))
+                .build(),
+                yaml_file="test_file_stream_with_filename_extractor.yaml",
+            )
+
+            assert output.records
+            file_reference = output.records[0].record.file_reference
+            assert file_reference
+            assert (
+                file_reference.staging_file_url
+                == "/tmp/airbyte-file-transfer/article_attachments/12138758717583/some_image_name.png"
+            )
+            assert file_reference.source_file_relative_path
+            assert not re.match(
+                r"^article_attachments/[0-9a-fA-F-]{36}$", file_reference.source_file_relative_path
+            )
+            assert file_reference.file_size_bytes
 
     def test_discover_article_attachments(self) -> None:
         output = discover(self._config())

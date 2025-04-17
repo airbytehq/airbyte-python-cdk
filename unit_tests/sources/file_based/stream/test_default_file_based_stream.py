@@ -12,8 +12,15 @@ from unittest.mock import Mock
 
 import pytest
 
-from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level
+from airbyte_cdk.models import (
+    AirbyteLogMessage,
+    AirbyteMessage,
+    AirbyteRecordMessageFileReference,
+    AirbyteStream,
+    Level,
+)
 from airbyte_cdk.models import Type as MessageType
+from airbyte_cdk.sources.file_based import FileBasedStreamConfig
 from airbyte_cdk.sources.file_based.availability_strategy import (
     AbstractFileBasedAvailabilityStrategy,
 )
@@ -24,6 +31,7 @@ from airbyte_cdk.sources.file_based.exceptions import (
     FileBasedSourceError,
 )
 from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
+from airbyte_cdk.sources.file_based.file_record_data import FileRecordData
 from airbyte_cdk.sources.file_based.file_types import FileTransfer
 from airbyte_cdk.sources.file_based.file_types.file_type_parser import FileTypeParser
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
@@ -275,11 +283,17 @@ class TestFileBasedErrorCollector:
 
 class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
     _NOW = datetime(2022, 10, 22, tzinfo=timezone.utc)
-    _A_RECORD = {
-        "bytes": 10,
-        "file_relative_path": "relative/path/file.csv",
-        "file_url": "/absolute/path/file.csv",
-    }
+    _A_FILE_RECORD_DATA = FileRecordData(
+        folder="/absolute/path/",
+        filename="file.csv",
+        bytes=10,
+        source_uri="file:///absolute/path/file.csv",
+    )
+    _A_FILE_REFERENCE_MESSAGE = AirbyteRecordMessageFileReference(
+        file_size_bytes=10,
+        source_file_relative_path="relative/path/file.csv",
+        staging_file_url="/absolute/path/file.csv",
+    )
 
     def setUp(self) -> None:
         self._stream_config = Mock()
@@ -307,37 +321,27 @@ class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
             use_file_transfer=True,
         )
 
-        self._stream_not_mirroring = DefaultFileBasedStream(
-            config=self._stream_config,
-            catalog_schema=self._catalog_schema,
-            stream_reader=self._stream_reader,
-            availability_strategy=self._availability_strategy,
-            discovery_policy=self._discovery_policy,
-            parsers={MockFormat: self._parser},
-            validation_policy=self._validation_policy,
-            cursor=self._cursor,
-            errors_collector=FileBasedErrorsCollector(),
-            use_file_transfer=True,
-            preserve_directory_structure=False,
-        )
-
     def test_when_read_records_from_slice_then_return_records(self) -> None:
         """Verify that we have the new file method and data is empty"""
-        with mock.patch.object(FileTransfer, "get_file", return_value=[self._A_RECORD]):
-            messages = list(
-                self._stream.read_records_from_slice(
-                    {"files": [RemoteFile(uri="uri", last_modified=self._NOW)]}
-                )
-            )
-            assert list(map(lambda message: message.record.file, messages)) == [self._A_RECORD]
-            assert list(map(lambda message: message.record.data, messages)) == [{}]
+        with mock.patch.object(
+            FileTransfer,
+            "upload",
+            return_value=[(self._A_FILE_RECORD_DATA, self._A_FILE_REFERENCE_MESSAGE)],
+        ):
+            remote_file = RemoteFile(uri="uri", last_modified=self._NOW)
+            messages = list(self._stream.read_records_from_slice({"files": [remote_file]}))
 
-    def test_when_transform_record_then_return_updated_record(self) -> None:
-        file = RemoteFile(uri="uri", last_modified=self._NOW)
-        last_updated = int(self._NOW.timestamp()) * 1000
-        transformed_record = self._stream.transform_record_for_file_transfer(self._A_RECORD, file)
-        assert transformed_record[self._stream.modified] == last_updated
-        assert transformed_record[self._stream.source_file_url] == file.uri
+            assert list(map(lambda message: message.record.file_reference, messages)) == [
+                self._A_FILE_REFERENCE_MESSAGE
+            ]
+            assert list(map(lambda message: message.record.data, messages)) == [
+                {
+                    "bytes": 10,
+                    "filename": "file.csv",
+                    "folder": "/absolute/path/",
+                    "source_uri": "file:///absolute/path/file.csv",
+                }
+            ]
 
     def test_when_compute_slices(self) -> None:
         all_files = [
@@ -467,3 +471,86 @@ class DefaultFileBasedStreamFileTransferTestNotMirroringDirectories(unittest.Tes
         assert "2 duplicates found for file name monthly-kickoff-202402.mpeg" in str(exc_info.value)
         assert "2 duplicates found for file name monthly-kickoff-202401.mpeg" in str(exc_info.value)
         assert "3 duplicates found for file name monthly-kickoff-202403.mpeg" in str(exc_info.value)
+
+
+class DefaultFileBasedStreamSchemaTest(unittest.TestCase):
+    _NOW = datetime(2022, 10, 22, tzinfo=timezone.utc)
+    _A_FILE_REFERENCE_MESSAGE = AirbyteRecordMessageFileReference(
+        file_size_bytes=10,
+        source_file_relative_path="relative/path/file.csv",
+        staging_file_url="/absolute/path/file.csv",
+    )
+
+    def setUp(self) -> None:
+        self._stream_config = Mock(spec=FileBasedStreamConfig)
+        self._stream_config.format = MockFormat()
+        self._stream_config.name = "a stream name"
+        self._stream_config.input_schema = ""
+        self._stream_config.schemaless = False
+        self._stream_config.primary_key = []
+        self._catalog_schema = Mock()
+        self._stream_reader = Mock(spec=AbstractFileBasedStreamReader)
+        self._availability_strategy = Mock(spec=AbstractFileBasedAvailabilityStrategy)
+        self._discovery_policy = Mock(spec=AbstractDiscoveryPolicy)
+        self._parser = Mock(spec=FileTypeParser)
+        self._validation_policy = Mock(spec=AbstractSchemaValidationPolicy)
+        self._validation_policy.name = "validation policy name"
+        self._cursor = Mock(spec=AbstractFileBasedCursor)
+
+    def test_non_file_based_stream(self) -> None:
+        """
+        Test that the stream is correct when file transfer is not used.
+        """
+        non_file_based_stream = DefaultFileBasedStream(
+            config=self._stream_config,
+            catalog_schema=self._catalog_schema,
+            stream_reader=self._stream_reader,
+            availability_strategy=self._availability_strategy,
+            discovery_policy=self._discovery_policy,
+            parsers={MockFormat: self._parser},
+            validation_policy=self._validation_policy,
+            cursor=self._cursor,
+            errors_collector=FileBasedErrorsCollector(),
+            use_file_transfer=False,
+        )
+        with (
+            mock.patch.object(non_file_based_stream, "get_json_schema", return_value={}),
+            mock.patch.object(
+                DefaultFileBasedStream,
+                "primary_key",
+                new_callable=mock.PropertyMock,
+                return_value=["id"],
+            ),
+        ):
+            airbyte_stream = non_file_based_stream.as_airbyte_stream()
+            assert isinstance(airbyte_stream, AirbyteStream)
+            assert not airbyte_stream.is_file_based
+
+    def test_file_based_stream(self) -> None:
+        """
+        Test that the stream is correct when file transfer used.
+        """
+        non_file_based_stream = DefaultFileBasedStream(
+            config=self._stream_config,
+            catalog_schema=self._catalog_schema,
+            stream_reader=self._stream_reader,
+            availability_strategy=self._availability_strategy,
+            discovery_policy=self._discovery_policy,
+            parsers={MockFormat: self._parser},
+            validation_policy=self._validation_policy,
+            cursor=self._cursor,
+            errors_collector=FileBasedErrorsCollector(),
+            use_file_transfer=True,
+        )
+        with (
+            mock.patch.object(non_file_based_stream, "get_json_schema", return_value={}),
+            mock.patch.object(
+                DefaultFileBasedStream,
+                "primary_key",
+                new_callable=mock.PropertyMock,
+                return_value=["id"],
+            ),
+        ):
+            airbyte_stream = non_file_based_stream.as_airbyte_stream()
+            assert isinstance(airbyte_stream, AirbyteStream)
+            assert airbyte_stream.is_file_based

@@ -24,13 +24,11 @@ class Record(Mapping[str, Any]):
         data: Mapping[str, Any],
         stream_name: str,
         associated_slice: Optional[StreamSlice] = None,
-        is_file_transfer_message: bool = False,
         file_reference: Optional[AirbyteRecordMessageFileReference] = None,
     ):
         self._data = data
         self._associated_slice = associated_slice
         self.stream_name = stream_name
-        self.is_file_transfer_message = is_file_transfer_message
         self._file_reference = file_reference
 
     @property
@@ -46,7 +44,7 @@ class Record(Mapping[str, Any]):
         return self._file_reference
 
     @file_reference.setter
-    def file_reference(self, value: AirbyteRecordMessageFileReference):
+    def file_reference(self, value: AirbyteRecordMessageFileReference) -> None:
         self._file_reference = value
 
     def __repr__(self) -> str:
