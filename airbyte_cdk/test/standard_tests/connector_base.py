@@ -22,9 +22,10 @@ from airbyte_cdk.test.declarative.models import (
     ConnectorTestScenario,
 )
 from airbyte_cdk.test.declarative.utils.job_runner import IConnector, run_test_job
-
-ACCEPTANCE_TEST_CONFIG = "acceptance-test-config.yml"
-MANIFEST_YAML = "manifest.yaml"
+from airbyte_cdk.test.standard_tests.test_resources import (
+    ACCEPTANCE_TEST_CONFIG,
+    find_connector_root,
+)
 
 
 class ConnectorTestSuiteBase(abc.ABC):
@@ -81,27 +82,8 @@ class ConnectorTestSuiteBase(abc.ABC):
     @classmethod
     def get_connector_root_dir(cls) -> Path:
         """Get the root directory of the connector."""
-        for parent in cls.get_test_class_dir().parents:
-            if (parent / MANIFEST_YAML).exists():
-                return parent
-            if (parent / ACCEPTANCE_TEST_CONFIG).exists():
-                return parent
-            if parent.name == "airbyte_cdk":
-                break
-        # If we reach here, we didn't find the manifest file in any parent directory
-        # Check if the manifest file exists in the current directory
-        for parent in Path.cwd().parents:
-            if (parent / MANIFEST_YAML).exists():
-                return parent
-            if (parent / ACCEPTANCE_TEST_CONFIG).exists():
-                return parent
-            if parent.name == "airbyte_cdk":
-                break
+        return find_connector_root([cls.get_test_class_dir(), Path.cwd()])
 
-        raise FileNotFoundError(
-            "Could not find connector root directory relative to "
-            f"'{str(cls.get_test_class_dir())}' or '{str(Path.cwd())}'."
-        )
 
     @classproperty
     def acceptance_test_config_path(cls) -> Path:
