@@ -90,7 +90,11 @@ class FileUploader(BaseFileUploader):
     def upload(self, record: Record) -> None:
         mocked_response = SafeResponse()
         mocked_response.content = json.dumps(record.data).encode()
-        download_target = list(self.download_target_extractor.extract_records(mocked_response))[0]
+        download_targets = list(self.download_target_extractor.extract_records(mocked_response))
+        if not download_targets:
+            raise ValueError("No download targets found")
+
+        download_target = download_targets[0]  # we just expect one download target
         if not isinstance(download_target, str):
             raise ValueError(
                 f"download_target is expected to be a str but was {type(download_target)}: {download_target}"
