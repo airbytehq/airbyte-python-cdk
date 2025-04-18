@@ -31,11 +31,13 @@ The command reads the connector's metadata from the `metadata.yaml` file, builds
 This command is designed to be a simpler alternative to the `airbyte-ci build` command, using Docker directly on the host machine instead of Dagger.
 """
 
+import subprocess
 import sys
 from pathlib import Path
 
 import click
 
+from airbyte_cdk.cli.airbyte_cdk._util import resolve_connector_name_and_directory
 from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.utils.docker import (
     build_from_base_image,
@@ -51,15 +53,23 @@ def image_cli_group() -> None:
 
 
 @image_cli_group.command()
-@click.argument(
-    "connector_directory",
-    type=click.Path(exists=True, file_okay=False, dir_okay=True, path_type=Path),
+@click.option(
+    "--connector-name",
+    type=str,
+    help="Name of the connector to test. Ignored if --connector-directory is provided.",
+)
+@click.option(
+    "--connector-directory",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Path to the connector directory.",
 )
 @click.option("--tag", default="dev", help="Tag to apply to the built image (default: dev)")
 @click.option("--no-verify", is_flag=True, help="Skip verification of the built image")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 def build(
-    connector_directory: Path,
+    connector_name: str | None = None,
+    connector_directory: Path | None = None,
+    *,
     tag: str = "dev",
     no_verify: bool = False,
     verbose: bool = False,
@@ -76,18 +86,19 @@ def build(
         )
         sys.exit(1)
 
+    connector_name, connector_directory = resolve_connector_name_and_directory(
+        connector_name=connector_name,
+        connector_directory=connector_directory,
+    )
+
     try:
         metadata = MetadataFile.from_file(connector_directory / "metadata.yaml")
-        click.echo(f"Connector: {metadata.data.dockerRepository}")
-        click.echo(f"Version: {metadata.data.dockerImageTag}")
-
-        if metadata.data.language:
-            click.echo(f"Connector language from metadata: {metadata.data.language}")
-        else:
-            click.echo("Connector language not specified in metadata")
+        click.echo(
+            f"Building Image for Connector: {metadata.data.dockerRepository} "
+            f"(v{metadata.data.dockerImageTag})"
+        )
 
         try:
-            import subprocess
 
             result = subprocess.run(
                 ["docker", "buildx", "inspect"], capture_output=True, text=True, check=False

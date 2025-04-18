@@ -45,6 +45,7 @@ from types import ModuleType
 import rich_click as click
 
 # from airbyte_cdk.test.standard_tests import pytest_hooks
+from airbyte_cdk.cli.airbyte_cdk._util import resolve_connector_name_and_directory
 from airbyte_cdk.test.standard_tests.test_resources import find_connector_root_from_name
 from airbyte_cdk.test.standard_tests.util import create_connector_test_suite
 
@@ -129,23 +130,10 @@ def test(
             "pytest is not installed. Please install pytest to run the connector tests."
         )
     click.echo("Connector test command executed.")
-    if not connector_name and not connector_directory:
-        cwd = Path().resolve().absolute()
-        if cwd.name.startswith("source-") or cwd.name.startswith("destination-"):
-            connector_name = cwd.name
-            connector_directory = cwd
-        else:
-            raise ValueError(
-                "Either connector_name or connector_directory must be provided if not "
-                "running from a connector directory."
-            )
-
-    if connector_directory:
-        connector_directory = connector_directory.resolve().absolute()
-    elif connector_name:
-        connector_directory = find_connector_root_from_name(connector_name)
-    else:
-        raise ValueError("Either connector_name or connector_directory must be provided.")
+    connector_name, connector_directory = resolve_connector_name_and_directory(
+        connector_name=connector_name,
+        connector_directory=connector_directory,
+    )
 
     connector_test_suite = create_connector_test_suite(
         connector_name=connector_name if not connector_directory else None,
