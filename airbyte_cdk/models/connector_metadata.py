@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
+import yaml
 from pydantic import BaseModel, Field
 
 
@@ -54,3 +56,23 @@ class MetadataFile(BaseModel):
     model_config = {"extra": "allow"}
 
     data: ConnectorMetadata = Field(..., description="Connector metadata")
+
+    @classmethod
+    def from_file(
+        cls,
+        file_path: Path,
+    ) -> MetadataFile:
+        """Load metadata from a YAML file."""
+        if not file_path.exists():
+            raise FileNotFoundError(f"Metadata file not found: {file_path!s}")
+
+        metadata_content = file_path.read_text()
+        metadata_dict = yaml.safe_load(metadata_content)
+
+        if not metadata_dict or "data" not in metadata_dict:
+            raise ValueError(
+                "Invalid metadata format: missing 'data' field in YAML file '{file_path!s}'"
+            )
+
+        metadata_file = MetadataFile.model_validate(metadata_dict)
+        return metadata_file
