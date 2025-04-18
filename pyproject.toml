@@ -52,7 +52,6 @@ PyYAML = "^6.0.1"
 rapidfuzz = "^3.10.1" # TODO: Remove if unused
 requests = "*"
 requests_cache = "*"
-rich = "^14.0.0"
 rich-click = "^1.8.8"
 typing-extensions = "*"  # Transitive dependency used directly in code
 wcmatch = "10.0"
@@ -86,6 +85,7 @@ sqlalchemy = {version = "^2.0,!=2.0.36", optional = true }
 xmltodict = ">=0.13,<0.15"
 anyascii = "^0.3.2"
 whenever = "^0.6.16"
+click = "^8.1.8"
 
 [tool.poetry.group.dev.dependencies]
 freezegun = "*"
