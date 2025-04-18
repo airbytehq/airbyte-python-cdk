@@ -100,10 +100,12 @@ def fetch(
     # List all secrets with the connector label
     parent = f"projects/{project}"
     filter_string = f"labels.{CONNECTOR_LABEL}={connector_name}"
-    secrets = client.list_secrets(request=secretmanager.ListSecretsRequest(
-        parent=parent,
-        filter=filter_string,
-    ))
+    secrets = client.list_secrets(
+        request=secretmanager.ListSecretsRequest(
+            parent=parent,
+            filter=filter_string,
+        )
+    )
 
     # Fetch and write secrets
     secret_count = 0
@@ -112,16 +114,16 @@ def fetch(
         version_name = f"{secret_name}/versions/latest"
         response = client.access_secret_version(name=version_name)
         payload = response.payload.data.decode("UTF-8")
-        
+
         filename_base = "config"  # Default filename
         if secret.labels and "filename" in secret.labels:
             filename_base = secret.labels["filename"]
-        
+
         secret_file_path = secrets_dir / f"{filename_base}.json"
         secret_file_path.write_text(payload)
         click.echo(f"Secret written to: {secret_file_path}")
         secret_count += 1
-    
+
     if secret_count == 0:
         click.echo(f"No secrets found for connector: {connector_name}")
 
