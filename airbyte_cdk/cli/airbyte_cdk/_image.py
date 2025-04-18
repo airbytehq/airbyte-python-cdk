@@ -133,6 +133,6 @@ def build(
         sys.exit(1)
 
 
-__all___ = [
+__all__ = [
     "image_cli_group",
 ]
