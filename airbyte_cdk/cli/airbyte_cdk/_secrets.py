@@ -8,6 +8,10 @@ Usage:
     airbyte-cdk secrets fetch --connector-directory /path/to/connector
     airbyte-cdk secrets fetch  # Run from within a connector directory
 
+Usage without pre-installing (stateless):
+    pipx run airbyte-cdk[dev] secrets fetch ...
+    uvx airbyte-cdk[dev] secrets fetch ...
+
 The 'fetch' command retrieves secrets from Google Secret Manager based on connector
 labels and writes them to the connector's `secrets` directory.
 """
@@ -35,6 +39,10 @@ def secrets_cli_group() -> None:
         airbyte-cdk secrets fetch --connector-name source-github
         airbyte-cdk secrets fetch --connector-directory /path/to/connector
         airbyte-cdk secrets fetch  # Run from within a connector directory
+
+    Usage without pre-installing (stateless):
+        pipx run airbyte-cdk[dev] secrets fetch ...
+        uvx airbyte-cdk[dev] secrets fetch ...
 
     The 'fetch' command retrieves secrets from Google Secret Manager based on connector
     labels and writes them to the connector's `secrets` directory.
