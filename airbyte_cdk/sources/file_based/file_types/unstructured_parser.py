@@ -423,9 +423,7 @@ class UnstructuredParser(FileTypeParser):
         # if the file name is not available, use the file content
         detected_type: FileType | None = None
         try:
-            detected_type = detect_filetype(
-                filename=remote_file.uri,
-            )
+            detected_type = detect_filetype(remote_file.uri)
         except Exception:
             # Path doesn't exist locally. Try something else...
             pass
@@ -433,8 +431,13 @@ class UnstructuredParser(FileTypeParser):
         if detected_type and detected_type != FileType.UNK:
             return detected_type
 
-        type_based_on_content = detect_filetype(file=file)
-        file.seek(0)  # detect_filetype is reading to read the file content, so we need to reset
+        # Convert IOBase to BytesIO for compatibility with detect_filetype
+        file.seek(0)
+        file_content = file.read()
+        file.seek(0)
+        with BytesIO(file_content) as bytes_io:
+            type_based_on_content = detect_filetype(bytes_io)
+        file.seek(0)  # Reset file position after reading
 
         if type_based_on_content and type_based_on_content != FileType.UNK:
             return type_based_on_content
