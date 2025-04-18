@@ -239,8 +239,8 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
     def _has_access_token_been_initialized(self) -> bool:
         return self._access_token is not None
 
-    def set_token_expiry_date(self, value: Union[str, int]) -> None:
-        self._token_expiry_date = self._parse_token_expiration_date(value)
+    def set_token_expiry_date(self, value: AirbyteDateTime) -> None:
+        self._token_expiry_date = value
 
     def get_assertion_name(self) -> str:
         return self.assertion_name

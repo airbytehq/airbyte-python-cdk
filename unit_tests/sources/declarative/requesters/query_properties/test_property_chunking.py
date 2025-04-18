@@ -43,9 +43,17 @@ CONFIG = {}
             ["kate", "laurie", "jaclyn"],
             None,
             PropertyLimitType.characters,
-            10,
+            15,
             [["kate", "laurie"], ["jaclyn"]],
             id="test_property_chunking_limit_characters",
+        ),
+        pytest.param(
+            ["laurie", "jaclyn", "kaitlin"],
+            None,
+            PropertyLimitType.characters,
+            12,
+            [["laurie"], ["jaclyn"], ["kaitlin"]],
+            id="test_property_chunking_includes_extra_delimiter",
         ),
         pytest.param(
             [],

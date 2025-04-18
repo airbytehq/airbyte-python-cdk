@@ -7,7 +7,7 @@ import pytest
 
 from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
 from airbyte_cdk.sources.source import Source
-from airbyte_cdk.test.standard_tests._job_runner import IConnector
+from airbyte_cdk.test.declarative.utils.job_runner import IConnector
 
 
 @pytest.mark.parametrize(
