@@ -432,7 +432,21 @@ class UnstructuredParser(FileTypeParser):
             return detected_type
 
         file.seek(0)
-        type_based_on_content = FileType.UNK  # Default to unknown
+        try:
+            file_content = file.read()
+            file.seek(0)
+            if file_content and isinstance(file_content, bytes):
+                content_str = file_content.decode('utf-8', errors='ignore')
+                if content_str.lstrip().startswith('#'):
+                    type_based_on_content = FileType.MD
+                elif remote_file.mime_type == "text/markdown":
+                    type_based_on_content = FileType.MD
+                else:
+                    type_based_on_content = FileType.UNK
+            else:
+                type_based_on_content = FileType.UNK
+        except Exception:
+            type_based_on_content = FileType.UNK
         file.seek(0)  # Reset file position after reading
 
         if type_based_on_content and type_based_on_content != FileType.UNK:
