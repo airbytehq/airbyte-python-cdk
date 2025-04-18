@@ -56,7 +56,7 @@ def fetch(
     except ImportError:
         raise ImportError(
             "google-cloud-secret-manager package is required for Secret Manager integration. "
-            "Install it with 'pip install airbyte-cdk[dev]' or 'pip install google-cloud-secret-manager'."
+            "Install it with 'pip install google-cloud-secret-manager'."
         )
 
     click.echo("Fetching secrets...")

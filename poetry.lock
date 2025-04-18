@@ -339,7 +339,7 @@ version = "5.5.1"
 description = "Extensible memoizing collections and decorators"
 optional = false
 python-versions = ">=3.7"
-groups = ["main", "dev"]
+groups = ["main"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "cachetools-5.5.1-py3-none-any.whl", hash = "sha256:b76651fdc3b24ead3c648bbdeeb940c1b04d365b38b4af66788f9ec4a81d42bb"},
@@ -1379,7 +1379,7 @@ version = "2.24.2"
 description = "Google API client core library"
 optional = true
 python-versions = ">=3.7"
-groups = ["dev"]
+groups = ["main"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "google_api_core-2.24.2-py3-none-any.whl", hash = "sha256:810a63ac95f3c441b7c0e43d344e372887f62ce9071ba972eacf32672e072de9"},
@@ -1413,7 +1413,7 @@ version = "2.39.0"
 description = "Google Authentication Library"
 optional = true
 python-versions = ">=3.7"
-groups = ["dev"]
+groups = ["main"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "google_auth-2.39.0-py2.py3-none-any.whl", hash = "sha256:0150b6711e97fb9f52fe599f55648950cc4540015565d8fbb31be2ad6e1548a2"},
@@ -1441,7 +1441,7 @@ version = "2.23.3"
 description = "Google Cloud Secret Manager API client library"
 optional = true
 python-versions = ">=3.7"
-groups = ["dev"]
+groups = ["main"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "google_cloud_secret_manager-2.23.3-py3-none-any.whl", hash = "sha256:fe06ebb2f71eb739ecc6c14ea9e8dafcb9bbc6123b78b2f8986ece6733d23a1a"},
@@ -1461,7 +1461,7 @@ version = "1.70.0"
 description = "Common protobufs used in Google APIs"
 optional = true
 python-versions = ">=3.7"
-groups = ["dev"]
+groups = ["main"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "googleapis_common_protos-1.70.0-py3-none-any.whl", hash = "sha256:b8bfcca8c25a2bb253e0e0b0adaf8c00773e5e6af6fd92397576680b807e0fd8"},
@@ -1569,7 +1569,7 @@ version = "0.14.2"
 description = "IAM API client library"
 optional = true
 python-versions = ">=3.7"
-groups = ["dev"]
+groups = ["main"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "grpc_google_iam_v1-0.14.2-py3-none-any.whl", hash = "sha256:a3171468459770907926d56a440b2bb643eec1d7ba215f48f3ecece42b4d8351"},
@@ -1587,7 +1587,7 @@ version = "1.71.0"
 description = "HTTP/2-based RPC framework"
 optional = true
 python-versions = ">=3.9"
-groups = ["dev"]
+groups = ["main"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "grpcio-1.71.0-cp310-cp310-linux_armv7l.whl", hash = "sha256:c200cb6f2393468142eb50ab19613229dcc7829b5ccee8b658a36005f6669fdd"},
@@ -1652,7 +1652,7 @@ version = "1.62.3"
 description = "Status proto mapping for gRPC"
 optional = true
 python-versions = ">=3.6"
-groups = ["dev"]
+groups = ["main"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "grpcio-status-1.62.3.tar.gz", hash = "sha256:289bdd7b2459794a12cf95dc0cb727bd4a1742c37bd823f760236c937e53a485"},
@@ -3450,7 +3450,7 @@ version = "1.26.1"
 description = "Beautiful, Pythonic protocol buffers"
 optional = true
 python-versions = ">=3.7"
-groups = ["dev"]
+groups = ["main"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "proto_plus-1.26.1-py3-none-any.whl", hash = "sha256:13285478c2dcf2abb829db158e1047e2f1e8d63a077d94263c2b88b043c75a66"},
@@ -3469,7 +3469,7 @@ version = "6.30.2"
 description = ""
 optional = true
 python-versions = ">=3.9"
-groups = ["dev"]
+groups = ["main"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "protobuf-6.30.2-cp310-abi3-win32.whl", hash = "sha256:b12ef7df7b9329886e66404bef5e9ce6a26b54069d7f7436a0853ccdeb91c103"},
@@ -3577,7 +3577,7 @@ version = "0.6.1"
 description = "Pure-Python implementation of ASN.1 types and DER/BER/CER codecs (X.208)"
 optional = true
 python-versions = ">=3.8"
-groups = ["dev"]
+groups = ["main"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "pyasn1-0.6.1-py3-none-any.whl", hash = "sha256:0d632f46f2ba09143da3a8afe9e33fb6f92fa2320ab7e886e2d0f7672af84629"},
@@ -3590,7 +3590,7 @@ version = "0.4.2"
 description = "A collection of ASN.1-based protocols modules"
 optional = true
 python-versions = ">=3.8"
-groups = ["dev"]
+groups = ["main"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "pyasn1_modules-0.4.2-py3-none-any.whl", hash = "sha256:29253a9207ce32b64c3ac6600edc75368f98473906e8fd1043bd6b5b1de2c14a"},
@@ -4728,7 +4728,7 @@ version = "4.9.1"
 description = "Pure-Python RSA implementation"
 optional = true
 python-versions = "<4,>=3.6"
-groups = ["dev"]
+groups = ["main"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "rsa-4.9.1-py3-none-any.whl", hash = "sha256:68635866661c6836b8d39430f97a996acbd61bfa49406748ea243539fe239762"},
@@ -5822,7 +5822,6 @@ test = ["big-O", "importlib-resources", "jaraco.functools", "jaraco.itertools", 
 type = ["pytest-mypy"]
 
 [extras]
-dev = []
 file-based = ["avro", "fastavro", "markdown", "pdf2image", "pdfminer.six", "pyarrow", "pytesseract", "python-calamine", "python-snappy", "unstructured", "unstructured.pytesseract"]
 sql = ["sqlalchemy"]
 vector-db-based = ["cohere", "langchain", "openai", "tiktoken"]
@@ -5830,4 +5829,4 @@ vector-db-based = ["cohere", "langchain", "openai", "tiktoken"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.13"
-content-hash = "8c465ba66708e8ac61c9350cc034cd3ef5b1261abb00293dd6c0c5a523d1b96e"
+content-hash = "8f37f0927409ca13c2feb52193208170e378bcf24096eba488e6cb1e70fa8ebb"
