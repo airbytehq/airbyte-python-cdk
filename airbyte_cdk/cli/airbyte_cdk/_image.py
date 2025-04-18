@@ -31,12 +31,6 @@ The command reads the connector's metadata from the `metadata.yaml` file, builds
 This command is designed to be a simpler alternative to the `airbyte-ci build` command, using Docker directly on the host machine instead of Dagger.
 """
 
-from airbyte_cdk.cli.build._run import run
-
-__all__ = [
-    "run",
-]
-
 import sys
 from pathlib import Path
 
@@ -55,7 +49,6 @@ from airbyte_cdk.utils.docker.build import (
 @click.group(name="image")
 def image_cli_group() -> None:
     """Commands for working with connector Docker images."""
-    pass
 
 
 @image_cli_group.command()
@@ -141,3 +134,8 @@ def build(
 
             click.echo(traceback.format_exc(), err=True)
         sys.exit(1)
+
+
+__all___ = [
+    "image_cli_group",
+]
