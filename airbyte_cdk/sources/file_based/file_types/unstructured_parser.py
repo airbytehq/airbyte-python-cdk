@@ -431,12 +431,8 @@ class UnstructuredParser(FileTypeParser):
         if detected_type and detected_type != FileType.UNK:
             return detected_type
 
-        # Convert IOBase to BytesIO for compatibility with detect_filetype
         file.seek(0)
-        file_content = file.read()
-        file.seek(0)
-        with BytesIO(file_content) as bytes_io:
-            type_based_on_content = detect_filetype(bytes_io)
+        type_based_on_content = FileType.UNK  # Default to unknown
         file.seek(0)  # Reset file position after reading
 
         if type_based_on_content and type_based_on_content != FileType.UNK:
