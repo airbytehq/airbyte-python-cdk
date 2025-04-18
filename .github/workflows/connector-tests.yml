@@ -75,9 +75,12 @@ jobs:
           # Chargebee is being flaky:
           # - connector: source-chargebee
           #   cdk_extra: n/a
-          # These two are behind in CDK updates and can't be used as tests until they are updated:
+          # This is behind in CDK updates and can't be used in tests until updated:
           # - connector: source-s3
           #   cdk_extra: file-based
+          - connector: destination-pgvector
+            cdk_extra: vector-db-based
+          # Can bring back Pinecone for testing once it is updated to latest CDK version:
           # - connector: destination-pinecone
           #   cdk_extra: vector-db-based
           - connector: destination-motherduck
