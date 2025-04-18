@@ -174,7 +174,9 @@ class UnstructuredParser(FileTypeParser):
                     "content": markdown,
                     "document_key": file.uri,
                     "_ab_source_file_parse_error": None,
-                    "_ab_source_file_last_modified": file.last_modified.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                    "_ab_source_file_last_modified": file.last_modified.strftime(
+                        "%Y-%m-%dT%H:%M:%S.%fZ"
+                    ),
                     "_ab_source_file_url": file.uri,
                 }
             except RecordParseError as e:
@@ -183,12 +185,16 @@ class UnstructuredParser(FileTypeParser):
                 # otherwise, we raise the error to fail the sync
                 if format.skip_unprocessable_files:
                     exception_str = str(e)
-                    logger.warning(f"File {file.uri} caused an error during parsing: {exception_str}.")
+                    logger.warning(
+                        f"File {file.uri} caused an error during parsing: {exception_str}."
+                    )
                     yield {
                         "content": None,
                         "document_key": file.uri,
                         "_ab_source_file_parse_error": exception_str,
-                        "_ab_source_file_last_modified": file.last_modified.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                        "_ab_source_file_last_modified": file.last_modified.strftime(
+                            "%Y-%m-%dT%H:%M:%S.%fZ"
+                        ),
                         "_ab_source_file_url": file.uri,
                     }
                     logger.warning(f"File {file.uri} cannot be parsed. Skipping it.")
@@ -445,16 +451,20 @@ class UnstructuredParser(FileTypeParser):
         try:
             file_content = file.read(4096)  # Read a sample of the file to detect type
             file.seek(0)
-            
-            if isinstance(file_content, bytes) and file_content.startswith(b'%PDF-'):
+
+            if isinstance(file_content, bytes) and file_content.startswith(b"%PDF-"):
                 return FileType.PDF
-                
-            if isinstance(file_content, bytes) and file_content.startswith(b'PK\x03\x04'):
-                if b'ppt/' in file_content or b'application/vnd.openxmlformats-officedocument.presentationml' in file_content:
+
+            if isinstance(file_content, bytes) and file_content.startswith(b"PK\x03\x04"):
+                if (
+                    b"ppt/" in file_content
+                    or b"application/vnd.openxmlformats-officedocument.presentationml"
+                    in file_content
+                ):
                     return FileType.PPTX
-                elif b'word/' in file_content or b'[Content_Types].xml' in file_content:
+                elif b"word/" in file_content or b"[Content_Types].xml" in file_content:
                     return FileType.DOCX
-            
+
             if file_content and isinstance(file_content, bytes):
                 try:
                     content_str = file_content.decode("utf-8", errors="ignore")
@@ -464,11 +474,13 @@ class UnstructuredParser(FileTypeParser):
                         or remote_file.uri.endswith(".md")
                     ):
                         return FileType.MD
-                    elif content_str.strip() and not any(c for c in content_str[:100] if ord(c) > 127):
+                    elif content_str.strip() and not any(
+                        c for c in content_str[:100] if ord(c) > 127
+                    ):
                         return FileType.TXT
                 except UnicodeDecodeError:
                     pass  # Not a text file
-            
+
             type_based_on_content = FileType.UNK
         except Exception as e:
             type_based_on_content = FileType.UNK
