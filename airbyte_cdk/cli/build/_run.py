@@ -11,7 +11,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from airbyte_cdk.utils.docker.build import run_command as docker_run_command
+from airbyte_cdk.utils.docker.build import run_command
 
 
 def run() -> None:
@@ -22,6 +22,13 @@ def run() -> None:
         "--tag", type=str, default="dev", help="Tag to apply to the built image (default: dev)"
     )
     parser.add_argument(
+        "--platform",
+        type=str,
+        choices=["linux/amd64", "linux/arm64"],
+        default="linux/amd64",
+        help="Platform to build for (default: linux/amd64)",
+    )
+    parser.add_argument(
         "--no-verify", action="store_true", help="Skip verification of the built image"
     )
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
@@ -29,9 +36,10 @@ def run() -> None:
     args = parser.parse_args(sys.argv[1:])
 
     sys.exit(
-        docker_run_command(
+        run_command(
             connector_dir=Path(args.connector_dir),
             tag=args.tag,
+            platform=args.platform,
             no_verify=args.no_verify,
             verbose=args.verbose,
         )
