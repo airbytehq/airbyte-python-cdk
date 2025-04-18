@@ -442,9 +442,9 @@ class UnstructuredParser(FileTypeParser):
             file.seek(0)
             if file_content and isinstance(file_content, bytes):
                 content_str = file_content.decode("utf-8", errors="ignore")
-                if content_str.lstrip().startswith("#"):
-                    type_based_on_content = FileType.MD
-                elif remote_file.mime_type == "text/markdown":
+                if (content_str.lstrip().startswith("#") or 
+                    remote_file.mime_type == "text/markdown" or
+                    remote_file.uri.endswith(".md")):
                     type_based_on_content = FileType.MD
                 else:
                     type_based_on_content = FileType.UNK
