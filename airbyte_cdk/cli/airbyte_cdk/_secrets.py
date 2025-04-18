@@ -137,6 +137,7 @@ def fetch(
 
         secret_file_path = secrets_dir / f"{filename_base}.json"
         secret_file_path.write_text(payload)
+        secret_file_path.chmod(0o600)  # default to owner read/write only
         click.echo(f"Secret written to: {secret_file_path}")
         secret_count += 1
 
