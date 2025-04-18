@@ -35,6 +35,8 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
     `components.py` file (if it exists) in the connector's directory.
     """
 
+    connector: type[IConnector] | None = None
+
     @classproperty
     def manifest_yaml_path(cls) -> Path:
         """Get the path to the manifest.yaml file."""

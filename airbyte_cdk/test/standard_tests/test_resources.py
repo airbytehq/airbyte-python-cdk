@@ -14,7 +14,7 @@ def find_connector_root(from_paths: list[Path]) -> Path:
     for path in from_paths:
         # If we reach here, we didn't find the manifest file in any parent directory
         # Check if the manifest file exists in the current directory
-        for parent in path.parents:
+        for parent in [path, *path.parents]:
             if (parent / METADATA_YAML).exists():
                 return parent
             if (parent / MANIFEST_YAML).exists():
@@ -37,15 +37,18 @@ def find_connector_root_from_name(connector_name: str) -> Path:
     # If the connector name is not found, check if we are in the airbyte monorepo
     # and try to find the connector root from the current directory.
 
-    if "airbyte" not in Path().parts:
+    cwd: Path = Path().absolute()
+
+    if "airbyte" not in cwd.parts:
         raise FileNotFoundError(
-            "Could not find connector root directory relative and we are not in the airbyte repo."
+            "Could not find connector root directory relative and we are not in the airbyte repo. "
+            f"Current directory: {cwd} "
         )
 
     # Find the connector root from the current directory
 
     airbyte_repo_root: Path
-    for parent in Path().parents:
+    for parent in [cwd, *cwd.parents]:
         if parent.name == "airbyte":
             airbyte_repo_root = parent
             break

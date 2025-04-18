@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import abc
+import importlib
 import inspect
 import sys
 from collections.abc import Callable
@@ -31,7 +32,7 @@ from airbyte_cdk.test.standard_tests.test_resources import (
 class ConnectorTestSuiteBase(abc.ABC):
     """Base class for connector test suites."""
 
-    connector: type[IConnector] | Callable[[], IConnector] | None = None
+    connector: type[IConnector] | Callable[[], IConnector] | None
     """The connector class or a factory function that returns an scenario of IConnector."""
 
     @classmethod
@@ -84,6 +85,42 @@ class ConnectorTestSuiteBase(abc.ABC):
         """Get the root directory of the connector."""
         return find_connector_root([cls.get_test_class_dir(), Path.cwd()])
 
+    @classproperty
+    def connector(cls) -> type[IConnector]:
+        """Get the connector class for the test suite.
+
+        This assumes a python connector and should be overridden by subclasses to provide the
+        specific connector class to be tested.
+        """
+        connector_root = cls.get_connector_root_dir()
+        connector_name = connector_root.name
+
+        expected_module_name = connector_name.replace("-", "_").lower()
+        expected_class_name = connector_name.replace("-", "_").title().replace("_", "")
+
+        # dynamically import and get the connector class: <expected_module_name>.<expected_class_name>
+
+        # Dynamically import the module
+        try:
+            module = importlib.import_module(expected_module_name)
+        except ModuleNotFoundError as e:
+            raise ImportError(f"Could not import module '{expected_module_name}'.") from e
+
+        # Dynamically get the class from the module
+        try:
+            return getattr(module, expected_class_name)
+        except AttributeError as e:
+            # We did not find it based on our expectations, so let's check if we can find it
+            # with a case-insensitive match.
+            matching_class_name = next(
+                (name for name in dir(module) if name.lower() == expected_class_name.lower()),
+                None,
+            )
+            if not matching_class_name:
+                raise ImportError(
+                    f"Module '{expected_module_name}' does not have a class named '{expected_class_name}'."
+                ) from e
+            return getattr(module, matching_class_name)
 
     @classproperty
     def acceptance_test_config_path(cls) -> Path:

@@ -38,9 +38,51 @@ poetry run airbyte-cdk connector --help
 
 """
 
+import os
+from pathlib import Path
+
 import rich_click as click
 
+# from airbyte_cdk.test.standard_tests import pytest_hooks
+from airbyte_cdk.test.standard_tests.test_resources import find_connector_root_from_name
+from airbyte_cdk.test.standard_tests.util import create_connector_test_suite
+
 click.rich_click.TEXT_MARKUP = "markdown"
+
+try:
+    import pytest
+except ImportError:
+    pytest = None
+    # Handle the case where pytest is not installed.
+    # This prevents import errors when running the script without pytest installed.
+    # We will raise an error later if pytest is required for a given command.
+
+
+TEST_FILE_TEMPLATE = '''
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+"""FAST Airbyte Standard Tests for the source_pokeapi_w_components source."""
+
+#from airbyte_cdk.test.standard_tests import {base_class_name}
+from airbyte_cdk.test.standard_tests.util import create_connector_test_suite
+from pathlib import Path
+
+pytest_plugins = [
+    "airbyte_cdk.test.standard_tests.pytest_hooks",
+]
+
+TestSuite = create_connector_test_suite(
+    connector_directory=Path(),
+)
+
+# class TestSuite({base_class_name}):
+#     """Test suite for the source_pokeapi_w_components source.
+
+#     This class inherits from SourceTestSuiteBase and implements all of the tests in the suite.
+
+#     As long as the class name starts with "Test", pytest will automatically discover and run the
+#     tests in this class.
+#     """
+'''
 
 
 @click.group()
@@ -54,9 +96,93 @@ def manifest() -> None:
     pass
 
 @connector.command()
-def test() -> None:
-    """Run connector tests."""
+@click.option(
+    "--connector-name",
+    type=str,
+    # help="Name of the connector to test. Ignored if --connector-directory is provided.",
+)
+@click.option(
+    "--connector-directory",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    # help="Path to the connector directory.",
+)
+@click.option(
+    "--collect-only",
+    is_flag=True,
+    default=False,
+    help="Only collect tests, do not run them.",
+)
+def test(
+    connector_name: str | None = None,
+    connector_directory: Path | None = None,
+    *,
+    collect_only: bool = False,
+) -> None:
+    """Run connector tests.
+
+    This command runs the standard connector tests for a specific connector.
+
+    If no connector name or directory is provided, we will look within the current working
+    directory. If the current working directory is not a connector directory (e.g. starting
+    with 'source-') and no connector name or path is provided, the process will fail.
+    """
+    if pytest is None:
+        raise ImportError(
+            "pytest is not installed. Please install pytest to run the connector tests."
+        )
     click.echo("Connector test command executed.")
+    if not connector_name and not connector_directory:
+        cwd = Path().resolve().absolute()
+        if cwd.name.startswith("source-") or cwd.name.startswith("destination-"):
+            connector_name = cwd.name
+            connector_directory = cwd
+        else:
+            raise ValueError(
+                "Either connector_name or connector_directory must be provided if not "
+                "running from a connector directory."
+            )
+
+    if connector_directory:
+        connector_directory = connector_directory.resolve().absolute()
+    elif connector_name:
+        connector_directory = find_connector_root_from_name(connector_name)
+    else:
+        raise ValueError("Either connector_name or connector_directory must be provided.")
+
+    connector_test_suite = create_connector_test_suite(
+        connector_name=connector_name if not connector_directory else None,
+        connector_directory=connector_directory,
+    )
+
+    pytest_args: list[str] = []
+    if connector_directory:
+        pytest_args.append(f"--rootdir={connector_directory}")
+        os.chdir(str(connector_directory))
+    else:
+        print("No connector directory provided. Running tests in the current directory.")
+
+    file_text = TEST_FILE_TEMPLATE.format(
+        base_class_name=connector_test_suite.__bases__[0].__name__,
+        connector_directory=str(connector_directory),
+    )
+    test_file_path = Path() / ".tmp" / "integration_tests/test_airbyte_standards.py"
+    test_file_path = test_file_path.resolve().absolute()
+    test_file_path.parent.mkdir(parents=True, exist_ok=True)
+    test_file_path.write_text(file_text)
+
+    if collect_only:
+        pytest_args.append("--collect-only")
+
+    pytest_args.append(str(test_file_path))
+    click.echo(f"Running tests from connector directory: {connector_directory}...")
+    click.echo(f"Test file: {test_file_path}")
+    click.echo(f"Collect only: {collect_only}")
+    click.echo(f"Pytest args: {pytest_args}")
+    click.echo("Invoking Pytest...")
+    pytest.main(
+        pytest_args,
+        plugins=[],
+    )
 
 @click.group(
     help=USAGE.replace("\n", "\n\n"),  # Workaround to format help text correctly
