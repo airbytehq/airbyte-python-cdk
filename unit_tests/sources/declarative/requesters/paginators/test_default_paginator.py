@@ -9,6 +9,7 @@ import pytest
 import requests
 
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder, XmlDecoder
+from airbyte_cdk.sources.declarative.extractors import DpathExtractor
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.requesters.paginators.default_paginator import (
     DefaultPaginator,
@@ -327,7 +328,13 @@ def test_initial_token_with_offset_pagination():
     )
     url_base = "https://airbyte.io"
     config = {}
-    strategy = OffsetIncrement(config={}, page_size=2, parameters={}, inject_on_first_request=True)
+    strategy = OffsetIncrement(
+        config={},
+        page_size=2,
+        extractor=DpathExtractor(field_path=[], parameters={}, config={}),
+        parameters={},
+        inject_on_first_request=True,
+    )
     paginator = DefaultPaginator(
         strategy,
         config,
@@ -348,7 +355,13 @@ def test_initial_token_with_offset_pagination():
     "pagination_strategy,last_page_size,expected_next_page_token,expected_second_next_page_token",
     [
         pytest.param(
-            OffsetIncrement(config={}, page_size=10, parameters={}, inject_on_first_request=True),
+            OffsetIncrement(
+                config={},
+                page_size=10,
+                extractor=DpathExtractor(field_path=["results"], parameters={}, config={}),
+                parameters={},
+                inject_on_first_request=True,
+            ),
             10,
             {"next_page_token": 10},
             {"next_page_token": 20},
@@ -373,10 +386,23 @@ def test_no_inject_on_first_request_offset_pagination(
     """
     Validate that the stateless next_page_token() works when the first page does not inject the value
     """
-
+    response_body = {
+        "results": [
+            {"id": 1},
+            {"id": 2},
+            {"id": 3},
+            {"id": 4},
+            {"id": 5},
+            {"id": 6},
+            {"id": 7},
+            {"id": 8},
+            {"id": 9},
+            {"id": 10},
+        ]
+    }
     response = requests.Response()
     response.headers = {"A_HEADER": "HEADER_VALUE"}
-    response._content = {}
+    response._content = json.dumps(response_body).encode("utf-8")
 
     last_record = Record(data={}, stream_name="test")
 
@@ -430,7 +456,12 @@ def test_limit_page_fetched():
 
 
 def test_paginator_with_page_option_no_page_size():
-    pagination_strategy = OffsetIncrement(config={}, page_size=None, parameters={})
+    pagination_strategy = OffsetIncrement(
+        config={},
+        page_size=None,
+        extractor=DpathExtractor(field_path=[], parameters={}, config={}),
+        parameters={},
+    )
 
     with pytest.raises(ValueError):
         (

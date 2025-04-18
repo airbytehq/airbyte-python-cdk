@@ -52,8 +52,10 @@ class PropertyChunking:
         chunk_size = 0
         for property_field in property_fields:
             # If property_limit_type is not defined, we default to property_count which is just an incrementing count
+            # todo: Add ability to specify parameter delimiter representation and take into account in property_field_size
             property_field_size = (
                 len(property_field)
+                + 1  # The +1 represents the extra character for the delimiter in between properties
                 if self.property_limit_type == PropertyLimitType.characters
                 else 1
             )
