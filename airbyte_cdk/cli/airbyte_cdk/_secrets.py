@@ -23,30 +23,15 @@ from typing import Optional
 
 import rich_click as click
 
-from airbyte_cdk.test.standard_tests.test_resources import find_connector_root_from_name
+from airbyte_cdk.cli.airbyte_cdk._util import resolve_connector_name_and_directory
 
 AIRBYTE_INTERNAL_GCP_PROJECT = "dataline-integration-testing"
 CONNECTOR_LABEL = "connector"
 
 
-@click.group(name="secrets")
+@click.group(name="secrets", help=__doc__.replace("\n", "\n\n"))
 def secrets_cli_group() -> None:
-    """Secret management commands.
-
-    This module provides commands for managing secrets for Airbyte connectors.
-
-    Usage:
-        airbyte-cdk secrets fetch --connector-name source-github
-        airbyte-cdk secrets fetch --connector-directory /path/to/connector
-        airbyte-cdk secrets fetch  # Run from within a connector directory
-
-    Usage without pre-installing (stateless):
-        pipx run airbyte-cdk[dev] secrets fetch ...
-        uvx airbyte-cdk[dev] secrets fetch ...
-
-    The 'fetch' command retrieves secrets from Google Secret Manager based on connector
-    labels and writes them to the connector's `secrets` directory.
-    """
+    """Secret management commands."""
     pass
 
 
@@ -92,33 +77,20 @@ def fetch(
     click.echo("Fetching secrets...")
 
     # Resolve connector name/directory
-    if not connector_name and not connector_directory:
-        cwd = Path().resolve().absolute()
-        if cwd.name.startswith("source-") or cwd.name.startswith("destination-"):
-            connector_name = cwd.name
-            connector_directory = cwd
-        else:
-            raise ValueError(
-                "Either connector_name or connector_directory must be provided if not "
-                "running from a connector directory."
-            )
-
-    if connector_directory:
-        connector_directory = connector_directory.resolve().absolute()
-        if not connector_name:
-            connector_name = connector_directory.name
-    elif connector_name:
-        try:
-            connector_directory = find_connector_root_from_name(connector_name)
-        except FileNotFoundError as e:
-            raise FileNotFoundError(
-                f"Could not find connector directory for '{connector_name}'. "
-                "Please provide the --connector-directory option with the path to the connector. "
-                "Note: This command requires either running from within a connector directory, "
-                "being in the airbyte monorepo, or explicitly providing the connector directory path."
-            ) from e
-    else:
-        raise ValueError("Either connector_name or connector_directory must be provided.")
+    try:
+        connector_name, connector_directory = resolve_connector_name_and_directory(
+            connector_name=connector_name,
+            connector_directory=connector_directory,
+        )
+    except FileNotFoundError as e:
+        raise FileNotFoundError(
+            f"Could not find connector directory for '{connector_name}'. "
+            "Please provide the --connector-directory option with the path to the connector. "
+            "Note: This command requires either running from within a connector directory, "
+            "being in the airbyte monorepo, or explicitly providing the connector directory path."
+        ) from e
+    except ValueError as e:
+        raise ValueError(str(e))
 
     # Create secrets directory if it doesn't exist
     secrets_dir = connector_directory / "secrets"
