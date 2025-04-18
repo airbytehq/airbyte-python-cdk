@@ -29,7 +29,10 @@ AIRBYTE_INTERNAL_GCP_PROJECT = "dataline-integration-testing"
 CONNECTOR_LABEL = "connector"
 
 
-@click.group(name="secrets", help=__doc__.replace("\n", "\n\n"))
+@click.group(
+    name="secrets",
+    help=__doc__.replace("\n", "\n\n"),
+)
 def secrets_cli_group() -> None:
     """Secret management commands."""
     pass
@@ -71,7 +74,8 @@ def fetch(
     except ImportError:
         raise ImportError(
             "google-cloud-secret-manager package is required for Secret Manager integration. "
-            "Install it with 'pip install airbyte-cdk[dev]' or 'pip install google-cloud-secret-manager'."
+            "Install it with 'pip install airbyte-cdk[dev]' "
+            "or 'pip install google-cloud-secret-manager'."
         )
 
     click.echo("Fetching secrets...")
