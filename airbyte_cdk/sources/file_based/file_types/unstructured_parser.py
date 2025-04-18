@@ -6,7 +6,7 @@ import os
 import traceback
 from datetime import datetime
 from io import BytesIO, IOBase
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union, cast
 
 import backoff
 import dpath
@@ -331,10 +331,14 @@ class UnstructuredParser(FileTypeParser):
         data = self._params_to_dict(format.parameters, strategy)
 
         mime_type = mimetypes.guess_type(f"file.{filetype.name.lower()}")[0] if filetype else "application/octet-stream"
-        files = {"files": ("filename", file_handle, mime_type)}
-
+        
+        files = cast(Any, {"files": ("filename", file_handle, mime_type)})
+        
         response = requests.post(
-            f"{format.api_url}/general/v0/general", headers=headers, data=data, files=files
+            f"{format.api_url}/general/v0/general", 
+            headers=headers, 
+            data=data, 
+            files=files
         )
 
         if response.status_code == 422:
