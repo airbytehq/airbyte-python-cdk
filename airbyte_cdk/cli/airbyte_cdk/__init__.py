@@ -8,6 +8,7 @@ testing and running commands.
 
 ```bash
 airbyte-cdk --help
+airbyte-cdk --version
 airbyte-cdk connector --help
 airbyte-cdk manifest --help
 ```
@@ -38,24 +39,45 @@ poetry run airbyte-cdk connector --help
 
 from typing import cast
 
-import click
+import rich_click as click
 
 from airbyte_cdk.cli.airbyte_cdk._connector import connector_cli_group
+from airbyte_cdk.cli.airbyte_cdk._image import image_cli_group
 from airbyte_cdk.cli.airbyte_cdk._manifest import manifest_cli_group
+from airbyte_cdk.cli.airbyte_cdk._version import print_version
 
 
 @click.group(
     help=cast(str, __doc__).replace("\n", "\n\n"),  # Workaround to format help text correctly
+    invoke_without_command=True,
 )
-def cli() -> None:
+@click.option(
+    "--version",
+    is_flag=True,
+    help="Show the version of the Airbyte CDK.",
+)
+@click.pass_context
+def cli(
+    ctx: click.Context,
+    version: bool,
+) -> None:
     """Airbyte CDK CLI.
 
     Help text is provided from the file-level docstring.
     """
+    if version:
+        print_version(short=False)
+        ctx.exit()
+
+    if ctx.invoked_subcommand is None:
+        # If no subcommand is provided, show the help message.
+        click.echo(ctx.get_help())
+        ctx.exit()
 
 
 cli.add_command(connector_cli_group)
 cli.add_command(manifest_cli_group)
+cli.add_command(image_cli_group)
 
 
 if __name__ == "__main__":
