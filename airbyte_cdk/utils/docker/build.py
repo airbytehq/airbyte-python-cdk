@@ -258,6 +258,13 @@ def build_from_base_image(
 ) -> str:
     """Build a Docker image for the connector using a base image.
 
+    This implementation follows a similar approach to airbyte-ci:
+    1. Creates a builder stage to install dependencies
+    2. Copies only necessary build files first
+    3. Installs dependencies
+    4. Copies the connector code
+    5. Sets up the entrypoint
+
     Args:
         connector_dir: Path to the connector directory.
         metadata: The connector metadata.
@@ -292,14 +299,35 @@ def build_from_base_image(
         except subprocess.CalledProcessError:
             logger.warning("Pre-install hook failed, continuing with build")
 
+        build_files = [
+            "setup.py",
+            "pyproject.toml",
+            "poetry.lock",
+            "poetry.toml",
+            "requirements.txt",
+            "README.md",
+            "build_customization.py"
+        ]
+        
+        connector_package_name = connector_dir.name.replace("-", "_")
+        
         dockerfile_content = f"""
+FROM {base_image} as builder
+
+WORKDIR /airbyte/integration_code
+
+COPY setup.py pyproject.toml poetry.lock poetry.toml requirements.txt README.md build_customization.py ./
+COPY {connector_package_name} ./{connector_package_name}
+
+RUN pip install --no-cache-dir .
+
 FROM {base_image}
 
 WORKDIR /airbyte/integration_code
 
-COPY . .
+COPY --from=builder /usr/local /usr/local
 
-RUN pip install .
+COPY . .
 
 ENV AIRBYTE_ENTRYPOINT "python /airbyte/integration_code/{get_main_file_name(connector_dir)}"
 ENTRYPOINT ["python", "/airbyte/integration_code/{get_main_file_name(connector_dir)}"]
@@ -310,6 +338,7 @@ ENTRYPOINT ["python", "/airbyte/integration_code/{get_main_file_name(connector_d
 
         dockerignore_content = """
 *
+
 !setup.py
 !pyproject.toml
 !poetry.lock
