@@ -100,7 +100,15 @@ def fetch(
         if not connector_name:
             connector_name = connector_directory.name
     elif connector_name:
-        connector_directory = find_connector_root_from_name(connector_name)
+        try:
+            connector_directory = find_connector_root_from_name(connector_name)
+        except FileNotFoundError as e:
+            raise FileNotFoundError(
+                f"Could not find connector directory for '{connector_name}'. "
+                "Please provide the --connector-directory option with the path to the connector. "
+                "Note: This command requires either running from within a connector directory, "
+                "being in the airbyte monorepo, or explicitly providing the connector directory path."
+            ) from e
     else:
         raise ValueError("Either connector_name or connector_directory must be provided.")
 
