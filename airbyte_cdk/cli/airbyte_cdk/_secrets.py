@@ -95,6 +95,9 @@ def fetch(
     # Create secrets directory if it doesn't exist
     secrets_dir = connector_directory / "secrets"
     secrets_dir.mkdir(parents=True, exist_ok=True)
+    
+    gitignore_path = secrets_dir / ".gitignore"
+    gitignore_path.write_text("*")
 
     # Get GSM client
     credentials_json = os.environ.get("GCP_GSM_CREDENTIALS")
