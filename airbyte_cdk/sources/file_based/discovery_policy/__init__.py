@@ -6,3 +6,5 @@ from airbyte_cdk.sources.file_based.discovery_policy.default_discovery_policy im
 )
 
 __all__ = ["AbstractDiscoveryPolicy", "DefaultDiscoveryPolicy"]
+
+# dummy change (revert me)
