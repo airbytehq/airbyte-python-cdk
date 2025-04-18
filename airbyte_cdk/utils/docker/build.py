@@ -18,6 +18,68 @@ from airbyte_cdk.models.connector_metadata import ConnectorLanguage, ConnectorMe
 logger = logging.getLogger("airbyte-cdk.utils.docker.build")
 
 
+def run_command(
+    connector_dir: Path,
+    tag: str = "dev",
+    platform: str = "linux/amd64",
+    no_verify: bool = False,
+    verbose: bool = False,
+) -> int:
+    """Run the build command with the given arguments.
+    
+    Args:
+        connector_dir: Path to the connector directory.
+        tag: Tag to apply to the built image.
+        platform: Platform to build for.
+        no_verify: Whether to skip verification of the built image.
+        verbose: Whether to enable verbose logging.
+        
+    Returns:
+        Exit code (0 for success, non-zero for failure).
+    """
+    set_up_logging(verbose)
+    
+    if not verify_docker_installation():
+        logger.error("Docker is not installed or not running. Please install Docker and try again.")
+        return 1
+    
+    if not connector_dir.exists():
+        logger.error(f"Connector directory not found: {connector_dir}")
+        return 1
+    
+    try:
+        metadata = read_metadata(connector_dir)
+        logger.info(f"Connector: {metadata.dockerRepository}")
+        logger.info(f"Version: {metadata.dockerImageTag}")
+    except (FileNotFoundError, ValueError) as e:
+        logger.error(f"Error reading connector metadata: {e}")
+        return 1
+    
+    try:
+        if metadata.connectorBuildOptions and metadata.connectorBuildOptions.baseImage:
+            image_name = build_from_base_image(connector_dir, metadata, tag, platform)
+        else:
+            image_name = build_from_dockerfile(connector_dir, metadata, tag, platform)
+        
+        if not no_verify:
+            if verify_image(image_name):
+                logger.info(f"Build completed successfully: {image_name}")
+                return 0
+            else:
+                logger.error(f"Built image failed verification: {image_name}")
+                return 1
+        else:
+            logger.info(f"Build completed successfully (without verification): {image_name}")
+            return 0
+            
+    except Exception as e:
+        logger.error(f"Error building Docker image: {e}")
+        if verbose:
+            import traceback
+            logger.error(traceback.format_exc())
+        return 1
+
+
 def set_up_logging(verbose: bool = False) -> None:
     """Set up logging configuration.
 
