@@ -218,9 +218,13 @@ class UnstructuredParser(FileTypeParser):
                 self._get_file_type_error_message(filetype),
             )
         if filetype in {FileType.MD, FileType.TXT}:
-            file_content: bytes = file_handle.read()
-            decoded_content: str = optional_decode(file_content)
-            return decoded_content
+            try:
+                file_content: bytes = file_handle.read()
+                decoded_content: str = optional_decode(file_content)
+                return decoded_content
+            except Exception as e:
+                logger.error(f"Error reading {filetype} file: {str(e)}")
+                raise self._create_parse_error(remote_file, str(e))
         if format.processing.mode == "local":
             return self._read_file_locally(
                 file_handle,
