@@ -12,6 +12,7 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union, c
 import backoff
 import dpath
 import nltk
+import pi_heif  # Required for handling HEIF images
 import requests
 from unstructured.file_utils.filetype import FileType, detect_filetype
 
