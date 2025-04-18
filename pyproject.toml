@@ -77,7 +77,7 @@ numpy = "<2"
 unstructured = { version = "0.10.27", extras = ["docx", "pptx"], optional = true }
 "unstructured.pytesseract" = { version = ">=0.3.12", optional = true }
 pyjwt = "^2.8.0"
-google-cloud-secret-manager = { version = "^2.17.0", optional = true }
+google-cloud-secret-manager = "^2.17.0"
 cryptography = ">=44.0.0,<45.0.0"  # Constrained as transitive dependency due to a bug in newer versions
 pytz = "2024.2"
 orjson = "^3.10.7"
@@ -111,7 +111,6 @@ types-cachetools = "^5.5.0.20240820"
 deptry = "^0.23.0"
 
 [tool.poetry.extras]
-dev = ["google-cloud-secret-manager"]
 file-based = ["avro", "fastavro", "pyarrow", "unstructured", "pdf2image", "pdfminer.six", "unstructured.pytesseract", "pytesseract", "markdown", "python-calamine", "python-snappy"]
 vector-db-based = ["langchain", "openai", "cohere", "tiktoken"]
 sql = ["sqlalchemy"]
