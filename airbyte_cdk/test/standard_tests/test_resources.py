@@ -29,6 +29,7 @@ def find_connector_root(from_paths: list[Path]) -> Path:
         f"'{str(from_paths)}'."
     )
 
+
 def find_connector_root_from_name(connector_name: str) -> Path:
     """Find the root directory of the connector from its name."""
     with suppress(FileNotFoundError):
