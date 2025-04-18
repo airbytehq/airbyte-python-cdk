@@ -55,11 +55,12 @@ The CDK uses [Deptry](https://deptry.com/) for dependency analysis to ensure all
 
 To ignore specific Deptry errors:
 
-1. Identify the rule you need to ignore (DEP001, DEP002, DEP003, or DEP004)
-2. Add the package name to the appropriate rule list in the `[tool.deptry.per_rule_ignores]` section of `pyproject.toml`
-3. Include an inline comment explaining why the ignore is needed
+1. Identify the rule you need to ignore (DEP001, DEP002, DEP003, or DEP004).
+2. Add the package name to the appropriate rule list in the `[tool.deptry.per_rule_ignores]` section of `pyproject.toml`.
+3. Include an inline comment explaining why the ignore is needed.
 
 Example:
+
 ```toml
 [tool.deptry.per_rule_ignores]
 # DEP002: Project should not contain unused dependencies.
@@ -69,9 +70,10 @@ DEP002 = [
 ```
 
 Common scenarios requiring ignores:
-- Packages imported using a different name than their PyPI package name
-- Packages that are imported dynamically or through submodules
-- Transitive dependencies that are used directly in the code
+
+- Packages imported using a different name than their PyPI package name.
+- Packages that are imported dynamically or through submodules.
+- Transitive dependencies that are used directly in the code.
 
 ## Auto-Generating the Declarative Schema File
 
