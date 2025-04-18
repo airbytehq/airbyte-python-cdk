@@ -21,11 +21,6 @@ class ConnectorBuilderFileUploader(BaseFileUploader):
 
     def upload(self, record: Record) -> None:
         self.file_uploader.upload(record=record)
-        for file_reference_attribute in [
-            file_reference_attribute
-            for file_reference_attribute in record.file_reference.__dict__
-            if not file_reference_attribute.startswith("_")
-        ]:
-            record.data[file_reference_attribute] = getattr(  # type: ignore
-                record.file_reference, file_reference_attribute
-            )
+        for file_reference_key, file_reference_value in record.file_reference.__dict__.items():
+            if not file_reference_key.startswith("_"):
+                record.data[file_reference_key] = file_reference_value  # type: ignore
