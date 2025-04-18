@@ -10,21 +10,7 @@ from pathlib import Path
 
 from airbyte_cdk.models.connector_metadata import ConnectorMetadata, MetadataFile
 
-logger = logging.getLogger("airbyte-cdk.utils.docker.build")
-
-
-def set_up_logging(verbose: bool = False) -> None:
-    """Set up logging configuration.
-
-    Args:
-        verbose: Whether to enable verbose logging.
-    """
-    log_level = logging.DEBUG if verbose else logging.INFO
-    logging.basicConfig(
-        level=log_level,
-        format="%(asctime)s [%(levelname)s] %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
+logger = logging.getLogger(__name__)
 
 
 def run_docker_command(cmd: list[str], check: bool = True) -> tuple[int, str, str]:

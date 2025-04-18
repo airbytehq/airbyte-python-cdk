@@ -40,7 +40,6 @@ from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.utils.docker import (
     build_from_base_image,
     build_from_dockerfile,
-    set_up_logging,
     verify_docker_installation,
     verify_image,
 )
@@ -71,8 +70,6 @@ def build(
     the connector's Dockerfile or a base image specified in the metadata.
     The image is built for both AMD64 and ARM64 architectures.
     """
-    set_up_logging(verbose)
-
     if not verify_docker_installation():
         click.echo(
             "Docker is not installed or not running. Please install Docker and try again.", err=True
