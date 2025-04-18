@@ -97,12 +97,12 @@ def connector_cli_group() -> None:
 @click.option(
     "--connector-name",
     type=str,
-    # help="Name of the connector to test. Ignored if --connector-directory is provided.",
+    help="Name of the connector to test. Ignored if --connector-directory is provided.",
 )
 @click.option(
     "--connector-directory",
     type=click.Path(exists=True, file_okay=False, path_type=Path),
-    # help="Path to the connector directory.",
+    help="Path to the connector directory.",
 )
 @click.option(
     "--collect-only",
