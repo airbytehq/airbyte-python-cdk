@@ -174,6 +174,8 @@ class UnstructuredParser(FileTypeParser):
                     "content": markdown,
                     "document_key": file.uri,
                     "_ab_source_file_parse_error": None,
+                    "_ab_source_file_last_modified": file.last_modified.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                    "_ab_source_file_url": file.uri,
                 }
             except RecordParseError as e:
                 # RecordParseError is raised when the file can't be parsed because of a problem with the file content (either the file is not supported or the file is corrupted)
@@ -181,13 +183,15 @@ class UnstructuredParser(FileTypeParser):
                 # otherwise, we raise the error to fail the sync
                 if format.skip_unprocessable_files:
                     exception_str = str(e)
-                    logger.warn(f"File {file.uri} caused an error during parsing: {exception_str}.")
+                    logger.warning(f"File {file.uri} caused an error during parsing: {exception_str}.")
                     yield {
                         "content": None,
                         "document_key": file.uri,
                         "_ab_source_file_parse_error": exception_str,
+                        "_ab_source_file_last_modified": file.last_modified.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                        "_ab_source_file_url": file.uri,
                     }
-                    logger.warn(f"File {file.uri} cannot be parsed. Skipping it.")
+                    logger.warning(f"File {file.uri} cannot be parsed. Skipping it.")
                 else:
                     raise e
             except Exception as e:
@@ -370,24 +374,25 @@ class UnstructuredParser(FileTypeParser):
             # check whether unstructured library is actually available for better error message and to ensure proper typing (can't be None after this point)
             raise Exception("unstructured library is not available")
 
-        file: Any = file_handle
-
         # before the parsing logic is entered, the file is read completely to make sure it is in local memory
         file_handle.seek(0)
-        file_handle.read()
+        file_content = file_handle.read()
         file_handle.seek(0)
 
         try:
-            if filetype == FileType.PDF:
-                # for PDF, read the file into a BytesIO object because some code paths in pdf parsing are doing an instance check on the file object and don't work with file-like objects
-                file_handle.seek(0)
-                with BytesIO(file_handle.read()) as file:
-                    file_handle.seek(0)
+            # For all file types, create a fresh BytesIO to avoid issues with file-like objects
+            with BytesIO(file_content) as file:
+                if filetype == FileType.PDF:
                     elements = unstructured_partition_pdf(file=file, strategy=strategy)
-            elif filetype == FileType.DOCX:
-                elements = unstructured_partition_docx(file=file)
-            elif filetype == FileType.PPTX:
-                elements = unstructured_partition_pptx(file=file)
+                elif filetype == FileType.DOCX:
+                    elements = unstructured_partition_docx(file=file)
+                elif filetype == FileType.PPTX:
+                    elements = unstructured_partition_pptx(file=file)
+                else:
+                    raise self._create_parse_error(
+                        remote_file,
+                        f"Unsupported file type {filetype} for local processing",
+                    )
         except Exception as e:
             raise self._create_parse_error(remote_file, str(e))
 
@@ -438,21 +443,34 @@ class UnstructuredParser(FileTypeParser):
 
         file.seek(0)
         try:
-            file_content = file.read()
+            file_content = file.read(4096)  # Read a sample of the file to detect type
             file.seek(0)
+            
+            if isinstance(file_content, bytes) and file_content.startswith(b'%PDF-'):
+                return FileType.PDF
+                
+            if isinstance(file_content, bytes) and file_content.startswith(b'PK\x03\x04'):
+                if b'ppt/' in file_content or b'application/vnd.openxmlformats-officedocument.presentationml' in file_content:
+                    return FileType.PPTX
+                elif b'word/' in file_content or b'[Content_Types].xml' in file_content:
+                    return FileType.DOCX
+            
             if file_content and isinstance(file_content, bytes):
-                content_str = file_content.decode("utf-8", errors="ignore")
-                if (
-                    content_str.lstrip().startswith("#")
-                    or remote_file.mime_type == "text/markdown"
-                    or remote_file.uri.endswith(".md")
-                ):
-                    type_based_on_content = FileType.MD
-                else:
-                    type_based_on_content = FileType.UNK
-            else:
-                type_based_on_content = FileType.UNK
-        except Exception:
+                try:
+                    content_str = file_content.decode("utf-8", errors="ignore")
+                    if (
+                        content_str.lstrip().startswith("#")
+                        or remote_file.mime_type == "text/markdown"
+                        or remote_file.uri.endswith(".md")
+                    ):
+                        return FileType.MD
+                    elif content_str.strip() and not any(c for c in content_str[:100] if ord(c) > 127):
+                        return FileType.TXT
+                except UnicodeDecodeError:
+                    pass  # Not a text file
+            
+            type_based_on_content = FileType.UNK
+        except Exception as e:
             type_based_on_content = FileType.UNK
         file.seek(0)  # Reset file position after reading
 
