@@ -2,6 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 import logging
+import mimetypes
 import os
 import traceback
 from datetime import datetime
@@ -10,7 +11,6 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union, c
 
 import backoff
 import dpath
-import mimetypes
 import nltk
 import requests
 from unstructured.file_utils.filetype import FileType, detect_filetype
@@ -330,15 +330,16 @@ class UnstructuredParser(FileTypeParser):
 
         data = self._params_to_dict(format.parameters, strategy)
 
-        mime_type = mimetypes.guess_type(f"file.{filetype.name.lower()}")[0] if filetype else "application/octet-stream"
-        
+        mime_type = (
+            mimetypes.guess_type(f"file.{filetype.name.lower()}")[0]
+            if filetype
+            else "application/octet-stream"
+        )
+
         files = cast(Any, {"files": ("filename", file_handle, mime_type)})
-        
+
         response = requests.post(
-            f"{format.api_url}/general/v0/general", 
-            headers=headers, 
-            data=data, 
-            files=files
+            f"{format.api_url}/general/v0/general", headers=headers, data=data, files=files
         )
 
         if response.status_code == 422:
@@ -407,7 +408,10 @@ class UnstructuredParser(FileTypeParser):
         """
         if remote_file.mime_type:
             for file_type in FileType:
-                if mimetypes.guess_type(f"file.{file_type.name.lower()}")[0] == remote_file.mime_type:
+                if (
+                    mimetypes.guess_type(f"file.{file_type.name.lower()}")[0]
+                    == remote_file.mime_type
+                ):
                     return file_type
 
         # set name to none, otherwise unstructured will try to get the modified date from the local file system
