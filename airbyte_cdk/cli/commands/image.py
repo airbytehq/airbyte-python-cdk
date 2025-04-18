@@ -55,20 +55,22 @@ def build(connector_dir: Path, tag: str, no_verify: bool, verbose: bool) -> None
 
         try:
             import subprocess
+
             result = subprocess.run(
-                ["docker", "buildx", "inspect"], 
-                capture_output=True, 
-                text=True, 
-                check=False
+                ["docker", "buildx", "inspect"], capture_output=True, text=True, check=False
             )
-            
+
             if "linux/amd64" in result.stdout and "linux/arm64" in result.stdout:
                 platforms = "linux/amd64,linux/arm64"
                 click.echo(f"Building for platforms: {platforms}")
             else:
                 platforms = "linux/amd64"
-                click.echo(f"Multi-platform build not available. Building for platform: {platforms}")
-                click.echo("To enable multi-platform builds, configure Docker buildx with: docker buildx create --use")
+                click.echo(
+                    f"Multi-platform build not available. Building for platform: {platforms}"
+                )
+                click.echo(
+                    "To enable multi-platform builds, configure Docker buildx with: docker buildx create --use"
+                )
         except Exception:
             platforms = "linux/amd64"
             click.echo(f"Multi-platform build check failed. Building for platform: {platforms}")

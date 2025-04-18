@@ -224,7 +224,9 @@ def build_from_dockerfile(
     full_image_name = f"{image_name}:{tag}"
 
     logger.info(f"Building Docker image from Dockerfile: {full_image_name} for platform {platform}")
-    logger.warning("Building from Dockerfile is deprecated. Consider using a base image in metadata.yaml.")
+    logger.warning(
+        "Building from Dockerfile is deprecated. Consider using a base image in metadata.yaml."
+    )
 
     build_cmd = [
         "docker",
@@ -285,7 +287,9 @@ def build_from_base_image(
     image_name = metadata.dockerRepository
     full_image_name = f"{image_name}:{tag}"
 
-    logger.info(f"Building Docker image from base image {base_image}: {full_image_name} for platform {platform}")
+    logger.info(
+        f"Building Docker image from base image {base_image}: {full_image_name} for platform {platform}"
+    )
 
     build_dir = connector_dir / "build" / "docker"
     build_dir.mkdir(parents=True, exist_ok=True)
@@ -306,11 +310,11 @@ def build_from_base_image(
             "poetry.toml",
             "requirements.txt",
             "README.md",
-            "build_customization.py"
+            "build_customization.py",
         ]
-        
+
         connector_package_name = connector_dir.name.replace("-", "_")
-        
+
         dockerfile_content = f"""
 FROM {base_image} as builder
 
@@ -364,7 +368,7 @@ ENTRYPOINT ["python", "/airbyte/integration_code/{get_main_file_name(connector_d
         if root_dockerignore_path.exists():
             original_dockerignore = root_dockerignore_path.read_text()
             logger.debug(f"Backing up original .dockerignore at {root_dockerignore_path}")
-        
+
         root_dockerignore_path.write_text(dockerignore_content)
         logger.debug(f"Temporarily replaced .dockerignore at {root_dockerignore_path}")
 
