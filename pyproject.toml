@@ -88,6 +88,7 @@ whenever = "^0.6.16"
 click = "^8.1.8"
 
 [tool.poetry.group.dev.dependencies]
+google-cloud-secret-manager = { version = "^2.17.0", optional = true }
 freezegun = "*"
 mypy = "*"
 asyncio = "3.4.3"
@@ -110,6 +111,7 @@ types-cachetools = "^5.5.0.20240820"
 deptry = "^0.23.0"
 
 [tool.poetry.extras]
+dev = ["google-cloud-secret-manager"]
 file-based = ["avro", "fastavro", "pyarrow", "unstructured", "pdf2image", "pdfminer.six", "unstructured.pytesseract", "pytesseract", "markdown", "python-calamine", "python-snappy"]
 vector-db-based = ["langchain", "openai", "cohere", "tiktoken"]
 sql = ["sqlalchemy"]
