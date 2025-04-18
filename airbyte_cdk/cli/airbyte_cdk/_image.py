@@ -37,7 +37,7 @@ from pathlib import Path
 import click
 
 from airbyte_cdk.models.connector_metadata import MetadataFile
-from airbyte_cdk.utils.docker.build import (
+from airbyte_cdk.utils.docker import (
     build_from_base_image,
     build_from_dockerfile,
     set_up_logging,
@@ -85,7 +85,7 @@ def build(
         click.echo(f"Version: {metadata.data.dockerImageTag}")
 
         if metadata.data.language:
-            click.echo(f"Connector language from metadata: {metadata.language}")
+            click.echo(f"Connector language from metadata: {metadata.data.language}")
         else:
             click.echo("Connector language not specified in metadata")
 
@@ -112,9 +112,9 @@ def build(
             click.echo(f"Multi-platform build check failed. Building for platform: {platforms}")
 
         if metadata.data.connectorBuildOptions and metadata.data.connectorBuildOptions.baseImage:
-            image_name = build_from_base_image(connector_dir, metadata, tag, platforms)
+            image_name = build_from_base_image(connector_directory, metadata, tag, platforms)
         else:
-            image_name = build_from_dockerfile(connector_dir, metadata, tag, platforms)
+            image_name = build_from_dockerfile(connector_directory, metadata, tag, platforms)
 
         if not no_verify:
             if verify_image(image_name):

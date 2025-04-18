@@ -2,18 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import logging
-import os
-import shutil
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
-from typing import List, Optional, Tuple
 
-import yaml
-
-from airbyte_cdk.models.connector_metadata import ConnectorLanguage, ConnectorMetadata, MetadataFile
+from airbyte_cdk.models.connector_metadata import ConnectorMetadata, MetadataFile
 
 logger = logging.getLogger("airbyte-cdk.utils.docker.build")
 
@@ -32,7 +27,7 @@ def set_up_logging(verbose: bool = False) -> None:
     )
 
 
-def run_docker_command(cmd: List[str], check: bool = True) -> Tuple[int, str, str]:
+def run_docker_command(cmd: list[str], check: bool = True) -> tuple[int, str, str]:
     """Run a Docker command as a subprocess.
 
     Args:
@@ -227,7 +222,7 @@ def build_from_dockerfile(
 
 def build_from_base_image(
     connector_dir: Path,
-    metadata: ConnectorMetadata,
+    metadata: MetadataFile,
     tag: str,
     platform: str,
 ) -> str:
@@ -253,11 +248,11 @@ def build_from_base_image(
         ValueError: If the base image is not specified in the metadata.
         subprocess.CalledProcessError: If the build fails.
     """
-    if not metadata.connectorBuildOptions or not metadata.connectorBuildOptions.baseImage:
+    if not metadata.data.connectorBuildOptions or not metadata.data.connectorBuildOptions.baseImage:
         raise ValueError("Base image not specified in metadata.connectorBuildOptions.baseImage")
 
-    base_image = metadata.connectorBuildOptions.baseImage
-    image_name = metadata.dockerRepository
+    base_image = metadata.data.connectorBuildOptions.baseImage
+    image_name = metadata.data.dockerRepository
     full_image_name = f"{image_name}:{tag}"
 
     logger.info(
@@ -359,9 +354,9 @@ ENTRYPOINT ["python", "/airbyte/integration_code/{get_main_file_name(connector_d
             "-t",
             full_image_name,
             "--label",
-            f"io.airbyte.version={metadata.dockerImageTag}",
+            f"io.airbyte.version={metadata.data.dockerImageTag}",
             "--label",
-            f"io.airbyte.name={metadata.dockerRepository}",
+            f"io.airbyte.name={metadata.data.dockerRepository}",
             "-f",
             str(dockerfile_temp_path),
             str(connector_dir),
@@ -405,7 +400,6 @@ def verify_image(image_name: str) -> bool:
         return False
 
     try:
-        import json
 
         spec_output = json.loads(stdout)
         if "connectionSpecification" in spec_output:
