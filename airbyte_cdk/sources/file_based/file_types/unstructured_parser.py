@@ -457,7 +457,6 @@ class UnstructuredParser(FileTypeParser):
             for file_type in FileType:
                 if file_type.name.lower() == extension[1:].lower():
                     return file_type
-                    
         if remote_file.uri.endswith(".md") or remote_file.mime_type == "text/markdown":
             return FileType.MD
 
