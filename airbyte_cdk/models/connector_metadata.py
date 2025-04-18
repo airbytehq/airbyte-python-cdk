@@ -1,9 +1,9 @@
-"""Models for connector metadata."""
+"""Models to represent the structure of a `metadata.yaml` file."""
 
 from __future__ import annotations
 
 from enum import Enum
-from typing import Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -23,11 +23,13 @@ class ConnectorBuildOptions(BaseModel):
 
     model_config = {"extra": "allow"}
 
-    baseImage: Optional[str] = Field(
-        None, description="Base image to use for building the connector"
+    baseImage: str | None = Field(
+        None,
+        description="Base image to use for building the connector",
     )
-    path: Optional[str] = Field(
-        None, description="Path to the connector code within the repository"
+    path: str | None = Field(
+        None,
+        description="Path to the connector code within the repository",
     )
 
 
@@ -38,10 +40,10 @@ class ConnectorMetadata(BaseModel):
 
     dockerRepository: str = Field(..., description="Docker repository for the connector image")
     dockerImageTag: str = Field(..., description="Docker image tag for the connector")
-    language: Optional[ConnectorLanguage] = Field(
+    language: ConnectorLanguage | None = Field(
         None, description="Language of the connector implementation"
     )
-    connectorBuildOptions: Optional[ConnectorBuildOptions] = Field(
+    connectorBuildOptions: ConnectorBuildOptions | None = Field(
         None, description="Options for building the connector"
     )
 
