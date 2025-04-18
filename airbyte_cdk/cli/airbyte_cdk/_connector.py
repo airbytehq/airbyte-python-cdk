@@ -40,6 +40,7 @@ poetry run airbyte-cdk connector --help
 
 import os
 from pathlib import Path
+from types import ModuleType
 
 import rich_click as click
 
@@ -49,6 +50,7 @@ from airbyte_cdk.test.standard_tests.util import create_connector_test_suite
 
 click.rich_click.TEXT_MARKUP = "markdown"
 
+pytest: ModuleType | None
 try:
     import pytest
 except ImportError:

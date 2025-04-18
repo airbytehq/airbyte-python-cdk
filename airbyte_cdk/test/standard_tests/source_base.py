@@ -13,10 +13,6 @@ from airbyte_cdk.models import (
     Type,
 )
 from airbyte_cdk.test import entrypoint_wrapper
-from airbyte_cdk.test.declarative.models import (
-    ConnectorTestScenario,
-)
-from airbyte_cdk.test.declarative.utils.job_runner import run_test_job
 from airbyte_cdk.test.standard_tests._job_runner import run_test_job
 from airbyte_cdk.test.standard_tests.connector_base import (
     ConnectorTestSuiteBase,

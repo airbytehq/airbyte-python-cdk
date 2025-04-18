@@ -9,8 +9,8 @@ from boltons.typeutils import classproperty
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
-from airbyte_cdk.test.declarative.models import ConnectorTestScenario
 from airbyte_cdk.test.declarative.utils.job_runner import IConnector
+from airbyte_cdk.test.standard_tests.models import ConnectorTestScenario
 from airbyte_cdk.test.standard_tests.source_base import SourceTestSuiteBase
 from airbyte_cdk.test.standard_tests.test_resources import MANIFEST_YAML
 

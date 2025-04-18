@@ -48,7 +48,7 @@ from airbyte_cdk.cli.airbyte_cdk._version import print_version
 
 
 @click.group(
-    help=cast(str, __doc__).replace("\n", "\n\n"),  # Workaround to format help text correctly
+    help=__doc__.replace("\n", "\n\n"),  # Workaround to format help text correctly
     invoke_without_command=True,
 )
 @click.option(
