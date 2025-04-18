@@ -111,6 +111,7 @@ types-cachetools = "^5.5.0.20240820"
 deptry = "^0.23.0"
 
 [tool.poetry.extras]
+dev = ["google-cloud-secret-manager"]
 file-based = ["avro", "fastavro", "pyarrow", "unstructured", "pdf2image", "pdfminer.six", "unstructured.pytesseract", "pytesseract", "markdown", "python-calamine", "python-snappy"]
 vector-db-based = ["langchain", "openai", "cohere", "tiktoken"]
 sql = ["sqlalchemy"]
@@ -222,7 +223,8 @@ exclude = [
 # https://deptry.com/rules-violations/#missing-dependencies-dep001
 DEP001 = [
   # These are imported but not declared:
-  "source_declarative_manifest"  # Imported only in dynamic import tests, not in main code
+  "source_declarative_manifest",  # Imported only in dynamic import tests, not in main code
+  "google"  # Imported via google.cloud.secretmanager_v1 which is provided by google-cloud-secret-manager
 ]
 
 # DEP002: Project should not contain unused dependencies.
