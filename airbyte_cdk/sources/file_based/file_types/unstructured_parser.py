@@ -13,10 +13,7 @@ import dpath
 import mimetypes
 import nltk
 import requests
-from unstructured.file_utils.filetype import (
-    FileType,
-    detect_filetype,
-)
+from unstructured.file_utils.filetype import FileType, detect_filetype
 
 from airbyte_cdk.models import FailureType
 from airbyte_cdk.sources.file_based.config.file_based_stream_config import FileBasedStreamConfig
@@ -334,10 +331,10 @@ class UnstructuredParser(FileTypeParser):
         data = self._params_to_dict(format.parameters, strategy)
 
         mime_type = mimetypes.guess_type(f"file.{filetype.name.lower()}")[0] if filetype else "application/octet-stream"
-        file_data = {"files": ("filename", file_handle, mime_type)}
+        files = {"files": ("filename", file_handle, mime_type)}
 
         response = requests.post(
-            f"{format.api_url}/general/v0/general", headers=headers, data=data, files=file_data
+            f"{format.api_url}/general/v0/general", headers=headers, data=data, files=files
         )
 
         if response.status_code == 422:
@@ -416,17 +413,17 @@ class UnstructuredParser(FileTypeParser):
         # detect_filetype is either using the file name or file content
         # if possible, try to leverage the file name to detect the file type
         # if the file name is not available, use the file content
-        file_type: FileType | None = None
+        detected_type: FileType | None = None
         try:
-            file_type = detect_filetype(
+            detected_type = detect_filetype(
                 filename=remote_file.uri,
             )
         except Exception:
             # Path doesn't exist locally. Try something else...
             pass
 
-        if file_type and file_type != FileType.UNK:
-            return file_type
+        if detected_type and detected_type != FileType.UNK:
+            return detected_type
 
         type_based_on_content = detect_filetype(file=file)
         file.seek(0)  # detect_filetype is reading to read the file content, so we need to reset
