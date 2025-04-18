@@ -1,5 +1,16 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
-"""Secret management commands."""
+"""Secret management commands.
+
+This module provides commands for managing secrets for Airbyte connectors.
+
+Usage:
+    airbyte-cdk secrets fetch --connector-name source-github
+    airbyte-cdk secrets fetch --connector-directory /path/to/connector
+    airbyte-cdk secrets fetch  # Run from within a connector directory
+
+The 'fetch' command retrieves secrets from Google Secret Manager based on connector
+labels and writes them to the connector's secrets directory.
+"""
 
 import json
 import os
@@ -16,7 +27,18 @@ CONNECTOR_LABEL = "connector"
 
 @click.group(name="secrets")
 def secrets_cli_group() -> None:
-    """Secret management commands."""
+    """Secret management commands.
+
+    This module provides commands for managing secrets for Airbyte connectors.
+
+    Usage:
+        airbyte-cdk secrets fetch --connector-name source-github
+        airbyte-cdk secrets fetch --connector-directory /path/to/connector
+        airbyte-cdk secrets fetch  # Run from within a connector directory
+
+    The 'fetch' command retrieves secrets from Google Secret Manager based on connector
+    labels and writes them to the connector's secrets directory.
+    """
     pass
 
 
@@ -32,7 +54,7 @@ def secrets_cli_group() -> None:
     help="Path to the connector directory.",
 )
 @click.option(
-    "--project",
+    "--gcp-project-id",
     type=str,
     default=AIRBYTE_INTERNAL_GCP_PROJECT,
     help=f"GCP project ID. Defaults to '{AIRBYTE_INTERNAL_GCP_PROJECT}'.",
@@ -40,7 +62,7 @@ def secrets_cli_group() -> None:
 def fetch(
     connector_name: Optional[str] = None,
     connector_directory: Optional[Path] = None,
-    project: str = AIRBYTE_INTERNAL_GCP_PROJECT,
+    gcp_project_id: str = AIRBYTE_INTERNAL_GCP_PROJECT,
 ) -> None:
     """Fetch secrets for a connector from Google Secret Manager.
 
@@ -56,7 +78,7 @@ def fetch(
     except ImportError:
         raise ImportError(
             "google-cloud-secret-manager package is required for Secret Manager integration. "
-            "Install it with 'pip install google-cloud-secret-manager'."
+            "Install it with 'pip install airbyte-cdk[dev]' or 'pip install google-cloud-secret-manager'."
         )
 
     click.echo("Fetching secrets...")
@@ -98,7 +120,7 @@ def fetch(
     )
 
     # List all secrets with the connector label
-    parent = f"projects/{project}"
+    parent = f"projects/{gcp_project_id}"
     filter_string = f"labels.{CONNECTOR_LABEL}={connector_name}"
     secrets = client.list_secrets(
         request=secretmanager.ListSecretsRequest(
