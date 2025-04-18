@@ -37,7 +37,7 @@ def secrets_cli_group() -> None:
         airbyte-cdk secrets fetch  # Run from within a connector directory
 
     The 'fetch' command retrieves secrets from Google Secret Manager based on connector
-    labels and writes them to the connector's secrets directory.
+    labels and writes them to the connector's `secrets` directory.
     """
     pass
 
