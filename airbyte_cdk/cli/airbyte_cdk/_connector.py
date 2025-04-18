@@ -85,17 +85,13 @@ TestSuite = create_connector_test_suite(
 '''
 
 
-@click.group()
-def connector() -> None:
+@click.group(name="connector")
+def connector_cli_group() -> None:
     """Connector related commands."""
     pass
 
-@click.group()
-def manifest() -> None:
-    """Manifest related commands."""
-    pass
 
-@connector.command()
+@connector_cli_group.command()
 @click.option(
     "--connector-name",
     type=str,
@@ -184,20 +180,7 @@ def test(
         plugins=[],
     )
 
-@click.group(
-    help=USAGE.replace("\n", "\n\n"),  # Workaround to format help text correctly
-)
-def cli() -> None:
-    """Airbyte CDK CLI.
 
-    Help text is provided from the file-level docstring.
-    """
-
-cli.add_command(connector)
-cli.add_command(manifest)
-
-def main() -> None:
-    cli()
-
-if __name__ == "__main__":
-    main()
+__all__ = [
+    "connector_cli_group",
+]
