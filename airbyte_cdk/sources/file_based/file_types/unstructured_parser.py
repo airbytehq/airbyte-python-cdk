@@ -452,10 +452,14 @@ class UnstructuredParser(FileTypeParser):
         if type_based_on_content and type_based_on_content != FileType.UNK:
             return type_based_on_content
 
-        extension = "." + remote_file.uri.split(".")[-1].lower()
-        for file_type in FileType:
-            if file_type.name.lower() == extension[1:].lower():
-                return file_type
+        if "." in remote_file.uri:
+            extension = "." + remote_file.uri.split(".")[-1].lower()
+            for file_type in FileType:
+                if file_type.name.lower() == extension[1:].lower():
+                    return file_type
+                    
+        if remote_file.uri.endswith(".md") or remote_file.mime_type == "text/markdown":
+            return FileType.MD
 
         return None
 
