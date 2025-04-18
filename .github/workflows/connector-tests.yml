@@ -78,7 +78,7 @@ jobs:
           # This one is behind in CDK updates and can't be used as tests until they are updated:
           # - connector: destination-pinecone
           #   cdk_extra: vector-db-based
-          - connector: source-s3
+          - connector: source-google-drive
             cdk_extra: file-based
           - connector: destination-motherduck
             cdk_extra: sql
