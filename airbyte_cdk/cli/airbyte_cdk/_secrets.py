@@ -19,7 +19,6 @@ labels and writes them to the connector's `secrets` directory.
 import json
 import os
 from pathlib import Path
-from typing import Optional
 
 import rich_click as click
 
@@ -56,8 +55,8 @@ def secrets_cli_group() -> None:
     help=f"GCP project ID. Defaults to '{AIRBYTE_INTERNAL_GCP_PROJECT}'.",
 )
 def fetch(
-    connector_name: Optional[str] = None,
-    connector_directory: Optional[Path] = None,
+    connector_name: str | None = None,
+    connector_directory: Path | None = None,
     gcp_project_id: str = AIRBYTE_INTERNAL_GCP_PROJECT,
 ) -> None:
     """Fetch secrets for a connector from Google Secret Manager.
