@@ -26,6 +26,6 @@ class ConnectorBuilderFileUploader(BaseFileUploader):
             for file_reference_attribute in record.file_reference.__dict__
             if not file_reference_attribute.startswith("_")
         ]:
-            record.data[file_reference_attribute] = getattr(
+            record.data[file_reference_attribute] = getattr( # type: ignore
                 record.file_reference, file_reference_attribute
             )
