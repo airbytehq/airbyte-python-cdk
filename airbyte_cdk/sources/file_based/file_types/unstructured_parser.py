@@ -80,7 +80,7 @@ def _import_unstructured() -> None:
     global unstructured_partition_docx
     global unstructured_partition_pptx
     from unstructured.partition.docx import partition_docx
-    from unstructured.partition.pdf import partition_pdf
+    from unstructured.partition.pdf_image.pdf import partition_pdf
     from unstructured.partition.pptx import partition_pptx
 
     # separate global variables to properly propagate typing
