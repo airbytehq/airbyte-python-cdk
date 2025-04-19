@@ -138,23 +138,34 @@ class UnstructuredParser(FileTypeParser):
         with stream_reader.open_file(file, self.file_read_mode, None, logger) as file_handle:
             filetype = self._get_filetype(file_handle, file)
             if filetype not in self._supported_file_types() and not format.skip_unprocessable_files:
-                raise self._create_parse_error(
-                    file,
-                    self._get_file_type_error_message(filetype),
+                error_message = self._get_file_type_error_message(filetype)
+                logger.error(f"File {file.uri} has unsupported type: {error_message}")
+                raise AirbyteTracedException(
+                    message=error_message,
+                    internal_message="Please check the logged errors for more information.",
+                    failure_type=FailureType.config_error,
                 )
 
             return {
                 "content": {
-                    "type": "string",
+                    "type": ["null", "string"],
                     "description": "Content of the file as markdown. Might be null if the file could not be parsed",
                 },
                 "document_key": {
-                    "type": "string",
+                    "type": ["null", "string"],
                     "description": "Unique identifier of the document, e.g. the file path",
                 },
                 "_ab_source_file_parse_error": {
-                    "type": "string",
+                    "type": ["null", "string"],
                     "description": "Error message if the file could not be parsed even though the file is supported",
+                },
+                "_ab_source_file_last_modified": {
+                    "type": ["null", "string"],
+                    "description": "Last modified timestamp of the source file",
+                },
+                "_ab_source_file_url": {
+                    "type": ["null", "string"],
+                    "description": "URL or path to the source file",
                 },
             }
 
@@ -199,7 +210,12 @@ class UnstructuredParser(FileTypeParser):
                     }
                     logger.warning(f"File {file.uri} cannot be parsed. Skipping it.")
                 else:
-                    raise e
+                    logger.error(f"File {file.uri} caused an error during parsing: {exception_str}.")
+                    raise AirbyteTracedException(
+                        message="Please check the logged errors for more information.",
+                        internal_message=exception_str,
+                        failure_type=FailureType.config_error,
+                    )
             except Exception as e:
                 exception_str = str(e)
                 logger.error(f"File {file.uri} caused an error during parsing: {exception_str}.")
@@ -224,9 +240,12 @@ class UnstructuredParser(FileTypeParser):
         filetype: FileType | None = self._get_filetype(file_handle, remote_file)
 
         if filetype is None or filetype not in self._supported_file_types():
-            raise self._create_parse_error(
-                remote_file,
-                self._get_file_type_error_message(filetype),
+            error_message = self._get_file_type_error_message(filetype)
+            logger.error(f"File {remote_file.uri} has unsupported type: {error_message}")
+            raise AirbyteTracedException(
+                message=error_message,
+                internal_message="Please check the logged errors for more information.",
+                failure_type=FailureType.config_error,
             )
         if filetype in {FileType.MD, FileType.TXT}:
             try:

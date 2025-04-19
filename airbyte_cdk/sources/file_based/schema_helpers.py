@@ -54,6 +54,12 @@ PYTHON_TYPE_MAPPING = {t: k for k, (_, t) in TYPE_PYTHON_MAPPING.items()}
 
 
 def get_comparable_type(value: Any) -> Optional[ComparableType]:
+    if isinstance(value, list):
+        non_null_types = [item for item in value if item != "null"]
+        if non_null_types:
+            return get_comparable_type(non_null_types[0])
+        else:
+            return ComparableType.NULL
     if value == "null":
         return ComparableType.NULL
     if value == "boolean":
@@ -121,6 +127,8 @@ def merge_schemas(schema1: SchemaType, schema2: SchemaType) -> SchemaType:
 
 
 def _is_valid_type(t: JsonSchemaSupportedType) -> bool:
+    if isinstance(t, list):
+        return all(get_comparable_type(item) is not None for item in t)
     return t == "array" or get_comparable_type(t) is not None
 
 
@@ -128,7 +136,33 @@ def _choose_wider_type(key: str, t1: Mapping[str, Any], t2: Mapping[str, Any]) -
     t1_type = t1["type"]
     t2_type = t2["type"]
 
-    if (t1_type == "array" or t2_type == "array") and t1 != t2:
+    if isinstance(t1_type, list) and isinstance(t2_type, list):
+        if set(t1_type).issubset(set(t2_type)):
+            return t2
+        elif set(t2_type).issubset(set(t1_type)):
+            return t1
+        else:
+            combined_types = list(set(t1_type).union(set(t2_type)))
+            result = dict(t1)
+            result["type"] = combined_types
+            return result
+    elif isinstance(t1_type, list):
+        if t2_type in t1_type:
+            return t1
+        else:
+            combined_types = list(set(t1_type + [t2_type]))
+            result = dict(t1)
+            result["type"] = combined_types
+            return result
+    elif isinstance(t2_type, list):
+        if t1_type in t2_type:
+            return t2
+        else:
+            combined_types = list(set(t2_type + [t1_type]))
+            result = dict(t2)
+            result["type"] = combined_types
+            return result
+    elif (t1_type == "array" or t2_type == "array") and t1 != t2:
         raise SchemaInferenceError(
             FileBasedSourceError.SCHEMA_INFERENCE_ERROR,
             details="Cannot merge schema for unequal array types.",
@@ -149,20 +183,36 @@ def _choose_wider_type(key: str, t1: Mapping[str, Any], t2: Mapping[str, Any]) -
             detected_types=f"{t1},{t2}",
         )
     else:
-        comparable_t1 = get_comparable_type(
-            TYPE_PYTHON_MAPPING[t1_type][0]
-        )  # accessing the type_mapping value
-        comparable_t2 = get_comparable_type(
-            TYPE_PYTHON_MAPPING[t2_type][0]
-        )  # accessing the type_mapping value
-        if not comparable_t1 and comparable_t2:
-            raise SchemaInferenceError(
-                FileBasedSourceError.UNRECOGNIZED_TYPE, key=key, detected_types=f"{t1},{t2}"
-            )
-        return max(
-            [t1, t2],
-            key=lambda x: ComparableType(get_comparable_type(TYPE_PYTHON_MAPPING[x["type"]][0])),
-        )  # accessing the type_mapping value
+        if not isinstance(t1_type, list) and not isinstance(t2_type, list):
+            comparable_t1 = get_comparable_type(
+                TYPE_PYTHON_MAPPING[t1_type][0]
+            )  # accessing the type_mapping value
+            comparable_t2 = get_comparable_type(
+                TYPE_PYTHON_MAPPING[t2_type][0]
+            )  # accessing the type_mapping value
+            if not comparable_t1 and comparable_t2:
+                raise SchemaInferenceError(
+                    FileBasedSourceError.UNRECOGNIZED_TYPE, key=key, detected_types=f"{t1},{t2}"
+                )
+            return max(
+                [t1, t2],
+                key=lambda x: ComparableType(get_comparable_type(TYPE_PYTHON_MAPPING[x["type"]][0])),
+            )  # accessing the type_mapping value
+        
+        combined_types = []
+        if isinstance(t1_type, list):
+            combined_types.extend(t1_type)
+        else:
+            combined_types.append(t1_type)
+            
+        if isinstance(t2_type, list):
+            combined_types.extend(t2_type)
+        else:
+            combined_types.append(t2_type)
+            
+        result = dict(t1)
+        result["type"] = list(set(combined_types))
+        return result
 
 
 def is_equal_or_narrower_type(value: Any, expected_type: str) -> bool:

@@ -28,8 +28,14 @@ json_schema = {
             "type": ["null", "string"],
             "description": "Error message if the file could not be parsed even though the file is supported",
         },
-        "_ab_source_file_last_modified": {"type": "string"},
-        "_ab_source_file_url": {"type": "string"},
+        "_ab_source_file_last_modified": {
+            "type": ["null", "string"],
+            "description": "Last modified timestamp of the source file",
+        },
+        "_ab_source_file_url": {
+            "type": ["null", "string"],
+            "description": "URL or path to the source file",
+        },
     },
 }
 
