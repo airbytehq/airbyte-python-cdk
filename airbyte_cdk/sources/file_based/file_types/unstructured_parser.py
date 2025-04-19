@@ -535,7 +535,7 @@ class UnstructuredParser(FileTypeParser):
         if "." in remote_file.uri:
             extension = "." + remote_file.uri.split(".")[-1].lower()
             if extension == ".csv":
-                return "CSV"
+                return FileType.CSV
             for file_type in FileType:
                 if file_type.name.lower() == extension[1:].lower():
                     return file_type
