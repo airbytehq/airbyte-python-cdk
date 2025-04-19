@@ -43,7 +43,7 @@ CONFIG = {}
             ["kate", "laurie", "jaclyn"],
             None,
             PropertyLimitType.characters,
-            15,
+            20,
             [["kate", "laurie"], ["jaclyn"]],
             id="test_property_chunking_limit_characters",
         ),
@@ -51,7 +51,7 @@ CONFIG = {}
             ["laurie", "jaclyn", "kaitlin"],
             None,
             PropertyLimitType.characters,
-            12,
+            17,  # laurie%2Cjaclyn%2C == 18, so this will create separate chunks
             [["laurie"], ["jaclyn"], ["kaitlin"]],
             id="test_property_chunking_includes_extra_delimiter",
         ),
