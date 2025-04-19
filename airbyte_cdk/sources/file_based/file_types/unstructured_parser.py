@@ -137,7 +137,9 @@ class UnstructuredParser(FileTypeParser):
         format = _extract_format(config)
         with stream_reader.open_file(file, self.file_read_mode, None, logger) as file_handle:
             filetype = self._get_filetype(file_handle, file)
-            if (isinstance(filetype, str) or filetype not in self._supported_file_types()) and not format.skip_unprocessable_files:
+            if (
+                isinstance(filetype, str) or filetype not in self._supported_file_types()
+            ) and not format.skip_unprocessable_files:
                 error_message = self._get_file_type_error_message(filetype)
                 logger.error(f"File {file.uri} has unsupported type: {error_message}")
                 raise AirbyteTracedException(
