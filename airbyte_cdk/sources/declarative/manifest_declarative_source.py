@@ -103,34 +103,18 @@ class ManifestDeclarativeSource(DeclarativeSource):
             normalize_manifest: Optional flag to indicate if the manifest should be normalized.
         """
         self.logger = logging.getLogger(f"airbyte.{self.name}")
-
+        self._should_normalize = normalize_manifest
         self._declarative_component_schema = _get_declarative_component_schema()
         # For ease of use we don't require the type to be specified at the top level manifest, but it should be included during processing
         manifest = dict(source_config)
-        if "type" not in manifest:
-            manifest["type"] = "DeclarativeSource"
-
+        self._fix_source_type(manifest)
         # If custom components are needed, locate and/or register them.
         self.components_module: ModuleType | None = get_registered_components_module(config=config)
-
         # resolve all `$ref` references in the manifest
-        resolved_source_config = ManifestReferenceResolver().preprocess_manifest(manifest)
+        self._preprocess_manifest(manifest)
         # resolve all components in the manifest
-        propagated_source_config = ManifestComponentTransformer().propagate_types_and_parameters(
-            "", resolved_source_config, {}
-        )
-
-        if normalize_manifest:
-            # Connector Builder UI rendering requires the manifest to be in a specific format.
-            # 1) references have been resolved
-            # 2) the commonly used definitions are extracted to the `definitions.shared.*`
-            # 3) ! the normalized manifest could be validated only after the additional UI post-processing.
-            propagated_source_config = ManifestNormalizer(
-                propagated_source_config,
-                self._declarative_component_schema,
-            ).normalize()
-
-        self._source_config = propagated_source_config
+        self._propagate_types_and_parameters(manifest)
+        self._source_config = manifest
         self._debug = debug
         self._emit_connector_builder_messages = emit_connector_builder_messages
         self._constructor = (
@@ -145,13 +129,73 @@ class ManifestDeclarativeSource(DeclarativeSource):
         self._slice_logger: SliceLogger = (
             AlwaysLogSliceLogger() if emit_connector_builder_messages else DebugSliceLogger()
         )
-
         self._config = config or {}
+        # validate resolved manifest against the declarative component schema
         self._validate_source()
+        # apply additional post-processing to the manifest
+        self._normalize_manifest()
 
     @property
     def resolved_manifest(self) -> Mapping[str, Any]:
+        """
+        Returns the resolved manifest configuration for the source.
+
+        This property provides access to the internal source configuration as a mapping,
+        which contains all settings and parameters required to define the source's behavior.
+
+        Returns:
+            Mapping[str, Any]: The resolved source configuration manifest.
+        """
         return self._source_config
+
+    def _preprocess_manifest(self, manifest: Dict[str, Any]) -> None:
+        """
+        Preprocesses the provided manifest dictionary by resolving any manifest references.
+
+        This method modifies the input manifest in place, resolving references using the
+        ManifestReferenceResolver to ensure all references within the manifest are properly handled.
+
+        Args:
+            manifest (Dict[str, Any]): The manifest dictionary to preprocess and resolve references in.
+
+        Returns:
+            None
+        """
+        ManifestReferenceResolver().preprocess_manifest(manifest)
+
+    def _propagate_types_and_parameters(self, manifest: Dict[str, Any]) -> None:
+        """
+        Propagates types and parameters throughout the provided manifest.
+
+        This method utilizes the ManifestComponentTransformer to traverse and update the manifest dictionary,
+        ensuring that types and parameters are correctly propagated from the root to all nested components.
+
+        Args:
+            manifest (Dict[str, Any]): The manifest dictionary to update with propagated types and parameters.
+
+        Returns:
+            None
+        """
+        ManifestComponentTransformer().propagate_types_and_parameters("", manifest, {})
+
+    def _normalize_manifest(self) -> None:
+        """
+        This method is used to normalize the manifest. It should be called after the manifest has been validated.
+
+        Connector Builder UI rendering requires the manifest to be in a specific format.
+         - references have been resolved
+         - the commonly used definitions are extracted to the `definitions.linked.*`
+        """
+        if self._should_normalize:
+            normalizer = ManifestNormalizer(self._source_config, self._declarative_component_schema)
+            self._source_config = normalizer.normalize()
+
+    def _fix_source_type(self, manifest: Dict[str, Any]) -> None:
+        """
+        Fix the source type in the manifest. This is necessary because the source type is not always set in the manifest.
+        """
+        if "type" not in manifest:
+            manifest["type"] = "DeclarativeSource"
 
     @property
     def message_repository(self) -> MessageRepository:
