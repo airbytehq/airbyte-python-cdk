@@ -105,16 +105,11 @@ class ManifestDeclarativeSource(DeclarativeSource):
         self.logger = logging.getLogger(f"airbyte.{self.name}")
         self._should_normalize = normalize_manifest
         self._declarative_component_schema = _get_declarative_component_schema()
-        # For ease of use we don't require the type to be specified at the top level manifest, but it should be included during processing
-        manifest = dict(source_config)
-        self._fix_source_type(manifest)
         # If custom components are needed, locate and/or register them.
         self.components_module: ModuleType | None = get_registered_components_module(config=config)
-        # resolve all `$ref` references in the manifest
-        self._preprocess_manifest(manifest)
         # resolve all components in the manifest
-        self._propagate_types_and_parameters(manifest)
-        self._source_config = manifest
+        self._source_config = self._preprocess_manifest(dict(source_config))
+
         self._debug = debug
         self._emit_connector_builder_messages = emit_connector_builder_messages
         self._constructor = (
@@ -130,10 +125,12 @@ class ManifestDeclarativeSource(DeclarativeSource):
             AlwaysLogSliceLogger() if emit_connector_builder_messages else DebugSliceLogger()
         )
         self._config = config or {}
+
         # validate resolved manifest against the declarative component schema
         self._validate_source()
+
         # apply additional post-processing to the manifest
-        self._normalize_manifest()
+        self._postprocess_manifest()
 
     @property
     def resolved_manifest(self) -> Mapping[str, Any]:
@@ -148,7 +145,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         """
         return self._source_config
 
-    def _preprocess_manifest(self, manifest: Dict[str, Any]) -> None:
+    def _preprocess_manifest(self, manifest: Dict[str, Any]) -> Dict[str, Any]:
         """
         Preprocesses the provided manifest dictionary by resolving any manifest references.
 
@@ -161,22 +158,25 @@ class ManifestDeclarativeSource(DeclarativeSource):
         Returns:
             None
         """
-        ManifestReferenceResolver().preprocess_manifest(manifest)
+        # For ease of use we don't require the type to be specified at the top level manifest, but it should be included during processing
+        manifest = self._fix_source_type(manifest)
+        # Resolve references in the manifest
+        resolved_manifest = ManifestReferenceResolver().preprocess_manifest(manifest)
+        # Propagate types and parameters throughout the manifest
+        propagated_manifest = ManifestComponentTransformer().propagate_types_and_parameters(
+            "", resolved_manifest, {}
+        )
 
-    def _propagate_types_and_parameters(self, manifest: Dict[str, Any]) -> None:
+        return propagated_manifest
+
+    def _postprocess_manifest(self) -> None:
         """
-        Propagates types and parameters throughout the provided manifest.
-
-        This method utilizes the ManifestComponentTransformer to traverse and update the manifest dictionary,
-        ensuring that types and parameters are correctly propagated from the root to all nested components.
-
-        Args:
-            manifest (Dict[str, Any]): The manifest dictionary to update with propagated types and parameters.
-
-        Returns:
-            None
+        Post-processes the manifest after validation.
+        This method is responsible for any additional modifications or transformations needed
+        after the manifest has been validated and before it is used in the source.
         """
-        ManifestComponentTransformer().propagate_types_and_parameters("", manifest, {})
+        # apply manifest normalization, if required
+        self._normalize_manifest()
 
     def _normalize_manifest(self) -> None:
         """
@@ -190,12 +190,14 @@ class ManifestDeclarativeSource(DeclarativeSource):
             normalizer = ManifestNormalizer(self._source_config, self._declarative_component_schema)
             self._source_config = normalizer.normalize()
 
-    def _fix_source_type(self, manifest: Dict[str, Any]) -> None:
+    def _fix_source_type(self, manifest: Dict[str, Any]) -> Dict[str, Any]:
         """
         Fix the source type in the manifest. This is necessary because the source type is not always set in the manifest.
         """
         if "type" not in manifest:
             manifest["type"] = "DeclarativeSource"
+
+        return manifest
 
     @property
     def message_repository(self) -> MessageRepository:
