@@ -55,7 +55,7 @@ class PropertyChunking:
             # todo: Add ability to specify parameter delimiter representation and take into account in property_field_size
             property_field_size = (
                 len(property_field)
-                + 1  # The +1 represents the extra character for the delimiter in between properties
+                + 3  # The +3 represents the extra characters for encoding the delimiter in between properties
                 if self.property_limit_type == PropertyLimitType.characters
                 else 1
             )
