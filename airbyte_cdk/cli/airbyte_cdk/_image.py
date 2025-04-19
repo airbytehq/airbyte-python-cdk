@@ -47,7 +47,10 @@ from airbyte_cdk.utils.docker import (
 )
 
 
-@click.group(name="image")
+@click.group(
+    name="image",
+    help=__doc__.replace("\n", "\n\n"),  # Render docstring as help text (markdown)
+)
 def image_cli_group() -> None:
     """Commands for working with connector Docker images."""
 

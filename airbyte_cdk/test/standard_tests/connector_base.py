@@ -6,6 +6,7 @@ from __future__ import annotations
 import abc
 import importlib
 import inspect
+import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -43,18 +44,24 @@ class ConnectorTestSuiteBase(abc.ABC):
         specific connector class to be tested.
         """
         connector_root = cls.get_connector_root_dir()
-        connector_name = connector_root.name
+        connector_name = connector_root.absolute().name
 
         expected_module_name = connector_name.replace("-", "_").lower()
         expected_class_name = connector_name.replace("-", "_").title().replace("_", "")
 
         # dynamically import and get the connector class: <expected_module_name>.<expected_class_name>
 
+        cwd_snapshot = Path().absolute()
+        os.chdir(connector_root)
+
         # Dynamically import the module
         try:
             module = importlib.import_module(expected_module_name)
         except ModuleNotFoundError as e:
             raise ImportError(f"Could not import module '{expected_module_name}'.") from e
+        finally:
+            # Change back to the original working directory
+            os.chdir(cwd_snapshot)
 
         # Dynamically get the class from the module
         try:

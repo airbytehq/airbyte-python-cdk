@@ -88,7 +88,10 @@ TestSuite = create_connector_test_suite(
 '''
 
 
-@click.group(name="connector")
+@click.group(
+    name="connector",
+    help=__doc__.replace("\n", "\n\n"),  # Render docstring as help text (markdown)
+)
 def connector_cli_group() -> None:
     """Connector related commands."""
     pass

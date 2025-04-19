@@ -34,9 +34,11 @@ airbyte-protocol-models-dataclasses = "^0.14"
 backoff = "*"
 boltons = "^25.0.0"
 cachetools = "*"
+click = "^8.1.8"
 dpath = "^2.1.6"
 dunamai = "^1.22.0"
 genson = "1.3.0"
+google-cloud-secret-manager = "^2.17.0"
 isodate = "~0.6.1"
 Jinja2 = "~3.1.2"
 jsonref = "~0.2"
@@ -85,7 +87,6 @@ sqlalchemy = {version = "^2.0,!=2.0.36", optional = true }
 xmltodict = ">=0.13,<0.15"
 anyascii = "^0.3.2"
 whenever = "^0.6.16"
-click = "^8.1.8"
 
 [tool.poetry.group.dev.dependencies]
 freezegun = "*"
@@ -116,8 +117,8 @@ sql = ["sqlalchemy"]
 
 [tool.poetry.scripts]
 
-source-declarative-manifest = "airbyte_cdk.cli.source_declarative_manifest:run"
 airbyte-cdk = "airbyte_cdk.cli.airbyte_cdk:cli"
+source-declarative-manifest = "airbyte_cdk.cli.source_declarative_manifest:run"
 
 [tool.isort]
 skip = ["__init__.py"]  # TODO: Remove after this is fixed: https://github.com/airbytehq/airbyte-python-cdk/issues/12
@@ -221,13 +222,15 @@ exclude = [
 # https://deptry.com/rules-violations/#missing-dependencies-dep001
 DEP001 = [
   # These are imported but not declared:
-  "source_declarative_manifest"  # Imported only in dynamic import tests, not in main code
+  "source_declarative_manifest",  # Imported only in dynamic import tests, not in main code
+  "google"  # Imported via google.cloud.secretmanager_v1 which is provided by google-cloud-secret-manager
 ]
 
 # DEP002: Project should not contain unused dependencies.
 # https://deptry.com/rules-violations/#missing-dependencies-dep002
 DEP002 = [
   "cryptography",  # Constrained as transitive dependency due to a bug in newer versions
+  "google-cloud-secret-manager",  # Deptry can't detect that `google.cloud.secretmanager_v1` uses this package
 
   # TODO: Remove these dependencies if not needed:
   "avro",  # Only imported in `unit_tests` code
