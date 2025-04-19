@@ -210,7 +210,9 @@ class UnstructuredParser(FileTypeParser):
                     }
                     logger.warning(f"File {file.uri} cannot be parsed. Skipping it.")
                 else:
-                    logger.error(f"File {file.uri} caused an error during parsing: {exception_str}.")
+                    logger.error(
+                        f"File {file.uri} caused an error during parsing: {exception_str}."
+                    )
                     raise AirbyteTracedException(
                         message="Please check the logged errors for more information.",
                         internal_message=exception_str,

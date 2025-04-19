@@ -196,20 +196,22 @@ def _choose_wider_type(key: str, t1: Mapping[str, Any], t2: Mapping[str, Any]) -
                 )
             return max(
                 [t1, t2],
-                key=lambda x: ComparableType(get_comparable_type(TYPE_PYTHON_MAPPING[x["type"]][0])),
+                key=lambda x: ComparableType(
+                    get_comparable_type(TYPE_PYTHON_MAPPING[x["type"]][0])
+                ),
             )  # accessing the type_mapping value
-        
+
         combined_types = []
         if isinstance(t1_type, list):
             combined_types.extend(t1_type)
         else:
             combined_types.append(t1_type)
-            
+
         if isinstance(t2_type, list):
             combined_types.extend(t2_type)
         else:
             combined_types.append(t2_type)
-            
+
         result = dict(t1)
         result["type"] = list(set(combined_types))
         return result

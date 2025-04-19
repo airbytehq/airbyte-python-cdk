@@ -2315,7 +2315,7 @@ definitions:
     properties:
       type:
         type: string
-        enum: [ KeyTransformation ]
+        enum: [KeyTransformation]
       prefix:
         title: Key Prefix
         description: Prefix to add for object keys. If not provided original keys remain unchanged.
