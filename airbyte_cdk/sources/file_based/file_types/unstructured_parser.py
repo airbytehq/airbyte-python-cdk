@@ -137,7 +137,7 @@ class UnstructuredParser(FileTypeParser):
         format = _extract_format(config)
         with stream_reader.open_file(file, self.file_read_mode, None, logger) as file_handle:
             filetype = self._get_filetype(file_handle, file)
-            if filetype not in self._supported_file_types() and not format.skip_unprocessable_files:
+            if (isinstance(filetype, str) or filetype not in self._supported_file_types()) and not format.skip_unprocessable_files:
                 error_message = self._get_file_type_error_message(filetype)
                 logger.error(f"File {file.uri} has unsupported type: {error_message}")
                 raise AirbyteTracedException(
@@ -194,15 +194,16 @@ class UnstructuredParser(FileTypeParser):
                 # RecordParseError is raised when the file can't be parsed because of a problem with the file content (either the file is not supported or the file is corrupted)
                 # if the skip_unprocessable_files flag is set, we log a warning and pass the error as part of the document
                 # otherwise, we raise the error to fail the sync
+                exception_str = str(e)
                 if format.skip_unprocessable_files:
-                    exception_str = str(e)
                     logger.warning(
                         f"File {file.uri} caused an error during parsing: {exception_str}."
                     )
+                    error_message = f"Error parsing record. This could be due to a mismatch between the config's file type and the actual file type, or because the file or record is not parseable. Contact Support if you need assistance.\nfilename={file.uri} message={exception_str}"
                     yield {
                         "content": None,
                         "document_key": file.uri,
-                        "_ab_source_file_parse_error": exception_str,
+                        "_ab_source_file_parse_error": error_message,
                         "_ab_source_file_last_modified": file.last_modified.strftime(
                             "%Y-%m-%dT%H:%M:%S.%fZ"
                         ),
@@ -218,6 +219,25 @@ class UnstructuredParser(FileTypeParser):
                         internal_message=exception_str,
                         failure_type=FailureType.config_error,
                     )
+            except AirbyteTracedException as e:
+                if format.skip_unprocessable_files:
+                    exception_str = str(e)
+                    logger.warning(
+                        f"File {file.uri} caused an error during parsing: {exception_str}."
+                    )
+                    error_message = f"Error parsing record. This could be due to a mismatch between the config's file type and the actual file type, or because the file or record is not parseable. Contact Support if you need assistance.\nfilename={file.uri} message={exception_str}"
+                    yield {
+                        "content": None,
+                        "document_key": file.uri,
+                        "_ab_source_file_parse_error": error_message,
+                        "_ab_source_file_last_modified": file.last_modified.strftime(
+                            "%Y-%m-%dT%H:%M:%S.%fZ"
+                        ),
+                        "_ab_source_file_url": file.uri,
+                    }
+                    logger.warning(f"File {file.uri} cannot be parsed. Skipping it.")
+                else:
+                    raise e
             except Exception as e:
                 exception_str = str(e)
                 logger.error(f"File {file.uri} caused an error during parsing: {exception_str}.")
@@ -245,8 +265,8 @@ class UnstructuredParser(FileTypeParser):
             error_message = self._get_file_type_error_message(filetype)
             logger.error(f"File {remote_file.uri} has unsupported type: {error_message}")
             raise AirbyteTracedException(
-                message=error_message,
-                internal_message="Please check the logged errors for more information.",
+                message="Please check the logged errors for more information.",
+                internal_message=error_message,
                 failure_type=FailureType.config_error,
             )
         if filetype in {FileType.MD, FileType.TXT}:
@@ -512,6 +532,8 @@ class UnstructuredParser(FileTypeParser):
 
         if "." in remote_file.uri:
             extension = "." + remote_file.uri.split(".")[-1].lower()
+            if extension == ".csv":
+                return "CSV"
             for file_type in FileType:
                 if file_type.name.lower() == extension[1:].lower():
                     return file_type
@@ -525,7 +547,7 @@ class UnstructuredParser(FileTypeParser):
 
     def _get_file_type_error_message(
         self,
-        file_type: FileType | None,
+        file_type: Union[FileType, str, None],
     ) -> str:
         supported_file_types = ", ".join([str(type) for type in self._supported_file_types()])
         return f"File type {file_type or 'None'!s} is not supported. Supported file types are {supported_file_types}"
