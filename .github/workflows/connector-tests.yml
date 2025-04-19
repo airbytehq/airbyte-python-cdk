@@ -75,7 +75,7 @@ jobs:
           # Chargebee is being flaky:
           # - connector: source-chargebee
           #   cdk_extra: n/a
-          # This one is behind in CDK updates and can't be used as tests until they are updated:
+          # This one is behind in CDK updates and can't be used as tests until it is updated:
           # - connector: destination-pinecone
           #   cdk_extra: vector-db-based
           - connector: source-google-drive
