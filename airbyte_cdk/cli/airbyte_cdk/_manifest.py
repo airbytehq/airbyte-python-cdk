@@ -7,13 +7,14 @@ This module is planned to provide a command line interface (CLI) for validating
 Airbyte CDK manifests.
 """
 
-import click
+import rich_click as click
 
 
-@click.group(name="manifest")
-def manifest_cli_group(
-    help=__doc__,
-) -> None:
+@click.group(
+    name="manifest",
+    help=__doc__.replace("\n", "\n\n"),  # Render docstring as help text (markdown)
+)
+def manifest_cli_group() -> None:
     """Manifest related commands."""
     pass
 

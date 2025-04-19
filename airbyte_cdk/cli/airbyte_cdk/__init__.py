@@ -49,7 +49,7 @@ from airbyte_cdk.cli.airbyte_cdk._version import print_version
 
 
 @click.group(
-    help=__doc__.replace("\n", "\n\n"),  # Workaround to format help text correctly
+    help=__doc__.replace("\n", "\n\n"),  # Render docstring as help text (markdown)
     invoke_without_command=True,
 )
 @click.option(

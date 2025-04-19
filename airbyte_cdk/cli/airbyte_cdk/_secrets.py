@@ -30,7 +30,7 @@ CONNECTOR_LABEL = "connector"
 
 @click.group(
     name="secrets",
-    help=__doc__.replace("\n", "\n\n"),
+    help=__doc__.replace("\n", "\n\n"),  # Render docstring as help text (markdown)
 )
 def secrets_cli_group() -> None:
     """Secret management commands."""
