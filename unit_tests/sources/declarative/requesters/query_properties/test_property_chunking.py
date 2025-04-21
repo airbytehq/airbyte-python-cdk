@@ -43,9 +43,17 @@ CONFIG = {}
             ["kate", "laurie", "jaclyn"],
             None,
             PropertyLimitType.characters,
-            10,
+            20,
             [["kate", "laurie"], ["jaclyn"]],
             id="test_property_chunking_limit_characters",
+        ),
+        pytest.param(
+            ["laurie", "jaclyn", "kaitlin"],
+            None,
+            PropertyLimitType.characters,
+            17,  # laurie%2Cjaclyn%2C == 18, so this will create separate chunks
+            [["laurie"], ["jaclyn"], ["kaitlin"]],
+            id="test_property_chunking_includes_extra_delimiter",
         ),
         pytest.param(
             [],
