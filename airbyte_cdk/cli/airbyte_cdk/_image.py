@@ -7,7 +7,7 @@ connector images.
 import sys
 from pathlib import Path
 
-import click
+import rich_click as click
 
 from airbyte_cdk.cli.airbyte_cdk._util import resolve_connector_name_and_directory
 from airbyte_cdk.models.connector_metadata import MetadataFile
