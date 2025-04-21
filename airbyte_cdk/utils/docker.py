@@ -149,7 +149,7 @@ def build_connector_image(
 
     base_tag = f"{metadata.data.dockerRepository}:{tag}"
     arch_images: list[str] = []
-    default_arch = "linux/amd64"
+    default_arch = "linux/arm64"  # Assume MacBook M series by default
     for arch in ["linux/amd64", "linux/arm64"]:
         docker_tag = f"{base_tag}-{arch.replace('/', '-')}"
         docker_tag_parts = docker_tag.split("/")
@@ -294,3 +294,5 @@ def verify_image(image_name: str) -> bool:
     cmd = ["docker", "run", "--rm", image_name, "spec"]
 
     run_docker_command(cmd)
+
+    return True
