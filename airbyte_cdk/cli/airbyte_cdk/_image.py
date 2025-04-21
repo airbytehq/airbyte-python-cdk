@@ -31,7 +31,6 @@ The command reads the connector's metadata from the `metadata.yaml` file, builds
 This command is designed to be a simpler alternative to the `airbyte-ci build` command, using Docker directly on the host machine instead of Dagger.
 """
 
-import subprocess
 import sys
 from pathlib import Path
 
@@ -67,14 +66,12 @@ def image_cli_group() -> None:
 )
 @click.option("--tag", default="dev", help="Tag to apply to the built image (default: dev)")
 @click.option("--no-verify", is_flag=True, help="Skip verification of the built image")
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose logging")
 def build(
     connector_name: str | None = None,
     connector_directory: Path | None = None,
     *,
     tag: str = "dev",
     no_verify: bool = False,
-    verbose: bool = False,
 ) -> None:
     """Build a connector Docker image.
 

@@ -119,13 +119,21 @@ def build_connector_image(
     dockerfile_path = connector_directory / "build" / "docker" / "Dockerfile"
     dockerignore_path = connector_directory / "build" / "docker" / "Dockerfile.dockerignore"
 
+    extra_build_steps: str = ""
+    build_customization_path = connector_directory / "build_customization.py"
+    if build_customization_path.exists():
+        extra_build_steps = "\n".join([
+            "COPY build_customization.py ./",
+            "RUN python3 build_customization.py",
+        ])
+
     dockerfile_path.parent.mkdir(parents=True, exist_ok=True)
     dockerfile_path.write_text(
         DOCKERFILE_TEMPLATE.format(
             base_image=metadata.data.connectorBuildOptions.baseImage,
             connector_snake_name=connector_snake_name,
             connector_kebab_name=connector_kebab_name,
-            extra_build_steps="",
+            extra_build_steps=extra_build_steps,
         )
     )
     dockerignore_path.write_text(
@@ -203,81 +211,6 @@ def verify_docker_installation() -> bool:
         return True
     except (subprocess.CalledProcessError, FileNotFoundError):
         return False
-
-
-def get_main_file_name(connector_dir: Path) -> str:
-    """Get the main file name for the connector.
-
-    Args:
-        connector_dir: Path to the connector directory.
-
-    Returns:
-        The main file name.
-    """
-    build_customization_path = connector_dir / "build_customization.py"
-    if build_customization_path.exists():
-        content = build_customization_path.read_text()
-        if "MAIN_FILE_NAME" in content:
-            for line in content.splitlines():
-                if line.strip().startswith("MAIN_FILE_NAME"):
-                    parts = line.split("=", 1)
-                    if len(parts) == 2:
-                        main_file = parts[1].strip().strip("\"'")
-                        return main_file
-
-    return "main.py"
-
-
-def execute_build_customization_hooks(connector_dir: Path, hook_type: str) -> None:
-    """Execute pre or post install hooks from build_customization.py if present.
-
-    Args:
-        connector_dir: Path to the connector directory.
-        hook_type: Type of hook to execute ('pre_connector_install' or 'post_connector_install').
-    """
-    build_customization_path = connector_dir / "build_customization.py"
-    if not build_customization_path.exists():
-        return
-
-    logger.info(f"Checking for {hook_type} hook in build_customization.py")
-
-    content = build_customization_path.read_text()
-    if f"def {hook_type}" not in content:
-        logger.debug(f"No {hook_type} hook found in build_customization.py")
-        return
-
-    logger.info(f"Executing {hook_type} hook from build_customization.py")
-
-    hook_script = f"""
-import sys
-import os
-sys.path.append('{connector_dir}')
-try:
-    from build_customization import {hook_type}
-    print(f"Executing {hook_type} hook...")
-    {hook_type}()
-    print(f"{hook_type} hook executed successfully")
-except Exception as e:
-    print(f"Error executing {hook_type} hook: {{e}}")
-    sys.exit(1)
-"""
-
-    with tempfile.NamedTemporaryFile(suffix=".py", mode="w") as temp_script:
-        temp_script.write(hook_script)
-        temp_script.flush()
-
-        try:
-            subprocess.run(
-                ["python", temp_script.name],
-                cwd=str(connector_dir),
-                check=True,
-                capture_output=True,
-                text=True,
-            )
-            logger.info(f"Successfully executed {hook_type} hook")
-        except subprocess.CalledProcessError as e:
-            logger.warning(f"Failed to execute {hook_type} hook: {e.stderr}")
-            raise
 
 
 def verify_image(image_name: str) -> bool:
