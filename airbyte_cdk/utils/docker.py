@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import subprocess
 import sys
-import tempfile
 from email.policy import default
 from pathlib import Path
 
 import click
 
-from airbyte_cdk.models.connector_metadata import ConnectorMetadata, MetadataFile
+from airbyte_cdk.models.connector_metadata import MetadataFile
 
 logger = logging.getLogger(__name__)
 
@@ -122,10 +120,12 @@ def build_connector_image(
     extra_build_steps: str = ""
     build_customization_path = connector_directory / "build_customization.py"
     if build_customization_path.exists():
-        extra_build_steps = "\n".join([
-            "COPY build_customization.py ./",
-            "RUN python3 build_customization.py",
-        ])
+        extra_build_steps = "\n".join(
+            [
+                "COPY build_customization.py ./",
+                "RUN python3 build_customization.py",
+            ]
+        )
 
     dockerfile_path.parent.mkdir(parents=True, exist_ok=True)
     dockerfile_path.write_text(
@@ -137,22 +137,24 @@ def build_connector_image(
         )
     )
     dockerignore_path.write_text(
-        "\n".join([
-            "# This file is auto-generated. Do not edit.",
-            "build/",
-            ".venv/",
-            "secrets/",
-            "!setup.py",
-            "!pyproject.toml",
-            "!poetry.lock",
-            "!poetry.toml",
-            "!components.py",
-            "!requirements.txt",
-            "!README.md",
-            "!metadata.yaml",
-            "!build_customization.py",
-            # f"!{connector_snake_name}/",
-        ])
+        "\n".join(
+            [
+                "# This file is auto-generated. Do not edit.",
+                "build/",
+                ".venv/",
+                "secrets/",
+                "!setup.py",
+                "!pyproject.toml",
+                "!poetry.lock",
+                "!poetry.toml",
+                "!components.py",
+                "!requirements.txt",
+                "!README.md",
+                "!metadata.yaml",
+                "!build_customization.py",
+                # f"!{connector_snake_name}/",
+            ]
+        )
     )
 
     base_tag = f"{metadata.data.dockerRepository}:{tag}"
