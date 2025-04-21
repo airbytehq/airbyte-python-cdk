@@ -293,6 +293,10 @@ def verify_image(image_name: str) -> bool:
 
     cmd = ["docker", "run", "--rm", image_name, "spec"]
 
-    run_docker_command(cmd)
+    try:
+        run_docker_command(cmd)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Image verification failed: {e.stderr}")
+        return False
 
     return True
