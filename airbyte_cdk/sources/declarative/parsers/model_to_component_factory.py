@@ -1084,7 +1084,7 @@ class ModelToComponentFactory:
         )
 
     def create_session_token_authenticator(
-        self, model: SessionTokenAuthenticatorModel, config: Config, name: str, **kwargs: Any
+        self, model: SessionTokenAuthenticatorModel, config: Config, *, name: str, **kwargs: Any
     ) -> Union[ApiKeyAuthenticator, BearerAuthenticator]:
         decoder = (
             self._create_component_from_model(model=model.decoder, config=config)
