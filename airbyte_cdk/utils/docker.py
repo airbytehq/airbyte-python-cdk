@@ -71,7 +71,7 @@ def _build_image(
         str(context_dir),
     ]
     print(f"Building image: {tag} ({arch})")
-    _ = run_docker_command(
+    run_docker_command(
         docker_args,
     )
     return tag
@@ -128,9 +128,13 @@ def build_connector_image(
         )
 
     dockerfile_path.parent.mkdir(parents=True, exist_ok=True)
+    image_name = f"airbyte/{connector_name}"
+    if metadata.data.connectorBuildOptions:
+        image_name = f"airbyte/{connector_name}"
+
     dockerfile_path.write_text(
         DOCKERFILE_TEMPLATE.format(
-            base_image=metadata.data.connectorBuildOptions.baseImage,
+            base_image=image_name,
             connector_snake_name=connector_snake_name,
             connector_kebab_name=connector_kebab_name,
             extra_build_steps=extra_build_steps,
