@@ -5,23 +5,184 @@ from __future__ import annotations
 import json
 import logging
 import subprocess
+import sys
 import tempfile
+from email.policy import default
 from pathlib import Path
+
+import click
 
 from airbyte_cdk.models.connector_metadata import ConnectorMetadata, MetadataFile
 
 logger = logging.getLogger(__name__)
 
+# This template accepts the following variables:
+# - base_image: The base image to use for the build
+# - extra_build_steps: Additional build steps to include in the Dockerfile
+# - connector_snake_name: The snake_case name of the connector
+# - connector_kebab_name: The kebab-case name of the connector
+DOCKERFILE_TEMPLATE = """
+FROM {base_image} AS builder
 
-def run_docker_command(cmd: list[str], check: bool = True) -> tuple[int, str, str]:
+WORKDIR /airbyte/integration_code
+
+COPY . ./
+COPY {connector_snake_name} ./{connector_snake_name}
+{extra_build_steps}
+
+# RUN pip install --no-cache-dir uv
+RUN pip install --no-cache-dir .
+
+FROM {base_image}
+
+WORKDIR /airbyte/integration_code
+
+COPY --from=builder /usr/local /usr/local
+
+COPY . .
+
+ENV AIRBYTE_ENTRYPOINT="{connector_kebab_name}"
+ENTRYPOINT ["{connector_kebab_name}"]
+"""
+
+
+def _build_image(
+    context_dir: Path,
+    dockerfile: Path,
+    metadata: MetadataFile,
+    tag: str,
+    arch: str,
+) -> str:
+    """Build a Docker image for the specified architecture.
+
+    Returns the tag of the built image.
+    """
+    docker_args: list[str] = [
+        "docker",
+        "build",
+        "--platform",
+        arch,
+        "--file",
+        str(dockerfile),
+        "--label",
+        f"io.airbyte.version={metadata.data.dockerImageTag}",
+        "--label",
+        f"io.airbyte.name={metadata.data.dockerRepository}",
+        "-t",
+        tag,
+        str(context_dir),
+    ]
+    print(f"Building image: {tag} ({arch})")
+    _ = run_docker_command(
+        docker_args,
+    )
+    return tag
+
+
+def _tag_image(
+    tag: str,
+    new_tags: list[str] | str,
+) -> str:
+    """Build a Docker image for the specified architecture.
+
+    Returns the tag of the built image.
+    """
+    if not isinstance(new_tags, list):
+        new_tags = [new_tags]
+
+    print(f"Tagging image '{tag}' as: {', '.join(new_tags)}")
+    docker_args = [
+        "docker",
+        "tag",
+        tag,
+        *new_tags,
+    ]
+    _ = subprocess.run(
+        docker_args,
+        text=True,
+        check=True,
+    )
+    return tag
+
+
+def build_connector_image(
+    connector_name: str,
+    connector_directory: Path,
+    metadata: MetadataFile,
+    tag: str,
+    arch: str | None = None,
+    no_verify: bool = False,
+) -> None:
+    connector_kebab_name = connector_name
+    connector_snake_name = connector_kebab_name.replace("-", "_")
+
+    dockerfile_path = connector_directory / "build" / "docker" / "Dockerfile"
+    dockerignore_path = connector_directory / "build" / "docker" / "Dockerfile.dockerignore"
+
+    dockerfile_path.parent.mkdir(parents=True, exist_ok=True)
+    dockerfile_path.write_text(
+        DOCKERFILE_TEMPLATE.format(
+            base_image=metadata.data.connectorBuildOptions.baseImage,
+            connector_snake_name=connector_snake_name,
+            connector_kebab_name=connector_kebab_name,
+            extra_build_steps="",
+        )
+    )
+    dockerignore_path.write_text(
+        "\n".join([
+            "# This file is auto-generated. Do not edit.",
+            "build/",
+            ".venv/",
+            "secrets/",
+            "!setup.py",
+            "!pyproject.toml",
+            "!poetry.lock",
+            "!poetry.toml",
+            "!components.py",
+            "!requirements.txt",
+            "!README.md",
+            "!metadata.yaml",
+            "!build_customization.py",
+            # f"!{connector_snake_name}/",
+        ])
+    )
+
+    base_tag = f"{metadata.data.dockerRepository}:{tag}"
+    arch_images: list[str] = []
+    default_arch = "linux/amd64"
+    for arch in ["linux/amd64", "linux/arm64"]:
+        docker_tag = f"{base_tag}-{arch.replace('/', '-')}"
+        docker_tag_parts = docker_tag.split("/")
+        if len(docker_tag_parts) > 2:
+            docker_tag = "/".join(docker_tag_parts[-1:])
+        arch_images.append(
+            _build_image(
+                context_dir=connector_directory,
+                dockerfile=dockerfile_path,
+                metadata=metadata,
+                tag=docker_tag,
+                arch=arch,
+            )
+        )
+
+    _tag_image(
+        tag=f"{base_tag}-{default_arch.replace('/', '-')}",
+        new_tags=[base_tag],
+    )
+    if not no_verify:
+        if verify_image(base_tag):
+            click.echo(f"Build completed successfully: {base_tag}")
+            sys.exit(0)
+        else:
+            click.echo(f"Built image failed verification: {base_tag}", err=True)
+            sys.exit(1)
+    else:
+        click.echo(f"Build completed successfully (without verification): {base_tag}")
+        sys.exit(0)
+
+
+def run_docker_command(cmd: list[str]) -> None:
     """Run a Docker command as a subprocess.
-
-    Args:
-        cmd: The command to run.
-        check: Whether to raise an exception if the command fails.
-
-    Returns:
-        Tuple of (return_code, stdout, stderr).
 
     Raises:
         subprocess.CalledProcessError: If the command fails and check is True.
@@ -30,22 +191,9 @@ def run_docker_command(cmd: list[str], check: bool = True) -> tuple[int, str, st
 
     process = subprocess.run(
         cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
         text=True,
-        check=False,
+        check=True,
     )
-
-    stdout = process.stdout.strip()
-    stderr = process.stderr.strip()
-
-    if process.returncode != 0:
-        logger.error(f"Command failed with exit code {process.returncode}")
-        logger.error(f"stderr: {stderr}")
-        if check:
-            raise subprocess.CalledProcessError(process.returncode, cmd, stdout, stderr)
-
-    return process.returncode, stdout, stderr
 
 
 def verify_docker_installation() -> bool:
@@ -132,239 +280,6 @@ except Exception as e:
             raise
 
 
-def cleanup_temp_files(connector_dir: Path) -> None:
-    """Clean up temporary build files from the connector directory.
-
-    Args:
-        connector_dir: Path to the connector directory.
-    """
-    temp_files = ["Dockerfile.temp", ".dockerignore.temp"]
-    for temp_file in temp_files:
-        temp_file_path = connector_dir / temp_file
-        if temp_file_path.exists():
-            try:
-                temp_file_path.unlink()
-                logger.debug(f"Cleaned up temporary file: {temp_file_path}")
-            except Exception as e:
-                logger.warning(f"Failed to clean up temporary file {temp_file_path}: {e}")
-
-
-def build_from_dockerfile(
-    connector_dir: Path,
-    metadata: ConnectorMetadata,
-    tag: str,
-    platform: str,
-) -> str:
-    """Build a Docker image for the connector using its Dockerfile.
-
-    Args:
-        connector_dir: Path to the connector directory.
-        metadata: The connector metadata.
-        tag: The tag to apply to the built image.
-        platform: The platform to build for (e.g., linux/amd64).
-
-    Returns:
-        The full image name with tag.
-
-    Raises:
-        FileNotFoundError: If the Dockerfile is not found.
-        subprocess.CalledProcessError: If the build fails.
-    """
-    dockerfile_path = connector_dir / "Dockerfile"
-    if not dockerfile_path.exists():
-        raise FileNotFoundError(f"Dockerfile not found: {dockerfile_path}")
-
-    image_name = metadata.dockerRepository
-    full_image_name = f"{image_name}:{tag}"
-
-    logger.info(f"Building Docker image from Dockerfile: {full_image_name} for platform {platform}")
-    logger.warning(
-        "Building from Dockerfile is deprecated. Consider using a base image in metadata.yaml."
-    )
-
-    build_cmd = [
-        "docker",
-        "buildx",
-        "build",
-        "--platform",
-        platform,
-        "-t",
-        full_image_name,
-        "--label",
-        f"io.airbyte.version={metadata.dockerImageTag}",
-        "--label",
-        f"io.airbyte.name={metadata.dockerRepository}",
-        str(connector_dir),
-    ]
-
-    try:
-        run_docker_command(build_cmd)
-        logger.info(f"Successfully built image: {full_image_name}")
-        return full_image_name
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to build image: {e}")
-        raise
-
-
-def build_from_base_image(
-    connector_dir: Path,
-    metadata: MetadataFile,
-    tag: str,
-    platform: str,
-) -> str:
-    """Build a Docker image for the connector using a base image.
-
-    This implementation follows a similar approach to airbyte-ci:
-    1. Creates a builder stage to install dependencies
-    2. Copies only necessary build files first
-    3. Installs dependencies
-    4. Copies the connector code
-    5. Sets up the entrypoint
-
-    Args:
-        connector_dir: Path to the connector directory.
-        metadata: The connector metadata.
-        tag: The tag to apply to the built image.
-        platform: The platform to build for (e.g., linux/amd64).
-
-    Returns:
-        The full image name with tag.
-
-    Raises:
-        ValueError: If the base image is not specified in the metadata.
-        subprocess.CalledProcessError: If the build fails.
-    """
-    if not metadata.data.connectorBuildOptions or not metadata.data.connectorBuildOptions.baseImage:
-        raise ValueError("Base image not specified in metadata.connectorBuildOptions.baseImage")
-
-    base_image = metadata.data.connectorBuildOptions.baseImage
-    image_name = metadata.data.dockerRepository
-    full_image_name = f"{image_name}:{tag}"
-
-    logger.info(
-        f"Building Docker image from base image {base_image}: {full_image_name} for platform {platform}"
-    )
-
-    build_dir = connector_dir / "build" / "docker"
-    build_dir.mkdir(parents=True, exist_ok=True)
-
-    dockerfile_temp_path = build_dir / "Dockerfile"
-    dockerignore_temp_path = build_dir / ".dockerignore"
-
-    try:
-        try:
-            execute_build_customization_hooks(connector_dir, "pre_connector_install")
-        except subprocess.CalledProcessError:
-            logger.warning("Pre-install hook failed, continuing with build")
-
-        build_files = [
-            "setup.py",
-            "pyproject.toml",
-            "poetry.lock",
-            "poetry.toml",
-            "requirements.txt",
-            "README.md",
-            "build_customization.py",
-        ]
-
-        connector_package_name = connector_dir.name.replace("-", "_")
-
-        dockerfile_content = f"""
-FROM {base_image} as builder
-
-WORKDIR /airbyte/integration_code
-
-COPY setup.py pyproject.toml poetry.lock poetry.toml requirements.txt README.md build_customization.py ./
-COPY {connector_package_name} ./{connector_package_name}
-
-RUN pip install --no-cache-dir .
-
-FROM {base_image}
-
-WORKDIR /airbyte/integration_code
-
-COPY --from=builder /usr/local /usr/local
-
-COPY . .
-
-ENV AIRBYTE_ENTRYPOINT "python /airbyte/integration_code/{get_main_file_name(connector_dir)}"
-ENTRYPOINT ["python", "/airbyte/integration_code/{get_main_file_name(connector_dir)}"]
-"""
-
-        dockerfile_temp_path.write_text(dockerfile_content)
-        logger.debug(f"Created temporary Dockerfile at {dockerfile_temp_path}")
-
-        dockerignore_content = """
-*
-
-!setup.py
-!pyproject.toml
-!poetry.lock
-!poetry.toml
-!requirements.txt
-!README.md
-!build_customization.py
-!unit_tests
-!integration_tests
-!acceptance_tests
-!src
-!main.py
-!source.py
-!destination.py
-!source_*
-!destination_*
-"""
-        dockerignore_temp_path.write_text(dockerignore_content)
-        logger.debug(f"Created temporary .dockerignore at {dockerignore_temp_path}")
-
-        root_dockerignore_path = connector_dir / ".dockerignore"
-        original_dockerignore = None
-        if root_dockerignore_path.exists():
-            original_dockerignore = root_dockerignore_path.read_text()
-            logger.debug(f"Backing up original .dockerignore at {root_dockerignore_path}")
-
-        root_dockerignore_path.write_text(dockerignore_content)
-        logger.debug(f"Temporarily replaced .dockerignore at {root_dockerignore_path}")
-
-        try:
-            execute_build_customization_hooks(connector_dir, "post_connector_install")
-        except subprocess.CalledProcessError:
-            logger.warning("Post-install hook failed, continuing with build")
-
-        build_cmd = [
-            "docker",
-            "buildx",
-            "build",
-            "--platform",
-            platform,
-            "-t",
-            full_image_name,
-            "--label",
-            f"io.airbyte.version={metadata.data.dockerImageTag}",
-            "--label",
-            f"io.airbyte.name={metadata.data.dockerRepository}",
-            "-f",
-            str(dockerfile_temp_path),
-            str(connector_dir),
-        ]
-
-        try:
-            run_docker_command(build_cmd)
-            logger.info(f"Successfully built image: {full_image_name}")
-            return full_image_name
-        finally:
-            if original_dockerignore is not None:
-                root_dockerignore_path.write_text(original_dockerignore)
-                logger.debug(f"Restored original .dockerignore at {root_dockerignore_path}")
-            elif root_dockerignore_path.exists():
-                root_dockerignore_path.unlink()
-                logger.debug(f"Removed temporary .dockerignore at {root_dockerignore_path}")
-
-    except Exception as e:
-        logger.error(f"Failed to build image: {e}")
-        raise
-
-
 def verify_image(image_name: str) -> bool:
     """Verify the built image by running the spec command.
 
@@ -378,21 +293,4 @@ def verify_image(image_name: str) -> bool:
 
     cmd = ["docker", "run", "--rm", image_name, "spec"]
 
-    returncode, stdout, stderr = run_docker_command(cmd, check=False)
-
-    if returncode != 0:
-        logger.error(f"Spec command failed with exit code {returncode}")
-        logger.error(f"stderr: {stderr}")
-        return False
-
-    try:
-
-        spec_output = json.loads(stdout)
-        if "connectionSpecification" in spec_output:
-            logger.info("Spec command succeeded and returned valid specification.")
-            return True
-        logger.warning("Spec command succeeded but returned unexpected format.")
-        return True
-    except json.JSONDecodeError:
-        logger.warning("Spec command succeeded but returned invalid JSON.")
-        return True
+    run_docker_command(cmd)

@@ -40,8 +40,7 @@ import click
 from airbyte_cdk.cli.airbyte_cdk._util import resolve_connector_name_and_directory
 from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.utils.docker import (
-    build_from_base_image,
-    build_from_dockerfile,
+    build_connector_image,
     verify_docker_installation,
     verify_image,
 )
@@ -94,57 +93,19 @@ def build(
         connector_directory=connector_directory,
     )
 
-    try:
-        metadata = MetadataFile.from_file(connector_directory / "metadata.yaml")
-        click.echo(
-            f"Building Image for Connector: {metadata.data.dockerRepository} "
-            f"(v{metadata.data.dockerImageTag})"
-        )
-
-        try:
-
-            result = subprocess.run(
-                ["docker", "buildx", "inspect"], capture_output=True, text=True, check=False
-            )
-
-            if "linux/amd64" in result.stdout and "linux/arm64" in result.stdout:
-                platforms = "linux/amd64,linux/arm64"
-                click.echo(f"Building for platforms: {platforms}")
-            else:
-                platforms = "linux/amd64"
-                click.echo(
-                    f"Multi-platform build not available. Building for platform: {platforms}"
-                )
-                click.echo(
-                    "To enable multi-platform builds, configure Docker buildx with: docker buildx create --use"
-                )
-        except Exception:
-            platforms = "linux/amd64"
-            click.echo(f"Multi-platform build check failed. Building for platform: {platforms}")
-
-        if metadata.data.connectorBuildOptions and metadata.data.connectorBuildOptions.baseImage:
-            image_name = build_from_base_image(connector_directory, metadata, tag, platforms)
-        else:
-            image_name = build_from_dockerfile(connector_directory, metadata, tag, platforms)
-
-        if not no_verify:
-            if verify_image(image_name):
-                click.echo(f"Build completed successfully: {image_name}")
-                sys.exit(0)
-            else:
-                click.echo(f"Built image failed verification: {image_name}", err=True)
-                sys.exit(1)
-        else:
-            click.echo(f"Build completed successfully (without verification): {image_name}")
-            sys.exit(0)
-
-    except Exception as e:
-        click.echo(f"Error: {str(e)}", err=True)
-        if verbose:
-            import traceback
-
-            click.echo(traceback.format_exc(), err=True)
-        sys.exit(1)
+    metadata = MetadataFile.from_file(connector_directory / "metadata.yaml")
+    click.echo(
+        f"Building Image for Connector: {metadata.data.dockerRepository} "
+        f"(v{metadata.data.dockerImageTag})"
+    )
+    build_connector_image(
+        connector_directory=connector_directory,
+        connector_name=connector_name,
+        metadata=metadata,
+        tag=tag,
+        arch="linux/amd64",
+        no_verify=no_verify,
+    )
 
 
 __all__ = [
