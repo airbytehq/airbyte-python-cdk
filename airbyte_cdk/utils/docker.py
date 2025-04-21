@@ -27,9 +27,11 @@ COPY . ./
 COPY {connector_snake_name} ./{connector_snake_name}
 {extra_build_steps}
 
-# RUN pip install --no-cache-dir uv
+# TODO: Pre-install uv on the base image to speed up the build.
+#       (uv is still faster even with the extra step.)
+RUN pip install --no-cache-dir uv
 
-RUN python -m pip install --no-cache-dir .
+RUN python -m uv pip install --no-cache-dir .
 
 FROM {base_image}
 
