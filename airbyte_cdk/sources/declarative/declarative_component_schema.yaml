@@ -1870,7 +1870,6 @@ definitions:
       url_base:
         deprecated: true
         deprecation_message: "Use `url` field instead."
-        sharable: true
         title: API Base URL
         description: Deprecated, use the `url` instead. Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
         type: string
@@ -1889,8 +1888,7 @@ definitions:
           - "https://connect.squareup.com/v2/quotes/{{ stream_partition['id'] }}/quote_line_groups"
           - "https://example.com/api/v1/resource/{{ next_page_token['id'] }}"
       url:
-        sharable: true
-        title: API URL
+        title: The URL of an API endpoint
         description: The URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
         type: string
         interpolation_context:
