@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
 import copy
@@ -114,6 +114,7 @@ class ManifestNormalizer:
             return self._normalized_manifest
         except ManifestNormalizationException:
             # if any error occurs, we just return the original manifest.
+            # TODO: enable debug logging
             return self._resolved_manifest
 
     def _get_manifest_streams(self) -> Iterable[Dict[str, Any]]:
@@ -162,22 +163,41 @@ class ManifestNormalizer:
             if key != LINKED_TAG:
                 self._normalized_manifest[DEF_TAG].pop(key, None)
 
+    def _extract_stream_schema(self, stream: Dict[str, Any]) -> None:
+        """
+        Extract the schema from the stream and add it to the `schemas` tag.
+        """
+
+        stream_name = stream["name"]
+        # copy the value of the SCHEMA_TAG to the SCHEMAS_TAG with the stream name as key
+        schema = stream.get(SCHEMA_LOADER_TAG, {}).get(SCHEMA_TAG)
+        if not SCHEMAS_TAG in self._normalized_manifest.keys():
+            self._normalized_manifest[SCHEMAS_TAG] = {}
+        # add stream schema to the SCHEMAS_TAG
+        if not stream_name in self._normalized_manifest[SCHEMAS_TAG].keys():
+            # add the schema to the SCHEMAS_TAG with the stream name as key
+            self._normalized_manifest[SCHEMAS_TAG][stream_name] = schema
+
     def _reference_schemas(self) -> None:
         """
-        Process the definitions in the manifest to move streams from definitions to the main stream list.
+        Set the schema reference for the given stream in the manifest.
         This function modifies the manifest in place.
         """
 
         # reference the stream schema for the stream to where it's stored
         if SCHEMAS_TAG in self._normalized_manifest.keys():
             for stream in self._get_manifest_streams():
-                stream_name = stream["name"]
+                self._extract_stream_schema(stream)
+                self._set_stream_schema_ref(stream)
 
-                if stream_name not in self._normalized_manifest[SCHEMAS_TAG].keys():
-                    raise ManifestNormalizationException(
-                        f"Stream {stream_name} not found in `schemas`. Please check the manifest."
-                    )
-
+    def _set_stream_schema_ref(self, stream: Dict[str, Any]) -> None:
+        """
+        Set the schema reference for the given stream in the manifest.
+        This function modifies the manifest in place.
+        """
+        stream_name = stream["name"]
+        if SCHEMAS_TAG in self._normalized_manifest.keys():
+            if stream_name in self._normalized_manifest[SCHEMAS_TAG]:
                 stream[SCHEMA_LOADER_TAG][SCHEMA_TAG] = self._create_schema_ref(stream_name)
 
     def _replace_duplicates_with_refs(self, duplicates: DuplicatesType) -> None:
@@ -265,9 +285,6 @@ class ManifestNormalizer:
     def _collect_duplicates(self) -> DuplicatesType:
         """
         Traverse the JSON object and collect all potential duplicate values and objects.
-
-        Args:
-            node: The JSON object to analyze.
 
         Returns:
             duplicates: A dictionary of duplicate objects.
@@ -431,15 +448,15 @@ class ManifestNormalizer:
 
         return {"$ref": f"#/{DEF_TAG}/{LINKED_TAG}/{type_key}/{key}"}
 
-    def _create_schema_ref(self, ref_key: str) -> Dict[str, str]:
+    def _create_schema_ref(self, key: str) -> Dict[str, str]:
         """
         Create a reference object for stream schema using the specified key.
 
         Args:
-            ref_key: The reference key to use
+            key: The reference key to use
 
         Returns:
             A reference object in the proper format
         """
 
-        return {"$ref": f"#/{SCHEMAS_TAG}/{ref_key}"}
+        return {"$ref": f"#/{SCHEMAS_TAG}/{key}"}
