@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import subprocess
 import sys
-from email.policy import default
 from pathlib import Path
 
 import click
@@ -29,7 +28,8 @@ COPY {connector_snake_name} ./{connector_snake_name}
 {extra_build_steps}
 
 # RUN pip install --no-cache-dir uv
-RUN pip install --no-cache-dir .
+
+RUN python -m pip install --no-cache-dir .
 
 FROM {base_image}
 
@@ -128,13 +128,17 @@ def build_connector_image(
         )
 
     dockerfile_path.parent.mkdir(parents=True, exist_ok=True)
-    image_name = f"airbyte/{connector_name}"
-    if metadata.data.connectorBuildOptions:
-        image_name = f"airbyte/{connector_name}"
+    if not metadata.data.connectorBuildOptions:
+        raise ValueError(
+            "Connector build options are not defined in metadata.yaml. "
+            "Please check the connector's metadata file."
+        )
+
+    base_image = metadata.data.connectorBuildOptions.baseImage
 
     dockerfile_path.write_text(
         DOCKERFILE_TEMPLATE.format(
-            base_image=image_name,
+            base_image=base_image,
             connector_snake_name=connector_snake_name,
             connector_kebab_name=connector_kebab_name,
             extra_build_steps=extra_build_steps,
