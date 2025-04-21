@@ -1986,9 +1986,11 @@ definitions:
         description: Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.
         anyOf:
           - type: object
+            title: Key/Value Pairs
             additionalProperties:
               type: string
           - type: string
+            title: Interpolated Value
         interpolation_context:
           - next_page_token
           - stream_interval
