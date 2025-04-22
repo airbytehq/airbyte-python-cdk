@@ -12,8 +12,8 @@ This directory contains the logic and registry for manifest migrations in the Ai
 
 2. **Define the Migration Class:**
    - The migration class must inherit from `ManifestMigration`.
-   - Name the class using the pattern: `V_<major>_<minor>_<patch>_ManifestMigration_<Description>`.
-     - Example: `V_6_45_2_ManifestMigration_HttpRequesterUrlBaseToUrl`
+   - Name the class using the pattern: `V_<major>_<minor>_<patch>_<Description>`.
+     - Example: `V_6_45_2_HttpRequesterUrlBaseToUrl`
    - Implement the following methods:
      - `should_migrate(self, manifest: ManifestType) -> bool`: Return `True` if the migration should be applied to the given manifest.
      - `migrate(self, manifest: ManifestType) -> None`: Perform the migration in-place.
@@ -43,7 +43,7 @@ This directory contains the logic and registry for manifest migrations in the Ai
 ```python
 from airbyte_cdk.sources.declarative.migrations.manifest.manifest_migration import TYPE_TAG, ManifestMigration, ManifestType
 
-class V_1_2_3_ManifestMigration_Example(ManifestMigration):
+class V_1_2_3_Example(ManifestMigration):
     component_type = "ExampleComponent"
     original_key = "old_key"
     replacement_key = "new_key"
