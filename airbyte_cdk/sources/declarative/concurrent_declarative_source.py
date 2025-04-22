@@ -211,6 +211,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             # so we need to treat them as synchronous
 
             supports_file_transfer = (
+                isinstance(declarative_stream, DeclarativeStream) and 
                 "file_uploader" in name_to_stream_mapping[declarative_stream.name]
             )
 
