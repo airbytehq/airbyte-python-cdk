@@ -41,7 +41,7 @@ This directory contains the logic and registry for manifest migrations in the Ai
 ## Example Migration Skeleton
 
 ```python
-from airbyte_cdk.sources.declarative.migrations.manifest.manifest_migration import TYPE_TAG, ManifestMigration, ManifestType
+from airbyte_cdk.manifest_migrations.manifest_migration import TYPE_TAG, ManifestMigration, ManifestType
 
 class V_1_2_3_Example(ManifestMigration):
     component_type = "ExampleComponent"
