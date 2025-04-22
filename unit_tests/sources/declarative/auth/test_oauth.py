@@ -203,6 +203,7 @@ class TestOauth2Authenticator:
                 grant_type="refresh_token",
             )
 
+    @freezegun.freeze_time("2022-01-01")
     def test_refresh_access_token(self, mocker):
         oauth = DeclarativeOauth2Authenticator(
             token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
@@ -225,13 +226,15 @@ class TestOauth2Authenticator:
             resp, "json", return_value={"access_token": "access_token", "expires_in": 1000}
         )
         mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
-        token = oauth.refresh_access_token()
+        access_token, token_expiry_date = oauth.refresh_access_token()
 
-        assert ("access_token", 1000) == token
+        assert access_token == "access_token"
+        assert token_expiry_date == ab_datetime_now() + timedelta(seconds=1000)
 
         filtered = filter_secrets("access_token")
         assert filtered == "****"
 
+    @freezegun.freeze_time("2022-01-01")
     def test_refresh_access_token_when_headers_provided(self, mocker):
         expected_headers = {
             "Authorization": "Bearer some_access_token",
@@ -256,9 +259,10 @@ class TestOauth2Authenticator:
         mocked_request = mocker.patch.object(
             requests, "request", side_effect=mock_request, autospec=True
         )
-        token = oauth.refresh_access_token()
+        access_token, token_expiry_date = oauth.refresh_access_token()
 
-        assert ("access_token", 1000) == token
+        assert access_token == "access_token"
+        assert token_expiry_date == ab_datetime_now() + timedelta(seconds=1000)
 
         assert mocked_request.call_args.kwargs["headers"] == expected_headers
 
@@ -314,6 +318,7 @@ class TestOauth2Authenticator:
         assert isinstance(oauth._token_expiry_date, AirbyteDateTime)
         assert oauth.get_token_expiry_date() == ab_datetime_parse(expected_date)
 
+    @freezegun.freeze_time("2022-01-01")
     def test_given_no_access_token_but_expiry_in_the_future_when_refresh_token_then_fetch_access_token(
         self,
     ) -> None:
@@ -335,12 +340,65 @@ class TestOauth2Authenticator:
                     url="https://refresh_endpoint.com/",
                     body="grant_type=client&client_id=some_client_id&client_secret=some_client_secret&refresh_token=some_refresh_token",
                 ),
-                HttpResponse(body=json.dumps({"access_token": "new_access_token"})),
+                HttpResponse(
+                    body=json.dumps({"access_token": "new_access_token", "expires_in": 1000})
+                ),
             )
             oauth.get_access_token()
 
         assert oauth.access_token == "new_access_token"
-        assert oauth._token_expiry_date == expiry_date
+        assert oauth._token_expiry_date == ab_datetime_now() + timedelta(seconds=1000)
+
+    @freezegun.freeze_time("2022-01-01")
+    @pytest.mark.parametrize(
+        "initial_expiry_date_delta, expected_new_expiry_date_delta, expected_access_token",
+        [
+            (timedelta(days=1), timedelta(days=1), "some_access_token"),
+            (timedelta(days=-1), timedelta(hours=1), "new_access_token"),
+            (None, timedelta(hours=1), "new_access_token"),
+        ],
+        ids=[
+            "initial_expiry_date_in_future",
+            "initial_expiry_date_in_past",
+            "no_initial_expiry_date",
+        ],
+    )
+    def test_no_expiry_date_provided_by_auth_server(
+        self,
+        initial_expiry_date_delta,
+        expected_new_expiry_date_delta,
+        expected_access_token,
+    ) -> None:
+        initial_expiry_date = (
+            ab_datetime_now().add(initial_expiry_date_delta).isoformat()
+            if initial_expiry_date_delta
+            else None
+        )
+        expected_new_expiry_date = ab_datetime_now().add(expected_new_expiry_date_delta)
+        oauth = DeclarativeOauth2Authenticator(
+            token_refresh_endpoint="https://refresh_endpoint.com/",
+            client_id="some_client_id",
+            client_secret="some_client_secret",
+            token_expiry_date=initial_expiry_date,
+            access_token_value="some_access_token",
+            refresh_token="some_refresh_token",
+            config={},
+            parameters={},
+            grant_type="client",
+        )
+
+        with HttpMocker() as http_mocker:
+            http_mocker.post(
+                HttpRequest(
+                    url="https://refresh_endpoint.com/",
+                    body="grant_type=client&client_id=some_client_id&client_secret=some_client_secret&refresh_token=some_refresh_token",
+                ),
+                HttpResponse(body=json.dumps({"access_token": "new_access_token"})),
+            )
+            oauth.get_access_token()
+
+        assert oauth.access_token == expected_access_token
+        assert oauth._token_expiry_date == expected_new_expiry_date
 
     @pytest.mark.parametrize(
         "expires_in_response, token_expiry_date_format",
@@ -443,6 +501,7 @@ class TestOauth2Authenticator:
             assert "access_token" == token
             assert oauth.get_token_expiry_date() == ab_datetime_parse(next_day)
 
+    @freezegun.freeze_time("2022-01-01")
     def test_profile_assertion(self, mocker):
         with HttpMocker() as http_mocker:
             jwt = JwtAuthenticator(
@@ -477,7 +536,7 @@ class TestOauth2Authenticator:
 
             token = oauth.refresh_access_token()
 
-        assert ("access_token", 1000) == token
+        assert ("access_token", ab_datetime_now().add(timedelta(seconds=1000))) == token
 
         filtered = filter_secrets("access_token")
         assert filtered == "****"

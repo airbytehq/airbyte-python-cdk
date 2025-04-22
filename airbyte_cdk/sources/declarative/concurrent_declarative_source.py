@@ -19,7 +19,10 @@ from airbyte_cdk.sources.declarative.extractors import RecordSelector
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
-from airbyte_cdk.sources.declarative.incremental import ConcurrentPerPartitionCursor
+from airbyte_cdk.sources.declarative.incremental import (
+    ConcurrentPerPartitionCursor,
+    GlobalSubstreamCursor,
+)
 from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
 from airbyte_cdk.sources.declarative.incremental.per_partition_with_global import (
     PerPartitionWithGlobalCursor,
@@ -361,7 +364,8 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     == DatetimeBasedCursorModel.__name__
                     and hasattr(declarative_stream.retriever, "stream_slicer")
                     and isinstance(
-                        declarative_stream.retriever.stream_slicer, PerPartitionWithGlobalCursor
+                        declarative_stream.retriever.stream_slicer,
+                        (GlobalSubstreamCursor, PerPartitionWithGlobalCursor),
                     )
                 ):
                     stream_state = self._connector_state_manager.get_stream_state(

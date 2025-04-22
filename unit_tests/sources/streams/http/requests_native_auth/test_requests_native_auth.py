@@ -4,7 +4,7 @@
 
 import json
 import logging
-from datetime import timedelta, timezone
+from datetime import timedelta
 from typing import Optional, Union
 from unittest.mock import Mock
 
@@ -83,6 +83,7 @@ def test_multiple_token_authenticator():
     assert {"Authorization": "Bearer token1"} == header3
 
 
+@freezegun.freeze_time("2022-01-01")
 class TestOauth2Authenticator:
     """
     Test class for OAuth2Authenticator.
@@ -104,8 +105,9 @@ class TestOauth2Authenticator:
             refresh_token=TestOauth2Authenticator.refresh_token,
         )
 
+        expires_in = ab_datetime_now().add(timedelta(seconds=1000))
         mocker.patch.object(
-            Oauth2Authenticator, "refresh_access_token", return_value=("access_token", 1000)
+            Oauth2Authenticator, "refresh_access_token", return_value=("access_token", expires_in)
         )
         header = oauth.get_auth_header()
         assert {"Authorization": "Bearer access_token"} == header
@@ -121,15 +123,15 @@ class TestOauth2Authenticator:
             refresh_token=TestOauth2Authenticator.refresh_token,
         )
 
-        expire_immediately = 0
+        already_expired = ab_datetime_now() - timedelta(seconds=100)
         mocker.patch.object(
             Oauth2Authenticator,
             "refresh_access_token",
-            return_value=("access_token_1", expire_immediately),
+            return_value=("access_token_1", already_expired),
         )
         oauth.get_auth_header()  # Set the first expired token.
 
-        valid_100_secs = 100
+        valid_100_secs = ab_datetime_now() + timedelta(seconds=100)
         mocker.patch.object(
             Oauth2Authenticator,
             "refresh_access_token",
@@ -251,6 +253,20 @@ class TestOauth2Authenticator:
             },
         )
 
+        oauth_with_expired_token = Oauth2Authenticator(
+            token_refresh_endpoint="https://refresh_endpoint.com",
+            client_id="some_client_id",
+            client_secret="some_client_secret",
+            refresh_token="some_refresh_token",
+            scopes=["scope1", "scope2"],
+            token_expiry_date=ab_datetime_now() - timedelta(days=3),
+            refresh_request_body={
+                "custom_field": "in_outbound_request",
+                "another_field": "exists_in_body",
+                "scopes": ["no_override"],
+            },
+        )
+
         resp.status_code = 200
         mocker.patch.object(
             resp, "json", return_value={"access_token": "access_token", "expires_in": 1000}
@@ -258,8 +274,9 @@ class TestOauth2Authenticator:
         mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
         token, expires_in = oauth.refresh_access_token()
 
-        assert isinstance(expires_in, int)
-        assert ("access_token", 1000) == (token, expires_in)
+        assert isinstance(expires_in, AirbyteDateTime)
+        assert expires_in == ab_datetime_now().add(timedelta(seconds=1000))
+        assert token == "access_token"
 
         # Test with expires_in as str(int)
         mocker.patch.object(
@@ -267,8 +284,9 @@ class TestOauth2Authenticator:
         )
         token, expires_in = oauth.refresh_access_token()
 
-        assert isinstance(expires_in, str)
-        assert ("access_token", "2000") == (token, expires_in)
+        assert isinstance(expires_in, AirbyteDateTime)
+        assert expires_in == ab_datetime_now().add(timedelta(seconds=2000))
+        assert token == "access_token"
 
         # Test with expires_in as datetime(str)
         mocker.patch.object(
@@ -276,10 +294,30 @@ class TestOauth2Authenticator:
             "json",
             return_value={"access_token": "access_token", "expires_in": "2022-04-24T00:00:00Z"},
         )
+        # This should raise a ValueError because the token_expiry_is_time_of_expiration is False by default
+        with pytest.raises(ValueError):
+            token, expires_in = oauth.refresh_access_token()
+
+        # Test with no expires_in
+        mocker.patch.object(
+            resp,
+            "json",
+            return_value={"access_token": "access_token"},
+        )
+
+        # Since the initialized token is not expired (now + 3 days), we don't expect the expiration date to be updated
         token, expires_in = oauth.refresh_access_token()
 
-        assert isinstance(expires_in, str)
-        assert ("access_token", "2022-04-24T00:00:00Z") == (token, expires_in)
+        assert isinstance(expires_in, AirbyteDateTime)
+        assert expires_in == ab_datetime_now().add(timedelta(days=3))
+        assert token == "access_token"
+
+        # Since the initialized token is expired (now - 3 days), we expect the expiration date to be updated to the default value (now + 1 hour)
+        token, expires_in = oauth_with_expired_token.refresh_access_token()
+
+        assert isinstance(expires_in, AirbyteDateTime)
+        assert expires_in == ab_datetime_now().add(timedelta(hours=1))
+        assert token == "access_token"
 
         # Test with nested access_token and expires_in as str(int)
         mocker.patch.object(
@@ -289,8 +327,9 @@ class TestOauth2Authenticator:
         )
         token, expires_in = oauth.refresh_access_token()
 
-        assert isinstance(expires_in, str)
-        assert ("access_token_nested", "2001") == (token, expires_in)
+        assert isinstance(expires_in, AirbyteDateTime)
+        assert expires_in == ab_datetime_now().add(timedelta(seconds=2001))
+        assert token == "access_token_nested"
 
         # Test with multiple nested levels access_token and expires_in as str(int)
         mocker.patch.object(
@@ -317,8 +356,9 @@ class TestOauth2Authenticator:
         )
         token, expires_in = oauth.refresh_access_token()
 
-        assert isinstance(expires_in, str)
-        assert ("access_token_deeply_nested", "2002") == (token, expires_in)
+        assert isinstance(expires_in, AirbyteDateTime)
+        assert expires_in == ab_datetime_now().add(timedelta(seconds=2002))
+        assert token == "access_token_deeply_nested"
 
         # Test with max nested levels access_token and expires_in as str(int)
         mocker.patch.object(
@@ -348,7 +388,7 @@ class TestOauth2Authenticator:
         )
         with pytest.raises(ResponseKeysMaxRecurtionReached) as exc_info:
             oauth.refresh_access_token()
-        error_message = "The maximum level of recursion is reached. Couldn't find the speficied `access_token` in the response."
+        error_message = "The maximum level of recursion is reached. Couldn't find the specified `access_token` in the response."
         assert exc_info.value.internal_message == error_message
         assert exc_info.value.message == error_message
         assert exc_info.value.failure_type == FailureType.config_error
@@ -377,8 +417,9 @@ class TestOauth2Authenticator:
         )
         token, expires_in = oauth.refresh_access_token()
 
-        assert isinstance(expires_in, int)
-        assert ("access_token", 1000) == (token, expires_in)
+        assert isinstance(expires_in, AirbyteDateTime)
+        assert expires_in == ab_datetime_now().add(timedelta(seconds=1000))
+        assert token == "access_token"
 
         assert mocked_request.call_args.kwargs["headers"] == expected_headers
 
@@ -393,10 +434,18 @@ class TestOauth2Authenticator:
                 "YYYY-MM-DDTHH:mm:ss.SSSSSSZ",
                 AirbyteDateTime(year=2022, month=2, day=12),
             ),
+            (None, None, AirbyteDateTime(year=2022, month=1, day=1, hour=1)),
+            (None, "YYYY-MM-DD", AirbyteDateTime(year=2022, month=1, day=1, hour=1)),
         ],
-        ids=["seconds", "string_of_seconds", "simple_date", "simple_datetime"],
+        ids=[
+            "seconds",
+            "string_of_seconds",
+            "simple_date",
+            "simple_datetime",
+            "default_behavior",
+            "default_behavior_with_format",
+        ],
     )
-    @freezegun.freeze_time("2022-01-01")
     def test_parse_refresh_token_lifespan(
         self,
         mocker,
@@ -427,14 +476,11 @@ class TestOauth2Authenticator:
             return_value={"access_token": "access_token", "expires_in": expires_in_response},
         )
         mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
-        token, expire_in = oauth.refresh_access_token()
-        expires_datetime = oauth._parse_token_expiration_date(expire_in)
+        token, expires_datetime = oauth.refresh_access_token()
 
         assert isinstance(expires_datetime, AirbyteDateTime)
-        assert ("access_token", expected_token_expiry_date) == (
-            token,
-            expires_datetime,
-        )
+        assert expires_datetime == expected_token_expiry_date
+        assert token == "access_token"
 
     @pytest.mark.usefixtures("mock_sleep")
     @pytest.mark.parametrize("error_code", (429, 500, 502, 504))
@@ -454,8 +500,9 @@ class TestOauth2Authenticator:
             ],
         )
         token, expires_in = oauth.refresh_access_token()
-        assert isinstance(expires_in, int)
-        assert (token, expires_in) == ("token", 10)
+        assert isinstance(expires_in, AirbyteDateTime)
+        assert token == "token"
+        assert expires_in == ab_datetime_now().add(timedelta(seconds=10))
         assert requests_mock.call_count == 3
 
     def test_auth_call_method(self, mocker):
@@ -466,8 +513,9 @@ class TestOauth2Authenticator:
             refresh_token=TestOauth2Authenticator.refresh_token,
         )
 
+        expires_in = ab_datetime_now().add(timedelta(seconds=1000))
         mocker.patch.object(
-            Oauth2Authenticator, "refresh_access_token", return_value=("access_token", 1000)
+            Oauth2Authenticator, "refresh_access_token", return_value=("access_token", expires_in)
         )
         prepared_request = requests.PreparedRequest()
         prepared_request.headers = {}
@@ -531,6 +579,7 @@ class TestOauth2Authenticator:
             assert exc_info.value.failure_type == FailureType.config_error
 
 
+@freezegun.freeze_time("2022-12-31")
 class TestSingleUseRefreshTokenOauth2Authenticator:
     @pytest.fixture
     def connector_config(self):
@@ -551,7 +600,7 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
     def test_init(self, connector_config):
         authenticator = SingleUseRefreshTokenOauth2Authenticator(
             connector_config,
-            token_refresh_endpoint="foobar",
+            token_refresh_endpoint="https://refresh_endpoint.com",
             client_id=connector_config["credentials"]["client_id"],
             client_secret=connector_config["credentials"]["client_secret"],
         )
@@ -561,7 +610,6 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
             connector_config["credentials"]["token_expiry_date"]
         )
 
-    @freezegun.freeze_time("2022-12-31")
     @pytest.mark.parametrize(
         "test_name, expires_in_value, expiry_date_format, expected_expiry_date",
         [
@@ -582,14 +630,26 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
     ):
         authenticator = SingleUseRefreshTokenOauth2Authenticator(
             connector_config,
-            token_refresh_endpoint="foobar",
+            token_refresh_endpoint="https://refresh_endpoint.com",
             client_id=connector_config["credentials"]["client_id"],
             client_secret=connector_config["credentials"]["client_secret"],
             token_expiry_date_format=expiry_date_format,
+            token_expiry_is_time_of_expiration=bool(expiry_date_format),
         )
-        authenticator.refresh_access_token = mocker.Mock(
-            return_value=("new_access_token", expires_in_value, "new_refresh_token")
+
+        # Mock the response from the refresh token endpoint
+        resp.status_code = 200
+        mocker.patch.object(
+            resp,
+            "json",
+            return_value={
+                authenticator.get_access_token_name(): "new_access_token",
+                authenticator.get_expires_in_name(): expires_in_value,
+                authenticator.get_refresh_token_name(): "new_refresh_token",
+            },
         )
+        mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
+
         authenticator.token_has_expired = mocker.Mock(return_value=True)
         access_token = authenticator.get_access_token()
         captured = capsys.readouterr()
@@ -614,15 +674,26 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
         message_repository = Mock()
         authenticator = SingleUseRefreshTokenOauth2Authenticator(
             connector_config,
-            token_refresh_endpoint="foobar",
+            token_refresh_endpoint="https://refresh_endpoint.com",
             client_id=connector_config["credentials"]["client_id"],
             client_secret=connector_config["credentials"]["client_secret"],
+            token_expiry_is_time_of_expiration=True,
             token_expiry_date_format="YYYY-MM-DD",
             message_repository=message_repository,
         )
-        authenticator.refresh_access_token = mocker.Mock(
-            return_value=("new_access_token", "2023-04-04", "new_refresh_token")
+        # Mock the response from the refresh token endpoint
+        resp.status_code = 200
+        mocker.patch.object(
+            resp,
+            "json",
+            return_value={
+                authenticator.get_access_token_name(): "new_access_token",
+                authenticator.get_expires_in_name(): "2023-04-04",
+                authenticator.get_refresh_token_name(): "new_refresh_token",
+            },
         )
+        mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
+
         authenticator.token_has_expired = mocker.Mock(return_value=True)
 
         authenticator.get_access_token()
@@ -683,21 +754,27 @@ class TestSingleUseRefreshTokenOauth2Authenticator:
     def test_refresh_access_token(self, mocker, connector_config):
         authenticator = SingleUseRefreshTokenOauth2Authenticator(
             connector_config,
-            token_refresh_endpoint="foobar",
+            token_refresh_endpoint="https://refresh_endpoint.com",
             client_id=connector_config["credentials"]["client_id"],
             client_secret=connector_config["credentials"]["client_secret"],
         )
 
-        authenticator._make_handled_request = mocker.Mock(
+        # Mock the response from the refresh token endpoint
+        resp.status_code = 200
+        mocker.patch.object(
+            resp,
+            "json",
             return_value={
                 authenticator.get_access_token_name(): "new_access_token",
                 authenticator.get_expires_in_name(): "42",
                 authenticator.get_refresh_token_name(): "new_refresh_token",
-            }
+            },
         )
+        mocker.patch.object(requests, "request", side_effect=mock_request, autospec=True)
+
         assert authenticator.refresh_access_token() == (
             "new_access_token",
-            "42",
+            ab_datetime_now().add(timedelta(seconds=42)),
             "new_refresh_token",
         )
 
