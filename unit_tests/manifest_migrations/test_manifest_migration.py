@@ -14,7 +14,7 @@ from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import 
 resolver = ManifestReferenceResolver()
 
 
-def test_manifest_resolve_migrate(
+def test_manifest_resolve_migrate_url_base_to_url(
     manifest_with_url_base_to_migrate_to_url,
     expected_manifest_with_url_base_migrated_to_url,
 ) -> None:
@@ -44,3 +44,20 @@ def test_manifest_resolve_do_not_migrate(
 
     # it's expected that the manifest is the same after the processing
     assert migrated_manifest == manifest_with_migrated_url_base_and_path_is_joined_to_url
+
+
+def test_manifest_resolve_migrate_request_body_json_and_data_to_request_body(
+    manifest_with_request_body_json_and_data_to_migrate_to_request_body,
+    expected_manifest_with_migrated_to_request_body,
+) -> None:
+    """
+    This test is to check that the manifest is migrated correctly,
+    after the `request_body_json` and `request_body_data` are migrated to `request_body`.
+    """
+
+    resolved_manifest = resolver.preprocess_manifest(
+        manifest_with_request_body_json_and_data_to_migrate_to_request_body
+    )
+    migrated_manifest = ManifestMigrationHandler(dict(resolved_manifest)).apply_migrations()
+
+    assert migrated_manifest == expected_manifest_with_migrated_to_request_body
