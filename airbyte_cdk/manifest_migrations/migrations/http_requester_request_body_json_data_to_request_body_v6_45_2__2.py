@@ -7,9 +7,9 @@ from airbyte_cdk.manifest_migrations.manifest_migration import (
 
 class V_6_45_2_HttpRequesterRequestBodyJsonDataToRequestBody(ManifestMigration):
     """
-    This migration is responsible for migrating the `url_base` key to `url` in the HttpRequester component.
-    The `url_base` key is expected to be a base URL, and the `url` key is expected to be a full URL.
-    The migration will copy the value of `url_base` to `url`.
+    This migration is responsible for migrating the `request_body_json` and `request_body_data` keys
+    to a unified `request_body` key in the HttpRequester component.
+    The migration will copy the value of either original key to `request_body` and remove the original key.
     """
 
     component_type = "HttpRequester"
