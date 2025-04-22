@@ -5,7 +5,7 @@ from airbyte_cdk.sources.declarative.migrations.manifest.manifest_migration impo
 )
 
 
-class V_6_45_2_ManifestMigration_HttpRequesterUrlBaseToUrl(ManifestMigration):
+class V_6_45_2_HttpRequesterUrlBaseToUrl(ManifestMigration):
     """
     This migration is responsible for migrating the `url_base` key to `url` in the HttpRequester component.
     The `url_base` key is expected to be a base URL, and the `url` key is expected to be a full URL.

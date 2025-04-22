@@ -56,14 +56,14 @@ def get_limits(config: Mapping[str, Any]) -> TestLimits:
     return TestLimits(max_records, max_pages_per_slice, max_slices, max_streams)
 
 
-def requires_migration(config: Mapping[str, Any]) -> bool:
+def should_migrate_manifest(config: Mapping[str, Any]) -> bool:
     """
     Check if the manifest requires migration.
 
     :param config: The config to check
     :return: True if the manifest requires migration, False otherwise
     """
-    return config.get("__requires_migration", False)
+    return config.get("__should_migrate", False)
 
 
 def create_source(config: Mapping[str, Any], limits: TestLimits) -> ManifestDeclarativeSource:
@@ -72,7 +72,7 @@ def create_source(config: Mapping[str, Any], limits: TestLimits) -> ManifestDecl
         config=config,
         emit_connector_builder_messages=True,
         source_config=manifest,
-        migrate_manifest=requires_migration(config),
+        migrate_manifest=should_migrate_manifest(config),
         component_factory=ModelToComponentFactory(
             emit_connector_builder_messages=True,
             limit_pages_fetched_per_slice=limits.max_pages_per_slice,
