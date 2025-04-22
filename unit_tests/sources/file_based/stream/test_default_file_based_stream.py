@@ -285,7 +285,7 @@ class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
     _NOW = datetime(2022, 10, 22, tzinfo=timezone.utc)
     _A_FILE_RECORD_DATA = FileRecordData(
         folder="/absolute/path/",
-        filen_ame="file.csv",
+        file_name="file.csv",
         bytes=10,
         source_uri="file:///absolute/path/file.csv",
     )
