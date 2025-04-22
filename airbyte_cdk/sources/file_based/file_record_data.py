@@ -14,7 +14,7 @@ class FileRecordData(BaseModel):
     """
 
     folder: str
-    filename: str
+    file_name: str
     bytes: int
     source_uri: str
     id: Optional[str] = None

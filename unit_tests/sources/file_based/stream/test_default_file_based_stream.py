@@ -285,7 +285,7 @@ class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
     _NOW = datetime(2022, 10, 22, tzinfo=timezone.utc)
     _A_FILE_RECORD_DATA = FileRecordData(
         folder="/absolute/path/",
-        filename="file.csv",
+        filen_ame="file.csv",
         bytes=10,
         source_uri="file:///absolute/path/file.csv",
     )
@@ -337,7 +337,7 @@ class DefaultFileBasedStreamFileTransferTest(unittest.TestCase):
             assert list(map(lambda message: message.record.data, messages)) == [
                 {
                     "bytes": 10,
-                    "filename": "file.csv",
+                    "file_name": "file.csv",
                     "folder": "/absolute/path/",
                     "source_uri": "file:///absolute/path/file.csv",
                 }
