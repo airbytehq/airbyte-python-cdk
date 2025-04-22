@@ -1394,20 +1394,6 @@ definitions:
       type:
         type: string
         enum: [DeclarativeStream]
-      retriever:
-        title: Retriever
-        description: Component used to coordinate how records are extracted across stream slices and request pages.
-        anyOf:
-          - "$ref": "#/definitions/AsyncRetriever"
-          - "$ref": "#/definitions/CustomRetriever"
-          - "$ref": "#/definitions/SimpleRetriever"
-      incremental_sync:
-        title: Incremental Sync
-        description: Component used to fetch data incrementally based on a time field in the data.
-        anyOf:
-          - "$ref": "#/definitions/CustomIncrementalSync"
-          - "$ref": "#/definitions/DatetimeBasedCursor"
-          - "$ref": "#/definitions/IncrementingCountCursor"
       name:
         title: Name
         description: The stream name.
@@ -1415,6 +1401,20 @@ definitions:
         default: ""
         example:
           - "Users"
+      retriever:
+        title: Retriever
+        description: Component used to coordinate how records are extracted across stream slices and request pages.
+        anyOf:
+          - "$ref": "#/definitions/SimpleRetriever"
+          - "$ref": "#/definitions/AsyncRetriever"
+          - "$ref": "#/definitions/CustomRetriever"
+      incremental_sync:
+        title: Incremental Sync
+        description: Component used to fetch data incrementally based on a time field in the data.
+        anyOf:
+          - "$ref": "#/definitions/DatetimeBasedCursor"
+          - "$ref": "#/definitions/IncrementingCountCursor"
+          - "$ref": "#/definitions/CustomIncrementalSync"
       primary_key:
         title: Primary Key
         description: The primary key of the stream.
@@ -1912,6 +1912,17 @@ definitions:
           - "/products"
           - "/quotes/{{ stream_partition['id'] }}/quote_line_groups"
           - "/trades/{{ config['symbol_id'] }}/history"
+      http_method:
+        title: HTTP Method
+        description: The HTTP method used to fetch data from the source (can be GET or POST).
+        type: string
+        enum:
+          - GET
+          - POST
+        default: GET
+        examples:
+          - GET
+          - POST
       authenticator:
         title: Authenticator
         description: Authentication method to use for requests sent to the API.
@@ -1926,24 +1937,6 @@ definitions:
           - "$ref": "#/definitions/SelectiveAuthenticator"
           - "$ref": "#/definitions/CustomAuthenticator"
           - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
-      error_handler:
-        title: Error Handler
-        description: Error handler component that defines how to handle errors.
-        anyOf:
-          - "$ref": "#/definitions/DefaultErrorHandler"
-          - "$ref": "#/definitions/CompositeErrorHandler"
-          - "$ref": "#/definitions/CustomErrorHandler"
-      http_method:
-        title: HTTP Method
-        description: The HTTP method used to fetch data from the source (can be GET or POST).
-        type: string
-        enum:
-          - GET
-          - POST
-        default: GET
-        examples:
-          - GET
-          - POST
       request_body_data:
         title: Request Body Payload (Non-JSON)
         description: Specifies how to populate the body of the request with a non-JSON payload. Plain text will be sent as is, whereas objects will be converted to a urlencoded form.
@@ -2021,6 +2014,13 @@ definitions:
           - query: 'last_event_time BETWEEN TIMESTAMP "{{ stream_interval.start_time }}" AND TIMESTAMP "{{ stream_interval.end_time }}"'
           - searchIn: "{{ ','.join(config.get('search_in', [])) }}"
           - sort_by[asc]: updated_at
+      error_handler:
+        title: Error Handler
+        description: Error handler component that defines how to handle errors.
+        anyOf:
+          - "$ref": "#/definitions/DefaultErrorHandler"
+          - "$ref": "#/definitions/CompositeErrorHandler"
+          - "$ref": "#/definitions/CustomErrorHandler"
       use_cache:
         title: Use Cache
         description: Enables stream requests caching. This field is automatically set by the CDK.
@@ -3395,14 +3395,26 @@ definitions:
       type:
         type: string
         enum: [SimpleRetriever]
-      record_selector:
-        description: Component that describes how to extract records from a HTTP response.
-        "$ref": "#/definitions/RecordSelector"
       requester:
         description: Requester component that describes how to prepare HTTP requests to send to the source API.
         anyOf:
           - "$ref": "#/definitions/HttpRequester"
           - "$ref": "#/definitions/CustomRequester"
+      decoder:
+        title: Decoder
+        description: Component decoding the response so records can be extracted.
+        anyOf:
+          - "$ref": "#/definitions/CsvDecoder"
+          - "$ref": "#/definitions/GzipDecoder"
+          - "$ref": "#/definitions/JsonDecoder"
+          - "$ref": "#/definitions/JsonlDecoder"
+          - "$ref": "#/definitions/IterableDecoder"
+          - "$ref": "#/definitions/XmlDecoder"
+          - "$ref": "#/definitions/ZipfileDecoder"
+          - "$ref": "#/definitions/CustomDecoder"
+      record_selector:
+        description: Component that describes how to extract records from a HTTP response.
+        "$ref": "#/definitions/RecordSelector"
       paginator:
         description: Paginator component that describes how to navigate through the API's pages.
         anyOf:
@@ -3428,18 +3440,6 @@ definitions:
                 - "$ref": "#/definitions/SubstreamPartitionRouter"
                 - "$ref": "#/definitions/GroupingPartitionRouter"
                 - "$ref": "#/definitions/CustomPartitionRouter"
-      decoder:
-        title: Decoder
-        description: Component decoding the response so records can be extracted.
-        anyOf:
-          - "$ref": "#/definitions/CsvDecoder"
-          - "$ref": "#/definitions/GzipDecoder"
-          - "$ref": "#/definitions/JsonDecoder"
-          - "$ref": "#/definitions/JsonlDecoder"
-          - "$ref": "#/definitions/IterableDecoder"
-          - "$ref": "#/definitions/XmlDecoder"
-          - "$ref": "#/definitions/ZipfileDecoder"
-          - "$ref": "#/definitions/CustomDecoder"
       $parameters:
         type: object
         additionalProperties: true
