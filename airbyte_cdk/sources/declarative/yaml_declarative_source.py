@@ -35,7 +35,7 @@ class YamlDeclarativeSource(ConcurrentDeclarativeSource[List[AirbyteStateMessage
             catalog=catalog or ConfiguredAirbyteCatalog(streams=[]),
             config=config or {},
             state=state or [],
-            source_config=source_config
+            source_config=source_config,
         )
 
     def _read_and_parse_yaml_file(self, path_to_yaml_file: str) -> ConnectionDefinition:

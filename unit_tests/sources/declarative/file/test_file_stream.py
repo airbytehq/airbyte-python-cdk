@@ -6,7 +6,9 @@ from unittest import TestCase
 from unittest.mock import Mock, patch
 
 from airbyte_cdk.models import AirbyteStateMessage, ConfiguredAirbyteCatalog, Status
-from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import ModelToComponentFactory as OriginalModelToComponentFactory
+from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
+    ModelToComponentFactory as OriginalModelToComponentFactory,
+)
 from airbyte_cdk.sources.declarative.retrievers.file_uploader.noop_file_writer import NoopFileWriter
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.test.catalog_builder import CatalogBuilder, ConfiguredAirbyteStreamBuilder
@@ -43,7 +45,7 @@ def _source(
         path_to_yaml=str(Path(__file__).parent / yaml_file),
         catalog=catalog,
         config=config,
-        state=state
+        state=state,
     )
 
 
@@ -52,7 +54,7 @@ def read(
     catalog: ConfiguredAirbyteCatalog,
     state_builder: Optional[StateBuilder] = None,
     expecting_exception: bool = False,
-    yaml_file: Optional[str] = None
+    yaml_file: Optional[str] = None,
 ) -> EntrypointOutput:
     config = config_builder.build()
     state = state_builder.build() if state_builder else StateBuilder().build()
@@ -218,20 +220,20 @@ class FileStreamTest(TestCase):
             # Define a mock factory that forces emit_connector_builder_messages=True
             class MockModelToComponentFactory(OriginalModelToComponentFactory):
                 def __init__(self, *args, **kwargs):
-                    kwargs['emit_connector_builder_messages'] = True
+                    kwargs["emit_connector_builder_messages"] = True
                     super().__init__(*args, **kwargs)
 
             # Patch the factory class where ConcurrentDeclarativeSource (parent of YamlDeclarativeSource) imports it
             with patch(
                 "airbyte_cdk.sources.declarative.concurrent_declarative_source.ModelToComponentFactory",
-                new=MockModelToComponentFactory
+                new=MockModelToComponentFactory,
             ):
                 output = read(
                     self._config(),
                     CatalogBuilder()
                     .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments"))
                     .build(),
-                    yaml_file="test_file_stream_with_filename_extractor.yaml"
+                    yaml_file="test_file_stream_with_filename_extractor.yaml",
                 )
 
                 assert len(output.records) == 1
@@ -246,7 +248,8 @@ class FileStreamTest(TestCase):
                 record_data = output.records[0].record.data
                 assert record_data["staging_file_url"] == file_reference.staging_file_url
                 assert (
-                    record_data["source_file_relative_path"] == file_reference.source_file_relative_path
+                    record_data["source_file_relative_path"]
+                    == file_reference.source_file_relative_path
                 )
                 assert record_data["file_size_bytes"] == file_reference.file_size_bytes
 
