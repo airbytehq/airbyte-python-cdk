@@ -101,6 +101,18 @@ def test_macros_export(test_name, fn_name, found_in_macros):
             "%ms",
             "2022-01-01T01:01:01Z",
         ),
+        (
+            "2022-01-01T01:01:01+0100",
+            "%Y-%m-%dT%H:%M:%S.%f%z",
+            None,
+            "2022-01-01T00:01:01.000000+0000",
+        ),
+        (
+            "2022-01-01T01:01:01",
+            "%Y-%m-%dT%H:%M:%S.%f%z",
+            None,
+            "2022-01-01T01:01:01.000000+0000",
+        ),
     ],
     ids=[
         "test_datetime_string_to_date",
@@ -117,6 +129,8 @@ def test_macros_export(test_name, fn_name, found_in_macros):
         "test_timestamp_to_format_string",
         "test_timestamp_epoch_microseconds_to_format_string",
         "test_timestamp_ms_to_format_string",
+        "test_datetime_with_timezone",
+        "test_datetime_without_timezone_then_utc_is_inferred",
     ],
 )
 def test_format_datetime(input_value, format, input_format, expected_output):

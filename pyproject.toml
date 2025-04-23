@@ -30,8 +30,10 @@ enable = true
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
-airbyte-protocol-models-dataclasses = "^0.14"
+airbyte-protocol-models-dataclasses = "^0.15"
+
 backoff = "*"
+boltons = "^25.0.0"
 cachetools = "*"
 dpath = "^2.1.6"
 dunamai = "^1.22.0"
@@ -88,7 +90,7 @@ whenever = "^0.6.16"
 freezegun = "*"
 mypy = "*"
 asyncio = "3.4.3"
-ruff = "^0.7.2"
+ruff = "^0.11.5"
 pdoc = "^15.0.0"
 poethepoet = "^0.24.2"
 pyproject-flake8 = "^6.1.0"
@@ -131,12 +133,12 @@ build-package = {cmd = "poetry build", help = "Build the python package: source 
 build = {sequence = ["assemble", "build-package"], help = "Run all tasks to build the package."}
 
 # Format check tasks
-_format-check-ruff = {cmd = "ruff format --check .", help = "Check formatting with Ruff."}
+_format-check-ruff = {cmd = "poetry run ruff format --check .", help = "Check formatting with Ruff."}
 _format-check-prettier = {cmd = "npx prettier . --check", help = "Check formatting with prettier."}
 format-check = {sequence = ["_format-check-ruff", "_format-check-prettier"], help = "Check formatting for all file types.", ignore_fail = "return_non_zero"}
 
 # Format fix tasks
-_format-fix-ruff = {cmd = "ruff format .", help = "Format with Ruff."}
+_format-fix-ruff = {cmd = "poetry run ruff format .", help = "Format with Ruff."}
 _format-fix-prettier = {cmd = "npx prettier . --write", help = "Format with prettier."}
 format-fix = {sequence = ["_format-fix-ruff", "_format-fix-prettier"], help = "Format all file types.", ignore_fail = "return_non_zero"}
 
@@ -152,6 +154,9 @@ check-lockfile = {cmd = "poetry check", help = "Check the poetry lock file."}
 lint-fix = { cmd = "poetry run ruff check --fix .", help = "Auto-fix any lint issues that Ruff can automatically resolve (excluding 'unsafe' fixes)." }
 lint-fix-unsafe = { cmd = "poetry run ruff check --fix --unsafe-fixes .", help = "Lint-fix modified files, including 'unsafe' fixes. It is recommended to first commit any pending changes and then always manually review any unsafe changes applied." }
 
+# ruff fix everything (ignoring non-Python fixes)
+ruff-fix = { sequence = ["lint-fix", "_format-fix-ruff"] , help = "Lint-fix and format-fix all code." }
+
 # Combined Check and Fix tasks
 
 check-all = {sequence = ["lint", "format-check", "type-check", "check-lockfile"], help = "Lint, format, and type-check modified files.", ignore_fail = "return_non_zero"}
@@ -162,7 +167,7 @@ fix-and-check = {sequence = ["fix-all", "check-all"], help = "Lint-fix and forma
 
 pytest = {cmd = "poetry run coverage run -m pytest --durations=10", help = "Run all pytest tests."}
 pytest-fast = {cmd = "poetry run coverage run -m pytest --durations=5 --exitfirst -m 'not flaky and not slow and not requires_creds'", help = "Run pytest tests, failing fast and excluding slow tests."}
-unit-test-with-cov = {cmd = "pytest -s unit_tests --cov=airbyte_cdk --cov-report=term --cov-config ./pyproject.toml", help = "Run unit tests and create a coverage report."}
+unit-test-with-cov = {cmd = "poetry run pytest -s unit_tests --cov=airbyte_cdk --cov-report=term --cov-config ./pyproject.toml", help = "Run unit tests and create a coverage report."}
 
 # Combined check tasks (other)
 

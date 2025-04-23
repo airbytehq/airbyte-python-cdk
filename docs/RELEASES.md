@@ -21,11 +21,13 @@ _Note:_
 
 This process is slightly different from the above, since we don't necessarily want public release notes to be published for internal testing releases. The same underlying workflow will be run, but we'll kick it off directly:
 
-1. Navigate to the "Packaging and Publishing" workflow in GitHub Actions.
-2. Type the version number - including a valid pre-release suffix. Examples: `1.2.3dev0`, `1.2.3rc1`, `1.2.3b0`, etc.
-3. Select `main` or your dev branch from the "Use workflow from" dropdown.
-4. Select your options and click "Run workflow".
-5. Monitor the workflow to ensure the process has succeeded.
+1. Navigate to the "Publish CDK" workflow in GitHub Actions.
+2. Select your dev branch (or `main`) from the "Use workflow from" dropdown.
+3. Leave the version number blank, allowing the CI workflow to pick a version number
+   using [Dunamai](https://dunamai.readthedocs.io).
+4. Select from the other options and click "Run workflow".
+5. Monitor the workflow to ensure the process has succeeded. You will see the
+   version number in the GitHub Actions job output and in GitHub Environments view.
 
 ## Understanding and Debugging Builder and SDM Releases
 
@@ -59,15 +61,15 @@ To manually test changes against a dev image of SDM before committing to a relea
 
 Once the publish pipeline has completed, choose a connector to test. Set the base_image in the connector's metadata to your pre-release version in Dockerhub (make sure to update the SHA as well).
 Next, build the pre-release image locally using `airbyte-ci connectors —name=<source> build`.
-You can now run connector interfaces against the built image using the pattern `docker run airbyte/<source-name>:dev <spec/check/discover/read>`.
+You can now run connector interfaces against the built image using the pattern`docker run airbyte/<source-name>:dev <spec/check/discover/read>`.
 The connector's README should include a list of these commands, which can be copy/pasted and run from the connector's directory for quick testing against a local config.
 You can also run `airbyte-ci connectors —name=<source> test` to run the CI test suite against the dev image.
 
 #### Pretesting Low-Code Python connectors
 
 Once the publish pipeline has completed, set the version of `airbyte-cdk` in the connector's pyproject.toml file to the pre-release version in PyPI.
-Update the lockfile and run connector interfaces via poetry: `poetry run source-<name> spec/check/discover/read`.
-You can also run `airbyte-ci connectors —name=<source> test` to run the CI test suite against the dev image.  
+Update the lockfile and run connector interfaces via poetry:`poetry run source-<name> spec/check/discover/read`.
+You can also run `airbyte-ci connectors —name=<source> test` to run the CI test suite against the dev image.
 
 #### Pretesting in Cloud
 

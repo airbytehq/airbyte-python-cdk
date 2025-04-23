@@ -879,6 +879,25 @@ class FlattenFields(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class KeyTransformation(BaseModel):
+    prefix: Optional[Union[str, None]] = Field(
+        None,
+        description="Prefix to add for object keys. If not provided original keys remain unchanged.",
+        examples=[
+            "flattened_",
+        ],
+        title="Key Prefix",
+    )
+    suffix: Optional[Union[str, None]] = Field(
+        None,
+        description="Suffix to add for object keys. If not provided original keys remain unchanged.",
+        examples=[
+            "_flattened",
+        ],
+        title="Key Suffix",
+    )
+
+
 class DpathFlattenFields(BaseModel):
     type: Literal["DpathFlattenFields"]
     field_path: List[str] = Field(
@@ -896,6 +915,11 @@ class DpathFlattenFields(BaseModel):
         None,
         description="Whether to replace the origin record or not. Default is False.",
         title="Replace Origin Record",
+    )
+    key_transformation: Optional[Union[KeyTransformation, None]] = Field(
+        None,
+        description="Transformation for object keys. If not provided, original key will be used.",
+        title="Key transformation",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -2042,6 +2066,31 @@ class SelectiveAuthenticator(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class FileUploader(BaseModel):
+    type: Literal["FileUploader"]
+    requester: Union[CustomRequester, HttpRequester] = Field(
+        ...,
+        description="Requester component that describes how to prepare HTTP requests to send to the source API.",
+    )
+    download_target_extractor: Union[CustomRecordExtractor, DpathExtractor] = Field(
+        ...,
+        description="Responsible for fetching the url where the file is located. This is applied on each records and not on the HTTP response",
+    )
+    file_extractor: Optional[Union[CustomRecordExtractor, DpathExtractor]] = Field(
+        None,
+        description="Responsible for fetching the content of the file. If not defined, the assumption is that the whole response body is the file content",
+    )
+    filename_extractor: Optional[str] = Field(
+        None,
+        description="Defines the name to store the file. Stream name is automatically added to the file path. File unique ID can be used to avoid overwriting files. Random UUID will be used if the extractor is not provided.",
+        examples=[
+            "{{ record.id }}/{{ record.file_name }}/",
+            "{{ record.id }}_{{ record.file_name }}/",
+        ],
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class DeclarativeStream(BaseModel):
     class Config:
         extra = Extra.allow
@@ -2099,6 +2148,11 @@ class DeclarativeStream(BaseModel):
         [],
         description="Array of state migrations to be applied on the input state",
         title="State Migrations",
+    )
+    file_uploader: Optional[FileUploader] = Field(
+        None,
+        description="(experimental) Describes how to fetch a file",
+        title="File Uploader",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -2593,6 +2647,7 @@ CompositeErrorHandler.update_forward_refs()
 DeclarativeSource1.update_forward_refs()
 DeclarativeSource2.update_forward_refs()
 SelectiveAuthenticator.update_forward_refs()
+FileUploader.update_forward_refs()
 DeclarativeStream.update_forward_refs()
 SessionTokenAuthenticator.update_forward_refs()
 DynamicSchemaLoader.update_forward_refs()

@@ -363,9 +363,9 @@ def run_mocked_test(
             request_count = len(
                 [req for req in m.request_history if unquote(req.url) == unquote(url)]
             )
-            assert (
-                request_count == 1
-            ), f"URL {url} was called {request_count} times, expected exactly once."
+            assert request_count == 1, (
+                f"URL {url} was called {request_count} times, expected exactly once."
+            )
 
 
 def _run_read(
@@ -855,10 +855,11 @@ def run_incremental_parent_state_test(
             expected_records_set = list(
                 {orjson.dumps(record): record for record in expected_records}.values()
             )
-            assert (
-                sorted(cumulative_records_state_deduped, key=lambda x: x["id"])
-                == sorted(expected_records_set, key=lambda x: x["id"])
-            ), f"Records mismatch with intermediate state {state}. Expected {expected_records}, got {cumulative_records_state_deduped}"
+            assert sorted(cumulative_records_state_deduped, key=lambda x: x["id"]) == sorted(
+                expected_records_set, key=lambda x: x["id"]
+            ), (
+                f"Records mismatch with intermediate state {state}. Expected {expected_records}, got {cumulative_records_state_deduped}"
+            )
 
             # Store the final state after each intermediate read
             final_state_intermediate = [
@@ -869,9 +870,9 @@ def run_incremental_parent_state_test(
 
         # Assert that the final state matches the expected state for all runs
         for i, final_state in enumerate(final_states):
-            assert (
-                final_state in expected_states
-            ), f"Final state mismatch at run {i + 1}. Expected {expected_states}, got {final_state}"
+            assert final_state in expected_states, (
+                f"Final state mismatch at run {i + 1}. Expected {expected_states}, got {final_state}"
+            )
 
 
 @pytest.mark.parametrize(
@@ -1300,8 +1301,7 @@ STATE_MIGRATION_GLOBAL_EXPECTED_STATE["use_global_cursor"] = True
                             {"id": 11, "post_id": 1, "updated_at": COMMENT_11_UPDATED_AT},
                         ],
                         "next_page": (
-                            "https://api.example.com/community/posts/1/comments"
-                            "?per_page=100&page=2"
+                            "https://api.example.com/community/posts/1/comments?per_page=100&page=2"
                         ),
                     },
                 ),
@@ -1346,8 +1346,7 @@ STATE_MIGRATION_GLOBAL_EXPECTED_STATE["use_global_cursor"] = True
                     {
                         "comments": [{"id": 20, "post_id": 2, "updated_at": COMMENT_20_UPDATED_AT}],
                         "next_page": (
-                            "https://api.example.com/community/posts/2/comments"
-                            "?per_page=100&page=2"
+                            "https://api.example.com/community/posts/2/comments?per_page=100&page=2"
                         ),
                     },
                 ),
@@ -3450,3 +3449,48 @@ def test_semaphore_cleanup():
     assert '{"id":"2"}' not in cursor._semaphore_per_partition
     assert len(cursor._partition_parent_state_map) == 0  # All parent states should be popped
     assert cursor._parent_state == {"parent": {"state": "state2"}}  # Last parent state
+
+
+def test_given_global_state_when_read_then_state_is_not_per_partition() -> None:
+    manifest = deepcopy(SUBSTREAM_MANIFEST)
+    manifest["definitions"]["post_comments_stream"]["incremental_sync"][
+        "global_substream_cursor"
+    ] = True
+    manifest["streams"].remove({"$ref": "#/definitions/post_comment_votes_stream"})
+    record = {
+        "id": 9,
+        "post_id": 1,
+        "updated_at": COMMENT_10_UPDATED_AT,
+    }
+    mock_requests = [
+        (
+            f"https://api.example.com/community/posts?per_page=100&start_time={START_DATE}",
+            {
+                "posts": [
+                    {"id": 1, "updated_at": POST_1_UPDATED_AT},
+                ],
+            },
+        ),
+        # Fetch the first page of comments for post 1
+        (
+            "https://api.example.com/community/posts/1/comments?per_page=100",
+            {
+                "comments": [record],
+            },
+        ),
+    ]
+
+    run_mocked_test(
+        mock_requests,
+        manifest,
+        CONFIG,
+        "post_comments",
+        {},
+        [record],
+        {
+            "lookback_window": 1,
+            "parent_state": {"posts": {"updated_at": "2024-01-30T00:00:00Z"}},
+            "state": {"updated_at": "2024-01-25T00:00:00Z"},
+            "use_global_cursor": True,  # ensures that it is running the Concurrent CDK version as this is not populated in the declarative implementation
+        },  # this state does have per partition which would be under `states`
+    )

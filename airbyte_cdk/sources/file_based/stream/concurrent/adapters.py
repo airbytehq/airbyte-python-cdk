@@ -4,7 +4,7 @@
 
 import copy
 import logging
-from functools import cache, lru_cache
+from functools import lru_cache
 from typing import TYPE_CHECKING, Any, Iterable, List, Mapping, MutableMapping, Optional, Union
 
 from typing_extensions import deprecated
@@ -258,19 +258,14 @@ class FileBasedStreamPartition(Partition):
                     and record_data.record is not None
                 ):
                     # `AirbyteMessage`s of type `Record` should also be yielded so they are enqueued
-                    # If stream is flagged for file_transfer the record should data in file key
-                    record_message_data = (
-                        record_data.record.file
-                        if self._use_file_transfer()
-                        else record_data.record.data
-                    )
+                    record_message_data = record_data.record.data
                     if not record_message_data:
                         raise ExceptionWithDisplayMessage("A record without data was found")
                     else:
                         yield Record(
                             data=record_message_data,
                             stream_name=self.stream_name(),
-                            is_file_transfer_message=self._use_file_transfer(),
+                            file_reference=record_data.record.file_reference,
                         )
                 else:
                     self._message_repository.emit_message(record_data)
@@ -284,9 +279,9 @@ class FileBasedStreamPartition(Partition):
     def to_slice(self) -> Optional[Mapping[str, Any]]:
         if self._slice is None:
             return None
-        assert (
-            len(self._slice["files"]) == 1
-        ), f"Expected 1 file per partition but got {len(self._slice['files'])} for stream {self.stream_name()}"
+        assert len(self._slice["files"]) == 1, (
+            f"Expected 1 file per partition but got {len(self._slice['files'])} for stream {self.stream_name()}"
+        )
         file = self._slice["files"][0]
         return {"files": [file]}
 
@@ -305,10 +300,6 @@ class FileBasedStreamPartition(Partition):
 
     def stream_name(self) -> str:
         return self._stream.name
-
-    @cache
-    def _use_file_transfer(self) -> bool:
-        return hasattr(self._stream, "use_file_transfer") and self._stream.use_file_transfer
 
     def __repr__(self) -> str:
         return f"FileBasedStreamPartition({self._stream.name}, {self._slice})"

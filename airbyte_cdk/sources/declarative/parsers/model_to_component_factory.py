@@ -106,7 +106,6 @@ from airbyte_cdk.sources.declarative.migrations.legacy_to_per_partition_state_mi
 )
 from airbyte_cdk.sources.declarative.models import (
     CustomStateMigration,
-    GzipDecoder,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     AddedFieldDefinition as AddedFieldDefinitionModel,
@@ -227,6 +226,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ExponentialBackoffStrategy as ExponentialBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    FileUploader as FileUploaderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     FixedWindowCallRatePolicy as FixedWindowCallRatePolicyModel,
@@ -479,6 +481,7 @@ from airbyte_cdk.sources.declarative.retrievers import (
     SimpleRetriever,
     SimpleRetrieverTestReadDecorator,
 )
+from airbyte_cdk.sources.declarative.retrievers.file_uploader import FileUploader
 from airbyte_cdk.sources.declarative.schema import (
     ComplexFieldType,
     DefaultSchemaLoader,
@@ -498,6 +501,7 @@ from airbyte_cdk.sources.declarative.transformations import (
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
 from airbyte_cdk.sources.declarative.transformations.dpath_flatten_fields import (
     DpathFlattenFields,
+    KeyTransformation,
 )
 from airbyte_cdk.sources.declarative.transformations.flatten_fields import (
     FlattenFields,
@@ -675,6 +679,7 @@ class ModelToComponentFactory:
             ComponentMappingDefinitionModel: self.create_components_mapping_definition,
             ZipfileDecoderModel: self.create_zipfile_decoder,
             HTTPAPIBudgetModel: self.create_http_api_budget,
+            FileUploaderModel: self.create_file_uploader,
             FixedWindowCallRatePolicyModel: self.create_fixed_window_call_rate_policy,
             MovingWindowCallRatePolicyModel: self.create_moving_window_call_rate_policy,
             UnlimitedCallRatePolicyModel: self.create_unlimited_call_rate_policy,
@@ -790,6 +795,16 @@ class ModelToComponentFactory:
         self, model: DpathFlattenFieldsModel, config: Config, **kwargs: Any
     ) -> DpathFlattenFields:
         model_field_path: List[Union[InterpolatedString, str]] = [x for x in model.field_path]
+        key_transformation = (
+            KeyTransformation(
+                config=config,
+                prefix=model.key_transformation.prefix,
+                suffix=model.key_transformation.suffix,
+                parameters=model.parameters or {},
+            )
+            if model.key_transformation is not None
+            else None
+        )
         return DpathFlattenFields(
             config=config,
             field_path=model_field_path,
@@ -797,6 +812,7 @@ class ModelToComponentFactory:
             if model.delete_origin_value is not None
             else False,
             replace_record=model.replace_record if model.replace_record is not None else False,
+            key_transformation=key_transformation,
             parameters=model.parameters or {},
         )
 
@@ -1427,7 +1443,9 @@ class ModelToComponentFactory:
         stream_state = self.apply_stream_state_migrations(stream_state_migrations, stream_state)
 
         # Per-partition state doesn't make sense for GroupingPartitionRouter, so force the global state
-        use_global_cursor = isinstance(partition_router, GroupingPartitionRouter)
+        use_global_cursor = isinstance(
+            partition_router, GroupingPartitionRouter
+        ) or component_definition.get("global_substream_cursor", False)
 
         # Return the concurrent cursor and state converter
         return ConcurrentPerPartitionCursor(
@@ -1826,6 +1844,11 @@ class ModelToComponentFactory:
                 transformations.append(
                     self._create_component_from_model(model=transformation_model, config=config)
                 )
+        file_uploader = None
+        if model.file_uploader:
+            file_uploader = self._create_component_from_model(
+                model=model.file_uploader, config=config
+            )
 
         retriever = self._create_component_from_model(
             model=model.retriever,
@@ -1837,6 +1860,7 @@ class ModelToComponentFactory:
             stop_condition_on_cursor=stop_condition_on_cursor,
             client_side_incremental_sync=client_side_incremental_sync,
             transformations=transformations,
+            file_uploader=file_uploader,
             incremental_sync=model.incremental_sync,
         )
         cursor_field = model.incremental_sync.cursor_field if model.incremental_sync else None
@@ -2054,6 +2078,7 @@ class ModelToComponentFactory:
         config: Config,
         *,
         url_base: str,
+        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
         decoder: Optional[Decoder] = None,
         cursor_used_for_stop_condition: Optional[DeclarativeCursor] = None,
     ) -> Union[DefaultPaginator, PaginatorTestReadDecorator]:
@@ -2075,7 +2100,10 @@ class ModelToComponentFactory:
             else None
         )
         pagination_strategy = self._create_component_from_model(
-            model=model.pagination_strategy, config=config, decoder=decoder_to_use
+            model=model.pagination_strategy,
+            config=config,
+            decoder=decoder_to_use,
+            extractor_model=extractor_model,
         )
         if cursor_used_for_stop_condition:
             pagination_strategy = StopConditionPaginationStrategyDecorator(
@@ -2572,7 +2600,12 @@ class ModelToComponentFactory:
         )
 
     def create_offset_increment(
-        self, model: OffsetIncrementModel, config: Config, decoder: Decoder, **kwargs: Any
+        self,
+        model: OffsetIncrementModel,
+        config: Config,
+        decoder: Decoder,
+        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        **kwargs: Any,
     ) -> OffsetIncrement:
         if isinstance(decoder, PaginationDecoderDecorator):
             inner_decoder = decoder.decoder
@@ -2587,10 +2620,24 @@ class ModelToComponentFactory:
                 self._UNSUPPORTED_DECODER_ERROR.format(decoder_type=type(inner_decoder))
             )
 
+        # Ideally we would instantiate the runtime extractor from highest most level (in this case the SimpleRetriever)
+        # so that it can be shared by OffSetIncrement and RecordSelector. However, due to how we instantiate the
+        # decoder with various decorators here, but not in create_record_selector, it is simpler to retain existing
+        # behavior by having two separate extractors with identical behavior since they use the same extractor model.
+        # When we have more time to investigate we can look into reusing the same component.
+        extractor = (
+            self._create_component_from_model(
+                model=extractor_model, config=config, decoder=decoder_to_use
+            )
+            if extractor_model
+            else None
+        )
+
         return OffsetIncrement(
             page_size=model.page_size,
             config=config,
             decoder=decoder_to_use,
+            extractor=extractor,
             inject_on_first_request=model.inject_on_first_request or False,
             parameters=model.parameters or {},
         )
@@ -2759,6 +2806,7 @@ class ModelToComponentFactory:
         transformations: List[RecordTransformation] | None = None,
         decoder: Decoder | None = None,
         client_side_incremental_sync: Dict[str, Any] | None = None,
+        file_uploader: Optional[FileUploader] = None,
         **kwargs: Any,
     ) -> RecordSelector:
         extractor = self._create_component_from_model(
@@ -2796,6 +2844,7 @@ class ModelToComponentFactory:
             config=config,
             record_filter=record_filter,
             transformations=transformations or [],
+            file_uploader=file_uploader,
             schema_normalization=schema_normalization,
             parameters=model.parameters or {},
             transform_before_filtering=transform_before_filtering,
@@ -2853,6 +2902,7 @@ class ModelToComponentFactory:
         stop_condition_on_cursor: bool = False,
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
         transformations: List[RecordTransformation],
+        file_uploader: Optional[FileUploader] = None,
         incremental_sync: Optional[
             Union[
                 IncrementingCountCursorModel, DatetimeBasedCursorModel, CustomIncrementalSyncModel
@@ -2873,6 +2923,7 @@ class ModelToComponentFactory:
             decoder=decoder,
             transformations=transformations,
             client_side_incremental_sync=client_side_incremental_sync,
+            file_uploader=file_uploader,
         )
 
         query_properties: Optional[QueryProperties] = None
@@ -2954,6 +3005,7 @@ class ModelToComponentFactory:
                 model=model.paginator,
                 config=config,
                 url_base=url_base,
+                extractor_model=model.record_selector.extractor,
                 decoder=decoder,
                 cursor_used_for_stop_condition=cursor_used_for_stop_condition,
             )
@@ -3536,6 +3588,30 @@ class ModelToComponentFactory:
             period=parse_duration(model.period),
             call_limit=model.call_limit,
             matchers=matchers,
+        )
+
+    def create_file_uploader(
+        self, model: FileUploaderModel, config: Config, **kwargs: Any
+    ) -> FileUploader:
+        name = "File Uploader"
+        requester = self._create_component_from_model(
+            model=model.requester,
+            config=config,
+            name=name,
+            **kwargs,
+        )
+        download_target_extractor = self._create_component_from_model(
+            model=model.download_target_extractor,
+            config=config,
+            name=name,
+            **kwargs,
+        )
+        return FileUploader(
+            requester=requester,
+            download_target_extractor=download_target_extractor,
+            config=config,
+            parameters=model.parameters or {},
+            filename_extractor=model.filename_extractor if model.filename_extractor else None,
         )
 
     def create_moving_window_call_rate_policy(
