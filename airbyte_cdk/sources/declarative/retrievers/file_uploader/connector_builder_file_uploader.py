@@ -6,18 +6,18 @@ from dataclasses import dataclass
 
 from airbyte_cdk.sources.declarative.types import Record
 
-from .base_file_uploader import BaseFileUploader
 from .file_uploader import FileUploader
+from .default_file_uploader import DefaultFileUploader
 
 
 @dataclass
-class ConnectorBuilderFileUploader(BaseFileUploader):
+class ConnectorBuilderFileUploader(FileUploader):
     """
     Connector builder file uploader
     Acts as a decorator or wrapper around a FileUploader instance, copying the attributes from record.file_reference into the record.data.
     """
 
-    file_uploader: FileUploader
+    file_uploader: DefaultFileUploader
 
     def upload(self, record: Record) -> None:
         self.file_uploader.upload(record=record)

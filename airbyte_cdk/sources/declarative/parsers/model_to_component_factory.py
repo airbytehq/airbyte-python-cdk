@@ -482,10 +482,10 @@ from airbyte_cdk.sources.declarative.retrievers import (
     SimpleRetrieverTestReadDecorator,
 )
 from airbyte_cdk.sources.declarative.retrievers.file_uploader import (
-    BaseFileUploader,
-    ConnectorBuilderFileUploader,
     FileUploader,
-    FileWriter,
+    ConnectorBuilderFileUploader,
+    DefaultFileUploader,
+    LocalFileSystemFileWriter,
     NoopFileWriter,
 )
 from airbyte_cdk.sources.declarative.schema import (
@@ -2812,7 +2812,7 @@ class ModelToComponentFactory:
         transformations: List[RecordTransformation] | None = None,
         decoder: Decoder | None = None,
         client_side_incremental_sync: Dict[str, Any] | None = None,
-        file_uploader: Optional[FileUploader] = None,
+        file_uploader: Optional[DefaultFileUploader] = None,
         **kwargs: Any,
     ) -> RecordSelector:
         extractor = self._create_component_from_model(
@@ -2908,7 +2908,7 @@ class ModelToComponentFactory:
         stop_condition_on_cursor: bool = False,
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
         transformations: List[RecordTransformation],
-        file_uploader: Optional[FileUploader] = None,
+        file_uploader: Optional[DefaultFileUploader] = None,
         incremental_sync: Optional[
             Union[
                 IncrementingCountCursorModel, DatetimeBasedCursorModel, CustomIncrementalSyncModel
@@ -3598,7 +3598,7 @@ class ModelToComponentFactory:
 
     def create_file_uploader(
         self, model: FileUploaderModel, config: Config, **kwargs: Any
-    ) -> BaseFileUploader:
+    ) -> FileUploader:
         name = "File Uploader"
         requester = self._create_component_from_model(
             model=model.requester,
@@ -3613,11 +3613,11 @@ class ModelToComponentFactory:
             **kwargs,
         )
         emit_connector_builder_messages = self._emit_connector_builder_messages
-        file_uploader = FileUploader(
+        file_uploader = DefaultFileUploader(
             requester=requester,
             download_target_extractor=download_target_extractor,
             config=config,
-            file_writer=NoopFileWriter() if emit_connector_builder_messages else FileWriter(),
+            file_writer=NoopFileWriter() if emit_connector_builder_messages else LocalFileSystemFileWriter(),
             parameters=model.parameters or {},
             filename_extractor=model.filename_extractor if model.filename_extractor else None,
         )

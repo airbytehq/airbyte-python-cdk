@@ -4,12 +4,13 @@
 
 from pathlib import Path
 
-from .base_file_writer import BaseFileWriter
+from .file_writer import FileWriter
 
 
-class NoopFileWriter(BaseFileWriter):
+class NoopFileWriter(FileWriter):
+    NOOP_FILE_SIZE = -1
     def write(self, file_path: Path, content: bytes) -> int:
         """
         Noop file writer
         """
-        return 0
+        return self.NOOP_FILE_SIZE

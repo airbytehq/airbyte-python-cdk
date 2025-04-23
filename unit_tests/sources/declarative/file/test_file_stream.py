@@ -14,7 +14,7 @@ from airbyte_cdk.test.entrypoint_wrapper import read as entrypoint_read
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.test.mock_http.response_builder import find_binary_response, find_template
 from airbyte_cdk.test.state_builder import StateBuilder
-
+from airbyte_cdk.sources.declarative.retrievers.file_uploader.noop_file_writer import NoopFileWriter
 
 class ConfigBuilder:
     def build(self) -> Dict[str, Any]:
@@ -231,7 +231,7 @@ class FileStreamTest(TestCase):
             assert file_reference.staging_file_url
             assert file_reference.source_file_relative_path
             # because we didn't write the file, the size is 0
-            assert file_reference.file_size_bytes == 0
+            assert file_reference.file_size_bytes == NoopFileWriter.NOOP_FILE_SIZE
 
             # Assert file reference fields are copied to record data
             record_data = output.records[0].record.data
