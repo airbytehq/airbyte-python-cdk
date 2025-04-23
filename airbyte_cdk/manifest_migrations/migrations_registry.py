@@ -7,6 +7,7 @@ import importlib
 import inspect
 import os
 from pathlib import Path
+from types import ModuleType
 from typing import Dict, List, Type
 
 import yaml
@@ -21,22 +22,22 @@ MIGRATIONS_PATH = Path(__file__).parent / "migrations"
 REGISTRY_PATH = MIGRATIONS_PATH / "registry.yaml"
 
 
-def _find_migration_module(name: str) -> str | None:
+def _find_migration_module(name: str) -> str:
     """
     Finds the migration module by name in the migrations directory.
     The name should match the file name of the migration module (without the .py extension).
     Raises ImportError if the module is not found.
     """
-    try:
-        for migration_file in os.listdir(MIGRATIONS_PATH):
-            migration_name = name + ".py"
-            if migration_file == migration_name:
-                return migration_file.replace(".py", "")
-    except ImportError as e:
-        raise ImportError(f"Migration module '{name}' not found in {MIGRATIONS_PATH}.") from e
+
+    for migration_file in os.listdir(MIGRATIONS_PATH):
+        migration_name = name + ".py"
+        if migration_file == migration_name:
+            return migration_file.replace(".py", "")
+
+    raise ImportError(f"Migration module '{name}' not found in {MIGRATIONS_PATH}.")
 
 
-def _get_migration_class(module) -> type:
+def _get_migration_class(module: ModuleType) -> Type[ManifestMigration]:
     """
     Returns the ManifestMigration subclass defined in the module.
     """
@@ -53,7 +54,7 @@ def _discover_migrations() -> DiscoveredMigrations:
     """
     with open(REGISTRY_PATH, "r") as f:
         registry = yaml.safe_load(f)
-        migrations = {}
+        migrations: DiscoveredMigrations = {}
         # Iterate through the registry and import the migration classes
         # based on the version and order specified in the registry.yaml
         for version_entry in registry.get("manifest_migrations", []):

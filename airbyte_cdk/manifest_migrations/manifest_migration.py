@@ -31,7 +31,7 @@ class MigrationTrace:
     migration: str
     migrated_at: str
 
-    def as_dict(self) -> dict:
+    def as_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
 

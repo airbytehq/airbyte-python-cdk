@@ -82,14 +82,22 @@ class ManifestMigrationHandler:
                 if migration_instance.is_migrated:
                     # set the updated manifest version, after migration has been applied
                     self._set_manifest_version(migration_version)
-                    # set the migration trace
                     self._set_migration_trace(migration_class, manifest_version, migration_version)
             else:
                 LOGGER.info(
-                    f"Manifest migration: `{migration_instance.__name__}` is not supported for the given manifest version `{manifest_version}`.",
+                    f"Manifest migration: `{self._get_migration_name(migration_class)}` is not supported for the given manifest version `{manifest_version}`.",
                 )
         except Exception as e:
             raise ManifestMigrationException(str(e)) from e
+
+    def _get_migration_name(self, migration_class: Type[ManifestMigration]) -> str:
+        """
+        Get the name of the migration instance.
+
+        Returns:
+            str: The name of the migration.
+        """
+        return migration_class.__name__
 
     def _get_manifest_version(self) -> str:
         """
@@ -101,8 +109,20 @@ class ManifestMigrationHandler:
         return str(self._migrated_manifest.get(MANIFEST_VERSION_TAG, "0.0.0"))
 
     def _version_is_valid_for_migration(
-        self, manifest_version: str, migration_version: str
+        self,
+        manifest_version: str,
+        migration_version: str,
     ) -> bool:
+        """
+        Checks if the given manifest version is less than or equal to the specified migration version.
+
+        Args:
+            manifest_version (str): The version of the manifest to check.
+            migration_version (str): The migration version to compare against.
+
+        Returns:
+            bool: True if the manifest version is less than or equal to the migration version, False otherwise.
+        """
         return Version(manifest_version) <= Version(migration_version)
 
     def _set_manifest_version(self, version: str) -> None:
@@ -120,7 +140,7 @@ class ManifestMigrationHandler:
         migration_version: str,
     ) -> None:
         """
-        Set the migration trace in the manifest.
+        Set the migration trace in the manifest, under the `metadata.applied_migrations` property object.
 
         :param migration_instance: The migration instance to set
         :param manifest_version: The manifest version before migration
@@ -135,7 +155,7 @@ class ManifestMigrationHandler:
         migration_trace = MigrationTrace(
             from_version=manifest_version,
             to_version=migration_version,
-            migration=migration_instance.__name__,
+            migration=self._get_migration_name(migration_instance),
             migrated_at=datetime.now(tz=timezone.utc).isoformat(),
         ).as_dict()
 
