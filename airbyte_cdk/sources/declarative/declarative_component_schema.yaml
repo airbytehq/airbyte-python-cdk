@@ -1424,8 +1424,8 @@ definitions:
         title: Schema Loader
         description: Component used to retrieve the schema for the current stream.
         anyOf:
-          - "$ref": "#/definitions/DynamicSchemaLoader"
           - "$ref": "#/definitions/InlineSchemaLoader"
+          - "$ref": "#/definitions/DynamicSchemaLoader"
           - "$ref": "#/definitions/JsonFileSchemaLoader"
           - "$ref": "#/definitions/CustomSchemaLoader"
       # TODO we have move the transformation to the RecordSelector level in the code but kept this here for
@@ -2235,6 +2235,7 @@ definitions:
         title: Schema
         description: Describes a streams' schema. Refer to the <a href="https://docs.airbyte.com/understanding-airbyte/supported-data-types/">Data Types documentation</a> for more details on which types are valid.
         type: object
+        additionalProperties: true
   JsonFileSchemaLoader:
     title: Json File Schema Loader
     description: Loads the schema from a json file.
@@ -3373,11 +3374,11 @@ definitions:
         example:
           - "Users"
       full_refresh_stream:
-        title: Retriever
+        title: Full Refresh Stream
         description: Component used to coordinate how records are extracted across stream slices and request pages when the state is empty or not provided.
         "$ref": "#/definitions/DeclarativeStream"
       incremental_stream:
-        title: Retriever
+        title: Incremental Stream
         description: Component used to coordinate how records are extracted across stream slices and request pages when the state provided.
         "$ref": "#/definitions/DeclarativeStream"
       $parameters:
