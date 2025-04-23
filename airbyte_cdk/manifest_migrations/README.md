@@ -6,44 +6,53 @@ This directory contains the logic and registry for manifest migrations in the Ai
 
 1. **Create a Migration File:**
    - Add a new Python file in the `migrations/` subdirectory.
-   - Name the file using the pattern: `<description>_v<major>_<minor>_<patch>__<order>.py`.
-     - Example: `http_requester_url_base_to_url_v6_45_2__0.py`
-   - The `<order>` integer is used to determine the order of migrations for the same version.
+   - Name the file using the pattern: `<description_of_the_migration>.py`.
+     - Example: `http_requester_url_base_to_url.py`
+   - The filename should be unique and descriptive.
 
 2. **Define the Migration Class:**
    - The migration class must inherit from `ManifestMigration`.
-   - Name the class using the pattern: `V_<major>_<minor>_<patch>_<Description>`.
-     - Example: `V_6_45_2_HttpRequesterUrlBaseToUrl`
+   - Name the class using a descriptive name (e.g., `HttpRequesterUrlBaseToUrl`).
    - Implement the following methods:
-     - `should_migrate(self, manifest: ManifestType) -> bool`: Return `True` if the migration should be applied to the given manifest.
-     - `migrate(self, manifest: ManifestType) -> None`: Perform the migration in-place.
+     - `should_migrate(self, manifest: ManifestType) -> bool`
+     - `migrate(self, manifest: ManifestType) -> None`
+     - `validate(self, manifest: ManifestType) -> bool`
 
-3. **Migration Versioning:**
-   - The migration version is extracted from the class name and used to determine applicability.
-   - Only manifests with a version less than or equal to the migration version will be migrated.
+3. **Register the Migration:**
+   - Open `migrations/registry.yaml`.
+   - Add an entry under the appropriate version, or create a new version section if needed.
+   - Each migration entry should include:
+     - `name`: The filename (without `.py`)
+     - `order`: The order in which this migration should be applied for the version
+     - `description`: A short description of the migration
 
-4. **Component Type:**
-   - Use the `TYPE_TAG` constant to check the component type in your migration logic.
+   Example:
+   ```yaml
+   manifest_migrations:
+     - version: 6.45.2
+       migrations:
+         - name: http_requester_url_base_to_url
+           order: 1
+           description: |
+             This migration updates the `url_base` field in the `HttpRequester` component spec to `url`.
+   ```
 
-5. **Examples:**
-   - See `migrations/http_requester_url_base_to_url_v6_45_2__0.py` and `migrations/http_requester_path_to_url_v6_45_2__1.py` for reference implementations.
+4. **Testing:**
+   - Ensure your migration is covered by unit tests.
+   - Tests should verify both `should_migrate`, `migrate`, and `validate` behaviors.
 
-## Migration Registry
+## Migration Discovery
 
-- All migration classes in the `migrations/` folder are automatically discovered and registered in `migrations_registry.py`.
-- Migrations are applied in order, determined by the `<order>` suffix in the filename.
-
-## Testing
-
-- Ensure your migration is covered by unit tests.
-- Tests should verify both `should_migrate` and `migrate` behaviors.
+- Migrations are discovered and registered automatically based on the entries in `migrations/registry.yaml`.
+- Do not modify the migration registry in code manually.
+- If you need to skip certain component types, use the `NON_MIGRATABLE_TYPES` list in `manifest_migration.py`.
 
 ## Example Migration Skeleton
 
 ```python
 from airbyte_cdk.manifest_migrations.manifest_migration import TYPE_TAG, ManifestMigration, ManifestType
 
-class V_1_2_3_Example(ManifestMigration):
+class ExampleMigration(ManifestMigration):
     component_type = "ExampleComponent"
     original_key = "old_key"
     replacement_key = "new_key"
@@ -54,12 +63,10 @@ class V_1_2_3_Example(ManifestMigration):
     def migrate(self, manifest: ManifestType) -> None:
         manifest[self.replacement_key] = manifest[self.original_key]
         manifest.pop(self.original_key, None)
+
+    def validate(self, manifest: ManifestType) -> bool:
+        return self.replacement_key in manifest and self.original_key not in manifest
 ```
-
-## Additional Notes
-
-- Do not modify the migration registry manually; it will pick up all valid migration classes automatically.
-- If you need to skip certain component types, use the `NON_MIGRATABLE_TYPES` list in `manifest_migration.py`.
 
 ---
 

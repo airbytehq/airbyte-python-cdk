@@ -1,3 +1,8 @@
+#
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+#
+
+
 from urllib.parse import urljoin
 
 from airbyte_cdk.manifest_migrations.manifest_migration import (
@@ -8,7 +13,7 @@ from airbyte_cdk.manifest_migrations.manifest_migration import (
 from airbyte_cdk.sources.types import EmptyString
 
 
-class V_6_45_2_HttpRequesterPathToUrl(ManifestMigration):
+class HttpRequesterPathToUrl(ManifestMigration):
     """
     This migration is responsible for migrating the `path` key to `url` in the HttpRequester component.
     The `path` key is expected to be a relative path, and the `url` key is expected to be a full URL.
@@ -40,3 +45,13 @@ class V_6_45_2_HttpRequesterPathToUrl(ManifestMigration):
 
             manifest[self.replacement_key] = urljoin(replacement_key_value, original_key_value)
             manifest.pop(self.original_key, None)
+
+    def validate(self, manifest: ManifestType) -> bool:
+        """
+        Validate the migration by checking if the `url` key is present and the `path` key is not.
+        """
+        return (
+            self.replacement_key in manifest
+            and self.original_key not in manifest
+            and manifest[self.replacement_key] is not None
+        )

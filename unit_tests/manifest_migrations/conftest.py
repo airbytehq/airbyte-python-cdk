@@ -197,7 +197,7 @@ def manifest_with_url_base_to_migrate_to_url() -> Dict[str, Any]:
 @pytest.fixture
 def expected_manifest_with_url_base_migrated_to_url() -> Dict[str, Any]:
     return {
-        "version": "0.0.0",
+        "version": "6.45.2",
         "type": "DeclarativeSource",
         "check": {"type": "CheckStream", "stream_names": ["A"]},
         "definitions": {
@@ -490,13 +490,29 @@ def expected_manifest_with_url_base_migrated_to_url() -> Dict[str, Any]:
                 "properties": {"field_e1": {"type": "string"}},
             },
         },
+        "metadata": {
+            "applied_migrations": [
+                {
+                    "from_version": "0.0.0",
+                    "to_version": "6.45.2",
+                    "migration": "HttpRequesterUrlBaseToUrl",
+                    "migrated_at": "2025-04-01T00:00:00+00:00",  # time freezed in the test
+                },
+                {
+                    "from_version": "0.0.0",
+                    "to_version": "6.45.2",
+                    "migration": "HttpRequesterPathToUrl",
+                    "migrated_at": "2025-04-01T00:00:00+00:00",  # time freezed in the test
+                },
+            ]
+        },
     }
 
 
 @pytest.fixture
 def manifest_with_migrated_url_base_and_path_is_joined_to_url() -> Dict[str, Any]:
     return {
-        "version": "0.0.0",
+        "version": "6.45.3",
         "type": "DeclarativeSource",
         "check": {"type": "CheckStream", "stream_names": ["A"]},
         "definitions": {},
@@ -806,7 +822,7 @@ def manifest_with_request_body_json_and_data_to_migrate_to_request_body() -> Dic
 @pytest.fixture
 def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
     return {
-        "version": "0.0.0",
+        "version": "6.45.2",
         "type": "DeclarativeSource",
         "check": {"type": "CheckStream", "stream_names": ["A"]},
         "definitions": {
@@ -1136,5 +1152,27 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                 "additionalProperties": True,
                 "properties": {"field_e1": {"type": "string"}},
             },
+        },
+        "metadata": {
+            "applied_migrations": [
+                {
+                    "from_version": "0.0.0",
+                    "to_version": "6.45.2",
+                    "migration": "HttpRequesterUrlBaseToUrl",
+                    "migrated_at": "2025-04-01T00:00:00+00:00",
+                },
+                {
+                    "from_version": "0.0.0",
+                    "to_version": "6.45.2",
+                    "migration": "HttpRequesterPathToUrl",
+                    "migrated_at": "2025-04-01T00:00:00+00:00",
+                },
+                {
+                    "from_version": "0.0.0",
+                    "to_version": "6.45.2",
+                    "migration": "HttpRequesterRequestBodyJsonDataToRequestBody",
+                    "migrated_at": "2025-04-01T00:00:00+00:00",
+                },
+            ]
         },
     }

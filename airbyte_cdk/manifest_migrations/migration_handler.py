@@ -1,9 +1,11 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
+
 
 import copy
 import logging
+from datetime import datetime, timezone
 from typing import Type
 
 from packaging.version import Version
@@ -14,10 +16,15 @@ from airbyte_cdk.manifest_migrations.exceptions import (
 from airbyte_cdk.manifest_migrations.manifest_migration import (
     ManifestMigration,
     ManifestType,
+    MigrationTrace,
 )
 from airbyte_cdk.manifest_migrations.migrations_registry import (
-    MIGRATIONS,
+    MANIFEST_MIGRATIONS,
 )
+
+METADATA_TAG = "metadata"
+MANIFEST_VERSION_TAG = "version"
+APPLIED_MIGRATIONS_TAG = "applied_migrations"
 
 LOGGER = logging.getLogger("airbyte.cdk.manifest_migrations")
 
@@ -30,7 +37,6 @@ class ManifestMigrationHandler:
     def __init__(self, manifest: ManifestType) -> None:
         self._manifest = manifest
         self._migrated_manifest: ManifestType = copy.deepcopy(self._manifest)
-        self._manifest_version: Version = self._get_manifest_version()
 
     def apply_migrations(self) -> ManifestType:
         """
@@ -45,14 +51,21 @@ class ManifestMigrationHandler:
                           manifest if any migration failed.
         """
         try:
-            for migration_cls in MIGRATIONS:
-                self._handle_migration(migration_cls)
+            manifest_version = self._get_manifest_version()
+            for migration_version, migrations in MANIFEST_MIGRATIONS.items():
+                for migration_cls in migrations:
+                    self._handle_migration(migration_cls, manifest_version, migration_version)
             return self._migrated_manifest
         except ManifestMigrationException:
             # if any errors occur we return the original resolved manifest
             return self._manifest
 
-    def _handle_migration(self, migration_class: Type[ManifestMigration]) -> None:
+    def _handle_migration(
+        self,
+        migration_class: Type[ManifestMigration],
+        manifest_version: str,
+        migration_version: str,
+    ) -> None:
         """
         Handles a single manifest migration by instantiating the migration class and processing the manifest.
 
@@ -64,21 +77,67 @@ class ManifestMigrationHandler:
         """
         try:
             migration_instance = migration_class()
-            # check if the migration is supported for the given manifest version
-            if self._manifest_version <= migration_instance.migration_version:
+            if self._version_is_valid_for_migration(manifest_version, migration_version):
                 migration_instance._process_manifest(self._migrated_manifest)
+                if migration_instance.is_migrated:
+                    # set the updated manifest version, after migration has been applied
+                    self._set_manifest_version(migration_version)
+                    # set the migration trace
+                    self._set_migration_trace(migration_class, manifest_version, migration_version)
             else:
                 LOGGER.info(
-                    f"Manifest migration: `{migration_class.__name__}` is not supported for the given manifest version `{self._manifest_version}`.",
+                    f"Manifest migration: `{migration_instance.__name__}` is not supported for the given manifest version `{manifest_version}`.",
                 )
         except Exception as e:
             raise ManifestMigrationException(str(e)) from e
 
-    def _get_manifest_version(self) -> Version:
+    def _get_manifest_version(self) -> str:
         """
         Get the manifest version from the manifest.
 
         :param manifest: The manifest to get the version from
         :return: The manifest version
         """
-        return Version(str(self._migrated_manifest.get("version", "0.0.0")))
+        return str(self._migrated_manifest.get(MANIFEST_VERSION_TAG, "0.0.0"))
+
+    def _version_is_valid_for_migration(
+        self, manifest_version: str, migration_version: str
+    ) -> bool:
+        return Version(manifest_version) <= Version(migration_version)
+
+    def _set_manifest_version(self, version: str) -> None:
+        """
+        Set the manifest version in the manifest.
+
+        :param version: The version to set
+        """
+        self._migrated_manifest[MANIFEST_VERSION_TAG] = version
+
+    def _set_migration_trace(
+        self,
+        migration_instance: Type[ManifestMigration],
+        manifest_version: str,
+        migration_version: str,
+    ) -> None:
+        """
+        Set the migration trace in the manifest.
+
+        :param migration_instance: The migration instance to set
+        :param manifest_version: The manifest version before migration
+        :param migration_version: The manifest version after migration
+        """
+
+        if METADATA_TAG not in self._migrated_manifest:
+            self._migrated_manifest[METADATA_TAG] = {}
+        if APPLIED_MIGRATIONS_TAG not in self._migrated_manifest[METADATA_TAG]:
+            self._migrated_manifest[METADATA_TAG][APPLIED_MIGRATIONS_TAG] = []
+
+        migration_trace = MigrationTrace(
+            from_version=manifest_version,
+            to_version=migration_version,
+            migration=migration_instance.__name__,
+            migrated_at=datetime.now(tz=timezone.utc).isoformat(),
+        ).as_dict()
+
+        if migration_version not in self._migrated_manifest[METADATA_TAG][APPLIED_MIGRATIONS_TAG]:
+            self._migrated_manifest[METADATA_TAG][APPLIED_MIGRATIONS_TAG].append(migration_trace)

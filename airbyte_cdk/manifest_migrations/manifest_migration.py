@@ -1,10 +1,11 @@
-# Copyright (c) 2024 Airbyte, Inc., all rights reserved.
+#
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+#
 
-import re
-from abc import abstractmethod
+
+from abc import ABC, abstractmethod
+from dataclasses import asdict, dataclass
 from typing import Any, Dict
-
-from packaging.version import Version
 
 ManifestType = Dict[str, Any]
 
@@ -12,18 +13,45 @@ ManifestType = Dict[str, Any]
 TYPE_TAG = "type"
 
 NON_MIGRATABLE_TYPES = [
+    # more info here: https://github.com/airbytehq/airbyte-internal-issues/issues/12423
     "DynamicDeclarativeStream",
 ]
 
 
-class ManifestMigration:
+@dataclass
+class MigrationTrace:
+    """
+    This class represents a migration that has been applied to the manifest.
+    It contains information about the migration, including the version it was applied from,
+    the version it was applied to, and the time it was applied.
+    """
+
+    from_version: str
+    to_version: str
+    migration: str
+    migrated_at: str
+
+    def as_dict(self) -> dict:
+        return asdict(self)
+
+
+class ManifestMigration(ABC):
+    """
+    Base class for manifest migrations.
+    This class provides a framework for migrating manifest components.
+    It defines the structure for migration classes, including methods for checking if a migration is needed,
+    performing the migration, and validating the migration.
+    """
+
+    def __init__(self) -> None:
+        self.is_migrated: bool = False
+
     @abstractmethod
     def should_migrate(self, manifest: ManifestType) -> bool:
         """
         Check if the manifest should be migrated.
 
         :param manifest: The manifest to potentially migrate
-        :param kwargs: Additional arguments for migration
 
         :return: true if the manifest is of the expected format and should be migrated. False otherwise.
         """
@@ -34,17 +62,15 @@ class ManifestMigration:
         Migrate the manifest. Assumes should_migrate(manifest) returned True.
 
         :param manifest: The manifest to migrate
-        :param kwargs: Additional arguments for migration
         """
 
-    @property
-    def migration_version(self) -> Version:
+    @abstractmethod
+    def validate(self, manifest: ManifestType) -> bool:
         """
-        Get the migration version.
+        Validate the manifest to ensure the migration was successfully applied.
 
-        :return: The migration version as a Version object
+        :param manifest: The manifest to validate
         """
-        return Version(self._get_migration_version())
 
     def _is_component(self, obj: Dict[str, Any]) -> bool:
         """
@@ -95,6 +121,8 @@ class ManifestMigration:
                 if self.should_migrate(obj):
                     # Perform the migration, if needed
                     self.migrate(obj)
+                    # validate the migration
+                    self.is_migrated = self.validate(obj)
 
             # Process all values in the dictionary
             for value in list(obj.values()):
@@ -104,24 +132,3 @@ class ManifestMigration:
             # Process all items in the list
             for item in obj:
                 self._process_manifest(item)
-
-    def _get_migration_version(self) -> str:
-        """
-        Get the migration version from the class name.
-        The migration version is extracted from the class name using a regular expression.
-        The expected format is "V_<major>_<minor>_<patch>_<migration_name>".
-
-        For example, "V_6_45_2_HttpRequesterPathToUrl" -> "6.45.2"
-
-        :return: The migration version as a string in the format "major.minor.patch"
-        :raises ValueError: If the class name does not match the expected format
-        """
-
-        class_name = self.__class__.__name__
-        migration_version = re.search(r"V_(\d+_\d+_\d+)", class_name)
-        if migration_version:
-            return migration_version.group(1).replace("_", ".")
-        else:
-            raise ValueError(
-                f"Invalid migration class name, make sure the class name has the version (e.g `V_<major>_<minor>_<patch>_<migration_name>`): {class_name}"
-            )

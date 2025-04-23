@@ -1,3 +1,8 @@
+#
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+#
+
+
 from airbyte_cdk.manifest_migrations.manifest_migration import (
     TYPE_TAG,
     ManifestMigration,
@@ -5,7 +10,7 @@ from airbyte_cdk.manifest_migrations.manifest_migration import (
 )
 
 
-class V_6_45_2_HttpRequesterRequestBodyJsonDataToRequestBody(ManifestMigration):
+class HttpRequesterRequestBodyJsonDataToRequestBody(ManifestMigration):
     """
     This migration is responsible for migrating the `request_body_json` and `request_body_data` keys
     to a unified `request_body` key in the HttpRequester component.
@@ -26,3 +31,11 @@ class V_6_45_2_HttpRequesterRequestBodyJsonDataToRequestBody(ManifestMigration):
             if key in manifest:
                 manifest[self.replacement_key] = manifest[key]
                 manifest.pop(key, None)
+
+    def validate(self, manifest: ManifestType) -> bool:
+        """
+        Validate the migration by checking if the `request_body` key is present and none of the original keys are.
+        """
+        return self.replacement_key in manifest and all(
+            key not in manifest for key in self.original_keys
+        )
