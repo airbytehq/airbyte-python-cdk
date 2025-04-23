@@ -2818,6 +2818,10 @@ class ModelToComponentFactory:
             else None
         )
 
+        if model.transform_before_filtering is None:
+            # default to False if not set
+            model.transform_before_filtering = False
+
         assert model.transform_before_filtering is not None  # for mypy
 
         transform_before_filtering = model.transform_before_filtering
@@ -2831,6 +2835,10 @@ class ModelToComponentFactory:
                 **client_side_incremental_sync,
             )
             transform_before_filtering = True
+
+        if model.schema_normalization is None:
+            # default to no schema normalization if not set
+            model.schema_normalization = SchemaNormalizationModel.None_
 
         schema_normalization = (
             TypeTransformer(SCHEMA_TRANSFORMER_TYPE_MAPPING[model.schema_normalization])
