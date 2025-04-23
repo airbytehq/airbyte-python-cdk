@@ -61,9 +61,7 @@ class PermissionsFileBasedStream(DefaultFileBasedStream):
                 permissions_record = self.transform_record(
                     permissions_record, file, file_datetime_string
                 )
-                yield stream_data_to_airbyte_message(
-                    self.name, permissions_record, is_file_transfer_message=False
-                )
+                yield stream_data_to_airbyte_message(self.name, permissions_record)
             except Exception as e:
                 self.logger.error(f"Failed to retrieve permissions for file {file.uri}: {str(e)}")
                 yield AirbyteMessage(
