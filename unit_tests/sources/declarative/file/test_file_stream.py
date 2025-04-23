@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 from unittest import TestCase
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from airbyte_cdk.models import AirbyteStateMessage, ConfiguredAirbyteCatalog, Status
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
