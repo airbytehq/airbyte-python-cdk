@@ -4,8 +4,7 @@
 
 from pathlib import Path
 
--from .file_uploader import BaseFileWriter
-+from .base_file_writer import BaseFileWriter
+from .base_file_writer import BaseFileWriter
 
 
 class NoopFileWriter(BaseFileWriter):
