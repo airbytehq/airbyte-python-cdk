@@ -6,8 +6,8 @@ from dataclasses import dataclass
 
 from airbyte_cdk.sources.declarative.types import Record
 
-from .file_uploader import FileUploader
 from .default_file_uploader import DefaultFileUploader
+from .file_uploader import FileUploader
 
 
 @dataclass

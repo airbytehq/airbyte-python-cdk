@@ -482,9 +482,9 @@ from airbyte_cdk.sources.declarative.retrievers import (
     SimpleRetrieverTestReadDecorator,
 )
 from airbyte_cdk.sources.declarative.retrievers.file_uploader import (
-    FileUploader,
     ConnectorBuilderFileUploader,
     DefaultFileUploader,
+    FileUploader,
     LocalFileSystemFileWriter,
     NoopFileWriter,
 )

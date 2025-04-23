@@ -6,6 +6,7 @@ from unittest import TestCase
 from unittest.mock import Mock
 
 from airbyte_cdk.models import AirbyteStateMessage, ConfiguredAirbyteCatalog, Status
+from airbyte_cdk.sources.declarative.retrievers.file_uploader.noop_file_writer import NoopFileWriter
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.test.catalog_builder import CatalogBuilder, ConfiguredAirbyteStreamBuilder
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
@@ -14,7 +15,6 @@ from airbyte_cdk.test.entrypoint_wrapper import read as entrypoint_read
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.test.mock_http.response_builder import find_binary_response, find_template
 from airbyte_cdk.test.state_builder import StateBuilder
-from airbyte_cdk.sources.declarative.retrievers.file_uploader.noop_file_writer import NoopFileWriter
 
 
 class ConfigBuilder:
