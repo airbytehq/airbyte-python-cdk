@@ -72,7 +72,9 @@ class DefaultFileUploader(FileUploader):
         )
 
         if self.content_extractor:
-            raise NotImplementedError("Content extraction is not yet implemented. The content_extractor component is currently not supported.")
+            raise NotImplementedError(
+                "Content extraction is not yet implemented. The content_extractor component is currently not supported."
+            )
         else:
             files_directory = Path(get_files_directory())
 

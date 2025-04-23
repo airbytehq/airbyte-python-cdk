@@ -16,6 +16,7 @@ from airbyte_cdk.test.mock_http.response_builder import find_binary_response, fi
 from airbyte_cdk.test.state_builder import StateBuilder
 from airbyte_cdk.sources.declarative.retrievers.file_uploader.noop_file_writer import NoopFileWriter
 
+
 class ConfigBuilder:
     def build(self) -> Dict[str, Any]:
         return {

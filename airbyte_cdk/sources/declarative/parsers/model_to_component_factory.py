@@ -3617,7 +3617,9 @@ class ModelToComponentFactory:
             requester=requester,
             download_target_extractor=download_target_extractor,
             config=config,
-            file_writer=NoopFileWriter() if emit_connector_builder_messages else LocalFileSystemFileWriter(),
+            file_writer=NoopFileWriter()
+            if emit_connector_builder_messages
+            else LocalFileSystemFileWriter(),
             parameters=model.parameters or {},
             filename_extractor=model.filename_extractor if model.filename_extractor else None,
         )
