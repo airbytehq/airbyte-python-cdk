@@ -4,6 +4,7 @@
 
 
 import logging
+from math import log
 from typing import Any, ClassVar, Dict, Iterator, List, Mapping, Optional, Union
 
 from airbyte_cdk.connector_builder.models import (
@@ -133,8 +134,8 @@ class TestReader:
             message_group
         )
 
-        # append deprecation warnings to the log messages
-        log_messages += deprecation_warnings
+        # extend log messages with deprecation warnings
+        log_messages.extend(deprecation_warnings)
 
         schema, log_messages = self._get_infered_schema(
             configured_catalog, schema_inferrer, log_messages
