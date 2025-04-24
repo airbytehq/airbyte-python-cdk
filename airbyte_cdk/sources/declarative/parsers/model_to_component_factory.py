@@ -27,7 +27,10 @@ from typing import (
 from isodate import parse_duration
 from pydantic.v1 import BaseModel
 
-from airbyte_cdk.models import AirbyteLogMessage, FailureType, Level
+from airbyte_cdk.connector_builder.models import (
+    LogMessage as ConnectorBuilderLogMessage,
+)
+from airbyte_cdk.models import FailureType, Level
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator
 from airbyte_cdk.sources.declarative.async_job.job_tracker import JobTracker
@@ -592,7 +595,7 @@ class ModelToComponentFactory:
         self._api_budget: Optional[Union[APIBudget, HttpAPIBudget]] = None
         self._job_tracker: JobTracker = JobTracker(max_concurrent_async_job_count or 1)
         # placeholder for deprecation warnings
-        self._collected_deprecation_logs: List[AirbyteLogMessage] = []
+        self._collected_deprecation_logs: List[ConnectorBuilderLogMessage] = []
 
     def _init_mappings(self) -> None:
         self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Mapping[Type[BaseModel], Callable[..., Any]] = {
@@ -747,7 +750,7 @@ class ModelToComponentFactory:
 
         return component_constructor(model=model, config=config, **kwargs)
 
-    def get_model_deprecations(self) -> List[Any]:
+    def get_model_deprecations(self) -> List[ConnectorBuilderLogMessage]:
         """
         Returns the deprecation warnings that were collected during the creation of components.
         """

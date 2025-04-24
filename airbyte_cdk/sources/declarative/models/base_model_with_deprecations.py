@@ -8,10 +8,7 @@ from typing import Any, List
 
 from pydantic.v1 import BaseModel
 
-from airbyte_cdk.models import (
-    AirbyteLogMessage,
-    Level,
-)
+from airbyte_cdk.connector_builder.models import LogMessage as ConnectorBuilderLogMessage
 
 # format the warning message
 warnings.formatwarning = (
@@ -55,7 +52,7 @@ class BaseModelWithDeprecations(BaseModel):
         # set the placeholder for the default deprecation messages
         self._default_deprecation_messages: List[str] = []
         # set the placeholder for the deprecation logs
-        self._deprecation_logs: List[AirbyteLogMessage] = []
+        self._deprecation_logs: List[ConnectorBuilderLogMessage] = []
         # process deprecated fields, if present
         self._process_fields(model_fields)
         # emit default deprecation messages
@@ -130,7 +127,9 @@ class BaseModelWithDeprecations(BaseModel):
             self._default_deprecation_messages.append(deprecated_message)
 
         # Create an Airbyte deprecation log message
-        deprecation_log_message = AirbyteLogMessage(level=Level.WARN, message=deprecated_message)
+        deprecation_log_message = ConnectorBuilderLogMessage(
+            level="WARN", message=deprecated_message
+        )
         # Add the deprecation message to the Airbyte log messages,
         # this logs are displayed in the Connector Builder.
         if deprecation_log_message not in self._deprecation_logs:

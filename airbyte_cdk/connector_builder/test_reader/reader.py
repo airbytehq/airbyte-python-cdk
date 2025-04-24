@@ -114,7 +114,7 @@ class TestReader:
         stream = source.streams(config)[0]
 
         # get any deprecation warnings during the component creation
-        deprecation_warnings: List[AirbyteLogMessage] = source.deprecation_warnings()
+        deprecation_warnings: List[LogMessage] = source.deprecation_warnings()
 
         schema_inferrer = SchemaInferrer(
             self._pk_to_nested_and_composite_field(stream.primary_key),
@@ -130,8 +130,12 @@ class TestReader:
         )
 
         slices, log_messages, auxiliary_requests, latest_config_update = self._categorise_groups(
-            message_group, deprecation_warnings
+            message_group
         )
+
+        # append deprecation warnings to the log messages
+        log_messages += deprecation_warnings
+
         schema, log_messages = self._get_infered_schema(
             configured_catalog, schema_inferrer, log_messages
         )
@@ -243,11 +247,7 @@ class TestReader:
 
         return record_limit
 
-    def _categorise_groups(
-        self,
-        message_groups: MESSAGE_GROUPS,
-        deprecation_warnings: Optional[List[Any]] = None,
-    ) -> GROUPED_MESSAGES:
+    def _categorise_groups(self, message_groups: MESSAGE_GROUPS) -> GROUPED_MESSAGES:
         """
         Categorizes a sequence of message groups into slices, log messages, auxiliary requests, and the latest configuration update.
 
@@ -307,17 +307,6 @@ class TestReader:
                     slices.append(message_group)
                 case _:
                     raise ValueError(f"Unknown message group type: {type(message_group)}")
-
-        # process deprecation warnings, if present
-        if deprecation_warnings is not None:
-            for deprecation in deprecation_warnings:
-                match deprecation:
-                    case AirbyteLogMessage():
-                        log_messages.append(
-                            LogMessage(message=deprecation.message, level=deprecation.level.value)
-                        )
-                    case _:
-                        raise ValueError(f"Unknown message group type: {type(deprecation)}")
 
         return slices, log_messages, auxiliary_requests, latest_config_update
 
