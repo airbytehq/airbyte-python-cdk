@@ -201,7 +201,7 @@ def run_docker_command(
     *,
     check: bool = True,
     capture_output: bool = False,
-) -> subprocess.CompletedProcess:
+) -> subprocess.CompletedProcess[str]:
     """Run a Docker command as a subprocess.
 
     Args:
