@@ -2092,6 +2092,7 @@ class FileUploader(BaseModel):
             "{{ record.id }}_{{ record.file_name }}/",
         ],
     )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
 class DeclarativeStream(BaseModel):
