@@ -48,7 +48,7 @@ def test_with_shared_definitions_url_base_are_present(
     assert normalized_manifest == expected_manifest_with_url_base_linked_definition_normalized
 
 
-def test_with_linked_definitions_url_base_authenticator_abnormal_schemas(
+def test_with_linked_definitions_url_base_authenticator_when_multiple_streams_reference_the_same_schema(
     manifest_with_linked_definitions_url_base_authenticator_abnormal_schemas,
     expected_manifest_with_linked_definitions_url_base_authenticator_normalized,
 ) -> None:
@@ -56,6 +56,9 @@ def test_with_linked_definitions_url_base_authenticator_abnormal_schemas(
     This test is to check that the manifest is normalized when the `url_base` and the `authenticator` is linked
     between the definitions and the `url_base` is present in the manifest.
     The `authenticator` is not a normal schema, but a reference to another schema.
+
+    The test also verifies the `stream.schema_loader.schema` is properly extracted to
+    the `schemas.<stream_name>`.
     """
 
     schema = _get_declarative_component_schema()
