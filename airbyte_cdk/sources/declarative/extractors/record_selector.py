@@ -15,6 +15,7 @@ from airbyte_cdk.sources.declarative.extractors.type_transformer import (
 )
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.models import SchemaNormalization
+from airbyte_cdk.sources.declarative.retrievers.file_uploader import FileUploader
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from airbyte_cdk.sources.utils.transform import TypeTransformer
@@ -42,6 +43,7 @@ class RecordSelector(HttpSelector):
     record_filter: Optional[RecordFilter] = None
     transformations: List[RecordTransformation] = field(default_factory=lambda: [])
     transform_before_filtering: bool = False
+    file_uploader: Optional[FileUploader] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._parameters = parameters
@@ -117,7 +119,10 @@ class RecordSelector(HttpSelector):
             transformed_filtered_data, schema=records_schema
         )
         for data in normalized_data:
-            yield Record(data=data, stream_name=self.name, associated_slice=stream_slice)
+            record = Record(data=data, stream_name=self.name, associated_slice=stream_slice)
+            if self.file_uploader:
+                self.file_uploader.upload(record)
+            yield record
 
     def _normalize_by_schema(
         self, records: Iterable[Mapping[str, Any]], schema: Optional[Mapping[str, Any]]

@@ -28,6 +28,7 @@ from airbyte_cdk.sources.declarative.incremental.per_partition_with_global impor
     PerPartitionWithGlobalCursor,
 )
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
+from airbyte_cdk.sources.declarative.models import FileUploader
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConcurrencyLevel as ConcurrencyLevelModel,
 )
@@ -209,6 +210,11 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             # these legacy Python streams the way we do low-code streams to determine if they are concurrent compatible,
             # so we need to treat them as synchronous
 
+            supports_file_transfer = (
+                isinstance(declarative_stream, DeclarativeStream)
+                and "file_uploader" in name_to_stream_mapping[declarative_stream.name]
+            )
+
             if (
                 isinstance(declarative_stream, DeclarativeStream)
                 and name_to_stream_mapping[declarative_stream.name]["type"]
@@ -325,6 +331,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             else None,
                             logger=self.logger,
                             cursor=cursor,
+                            supports_file_transfer=supports_file_transfer,
                         )
                     )
                 elif (
@@ -356,6 +363,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             cursor_field=None,
                             logger=self.logger,
                             cursor=final_state_cursor,
+                            supports_file_transfer=supports_file_transfer,
                         )
                     )
                 elif (
@@ -410,6 +418,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             cursor_field=perpartition_cursor.cursor_field.cursor_field_key,
                             logger=self.logger,
                             cursor=perpartition_cursor,
+                            supports_file_transfer=supports_file_transfer,
                         )
                     )
                 else:
