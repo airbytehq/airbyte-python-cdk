@@ -283,13 +283,6 @@ class ManifestDeclarativeSource(DeclarativeSource):
                 f"Failed to read manifest component json schema required for validation: {e}"
             )
 
-        streams = self._source_config.get("streams")
-        dynamic_streams = self._source_config.get("dynamic_streams")
-        if not (streams or dynamic_streams):
-            raise ValidationError(
-                f"A valid manifest should have at least one stream defined. Got {streams}"
-            )
-
         try:
             validate(self._source_config, declarative_component_schema)
         except ValidationError as e:
