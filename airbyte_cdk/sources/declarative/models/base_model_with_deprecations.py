@@ -52,10 +52,14 @@ class BaseModelWithDeprecations(BaseModel):
         """
         # call the parent constructor first to initialize Pydantic internals
         super().__init__(**model_fields)
+        # set the placeholder for the default deprecation messages
+        self._default_deprecation_messages: List[str] = []
         # set the placeholder for the deprecation logs
         self._deprecation_logs: List[AirbyteLogMessage] = []
         # process deprecated fields, if present
         self._process_fields(model_fields)
+        # emit default deprecation messages
+        self._emit_default_deprecation_messages()
         # set the deprecation logs attribute to the model
         self._set_deprecation_logs_attr_to_model()
 
@@ -119,13 +123,23 @@ class BaseModelWithDeprecations(BaseModel):
             message (str): Warning message to be displayed.
         """
 
-        message = f"Component type: `{self.__class__.__name__}`. Field '{field_name}' is deprecated. {message}"
-        # Emit a warning message for deprecated fields (to stdout) (Python Default behavior)
-        warnings.warn(message, DeprecationWarning)
+        deprecated_message = f"Component type: `{self.__class__.__name__}`. Field '{field_name}' is deprecated. {message}"
+
+        if deprecated_message not in self._default_deprecation_messages:
+            # Avoid duplicates in the default deprecation messages
+            self._default_deprecation_messages.append(deprecated_message)
+
         # Create an Airbyte deprecation log message
-        deprecation_log_message = AirbyteLogMessage(level=Level.WARN, message=message)
+        deprecation_log_message = AirbyteLogMessage(level=Level.WARN, message=deprecated_message)
         # Add the deprecation message to the Airbyte log messages,
         # this logs are displayed in the Connector Builder.
         if deprecation_log_message not in self._deprecation_logs:
             # Avoid duplicates in the deprecation logs
             self._deprecation_logs.append(deprecation_log_message)
+
+    def _emit_default_deprecation_messages(self) -> None:
+        """
+        Emit default deprecation messages for deprecated fields to STDOUT.
+        """
+        for message in self._default_deprecation_messages:
+            warnings.warn(message, DeprecationWarning)
