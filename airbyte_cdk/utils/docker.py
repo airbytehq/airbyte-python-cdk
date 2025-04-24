@@ -21,6 +21,7 @@ from airbyte_cdk.utils.docker_image_templates import (
 
 logger = logging.getLogger(__name__)
 
+
 class ArchEnum(str, Enum):
     """Enum for supported architectures."""
 
