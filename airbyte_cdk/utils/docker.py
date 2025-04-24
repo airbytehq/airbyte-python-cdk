@@ -7,6 +7,7 @@ import logging
 import os
 import subprocess
 import sys
+from enum import Enum
 from pathlib import Path
 
 import click
@@ -20,13 +21,19 @@ from airbyte_cdk.utils.docker_image_templates import (
 
 logger = logging.getLogger(__name__)
 
+class ArchEnum(str, Enum):
+    """Enum for supported architectures."""
+
+    ARM64 = "arm64"
+    AMD64 = "amd64"
+
 
 def _build_image(
     context_dir: Path,
     dockerfile: Path,
     metadata: MetadataFile,
     tag: str,
-    arch: str,
+    arch: ArchEnum,
     build_args: dict[str, str | None] | None = None,
 ) -> str:
     """Build a Docker image for the specified architecture.
@@ -37,7 +44,7 @@ def _build_image(
         "docker",
         "build",
         "--platform",
-        arch,
+        f"linux/{arch.value}",
         "--file",
         str(dockerfile),
         "--label",
@@ -98,9 +105,25 @@ def build_connector_image(
     connector_directory: Path,
     metadata: MetadataFile,
     tag: str,
-    arch: str | None = None,
+    primary_arch: ArchEnum = ArchEnum.ARM64,  # Assume MacBook M series by default
     no_verify: bool = False,
 ) -> None:
+    """Build a connector Docker image.
+
+    This command builds a Docker image for a connector, using either
+    the connector's Dockerfile or a base image specified in the metadata.
+    The image is built for both AMD64 and ARM64 architectures.
+
+    Args:
+        connector_name: The name of the connector.
+        connector_directory: The directory containing the connector code.
+        metadata: The metadata of the connector.
+        tag: The tag to apply to the built image.
+        primary_arch: The primary architecture for the build (default: arm64). This
+            architecture will be used for the same-named tag. Both AMD64 and ARM64
+            images will be built, with the suffixes '-amd64' and '-arm64'.
+        no_verify: If True, skip verification of the built image.
+    """
     connector_kebab_name = connector_name
     connector_snake_name = connector_kebab_name.replace("-", "_")
 
@@ -133,9 +156,8 @@ def build_connector_image(
 
     base_tag = f"{metadata.data.dockerRepository}:{tag}"
     arch_images: list[str] = []
-    default_arch = "linux/arm64"  # Assume MacBook M series by default
-    for arch in ["linux/amd64", "linux/arm64"]:
-        docker_tag = f"{base_tag}-{arch.replace('/', '-')}"
+    for arch in [ArchEnum.AMD64, ArchEnum.ARM64]:
+        docker_tag = f"{base_tag}-{arch.value}"
         docker_tag_parts = docker_tag.split("/")
         if len(docker_tag_parts) > 2:
             docker_tag = "/".join(docker_tag_parts[-1:])
@@ -151,7 +173,7 @@ def build_connector_image(
         )
 
     _tag_image(
-        tag=f"{base_tag}-{default_arch.replace('/', '-')}",
+        tag=f"{base_tag}-{primary_arch.value}",
         new_tags=[base_tag],
     )
     if not no_verify:

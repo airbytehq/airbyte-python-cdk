@@ -72,7 +72,6 @@ def build(
         connector_name=connector_name,
         metadata=metadata,
         tag=tag,
-        arch="linux/amd64",
         no_verify=no_verify,
     )
 
