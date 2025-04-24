@@ -7,6 +7,10 @@ for different connectors and architectures.
 These templates are used to generate connector images.
 """
 
+##############################
+## GLOBAL DOCKERIGNORE FILE ##
+##############################
+
 DOCKERIGNORE_TEMPLATE: str = "\n".join(
     [
         "# This file is auto-generated. Do not edit.",
@@ -28,6 +32,10 @@ DOCKERIGNORE_TEMPLATE: str = "\n".join(
     ]
 )
 
+###########################
+# PYTHON CONNECTOR IMAGE ##
+###########################
+
 PYTHON_CONNECTOR_DOCKERFILE_TEMPLATE = """
 # syntax=docker/dockerfile:1
 # check=skip=all
@@ -42,7 +50,6 @@ ARG EXTRA_PREREQS_SCRIPT=""
 WORKDIR /airbyte/integration_code
 
 COPY . ./
-COPY ${CONNECTOR_SNAKE_NAME} ./${CONNECTOR_SNAKE_NAME}
 
 # Conditionally copy and execute the extra build script if provided
 RUN if [ -n "${EXTRA_PREREQS_SCRIPT}" ]; then \
@@ -74,23 +81,21 @@ ENV AIRBYTE_ENTRYPOINT="/entrypoint.sh"
 ENTRYPOINT ["/entrypoint.sh"]
 """
 
+##################################
+# MANIFEST-ONLY CONNECTOR IMAGE ##
+##################################
+
 MANIFEST_ONLY_DOCKERFILE_TEMPLATE = """
 ARG BASE_IMAGE
 ARG CONNECTOR_SNAKE_NAME
 ARG CONNECTOR_KEBAB_NAME
 
-FROM ${BASE_IMAGE} AS builder
+FROM ${BASE_IMAGE}
 
 WORKDIR /airbyte/integration_code
 
 COPY . ./
-COPY --chmod=755 <<EOT /entrypoint.sh
-#!/usr/bin/env bash
-set -e
 
-${CONNECTOR_KEBAB_NAME} "$@"
-EOT
-
-ENV AIRBYTE_ENTRYPOINT="/entrypoint.sh"
-ENTRYPOINT ["/entrypoint.sh"]
+ENV AIRBYTE_ENTRYPOINT="python ./main.py"
+ENTRYPOINT ["python", "./main.py"]
 """

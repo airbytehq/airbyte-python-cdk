@@ -14,6 +14,7 @@ import click
 from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.utils.docker_image_templates import (
     DOCKERIGNORE_TEMPLATE,
+    MANIFEST_ONLY_DOCKERFILE_TEMPLATE,
     PYTHON_CONNECTOR_DOCKERFILE_TEMPLATE,
 )
 
@@ -120,7 +121,7 @@ def build_connector_image(
 
     base_image = metadata.data.connectorBuildOptions.baseImage
 
-    dockerfile_path.write_text(PYTHON_CONNECTOR_DOCKERFILE_TEMPLATE)
+    dockerfile_path.write_text(get_dockerfile_template(metadata))
     dockerignore_path.write_text(DOCKERIGNORE_TEMPLATE)
 
     build_args: dict[str, str | None] = {
@@ -163,6 +164,36 @@ def build_connector_image(
     else:
         click.echo(f"Build completed successfully (without verification): {base_tag}")
         sys.exit(0)
+
+
+def get_dockerfile_template(
+    metadata: MetadataFile,
+) -> str:
+    """Get the Dockerfile template for the connector.
+
+    Args:
+        metadata: The metadata of the connector.
+        connector_name: The name of the connector.
+
+    Returns:
+        The Dockerfile template as a string.
+    """
+    if metadata.data.language == "python":
+        return PYTHON_CONNECTOR_DOCKERFILE_TEMPLATE
+
+    if metadata.data.language == "manifest-only":
+        return MANIFEST_ONLY_DOCKERFILE_TEMPLATE
+
+    if metadata.data.language == "java":
+        raise ValueError(
+            f"Java and Kotlin connectors are not yet supported. "
+            "Please use airbyte-ci or gradle to build your image."
+        )
+
+    raise ValueError(
+        f"Unsupported connector language: {metadata.data.language}. "
+        "Please check the connector's metadata file."
+    )
 
 
 def run_docker_command(
