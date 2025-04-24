@@ -42,9 +42,29 @@ class ConnectorMetadata(BaseModel):
 
     dockerRepository: str = Field(..., description="Docker repository for the connector image")
     dockerImageTag: str = Field(..., description="Docker image tag for the connector")
-    language: ConnectorLanguage | None = Field(
-        None, description="Language of the connector implementation"
+
+    tags: list[str] = Field(
+        default=[],
+        description="List of tags for the connector",
     )
+
+    @property
+    def language(self) -> ConnectorLanguage:
+        """Get the connector language."""
+        for tag in self.tags:
+            if tag.startswith("language:"):
+                language = tag.split(":", 1)[1]
+                if language == "python":
+                    return ConnectorLanguage.PYTHON
+                elif language == "java":
+                    return ConnectorLanguage.JAVA
+                elif language == "low-code":
+                    return ConnectorLanguage.LOW_CODE
+                elif language == "manifest-only":
+                    return ConnectorLanguage.MANIFEST_ONLY
+
+        return ConnectorLanguage.UNKNOWN
+
     connectorBuildOptions: ConnectorBuildOptions | None = Field(
         None, description="Options for building the connector"
     )
