@@ -7,6 +7,7 @@ import logging
 import os
 import subprocess
 import sys
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 
@@ -18,6 +19,22 @@ from airbyte_cdk.utils.docker_image_templates import (
     MANIFEST_ONLY_DOCKERFILE_TEMPLATE,
     PYTHON_CONNECTOR_DOCKERFILE_TEMPLATE,
 )
+
+
+@dataclass(kw_only=True)
+class ConnectorImageBuildError(Exception):
+    """Custom exception for Docker build errors."""
+
+    error_text: str
+    build_args: list[str]
+
+    def __str__(self) -> str:
+        return "\n".join([
+            f"ConnectorImageBuildError: Could not build image.",
+            f"Build args: {self.build_args}",
+            f"Error text: {self.error_text}",
+        ])
+
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +57,8 @@ def _build_image(
     """Build a Docker image for the specified architecture.
 
     Returns the tag of the built image.
+
+    Raises: ConnectorImageBuildError if the build fails.
     """
     docker_args: list[str] = [
         "docker",
@@ -71,9 +90,11 @@ def _build_image(
             docker_args,
         )
     except subprocess.CalledProcessError as e:
-        print(f"ERROR: Failed to build image using Docker args: {docker_args}")
-        exit(1)
-        raise
+        raise ConnectorImageBuildError(
+            error_text=e.stderr,
+            build_args=docker_args,
+        ) from e
+
     return tag
 
 
@@ -126,6 +147,10 @@ def build_connector_image(
             architecture will be used for the same-named tag. Both AMD64 and ARM64
             images will be built, with the suffixes '-amd64' and '-arm64'.
         no_verify: If True, skip verification of the built image.
+
+    Raises:
+        ValueError: If the connector build options are not defined in metadata.yaml.
+        ConnectorImageBuildError: If the build fails.
     """
     connector_kebab_name = connector_name
     connector_snake_name = connector_kebab_name.replace("-", "_")

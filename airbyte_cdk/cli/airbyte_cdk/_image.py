@@ -13,6 +13,7 @@ import rich_click as click
 from airbyte_cdk.cli.airbyte_cdk._util import resolve_connector_name_and_directory
 from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.utils.docker import (
+    ConnectorImageBuildError,
     build_connector_image,
     verify_docker_installation,
 )
@@ -73,13 +74,20 @@ def build(
         )
         sys.exit(1)
     click.echo(f"Building Image for Connector: {metadata.data.dockerRepository}:{tag}")
-    build_connector_image(
-        connector_directory=connector_directory,
-        connector_name=connector_name,
-        metadata=metadata,
-        tag=tag,
-        no_verify=no_verify,
-    )
+    try:
+        build_connector_image(
+            connector_directory=connector_directory,
+            connector_name=connector_name,
+            metadata=metadata,
+            tag=tag,
+            no_verify=no_verify,
+        )
+    except ConnectorImageBuildError as e:
+        click.echo(
+            f"Error building connector image: {e!s}",
+            err=True,
+        )
+        sys.exit(1)
 
 
 __all__ = [
