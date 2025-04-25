@@ -1484,6 +1484,9 @@ definitions:
             examples:
               - "{{ record.id }}/{{ record.file_name }}/"
               - "{{ record.id }}_{{ record.file_name }}/"
+          $parameters:
+            type: object
+            additional_properties: true
       $parameters:
         type: object
         additional_properties: true

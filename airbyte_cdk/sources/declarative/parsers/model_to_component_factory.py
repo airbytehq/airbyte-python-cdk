@@ -2967,7 +2967,10 @@ class ModelToComponentFactory:
                 model.requester.request_parameters = self._remove_query_properties(
                     model.requester.request_parameters
                 )
-        elif model.requester.fetch_properties_from_endpoint:
+        elif (
+            hasattr(model.requester, "fetch_properties_from_endpoint")
+            and model.requester.fetch_properties_from_endpoint
+        ):
             query_properties_definition = QueryPropertiesModel(
                 type="QueryProperties",
                 property_list=model.requester.fetch_properties_from_endpoint,
