@@ -8,16 +8,18 @@ from datetime import datetime
 from enum import Enum
 from io import IOBase
 from os import makedirs, path
-from typing import Any, Dict, Iterable, List, Optional, Set
+from typing import Any, Callable, Iterable, List, MutableMapping, Optional, Set, Tuple
 
 from wcmatch.glob import GLOBSTAR, globmatch
 
+from airbyte_cdk.models import AirbyteRecordMessageFileReference
 from airbyte_cdk.sources.file_based.config.abstract_file_based_spec import AbstractFileBasedSpec
 from airbyte_cdk.sources.file_based.config.validate_config_transfer_modes import (
     include_identities_stream,
     preserve_directory_structure,
     use_file_transfer,
 )
+from airbyte_cdk.sources.file_based.file_record_data import FileRecordData
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 
 
@@ -28,6 +30,10 @@ class FileReadMode(Enum):
 
 class AbstractFileBasedStreamReader(ABC):
     DATE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
+    FILE_RELATIVE_PATH = "file_relative_path"
+    FILE_NAME = "file_name"
+    LOCAL_FILE_PATH = "local_file_path"
+    FILE_FOLDER = "file_folder"
 
     def __init__(self) -> None:
         self._config = None
@@ -148,9 +154,9 @@ class AbstractFileBasedStreamReader(ABC):
         return False
 
     @abstractmethod
-    def get_file(
+    def upload(
         self, file: RemoteFile, local_directory: str, logger: logging.Logger
-    ) -> Dict[str, Any]:
+    ) -> Tuple[FileRecordData, AirbyteRecordMessageFileReference]:
         """
         This is required for connectors that will support writing to
         files. It will handle the logic to download,get,read,acquire or
@@ -162,25 +168,41 @@ class AbstractFileBasedStreamReader(ABC):
                logger (logging.Logger): Logger for logging information and errors.
 
            Returns:
-               dict: A dictionary containing the following:
-                   - "file_url" (str): The absolute path of the downloaded file.
-                   - "bytes" (int): The file size in bytes.
-                   - "file_relative_path" (str): The relative path of the file for local storage. Is relative to local_directory as
-                   this a mounted volume in the pod container.
-
+               AirbyteRecordMessageFileReference: A file reference object containing:
+                   - staging_file_url (str): The absolute path to the referenced file in the staging area.
+                   - file_size_bytes (int): The size of the referenced file in bytes.
+                   - source_file_relative_path (str): The relative path to the referenced file in source.
         """
         ...
 
-    def _get_file_transfer_paths(self, file: RemoteFile, local_directory: str) -> List[str]:
+    def _get_file_transfer_paths(
+        self, source_file_relative_path: str, staging_directory: str
+    ) -> MutableMapping[str, Any]:
+        """
+        This method is used to get the file transfer paths for a given source file relative path and local directory.
+        It returns a dictionary with the following keys:
+            - FILE_RELATIVE_PATH: The relative path to file in reference to the staging directory.
+            - LOCAL_FILE_PATH: The absolute path to the file.
+            - FILE_NAME: The name of the referenced file.
+            - FILE_FOLDER: The folder of the referenced file.
+        """
         preserve_directory_structure = self.preserve_directory_structure()
+
+        file_name = path.basename(source_file_relative_path)
+        file_folder = path.dirname(source_file_relative_path)
         if preserve_directory_structure:
             # Remove left slashes from source path format to make relative path for writing locally
-            file_relative_path = file.uri.lstrip("/")
+            file_relative_path = source_file_relative_path.lstrip("/")
         else:
-            file_relative_path = path.basename(file.uri)
-        local_file_path = path.join(local_directory, file_relative_path)
-
+            file_relative_path = file_name
+        local_file_path = path.join(staging_directory, file_relative_path)
         # Ensure the local directory exists
         makedirs(path.dirname(local_file_path), exist_ok=True)
-        absolute_file_path = path.abspath(local_file_path)
-        return [file_relative_path, local_file_path, absolute_file_path]
+
+        file_paths = {
+            self.FILE_RELATIVE_PATH: file_relative_path,
+            self.LOCAL_FILE_PATH: local_file_path,
+            self.FILE_NAME: file_name,
+            self.FILE_FOLDER: file_folder,
+        }
+        return file_paths

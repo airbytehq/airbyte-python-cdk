@@ -75,11 +75,11 @@ jobs:
           # Chargebee is being flaky:
           # - connector: source-chargebee
           #   cdk_extra: n/a
-          # These two are behind in CDK updates and can't be used as tests until they are updated:
-          # - connector: source-s3
-          #   cdk_extra: file-based
+          # This one is behind in CDK updates and can't be used as tests until it is updated:
           # - connector: destination-pinecone
           #   cdk_extra: vector-db-based
+          - connector: source-google-drive
+            cdk_extra: file-based
           - connector: destination-motherduck
             cdk_extra: sql
           # ZenDesk currently failing (as of 2024-12-02)

@@ -30,7 +30,8 @@ enable = true
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
-airbyte-protocol-models-dataclasses = "^0.14"
+airbyte-protocol-models-dataclasses = "^0.15"
+
 backoff = "*"
 boltons = "^25.0.0"
 cachetools = "*"
@@ -81,6 +82,7 @@ unstructured = { version = "0.10.27", extras = ["docx", "pptx"], optional = true
 pyjwt = "^2.8.0"
 cryptography = ">=44.0.0,<45.0.0"  # Constrained as transitive dependency due to a bug in newer versions
 pytz = "2024.2"
+pytest = {version = "^7", optional = true }
 orjson = "^3.10.7"
 serpyco-rs = "^1.10.2"
 sqlalchemy = {version = "^2.0,!=2.0.36", optional = true }
@@ -96,7 +98,7 @@ ruff = "^0.11.5"
 pdoc = "^15.0.0"
 poethepoet = "^0.24.2"
 pyproject-flake8 = "^6.1.0"
-pytest = "^7"
+pytest = "*"  # Version will be set by the 'dev' extra
 pytest-memray = "^1.6.0"
 pympler = "*"
 pytest-cov = "*"
@@ -114,6 +116,7 @@ deptry = "^0.23.0"
 file-based = ["avro", "fastavro", "pyarrow", "unstructured", "pdf2image", "pdfminer.six", "unstructured.pytesseract", "pytesseract", "markdown", "python-calamine", "python-snappy"]
 vector-db-based = ["langchain", "openai", "cohere", "tiktoken"]
 sql = ["sqlalchemy"]
+dev = ["pytest"]
 
 [tool.poetry.scripts]
 
