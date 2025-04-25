@@ -29,11 +29,13 @@ class ConnectorImageBuildError(Exception):
     build_args: list[str]
 
     def __str__(self) -> str:
-        return "\n".join([
-            f"ConnectorImageBuildError: Could not build image.",
-            f"Build args: {self.build_args}",
-            f"Error text: {self.error_text}",
-        ])
+        return "\n".join(
+            [
+                f"ConnectorImageBuildError: Could not build image.",
+                f"Build args: {self.build_args}",
+                f"Error text: {self.error_text}",
+            ]
+        )
 
 
 logger = logging.getLogger(__name__)
@@ -78,11 +80,13 @@ def _build_image(
                 docker_args.append(f"--build-arg={key}={value}")
             else:
                 docker_args.append(f"--build-arg={key}")
-    docker_args.extend([
-        "-t",
-        tag,
-        str(context_dir),
-    ])
+    docker_args.extend(
+        [
+            "-t",
+            tag,
+            str(context_dir),
+        ]
+    )
 
     print(f"Building image: {tag} ({arch})")
     try:
