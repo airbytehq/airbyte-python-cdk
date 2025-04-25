@@ -365,13 +365,6 @@ class ManifestDeclarativeSource(DeclarativeSource):
         Validates the connector manifest against the declarative component schema
         """
 
-        streams = self._source_config.get("streams")
-        dynamic_streams = self._source_config.get("dynamic_streams")
-        if not (streams or dynamic_streams):
-            raise ValidationError(
-                f"A valid manifest should have at least one stream defined. Got {streams}"
-            )
-
         try:
             validate(self._source_config, self._declarative_component_schema)
         except ValidationError as e:
