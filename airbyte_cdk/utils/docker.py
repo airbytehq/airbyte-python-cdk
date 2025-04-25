@@ -78,7 +78,7 @@ def _build_image(
 def _tag_image(
     tag: str,
     new_tags: list[str] | str,
-) -> str:
+) -> None:
     """Build a Docker image for the specified architecture.
 
     Returns the tag of the built image.
@@ -86,19 +86,19 @@ def _tag_image(
     if not isinstance(new_tags, list):
         new_tags = [new_tags]
 
-    print(f"Tagging image '{tag}' as: {', '.join(new_tags)}")
-    docker_args = [
-        "docker",
-        "tag",
-        tag,
-        *new_tags,
-    ]
-    _ = subprocess.run(
-        docker_args,
-        text=True,
-        check=True,
-    )
-    return tag
+    for new_tag in new_tags:
+        print(f"Tagging image '{tag}' as: {new_tag}")
+        docker_args = [
+            "docker",
+            "tag",
+            tag,
+            new_tag,
+        ]
+        _ = subprocess.run(
+            docker_args,
+            text=True,
+            check=True,
+        )
 
 
 def build_connector_image(
