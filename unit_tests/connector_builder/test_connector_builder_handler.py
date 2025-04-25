@@ -503,7 +503,7 @@ def test_handle_resolve_manifest(valid_resolve_manifest_config_file, dummy_catal
                 str(valid_resolve_manifest_config_file),
                 "--catalog",
                 str(dummy_catalog),
-            ]
+            ],
         )
         assert patched_handle.call_count == 1
 
@@ -515,7 +515,13 @@ def test_handle_test_read(valid_read_config_file, configured_catalog):
         return_value=AirbyteMessage(type=MessageType.RECORD),
     ) as patch:
         handle_request(
-            ["read", "--config", str(valid_read_config_file), "--catalog", str(configured_catalog)]
+            [
+                "read",
+                "--config",
+                str(valid_read_config_file),
+                "--catalog",
+                str(configured_catalog),
+            ],
         )
         assert patch.call_count == 1
 
@@ -919,7 +925,13 @@ def test_missing_config(valid_resolve_manifest_config_file):
 def test_invalid_config_command(invalid_config_file, dummy_catalog):
     with pytest.raises(ValueError):
         handle_request(
-            ["read", "--config", str(invalid_config_file), "--catalog", str(dummy_catalog)]
+            [
+                "read",
+                "--config",
+                str(invalid_config_file),
+                "--catalog",
+                str(dummy_catalog),
+            ],
         )
 
 
