@@ -880,20 +880,17 @@ class FlattenFields(BaseModel):
 
 
 class KeyTransformation(BaseModel):
-    prefix: Optional[Union[str, None]] = Field(
+    type: Literal["KeyTransformation"]
+    prefix: Optional[str] = Field(
         None,
         description="Prefix to add for object keys. If not provided original keys remain unchanged.",
-        examples=[
-            "flattened_",
-        ],
+        examples=["flattened_"],
         title="Key Prefix",
     )
-    suffix: Optional[Union[str, None]] = Field(
+    suffix: Optional[str] = Field(
         None,
         description="Suffix to add for object keys. If not provided original keys remain unchanged.",
-        examples=[
-            "_flattened",
-        ],
+        examples=["_flattened"],
         title="Key Suffix",
     )
 
@@ -916,7 +913,7 @@ class DpathFlattenFields(BaseModel):
         description="Whether to replace the origin record or not. Default is False.",
         title="Replace Origin Record",
     )
-    key_transformation: Optional[Union[KeyTransformation, None]] = Field(
+    key_transformation: Optional[KeyTransformation] = Field(
         None,
         description="Transformation for object keys. If not provided, original key will be used.",
         title="Key transformation",
@@ -2088,7 +2085,6 @@ class FileUploader(BaseModel):
             "{{ record.id }}_{{ record.file_name }}/",
         ],
     )
-    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
 class DeclarativeStream(BaseModel):
@@ -2248,6 +2244,11 @@ class HttpRequester(BaseModel):
         None,
         description="Error handler component that defines how to handle errors.",
         title="Error Handler",
+    )
+    fetch_properties_from_endpoint: Optional[PropertiesFromEndpoint] = Field(
+        None,
+        description="Allows for retrieving a dynamic set of properties from an API endpoint which can be injected into outbound request using the stream_partition.extra_fields.",
+        title="Fetch Properties from Endpoint",
     )
     http_method: Optional[HttpMethod] = Field(
         HttpMethod.GET,
@@ -2650,6 +2651,7 @@ SelectiveAuthenticator.update_forward_refs()
 FileUploader.update_forward_refs()
 DeclarativeStream.update_forward_refs()
 SessionTokenAuthenticator.update_forward_refs()
+HttpRequester.update_forward_refs()
 DynamicSchemaLoader.update_forward_refs()
 ParentStreamConfig.update_forward_refs()
 PropertiesFromEndpoint.update_forward_refs()

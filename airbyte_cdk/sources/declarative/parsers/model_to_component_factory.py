@@ -2967,6 +2967,18 @@ class ModelToComponentFactory:
                 model.requester.request_parameters = self._remove_query_properties(
                     model.requester.request_parameters
                 )
+        elif model.requester.fetch_properties_from_endpoint:
+            query_properties_definition = QueryPropertiesModel(
+                type="QueryProperties",
+                property_list=model.requester.fetch_properties_from_endpoint,
+                always_include_properties=None,
+                property_chunking=None,
+            )  # type: ignore # $parameters has a default value
+
+            query_properties = self.create_query_properties(
+                model=query_properties_definition,
+                config=config,
+            )
 
         requester = self._create_component_from_model(
             model=model.requester,

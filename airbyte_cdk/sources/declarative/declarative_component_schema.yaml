@@ -1459,7 +1459,7 @@ definitions:
         properties:
           type:
             type: string
-            enum: [ FileUploader ]
+            enum: [FileUploader]
           requester:
             description: Requester component that describes how to prepare HTTP requests to send to the source API.
             anyOf:
@@ -1960,6 +1960,10 @@ definitions:
           - "$ref": "#/definitions/DefaultErrorHandler"
           - "$ref": "#/definitions/CustomErrorHandler"
           - "$ref": "#/definitions/CompositeErrorHandler"
+      fetch_properties_from_endpoint:
+        title: Fetch Properties from Endpoint
+        description: Allows for retrieving a dynamic set of properties from an API endpoint which can be injected into outbound request using the stream_partition.extra_fields.
+        "$ref": "#/definitions/PropertiesFromEndpoint"
       http_method:
         title: HTTP Method
         description: The HTTP method used to fetch data from the source (can be GET or POST).
@@ -2351,7 +2355,7 @@ definitions:
     properties:
       type:
         type: string
-        enum: [ KeyTransformation ]
+        enum: [KeyTransformation]
       prefix:
         title: Key Prefix
         description: Prefix to add for object keys. If not provided original keys remain unchanged.
