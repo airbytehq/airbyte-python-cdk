@@ -13,7 +13,7 @@ from pathlib import Path
 
 import click
 
-from airbyte_cdk.models.connector_metadata import MetadataFile
+from airbyte_cdk.models.connector_metadata import ConnectorLanguage, MetadataFile
 from airbyte_cdk.utils.docker_image_templates import (
     DOCKERIGNORE_TEMPLATE,
     MANIFEST_ONLY_DOCKERFILE_TEMPLATE,
@@ -88,6 +88,7 @@ def _build_image(
     try:
         run_docker_command(
             docker_args,
+            check=True,
         )
     except subprocess.CalledProcessError as e:
         raise ConnectorImageBuildError(
@@ -105,6 +106,9 @@ def _tag_image(
     """Build a Docker image for the specified architecture.
 
     Returns the tag of the built image.
+
+    Raises:
+        ConnectorImageBuildError: If the docker tag command fails.
     """
     if not isinstance(new_tags, list):
         new_tags = [new_tags]
@@ -117,11 +121,16 @@ def _tag_image(
             tag,
             new_tag,
         ]
-        _ = subprocess.run(
-            docker_args,
-            text=True,
-            check=True,
-        )
+        try:
+            run_docker_command(
+                docker_args,
+                check=True,
+            )
+        except subprocess.CalledProcessError as e:
+            raise ConnectorImageBuildError(
+                error_text=e.stderr,
+                build_args=docker_args,
+            ) from e
 
 
 def build_connector_image(
@@ -150,7 +159,7 @@ def build_connector_image(
 
     Raises:
         ValueError: If the connector build options are not defined in metadata.yaml.
-        ConnectorImageBuildError: If the build fails.
+        ConnectorImageBuildError: If the image build or tag operation fails.
     """
     connector_kebab_name = connector_name
     connector_snake_name = connector_kebab_name.replace("-", "_")
@@ -228,13 +237,13 @@ def get_dockerfile_template(
     Returns:
         The Dockerfile template as a string.
     """
-    if metadata.data.language == "python":
+    if metadata.data.language == ConnectorLanguage.PYTHON:
         return PYTHON_CONNECTOR_DOCKERFILE_TEMPLATE
 
-    if metadata.data.language == "manifest-only":
+    if metadata.data.language == ConnectorLanguage.MANIFEST_ONLY:
         return MANIFEST_ONLY_DOCKERFILE_TEMPLATE
 
-    if metadata.data.language == "java":
+    if metadata.data.language == ConnectorLanguage.JAVA:
         raise ValueError(
             f"Java and Kotlin connectors are not yet supported. "
             "Please use airbyte-ci or gradle to build your image."
@@ -269,7 +278,7 @@ def run_docker_command(
     process = subprocess.run(
         cmd,
         text=True,
-        check=True,
+        check=check,
         # If capture_output=True, stderr and stdout are captured and returned to caller:
         capture_output=capture_output,
         env={**os.environ, "DOCKER_BUILDKIT": "1"},
