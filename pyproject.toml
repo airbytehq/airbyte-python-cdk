@@ -35,9 +35,11 @@ airbyte-protocol-models-dataclasses = "^0.15"
 backoff = "*"
 boltons = "^25.0.0"
 cachetools = "*"
+click = "^8.1.8"
 dpath = "^2.1.6"
 dunamai = "^1.22.0"
 genson = "1.3.0"
+google-cloud-secret-manager = "^2.17.0"
 isodate = "~0.6.1"
 Jinja2 = "~3.1.2"
 jsonref = "~0.2"
@@ -53,6 +55,7 @@ PyYAML = "^6.0.1"
 rapidfuzz = "^3.10.1" # TODO: Remove if unused
 requests = "*"
 requests_cache = "*"
+rich-click = "^1.8.8"
 typing-extensions = "*"  # Transitive dependency used directly in code
 wcmatch = "10.0"
 # Extras depedencies
@@ -79,6 +82,7 @@ unstructured = { version = "0.10.27", extras = ["docx", "pptx"], optional = true
 pyjwt = "^2.8.0"
 cryptography = ">=44.0.0,<45.0.0"  # Constrained as transitive dependency due to a bug in newer versions
 pytz = "2024.2"
+pytest = {version = "^7", optional = true }
 orjson = "^3.10.7"
 serpyco-rs = "^1.10.2"
 sqlalchemy = {version = "^2.0,!=2.0.36", optional = true }
@@ -94,7 +98,7 @@ ruff = "^0.11.5"
 pdoc = "^15.0.0"
 poethepoet = "^0.24.2"
 pyproject-flake8 = "^6.1.0"
-pytest = "^7"
+pytest = "*"  # Version will be set by the 'dev' extra
 pytest-memray = "^1.6.0"
 pympler = "*"
 pytest-cov = "*"
@@ -112,9 +116,11 @@ deptry = "^0.23.0"
 file-based = ["avro", "fastavro", "pyarrow", "unstructured", "pdf2image", "pdfminer.six", "unstructured.pytesseract", "pytesseract", "markdown", "python-calamine", "python-snappy"]
 vector-db-based = ["langchain", "openai", "cohere", "tiktoken"]
 sql = ["sqlalchemy"]
+dev = ["pytest"]
 
 [tool.poetry.scripts]
 
+airbyte-cdk = "airbyte_cdk.cli.airbyte_cdk:cli"
 source-declarative-manifest = "airbyte_cdk.cli.source_declarative_manifest:run"
 
 [tool.isort]
@@ -155,7 +161,7 @@ lint-fix = { cmd = "poetry run ruff check --fix .", help = "Auto-fix any lint is
 lint-fix-unsafe = { cmd = "poetry run ruff check --fix --unsafe-fixes .", help = "Lint-fix modified files, including 'unsafe' fixes. It is recommended to first commit any pending changes and then always manually review any unsafe changes applied." }
 
 # ruff fix everything (ignoring non-Python fixes)
-ruff-fix = { sequence = ["lint-fix", "_format-fix-ruff"] , help = "Lint-fix and format-fix all code." }
+ruff-fix = { sequence = ["lint-fix", "_format-fix-ruff"],  help = "Lint-fix and format-fix all code." }
 
 # Combined Check and Fix tasks
 
@@ -219,13 +225,15 @@ exclude = [
 # https://deptry.com/rules-violations/#missing-dependencies-dep001
 DEP001 = [
   # These are imported but not declared:
-  "source_declarative_manifest"  # Imported only in dynamic import tests, not in main code
+  "source_declarative_manifest",  # Imported only in dynamic import tests, not in main code
+  "google"  # Imported via google.cloud.secretmanager_v1 which is provided by google-cloud-secret-manager
 ]
 
 # DEP002: Project should not contain unused dependencies.
 # https://deptry.com/rules-violations/#missing-dependencies-dep002
 DEP002 = [
   "cryptography",  # Constrained as transitive dependency due to a bug in newer versions
+  "google-cloud-secret-manager",  # Deptry can't detect that `google.cloud.secretmanager_v1` uses this package
 
   # TODO: Remove these dependencies if not needed:
   "avro",  # Only imported in `unit_tests` code
