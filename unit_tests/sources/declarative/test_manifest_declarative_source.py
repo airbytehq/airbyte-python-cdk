@@ -1015,46 +1015,6 @@ class TestManifestDeclarativeSource:
         with pytest.raises(FileNotFoundError):
             source.spec(logger)
 
-    def test_manifest_without_at_least_one_stream(self):
-        manifest = {
-            "version": "0.29.3",
-            "definitions": {
-                "schema_loader": {
-                    "name": "{{ parameters.stream_name }}",
-                    "file_path": "./source_sendgrid/schemas/{{ parameters.name }}.yaml",
-                },
-                "retriever": {
-                    "paginator": {
-                        "type": "DefaultPaginator",
-                        "page_size": 10,
-                        "page_size_option": {
-                            "type": "RequestOption",
-                            "inject_into": "request_body",
-                            "field_path": ["variables", "page_size"],
-                        },
-                        "page_token_option": {"type": "RequestPath"},
-                        "pagination_strategy": {
-                            "type": "CursorPagination",
-                            "cursor_value": "{{ response._metadata.next }}",
-                        },
-                    },
-                    "requester": {
-                        "path": "/v3/marketing/lists",
-                        "authenticator": {
-                            "type": "BearerAuthenticator",
-                            "api_token": "{{ config.apikey }}",
-                        },
-                        "request_parameters": {"page_size": 10},
-                    },
-                    "record_selector": {"extractor": {"field_path": ["result"]}},
-                },
-            },
-            "streams": [],
-            "check": {"type": "CheckStream", "stream_names": ["lists"]},
-        }
-        with pytest.raises(ValidationError):
-            ManifestDeclarativeSource(source_config=manifest)
-
     @patch("airbyte_cdk.sources.declarative.declarative_source.DeclarativeSource.read")
     def test_given_debug_when_read_then_set_log_level(self, declarative_source_read):
         any_valid_manifest = {

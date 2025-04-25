@@ -2194,11 +2194,20 @@ class ModelToComponentFactory:
 
         api_budget = self._api_budget
 
+        # Removes QueryProperties components from the interpolated mappings because it has been designed
+        # to be used by the SimpleRetriever and will be resolved from the provider from the slice directly
+        # instead of through jinja interpolation
+        request_parameters: Optional[Union[str, Mapping[str, str]]]
+        if isinstance(model.request_parameters, Mapping):
+            request_parameters = self._remove_query_properties(model.request_parameters)
+        else:
+            request_parameters = model.request_parameters
+
         request_options_provider = InterpolatedRequestOptionsProvider(
             request_body_data=model.request_body_data,
             request_body_json=model.request_body_json,
             request_headers=model.request_headers,
-            request_parameters=model.request_parameters,
+            request_parameters=request_parameters,
             query_properties_key=query_properties_key,
             config=config,
             parameters=model.parameters or {},
@@ -2818,6 +2827,10 @@ class ModelToComponentFactory:
             else None
         )
 
+        if model.transform_before_filtering is None:
+            # default to False if not set
+            model.transform_before_filtering = False
+
         assert model.transform_before_filtering is not None  # for mypy
 
         transform_before_filtering = model.transform_before_filtering
@@ -2831,6 +2844,10 @@ class ModelToComponentFactory:
                 **client_side_incremental_sync,
             )
             transform_before_filtering = True
+
+        if model.schema_normalization is None:
+            # default to no schema normalization if not set
+            model.schema_normalization = SchemaNormalizationModel.None_
 
         schema_normalization = (
             TypeTransformer(SCHEMA_TRANSFORMER_TYPE_MAPPING[model.schema_normalization])
@@ -2938,16 +2955,9 @@ class ModelToComponentFactory:
                 # When translating JSON schema into Pydantic models, enforcing types for arrays containing both
                 # concrete string complex object definitions like QueryProperties would get resolved to Union[str, Any].
                 # This adds the extra validation that we couldn't get for free in Pydantic model generation
-                if (
-                    isinstance(request_parameter, Mapping)
-                    and request_parameter.get("type") == "QueryProperties"
-                ):
+                if isinstance(request_parameter, QueryPropertiesModel):
                     query_properties_key = key
                     query_properties_definitions.append(request_parameter)
-                elif not isinstance(request_parameter, str):
-                    raise ValueError(
-                        f"Each element of request_parameters should be of type str or QueryProperties, but received {request_parameter.get('type')}"
-                    )
 
             if len(query_properties_definitions) > 1:
                 raise ValueError(
@@ -2955,17 +2965,8 @@ class ModelToComponentFactory:
                 )
 
             if len(query_properties_definitions) == 1:
-                query_properties = self.create_component(
-                    model_type=QueryPropertiesModel,
-                    component_definition=query_properties_definitions[0],
-                    config=config,
-                )
-
-            # Removes QueryProperties components from the interpolated mappings because it will be resolved in
-            # the provider from the slice directly instead of through jinja interpolation
-            if isinstance(model.requester.request_parameters, Mapping):
-                model.requester.request_parameters = self._remove_query_properties(
-                    model.requester.request_parameters
+                query_properties = self._create_component_from_model(
+                    model=query_properties_definitions[0], config=config
                 )
 
         requester = self._create_component_from_model(
@@ -3088,13 +3089,12 @@ class ModelToComponentFactory:
 
     @staticmethod
     def _remove_query_properties(
-        request_parameters: Mapping[str, Union[Any, str]],
-    ) -> Mapping[str, Union[Any, str]]:
+        request_parameters: Mapping[str, Union[str, QueryPropertiesModel]],
+    ) -> Mapping[str, str]:
         return {
             parameter_field: request_parameter
             for parameter_field, request_parameter in request_parameters.items()
-            if not isinstance(request_parameter, Mapping)
-            or not request_parameter.get("type") == "QueryProperties"
+            if not isinstance(request_parameter, QueryPropertiesModel)
         }
 
     def create_state_delegating_stream(
