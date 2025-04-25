@@ -65,6 +65,7 @@ def should_migrate_manifest(config: Mapping[str, Any]) -> bool:
     """
     return config.get("__should_migrate", False)
 
+
 def should_normalize_manifest(config: Mapping[str, Any]) -> bool:
     """
     Check if the manifest should be normalized.

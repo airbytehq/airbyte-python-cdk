@@ -106,7 +106,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
             component_factory: optional factory if ModelToComponentFactory's default behavior needs to be tweaked.
             normalize_manifest: Optional flag to indicate if the manifest should be normalized.
         """
-        self.logger = logging.getLogger(f"airbyte.{self.name}")        
+        self.logger = logging.getLogger(f"airbyte.{self.name}")
         self._should_normalize = normalize_manifest
         self._should_migrate = migrate_manifest
         self._declarative_component_schema = _get_declarative_component_schema()
@@ -128,7 +128,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
             AlwaysLogSliceLogger() if emit_connector_builder_messages else DebugSliceLogger()
         )
         self._config = config or {}
-        
+
         # resolve all components in the manifest
         self._source_config = self._pre_process_manifest(dict(source_config))
         # validate resolved manifest against the declarative component schema
@@ -170,9 +170,8 @@ class ManifestDeclarativeSource(DeclarativeSource):
         propagated_manifest = ManifestComponentTransformer().propagate_types_and_parameters(
             "", resolved_manifest, {}
         )
-        
+
         return propagated_manifest
-        
 
     def _post_process_manifest(self) -> None:
         """
@@ -184,8 +183,6 @@ class ManifestDeclarativeSource(DeclarativeSource):
         self._migrate_manifest()
         # apply manifest normalization, if required
         self._normalize_manifest()
-
-        
 
     def _normalize_manifest(self) -> None:
         """
@@ -203,7 +200,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         """
         This method is used to migrate the manifest. It should be called after the manifest has been validated.
         The migration is done in place, so the original manifest is modified.
-        
+
         The original manifest is returned if any error occurs during migration.
         """
         if self._should_migrate:
