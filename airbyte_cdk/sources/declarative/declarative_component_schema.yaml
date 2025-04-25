@@ -1965,6 +1965,7 @@ definitions:
           - POST
       authenticator:
         title: Authenticator
+        linkable: true
         description: Authentication method to use for requests sent to the API.
         anyOf:
           - "$ref": "#/definitions/NoAuth"
