@@ -52,9 +52,6 @@ def _build_image(
         f"io.airbyte.version={metadata.data.dockerImageTag}",
         "--label",
         f"io.airbyte.name={metadata.data.dockerRepository}",
-        "-t",
-        tag,
-        str(context_dir),
     ]
     if build_args:
         for key, value in build_args.items():
@@ -62,6 +59,11 @@ def _build_image(
                 docker_args.append(f"--build-arg={key}={value}")
             else:
                 docker_args.append(f"--build-arg={key}")
+    docker_args.extend([
+        "-t",
+        tag,
+        str(context_dir),
+    ])
 
     print(f"Building image: {tag} ({arch})")
     try:
