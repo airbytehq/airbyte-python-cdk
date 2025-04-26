@@ -10,9 +10,9 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
 from airbyte_cdk.test.standard_tests._job_runner import IConnector
-from airbyte_cdk.test.standard_tests.connector_base import MANIFEST_YAML
 from airbyte_cdk.test.standard_tests.models import ConnectorTestScenario
 from airbyte_cdk.test.standard_tests.source_base import SourceTestSuiteBase
+from airbyte_cdk.test.standard_tests.test_resources import MANIFEST_YAML
 
 
 def md5_checksum(file_path: Path) -> str:
@@ -34,6 +34,8 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
     The class also automatically locates the `manifest.yaml` file and the
     `components.py` file (if it exists) in the connector's directory.
     """
+
+    connector: type[IConnector] | None = None
 
     @classproperty
     def manifest_yaml_path(cls) -> Path:
