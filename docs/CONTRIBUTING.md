@@ -49,6 +49,32 @@ To see all available `ruff` options, run `poetry run ruff`.
 
 The Ruff configuration is stored in `ruff.toml` at the root of the repository. This file contains settings for line length, target Python version, and linting rules.
 
+## Handling Dependency Analysis with Deptry
+
+The CDK uses [Deptry](https://deptry.com/) for dependency analysis to ensure all dependencies are properly declared and used. Sometimes Deptry may not correctly detect certain package usage patterns, especially for packages with complex import structures.
+
+To ignore specific Deptry errors:
+
+1. Identify the rule you need to ignore (DEP001, DEP002, DEP003, or DEP004).
+2. Add the package name to the appropriate rule list in the `[tool.deptry.per_rule_ignores]` section of `pyproject.toml`.
+3. Include an inline comment explaining why the ignore is needed.
+
+Example:
+
+```toml
+[tool.deptry.per_rule_ignores]
+# DEP002: Project should not contain unused dependencies.
+DEP002 = [
+  "google-cloud-secret-manager",  # Deptry can't detect that `google.cloud.secretmanager_v1` uses this package
+]
+```
+
+Common scenarios requiring ignores:
+
+- Packages imported using a different name than their PyPI package name.
+- Packages that are imported dynamically or through submodules.
+- Transitive dependencies that are used directly in the code.
+
 ## Auto-Generating the Declarative Schema File
 
 Low-code CDK models are generated from `sources/declarative/declarative_component_schema.yaml`. If the iteration you are working on includes changes to the models or the connector generator, you may need to regenerate them. In order to do that, you can run:

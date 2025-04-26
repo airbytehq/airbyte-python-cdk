@@ -1,0 +1,28 @@
+name: On-Demand Poe Task
+
+on:
+  workflow_dispatch:
+    inputs:
+      comment-id:
+        description: "Optional comment-id of the slash command. Ignore if not applicable."
+        required: false
+      pr:
+        description: "PR Number"
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  run-poe-command:
+    env:
+      GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run Poe Slash Command Processor
+        uses: aaronsteers/poe-command-processor@v1
+        with:
+          pr: ${{ github.event.inputs.pr }}
+          comment-id: ${{ github.event.inputs.comment-id }}
+          github-token: ${{ secrets.GH_PAT_MAINTENANCE_OCTAVIA }}

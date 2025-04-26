@@ -3,7 +3,7 @@
 #
 
 import re
-from typing import Any, Mapping, Set, Tuple, Union
+from typing import Any, Dict, Mapping, Set, Tuple, Union
 
 from airbyte_cdk.sources.declarative.parsers.custom_exceptions import (
     CircularReferenceException,
@@ -99,7 +99,7 @@ class ManifestReferenceResolver:
     until we find a key with the given path, or until there is nothing to traverse.
     """
 
-    def preprocess_manifest(self, manifest: Mapping[str, Any]) -> Mapping[str, Any]:
+    def preprocess_manifest(self, manifest: Mapping[str, Any]) -> Dict[str, Any]:
         """
         :param manifest: incoming manifest that could have references to previously defined components
         :return:
