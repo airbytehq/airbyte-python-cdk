@@ -180,7 +180,9 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             ]
         )
 
-    def streams(self, config: Mapping[str, Any], catalog: ConfiguredAirbyteCatalog | None = None) -> List[Stream]:
+    def streams(
+        self, config: Mapping[str, Any], catalog: ConfiguredAirbyteCatalog | None = None
+    ) -> List[Stream]:
         """
         The `streams` method is used as part of the AbstractSource in the following cases:
         * ConcurrentDeclarativeSource.check -> ManifestDeclarativeSource.check -> AbstractSource.check -> DeclarativeSource.check_connection -> CheckStream.check_connection -> streams

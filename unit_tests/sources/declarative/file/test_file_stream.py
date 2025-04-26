@@ -120,9 +120,15 @@ class FileStreamTest(TestCase):
             assert output.records
 
     def test_get_article_attachments(self) -> None:
-        with HttpMocker() as http_mocker, patch(
-                    'airbyte_cdk.sources.declarative.retrievers.file_uploader.noop_file_writer.NoopFileWriter.write') as mock_noop_write, patch(
-                    'airbyte_cdk.sources.declarative.retrievers.file_uploader.local_file_system_file_writer.LocalFileSystemFileWriter.write') as mock_file_system_write:
+        with (
+            HttpMocker() as http_mocker,
+            patch(
+                "airbyte_cdk.sources.declarative.retrievers.file_uploader.noop_file_writer.NoopFileWriter.write"
+            ) as mock_noop_write,
+            patch(
+                "airbyte_cdk.sources.declarative.retrievers.file_uploader.local_file_system_file_writer.LocalFileSystemFileWriter.write"
+            ) as mock_file_system_write,
+        ):
             http_mocker.get(
                 HttpRequest(url=STREAM_URL),
                 HttpResponse(json.dumps(find_template("file_api/articles", __file__)), 200),
@@ -146,7 +152,11 @@ class FileStreamTest(TestCase):
             output = read(
                 self._config(),
                 CatalogBuilder()
-                .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments").with_include_files(True))
+                .with_stream(
+                    ConfiguredAirbyteStreamBuilder()
+                    .with_name("article_attachments")
+                    .with_include_files(True)
+                )
                 .build(),
             )
 
@@ -190,19 +200,31 @@ class FileStreamTest(TestCase):
             output = read(
                 self._config(),
                 CatalogBuilder()
-                .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments").with_include_files(True))
+                .with_stream(
+                    ConfiguredAirbyteStreamBuilder()
+                    .with_name("article_attachments")
+                    .with_include_files(True)
+                )
                 .build(),
                 yaml_file="test_file_stream_with_filename_extractor.yaml",
             )
             file_reference = output.records[0].record.file_reference
             assert file_reference.file_size_bytes
-            assert Path(file_reference.staging_file_url).exists(), "File should be uploaded to the staging directory"
+            assert Path(file_reference.staging_file_url).exists(), (
+                "File should be uploaded to the staging directory"
+            )
 
     def test_get_article_attachments_with_filename_extractor(self) -> None:
         """Test that article attachments can be read with filename extractor and file system writer is called"""
-        with HttpMocker() as http_mocker, patch(
-                    'airbyte_cdk.sources.declarative.retrievers.file_uploader.noop_file_writer.NoopFileWriter.write') as mock_noop_write, patch(
-                    'airbyte_cdk.sources.declarative.retrievers.file_uploader.local_file_system_file_writer.LocalFileSystemFileWriter.write') as mock_file_system_write:
+        with (
+            HttpMocker() as http_mocker,
+            patch(
+                "airbyte_cdk.sources.declarative.retrievers.file_uploader.noop_file_writer.NoopFileWriter.write"
+            ) as mock_noop_write,
+            patch(
+                "airbyte_cdk.sources.declarative.retrievers.file_uploader.local_file_system_file_writer.LocalFileSystemFileWriter.write"
+            ) as mock_file_system_write,
+        ):
             http_mocker.get(
                 HttpRequest(url=STREAM_URL),
                 HttpResponse(json.dumps(find_template("file_api/articles", __file__)), 200),
@@ -226,7 +248,11 @@ class FileStreamTest(TestCase):
             output = read(
                 self._config(),
                 CatalogBuilder()
-                .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments").with_include_files(True))
+                .with_stream(
+                    ConfiguredAirbyteStreamBuilder()
+                    .with_name("article_attachments")
+                    .with_include_files(True)
+                )
                 .build(),
                 yaml_file="test_file_stream_with_filename_extractor.yaml",
             )
@@ -251,9 +277,15 @@ class FileStreamTest(TestCase):
     def test_get_article_attachments_without_include_files(self) -> None:
         """Test that article attachments can be read without including files, it can be opt-out by configured catalog"""
         include_files = False
-        with HttpMocker() as http_mocker, patch(
-                    'airbyte_cdk.sources.declarative.retrievers.file_uploader.noop_file_writer.NoopFileWriter.write') as mock_noop_write, patch(
-                    'airbyte_cdk.sources.declarative.retrievers.file_uploader.local_file_system_file_writer.LocalFileSystemFileWriter.write') as mock_file_system_write:
+        with (
+            HttpMocker() as http_mocker,
+            patch(
+                "airbyte_cdk.sources.declarative.retrievers.file_uploader.noop_file_writer.NoopFileWriter.write"
+            ) as mock_noop_write,
+            patch(
+                "airbyte_cdk.sources.declarative.retrievers.file_uploader.local_file_system_file_writer.LocalFileSystemFileWriter.write"
+            ) as mock_file_system_write,
+        ):
             http_mocker.get(
                 HttpRequest(url=STREAM_URL),
                 HttpResponse(json.dumps(find_template("file_api/articles", __file__)), 200),
@@ -276,7 +308,11 @@ class FileStreamTest(TestCase):
             output = read(
                 self._config(),
                 CatalogBuilder()
-                .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments").with_include_files(include_files))
+                .with_stream(
+                    ConfiguredAirbyteStreamBuilder()
+                    .with_name("article_attachments")
+                    .with_include_files(include_files)
+                )
                 .build(),
                 yaml_file="test_file_stream_with_filename_extractor.yaml",
             )
@@ -300,9 +336,15 @@ class FileStreamTest(TestCase):
             assert file_reference.file_size_bytes == NoopFileWriter.NOOP_FILE_SIZE
 
     def test_get_article_attachments_messages_for_connector_builder(self) -> None:
-        with HttpMocker() as http_mocker, patch(
-                    'airbyte_cdk.sources.declarative.retrievers.file_uploader.noop_file_writer.NoopFileWriter.write') as mock_noop_write, patch(
-                    'airbyte_cdk.sources.declarative.retrievers.file_uploader.local_file_system_file_writer.LocalFileSystemFileWriter.write') as mock_file_system_write:
+        with (
+            HttpMocker() as http_mocker,
+            patch(
+                "airbyte_cdk.sources.declarative.retrievers.file_uploader.noop_file_writer.NoopFileWriter.write"
+            ) as mock_noop_write,
+            patch(
+                "airbyte_cdk.sources.declarative.retrievers.file_uploader.local_file_system_file_writer.LocalFileSystemFileWriter.write"
+            ) as mock_file_system_write,
+        ):
             http_mocker.get(
                 HttpRequest(url=STREAM_URL),
                 HttpResponse(json.dumps(find_template("file_api/articles", __file__)), 200),
@@ -337,7 +379,11 @@ class FileStreamTest(TestCase):
                 output = read(
                     self._config(),
                     CatalogBuilder()
-                    .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments").with_include_files(True))
+                    .with_stream(
+                        ConfiguredAirbyteStreamBuilder()
+                        .with_name("article_attachments")
+                        .with_include_files(True)
+                    )
                     .build(),
                     yaml_file="test_file_stream_with_filename_extractor.yaml",
                 )

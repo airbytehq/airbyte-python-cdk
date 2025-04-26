@@ -142,7 +142,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
                 f"Expected to generate a ConnectionChecker component, but received {check_stream.__class__}"
             )
 
-    def streams(self, config: Mapping[str, Any], catalog: Optional[ConfiguredAirbyteCatalog] = None) -> List[Stream]:
+    def streams(
+        self, config: Mapping[str, Any], catalog: Optional[ConfiguredAirbyteCatalog] = None
+    ) -> List[Stream]:
         self._emit_manifest_debug_message(
             extra_args={"source_name": self.name, "parsed_config": json.dumps(self._source_config)}
         )
@@ -164,7 +166,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
                 stream_config,
                 config,
                 emit_connector_builder_messages=self._emit_connector_builder_messages,
-                include_files=self._get_include_files(stream_config=stream_config, catalog_with_streams_name=catalog_with_streams_name),
+                include_files=self._get_include_files(
+                    stream_config=stream_config, catalog_with_streams_name=catalog_with_streams_name
+                ),
             )
             for stream_config in self._initialize_cache_for_parent_streams(deepcopy(stream_configs))
         ]
@@ -173,7 +177,8 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
     @staticmethod
     def _get_include_files(
-        stream_config: Dict[str, Any], catalog_with_streams_name: Mapping[str, ConfiguredAirbyteStream] | None
+        stream_config: Dict[str, Any],
+        catalog_with_streams_name: Mapping[str, ConfiguredAirbyteStream] | None,
     ) -> Optional[bool]:
         """
         Returns the include_files for the stream if it exists in the catalog.
@@ -185,12 +190,17 @@ class ManifestDeclarativeSource(DeclarativeSource):
         return False
 
     @staticmethod
-    def _catalog_with_streams_name(catalog: ConfiguredAirbyteCatalog | None) -> Mapping[str, ConfiguredAirbyteStream] | None:
+    def _catalog_with_streams_name(
+        catalog: ConfiguredAirbyteCatalog | None,
+    ) -> Mapping[str, ConfiguredAirbyteStream] | None:
         """
         Returns a dict mapping stream names to their corresponding ConfiguredAirbyteStream objects.
         """
         if catalog:
-            return { configured_stream.stream.name: configured_stream for configured_stream in catalog.streams}
+            return {
+                configured_stream.stream.name: configured_stream
+                for configured_stream in catalog.streams
+            }
         return None
 
     @staticmethod
