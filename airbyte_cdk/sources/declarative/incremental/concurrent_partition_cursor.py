@@ -281,12 +281,10 @@ class ConcurrentPerPartitionCursor(Cursor):
                 self._number_of_partitions += 1
                 self._cursor_per_partition[partition_key] = cursor
 
-        if (
-            not self._IS_PARTITION_DUPLICATION_LOGGED
-            and partition_key in self._semaphore_per_partition
-        ):
-            logger.warning(f"Partition duplication detected for stream {self._stream_name}")
-            self._IS_PARTITION_DUPLICATION_LOGGED = True
+        if partition_key in self._semaphore_per_partition:
+            if not self._IS_PARTITION_DUPLICATION_LOGGED:
+                logger.warning(f"Partition duplication detected for stream {self._stream_name}")
+                self._IS_PARTITION_DUPLICATION_LOGGED = True
         else:
             self._semaphore_per_partition[partition_key] = threading.Semaphore(0)
 
