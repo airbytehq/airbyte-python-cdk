@@ -99,7 +99,7 @@ class StreamSlicerPartitionGenerator(PartitionGenerator):
             yield self._partition_factory.create(stream_slice)
 
     @staticmethod
-    def _make_hashable(obj: Any) -> Hashable:
+    def _make_hashable(obj: Any) -> Any:
         if isinstance(obj, dict):
             return frozenset((k, StreamSlicerPartitionGenerator._make_hashable(v)) for k, v in obj.items())
         if isinstance(obj, list):
