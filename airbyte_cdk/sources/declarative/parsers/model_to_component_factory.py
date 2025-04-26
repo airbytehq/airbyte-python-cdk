@@ -2945,16 +2945,19 @@ class ModelToComponentFactory:
 
         query_properties: Optional[QueryProperties] = None
         query_properties_key: Optional[str] = None
-        if (
-            hasattr(model.requester, "request_parameters")
-            and model.requester.request_parameters
-            and isinstance(model.requester.request_parameters, Mapping)
-        ):
+        if self._query_properties_in_request_parameters(model.requester):
+            # It is better to be explicit about an error if PropertiesFromEndpoint is defined in multiple
+            # places instead of default to request_parameters which isn't clearly documented
+            if (
+                hasattr(model.requester, "fetch_properties_from_endpoint")
+                and model.requester.fetch_properties_from_endpoint
+            ):
+                raise ValueError(
+                    f"PropertiesFromEndpoint should only be specified once per stream, but found in {model.requester.type}.fetch_properties_from_endpoint and {model.requester.type}.request_parameters"
+                )
+
             query_properties_definitions = []
-            for key, request_parameter in model.requester.request_parameters.items():
-                # When translating JSON schema into Pydantic models, enforcing types for arrays containing both
-                # concrete string complex object definitions like QueryProperties would get resolved to Union[str, Any].
-                # This adds the extra validation that we couldn't get for free in Pydantic model generation
+            for key, request_parameter in model.requester.request_parameters.items():  # type: ignore # request_parameters is already validated to be a Mapping using _query_properties_in_request_parameters()
                 if isinstance(request_parameter, QueryPropertiesModel):
                     query_properties_key = key
                     query_properties_definitions.append(request_parameter)
@@ -3101,6 +3104,19 @@ class ModelToComponentFactory:
             additional_query_properties=query_properties,
             parameters=model.parameters or {},
         )
+
+    @staticmethod
+    def _query_properties_in_request_parameters(
+        requester: Union[HttpRequesterModel, CustomRequesterModel],
+    ) -> bool:
+        if not hasattr(requester, "request_parameters"):
+            return False
+        request_parameters = requester.request_parameters
+        if request_parameters and isinstance(request_parameters, Mapping):
+            for request_parameter in request_parameters.values():
+                if isinstance(request_parameter, QueryPropertiesModel):
+                    return True
+        return False
 
     @staticmethod
     def _remove_query_properties(

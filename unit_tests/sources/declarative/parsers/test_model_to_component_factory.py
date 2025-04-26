@@ -4442,6 +4442,89 @@ def test_create_simple_retriever_raise_error_if_multiple_request_properties():
         )
 
 
+def test_create_simple_retriever_raise_error_properties_from_endpoint_defined_multiple_times():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+          type: DpathExtractor
+          field_path: ["extractor_path"]
+      record_filter:
+        type: RecordFilter
+        condition: "{{ record['id'] > stream_state['id'] }}"
+    requester:
+      type: HttpRequester
+      name: "{{ parameters['name'] }}"
+      url_base: "https://api.linkedin.com/rest/"
+      http_method: "GET"
+      path: "adAnalytics"
+      fetch_properties_from_endpoint:
+        type: PropertiesFromEndpoint
+        property_field_path: [ "name" ]
+        retriever:
+          type: SimpleRetriever
+          requester:
+            type: HttpRequester
+            url_base: https://api.hubapi.com
+            path: "/properties/v2/dynamics/properties"
+            http_method: GET
+          record_selector:
+            type: RecordSelector
+            extractor:
+              type: DpathExtractor
+              field_path: []
+      request_parameters:
+        properties:
+          type: QueryProperties
+          property_list:
+            - first_name
+            - last_name
+            - status
+            - organization
+            - created_at
+          always_include_properties:
+            - id
+          property_chunking:
+            type: PropertyChunking
+            property_limit_type: property_count
+            property_limit: 3
+            record_merge_strategy:
+              type: GroupByKeyMergeStrategy
+              key: ["id"]
+        nonary: "{{config['nonary'] }}"
+    analytics_stream:
+      type: DeclarativeStream
+      incremental_sync:
+        type: DatetimeBasedCursor
+        $parameters:
+          datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+        start_datetime: "{{ config['start_time'] }}"
+        cursor_field: "created"
+      retriever:
+        type: SimpleRetriever
+        name: "{{ parameters['name'] }}"
+        requester:
+          $ref: "#/requester"
+        record_selector:
+          $ref: "#/selector"
+      $parameters:
+        name: "analytics"
+            """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["analytics_stream"], {}
+    )
+
+    with pytest.raises(ValueError):
+        factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_manifest,
+            config=input_config,
+        )
+
+
 def test_create_property_chunking_characters():
     property_chunking_model = {
         "type": "PropertyChunking",
