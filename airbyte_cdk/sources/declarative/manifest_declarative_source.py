@@ -179,14 +179,16 @@ class ManifestDeclarativeSource(DeclarativeSource):
     def _get_include_files(
         stream_config: Dict[str, Any],
         catalog_with_streams_name: Mapping[str, ConfiguredAirbyteStream] | None,
-    ) -> Optional[bool]:
+    ) -> bool:
         """
         Returns the include_files for the stream if it exists in the catalog.
         """
         if catalog_with_streams_name:
             stream_name = stream_config.get("name")
-            configured_catalog_stream = catalog_with_streams_name.get(stream_name)
-            return configured_catalog_stream and configured_catalog_stream.include_files
+            configured_catalog_stream = (
+                catalog_with_streams_name.get(stream_name) if stream_name else None
+            )
+            return bool(configured_catalog_stream and configured_catalog_stream.include_files)
         return False
 
     @staticmethod
