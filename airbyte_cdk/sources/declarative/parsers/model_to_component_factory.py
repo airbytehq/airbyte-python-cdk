@@ -1852,8 +1852,9 @@ class ModelToComponentFactory:
                 )
         file_uploader = None
         if model.file_uploader:
+            include_files = kwargs.pop("include_files", False)
             file_uploader = self._create_component_from_model(
-                model=model.file_uploader, config=config
+                model=model.file_uploader, config=config, include_files=include_files
             )
 
         retriever = self._create_component_from_model(
@@ -3597,7 +3598,7 @@ class ModelToComponentFactory:
         )
 
     def create_file_uploader(
-        self, model: FileUploaderModel, config: Config, **kwargs: Any
+        self, model: FileUploaderModel, config: Config, include_files: bool, **kwargs: Any
     ) -> FileUploader:
         name = "File Uploader"
         requester = self._create_component_from_model(
@@ -3618,7 +3619,7 @@ class ModelToComponentFactory:
             download_target_extractor=download_target_extractor,
             config=config,
             file_writer=NoopFileWriter()
-            if emit_connector_builder_messages
+            if emit_connector_builder_messages or not include_files
             else LocalFileSystemFileWriter(),
             parameters=model.parameters or {},
             filename_extractor=model.filename_extractor if model.filename_extractor else None,

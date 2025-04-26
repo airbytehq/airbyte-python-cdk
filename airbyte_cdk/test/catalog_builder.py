@@ -41,6 +41,14 @@ class ConfiguredAirbyteStreamBuilder:
         self._stream["stream"]["json_schema"] = json_schema
         return self
 
+    def with_include_files(self, include_files: bool) -> "ConfiguredAirbyteStreamBuilder":
+        """
+        Set whether the stream should include files in the sync.
+        :param include_files: True if files should be included, False otherwise.
+        """
+        self._stream["include_files"] = include_files
+        return self
+
     def build(self) -> ConfiguredAirbyteStream:
         return ConfiguredAirbyteStreamSerializer.load(self._stream)
 

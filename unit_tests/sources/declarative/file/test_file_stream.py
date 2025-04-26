@@ -120,7 +120,9 @@ class FileStreamTest(TestCase):
             assert output.records
 
     def test_get_article_attachments(self) -> None:
-        with HttpMocker() as http_mocker:
+        with HttpMocker() as http_mocker, patch(
+                    'airbyte_cdk.sources.declarative.retrievers.file_uploader.noop_file_writer.NoopFileWriter.write') as mock_noop_write, patch(
+                    'airbyte_cdk.sources.declarative.retrievers.file_uploader.local_file_system_file_writer.LocalFileSystemFileWriter.write') as mock_file_system_write:
             http_mocker.get(
                 HttpRequest(url=STREAM_URL),
                 HttpResponse(json.dumps(find_template("file_api/articles", __file__)), 200),
@@ -138,14 +140,21 @@ class FileStreamTest(TestCase):
                 ),
             )
 
+            file_size = 12345
+            mock_file_system_write.return_value = file_size  # Simulate a file size
+
             output = read(
                 self._config(),
                 CatalogBuilder()
-                .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments"))
+                .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments").with_include_files(True))
                 .build(),
             )
 
             assert output.records
+            # Ensure that FileSystemFileWriter is called.
+            mock_file_system_write.assert_called()
+            # Ensure that NoopFileWriter is not called.
+            mock_noop_write.assert_not_called()
             file_reference = output.records[0].record.file_reference
             assert file_reference
             assert file_reference.staging_file_url
@@ -158,7 +167,8 @@ class FileStreamTest(TestCase):
             )
             assert file_reference.file_size_bytes
 
-    def test_get_article_attachments_with_filename_extractor(self) -> None:
+    def test_get_article_attachments_and_file_is_uploaded(self) -> None:
+        """Test that article attachments can be read and the file is uploaded to the staging directory"""
         with HttpMocker() as http_mocker:
             http_mocker.get(
                 HttpRequest(url=STREAM_URL),
@@ -180,26 +190,19 @@ class FileStreamTest(TestCase):
             output = read(
                 self._config(),
                 CatalogBuilder()
-                .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments"))
+                .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments").with_include_files(True))
                 .build(),
                 yaml_file="test_file_stream_with_filename_extractor.yaml",
             )
-
-            assert len(output.records) == 1
             file_reference = output.records[0].record.file_reference
-            assert file_reference
-            assert (
-                file_reference.staging_file_url
-                == "/tmp/airbyte-file-transfer/article_attachments/12138758717583/some_image_name.png"
-            )
-            assert file_reference.source_file_relative_path
-            assert not re.match(
-                r"^article_attachments/[0-9a-fA-F-]{36}$", file_reference.source_file_relative_path
-            )
             assert file_reference.file_size_bytes
+            assert Path(file_reference.staging_file_url).exists(), "File should be uploaded to the staging directory"
 
-    def test_get_article_attachments_messages_for_connector_builder(self) -> None:
-        with HttpMocker() as http_mocker:
+    def test_get_article_attachments_with_filename_extractor(self) -> None:
+        """Test that article attachments can be read with filename extractor and file system writer is called"""
+        with HttpMocker() as http_mocker, patch(
+                    'airbyte_cdk.sources.declarative.retrievers.file_uploader.noop_file_writer.NoopFileWriter.write') as mock_noop_write, patch(
+                    'airbyte_cdk.sources.declarative.retrievers.file_uploader.local_file_system_file_writer.LocalFileSystemFileWriter.write') as mock_file_system_write:
             http_mocker.get(
                 HttpRequest(url=STREAM_URL),
                 HttpResponse(json.dumps(find_template("file_api/articles", __file__)), 200),
@@ -216,6 +219,109 @@ class FileStreamTest(TestCase):
                     find_binary_response("file_api/article_attachment_content.png", __file__), 200
                 ),
             )
+
+            file_size = 12345
+            mock_file_system_write.return_value = file_size  # Simulate a file size
+
+            output = read(
+                self._config(),
+                CatalogBuilder()
+                .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments").with_include_files(True))
+                .build(),
+                yaml_file="test_file_stream_with_filename_extractor.yaml",
+            )
+
+            assert len(output.records) == 1
+            # Ensure that FileSystemFileWriter is called.
+            mock_file_system_write.assert_called()
+            # Ensure that NoopFileWriter is not called.
+            mock_noop_write.assert_not_called()
+            file_reference = output.records[0].record.file_reference
+            assert file_reference
+            assert (
+                file_reference.staging_file_url
+                == "/tmp/airbyte-file-transfer/article_attachments/12138758717583/some_image_name.png"
+            )
+            assert file_reference.source_file_relative_path
+            assert not re.match(
+                r"^article_attachments/[0-9a-fA-F-]{36}$", file_reference.source_file_relative_path
+            )
+            assert file_reference.file_size_bytes == file_size
+
+    def test_get_article_attachments_without_include_files(self) -> None:
+        """Test that article attachments can be read without including files, it can be opt-out by configured catalog"""
+        include_files = False
+        with HttpMocker() as http_mocker, patch(
+                    'airbyte_cdk.sources.declarative.retrievers.file_uploader.noop_file_writer.NoopFileWriter.write') as mock_noop_write, patch(
+                    'airbyte_cdk.sources.declarative.retrievers.file_uploader.local_file_system_file_writer.LocalFileSystemFileWriter.write') as mock_file_system_write:
+            http_mocker.get(
+                HttpRequest(url=STREAM_URL),
+                HttpResponse(json.dumps(find_template("file_api/articles", __file__)), 200),
+            )
+            http_mocker.get(
+                HttpRequest(url=STREAM_ATTACHMENTS_URL),
+                HttpResponse(
+                    json.dumps(find_template("file_api/article_attachments", __file__)), 200
+                ),
+            )
+            http_mocker.get(
+                HttpRequest(url=STREAM_ATTACHMENT_CONTENT_URL),
+                HttpResponse(
+                    find_binary_response("file_api/article_attachment_content.png", __file__), 200
+                ),
+            )
+
+            mock_noop_write.return_value = NoopFileWriter.NOOP_FILE_SIZE
+
+            output = read(
+                self._config(),
+                CatalogBuilder()
+                .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments").with_include_files(include_files))
+                .build(),
+                yaml_file="test_file_stream_with_filename_extractor.yaml",
+            )
+
+            assert len(output.records) == 1
+            # Ensure that LocalFileSystemFileWriter is not called when include_files is False
+            mock_file_system_write.assert_not_called()
+            # Ensure that NoopFileWriter is called to simulate file writing
+            mock_noop_write.assert_called()
+            file_reference = output.records[0].record.file_reference
+            assert file_reference
+            assert (
+                file_reference.staging_file_url
+                == "/tmp/airbyte-file-transfer/article_attachments/12138758717583/some_image_name.png"
+            )
+
+            assert file_reference.source_file_relative_path
+            assert not re.match(
+                r"^article_attachments/[0-9a-fA-F-]{36}$", file_reference.source_file_relative_path
+            )
+            assert file_reference.file_size_bytes == NoopFileWriter.NOOP_FILE_SIZE
+
+    def test_get_article_attachments_messages_for_connector_builder(self) -> None:
+        with HttpMocker() as http_mocker, patch(
+                    'airbyte_cdk.sources.declarative.retrievers.file_uploader.noop_file_writer.NoopFileWriter.write') as mock_noop_write, patch(
+                    'airbyte_cdk.sources.declarative.retrievers.file_uploader.local_file_system_file_writer.LocalFileSystemFileWriter.write') as mock_file_system_write:
+            http_mocker.get(
+                HttpRequest(url=STREAM_URL),
+                HttpResponse(json.dumps(find_template("file_api/articles", __file__)), 200),
+            )
+            http_mocker.get(
+                HttpRequest(url=STREAM_ATTACHMENTS_URL),
+                HttpResponse(
+                    json.dumps(find_template("file_api/article_attachments", __file__)), 200
+                ),
+            )
+            http_mocker.get(
+                HttpRequest(url=STREAM_ATTACHMENT_CONTENT_URL),
+                HttpResponse(
+                    find_binary_response("file_api/article_attachment_content.png", __file__), 200
+                ),
+            )
+
+            file_size = NoopFileWriter.NOOP_FILE_SIZE
+            mock_noop_write.return_value = file_size  # Simulate a file size
 
             # Define a mock factory that forces emit_connector_builder_messages=True
             class MockModelToComponentFactory(OriginalModelToComponentFactory):
@@ -231,12 +337,16 @@ class FileStreamTest(TestCase):
                 output = read(
                     self._config(),
                     CatalogBuilder()
-                    .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments"))
+                    .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments").with_include_files(True))
                     .build(),
                     yaml_file="test_file_stream_with_filename_extractor.yaml",
                 )
 
                 assert len(output.records) == 1
+                # Ensure that NoopFileWriter is called.
+                mock_noop_write.assert_called()
+                # Ensure that LocalFileSystemFileWriter is not called.
+                mock_file_system_write.assert_not_called()
                 file_reference = output.records[0].record.file_reference
                 assert file_reference
                 assert file_reference.staging_file_url
