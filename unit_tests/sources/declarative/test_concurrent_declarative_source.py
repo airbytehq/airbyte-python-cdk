@@ -2,7 +2,6 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
-import pytest
 import copy
 import json
 import math
@@ -12,6 +11,7 @@ from unittest.mock import patch
 
 import freezegun
 import isodate
+import pytest
 from typing_extensions import deprecated
 
 from airbyte_cdk.models import (
