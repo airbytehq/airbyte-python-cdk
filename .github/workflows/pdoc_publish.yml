@@ -30,14 +30,17 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+      - name: Get tool versions
+        uses: marocchino/tool-versions-action@v1
+        id: tool-versions
       - name: Set up Poetry
         uses: Gr1N/setup-poetry@v9
         with:
-          poetry-version: "2.0.1"
+          poetry-version: ${{ steps.tool-versions.outputs.poetry }}
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: ${{ steps.tool-versions.outputs.python }}
           cache: "poetry"
       - name: Setup Pages
         uses: actions/configure-pages@v5

@@ -125,10 +125,13 @@ jobs:
           repository: airbytehq/airbyte
           ref: master
           path: airbyte
+      - name: Get tool versions
+        uses: marocchino/tool-versions-action@v1
+        id: tool-versions
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ steps.tool-versions.outputs.python }}
       # Create initial pending status for test report
       - name: Create Pending Test Report Status
         if: steps.no_changes.outputs.status != 'cancelled'

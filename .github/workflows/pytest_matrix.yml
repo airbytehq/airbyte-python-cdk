@@ -57,16 +57,20 @@ jobs:
               - 'bin/**'
               - 'poetry.lock'
               - 'pyproject.toml'
+      - name: Get tool versions
+        uses: marocchino/tool-versions-action@v1
+        id: tool-versions
+        if: steps.changes.outputs.src == 'true'
       - name: Set up Poetry
         uses: Gr1N/setup-poetry@v9
         if: steps.changes.outputs.src == 'true'
         with:
-          poetry-version: "2.0.1"
+          poetry-version: ${{ steps.tool-versions.outputs.poetry }}
       - name: Set up Python
         uses: actions/setup-python@v5
         if: steps.changes.outputs.src == 'true'
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ steps.tool-versions.outputs.python }}
           cache: "poetry"
       - name: Install dependencies
         if: steps.changes.outputs.src == 'true'
