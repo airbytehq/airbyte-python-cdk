@@ -305,6 +305,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                                 stream_name=declarative_stream.name,
                                 stream_namespace=declarative_stream.namespace,
                                 config=config or {},
+                                stream_state_migrations=declarative_stream.state_migrations,
                             )
                         partition_generator = StreamSlicerPartitionGenerator(
                             partition_factory=DeclarativePartitionFactory(
