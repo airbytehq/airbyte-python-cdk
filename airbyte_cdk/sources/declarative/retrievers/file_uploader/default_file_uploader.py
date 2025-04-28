@@ -43,7 +43,6 @@ class DefaultFileUploader(FileUploader):
     parameters: InitVar[Mapping[str, Any]]
 
     filename_extractor: Optional[Union[InterpolatedString, str]] = None
-    content_extractor: Optional[RecordExtractor] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if self.filename_extractor:
@@ -71,33 +70,28 @@ class DefaultFileUploader(FileUploader):
             ),
         )
 
-        if self.content_extractor:
-            raise NotImplementedError(
-                "Content extraction is not yet implemented. The content_extractor component is currently not supported."
-            )
-        else:
-            files_directory = Path(get_files_directory())
+        files_directory = Path(get_files_directory())
 
-            file_name = (
-                self.filename_extractor.eval(self.config, record=record)
-                if self.filename_extractor
-                else str(uuid.uuid4())
-            )
-            file_name = file_name.lstrip("/")
-            file_relative_path = Path(record.stream_name) / Path(file_name)
+        file_name = (
+            self.filename_extractor.eval(self.config, record=record)
+            if self.filename_extractor
+            else str(uuid.uuid4())
+        )
+        file_name = file_name.lstrip("/")
+        file_relative_path = Path(record.stream_name) / Path(file_name)
 
-            full_path = files_directory / file_relative_path
-            full_path.parent.mkdir(parents=True, exist_ok=True)
+        full_path = files_directory / file_relative_path
+        full_path.parent.mkdir(parents=True, exist_ok=True)
 
-            file_size_bytes = self.file_writer.write(full_path, content=response.content)
+        file_size_bytes = self.file_writer.write(full_path, content=response.content)
 
-            logger.info("File uploaded successfully")
-            logger.info(f"File url: {str(full_path)}")
-            logger.info(f"File size: {file_size_bytes / 1024} KB")
-            logger.info(f"File relative path: {str(file_relative_path)}")
+        logger.info("File uploaded successfully")
+        logger.info(f"File url: {str(full_path)}")
+        logger.info(f"File size: {file_size_bytes / 1024} KB")
+        logger.info(f"File relative path: {str(file_relative_path)}")
 
-            record.file_reference = AirbyteRecordMessageFileReference(
-                staging_file_url=str(full_path),
-                source_file_relative_path=str(file_relative_path),
-                file_size_bytes=file_size_bytes,
-            )
+        record.file_reference = AirbyteRecordMessageFileReference(
+            staging_file_url=str(full_path),
+            source_file_relative_path=str(file_relative_path),
+            file_size_bytes=file_size_bytes,
+        )
