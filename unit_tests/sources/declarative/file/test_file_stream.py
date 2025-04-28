@@ -445,6 +445,61 @@ class FileStreamTest(TestCase):
                 )
                 assert record_data["file_size_bytes"] == file_reference.file_size_bytes
 
+    def test_get_article_attachments_messages_for_connector_builder(self) -> None:
+        with HttpMocker() as http_mocker:
+            http_mocker.get(
+                HttpRequest(url=STREAM_URL),
+                HttpResponse(json.dumps(find_template("file_api/articles", __file__)), 200),
+            )
+            http_mocker.get(
+                HttpRequest(url=STREAM_ATTACHMENTS_URL),
+                HttpResponse(
+                    json.dumps(find_template("file_api/article_attachments", __file__)), 200
+                ),
+            )
+            http_mocker.get(
+                HttpRequest(url=STREAM_ATTACHMENT_CONTENT_URL),
+                HttpResponse(
+                    find_binary_response("file_api/article_attachment_content.png", __file__), 200
+                ),
+            )
+
+            # Define a mock factory that forces emit_connector_builder_messages=True
+            class MockModelToComponentFactory(OriginalModelToComponentFactory):
+                def __init__(self, *args, **kwargs):
+                    kwargs["emit_connector_builder_messages"] = True
+                    super().__init__(*args, **kwargs)
+
+            # Patch the factory class where ConcurrentDeclarativeSource (parent of YamlDeclarativeSource) imports it
+            with patch(
+                "airbyte_cdk.sources.declarative.concurrent_declarative_source.ModelToComponentFactory",
+                new=MockModelToComponentFactory,
+            ):
+                output = read(
+                    self._config(),
+                    CatalogBuilder()
+                    .with_stream(ConfiguredAirbyteStreamBuilder().with_name("article_attachments"))
+                    .build(),
+                    yaml_file="test_file_stream_with_filename_extractor.yaml",
+                )
+
+                assert len(output.records) == 1
+                file_reference = output.records[0].record.file_reference
+                assert file_reference
+                assert file_reference.staging_file_url
+                assert file_reference.source_file_relative_path
+                # because we didn't write the file, the size is NOOP_FILE_SIZE
+                assert file_reference.file_size_bytes == NoopFileWriter.NOOP_FILE_SIZE
+
+                # Assert file reference fields are copied to record data
+                record_data = output.records[0].record.data
+                assert record_data["staging_file_url"] == file_reference.staging_file_url
+                assert (
+                    record_data["source_file_relative_path"]
+                    == file_reference.source_file_relative_path
+                )
+                assert record_data["file_size_bytes"] == file_reference.file_size_bytes
+
     def test_discover_article_attachments(self) -> None:
         output = discover(self._config())
 
