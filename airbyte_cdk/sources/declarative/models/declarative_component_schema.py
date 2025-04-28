@@ -2233,7 +2233,7 @@ class HttpRequester(BaseModelWithDeprecations):
             "https://connect.squareup.com/v2/quotes/{{ stream_partition['id'] }}/quote_line_groups",
             "https://example.com/api/v1/resource/{{ next_page_token['id'] }}",
         ],
-        title="API URL",
+        title="The URL of an API endpoint",
     )
     path: Optional[str] = Field(
         None,
