@@ -1,7 +1,7 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
-
+from pathlib import Path
 from typing import Any, Dict
 
 import pytest
@@ -645,10 +645,7 @@ def expected_manifest_with_url_base_linked_definition_normalized() -> Dict[str, 
 
 @pytest.fixture
 def manifest_with_linked_definitions_url_base_authenticator_abnormal_schemas() -> Dict[str, Any]:
-    with open(
-        "unit_tests/sources/declarative/parsers/resources/abnormal_schemas_manifest.yaml",
-        "r",
-    ) as file:
+    with open(str(Path(__file__).parent / "resources/abnormal_schemas_manifest.yaml"), "r") as file:
         return dict(yaml.safe_load(file))
 
 

@@ -5,6 +5,7 @@
 import base64
 import json
 import logging
+from copy import deepcopy
 from datetime import timedelta, timezone
 from unittest.mock import Mock
 
@@ -127,6 +128,20 @@ class TestOauth2Authenticator:
             "refresh_token": None,
         }
         assert body == expected
+
+    def test_client_secret_empty(self):
+        config_without_client_secret = deepcopy(config)
+        del config_without_client_secret["client_secret"]
+        oauth = DeclarativeOauth2Authenticator(
+            token_refresh_endpoint="{{ config['refresh_endpoint'] }}",
+            client_id="{{ config['client_id'] }}",
+            client_secret="{{ config['client_secret'] }}",
+            config=config_without_client_secret,
+            parameters={},
+            grant_type="client_credentials",
+        )
+        body = oauth.build_refresh_request_body()
+        assert body["client_secret"] == ""
 
     def test_refresh_with_decode_config_params(self):
         updated_config_fields = {
