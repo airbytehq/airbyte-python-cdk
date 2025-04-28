@@ -126,9 +126,11 @@ jobs:
           ref: master
           path: airbyte
       - name: Get tool versions
+        if: steps.no_changes.outputs.status != 'cancelled'
         uses: marocchino/tool-versions-action@v1
         id: tool-versions
       - name: Set up Python
+        if: steps.no_changes.outputs.status != 'cancelled'
         uses: actions/setup-python@v5
         with:
           python-version: ${{ steps.tool-versions.outputs.python }}
