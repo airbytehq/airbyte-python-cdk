@@ -88,6 +88,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             emit_connector_builder_messages=emit_connector_builder_messages,
             disable_resumable_full_refresh=True,
             connector_state_manager=self._connector_state_manager,
+            catalog=catalog,
         )
 
         super().__init__(
@@ -139,7 +140,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         catalog: ConfiguredAirbyteCatalog,
         state: Optional[List[AirbyteStateMessage]] = None,
     ) -> Iterator[AirbyteMessage]:
-        concurrent_streams, _ = self._group_streams(config=config, catalog=catalog)
+        concurrent_streams, _ = self._group_streams(config=config)
 
         # ConcurrentReadProcessor pops streams that are finished being read so before syncing, the names of
         # the concurrent streams must be saved so that they can be removed from the catalog before starting
@@ -180,9 +181,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             ]
         )
 
-    def streams(
-        self, config: Mapping[str, Any], catalog: ConfiguredAirbyteCatalog | None = None
-    ) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
         """
         The `streams` method is used as part of the AbstractSource in the following cases:
         * ConcurrentDeclarativeSource.check -> ManifestDeclarativeSource.check -> AbstractSource.check -> DeclarativeSource.check_connection -> CheckStream.check_connection -> streams
@@ -191,10 +190,10 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
         In both case, we will assume that calling the DeclarativeStream is perfectly fine as the result for these is the same regardless of if it is a DeclarativeStream or a DefaultStream (concurrent). This should simply be removed once we have moved away from the mentioned code paths above.
         """
-        return super().streams(config, catalog=catalog)
+        return super().streams(config)
 
     def _group_streams(
-        self, config: Mapping[str, Any], catalog: ConfiguredAirbyteCatalog | None = None
+        self, config: Mapping[str, Any]
     ) -> Tuple[List[AbstractStream], List[Stream]]:
         concurrent_streams: List[AbstractStream] = []
         synchronous_streams: List[Stream] = []
@@ -207,7 +206,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
 
         name_to_stream_mapping = {stream["name"]: stream for stream in streams}
 
-        for declarative_stream in self.streams(config=config, catalog=catalog):
+        for declarative_stream in self.streams(config=config):
             # Some low-code sources use a combination of DeclarativeStream and regular Python streams. We can't inspect
             # these legacy Python streams the way we do low-code streams to determine if they are concurrent compatible,
             # so we need to treat them as synchronous

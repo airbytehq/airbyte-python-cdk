@@ -20,7 +20,6 @@ from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteStateMessage,
     ConfiguredAirbyteCatalog,
-    ConfiguredAirbyteStream,
     ConnectorSpecification,
     FailureType,
 )
@@ -93,6 +92,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         emit_connector_builder_messages: bool = False,
         component_factory: Optional[ModelToComponentFactory] = None,
         normalize_manifest: Optional[bool] = False,
+        catalog: Optional[ConfiguredAirbyteCatalog] = None,
     ) -> None:
         """
         Args:
@@ -119,6 +119,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
             else ModelToComponentFactory(
                 emit_connector_builder_messages,
                 max_concurrent_async_job_count=source_config.get("max_concurrent_async_job_count"),
+                catalog=catalog,
             )
         )
         self._message_repository = self._constructor.get_message_repository()
@@ -230,9 +231,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
                 f"Expected to generate a ConnectionChecker component, but received {check_stream.__class__}"
             )
 
-    def streams(
-        self, config: Mapping[str, Any], catalog: Optional[ConfiguredAirbyteCatalog] = None
-    ) -> List[Stream]:
+    def streams(self, config: Mapping[str, Any]) -> List[Stream]:
         self._emit_manifest_debug_message(
             extra_args={
                 "source_name": self.name,
@@ -248,7 +247,6 @@ class ManifestDeclarativeSource(DeclarativeSource):
         if api_budget_model:
             self._constructor.set_api_budget(api_budget_model, config)
 
-        catalog_with_streams_name = self._catalog_with_streams_name(catalog)
         source_streams = [
             self._constructor.create_component(
                 (
@@ -259,44 +257,11 @@ class ManifestDeclarativeSource(DeclarativeSource):
                 stream_config,
                 config,
                 emit_connector_builder_messages=self._emit_connector_builder_messages,
-                include_files=self._get_include_files(
-                    stream_config=stream_config, catalog_with_streams_name=catalog_with_streams_name
-                ),
             )
             for stream_config in self._initialize_cache_for_parent_streams(deepcopy(stream_configs))
         ]
 
         return source_streams
-
-    @staticmethod
-    def _get_include_files(
-        stream_config: Dict[str, Any],
-        catalog_with_streams_name: Mapping[str, ConfiguredAirbyteStream] | None,
-    ) -> bool:
-        """
-        Returns the include_files for the stream if it exists in the catalog.
-        """
-        if catalog_with_streams_name:
-            stream_name = stream_config.get("name")
-            configured_catalog_stream = (
-                catalog_with_streams_name.get(stream_name) if stream_name else None
-            )
-            return bool(configured_catalog_stream and configured_catalog_stream.include_files)
-        return False
-
-    @staticmethod
-    def _catalog_with_streams_name(
-        catalog: ConfiguredAirbyteCatalog | None,
-    ) -> Mapping[str, ConfiguredAirbyteStream] | None:
-        """
-        Returns a dict mapping stream names to their corresponding ConfiguredAirbyteStream objects.
-        """
-        if catalog:
-            return {
-                configured_stream.stream.name: configured_stream
-                for configured_stream in catalog.streams
-            }
-        return None
 
     @staticmethod
     def _initialize_cache_for_parent_streams(
