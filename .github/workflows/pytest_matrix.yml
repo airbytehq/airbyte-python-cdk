@@ -70,7 +70,7 @@ jobs:
         uses: actions/setup-python@v5
         if: steps.changes.outputs.src == 'true'
         with:
-          python-version: ${{ steps.tool-versions.outputs.python }}
+          python-version: ${{ matrix.python-version }}
           cache: "poetry"
       - name: Install dependencies
         if: steps.changes.outputs.src == 'true'

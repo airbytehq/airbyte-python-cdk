@@ -90,7 +90,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ steps.tool-versions.outputs.python }}
+          python-version: ${{ matrix.python-version }}
           cache: "poetry"
 
       # Run `poetry lock`
