@@ -16,7 +16,7 @@ resolver = ManifestReferenceResolver()
 
 
 @freeze_time("2025-04-01")
-def test_manifest_resolve_migrate_url_base_to_url(
+def test_manifest_resolve_migrate_url_base_and_path_to_url(
     manifest_with_url_base_to_migrate_to_url,
     expected_manifest_with_url_base_migrated_to_url,
 ) -> None:
