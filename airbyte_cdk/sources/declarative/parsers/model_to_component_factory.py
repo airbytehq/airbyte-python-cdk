@@ -2239,6 +2239,7 @@ class ModelToComponentFactory:
             request_parameters = model.request_parameters
 
         request_options_provider = InterpolatedRequestOptionsProvider(
+            request_body=model.request_body,
             request_body_data=model.request_body_data,
             request_body_json=model.request_body_json,
             request_headers=model.request_headers,

@@ -6,6 +6,9 @@ from dataclasses import InitVar, dataclass, field
 from typing import Any, List, Mapping, MutableMapping, Optional, Union
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_nested_mapping import NestedMapping
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RequestBody,
+)
 from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_nested_request_input_provider import (
     InterpolatedNestedRequestInputProvider,
 )
@@ -38,6 +41,7 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
     config: Config = field(default_factory=dict)
     request_parameters: Optional[RequestInput] = None
     request_headers: Optional[RequestInput] = None
+    request_body: Optional[RequestBody] = None
     request_body_data: Optional[RequestInput] = None
     request_body_json: Optional[NestedMapping] = None
     query_properties_key: Optional[str] = None
@@ -47,16 +51,19 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
             self.request_parameters = {}
         if self.request_headers is None:
             self.request_headers = {}
+        # resolve the request body to either data or json
+        self._resolve_request_body()
+        # If request_body is not provided, set request_body_data and request_body_json to empty dicts
         if self.request_body_data is None:
             self.request_body_data = {}
         if self.request_body_json is None:
             self.request_body_json = {}
-
+        # If both request_body_data and request_body_json are provided, raise an error
         if self.request_body_json and self.request_body_data:
             raise ValueError(
                 "RequestOptionsProvider should only contain either 'request_body_data' or 'request_body_json' not both"
             )
-
+        # set interpolators
         self._parameter_interpolator = InterpolatedRequestInputProvider(
             config=self.config, request_inputs=self.request_parameters, parameters=parameters
         )
@@ -69,6 +76,21 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
         self._body_json_interpolator = InterpolatedNestedRequestInputProvider(
             config=self.config, request_inputs=self.request_body_json, parameters=parameters
         )
+
+    def _resolve_request_body(self) -> None:
+        """
+        Resolves the request body configuration by setting either `request_body_data` or `request_body_json`
+        based on the type specified in `self.request_body`. If neither is provided, both are initialized as empty
+        dictionaries. Raises a ValueError if both `request_body_data` and `request_body_json` are set simultaneously.
+        Raises:
+            ValueError: If both `request_body_data` and `request_body_json` are provided.
+        """
+        # Resolve the request body to either data or json
+        if self.request_body is not None and self.request_body.type is not None:
+            if self.request_body.type == "RequestBodyData":
+                self.request_body_data = self.request_body.value
+            elif self.request_body.type == "RequestBodyJson":
+                self.request_body_json = self.request_body.value
 
     def get_request_params(
         self,

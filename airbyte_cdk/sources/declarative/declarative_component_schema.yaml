@@ -2000,6 +2000,8 @@ definitions:
           - "$ref": "#/definitions/CustomAuthenticator"
           - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
       request_body_data:
+        deprecated: true
+        deprecation_message: "Use `request_body` field instead."
         title: Request Body Payload (Non-JSON)
         description: Specifies how to populate the body of the request with a non-JSON payload. Plain text will be sent as is, whereas objects will be converted to a urlencoded form.
         anyOf:
@@ -2018,6 +2020,8 @@ definitions:
                 [{"value": {{ stream_interval['start_time'] | int * 1000 }} }]
               }, "orderBy": 1, "columnName": "Timestamp"}]/
       request_body_json:
+        deprecated: true
+        deprecation_message: "Use `request_body` field instead."
         title: Request Body JSON Payload
         description: Specifies how to populate the body of the request with a JSON payload. Can contain nested objects.
         anyOf:
@@ -2036,6 +2040,35 @@ definitions:
           - sort:
               field: "updated_at"
               order: "ascending"
+      request_body:
+        title: Request Body Payload to be send as a part of the API request.
+        description: Specifies how to populate the body of the request with a payload. Can contain nested objects.
+        anyOf:
+          - "$ref": "#/definitions/RequestBody"
+        interpolation_context:
+          - next_page_token
+          - stream_interval
+          - stream_partition
+          - stream_slice
+        examples:
+          - type: RequestBodyJson
+            value:
+              sort_order: "ASC"
+              sort_field: "CREATED_AT"
+          - type: RequestBodyJson
+            value:
+              key: "{{ config['value'] }}"
+          - type: RequestBodyJson
+            value:
+              sort:
+                field: "updated_at"
+                order: "ascending"
+          - type: RequestBodyData
+            value: "plain_text_body"
+          - type: RequestBodyData
+            value:
+              param1: "value1"
+              param2: "{{ config['param2_value'] }}"
       request_headers:
         title: Request Headers
         description: Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.
@@ -4036,6 +4069,27 @@ definitions:
       - type
       - stream_template
       - components_resolver
+  RequestBody:
+    type: object
+    description: The request body payload. Can be either URL encoded data or JSON.
+    properties:
+      type:
+        anyOf:
+          - type: string
+            enum: [RequestBodyData]
+          - type: string
+            enum: [RequestBodyJson]
+      value:
+        anyOf:
+          - type: string
+            description: The request body payload as a string.
+          - type: object
+            description: The request body payload as a Non-JSON object (url-encoded data).
+            additionalProperties:
+              type: string
+          - type: object
+            description: The request body payload as a JSON object (json-encoded data).
+            additionalProperties: true
 interpolation:
   variables:
     - title: config

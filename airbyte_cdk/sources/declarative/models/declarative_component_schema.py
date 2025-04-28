@@ -1499,6 +1499,11 @@ class ConfigComponentsResolver(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class RequestBody(BaseModel):
+    type: Optional[Union[Literal["RequestBodyData"], Literal["RequestBodyJson"]]] = None
+    value: Optional[Union[str, Dict[str, str], Dict[str, Any]]] = None
+
+
 class AddedFieldDefinition(BaseModel):
     type: Literal["AddedFieldDefinition"]
     path: List[str] = Field(
@@ -2273,6 +2278,8 @@ class HttpRequester(BaseModelWithDeprecations):
     )
     request_body_data: Optional[Union[Dict[str, str], str]] = Field(
         None,
+        deprecated=True,
+        deprecation_message="Use `request_body` field instead.",
         description="Specifies how to populate the body of the request with a non-JSON payload. Plain text will be sent as is, whereas objects will be converted to a urlencoded form.",
         examples=[
             '[{"clause": {"type": "timestamp", "operator": 10, "parameters":\n    [{"value": {{ stream_interval[\'start_time\'] | int * 1000 }} }]\n  }, "orderBy": 1, "columnName": "Timestamp"}]/\n'
@@ -2281,6 +2288,8 @@ class HttpRequester(BaseModelWithDeprecations):
     )
     request_body_json: Optional[Union[Dict[str, Any], str]] = Field(
         None,
+        deprecated=True,
+        deprecation_message="Use `request_body` field instead.",
         description="Specifies how to populate the body of the request with a JSON payload. Can contain nested objects.",
         examples=[
             {"sort_order": "ASC", "sort_field": "CREATED_AT"},
@@ -2288,6 +2297,27 @@ class HttpRequester(BaseModelWithDeprecations):
             {"sort": {"field": "updated_at", "order": "ascending"}},
         ],
         title="Request Body JSON Payload",
+    )
+    request_body: Optional[RequestBody] = Field(
+        None,
+        description="Specifies how to populate the body of the request with a payload. Can contain nested objects.",
+        examples=[
+            {
+                "type": "RequestBodyJson",
+                "value": {"sort_order": "ASC", "sort_field": "CREATED_AT"},
+            },
+            {"type": "RequestBodyJson", "value": {"key": "{{ config['value'] }}"}},
+            {
+                "type": "RequestBodyJson",
+                "value": {"sort": {"field": "updated_at", "order": "ascending"}},
+            },
+            {"type": "RequestBodyData", "value": "plain_text_body"},
+            {
+                "type": "RequestBodyData",
+                "value": {"param1": "value1", "param2": "{{ config['param2_value'] }}"},
+            },
+        ],
+        title="Request Body Payload to be send as a part of the API request.",
     )
     request_headers: Optional[Union[Dict[str, str], str]] = Field(
         None,
