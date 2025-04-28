@@ -18,7 +18,11 @@ class HttpRequesterRequestBodyJsonDataToRequestBody(ManifestMigration):
     """
 
     component_type = "HttpRequester"
-    original_keys = ["request_body_json", "request_body_data"]
+
+    body_json_key = "request_body_json"
+    body_data_key = "request_body_data"
+    original_keys = (body_json_key, body_data_key)
+
     replacement_key = "request_body"
 
     def should_migrate(self, manifest: ManifestType) -> bool:
@@ -28,14 +32,20 @@ class HttpRequesterRequestBodyJsonDataToRequestBody(ManifestMigration):
 
     def migrate(self, manifest: ManifestType) -> None:
         for key in self.original_keys:
-            if key in manifest:
-                manifest[self.replacement_key] = manifest[key]
+            if key == self.body_json_key and key in manifest:
+                manifest[self.replacement_key] = {
+                    "type": "RequestBodyJson",
+                    "value": manifest[key],
+                }
+                manifest.pop(key, None)
+            elif key == self.body_data_key and key in manifest:
+                manifest[self.replacement_key] = {
+                    "type": "RequestBodyData",
+                    "value": manifest[key],
+                }
                 manifest.pop(key, None)
 
     def validate(self, manifest: ManifestType) -> bool:
-        """
-        Validate the migration by checking if the `request_body` key is present and none of the original keys are.
-        """
         return self.replacement_key in manifest and all(
             key not in manifest for key in self.original_keys
         )

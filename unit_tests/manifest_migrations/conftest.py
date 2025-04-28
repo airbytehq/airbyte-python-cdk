@@ -837,9 +837,12 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                             "http_method": "GET",
                             "url": "https://example.com/v1/path_to_A",
                             "request_body": {
-                                "test_key": "{{ config['config_key'] }}",
-                                "test_key_2": "test_value_2",
-                                "test_key_3": 123,
+                                "type": "RequestBodyData",
+                                "value": {
+                                    "test_key": "{{ config['config_key'] }}",
+                                    "test_key_2": "test_value_2",
+                                    "test_key_3": 123,
+                                },
                             },
                         },
                         "record_selector": {
@@ -867,9 +870,12 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                             "http_method": "GET",
                             "url": "https://example.com/v1/path_to_A",
                             "request_body": {
-                                "test_key": "{{ config['config_key'] }}",
-                                "test_key_2": "test_value_2",
-                                "test_key_3": 123,
+                                "type": "RequestBodyData",
+                                "value": {
+                                    "test_key": "{{ config['config_key'] }}",
+                                    "test_key_2": "test_value_2",
+                                    "test_key_3": 123,
+                                },
                             },
                         },
                         "record_selector": {
@@ -897,9 +903,12 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                             "http_method": "GET",
                             "url": "https://example.com/v2/path_to_B",
                             "request_body": {
-                                "reportType": "test_report",
-                                "groupBy": "GROUP",
-                                "metrics": "{{ ','.join( ['a-b','cd','e-f-g-h'] ) }}",
+                                "type": "RequestBodyJson",
+                                "value": {
+                                    "reportType": "test_report",
+                                    "groupBy": "GROUP",
+                                    "metrics": "{{ ','.join( ['a-b','cd','e-f-g-h'] ) }}",
+                                },
                             },
                         },
                         "record_selector": {
@@ -972,9 +981,12 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                 "type": "HttpRequester",
                 "url": "https://example.com/v1/",
                 "request_body": {
-                    "test_key": "{{ config['config_key'] }}",
-                    "test_key_2": "test_value_2",
-                    "test_key_3": 123,
+                    "type": "RequestBodyData",
+                    "value": {
+                        "test_key": "{{ config['config_key'] }}",
+                        "test_key_2": "test_value_2",
+                        "test_key_3": 123,
+                    },
                 },
             },
             "requester_B": {"type": "HttpRequester", "url": "https://example.com/v2/"},
@@ -990,9 +1002,12 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                         "http_method": "GET",
                         "url": "https://example.com/v1/path_to_A",
                         "request_body": {
-                            "test_key": "{{ config['config_key'] }}",
-                            "test_key_2": "test_value_2",
-                            "test_key_3": 123,
+                            "type": "RequestBodyData",
+                            "value": {
+                                "test_key": "{{ config['config_key'] }}",
+                                "test_key_2": "test_value_2",
+                                "test_key_3": 123,
+                            },
                         },
                     },
                     "record_selector": {
@@ -1020,9 +1035,12 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                         "http_method": "GET",
                         "url": "https://example.com/v1/path_to_A",
                         "request_body": {
-                            "test_key": "{{ config['config_key'] }}",
-                            "test_key_2": "test_value_2",
-                            "test_key_3": 123,
+                            "type": "RequestBodyData",
+                            "value": {
+                                "test_key": "{{ config['config_key'] }}",
+                                "test_key_2": "test_value_2",
+                                "test_key_3": 123,
+                            },
                         },
                     },
                     "record_selector": {
@@ -1050,9 +1068,12 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                         "http_method": "GET",
                         "url": "https://example.com/v2/path_to_B",
                         "request_body": {
-                            "reportType": "test_report",
-                            "groupBy": "GROUP",
-                            "metrics": "{{ ','.join( ['a-b','cd','e-f-g-h'] ) }}",
+                            "type": "RequestBodyJson",
+                            "value": {
+                                "reportType": "test_report",
+                                "groupBy": "GROUP",
+                                "metrics": "{{ ','.join( ['a-b','cd','e-f-g-h'] ) }}",
+                            },
                         },
                     },
                     "record_selector": {
