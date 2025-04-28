@@ -65,6 +65,7 @@ class ConcurrentPerPartitionCursor(Cursor):
     _NO_CURSOR_STATE: Mapping[str, Any] = {}
     _GLOBAL_STATE_KEY = "state"
     _PERPARTITION_STATE_KEY = "states"
+    _IS_PARTITION_DUPLICATION_LOGGED = False
     _KEY = 0
     _VALUE = 1
 
@@ -279,7 +280,13 @@ class ConcurrentPerPartitionCursor(Cursor):
             with self._lock:
                 self._number_of_partitions += 1
                 self._cursor_per_partition[partition_key] = cursor
-        self._semaphore_per_partition[partition_key] = threading.Semaphore(0)
+
+        if partition_key in self._semaphore_per_partition:
+            if not self._IS_PARTITION_DUPLICATION_LOGGED:
+                logger.warning(f"Partition duplication detected for stream {self._stream_name}")
+                self._IS_PARTITION_DUPLICATION_LOGGED = True
+        else:
+            self._semaphore_per_partition[partition_key] = threading.Semaphore(0)
 
         with self._lock:
             if (
