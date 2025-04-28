@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import abc
+import importlib
 import inspect
+import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -22,16 +24,60 @@ from airbyte_cdk.test.standard_tests._job_runner import IConnector, run_test_job
 from airbyte_cdk.test.standard_tests.models import (
     ConnectorTestScenario,
 )
-
-ACCEPTANCE_TEST_CONFIG = "acceptance-test-config.yml"
-MANIFEST_YAML = "manifest.yaml"
+from airbyte_cdk.test.standard_tests.test_resources import (
+    ACCEPTANCE_TEST_CONFIG,
+    find_connector_root,
+)
 
 
 class ConnectorTestSuiteBase(abc.ABC):
     """Base class for connector test suites."""
 
-    connector: type[IConnector] | Callable[[], IConnector] | None = None
+    connector: type[IConnector] | Callable[[], IConnector] | None  # type: ignore [reportRedeclaration]
     """The connector class or a factory function that returns an scenario of IConnector."""
+
+    @classproperty  # type: ignore [no-redef]
+    def connector(cls) -> type[IConnector] | Callable[[], IConnector] | None:
+        """Get the connector class for the test suite.
+
+        This assumes a python connector and should be overridden by subclasses to provide the
+        specific connector class to be tested.
+        """
+        connector_root = cls.get_connector_root_dir()
+        connector_name = connector_root.absolute().name
+
+        expected_module_name = connector_name.replace("-", "_").lower()
+        expected_class_name = connector_name.replace("-", "_").title().replace("_", "")
+
+        # dynamically import and get the connector class: <expected_module_name>.<expected_class_name>
+
+        cwd_snapshot = Path().absolute()
+        os.chdir(connector_root)
+
+        # Dynamically import the module
+        try:
+            module = importlib.import_module(expected_module_name)
+        except ModuleNotFoundError as e:
+            raise ImportError(f"Could not import module '{expected_module_name}'.") from e
+        finally:
+            # Change back to the original working directory
+            os.chdir(cwd_snapshot)
+
+        # Dynamically get the class from the module
+        try:
+            return cast(type[IConnector], getattr(module, expected_class_name))
+        except AttributeError as e:
+            # We did not find it based on our expectations, so let's check if we can find it
+            # with a case-insensitive match.
+            matching_class_name = next(
+                (name for name in dir(module) if name.lower() == expected_class_name.lower()),
+                None,
+            )
+            if not matching_class_name:
+                raise ImportError(
+                    f"Module '{expected_module_name}' does not have a class named '{expected_class_name}'."
+                ) from e
+            return cast(type[IConnector], getattr(module, matching_class_name))
 
     @classmethod
     def get_test_class_dir(cls) -> Path:
@@ -81,27 +127,7 @@ class ConnectorTestSuiteBase(abc.ABC):
     @classmethod
     def get_connector_root_dir(cls) -> Path:
         """Get the root directory of the connector."""
-        for parent in cls.get_test_class_dir().parents:
-            if (parent / MANIFEST_YAML).exists():
-                return parent
-            if (parent / ACCEPTANCE_TEST_CONFIG).exists():
-                return parent
-            if parent.name == "airbyte_cdk":
-                break
-        # If we reach here, we didn't find the manifest file in any parent directory
-        # Check if the manifest file exists in the current directory
-        for parent in Path.cwd().parents:
-            if (parent / MANIFEST_YAML).exists():
-                return parent
-            if (parent / ACCEPTANCE_TEST_CONFIG).exists():
-                return parent
-            if parent.name == "airbyte_cdk":
-                break
-
-        raise FileNotFoundError(
-            "Could not find connector root directory relative to "
-            f"'{str(cls.get_test_class_dir())}' or '{str(Path.cwd())}'."
-        )
+        return find_connector_root([cls.get_test_class_dir(), Path.cwd()])
 
     @classproperty
     def acceptance_test_config_path(cls) -> Path:

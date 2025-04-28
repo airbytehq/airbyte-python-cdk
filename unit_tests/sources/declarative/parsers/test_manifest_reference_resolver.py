@@ -16,7 +16,6 @@ from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import 
 resolver = ManifestReferenceResolver()
 
 
-# @
 def test_refer():
     content = {"limit": 50, "limit_ref": "#/limit"}
     config = resolver.preprocess_manifest(content)
@@ -152,7 +151,10 @@ def test_list_of_dicts():
 
 
 def test_multiple_levels_of_indexing():
-    content = {"list": [{"A": ["a1", "a2"]}, {"B": ["b1", "b2"]}], "elem_ref": "#/list/1/B/0"}
+    content = {
+        "list": [{"A": ["a1", "a2"]}, {"B": ["b1", "b2"]}],
+        "elem_ref": "#/list/1/B/0",
+    }
     config = resolver.preprocess_manifest(content)
     elem_ref = config["elem_ref"]
     assert elem_ref == "b1"
