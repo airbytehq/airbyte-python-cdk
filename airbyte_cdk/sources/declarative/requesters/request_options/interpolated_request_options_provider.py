@@ -7,7 +7,10 @@ from typing import Any, List, Mapping, MutableMapping, Optional, Union
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_nested_mapping import NestedMapping
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    RequestBody,
+    RequestBodyGraphQL,
+    RequestBodyJsonObject,
+    RequestBodyPlainText,
+    RequestBodyUrlEncodedForm,
 )
 from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_nested_request_input_provider import (
     InterpolatedNestedRequestInputProvider,
@@ -41,7 +44,14 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
     config: Config = field(default_factory=dict)
     request_parameters: Optional[RequestInput] = None
     request_headers: Optional[RequestInput] = None
-    request_body: Optional[RequestBody] = None
+    request_body: Optional[
+        Union[
+            RequestBodyGraphQL,
+            RequestBodyJsonObject,
+            RequestBodyPlainText,
+            RequestBodyUrlEncodedForm,
+        ]
+    ] = None
     request_body_data: Optional[RequestInput] = None
     request_body_json: Optional[NestedMapping] = None
     query_properties_key: Optional[str] = None
@@ -83,14 +93,18 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
         based on the type specified in `self.request_body`. If neither is provided, both are initialized as empty
         dictionaries. Raises a ValueError if both `request_body_data` and `request_body_json` are set simultaneously.
         Raises:
-            ValueError: If both `request_body_data` and `request_body_json` are provided.
+            ValueError: if an unsupported request body type is provided.
         """
         # Resolve the request body to either data or json
         if self.request_body is not None and self.request_body.type is not None:
-            if self.request_body.type == "RequestBodyData":
+            if self.request_body.type == "RequestBodyUrlEncodedForm":
                 self.request_body_data = self.request_body.value
-            elif self.request_body.type == "RequestBodyJson":
+            elif self.request_body.type == "RequestBodyGraphQL":
+                self.request_body_json = {"query": self.request_body.value.query}
+            elif self.request_body.type in ("RequestBodyJsonObject", "RequestBodyPlainText"):
                 self.request_body_json = self.request_body.value
+            else:
+                raise ValueError(f"Unsupported request body type: {self.request_body.type}")
 
     def get_request_params(
         self,
