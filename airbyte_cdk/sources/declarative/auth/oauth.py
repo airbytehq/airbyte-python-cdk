@@ -22,6 +22,7 @@ from airbyte_cdk.utils.datetime_helpers import AirbyteDateTime, ab_datetime_now,
 
 logger = logging.getLogger("airbyte")
 
+
 @dataclass
 class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAuthenticator):
     """
@@ -204,7 +205,9 @@ class DeclarativeOauth2Authenticator(AbstractOauth2Authenticator, DeclarativeAut
         )
         if not client_secret:
             # We've seen some APIs allowing empty client_secret so we will only log here
-            logger.warning("OAuthAuthenticator was unable to evaluate client_secret parameter hence it'll be empty")
+            logger.warning(
+                "OAuthAuthenticator was unable to evaluate client_secret parameter hence it'll be empty"
+            )
         return client_secret  # type: ignore # value will be returned as a string, or an error will be raised
 
     def get_refresh_token_name(self) -> str:
