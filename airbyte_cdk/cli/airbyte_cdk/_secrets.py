@@ -16,21 +16,41 @@ The 'fetch' command retrieves secrets from Google Secret Manager based on connec
 labels and writes them to the connector's `secrets` directory.
 """
 
+from __future__ import annotations
+
 import json
 import os
 from pathlib import Path
+from types import ModuleType
 
 import rich_click as click
+from click import style
+from rich.console import Console
+from rich.table import Table
 
-from airbyte_cdk.cli.airbyte_cdk._util import resolve_connector_name_and_directory
+from airbyte_cdk.cli.airbyte_cdk._util import (
+    resolve_connector_name,
+    resolve_connector_name_and_directory,
+)
 
 AIRBYTE_INTERNAL_GCP_PROJECT = "dataline-integration-testing"
 CONNECTOR_LABEL = "connector"
 
 
+secretmanager: ModuleType | None
+Secret: type | None
+try:
+    from google.cloud import secretmanager_v1 as secretmanager
+    from google.cloud.secretmanager_v1 import Secret
+except ImportError:
+    # If the package is not installed, we will raise an error in the CLI command.
+    secretmanager = None
+    Secret = None
+
+
 @click.group(
     name="secrets",
-    help=__doc__.replace("\n", "\n\n"),  # Render docstring as help text (markdown)
+    help=__doc__.replace("\n", "\n\n"),  # Render docstring as help text (markdown) # type: ignore
 )
 def secrets_cli_group() -> None:
     """Secret management commands."""
@@ -68,18 +88,151 @@ def fetch(
     directory. If the current working directory is not a connector directory (e.g. starting
     with 'source-') and no connector name or path is provided, the process will fail.
     """
-    try:
-        from google.cloud import secretmanager_v1 as secretmanager
-    except ImportError:
+    click.echo("Fetching secrets...")
+
+    client = _get_gsm_secrets_client()
+    connector_name, connector_directory = resolve_connector_name_and_directory(
+        connector_name=connector_name,
+        connector_directory=connector_directory,
+    )
+    secrets_dir = _get_secrets_dir(
+        connector_directory=connector_directory,
+        connector_name=connector_name,
+        ensure_exists=True,
+    )
+    secrets = _fetch_secret_handles(
+        connector_name=connector_name,
+        gcp_project_id=gcp_project_id,
+    )
+    # Fetch and write secrets
+    secret_count = 0
+    for secret in secrets:
+        secret_file_path = _get_secret_filepath(
+            secrets_dir=secrets_dir,
+            secret=secret,
+        )
+        secret_file_path.write_text(_get_secret_value(secret=secret, client=client))
+        secret_file_path.chmod(0o600)  # default to owner read/write only
+        click.echo(f"Secret written to: {secret_file_path.absolute()!s}")
+        secret_count += 1
+
+    if secret_count == 0:
+        click.echo(
+            f"No secrets found for connector: '{connector_name}'",
+            err=True,
+        )
+
+
+@secrets_cli_group.command("list")
+@click.option(
+    "--connector-name",
+    type=str,
+    help="Name of the connector to fetch secrets for. Ignored if --connector-directory is provided.",
+)
+@click.option(
+    "--connector-directory",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+    help="Path to the connector directory.",
+)
+@click.option(
+    "--gcp-project-id",
+    type=str,
+    default=AIRBYTE_INTERNAL_GCP_PROJECT,
+    help=f"GCP project ID. Defaults to '{AIRBYTE_INTERNAL_GCP_PROJECT}'.",
+)
+def list_(
+    connector_name: str | None = None,
+    connector_directory: Path | None = None,
+    gcp_project_id: str = AIRBYTE_INTERNAL_GCP_PROJECT,
+) -> None:
+    """List secrets for a connector from Google Secret Manager.
+
+    This command fetches secrets for a connector from Google Secret Manager and prints
+    them as a table.
+
+    If no connector name or directory is provided, we will look within the current working
+    directory. If the current working directory is not a connector directory (e.g. starting
+    with 'source-') and no connector name or path is provided, the process will fail.
+    """
+    click.echo("Fetching secrets...")
+
+    connector_name = connector_name or resolve_connector_name(
+        connector_directory=connector_directory or Path().resolve().absolute(),
+    )
+    secrets = _fetch_secret_handles(
+        connector_name=connector_name,
+        gcp_project_id=gcp_project_id,
+    )
+
+    if not secrets:
+        click.echo(
+            f"No secrets found for connector: '{connector_name}'",
+            err=True,
+        )
+        return
+    # print a rich table with the secrets
+    click.echo(
+        style(
+            f"Secrets for connector '{connector_name}' in project '{gcp_project_id}':",
+            fg="green",
+        )
+    )
+
+    console = Console()
+    table = Table(title=f"'{connector_name}' Secrets")
+    table.add_column("Name", justify="left", style="cyan", overflow="fold")
+    table.add_column("Labels", justify="left", style="magenta", overflow="fold")
+    table.add_column("Last Updated", justify="left", style="blue", overflow="fold")
+    for secret in secrets:
+        table.add_row(
+            secret.name.split("/secrets/")[-1],
+            str(secret.create_time),
+            "\n".join([f"{k}={v}" for k, v in secret.labels.items()]),
+        )
+
+    console.print(table)
+
+
+def _fetch_secret_handles(
+    connector_name: str,
+    gcp_project_id: str = AIRBYTE_INTERNAL_GCP_PROJECT,
+) -> list["Secret"]: # type: ignore
+    """Fetch secrets from Google Secret Manager."""
+    if not secretmanager:
         raise ImportError(
             "google-cloud-secret-manager package is required for Secret Manager integration. "
             "Install it with 'pip install airbyte-cdk[dev]' "
             "or 'pip install google-cloud-secret-manager'."
         )
 
-    click.echo("Fetching secrets...")
+    client = _get_gsm_secrets_client()
 
-    # Resolve connector name/directory
+    # List all secrets with the connector label
+    parent = f"projects/{gcp_project_id}"
+    filter_string = f"labels.{CONNECTOR_LABEL}={connector_name}"
+    secrets = client.list_secrets(
+        request=secretmanager.ListSecretsRequest(
+            parent=parent,
+            filter=filter_string,
+        )
+    )
+    return [s for s in secrets]
+
+
+def _get_secret_value(
+    secret: "Secret", # type: ignore
+    client: "secretmanager.SecretManagerServiceClient", # type: ignore
+) -> str:
+    version_name = f"{secret.name}/versions/latest"
+    response = client.access_secret_version(name=version_name)
+    return response.payload.data.decode("UTF-8")
+
+
+def _get_secrets_dir(
+    connector_directory: Path,
+    connector_name: str,
+    ensure_exists: bool = True,
+) -> Path:
     try:
         connector_name, connector_directory = resolve_connector_name_and_directory(
             connector_name=connector_name,
@@ -95,56 +248,44 @@ def fetch(
     except ValueError as e:
         raise ValueError(str(e))
 
-    # Create secrets directory if it doesn't exist
     secrets_dir = connector_directory / "secrets"
-    secrets_dir.mkdir(parents=True, exist_ok=True)
+    if ensure_exists:
+        secrets_dir.mkdir(parents=True, exist_ok=True)
 
-    gitignore_path = secrets_dir / ".gitignore"
-    gitignore_path.write_text("*")
+        gitignore_path = secrets_dir / ".gitignore"
+        if not gitignore_path.exists():
+            gitignore_path.write_text("*")
 
-    # Get GSM client
+    return secrets_dir
+
+
+def _get_secret_filepath(
+    secrets_dir: Path,
+    secret: Secret, # type: ignore
+) -> Path:
+    """Get the file path for a secret based on its labels."""
+    if secret.labels and "filename" in secret.labels:
+        return secrets_dir / f"{secret.labels['filename']}.json"
+
+    return secrets_dir / "config.json"  # Default filename
+
+
+def _get_gsm_secrets_client() -> "secretmanager.SecretManagerServiceClient": # type: ignore
+    """Get the Google Secret Manager client."""
+    if not secretmanager:
+        raise ImportError(
+            "google-cloud-secret-manager package is required for Secret Manager integration. "
+            "Install it with 'pip install airbyte-cdk[dev]' "
+            "or 'pip install google-cloud-secret-manager'."
+        )
+
     credentials_json = os.environ.get("GCP_GSM_CREDENTIALS")
     if not credentials_json:
         raise ValueError(
-            "No Google Cloud credentials found. Please set the GCP_GSM_CREDENTIALS environment variable."
+            "No Google Cloud credentials found. "
+            "Please set the `GCP_GSM_CREDENTIALS` environment variable."
         )
 
-    client = secretmanager.SecretManagerServiceClient.from_service_account_info(
+    return secretmanager.SecretManagerServiceClient.from_service_account_info(
         json.loads(credentials_json)
     )
-
-    # List all secrets with the connector label
-    parent = f"projects/{gcp_project_id}"
-    filter_string = f"labels.{CONNECTOR_LABEL}={connector_name}"
-    secrets = client.list_secrets(
-        request=secretmanager.ListSecretsRequest(
-            parent=parent,
-            filter=filter_string,
-        )
-    )
-
-    # Fetch and write secrets
-    secret_count = 0
-    for secret in secrets:
-        secret_name = secret.name
-        version_name = f"{secret_name}/versions/latest"
-        response = client.access_secret_version(name=version_name)
-        payload = response.payload.data.decode("UTF-8")
-
-        filename_base = "config"  # Default filename
-        if secret.labels and "filename" in secret.labels:
-            filename_base = secret.labels["filename"]
-
-        secret_file_path = secrets_dir / f"{filename_base}.json"
-        secret_file_path.write_text(payload)
-        secret_file_path.chmod(0o600)  # default to owner read/write only
-        click.echo(f"Secret written to: {secret_file_path.absolute()!s}")
-        secret_count += 1
-
-    if secret_count == 0:
-        click.echo(f"No secrets found for connector: {connector_name}")
-
-
-__all__ = [
-    "secrets_cli_group",
-]
