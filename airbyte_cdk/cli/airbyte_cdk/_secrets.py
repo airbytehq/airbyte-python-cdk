@@ -111,8 +111,11 @@ def fetch(
             secrets_dir=secrets_dir,
             secret=secret,
         )
-        secret_file_path.write_text(_get_secret_value(secret=secret, client=client))
-        secret_file_path.chmod(0o600)  # default to owner read/write only
+        _write_secret_file(
+            secret=secret,
+            client=client,
+            file_path=secret_file_path,
+        )
         click.echo(f"Secret written to: {secret_file_path.absolute()!s}")
         secret_count += 1
 
@@ -185,9 +188,9 @@ def list_(
     table.add_column("Last Updated", justify="left", style="blue", overflow="fold")
     for secret in secrets:
         table.add_row(
-            secret.name.split("/secrets/")[-1],
-            str(secret.create_time),
+            secret.name.split("/secrets/")[-1],  # Name of the secret, without the prefix
             "\n".join([f"{k}={v}" for k, v in secret.labels.items()]),
+            str(secret.create_time),
         )
 
     console.print(table)
@@ -219,13 +222,15 @@ def _fetch_secret_handles(
     return [s for s in secrets]
 
 
-def _get_secret_value(
-    secret: "Secret", # type: ignore
-    client: "secretmanager.SecretManagerServiceClient", # type: ignore
-) -> str:
+def _write_secret_file(
+    secret: "Secret",  # type: ignore
+    client: "secretmanager.SecretManagerServiceClient",  # type: ignore
+    file_path: Path,
+) -> None:
     version_name = f"{secret.name}/versions/latest"
     response = client.access_secret_version(name=version_name)
-    return response.payload.data.decode("UTF-8")
+    file_path.write_text(response.payload.data.decode("UTF-8"))
+    file_path.chmod(0o600)  # default to owner read/write only
 
 
 def _get_secrets_dir(
