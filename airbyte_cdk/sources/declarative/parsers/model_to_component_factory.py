@@ -2870,13 +2870,9 @@ class ModelToComponentFactory:
             else None
         )
 
-        if model.transform_before_filtering is None:
-            # default to False if not set
-            model.transform_before_filtering = False
-
-        assert model.transform_before_filtering is not None  # for mypy
-
-        transform_before_filtering = model.transform_before_filtering
+        transform_before_filtering = (
+            False if model.transform_before_filtering is None else model.transform_before_filtering
+        )
         if client_side_incremental_sync:
             record_filter = ClientSideIncrementalRecordFilterDecorator(
                 config=config,
@@ -2886,7 +2882,11 @@ class ModelToComponentFactory:
                 else None,
                 **client_side_incremental_sync,
             )
-            transform_before_filtering = True
+            transform_before_filtering = (
+                True
+                if model.transform_before_filtering is None
+                else model.transform_before_filtering
+            )
 
         if model.schema_normalization is None:
             # default to no schema normalization if not set

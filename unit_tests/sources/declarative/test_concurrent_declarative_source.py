@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 import freezegun
 import isodate
+import pytest
 from typing_extensions import deprecated
 
 from airbyte_cdk.models import (
@@ -1874,6 +1875,69 @@ def test_stream_using_is_client_side_incremental_has_cursor_state():
     client_side_incremental_cursor_state = record_filter._cursor._cursor
 
     assert client_side_incremental_cursor_state == expected_cursor_value
+
+
+@pytest.mark.parametrize(
+    "expected_transform_before_filtering",
+    [
+        pytest.param(
+            True,
+            id="transform before filtering",
+        ),
+        pytest.param(
+            False,
+            id="transform after filtering",
+        ),
+        pytest.param(
+            None,
+            id="default transform before filtering",
+        ),
+    ],
+)
+def test_stream_using_is_client_side_incremental_has_transform_before_filtering_according_to_manifest(
+    expected_transform_before_filtering,
+):
+    expected_cursor_value = "2024-07-01"
+    state = [
+        AirbyteStateMessage(
+            type=AirbyteStateType.STREAM,
+            stream=AirbyteStreamState(
+                stream_descriptor=StreamDescriptor(name="locations", namespace=None),
+                stream_state=AirbyteStateBlob(updated_at=expected_cursor_value),
+            ),
+        )
+    ]
+
+    manifest_with_stream_state_interpolation = copy.deepcopy(_MANIFEST)
+
+    # Enable semi-incremental on the locations stream
+    manifest_with_stream_state_interpolation["definitions"]["locations_stream"]["incremental_sync"][
+        "is_client_side_incremental"
+    ] = True
+
+    if expected_transform_before_filtering is not None:
+        manifest_with_stream_state_interpolation["definitions"]["locations_stream"]["retriever"][
+            "record_selector"
+        ]["transform_before_filtering"] = expected_transform_before_filtering
+
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest_with_stream_state_interpolation,
+        config=_CONFIG,
+        catalog=_CATALOG,
+        state=state,
+    )
+    concurrent_streams, synchronous_streams = source._group_streams(config=_CONFIG)
+
+    locations_stream = concurrent_streams[2]
+    assert isinstance(locations_stream, DefaultStream)
+
+    simple_retriever = locations_stream._stream_partition_generator._partition_factory._retriever
+    record_selector = simple_retriever.record_selector
+
+    if expected_transform_before_filtering is not None:
+        assert record_selector.transform_before_filtering == expected_transform_before_filtering
+    else:
+        assert record_selector.transform_before_filtering is True
 
 
 def create_wrapped_stream(stream: DeclarativeStream) -> Stream:
