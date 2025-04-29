@@ -419,12 +419,14 @@ class TestOauth2Authenticator:
             http_mocker.post(
                 HttpRequest(
                     url="https://refresh_endpoint.com/",
-                    body=json.dumps({
-                       "grant_type": "client",
-                        "client_id": "some_client_id",
-                        "client_secret": "some_client_secret",
-                        "refresh_token": "some_refresh_token",
-                    }),
+                    body=json.dumps(
+                        {
+                            "grant_type": "client",
+                            "client_id": "some_client_id",
+                            "client_secret": "some_client_secret",
+                            "refresh_token": "some_refresh_token",
+                        }
+                    ),
                 ),
                 HttpResponse(body=json.dumps({"access_token": "new_access_token"})),
             )
