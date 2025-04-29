@@ -22,6 +22,7 @@ import json
 import os
 from pathlib import Path
 from types import ModuleType
+from typing import Any, TypeVar, cast
 
 import rich_click as click
 from click import style
@@ -199,7 +200,7 @@ def list_(
 def _fetch_secret_handles(
     connector_name: str,
     gcp_project_id: str = AIRBYTE_INTERNAL_GCP_PROJECT,
-) -> list["Secret"]: # type: ignore
+) -> list["Secret"]:  # type: ignore
     """Fetch secrets from Google Secret Manager."""
     if not secretmanager:
         raise ImportError(
@@ -266,7 +267,7 @@ def _get_secrets_dir(
 
 def _get_secret_filepath(
     secrets_dir: Path,
-    secret: Secret, # type: ignore
+    secret: Secret,  # type: ignore
 ) -> Path:
     """Get the file path for a secret based on its labels."""
     if secret.labels and "filename" in secret.labels:
@@ -275,7 +276,7 @@ def _get_secret_filepath(
     return secrets_dir / "config.json"  # Default filename
 
 
-def _get_gsm_secrets_client() -> "secretmanager.SecretManagerServiceClient": # type: ignore
+def _get_gsm_secrets_client() -> "secretmanager.SecretManagerServiceClient":  # type: ignore
     """Get the Google Secret Manager client."""
     if not secretmanager:
         raise ImportError(
