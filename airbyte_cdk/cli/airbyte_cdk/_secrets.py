@@ -183,10 +183,14 @@ def list_(
     table = Table(title=f"'{connector_name}' Secrets")
     table.add_column("Name", justify="left", style="cyan", overflow="fold")
     table.add_column("Labels", justify="left", style="magenta", overflow="fold")
-    table.add_column("Last Updated", justify="left", style="blue", overflow="fold")
+    table.add_column("Created", justify="left", style="blue", overflow="fold")
     for secret in secrets:
+        full_secret_name = secret.name
+        secret_name = full_secret_name.split("/secrets/")[-1]  # Removes project prefix
+        # E.g. https://console.cloud.google.com/security/secret-manager/secret/SECRET_SOURCE-SHOPIFY__CREDS/versions?hl=en&project=dataline-integration-testing
+        secret_url = f"https://console.cloud.google.com/security/secret-manager/secret/{secret_name}/versions?hl=en&project={gcp_project_id}"
         table.add_row(
-            secret.name.split("/secrets/")[-1],  # Name of the secret, without the prefix
+            f"[link={secret_url}]{secret_name}[/link]",
             "\n".join([f"{k}={v}" for k, v in secret.labels.items()]),
             str(secret.create_time),
         )
