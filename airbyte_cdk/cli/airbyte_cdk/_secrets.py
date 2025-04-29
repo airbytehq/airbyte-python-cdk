@@ -38,15 +38,13 @@ AIRBYTE_INTERNAL_GCP_PROJECT = "dataline-integration-testing"
 CONNECTOR_LABEL = "connector"
 
 
-secretmanager: ModuleType | None
-Secret: type | None
 try:
     from google.cloud import secretmanager_v1 as secretmanager
     from google.cloud.secretmanager_v1 import Secret
 except ImportError:
     # If the package is not installed, we will raise an error in the CLI command.
-    secretmanager = None
-    Secret = None
+    secretmanager = None  # type: ignore
+    Secret = None  # type: ignore
 
 
 @click.group(
@@ -163,7 +161,7 @@ def list_(
     connector_name = connector_name or resolve_connector_name(
         connector_directory=connector_directory or Path().resolve().absolute(),
     )
-    secrets = _fetch_secret_handles(
+    secrets: list[Secret] = _fetch_secret_handles(  # type: ignore
         connector_name=connector_name,
         gcp_project_id=gcp_project_id,
     )
@@ -292,6 +290,9 @@ def _get_gsm_secrets_client() -> "secretmanager.SecretManagerServiceClient":  # 
             "Please set the `GCP_GSM_CREDENTIALS` environment variable."
         )
 
-    return secretmanager.SecretManagerServiceClient.from_service_account_info(
-        json.loads(credentials_json)
+    return cast(
+        "secretmanager.SecretManagerServiceClient",
+        secretmanager.SecretManagerServiceClient.from_service_account_info(
+            json.loads(credentials_json)
+        ),
     )
