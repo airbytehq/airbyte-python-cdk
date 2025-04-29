@@ -197,7 +197,7 @@ def manifest_with_url_base_to_migrate_to_url() -> Dict[str, Any]:
 @pytest.fixture
 def expected_manifest_with_url_base_migrated_to_url() -> Dict[str, Any]:
     return {
-        "version": "6.47.1",
+        "version": "6.48.0",
         "type": "DeclarativeSource",
         "check": {"type": "CheckStream", "stream_names": ["A"]},
         "definitions": {
@@ -494,13 +494,13 @@ def expected_manifest_with_url_base_migrated_to_url() -> Dict[str, Any]:
             "applied_migrations": [
                 {
                     "from_version": "0.0.0",
-                    "to_version": "6.47.1",
+                    "to_version": "6.48.0",
                     "migration": "HttpRequesterUrlBaseToUrl",
                     "migrated_at": "2025-04-01T00:00:00+00:00",  # time freezed in the test
                 },
                 {
                     "from_version": "0.0.0",
-                    "to_version": "6.47.1",
+                    "to_version": "6.48.0",
                     "migration": "HttpRequesterPathToUrl",
                     "migrated_at": "2025-04-01T00:00:00+00:00",  # time freezed in the test
                 },
@@ -512,7 +512,7 @@ def expected_manifest_with_url_base_migrated_to_url() -> Dict[str, Any]:
 @pytest.fixture
 def manifest_with_migrated_url_base_and_path_is_joined_to_url() -> Dict[str, Any]:
     return {
-        "version": "6.47.1",
+        "version": "6.48.0",
         "type": "DeclarativeSource",
         "check": {"type": "CheckStream", "stream_names": ["A"]},
         "definitions": {},
@@ -822,7 +822,7 @@ def manifest_with_request_body_json_and_data_to_migrate_to_request_body() -> Dic
 @pytest.fixture
 def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
     return {
-        "version": "6.47.1",
+        "version": "6.48.0",
         "type": "DeclarativeSource",
         "check": {"type": "CheckStream", "stream_names": ["A"]},
         "definitions": {
@@ -1178,19 +1178,19 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
             "applied_migrations": [
                 {
                     "from_version": "0.0.0",
-                    "to_version": "6.47.1",
+                    "to_version": "6.48.0",
                     "migration": "HttpRequesterUrlBaseToUrl",
                     "migrated_at": "2025-04-01T00:00:00+00:00",
                 },
                 {
                     "from_version": "0.0.0",
-                    "to_version": "6.47.1",
+                    "to_version": "6.48.0",
                     "migration": "HttpRequesterPathToUrl",
                     "migrated_at": "2025-04-01T00:00:00+00:00",
                 },
                 {
                     "from_version": "0.0.0",
-                    "to_version": "6.47.1",
+                    "to_version": "6.48.0",
                     "migration": "HttpRequesterRequestBodyJsonDataToRequestBody",
                     "migrated_at": "2025-04-01T00:00:00+00:00",
                 },

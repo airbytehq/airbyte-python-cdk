@@ -3,7 +3,7 @@
 #
 
 manifest_migrations:
-  - version: 6.47.1
+  - version: 6.48.0
     migrations: 
       - name: http_requester_url_base_to_url
         order: 1
