@@ -5,7 +5,7 @@
 import base64
 import json
 import logging
-from datetime import timedelta, timezone
+from datetime import timedelta
 from unittest.mock import Mock
 
 import freezegun
@@ -399,6 +399,38 @@ class TestOauth2Authenticator:
 
         assert oauth.access_token == expected_access_token
         assert oauth._token_expiry_date == expected_new_expiry_date
+
+    @freezegun.freeze_time("2022-01-01")
+    def test_given_content_type_application_json_when_refresh_token_then_send_request_as_json(
+        self,
+    ) -> None:
+        oauth = DeclarativeOauth2Authenticator(
+            token_refresh_endpoint="https://refresh_endpoint.com/",
+            refresh_request_headers={"Content-type": "application/json"},
+            client_id="some_client_id",
+            client_secret="some_client_secret",
+            refresh_token="some_refresh_token",
+            config={},
+            parameters={},
+            grant_type="client",
+        )
+
+        with HttpMocker() as http_mocker:
+            http_mocker.post(
+                HttpRequest(
+                    url="https://refresh_endpoint.com/",
+                    body=json.dumps({
+                       "grant_type": "client",
+                        "client_id": "some_client_id",
+                        "client_secret": "some_client_secret",
+                        "refresh_token": "some_refresh_token",
+                    }),
+                ),
+                HttpResponse(body=json.dumps({"access_token": "new_access_token"})),
+            )
+            oauth.get_access_token()
+
+        assert oauth.access_token == "new_access_token"
 
     @pytest.mark.parametrize(
         "expires_in_response, token_expiry_date_format",
