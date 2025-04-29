@@ -56,6 +56,16 @@ def get_limits(config: Mapping[str, Any]) -> TestLimits:
     return TestLimits(max_records, max_pages_per_slice, max_slices, max_streams)
 
 
+def should_migrate_manifest(config: Mapping[str, Any]) -> bool:
+    """
+    Determines whether the manifest should be migrated,
+    based on the presence of the "__should_migrate" key in the config.
+
+    This flag is set by the UI.
+    """
+    return config.get("__should_migrate", False)
+
+
 def should_normalize_manifest(config: Mapping[str, Any]) -> bool:
     """
     Check if the manifest should be normalized.
@@ -71,6 +81,7 @@ def create_source(config: Mapping[str, Any], limits: TestLimits) -> ManifestDecl
         config=config,
         emit_connector_builder_messages=True,
         source_config=manifest,
+        migrate_manifest=should_migrate_manifest(config),
         normalize_manifest=should_normalize_manifest(config),
         component_factory=ModelToComponentFactory(
             emit_connector_builder_messages=True,

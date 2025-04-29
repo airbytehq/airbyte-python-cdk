@@ -46,13 +46,3 @@ class QueryProperties:
             )
         else:
             yield list(fields)
-
-    # delete later, but leaving this to keep the discussion thread on the PR from getting hidden
-    def has_multiple_chunks(self, stream_slice: Optional[StreamSlice]) -> bool:
-        property_chunks = iter(self.get_request_property_chunks(stream_slice=stream_slice))
-        try:
-            next(property_chunks)
-            next(property_chunks)
-            return True
-        except StopIteration:
-            return False

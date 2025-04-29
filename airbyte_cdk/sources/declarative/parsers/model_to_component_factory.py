@@ -488,7 +488,13 @@ from airbyte_cdk.sources.declarative.retrievers import (
     SimpleRetriever,
     SimpleRetrieverTestReadDecorator,
 )
-from airbyte_cdk.sources.declarative.retrievers.file_uploader import FileUploader
+from airbyte_cdk.sources.declarative.retrievers.file_uploader import (
+    ConnectorBuilderFileUploader,
+    DefaultFileUploader,
+    FileUploader,
+    LocalFileSystemFileWriter,
+    NoopFileWriter,
+)
 from airbyte_cdk.sources.declarative.schema import (
     ComplexFieldType,
     DefaultSchemaLoader,
@@ -2852,7 +2858,7 @@ class ModelToComponentFactory:
         transformations: List[RecordTransformation] | None = None,
         decoder: Decoder | None = None,
         client_side_incremental_sync: Dict[str, Any] | None = None,
-        file_uploader: Optional[FileUploader] = None,
+        file_uploader: Optional[DefaultFileUploader] = None,
         **kwargs: Any,
     ) -> RecordSelector:
         extractor = self._create_component_from_model(
@@ -2956,7 +2962,7 @@ class ModelToComponentFactory:
         stop_condition_on_cursor: bool = False,
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
         transformations: List[RecordTransformation],
-        file_uploader: Optional[FileUploader] = None,
+        file_uploader: Optional[DefaultFileUploader] = None,
         incremental_sync: Optional[
             Union[
                 IncrementingCountCursorModel, DatetimeBasedCursorModel, CustomIncrementalSyncModel
@@ -3001,16 +3007,19 @@ class ModelToComponentFactory:
 
         query_properties: Optional[QueryProperties] = None
         query_properties_key: Optional[str] = None
-        if (
-            hasattr(model.requester, "request_parameters")
-            and model.requester.request_parameters
-            and isinstance(model.requester.request_parameters, Mapping)
-        ):
+        if self._query_properties_in_request_parameters(model.requester):
+            # It is better to be explicit about an error if PropertiesFromEndpoint is defined in multiple
+            # places instead of default to request_parameters which isn't clearly documented
+            if (
+                hasattr(model.requester, "fetch_properties_from_endpoint")
+                and model.requester.fetch_properties_from_endpoint
+            ):
+                raise ValueError(
+                    f"PropertiesFromEndpoint should only be specified once per stream, but found in {model.requester.type}.fetch_properties_from_endpoint and {model.requester.type}.request_parameters"
+                )
+
             query_properties_definitions = []
-            for key, request_parameter in model.requester.request_parameters.items():
-                # When translating JSON schema into Pydantic models, enforcing types for arrays containing both
-                # concrete string complex object definitions like QueryProperties would get resolved to Union[str, Any].
-                # This adds the extra validation that we couldn't get for free in Pydantic model generation
+            for key, request_parameter in model.requester.request_parameters.items():  # type: ignore # request_parameters is already validated to be a Mapping using _query_properties_in_request_parameters()
                 if isinstance(request_parameter, QueryPropertiesModel):
                     query_properties_key = key
                     query_properties_definitions.append(request_parameter)
@@ -3024,6 +3033,21 @@ class ModelToComponentFactory:
                 query_properties = self._create_component_from_model(
                     model=query_properties_definitions[0], config=config
                 )
+        elif (
+            hasattr(model.requester, "fetch_properties_from_endpoint")
+            and model.requester.fetch_properties_from_endpoint
+        ):
+            query_properties_definition = QueryPropertiesModel(
+                type="QueryProperties",
+                property_list=model.requester.fetch_properties_from_endpoint,
+                always_include_properties=None,
+                property_chunking=None,
+            )  # type: ignore # $parameters has a default value
+
+            query_properties = self.create_query_properties(
+                model=query_properties_definition,
+                config=config,
+            )
 
         requester = self._create_component_from_model(
             model=model.requester,
@@ -3137,6 +3161,19 @@ class ModelToComponentFactory:
             additional_query_properties=query_properties,
             parameters=model.parameters or {},
         )
+
+    @staticmethod
+    def _query_properties_in_request_parameters(
+        requester: Union[HttpRequesterModel, CustomRequesterModel],
+    ) -> bool:
+        if not hasattr(requester, "request_parameters"):
+            return False
+        request_parameters = requester.request_parameters
+        if request_parameters and isinstance(request_parameters, Mapping):
+            for request_parameter in request_parameters.values():
+                if isinstance(request_parameter, QueryPropertiesModel):
+                    return True
+        return False
 
     @staticmethod
     def _remove_query_properties(
@@ -3657,12 +3694,22 @@ class ModelToComponentFactory:
             name=name,
             **kwargs,
         )
-        return FileUploader(
+        emit_connector_builder_messages = self._emit_connector_builder_messages
+        file_uploader = DefaultFileUploader(
             requester=requester,
             download_target_extractor=download_target_extractor,
             config=config,
+            file_writer=NoopFileWriter()
+            if emit_connector_builder_messages
+            else LocalFileSystemFileWriter(),
             parameters=model.parameters or {},
             filename_extractor=model.filename_extractor if model.filename_extractor else None,
+        )
+
+        return (
+            ConnectorBuilderFileUploader(file_uploader)
+            if emit_connector_builder_messages
+            else file_uploader
         )
 
     def create_moving_window_call_rate_policy(

@@ -15,7 +15,7 @@ from airbyte_cdk.sources.declarative.extractors.type_transformer import (
 )
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.models import SchemaNormalization
-from airbyte_cdk.sources.declarative.retrievers.file_uploader import FileUploader
+from airbyte_cdk.sources.declarative.retrievers.file_uploader import DefaultFileUploader
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
 from airbyte_cdk.sources.utils.transform import TypeTransformer
@@ -43,7 +43,7 @@ class RecordSelector(HttpSelector):
     record_filter: Optional[RecordFilter] = None
     transformations: List[RecordTransformation] = field(default_factory=lambda: [])
     transform_before_filtering: bool = False
-    file_uploader: Optional[FileUploader] = None
+    file_uploader: Optional[DefaultFileUploader] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._parameters = parameters
