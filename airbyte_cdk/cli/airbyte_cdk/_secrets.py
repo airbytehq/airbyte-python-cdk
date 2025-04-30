@@ -1,16 +1,27 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
-"""Secret management commands.
+"""**Secret management commands.**
 
 This module provides commands for managing secrets for Airbyte connectors.
 
-Usage:
-    airbyte-cdk secrets fetch --connector-name source-github
-    airbyte-cdk secrets fetch --connector-directory /path/to/connector
-    airbyte-cdk secrets fetch  # Run from within a connector directory
+**Usage:**
 
-Usage without pre-installing (stateless):
-    pipx run airbyte-cdk secrets fetch ...
-    uvx airbyte-cdk secrets fetch ...
+```bash
+# Fetch secrets
+airbyte-cdk secrets fetch --connector-name source-github
+airbyte-cdk secrets fetch --connector-directory /path/to/connector
+airbyte-cdk secrets fetch  # Run from within a connector directory
+
+# List secrets (without fetching)
+airbyte-cdk secrets list --connector-name source-github
+airbyte-cdk secrets list --connector-directory /path/to/connector
+```
+
+**Usage without pre-installing (stateless):**
+
+```bash
+pipx run airbyte-cdk secrets fetch ...
+uvx airbyte-cdk secrets fetch ...
+```
 
 The 'fetch' command retrieves secrets from Google Secret Manager based on connector
 labels and writes them to the connector's `secrets` directory.
