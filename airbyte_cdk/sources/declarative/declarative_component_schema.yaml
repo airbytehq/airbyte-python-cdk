@@ -2048,31 +2048,39 @@ definitions:
         title: Request Body Payload to be send as a part of the API request.
         description: Specifies how to populate the body of the request with a payload. Can contain nested objects.
         anyOf:
-          - "$ref": "#/definitions/RequestBody"
+          - "$ref": "#/definitions/RequestBodyPlainText"
+          - "$ref": "#/definitions/RequestBodyUrlEncodedForm"
+          - "$ref": "#/definitions/RequestBodyJsonObject"
+          - "$ref": "#/definitions/RequestBodyGraphQL"
         interpolation_context:
           - next_page_token
           - stream_interval
           - stream_partition
           - stream_slice
         examples:
-          - type: RequestBodyJson
+          - type: RequestBodyJsonObject
             value:
               sort_order: "ASC"
               sort_field: "CREATED_AT"
-          - type: RequestBodyJson
+          - type: RequestBodyJsonObject
             value:
               key: "{{ config['value'] }}"
-          - type: RequestBodyJson
+          - type: RequestBodyJsonObject
             value:
               sort:
                 field: "updated_at"
                 order: "ascending"
-          - type: RequestBodyData
+          - type: RequestBodyPlainText
             value: "plain_text_body"
-          - type: RequestBodyData
+          - type: RequestBodyUrlEncodedForm
             value:
               param1: "value1"
               param2: "{{ config['param2_value'] }}"
+          - type: RequestBodyGraphQL
+            value:
+              query:
+                param1: "value1"
+                param2: "{{ config['param2_value'] }}"
       request_headers:
         title: Request Headers
         description: Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.
@@ -4073,27 +4081,74 @@ definitions:
       - type
       - stream_template
       - components_resolver
-  RequestBody:
+  RequestBodyPlainText:
+    title: Plain-text Body
+    description: Request body value is sent as plain text
     type: object
-    description: The request body payload. Can be either URL encoded data or JSON.
+    required:
+      - type
+      - value
     properties:
       type:
-        anyOf:
-          - type: string
-            enum: [RequestBodyData]
-          - type: string
-            enum: [RequestBodyJson]
+        type: string
+        enum: [RequestBodyPlainText]
       value:
-        anyOf:
-          - type: string
-            description: The request body payload as a string.
-          - type: object
-            description: The request body payload as a Non-JSON object (url-encoded data).
-            additionalProperties:
-              type: string
-          - type: object
-            description: The request body payload as a JSON object (json-encoded data).
-            additionalProperties: true
+        type: string
+  RequestBodyUrlEncodedForm:
+    title: URL-encoded Body
+    description: Request body value is converted into a url-encoded form
+    type: object
+    required:
+      - type
+      - value
+    properties:
+      type:
+        type: string
+        enum: [RequestBodyUrlEncodedForm]
+      value:
+        type: object
+        additionalProperties:
+          type: string
+  RequestBodyJsonObject:
+    title: Json Object Body
+    description: Request body value converted into a JSON object
+    type: object
+    required:
+      - type
+      - value
+    properties:
+      type:
+        type: string
+        enum: [RequestBodyJsonObject]
+      value:
+        type: object
+        additionalProperties: true
+  RequestBodyGraphQL:
+    title: GraphQL Body
+    description: Request body value converted into a GraphQL query object
+    type: object
+    required:
+      - type
+      - value
+    properties:
+      type:
+        type: string
+        enum: [RequestBodyGraphQL]
+      value:
+        "$ref": "#/definitions/RequestBodyGraphQlQuery"
+  RequestBodyGraphQlQuery:
+    title: GraphQL Query Body
+    description: Request body GraphQL query object
+    type: object
+    required:
+      - query
+    properties:
+      query:
+        type: object
+        additionalProperties: true
+        description: The GraphQL query to be executed
+        default: {}
+    additionalProperties: true
 interpolation:
   variables:
     - title: config

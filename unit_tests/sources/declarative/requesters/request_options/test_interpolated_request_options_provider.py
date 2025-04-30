@@ -4,7 +4,13 @@
 
 import pytest
 
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import RequestBody
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RequestBodyGraphQL,
+    RequestBodyGraphQlQuery,
+    RequestBodyJsonObject,
+    RequestBodyPlainText,
+    RequestBodyUrlEncodedForm,
+)
 from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_request_options_provider import (
     InterpolatedRequestOptionsProvider,
 )
@@ -137,57 +143,115 @@ def test_interpolated_request_json(test_name, input_request_json, expected_reque
     [
         (
             "test_static_json",
-            {"a_static_request_param": "a_static_value"},
+            RequestBodyJsonObject(
+                type="RequestBodyJsonObject", value={"a_static_request_param": "a_static_value"}
+            ),
             {"a_static_request_param": "a_static_value"},
         ),
         (
             "test_value_depends_on_stream_slice",
-            {"read_from_slice": "{{ stream_slice['start_date'] }}"},
+            RequestBodyJsonObject(
+                type="RequestBodyJsonObject",
+                value={"read_from_slice": "{{ stream_slice['start_date'] }}"},
+            ),
             {"read_from_slice": "2020-01-01"},
         ),
         (
             "test_value_depends_on_next_page_token",
-            {"read_from_token": "{{ next_page_token['offset'] }}"},
+            RequestBodyJsonObject(
+                type="RequestBodyJsonObject",
+                value={"read_from_token": "{{ next_page_token['offset'] }}"},
+            ),
             {"read_from_token": 12345},
         ),
         (
             "test_value_depends_on_config",
-            {"read_from_config": "{{ config['option'] }}"},
+            RequestBodyJsonObject(
+                type="RequestBodyJsonObject", value={"read_from_config": "{{ config['option'] }}"}
+            ),
             {"read_from_config": "OPTION"},
         ),
         (
             "test_interpolated_keys",
-            {"{{ stream_interval['start_date'] }}": 123, "{{ config['option'] }}": "ABC"},
+            RequestBodyJsonObject(
+                type="RequestBodyJsonObject",
+                value={"{{ stream_interval['start_date'] }}": 123, "{{ config['option'] }}": "ABC"},
+            ),
             {"2020-01-01": 123, "OPTION": "ABC"},
         ),
-        ("test_boolean_false_value", {"boolean_false": "{{ False }}"}, {"boolean_false": False}),
-        ("test_integer_falsy_value", {"integer_falsy": "{{ 0 }}"}, {"integer_falsy": 0}),
-        ("test_number_falsy_value", {"number_falsy": "{{ 0.0 }}"}, {"number_falsy": 0.0}),
-        ("test_string_falsy_value", {"string_falsy": "{{ '' }}"}, {}),
-        ("test_none_value", {"none_value": "{{ None }}"}, {}),
+        (
+            "test_boolean_false_value",
+            RequestBodyJsonObject(
+                type="RequestBodyJsonObject", value={"boolean_false": "{{ False }}"}
+            ),
+            {"boolean_false": False},
+        ),
+        (
+            "test_integer_falsy_value",
+            RequestBodyJsonObject(
+                type="RequestBodyJsonObject",
+                value={"integer_falsy": "{{ 0 }}"},
+            ),
+            {"integer_falsy": 0},
+        ),
+        (
+            "test_number_falsy_value",
+            RequestBodyJsonObject(
+                type="RequestBodyJsonObject", value={"number_falsy": "{{ 0.0 }}"}
+            ),
+            {"number_falsy": 0.0},
+        ),
+        (
+            "test_string_falsy_value",
+            RequestBodyJsonObject(type="RequestBodyJsonObject", value={"string_falsy": "{{ '' }}"}),
+            {},
+        ),
+        (
+            "test_none_value",
+            RequestBodyJsonObject(type="RequestBodyJsonObject", value={"none_value": "{{ None }}"}),
+            {},
+        ),
         (
             "test_string",
-            """{"nested": { "key": "{{ config['option'] }}" }}""",
+            RequestBodyPlainText(
+                type="RequestBodyPlainText",
+                value="""{"nested": { "key": "{{ config['option'] }}" }}""",
+            ),
             {"nested": {"key": "OPTION"}},
         ),
         (
             "test_nested_objects",
-            {"nested": {"key": "{{ config['option'] }}"}},
+            RequestBodyJsonObject(
+                type="RequestBodyJsonObject", value={"nested": {"key": "{{ config['option'] }}"}}
+            ),
             {"nested": {"key": "OPTION"}},
         ),
         (
             "test_nested_objects_interpolated keys",
-            {"nested": {"{{ stream_interval['start_date'] }}": "{{ config['option'] }}"}},
+            RequestBodyJsonObject(
+                type="RequestBodyJsonObject",
+                value={"nested": {"{{ stream_interval['start_date'] }}": "{{ config['option'] }}"}},
+            ),
             {"nested": {"2020-01-01": "OPTION"}},
+        ),
+        (
+            "test_graphql_query",
+            RequestBodyGraphQL(
+                type="RequestBodyGraphQL",
+                value=RequestBodyGraphQlQuery(
+                    query={"query_key": "{{ config['option'] }}", "query_key_2": "value"}
+                ),
+            ),
+            {"query": {"query_key": "OPTION", "query_key_2": "value"}},
         ),
     ],
 )
 def test_interpolated_request_json_using_request_body(
     test_name, input_request_json, expected_request_json
-):
+) -> None:
     provider = InterpolatedRequestOptionsProvider(
         config=config,
-        request_body=RequestBody(type="RequestBodyJson", value=input_request_json),
+        request_body=input_request_json,
         parameters={},
     )
     actual_request_json = provider.get_request_body_json(
@@ -240,33 +304,54 @@ def test_interpolated_request_data(test_name, input_request_data, expected_reque
     [
         (
             "test_static_map_data",
-            {"a_static_request_param": "a_static_value"},
+            RequestBodyUrlEncodedForm(
+                type="RequestBodyUrlEncodedForm",
+                value={"a_static_request_param": "a_static_value"},
+            ),
             {"a_static_request_param": "a_static_value"},
         ),
         (
             "test_map_depends_on_stream_slice",
-            {"read_from_slice": "{{ stream_slice['start_date'] }}"},
+            RequestBodyUrlEncodedForm(
+                type="RequestBodyUrlEncodedForm",
+                value={"read_from_slice": "{{ stream_slice['start_date'] }}"},
+            ),
             {"read_from_slice": "2020-01-01"},
         ),
         (
             "test_map_depends_on_config",
-            {"read_from_config": "{{ config['option'] }}"},
+            RequestBodyUrlEncodedForm(
+                type="RequestBodyUrlEncodedForm",
+                value={"read_from_config": "{{ config['option'] }}"},
+            ),
             {"read_from_config": "OPTION"},
         ),
-        ("test_defaults_to_empty_dict", None, {}),
+        (
+            "test_defaults_to_empty_dict",
+            RequestBodyUrlEncodedForm(
+                type="RequestBodyUrlEncodedForm",
+                value={},
+            ),
+            {},
+        ),
         (
             "test_interpolated_keys",
-            {"{{ stream_interval['start_date'] }} - {{ next_page_token['offset'] }}": "ABC"},
+            RequestBodyUrlEncodedForm(
+                type="RequestBodyUrlEncodedForm",
+                value={
+                    "{{ stream_interval['start_date'] }} - {{ next_page_token['offset'] }}": "ABC"
+                },
+            ),
             {"2020-01-01 - 12345": "ABC"},
         ),
     ],
 )
 def test_interpolated_request_data_using_request_body(
     test_name, input_request_data, expected_request_data
-):
+) -> None:
     provider = InterpolatedRequestOptionsProvider(
         config=config,
-        request_body=RequestBody(type="RequestBodyData", value=input_request_data),
+        request_body=input_request_data,
         parameters={},
     )
 
