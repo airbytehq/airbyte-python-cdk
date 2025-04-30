@@ -377,7 +377,7 @@ def _print_ci_secrets_masks(
 
 
 def _print_ci_secrets_masks_for_config(
-    config: dict[str, str] | list | Any,
+    config: dict[str, str] | list[Any] | Any,
 ) -> None:
     """Print GitHub CI mask for secrets config, navigating child nodes recursively."""
     if isinstance(config, list):
@@ -411,7 +411,7 @@ def _get_spec_mask() -> list[str]:
     """Get the list of properties to mask from the spec mask file."""
     response = requests.get(GLOBAL_MASK_KEYS_URL, allow_redirects=True)
     if not response.ok:
-        logger.error(f"Failed to fetch spec mask: {response.content}")
+        logger.error(f"Failed to fetch spec mask: {response.content.decode('utf-8')}")
     try:
         return cast(list[str], yaml.safe_load(response.content)["properties"])
     except Exception as e:
