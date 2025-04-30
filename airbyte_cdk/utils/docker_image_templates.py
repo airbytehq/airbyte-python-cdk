@@ -149,11 +149,15 @@ RUN chmod +x /airbyte/base.sh /airbyte/javabase.sh && \
     chown airbyte:airbyte /airbyte/base.sh /airbyte/javabase.sh /airbyte/dd-java-agent.jar
 
 # Set environment variables
+# These variables tell base.sh what to do:
 ENV AIRBYTE_SPEC_CMD="/airbyte/javabase.sh --spec"
 ENV AIRBYTE_CHECK_CMD="/airbyte/javabase.sh --check"
 ENV AIRBYTE_DISCOVER_CMD="/airbyte/javabase.sh --discover"
 ENV AIRBYTE_READ_CMD="/airbyte/javabase.sh --read"
 ENV AIRBYTE_WRITE_CMD="/airbyte/javabase.sh --write"
+
+# base.sh will set the classpath for the connector and invoke javabase.sh
+# using one of the above commands.
 ENV AIRBYTE_ENTRYPOINT="/airbyte/base.sh"
 ENV APPLICATION="${CONNECTOR_KEBAB_NAME}"
 

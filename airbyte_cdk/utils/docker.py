@@ -63,9 +63,20 @@ def _build_image(
 
     Raises: ConnectorImageBuildError if the build fails.
     """
+    connector_name = metadata.data.dockerRepository.split("/")[-1]
     if metadata.data.language == ConnectorLanguage.JAVA:
         # For Java connectors, the context directory is the repo root.
         context_dir = context_dir.parent.parent.parent
+        # For Java connectors, we need to build the connector tar file first.
+        response: subprocess.CompletedProcess[str] = subprocess.run(
+            [
+                "./gradlew",
+                f":airbyte-integrations:connectors:{connector_name}:distTar",
+            ],
+            cwd=context_dir,
+            text=True,
+            check=True,
+        )
 
     docker_args: list[str] = [
         "docker",
