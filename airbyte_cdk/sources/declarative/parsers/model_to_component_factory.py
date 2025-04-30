@@ -583,7 +583,7 @@ class ModelToComponentFactory:
         disable_retries: bool = False,
         disable_cache: bool = False,
         disable_resumable_full_refresh: bool = False,
-        catalog: ConfiguredAirbyteCatalog = ConfiguredAirbyteCatalog(streams=[]),
+        catalog: ConfiguredAirbyteCatalog = None,
         message_repository: Optional[MessageRepository] = None,
         connector_state_manager: Optional[ConnectorStateManager] = None,
         max_concurrent_async_job_count: Optional[int] = None,
