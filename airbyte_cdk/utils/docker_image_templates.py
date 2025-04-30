@@ -37,7 +37,7 @@ DOCKERIGNORE_TEMPLATE: str = "\n".join(
 # PYTHON CONNECTOR IMAGE ##
 ###########################
 
-PYTHON_CONNECTOR_DOCKERFILE_TEMPLATE = """
+PYTHON_CONNECTOR_DOCKERFILE_TEMPLATE = r"""
 # syntax=docker/dockerfile:1
 # check=skip=all
 ARG BASE_IMAGE
