@@ -18,11 +18,11 @@ from airbyte_cdk.test.standard_tests.test_resources import (
 )
 
 TEST_CLASS_MAPPING: dict[
-    Literal["python", "manifest-only", "declarative"], type[ConnectorTestSuiteBase]
+    Literal["python", "manifest-only", "java"], type[ConnectorTestSuiteBase]
 ] = {
     "python": SourceTestSuiteBase,
     "manifest-only": DeclarativeSourceTestSuite,
-    # "declarative": DeclarativeSourceTestSuite,
+    # "java": DestinationTestSuiteBase,
 }
 
 

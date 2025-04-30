@@ -140,11 +140,11 @@ def _tag_image(
 def build_connector_image(
     connector_name: str,
     connector_directory: Path,
-    metadata: MetadataFile,
+    *,
     tag: str,
     primary_arch: ArchEnum = ArchEnum.ARM64,  # Assume MacBook M series by default
     no_verify: bool = False,
-) -> None:
+) -> str:
     """Build a connector Docker image.
 
     This command builds a Docker image for a connector, using either
@@ -164,7 +164,18 @@ def build_connector_image(
     Raises:
         ValueError: If the connector build options are not defined in metadata.yaml.
         ConnectorImageBuildError: If the image build or tag operation fails.
+
+    Returns:
+        The tag of the built image.
     """
+    metadata_file_path: Path = connector_directory / "metadata.yaml"
+    try:
+        metadata = MetadataFile.from_file(metadata_file_path)
+    except (FileNotFoundError, ValueError) as e:
+        raise FileNotFoundError(
+            f"Error loading metadata file '{metadata_file_path}': {e!s}",
+        ) from e
+
     connector_kebab_name = connector_name
     connector_snake_name = connector_kebab_name.replace("-", "_")
 
@@ -227,6 +238,8 @@ def build_connector_image(
     else:
         click.echo(f"Build completed successfully (without verification): {base_tag}")
         sys.exit(0)
+
+    return base_tag
 
 
 def get_dockerfile_template(

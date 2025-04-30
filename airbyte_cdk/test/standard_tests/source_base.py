@@ -32,6 +32,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
     def test_check(
         self,
         scenario: ConnectorTestScenario,
+        use_docker_image: str | bool,
     ) -> None:
         """Run standard `check` tests on the connector.
 
@@ -40,8 +41,11 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         and return its status with the expected message type.
         """
         result: entrypoint_wrapper.EntrypointOutput = run_test_job(
-            self.create_connector(scenario),
-            "check",
+            connector=self.create_connector(
+                scenario=scenario,
+                use_docker_image=use_docker_image,
+            ),
+            verb="check",
             test_scenario=scenario,
         )
         conn_status_messages: list[AirbyteMessage] = [
@@ -56,10 +60,14 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
     def test_discover(
         self,
         scenario: ConnectorTestScenario,
+        use_docker_image: str | bool,
     ) -> None:
         """Standard test for `discover`."""
         run_test_job(
-            self.create_connector(scenario),
+            self.create_connector(
+                scenario,
+                use_docker_image=use_docker_image,
+            ),
             "discover",
             test_scenario=scenario,
         )
@@ -67,6 +75,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
     def test_basic_read(
         self,
         scenario: ConnectorTestScenario,
+        use_docker_image: str | bool,
     ) -> None:
         """Run standard `read` test on the connector.
 
@@ -76,7 +85,10 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         records from those streams.
         """
         discover_result = run_test_job(
-            self.create_connector(scenario),
+            self.create_connector(
+                scenario,
+                use_docker_image=use_docker_image,
+            ),
             "discover",
             test_scenario=scenario,
         )
@@ -95,7 +107,10 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             ]
         )
         result = run_test_job(
-            self.create_connector(scenario),
+            self.create_connector(
+                scenario,
+                use_docker_image=use_docker_image,
+            ),
             "read",
             test_scenario=scenario,
             catalog=configured_catalog,
@@ -107,6 +122,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
     def test_fail_read_with_bad_catalog(
         self,
         scenario: ConnectorTestScenario,
+        use_docker_image: str | bool,
     ) -> None:
         """Standard test for `read` when passed a bad catalog file."""
         invalid_configured_catalog = ConfiguredAirbyteCatalog(
@@ -131,7 +147,10 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         # Set expected status to "failed" to ensure the test fails if the connector.
         scenario.status = "failed"
         result: entrypoint_wrapper.EntrypointOutput = run_test_job(
-            self.create_connector(scenario),
+            self.create_connector(
+                scenario,
+                use_docker_image=use_docker_image,
+            ),
             "read",
             test_scenario=scenario,
             catalog=asdict(invalid_configured_catalog),

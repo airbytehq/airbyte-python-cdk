@@ -65,6 +65,7 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
     def create_connector(
         cls,
         scenario: ConnectorTestScenario,
+        use_docker_image: str | bool,
     ) -> IConnector:
         """Create a connector scenario for the test suite.
 
@@ -73,6 +74,11 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
 
         Subclasses should not need to override this method.
         """
+        if use_docker_image:
+            return cls.create_docker_connector(
+                docker_image=use_docker_image,
+            )
+
         config: dict[str, Any] = scenario.get_config_dict()
 
         manifest_dict = yaml.safe_load(cls.manifest_yaml_path.read_text())

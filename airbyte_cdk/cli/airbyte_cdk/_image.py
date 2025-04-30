@@ -64,21 +64,11 @@ def build(
         connector_directory=connector_directory,
     )
 
-    metadata_file_path: Path = connector_directory / "metadata.yaml"
-    try:
-        metadata = MetadataFile.from_file(metadata_file_path)
-    except (FileNotFoundError, ValueError) as e:
-        click.echo(
-            f"Error loading metadata file '{metadata_file_path}': {e!s}",
-            err=True,
-        )
-        sys.exit(1)
-    click.echo(f"Building Image for Connector: {metadata.data.dockerRepository}:{tag}")
+    click.echo(f"Building '{tag}' Image for Connector '{connector_name}':")
     try:
         build_connector_image(
             connector_directory=connector_directory,
             connector_name=connector_name,
-            metadata=metadata,
             tag=tag,
             no_verify=no_verify,
         )
