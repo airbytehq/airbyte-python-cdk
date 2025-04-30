@@ -23,19 +23,24 @@ pipx run airbyte-cdk secrets fetch ...
 uvx airbyte-cdk secrets fetch ...
 ```
 
-The 'fetch' command retrieves secrets from Google Secret Manager based on connector
+The command retrieves secrets from Google Secret Manager based on connector
 labels and writes them to the connector's `secrets` directory.
 """
 
 from __future__ import annotations
 
 import json
+import logging
 import os
+from functools import lru_cache
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
+import requests
 import rich_click as click
+import yaml
 from click import style
+from numpy import isin
 from rich.console import Console
 from rich.table import Table
 
@@ -46,7 +51,9 @@ from airbyte_cdk.cli.airbyte_cdk._util import (
 
 AIRBYTE_INTERNAL_GCP_PROJECT = "dataline-integration-testing"
 CONNECTOR_LABEL = "connector"
+GLOBAL_MASK_KEYS_URL = "https://connectors.airbyte.com/files/registries/v0/specs_secrets_mask.yaml"
 
+logger = logging.getLogger("airbyte-cdk.cli.secrets")
 
 try:
     from google.cloud import secretmanager_v1 as secretmanager
@@ -83,10 +90,18 @@ def secrets_cli_group() -> None:
     default=AIRBYTE_INTERNAL_GCP_PROJECT,
     help=f"GCP project ID. Defaults to '{AIRBYTE_INTERNAL_GCP_PROJECT}'.",
 )
+@click.option(
+    "--print-ci-secrets-masks",
+    help="Print GitHub CI mask for secrets.",
+    type=bool,
+    is_flag=True,
+    default=False,
+)
 def fetch(
     connector_name: str | None = None,
     connector_directory: Path | None = None,
     gcp_project_id: str = AIRBYTE_INTERNAL_GCP_PROJECT,
+    print_ci_secrets_masks: bool = False,
 ) -> None:
     """Fetch secrets for a connector from Google Secret Manager.
 
@@ -96,8 +111,15 @@ def fetch(
     If no connector name or directory is provided, we will look within the current working
     directory. If the current working directory is not a connector directory (e.g. starting
     with 'source-') and no connector name or path is provided, the process will fail.
+
+    The `--print-ci-secrets-masks` option will print the GitHub CI mask for the secrets.
+    This is useful for masking secrets in CI logs.
+
+    WARNING: This action causes the secrets to be printed in clear text the logs. For security
+    reasons, this function will only execute if the `CI` environment variable is set. Otherwise,
+    masks will not be printed.
     """
-    click.echo("Fetching secrets...")
+    click.echo("Fetching secrets...", err=True)
 
     client = _get_gsm_secrets_client()
     connector_name, connector_directory = resolve_connector_name_and_directory(
@@ -125,7 +147,7 @@ def fetch(
             client=client,
             file_path=secret_file_path,
         )
-        click.echo(f"Secret written to: {secret_file_path.absolute()!s}")
+        click.echo(f"Secret written to: {secret_file_path.absolute()!s}", err=True)
         secret_count += 1
 
     if secret_count == 0:
@@ -133,6 +155,23 @@ def fetch(
             f"No secrets found for connector: '{connector_name}'",
             err=True,
         )
+
+    if not print_ci_secrets_masks:
+        return
+
+    if not os.environ.get("CI", None):
+        click.echo(
+            "The `--print-ci-secrets-masks` option is only available in CI environments. "
+            "The `CI` env var is either not set or not set to a truthy value. "
+            "Skipping printing secret masks.",
+            err=True,
+        )
+        return
+
+    # Else print the CI mask
+    _print_ci_secrets_masks(
+        secrets_dir=secrets_dir,
+    )
 
 
 @secrets_cli_group.command("list")
@@ -166,7 +205,7 @@ def list_(
     directory. If the current working directory is not a connector directory (e.g. starting
     with 'source-') and no connector name or path is provided, the process will fail.
     """
-    click.echo("Fetching secrets...")
+    click.echo("Scanning secrets...", err=True)
 
     connector_name = connector_name or resolve_connector_name(
         connector_directory=connector_directory or Path().resolve().absolute(),
@@ -310,3 +349,71 @@ def _get_gsm_secrets_client() -> "secretmanager.SecretManagerServiceClient":  # 
             json.loads(credentials_json)
         ),
     )
+
+
+def _print_ci_secrets_masks(
+    secrets_dir: Path,
+) -> None:
+    """Print GitHub CI mask for secrets.
+
+    https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/workflow-commands-for-github-actions#example-masking-an-environment-variable
+
+    The env var `CI` is set to a truthy value in GitHub Actions, so we can use it to
+    determine if we are in a CI environment. If not, we don't want to print the masks,
+    as it will cause the secrets to be printed in clear text to STDOUT.
+    """
+    if not os.environ.get("CI", None):
+        click.echo(
+            "The `--print-ci-secrets-masks` option is only available in CI environments. "
+            "The `CI` env var is either not set or not set to a truthy value. "
+            "Skipping printing secret masks.",
+            err=True,
+        )
+        return
+
+    for secret_file_path in secrets_dir.glob("*.json"):
+        config_dict = json.loads(secret_file_path.read_text())
+        _print_ci_secrets_masks_for_config(config=config_dict)
+
+
+def _print_ci_secrets_masks_for_config(
+    config: dict[str, str] | list | Any,
+) -> None:
+    """Print GitHub CI mask for secrets config, navigating child nodes recursively."""
+    if isinstance(config, list):
+        for item in config:
+            _print_ci_secrets_masks_for_config(item)
+
+    if isinstance(config, dict):
+        for key, value in config.items():
+            if _is_secret_property(key):
+                logger.debug(f"Masking secret for config key: {key}")
+                print(f"::add-mask::{value!s}")
+                if isinstance(value, dict):
+                    # For nested dicts, we also need to mask the json-stringified version
+                    print(f"::add-mask::{json.dumps(value)!s}")
+
+            if isinstance(value, dict | list):
+                _print_ci_secrets_masks_for_config(config=value)
+
+
+def _is_secret_property(property_name: str) -> bool:
+    """Check if the property name is in the list of properties to mask."""
+    names_to_mask: list[str] = _get_spec_mask()
+    if any([property_name.lower() in mask.lower() for mask in names_to_mask]):
+        return True
+
+    return False
+
+
+@lru_cache
+def _get_spec_mask() -> list[str]:
+    """Get the list of properties to mask from the spec mask file."""
+    response = requests.get(GLOBAL_MASK_KEYS_URL, allow_redirects=True)
+    if not response.ok:
+        logger.error(f"Failed to fetch spec mask: {response.content}")
+    try:
+        return cast(list[str], yaml.safe_load(response.content)["properties"])
+    except Exception as e:
+        logger.error(f"Failed to parse spec mask: {e}")
+        raise
