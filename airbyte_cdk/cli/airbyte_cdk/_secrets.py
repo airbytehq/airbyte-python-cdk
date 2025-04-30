@@ -40,7 +40,6 @@ import requests
 import rich_click as click
 import yaml
 from click import style
-from numpy import isin
 from rich.console import Console
 from rich.table import Table
 
@@ -398,9 +397,15 @@ def _print_ci_secrets_masks_for_config(
 
 
 def _is_secret_property(property_name: str) -> bool:
-    """Check if the property name is in the list of properties to mask."""
+    """Check if the property name is in the list of properties to mask.
+
+    To avoid false negatives, we perform a case-insensitive check, and we include any property name
+    that contains a rule entry, even if it is not an exact match.
+
+    For example, if the rule entry is "password", we will also match "PASSWORD" and "my_password".
+    """
     names_to_mask: list[str] = _get_spec_mask()
-    if any([property_name.lower() in mask.lower() for mask in names_to_mask]):
+    if any([mask.lower() in property_name.lower() for mask in names_to_mask]):
         return True
 
     return False
