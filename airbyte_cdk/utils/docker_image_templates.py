@@ -107,7 +107,6 @@ ENTRYPOINT ["python", "./main.py"]
 
 JAVA_CONNECTOR_DOCKERFILE_TEMPLATE = """
 # Java connector Dockerfile for Airbyte
-# This Dockerfile replicates the dagger-based build process for Java connectors
 
 # Build arguments
 ARG BASE_IMAGE
