@@ -8,6 +8,10 @@ from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic.v1 import BaseModel, Extra, Field
 
+from airbyte_cdk.sources.declarative.models.base_model_with_deprecations import (
+    BaseModelWithDeprecations,
+)
+
 
 class AuthFlowType(Enum):
     oauth2_0 = "oauth2.0"
@@ -1495,6 +1499,28 @@ class ConfigComponentsResolver(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class RequestBodyPlainText(BaseModel):
+    type: Literal["RequestBodyPlainText"]
+    value: str
+
+
+class RequestBodyUrlEncodedForm(BaseModel):
+    type: Literal["RequestBodyUrlEncodedForm"]
+    value: Dict[str, str]
+
+
+class RequestBodyJsonObject(BaseModel):
+    type: Literal["RequestBodyJsonObject"]
+    value: Dict[str, Any]
+
+
+class RequestBodyGraphQlQuery(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    query: Dict[str, Any] = Field(..., description="The GraphQL query to be executed")
+
+
 class AddedFieldDefinition(BaseModel):
     type: Literal["AddedFieldDefinition"]
     path: List[str] = Field(
@@ -1897,6 +1923,11 @@ class Spec(BaseModel):
     )
 
 
+class RequestBodyGraphQL(BaseModel):
+    type: Literal["RequestBodyGraphQL"]
+    value: RequestBodyGraphQlQuery
+
+
 class CompositeErrorHandler(BaseModel):
     type: Literal["CompositeErrorHandler"]
     error_handlers: List[Union[CompositeErrorHandler, DefaultErrorHandler]] = Field(
@@ -2205,11 +2236,13 @@ class SessionTokenAuthenticator(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class HttpRequester(BaseModel):
+class HttpRequester(BaseModelWithDeprecations):
     type: Literal["HttpRequester"]
-    url_base: str = Field(
-        ...,
-        description="The Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.",
+    url_base: Optional[str] = Field(
+        None,
+        deprecated=True,
+        deprecation_message="Use `url` field instead.",
+        description="Deprecated, use the `url` instead. Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.",
         examples=[
             "https://connect.squareup.com/v2",
             "{{ config['base_url'] or 'https://app.posthog.com'}}/api",
@@ -2218,9 +2251,22 @@ class HttpRequester(BaseModel):
         ],
         title="API Base URL",
     )
+    url: Optional[str] = Field(
+        None,
+        description="The URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.",
+        examples=[
+            "https://connect.squareup.com/v2",
+            "{{ config['url'] or 'https://app.posthog.com'}}/api",
+            "https://connect.squareup.com/v2/quotes/{{ stream_partition['id'] }}/quote_line_groups",
+            "https://example.com/api/v1/resource/{{ next_page_token['id'] }}",
+        ],
+        title="The URL of an API endpoint",
+    )
     path: Optional[str] = Field(
         None,
-        description="The Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.",
+        deprecated=True,
+        deprecation_message="Use `url` field instead.",
+        description="Deprecated, use the `url` instead. Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.",
         examples=[
             "/products",
             "/quotes/{{ stream_partition['id'] }}/quote_line_groups",
@@ -2252,8 +2298,15 @@ class HttpRequester(BaseModel):
         description="Authentication method to use for requests sent to the API.",
         title="Authenticator",
     )
+    fetch_properties_from_endpoint: Optional[PropertiesFromEndpoint] = Field(
+        None,
+        description="Allows for retrieving a dynamic set of properties from an API endpoint which can be injected into outbound request using the stream_partition.extra_fields.",
+        title="Fetch Properties from Endpoint",
+    )
     request_body_data: Optional[Union[Dict[str, str], str]] = Field(
         None,
+        deprecated=True,
+        deprecation_message="Use `request_body` field instead.",
         description="Specifies how to populate the body of the request with a non-JSON payload. Plain text will be sent as is, whereas objects will be converted to a urlencoded form.",
         examples=[
             '[{"clause": {"type": "timestamp", "operator": 10, "parameters":\n    [{"value": {{ stream_interval[\'start_time\'] | int * 1000 }} }]\n  }, "orderBy": 1, "columnName": "Timestamp"}]/\n'
@@ -2262,6 +2315,8 @@ class HttpRequester(BaseModel):
     )
     request_body_json: Optional[Union[Dict[str, Any], str]] = Field(
         None,
+        deprecated=True,
+        deprecation_message="Use `request_body` field instead.",
         description="Specifies how to populate the body of the request with a JSON payload. Can contain nested objects.",
         examples=[
             {"sort_order": "ASC", "sort_field": "CREATED_AT"},
@@ -2269,6 +2324,46 @@ class HttpRequester(BaseModel):
             {"sort": {"field": "updated_at", "order": "ascending"}},
         ],
         title="Request Body JSON Payload",
+    )
+    request_body: Optional[
+        Union[
+            RequestBodyPlainText,
+            RequestBodyUrlEncodedForm,
+            RequestBodyJsonObject,
+            RequestBodyGraphQL,
+        ]
+    ] = Field(
+        None,
+        description="Specifies how to populate the body of the request with a payload. Can contain nested objects.",
+        examples=[
+            {
+                "type": "RequestBodyJsonObject",
+                "value": {"sort_order": "ASC", "sort_field": "CREATED_AT"},
+            },
+            {
+                "type": "RequestBodyJsonObject",
+                "value": {"key": "{{ config['value'] }}"},
+            },
+            {
+                "type": "RequestBodyJsonObject",
+                "value": {"sort": {"field": "updated_at", "order": "ascending"}},
+            },
+            {"type": "RequestBodyPlainText", "value": "plain_text_body"},
+            {
+                "type": "RequestBodyUrlEncodedForm",
+                "value": {"param1": "value1", "param2": "{{ config['param2_value'] }}"},
+            },
+            {
+                "type": "RequestBodyGraphQL",
+                "value": {
+                    "query": {
+                        "param1": "value1",
+                        "param2": "{{ config['param2_value'] }}",
+                    }
+                },
+            },
+        ],
+        title="Request Body Payload to be send as a part of the API request.",
     )
     request_headers: Optional[Union[Dict[str, str], str]] = Field(
         None,

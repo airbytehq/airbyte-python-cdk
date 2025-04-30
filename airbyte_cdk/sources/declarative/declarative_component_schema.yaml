@@ -1464,7 +1464,7 @@ definitions:
         properties:
           type:
             type: string
-            enum: [ FileUploader ]
+            enum: [FileUploader]
           requester:
             description: Requester component that describes how to prepare HTTP requests to send to the source API.
             anyOf:
@@ -1911,15 +1911,16 @@ definitions:
     type: object
     required:
       - type
-      - url_base
     properties:
       type:
         type: string
         enum: [HttpRequester]
       url_base:
-        linkable: true
+        deprecated: true
+        deprecation_message: "Use `url` field instead."
         title: API Base URL
-        description: The Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
+        description: Deprecated, use the `url` instead. Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
+        linkable: true
         type: string
         interpolation_context:
           - config
@@ -1935,9 +1936,29 @@ definitions:
           - "{{ config['base_url'] or 'https://app.posthog.com'}}/api"
           - "https://connect.squareup.com/v2/quotes/{{ stream_partition['id'] }}/quote_line_groups"
           - "https://example.com/api/v1/resource/{{ next_page_token['id'] }}"
+      url:
+        title: The URL of an API endpoint
+        description: The URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
+        type: string
+        interpolation_context:
+          - config
+          - next_page_token
+          - stream_interval
+          - stream_partition
+          - stream_slice
+          - creation_response
+          - polling_response
+          - download_target
+        examples:
+          - "https://connect.squareup.com/v2"
+          - "{{ config['url'] or 'https://app.posthog.com'}}/api"
+          - "https://connect.squareup.com/v2/quotes/{{ stream_partition['id'] }}/quote_line_groups"
+          - "https://example.com/api/v1/resource/{{ next_page_token['id'] }}"
       path:
+        deprecated: true
+        deprecation_message: "Use `url` field instead."
         title: URL Path
-        description: The Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
+        description: Deprecated, use the `url` instead. Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
         type: string
         interpolation_context:
           - config
@@ -1978,7 +1999,13 @@ definitions:
           - "$ref": "#/definitions/SelectiveAuthenticator"
           - "$ref": "#/definitions/CustomAuthenticator"
           - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
+      fetch_properties_from_endpoint:
+        title: Fetch Properties from Endpoint
+        description: Allows for retrieving a dynamic set of properties from an API endpoint which can be injected into outbound request using the stream_partition.extra_fields.
+        "$ref": "#/definitions/PropertiesFromEndpoint"
       request_body_data:
+        deprecated: true
+        deprecation_message: "Use `request_body` field instead."
         title: Request Body Payload (Non-JSON)
         description: Specifies how to populate the body of the request with a non-JSON payload. Plain text will be sent as is, whereas objects will be converted to a urlencoded form.
         anyOf:
@@ -1997,6 +2024,8 @@ definitions:
                 [{"value": {{ stream_interval['start_time'] | int * 1000 }} }]
               }, "orderBy": 1, "columnName": "Timestamp"}]/
       request_body_json:
+        deprecated: true
+        deprecation_message: "Use `request_body` field instead."
         title: Request Body JSON Payload
         description: Specifies how to populate the body of the request with a JSON payload. Can contain nested objects.
         anyOf:
@@ -2015,6 +2044,43 @@ definitions:
           - sort:
               field: "updated_at"
               order: "ascending"
+      request_body:
+        title: Request Body Payload to be send as a part of the API request.
+        description: Specifies how to populate the body of the request with a payload. Can contain nested objects.
+        anyOf:
+          - "$ref": "#/definitions/RequestBodyPlainText"
+          - "$ref": "#/definitions/RequestBodyUrlEncodedForm"
+          - "$ref": "#/definitions/RequestBodyJsonObject"
+          - "$ref": "#/definitions/RequestBodyGraphQL"
+        interpolation_context:
+          - next_page_token
+          - stream_interval
+          - stream_partition
+          - stream_slice
+        examples:
+          - type: RequestBodyJsonObject
+            value:
+              sort_order: "ASC"
+              sort_field: "CREATED_AT"
+          - type: RequestBodyJsonObject
+            value:
+              key: "{{ config['value'] }}"
+          - type: RequestBodyJsonObject
+            value:
+              sort:
+                field: "updated_at"
+                order: "ascending"
+          - type: RequestBodyPlainText
+            value: "plain_text_body"
+          - type: RequestBodyUrlEncodedForm
+            value:
+              param1: "value1"
+              param2: "{{ config['param2_value'] }}"
+          - type: RequestBodyGraphQL
+            value:
+              query:
+                param1: "value1"
+                param2: "{{ config['param2_value'] }}"
       request_headers:
         title: Request Headers
         description: Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.
@@ -2370,7 +2436,7 @@ definitions:
     properties:
       type:
         type: string
-        enum: [ KeyTransformation ]
+        enum: [KeyTransformation]
       prefix:
         title: Key Prefix
         description: Prefix to add for object keys. If not provided original keys remain unchanged.
@@ -4015,6 +4081,74 @@ definitions:
       - type
       - stream_template
       - components_resolver
+  RequestBodyPlainText:
+    title: Plain-text Body
+    description: Request body value is sent as plain text
+    type: object
+    required:
+      - type
+      - value
+    properties:
+      type:
+        type: string
+        enum: [RequestBodyPlainText]
+      value:
+        type: string
+  RequestBodyUrlEncodedForm:
+    title: URL-encoded Body
+    description: Request body value is converted into a url-encoded form
+    type: object
+    required:
+      - type
+      - value
+    properties:
+      type:
+        type: string
+        enum: [RequestBodyUrlEncodedForm]
+      value:
+        type: object
+        additionalProperties:
+          type: string
+  RequestBodyJsonObject:
+    title: Json Object Body
+    description: Request body value converted into a JSON object
+    type: object
+    required:
+      - type
+      - value
+    properties:
+      type:
+        type: string
+        enum: [RequestBodyJsonObject]
+      value:
+        type: object
+        additionalProperties: true
+  RequestBodyGraphQL:
+    title: GraphQL Body
+    description: Request body value converted into a GraphQL query object
+    type: object
+    required:
+      - type
+      - value
+    properties:
+      type:
+        type: string
+        enum: [RequestBodyGraphQL]
+      value:
+        "$ref": "#/definitions/RequestBodyGraphQlQuery"
+  RequestBodyGraphQlQuery:
+    title: GraphQL Query Body
+    description: Request body GraphQL query object
+    type: object
+    required:
+      - query
+    properties:
+      query:
+        type: object
+        additionalProperties: true
+        description: The GraphQL query to be executed
+        default: {}
+    additionalProperties: true
 interpolation:
   variables:
     - title: config

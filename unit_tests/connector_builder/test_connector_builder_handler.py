@@ -7,7 +7,7 @@ import dataclasses
 import json
 import logging
 import os
-from typing import Literal
+from typing import List, Literal
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -823,6 +823,9 @@ def test_read_returns_error_response(mock_from_exception):
             connector_specification = mock.Mock()
             connector_specification.connectionSpecification = {}
             return connector_specification
+
+        def deprecation_warnings(self) -> List[AirbyteLogMessage]:
+            return []
 
         @property
         def check_config_against_spec(self) -> Literal[False]:
