@@ -121,8 +121,6 @@ ARG CONNECTOR_KEBAB_NAME
 RUN chmod +x /airbyte/base.sh /airbyte/javabase.sh && \
     chown airbyte:airbyte /airbyte/base.sh /airbyte/javabase.sh /airbyte/dd-java-agent.jar
 
-# base.sh will set the classpath for the connector and invoke javabase.sh
-# using one of the above commands.
 ENV AIRBYTE_ENTRYPOINT="/airbyte/base.sh"
 ENV APPLICATION="${CONNECTOR_KEBAB_NAME}"
 
@@ -137,8 +135,4 @@ USER airbyte
 
 # Set entrypoint
 ENTRYPOINT ["/airbyte/base.sh"]
-
-# Add labels
-LABEL io.airbyte.version="0.1.0"
-LABEL io.airbyte.name="airbyte/${CONNECTOR_KEBAB_NAME}"
 """
