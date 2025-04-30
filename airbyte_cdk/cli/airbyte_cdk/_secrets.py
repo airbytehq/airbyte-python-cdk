@@ -114,7 +114,7 @@ def fetch(
     The `--print-ci-secrets-masks` option will print the GitHub CI mask for the secrets.
     This is useful for masking secrets in CI logs.
 
-    WARNING: This action causes the secrets to be printed in clear text the logs. For security
+    WARNING: This action causes the secrets to be printed in clear text to `STDOUT`. For security
     reasons, this function will only execute if the `CI` environment variable is set. Otherwise,
     masks will not be printed.
     """
