@@ -197,7 +197,7 @@ def manifest_with_url_base_to_migrate_to_url() -> Dict[str, Any]:
 @pytest.fixture
 def expected_manifest_with_url_base_migrated_to_url() -> Dict[str, Any]:
     return {
-        "version": "6.48.2",
+        "version": "6.48.3",
         "type": "DeclarativeSource",
         "check": {"type": "CheckStream", "stream_names": ["A"]},
         "definitions": {
@@ -494,13 +494,13 @@ def expected_manifest_with_url_base_migrated_to_url() -> Dict[str, Any]:
             "applied_migrations": [
                 {
                     "from_version": "0.0.0",
-                    "to_version": "6.48.2",
+                    "to_version": "6.48.3",
                     "migration": "HttpRequesterUrlBaseToUrl",
                     "migrated_at": "2025-04-01T00:00:00+00:00",  # time freezed in the test
                 },
                 {
                     "from_version": "0.0.0",
-                    "to_version": "6.48.2",
+                    "to_version": "6.48.3",
                     "migration": "HttpRequesterPathToUrl",
                     "migrated_at": "2025-04-01T00:00:00+00:00",  # time freezed in the test
                 },
@@ -512,7 +512,7 @@ def expected_manifest_with_url_base_migrated_to_url() -> Dict[str, Any]:
 @pytest.fixture
 def manifest_with_migrated_url_base_and_path_is_joined_to_url() -> Dict[str, Any]:
     return {
-        "version": "6.48.2",
+        "version": "6.48.3",
         "type": "DeclarativeSource",
         "check": {"type": "CheckStream", "stream_names": ["A"]},
         "definitions": {},
@@ -636,6 +636,13 @@ def manifest_with_request_body_json_and_data_to_migrate_to_request_body() -> Dic
                             "$ref": "#/definitions/requester_A",
                             "path": "/path_to_A",
                             "http_method": "GET",
+                            # this requester has a `request_body_data` key,
+                            # to be migrated to the `request_body` key
+                            "request_body_data": {
+                                "test_key": "{{ config['config_key'] }}",
+                                "test_key_2": "test_value_2",
+                                "test_key_3": 123,
+                            },
                         },
                         "record_selector": {
                             "type": "RecordSelector",
@@ -656,6 +663,9 @@ def manifest_with_request_body_json_and_data_to_migrate_to_request_body() -> Dic
                             "$ref": "#/definitions/requester_A",
                             "path": "path_to_A",
                             "http_method": "GET",
+                            # this requester has a `request_body_data` key,
+                            # to be migrated to the `request_body` key
+                            "request_body_data": "&test_key=TestValue&test_key_2=test_value_2",
                         },
                         "record_selector": {
                             "type": "RecordSelector",
@@ -703,6 +713,8 @@ def manifest_with_request_body_json_and_data_to_migrate_to_request_body() -> Dic
                             # ! the double-slash is intentional here for the test.
                             "path": "//path_to_B",
                             "http_method": "GET",
+                            # the `request_body_json` is expected to be migrated to the `request_body` key
+                            "request_body_json": """{"nested": { "key": "{{ config['option'] }}" }}""",
                         },
                         "record_selector": {
                             "type": "RecordSelector",
@@ -723,6 +735,14 @@ def manifest_with_request_body_json_and_data_to_migrate_to_request_body() -> Dic
                             "$ref": "#/definitions/requester_B",
                             "path": "/path_to_B",
                             "http_method": "GET",
+                            # the `request_body_json` is expected to be migrated to the `request_body` key,
+                            # this example holds the GraphQL query object.
+                            "request_body_json": {
+                                "query": {
+                                    "field": "{{ config['query_field'] }}",
+                                    "value": "{{ config['query_value'] }}",
+                                }
+                            },
                         },
                         "record_selector": {
                             "type": "RecordSelector",
@@ -741,20 +761,10 @@ def manifest_with_request_body_json_and_data_to_migrate_to_request_body() -> Dic
             "requester_A": {
                 "type": "HttpRequester",
                 "url_base": "https://example.com/v1/",
-                # this requester has a `request_body_json` key,
-                # to be migrated to the `request_body` key
-                "request_body_data": {
-                    "test_key": "{{ config['config_key'] }}",
-                    "test_key_2": "test_value_2",
-                    "test_key_3": 123,
-                },
             },
             "requester_B": {
                 "type": "HttpRequester",
                 "url_base": "https://example.com/v2/",
-                # for this requester, the `request_body_json` key is not present,
-                # but the `request_body_data` key is present in the stream `C` itself.
-                # it should also be migrated to the `request_body` key
             },
         },
         "streams": [
@@ -822,7 +832,7 @@ def manifest_with_request_body_json_and_data_to_migrate_to_request_body() -> Dic
 @pytest.fixture
 def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
     return {
-        "version": "6.48.2",
+        "version": "6.48.3",
         "type": "DeclarativeSource",
         "check": {"type": "CheckStream", "stream_names": ["A"]},
         "definitions": {
@@ -837,7 +847,7 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                             "http_method": "GET",
                             "url": "https://example.com/v1/path_to_A",
                             "request_body": {
-                                "type": "RequestBodyData",
+                                "type": "RequestBodyUrlEncodedForm",
                                 "value": {
                                     "test_key": "{{ config['config_key'] }}",
                                     "test_key_2": "test_value_2",
@@ -870,12 +880,8 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                             "http_method": "GET",
                             "url": "https://example.com/v1/path_to_A",
                             "request_body": {
-                                "type": "RequestBodyData",
-                                "value": {
-                                    "test_key": "{{ config['config_key'] }}",
-                                    "test_key_2": "test_value_2",
-                                    "test_key_3": 123,
-                                },
+                                "type": "RequestBodyUrlEncodedForm",
+                                "value": "&test_key=TestValue&test_key_2=test_value_2",
                             },
                         },
                         "record_selector": {
@@ -903,7 +909,7 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                             "http_method": "GET",
                             "url": "https://example.com/v2/path_to_B",
                             "request_body": {
-                                "type": "RequestBodyJson",
+                                "type": "RequestBodyJsonObject",
                                 "value": {
                                     "reportType": "test_report",
                                     "groupBy": "GROUP",
@@ -935,6 +941,10 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                             "type": "HttpRequester",
                             "http_method": "GET",
                             "url": "https://example.com/v2/path_to_B",
+                            "request_body": {
+                                "type": "RequestBodyPlainText",
+                                "value": '{"nested": { "key": "{{ config[\'option\'] }}" }}',
+                            },
                         },
                         "record_selector": {
                             "type": "RecordSelector",
@@ -960,6 +970,15 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                             "type": "HttpRequester",
                             "http_method": "GET",
                             "url": "https://example.com/v2/path_to_B",
+                            "request_body": {
+                                "type": "RequestBodyGraphQL",
+                                "value": {
+                                    "query": {
+                                        "field": "{{ config['query_field'] }}",
+                                        "value": "{{ config['query_value'] }}",
+                                    }
+                                },
+                            },
                         },
                         "record_selector": {
                             "type": "RecordSelector",
@@ -977,18 +996,7 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                     },
                 },
             },
-            "requester_A": {
-                "type": "HttpRequester",
-                "url": "https://example.com/v1/",
-                "request_body": {
-                    "type": "RequestBodyData",
-                    "value": {
-                        "test_key": "{{ config['config_key'] }}",
-                        "test_key_2": "test_value_2",
-                        "test_key_3": 123,
-                    },
-                },
-            },
+            "requester_A": {"type": "HttpRequester", "url": "https://example.com/v1/"},
             "requester_B": {"type": "HttpRequester", "url": "https://example.com/v2/"},
         },
         "streams": [
@@ -1002,7 +1010,7 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                         "http_method": "GET",
                         "url": "https://example.com/v1/path_to_A",
                         "request_body": {
-                            "type": "RequestBodyData",
+                            "type": "RequestBodyUrlEncodedForm",
                             "value": {
                                 "test_key": "{{ config['config_key'] }}",
                                 "test_key_2": "test_value_2",
@@ -1035,12 +1043,8 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                         "http_method": "GET",
                         "url": "https://example.com/v1/path_to_A",
                         "request_body": {
-                            "type": "RequestBodyData",
-                            "value": {
-                                "test_key": "{{ config['config_key'] }}",
-                                "test_key_2": "test_value_2",
-                                "test_key_3": 123,
-                            },
+                            "type": "RequestBodyUrlEncodedForm",
+                            "value": "&test_key=TestValue&test_key_2=test_value_2",
                         },
                     },
                     "record_selector": {
@@ -1068,7 +1072,7 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                         "http_method": "GET",
                         "url": "https://example.com/v2/path_to_B",
                         "request_body": {
-                            "type": "RequestBodyJson",
+                            "type": "RequestBodyJsonObject",
                             "value": {
                                 "reportType": "test_report",
                                 "groupBy": "GROUP",
@@ -1100,6 +1104,10 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                         "type": "HttpRequester",
                         "http_method": "GET",
                         "url": "https://example.com/v2/path_to_B",
+                        "request_body": {
+                            "type": "RequestBodyPlainText",
+                            "value": '{"nested": { "key": "{{ config[\'option\'] }}" }}',
+                        },
                     },
                     "record_selector": {
                         "type": "RecordSelector",
@@ -1125,6 +1133,15 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                         "type": "HttpRequester",
                         "http_method": "GET",
                         "url": "https://example.com/v2/path_to_B",
+                        "request_body": {
+                            "type": "RequestBodyGraphQL",
+                            "value": {
+                                "query": {
+                                    "field": "{{ config['query_field'] }}",
+                                    "value": "{{ config['query_value'] }}",
+                                }
+                            },
+                        },
                     },
                     "record_selector": {
                         "type": "RecordSelector",
@@ -1178,19 +1195,19 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
             "applied_migrations": [
                 {
                     "from_version": "0.0.0",
-                    "to_version": "6.48.2",
+                    "to_version": "6.48.3",
                     "migration": "HttpRequesterUrlBaseToUrl",
                     "migrated_at": "2025-04-01T00:00:00+00:00",
                 },
                 {
                     "from_version": "0.0.0",
-                    "to_version": "6.48.2",
+                    "to_version": "6.48.3",
                     "migration": "HttpRequesterPathToUrl",
                     "migrated_at": "2025-04-01T00:00:00+00:00",
                 },
                 {
                     "from_version": "0.0.0",
-                    "to_version": "6.48.2",
+                    "to_version": "6.48.3",
                     "migration": "HttpRequesterRequestBodyJsonDataToRequestBody",
                     "migrated_at": "2025-04-01T00:00:00+00:00",
                 },

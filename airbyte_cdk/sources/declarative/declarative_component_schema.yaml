@@ -4106,7 +4106,7 @@ definitions:
           type: string
   RequestBodyJsonObject:
     title: Json Object Body
-    description: Request body value is converted into a url-encoded form
+    description: Request body value converted into a JSON object
     type: object
     required:
       - type
@@ -4120,7 +4120,7 @@ definitions:
         additionalProperties: true
   RequestBodyGraphQL:
     title: GraphQL Body
-    description: Request body is a GraphQL query object
+    description: Request body value converted into a GraphQL query object
     type: object
     required:
       - type
