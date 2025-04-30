@@ -346,8 +346,7 @@ def verify_connector_image(
                             found_spec_output = True
 
                     except json.JSONDecodeError as e:
-                        logger.error(f"Invalid JSON output from spec command: {e}: {line}")
-                        return False
+                        logger.warning(f"Invalid JSON output from spec command: {e}: {line}")
 
             if not found_spec_output:
                 logger.error("No valid JSON output found for spec command.")
