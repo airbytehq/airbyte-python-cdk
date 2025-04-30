@@ -2337,18 +2337,30 @@ class HttpRequester(BaseModelWithDeprecations):
         description="Specifies how to populate the body of the request with a payload. Can contain nested objects.",
         examples=[
             {
-                "type": "RequestBodyJson",
+                "type": "RequestBodyJsonObject",
                 "value": {"sort_order": "ASC", "sort_field": "CREATED_AT"},
             },
-            {"type": "RequestBodyJson", "value": {"key": "{{ config['value'] }}"}},
             {
-                "type": "RequestBodyJson",
+                "type": "RequestBodyJsonObject",
+                "value": {"key": "{{ config['value'] }}"},
+            },
+            {
+                "type": "RequestBodyJsonObject",
                 "value": {"sort": {"field": "updated_at", "order": "ascending"}},
             },
-            {"type": "RequestBodyData", "value": "plain_text_body"},
+            {"type": "RequestBodyPlainText", "value": "plain_text_body"},
             {
-                "type": "RequestBodyData",
+                "type": "RequestBodyUrlEncodedForm",
                 "value": {"param1": "value1", "param2": "{{ config['param2_value'] }}"},
+            },
+            {
+                "type": "RequestBodyGraphQL",
+                "value": {
+                    "query": {
+                        "param1": "value1",
+                        "param2": "{{ config['param2_value'] }}",
+                    }
+                },
             },
         ],
         title="Request Body Payload to be send as a part of the API request.",

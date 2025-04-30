@@ -2058,24 +2058,29 @@ definitions:
           - stream_partition
           - stream_slice
         examples:
-          - type: RequestBodyJson
+          - type: RequestBodyJsonObject
             value:
               sort_order: "ASC"
               sort_field: "CREATED_AT"
-          - type: RequestBodyJson
+          - type: RequestBodyJsonObject
             value:
               key: "{{ config['value'] }}"
-          - type: RequestBodyJson
+          - type: RequestBodyJsonObject
             value:
               sort:
                 field: "updated_at"
                 order: "ascending"
-          - type: RequestBodyData
+          - type: RequestBodyPlainText
             value: "plain_text_body"
-          - type: RequestBodyData
+          - type: RequestBodyUrlEncodedForm
             value:
               param1: "value1"
               param2: "{{ config['param2_value'] }}"
+          - type: RequestBodyGraphQL
+            value:
+              query:
+                param1: "value1"
+                param2: "{{ config['param2_value'] }}"
       request_headers:
         title: Request Headers
         description: Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.
