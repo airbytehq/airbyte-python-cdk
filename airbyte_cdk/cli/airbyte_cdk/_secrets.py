@@ -236,7 +236,7 @@ def list_(
     for secret in secrets:
         full_secret_name = secret.name
         secret_name = full_secret_name.split("/secrets/")[-1]  # Removes project prefix
-        # E.g. https://console.cloud.google.com/security/secret-manager/secret/SECRET_SOURCE-SHOPIFY__CREDS/versions?hl=en&project=dataline-integration-testing
+        # E.g. https://console.cloud.google.com/security/secret-manager/secret/SECRET_SOURCE-SHOPIFY__CREDS/versions?hl=en&project=<gcp_project_id>
         secret_url = f"https://console.cloud.google.com/security/secret-manager/secret/{secret_name}/versions?hl=en&project={gcp_project_id}"
         table.add_row(
             f"[link={secret_url}]{secret_name}[/link]",
