@@ -110,8 +110,7 @@ JAVA_CONNECTOR_DOCKERFILE_TEMPLATE = """
 # This Dockerfile replicates the dagger-based build process for Java connectors
 
 # Build arguments
-ARG JDK_VERSION=21-al2023
-ARG BASE_IMAGE=amazoncorretto:${JDK_VERSION}
+ARG BASE_IMAGE
 
 # Base image - using Amazon Corretto (Amazon's distribution of OpenJDK)
 FROM ${BASE_IMAGE}
