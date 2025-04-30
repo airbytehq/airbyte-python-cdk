@@ -211,12 +211,21 @@ class AbstractOauth2Authenticator(AuthBase):
             Exception: For any other exceptions that occur during the request.
         """
         try:
-            response = requests.request(
-                method="POST",
-                url=self.get_token_refresh_endpoint(),  # type: ignore # returns None, if not provided, but str | bytes is expected.
-                data=self.build_refresh_request_body(),
-                headers=self.build_refresh_request_headers(),
-            )
+            headers = self.build_refresh_request_headers()
+            if self._is_application_json(headers):
+                response = requests.request(
+                    method="POST",
+                    url=self.get_token_refresh_endpoint(),  # type: ignore # returns None, if not provided, but str | bytes is expected.
+                    json=self.build_refresh_request_body(),
+                    headers=headers,
+                )
+            else:
+                response = requests.request(
+                    method="POST",
+                    url=self.get_token_refresh_endpoint(),  # type: ignore # returns None, if not provided, but str | bytes is expected.
+                    data=self.build_refresh_request_body(),
+                    headers=headers,
+                )
             # log the response even if the request failed for troubleshooting purposes
             self._log_response(response)
             response.raise_for_status()
@@ -233,6 +242,16 @@ class AbstractOauth2Authenticator(AuthBase):
             raise
         except Exception as e:
             raise Exception(f"Error while refreshing access token: {e}") from e
+
+    @staticmethod
+    def _is_application_json(headers: Mapping[str, Any] | None) -> bool:
+        if not headers:
+            return False
+
+        for key, value in headers.items():
+            if key.lower() == "content-type" and value.lower() == "application/json":
+                return True
+        return False
 
     def _ensure_access_token_in_response(self, response_data: Mapping[str, Any]) -> None:
         """
