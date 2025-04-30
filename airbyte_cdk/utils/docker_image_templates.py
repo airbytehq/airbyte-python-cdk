@@ -111,51 +111,15 @@ JAVA_CONNECTOR_DOCKERFILE_TEMPLATE = """
 
 # Build arguments
 ARG JDK_VERSION=21-al2023
+ARG BASE_IMAGE=amazoncorretto:${JDK_VERSION}
 
 # Base image - using Amazon Corretto (Amazon's distribution of OpenJDK)
-FROM amazoncorretto:${JDK_VERSION}
+FROM ${BASE_IMAGE}
 ARG CONNECTOR_KEBAB_NAME
-
-# Install required packages and set up the non-root user
-RUN set -o xtrace && \
-    yum install -y shadow-utils tar openssl findutils && \
-    yum update -y --security && \
-    yum clean all && \
-    rm -rf /var/cache/yum && \
-    echo "Creating airbyte user and group..." && \
-    groupadd --gid 1000 airbyte && \
-    useradd --uid 1000 --gid airbyte --shell /bin/bash --create-home airbyte && \
-    echo "Creating directories..." && \
-    mkdir /secrets && \
-    mkdir /config && \
-    mkdir --mode 755 /airbyte && \
-    mkdir --mode 755 /custom_cache && \
-    echo "Setting permissions..." && \
-    chown -R airbyte:airbyte /airbyte && \
-    chown -R airbyte:airbyte /custom_cache && \
-    chown -R airbyte:airbyte /secrets && \
-    chown -R airbyte:airbyte /config && \
-    chown -R airbyte:airbyte /usr/share/pki/ca-trust-source && \
-    chown -R airbyte:airbyte /etc/pki/ca-trust && \
-    chown -R airbyte:airbyte /tmp
-
-# Download required scripts
-WORKDIR /airbyte
-ADD https://raw.githubusercontent.com/airbytehq/airbyte/6d8a3a2bc4f4ca79f10164447a90fdce5c9ad6f9/airbyte-integrations/bases/base/base.sh /airbyte/base.sh
-ADD https://raw.githubusercontent.com/airbytehq/airbyte/6d8a3a2bc4f4ca79f10164447a90fdce5c9ad6f9/airbyte-integrations/bases/base-java/javabase.sh /airbyte/javabase.sh
-ADD https://dtdg.co/latest-java-tracer /airbyte/dd-java-agent.jar
 
 # Set permissions for downloaded files
 RUN chmod +x /airbyte/base.sh /airbyte/javabase.sh && \
     chown airbyte:airbyte /airbyte/base.sh /airbyte/javabase.sh /airbyte/dd-java-agent.jar
-
-# Set environment variables
-# These variables tell base.sh what to do:
-ENV AIRBYTE_SPEC_CMD="/airbyte/javabase.sh --spec"
-ENV AIRBYTE_CHECK_CMD="/airbyte/javabase.sh --check"
-ENV AIRBYTE_DISCOVER_CMD="/airbyte/javabase.sh --discover"
-ENV AIRBYTE_READ_CMD="/airbyte/javabase.sh --read"
-ENV AIRBYTE_WRITE_CMD="/airbyte/javabase.sh --write"
 
 # base.sh will set the classpath for the connector and invoke javabase.sh
 # using one of the above commands.
