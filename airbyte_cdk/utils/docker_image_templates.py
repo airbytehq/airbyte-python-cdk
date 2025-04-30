@@ -14,7 +14,7 @@ These templates are used to generate connector images.
 DOCKERIGNORE_TEMPLATE: str = "\n".join(
     [
         "# This file is auto-generated. Do not edit.",
-        "*," # Ignore everything not explicitly allowed below
+        "*,"  # Ignore everything not explicitly allowed below
         "build/",
         "!build/distributions/*.tar",
         ".venv/",
