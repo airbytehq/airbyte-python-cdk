@@ -393,7 +393,7 @@ def _print_ci_secrets_masks_for_config(
                     # For nested dicts, we also need to mask the json-stringified version
                     print(f"::add-mask::{json.dumps(value)!s}")
 
-            if isinstance(value, dict | list):
+            if isinstance(value, (dict, list)):
                 _print_ci_secrets_masks_for_config(config=value)
 
 
