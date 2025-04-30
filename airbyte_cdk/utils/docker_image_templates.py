@@ -14,8 +14,9 @@ These templates are used to generate connector images.
 DOCKERIGNORE_TEMPLATE: str = "\n".join(
     [
         "# This file is auto-generated. Do not edit.",
-        # "*,"
+        "*," # Ignore everything not explicitly allowed below
         "build/",
+        "!build/distributions/*.tar",
         ".venv/",
         "secrets/",
         "!setup.py",
@@ -162,7 +163,7 @@ ENV AIRBYTE_ENTRYPOINT="/airbyte/base.sh"
 ENV APPLICATION="${CONNECTOR_KEBAB_NAME}"
 
 # Add the connector TAR file and extract it
-COPY airbyte-integrations/connectors/${CONNECTOR_KEBAB_NAME}/build/distributions/${CONNECTOR_KEBAB_NAME}.tar /tmp/${CONNECTOR_KEBAB_NAME}.tar
+COPY ./build/distributions/${CONNECTOR_KEBAB_NAME}.tar /tmp/${CONNECTOR_KEBAB_NAME}.tar
 RUN tar xf /tmp/${CONNECTOR_KEBAB_NAME}.tar --strip-components=1 -C /airbyte && \
     rm -rf /tmp/${CONNECTOR_KEBAB_NAME}.tar && \
     chown -R airbyte:airbyte /airbyte

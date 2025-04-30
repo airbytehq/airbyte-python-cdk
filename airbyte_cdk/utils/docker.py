@@ -63,21 +63,6 @@ def _build_image(
 
     Raises: ConnectorImageBuildError if the build fails.
     """
-    connector_name = metadata.data.dockerRepository.split("/")[-1]
-    if metadata.data.language == ConnectorLanguage.JAVA:
-        # For Java connectors, the context directory is the repo root.
-        context_dir = context_dir.parent.parent.parent
-        # For Java connectors, we need to build the connector tar file first.
-        response: subprocess.CompletedProcess[str] = subprocess.run(
-            [
-                "./gradlew",
-                f":airbyte-integrations:connectors:{connector_name}:distTar",
-            ],
-            cwd=context_dir,
-            text=True,
-            check=True,
-        )
-
     docker_args: list[str] = [
         "docker",
         "build",
@@ -213,6 +198,22 @@ def build_connector_image(
 
     base_tag = f"{metadata.data.dockerRepository}:{tag}"
     arch_images: list[str] = []
+
+    if metadata.data.language == ConnectorLanguage.JAVA:
+        # This assumes that the repo root ('airbyte') is three levels above the
+        # connector directory (airbyte/airbyte-integrations/connectors/source-foo).
+        repo_root = connector_directory.parent.parent.parent
+        # For Java connectors, we need to build the connector tar file first.
+        subprocess.run(
+            [
+                "./gradlew",
+                f":airbyte-integrations:connectors:{connector_name}:distTar",
+            ],
+            cwd=repo_root,
+            text=True,
+            check=True,
+        )
+
     for arch in [ArchEnum.AMD64, ArchEnum.ARM64]:
         docker_tag = f"{base_tag}-{arch.value}"
         docker_tag_parts = docker_tag.split("/")
