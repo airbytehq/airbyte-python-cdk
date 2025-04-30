@@ -16,6 +16,7 @@ import click
 from airbyte_cdk.models.connector_metadata import ConnectorLanguage, MetadataFile
 from airbyte_cdk.utils.docker_image_templates import (
     DOCKERIGNORE_TEMPLATE,
+    JAVA_CONNECTOR_DOCKERFILE_TEMPLATE,
     MANIFEST_ONLY_DOCKERFILE_TEMPLATE,
     PYTHON_CONNECTOR_DOCKERFILE_TEMPLATE,
 )
@@ -62,6 +63,10 @@ def _build_image(
 
     Raises: ConnectorImageBuildError if the build fails.
     """
+    if metadata.data.language == ConnectorLanguage.JAVA:
+        # For Java connectors, the context directory is the repo root.
+        context_dir = context_dir.parent.parent.parent
+
     docker_args: list[str] = [
         "docker",
         "build",
@@ -248,10 +253,7 @@ def get_dockerfile_template(
         return MANIFEST_ONLY_DOCKERFILE_TEMPLATE
 
     if metadata.data.language == ConnectorLanguage.JAVA:
-        raise ValueError(
-            f"Java and Kotlin connectors are not yet supported. "
-            "Please use airbyte-ci or gradle to build your image."
-        )
+        return JAVA_CONNECTOR_DOCKERFILE_TEMPLATE
 
     raise ValueError(
         f"Unsupported connector language: {metadata.data.language}. "
@@ -322,10 +324,21 @@ def verify_connector_image(
         )
         # check that the output is valid JSON
         if result.stdout:
-            try:
-                json.loads(result.stdout)
-            except json.JSONDecodeError:
-                logger.error("Invalid JSON output from spec command.")
+            found_spec_output = False
+            for line in result.stdout.split("\n"):
+                if line.strip():
+                    try:
+                        # Check if the line is a valid JSON object
+                        msg = json.loads(line)
+                        if isinstance(msg, dict) and "type" in msg and msg["type"] == "SPEC":
+                            found_spec_output = True
+
+                    except json.JSONDecodeError as e:
+                        logger.error(f"Invalid JSON output from spec command: {e}: {line}")
+                        return False
+
+            if not found_spec_output:
+                logger.error("No valid JSON output found for spec command.")
                 return False
         else:
             logger.error("No output from spec command.")
