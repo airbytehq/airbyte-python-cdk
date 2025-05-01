@@ -153,7 +153,7 @@ jobs:
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
         run: |
           cd airbyte
-          make tools.airbyte-ci-dev.install
+          make tools.airbyte-ci.install
           airbyte-ci \
           --ci-report-bucket-name=airbyte-ci-reports-multi \
           connectors \
