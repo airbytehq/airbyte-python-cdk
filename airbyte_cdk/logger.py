@@ -39,6 +39,7 @@ LOGGING_CONFIG = {
     },
 }
 
+# dummy change
 
 def init_logger(name: Optional[str] = None) -> logging.Logger:
     """Initial set up of logger"""
