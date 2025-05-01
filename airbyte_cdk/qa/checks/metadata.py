@@ -100,7 +100,7 @@ class CheckConnectorLanguageTag(MetadataCheck):
                 message="Could not infer the language tag from the connector directory",
             )
 
-        current_language_tags = [t for t in connector.metadata.get("tags", []) if t.startswith("language:")]
+        current_language_tags = [t for t in (connector.metadata.get("tags", []) if connector.metadata else []) if t.startswith("language:")]
         if not current_language_tags:
             return self.fail(
                 connector=connector,
@@ -170,7 +170,7 @@ class CheckConnectorCDKTag(MetadataCheck):
         Returns:
             CheckResult: The result of the check
         """
-        current_cdk_tags = [t for t in connector.metadata.get("tags", []) if t.startswith("cdk:")]
+        current_cdk_tags = [t for t in (connector.metadata.get("tags", []) if connector.metadata else []) if t.startswith("cdk:")]
         expected_cdk_tag = self.get_expected_cdk_tag(connector)
         if not current_cdk_tags:
             return self.fail(
@@ -217,7 +217,7 @@ class ValidateBreakingChangesDeadlines(MetadataCheck):
                 message="Can't verify breaking changes deadline: connector version is not defined.",
             )
 
-        breaking_changes = connector.metadata.get("releases", {}).get("breakingChanges")
+        breaking_changes = (connector.metadata.get("releases", {}) if connector.metadata else {}).get("breakingChanges")
 
         if not breaking_changes:
             return self.pass_(
@@ -270,7 +270,7 @@ class CheckConnectorMaxSecondsBetweenMessagesValue(MetadataCheck):
         Returns:
             CheckResult: The result of the check
         """
-        max_seconds_between_messages = connector.metadata.get("maxSecondsBetweenMessages")
+        max_seconds_between_messages = connector.metadata.get("maxSecondsBetweenMessages") if connector.metadata else None
         if not max_seconds_between_messages:
             return self.fail(
                 connector=connector,

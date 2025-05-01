@@ -175,7 +175,7 @@ class CheckConnectorUsesPythonBaseImage(SecurityCheck):
                 message=f"Dockerfile file exists. Please remove it and declare the base image in {consts.METADATA_FILE_NAME} file with the `connectorBuildOptions.baseImage` key",
             )
 
-        base_image = connector.metadata.get("connectorBuildOptions", {}).get("baseImage")
+        base_image = (connector.metadata.get("connectorBuildOptions", {}) if connector.metadata else {}).get("baseImage")
         if not base_image:
             return self.create_check_result(
                 connector=connector,

@@ -280,7 +280,7 @@ class CheckVersionFollowsSemver(PackagingCheck):
         Returns:
             CheckResult: The result of the check
         """
-        if "dockerImageTag" not in connector.metadata:
+        if not connector.metadata or "dockerImageTag" not in connector.metadata:
             return self.create_check_result(
                 connector=connector,
                 passed=False,
@@ -317,7 +317,7 @@ class CheckVersionBump(PackagingCheck):
         Returns:
             CheckResult: The result of the check
         """
-        if "dockerImageTag" not in connector.metadata:
+        if not connector.metadata or "dockerImageTag" not in connector.metadata:
             return self.create_check_result(
                 connector=connector,
                 passed=False,
