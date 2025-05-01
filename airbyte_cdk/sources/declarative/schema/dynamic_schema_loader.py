@@ -1,11 +1,10 @@
 #
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
-
-
+from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import InitVar, dataclass, field
-from typing import Any, List, Mapping, MutableMapping, Optional, Union
+from typing import Any, Dict, List, Mapping, MutableMapping, Optional, Union
 
 import dpath
 from typing_extensions import deprecated
@@ -115,6 +114,16 @@ class SchemaTypeIdentifier:
 
 
 @deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)
+class AdditionalPropertyFieldsInferer(ABC):
+    @abstractmethod
+    def infer(self, property_definition: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
+        """
+        Infers additional property fields from the given property definition.
+        """
+        pass
+
+
+@deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)
 @dataclass
 class DynamicSchemaLoader(SchemaLoader):
     """
@@ -126,6 +135,7 @@ class DynamicSchemaLoader(SchemaLoader):
     parameters: InitVar[Mapping[str, Any]]
     schema_type_identifier: SchemaTypeIdentifier
     schema_transformations: List[RecordTransformation] = field(default_factory=lambda: [])
+    additional_property_fields_inferrer: Optional[AdditionalPropertyFieldsInferer] = None
 
     def get_json_schema(self) -> Mapping[str, Any]:
         """
@@ -149,9 +159,11 @@ class DynamicSchemaLoader(SchemaLoader):
                 property_definition,
                 self.schema_type_identifier.type_pointer,
             )
+
+            value.update(self.additional_property_fields_inferrer.infer(property_definition) if self.additional_property_fields_inferrer else {})
             properties[key] = value
 
-        transformed_properties = self._transform(properties, {})
+        transformed_properties = self._transform(properties)
 
         return {
             "$schema": "https://json-schema.org/draft-07/schema#",
@@ -163,8 +175,6 @@ class DynamicSchemaLoader(SchemaLoader):
     def _transform(
         self,
         properties: Mapping[str, Any],
-        stream_state: StreamState,
-        stream_slice: Optional[StreamSlice] = None,
     ) -> Mapping[str, Any]:
         for transformation in self.schema_transformations:
             transformation.transform(
@@ -190,7 +200,7 @@ class DynamicSchemaLoader(SchemaLoader):
         self,
         raw_schema: MutableMapping[str, Any],
         field_type_path: Optional[List[Union[InterpolatedString, str]]],
-    ) -> Union[Mapping[str, Any], List[Mapping[str, Any]]]:
+    ) -> Dict[str, Any]:
         """
         Determines the JSON Schema type for a field, supporting nullable and combined types.
         """
