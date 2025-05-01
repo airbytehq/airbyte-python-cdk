@@ -174,6 +174,10 @@ def test(
     )
 
 
+from airbyte_cdk.cli.airbyte_cdk._qa import pre_release_check
+
+connector_cli_group.add_command(pre_release_check)
+
 __all__ = [
     "connector_cli_group",
 ]

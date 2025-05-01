@@ -1,0 +1,10 @@
+"""Constants for QA checks."""
+
+METADATA_FILE_NAME = "metadata.yaml"
+MANIFEST_FILE_NAME = "manifest.yaml"
+COMPONENTS_FILE_NAME = "components.py"
+DOCKERFILE_FILE_NAME = "Dockerfile"
+PYPROJECT_FILE_NAME = "pyproject.toml"
+ICON_FILE_NAME = "icon.svg"
+POETRY_LOCK_FILE_NAME = "poetry.lock"
+CONNECTORS_QA_DOC_TEMPLATE_NAME = "connectors_qa_doc.md.j2"
