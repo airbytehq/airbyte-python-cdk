@@ -2085,7 +2085,7 @@ definitions:
               field: "updated_at"
               order: "ascending"
       request_body:
-        title: Request Body
+        title: Request Body Payload to be send as a part of the API request.
         description: Specifies how to populate the body of the request with a payload. Can contain nested objects.
         anyOf:
           - "$ref": "#/definitions/RequestBodyPlainText"
@@ -2116,54 +2116,11 @@ definitions:
             value:
               param1: "value1"
               param2: "{{ config['param2_value'] }}"
-<<<<<<< Updated upstream
           - type: RequestBodyGraphQL
             value:
               query:
                 param1: "value1"
                 param2: "{{ config['param2_value'] }}"
-      request_headers:
-        title: Request Headers
-        description: Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.
-        anyOf:
-          - type: object
-            title: Key/Value Pairs
-            additionalProperties:
-              type: string
-          - type: string
-            title: Interpolated Value
-        interpolation_context:
-          - next_page_token
-          - stream_interval
-          - stream_partition
-          - stream_slice
-        examples:
-          - Output-Format: JSON
-          - Version: "{{ config['version'] }}"
-      request_parameters:
-        title: Query Parameters
-        description: Specifies the query parameters that should be set on an outgoing HTTP request given the inputs.
-        anyOf:
-          - type: object
-            title: Key/Value Pairs
-            additionalProperties:
-              anyOf:
-                - type: string
-                - $ref: "#/definitions/QueryProperties"
-          - type: string
-            title: Interpolated Value
-        interpolation_context:
-          - next_page_token
-          - stream_interval
-          - stream_partition
-          - stream_slice
-        examples:
-          - unit: "day"
-          - query: 'last_event_time BETWEEN TIMESTAMP "{{ stream_interval.start_time }}" AND TIMESTAMP "{{ stream_interval.end_time }}"'
-          - searchIn: "{{ ','.join(config.get('search_in', [])) }}"
-          - sort_by[asc]: updated_at
-=======
->>>>>>> Stashed changes
       error_handler:
         title: Error Handler
         description: Error handler component that defines how to handle errors.
