@@ -59,7 +59,7 @@ class MyCustomCheck(Check):
     name = "My custom check"
     description = "Description of what my check verifies"
     category = CheckCategory.TESTING
-    
+
     def _run(self, connector: Connector) -> CheckResult:
         if some_condition:
             return self.pass_(connector, "Check passed message")

@@ -98,15 +98,15 @@ class Connector:
         """
         if self._connector_directory:
             return self._connector_directory
-        
+
         cwd = Path.cwd()
         if cwd.name == self.technical_name:
             return cwd
-        
+
         for parent in cwd.parents:
             if parent.name == self.technical_name:
                 return parent
-        
+
         return cwd
 
     @property
@@ -142,9 +142,15 @@ class Connector:
         Returns:
             ConnectorLanguage: The programming language of the connector
         """
-        if Path(self.code_directory / "setup.py").exists() or Path(self.code_directory / "pyproject.toml").exists():
+        if (
+            Path(self.code_directory / "setup.py").exists()
+            or Path(self.code_directory / "pyproject.toml").exists()
+        ):
             return ConnectorLanguage.PYTHON
-        if Path(self.code_directory / "src" / "main" / "java").exists() or Path(self.code_directory / "src" / "main" / "kotlin").exists():
+        if (
+            Path(self.code_directory / "src" / "main" / "java").exists()
+            or Path(self.code_directory / "src" / "main" / "kotlin").exists()
+        ):
             return ConnectorLanguage.JAVA
         if self.manifest_path.exists():
             return ConnectorLanguage.LOW_CODE
@@ -247,7 +253,7 @@ class Connector:
         """
         if self._is_released is not None:
             return self._is_released
-        
+
         self._is_released = True
         return True
 

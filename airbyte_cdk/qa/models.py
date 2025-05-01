@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import json
@@ -196,12 +195,18 @@ class Check(ABC):
                 connector,
                 f"Check does not apply to {connector.connector_type} connectors",
             )
-        if self.applies_to_connector_support_levels and connector.support_level not in self.applies_to_connector_support_levels:
+        if (
+            self.applies_to_connector_support_levels
+            and connector.support_level not in self.applies_to_connector_support_levels
+        ):
             return self.skip(
                 connector,
                 f"Check does not apply to {connector.support_level} connectors",
             )
-        if self.applies_to_connector_cloud_usage and connector.cloud_usage not in self.applies_to_connector_cloud_usage:
+        if (
+            self.applies_to_connector_cloud_usage
+            and connector.cloud_usage not in self.applies_to_connector_cloud_usage
+        ):
             return self.skip(
                 connector,
                 f"Check does not apply to {connector.cloud_usage} connectors",
@@ -239,7 +244,9 @@ class Check(ABC):
         Returns:
             CheckResult: A passing check result
         """
-        return CheckResult(connector=connector, check=self, status=CheckStatus.PASSED, message=message)
+        return CheckResult(
+            connector=connector, check=self, status=CheckStatus.PASSED, message=message
+        )
 
     def fail(self, connector: Connector, message: str) -> CheckResult:
         """Create a failing check result.
@@ -251,7 +258,9 @@ class Check(ABC):
         Returns:
             CheckResult: A failing check result
         """
-        return CheckResult(connector=connector, check=self, status=CheckStatus.FAILED, message=message)
+        return CheckResult(
+            connector=connector, check=self, status=CheckStatus.FAILED, message=message
+        )
 
     def skip(self, connector: Connector, reason: str) -> CheckResult:
         """Create a skipped check result.
@@ -263,7 +272,9 @@ class Check(ABC):
         Returns:
             CheckResult: A skipped check result
         """
-        return CheckResult(connector=connector, check=self, status=CheckStatus.SKIPPED, message=reason)
+        return CheckResult(
+            connector=connector, check=self, status=CheckStatus.SKIPPED, message=reason
+        )
 
     def create_check_result(self, connector: Connector, passed: bool, message: str) -> CheckResult:
         """Create a check result based on whether the check passed or failed.
@@ -326,23 +337,31 @@ class Report:
                 "message": check_result.message,
             }
             if check_result.status == CheckStatus.PASSED:
-                connectors_report[connector.technical_name]["passed_checks"].append(check_name_and_message)
+                connectors_report[connector.technical_name]["passed_checks"].append(
+                    check_name_and_message
+                )
                 connectors_report[connector.technical_name]["successful_checks_count"] += 1
                 connectors_report[connector.technical_name]["total_checks_count"] += 1
 
             elif check_result.status == CheckStatus.FAILED:
-                connectors_report[connector.technical_name]["failed_checks"].append(check_name_and_message)
+                connectors_report[connector.technical_name]["failed_checks"].append(
+                    check_name_and_message
+                )
                 connectors_report[connector.technical_name]["failed_checks_count"] += 1
                 connectors_report[connector.technical_name]["total_checks_count"] += 1
 
             elif check_result.status == CheckStatus.SKIPPED:
-                connectors_report[connector.technical_name]["skipped_checks"].append(check_name_and_message)
+                connectors_report[connector.technical_name]["skipped_checks"].append(
+                    check_name_and_message
+                )
                 connectors_report[connector.technical_name]["skipped_checks_count"] += 1
             else:
                 raise ValueError(f"Invalid check status {check_result.status}")
         for connector_technical_name in connectors_report.keys():
             connectors_report[connector_technical_name]["badge_color"] = (
-                "red" if connectors_report[connector_technical_name]["failed_checks_count"] > 0 else "green"
+                "red"
+                if connectors_report[connector_technical_name]["failed_checks_count"] > 0
+                else "green"
             )
             badge_name = self.badge_name.replace(" ", "_")
             badge_text = f"{connectors_report[connector_technical_name]['successful_checks_count']}/{connectors_report[connector_technical_name]['total_checks_count']}".replace(

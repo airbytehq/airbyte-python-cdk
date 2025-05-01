@@ -14,7 +14,9 @@ class CheckConnectorHasAcceptanceTests(TestingCheck):
     """Check that connectors have acceptance tests."""
 
     name = "Connectors must have acceptance tests"
-    description = "Connectors must have acceptance tests to ensure that they meet the Airbyte specification."
+    description = (
+        "Connectors must have acceptance tests to ensure that they meet the Airbyte specification."
+    )
 
     def _run(self, connector: Connector) -> CheckResult:
         """Run the check.

@@ -17,7 +17,9 @@ def get_all_connectors_in_directory(directory: Path) -> List[Connector]:
     """
     connectors = []
     for path in directory.iterdir():
-        if path.is_dir() and (path.name.startswith("source-") or path.name.startswith("destination-")):
+        if path.is_dir() and (
+            path.name.startswith("source-") or path.name.startswith("destination-")
+        ):
             connectors.append(Connector(path.name, path))
     return connectors
 

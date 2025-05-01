@@ -16,7 +16,9 @@ class CheckDocumentationExists(DocumentationCheck):
     """Check that connectors have documentation."""
 
     name = "Connectors must have documentation"
-    description = "Connectors must have documentation to ensure that users can understand how to use them."
+    description = (
+        "Connectors must have documentation to ensure that users can understand how to use them."
+    )
 
     def _run(self, connector: Connector) -> CheckResult:
         """Run the check.
@@ -29,9 +31,11 @@ class CheckDocumentationExists(DocumentationCheck):
         """
         docs_dir = Path("/home/ubuntu/repos/airbyte/docs/integrations")
         connector_type_dir = docs_dir / (connector.connector_type + "s")
-        
-        doc_file = connector_type_dir / (connector.technical_name.replace("source-", "").replace("destination-", "") + ".md")
-        
+
+        doc_file = connector_type_dir / (
+            connector.technical_name.replace("source-", "").replace("destination-", "") + ".md"
+        )
+
         if not doc_file.exists():
             return self.create_check_result(
                 connector=connector,

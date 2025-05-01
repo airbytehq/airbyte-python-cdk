@@ -43,7 +43,9 @@ class CheckConnectorUsesPoetry(PackagingCheck):
                 message=f"{consts.PYPROJECT_FILE_NAME} file is missing",
             )
         if not (connector.code_directory / consts.POETRY_LOCK_FILE_NAME).exists():
-            return self.fail(connector=connector, message=f"{consts.POETRY_LOCK_FILE_NAME} file is missing")
+            return self.fail(
+                connector=connector, message=f"{consts.POETRY_LOCK_FILE_NAME} file is missing"
+            )
         if (connector.code_directory / "setup.py").exists():
             return self.fail(
                 connector=connector,
@@ -82,7 +84,9 @@ class CheckPublishToPyPiIsDeclared(PackagingCheck):
                 passed=False,
                 message=f"PyPi publishing is not declared. Please set it in the {consts.METADATA_FILE_NAME} file",
             )
-        return self.create_check_result(connector=connector, passed=True, message="PyPi publishing is declared")
+        return self.create_check_result(
+            connector=connector, passed=True, message="PyPi publishing is declared"
+        )
 
 
 class CheckManifestOnlyConnectorBaseImage(PackagingCheck):
@@ -110,7 +114,11 @@ class CheckManifestOnlyConnectorBaseImage(PackagingCheck):
                 passed=False,
                 message=f"A manifest-only connector must use `source-declarative-manifest` base image. Replace the base image in {consts.METADATA_FILE_NAME} file",
             )
-        return self.create_check_result(connector=connector, passed=True, message="Connector uses source-declarative-manifest base image")
+        return self.create_check_result(
+            connector=connector,
+            passed=True,
+            message="Connector uses source-declarative-manifest base image",
+        )
 
 
 class CheckConnectorLicense(PackagingCheck):
@@ -323,7 +331,7 @@ class CheckVersionBump(PackagingCheck):
                 passed=False,
                 message=f"dockerImageTag is missing in {consts.METADATA_FILE_NAME}",
             )
-        
+
         try:
             semver.Version.parse(str(connector.metadata["dockerImageTag"]))
         except ValueError:
@@ -332,7 +340,7 @@ class CheckVersionBump(PackagingCheck):
                 passed=False,
                 message=f"Connector version {connector.metadata['dockerImageTag']} does not follow semantic versioning",
             )
-        
+
         return self.create_check_result(
             connector=connector,
             passed=True,

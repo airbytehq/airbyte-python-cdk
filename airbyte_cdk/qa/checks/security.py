@@ -71,11 +71,20 @@ class CheckConnectorUsesHTTPSOnly(SecurityCheck):
             Tuple[Path, str]: The file path and line content
         """
         ignored_directories = ignored_directories if ignored_directories is not None else set()
-        ignored_filename_patterns = ignored_filename_patterns if ignored_filename_patterns is not None else set()
+        ignored_filename_patterns = (
+            ignored_filename_patterns if ignored_filename_patterns is not None else set()
+        )
 
         for path in directory.rglob("*"):
-            ignore_directory = any([ignored_directory in path.parts for ignored_directory in ignored_directories])
-            ignore_filename = any([path.match(ignored_filename_pattern) for ignored_filename_pattern in ignored_filename_patterns])
+            ignore_directory = any(
+                [ignored_directory in path.parts for ignored_directory in ignored_directories]
+            )
+            ignore_filename = any(
+                [
+                    path.match(ignored_filename_pattern)
+                    for ignored_filename_pattern in ignored_filename_patterns
+                ]
+            )
             ignore = ignore_directory or ignore_filename
             if path.is_file() and not ignore:
                 try:
@@ -148,9 +157,7 @@ class CheckConnectorUsesHTTPSOnly(SecurityCheck):
 class CheckConnectorUsesPythonBaseImage(SecurityCheck):
     """Check that Python connectors use the Python connector base image."""
 
-    name = (
-        f"Python connectors must not use a Dockerfile and must declare their base image in {consts.METADATA_FILE_NAME} file"
-    )
+    name = f"Python connectors must not use a Dockerfile and must declare their base image in {consts.METADATA_FILE_NAME} file"
     description = f"Connectors must use our Python connector base image, declared through the `connectorBuildOptions.baseImage` in their `{consts.METADATA_FILE_NAME}`.\nThis is to ensure that all connectors use a base image which is maintained and has security updates."
     applies_to_connector_languages = [
         ConnectorLanguage.PYTHON,
@@ -175,7 +182,9 @@ class CheckConnectorUsesPythonBaseImage(SecurityCheck):
                 message=f"Dockerfile file exists. Please remove it and declare the base image in {consts.METADATA_FILE_NAME} file with the `connectorBuildOptions.baseImage` key",
             )
 
-        base_image = (connector.metadata.get("connectorBuildOptions", {}) if connector.metadata else {}).get("baseImage")
+        base_image = (
+            connector.metadata.get("connectorBuildOptions", {}) if connector.metadata else {}
+        ).get("baseImage")
         if not base_image:
             return self.create_check_result(
                 connector=connector,

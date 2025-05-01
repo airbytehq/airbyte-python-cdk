@@ -33,15 +33,19 @@ class ValidateMetadata(MetadataCheck):
             CheckResult: The result of the check
         """
         if not connector.metadata_file_path.exists():
-            return self.fail(connector=connector, message=f"Metadata file {consts.METADATA_FILE_NAME} does not exist")
-        
+            return self.fail(
+                connector=connector,
+                message=f"Metadata file {consts.METADATA_FILE_NAME} does not exist",
+            )
+
         try:
             with open(connector.metadata_file_path, "r") as f:
                 yaml.safe_load(f)
         except yaml.YAMLError as e:
-            return self.fail(connector=connector, message=f"Metadata file is invalid YAML: {str(e)}")
-        
-        
+            return self.fail(
+                connector=connector, message=f"Metadata file is invalid YAML: {str(e)}"
+            )
+
         return self.pass_(
             connector=connector,
             message="Metadata file exists and is valid YAML.",
@@ -100,7 +104,11 @@ class CheckConnectorLanguageTag(MetadataCheck):
                 message="Could not infer the language tag from the connector directory",
             )
 
-        current_language_tags = [t for t in (connector.metadata.get("tags", []) if connector.metadata else []) if t.startswith("language:")]
+        current_language_tags = [
+            t
+            for t in (connector.metadata.get("tags", []) if connector.metadata else [])
+            if t.startswith("language:")
+        ]
         if not current_language_tags:
             return self.fail(
                 connector=connector,
@@ -146,7 +154,9 @@ class CheckConnectorCDKTag(MetadataCheck):
         Returns:
             str: The expected CDK tag
         """
-        manifest_file = connector.code_directory / connector.technical_name.replace("-", "_") / "manifest.yaml"
+        manifest_file = (
+            connector.code_directory / connector.technical_name.replace("-", "_") / "manifest.yaml"
+        )
         pyproject_file = connector.code_directory / consts.PYPROJECT_FILE_NAME
         setup_py_file = connector.code_directory / "setup.py"
         if manifest_file.exists():
@@ -154,7 +164,11 @@ class CheckConnectorCDKTag(MetadataCheck):
         if pyproject_file.exists():
             pyproject = toml.load((connector.code_directory / consts.PYPROJECT_FILE_NAME))
             cdk_deps = pyproject["tool"]["poetry"]["dependencies"].get("airbyte-cdk", None)
-            if cdk_deps and isinstance(cdk_deps, dict) and "file-based" in cdk_deps.get("extras", []):
+            if (
+                cdk_deps
+                and isinstance(cdk_deps, dict)
+                and "file-based" in cdk_deps.get("extras", [])
+            ):
                 return self.CDKTag.FILE
         if setup_py_file.exists():
             if "airbyte-cdk[file-based]" in (connector.code_directory / "setup.py").read_text():
@@ -170,7 +184,11 @@ class CheckConnectorCDKTag(MetadataCheck):
         Returns:
             CheckResult: The result of the check
         """
-        current_cdk_tags = [t for t in (connector.metadata.get("tags", []) if connector.metadata else []) if t.startswith("cdk:")]
+        current_cdk_tags = [
+            t
+            for t in (connector.metadata.get("tags", []) if connector.metadata else [])
+            if t.startswith("cdk:")
+        ]
         expected_cdk_tag = self.get_expected_cdk_tag(connector)
         if not current_cdk_tags:
             return self.fail(
@@ -217,7 +235,9 @@ class ValidateBreakingChangesDeadlines(MetadataCheck):
                 message="Can't verify breaking changes deadline: connector version is not defined.",
             )
 
-        breaking_changes = (connector.metadata.get("releases", {}) if connector.metadata else {}).get("breakingChanges")
+        breaking_changes = (
+            connector.metadata.get("releases", {}) if connector.metadata else {}
+        ).get("breakingChanges")
 
         if not breaking_changes:
             return self.pass_(
@@ -250,7 +270,10 @@ class ValidateBreakingChangesDeadlines(MetadataCheck):
                 message=f"The upgrade deadline for the breaking changes in {current_version} is less than {self.minimum_days_until_deadline} days from today. Please extend the deadline",
             )
 
-        return self.pass_(connector=connector, message="The upgrade deadline is set to at least a week in the future")
+        return self.pass_(
+            connector=connector,
+            message="The upgrade deadline is set to at least a week in the future",
+        )
 
 
 class CheckConnectorMaxSecondsBetweenMessagesValue(MetadataCheck):
@@ -270,7 +293,9 @@ class CheckConnectorMaxSecondsBetweenMessagesValue(MetadataCheck):
         Returns:
             CheckResult: The result of the check
         """
-        max_seconds_between_messages = connector.metadata.get("maxSecondsBetweenMessages") if connector.metadata else None
+        max_seconds_between_messages = (
+            connector.metadata.get("maxSecondsBetweenMessages") if connector.metadata else None
+        )
         if not max_seconds_between_messages:
             return self.fail(
                 connector=connector,
