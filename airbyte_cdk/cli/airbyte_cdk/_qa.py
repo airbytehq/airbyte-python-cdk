@@ -1,15 +1,14 @@
-"""CLI command for running QA checks on connectors."""
+"""CLI command for running QA checks on connectors using pytest."""
 
-import asyncio
+import os
+import subprocess
+import sys
 from pathlib import Path
 from typing import List, Optional
 
 import rich_click as click
 
 from airbyte_cdk.cli.airbyte_cdk._util import resolve_connector_name_and_directory
-from airbyte_cdk.qa.checks import ENABLED_CHECKS
-from airbyte_cdk.qa.connector import Connector
-from airbyte_cdk.qa.models import CheckResult, CheckStatus, Report
 
 
 @click.command(name="pre-release-check")
@@ -18,7 +17,6 @@ from airbyte_cdk.qa.models import CheckResult, CheckStatus, Report
     "--check",
     "selected_checks",
     multiple=True,
-    type=click.Choice([type(check).__name__ for check in ENABLED_CHECKS]),
     help="The name of the check to run. If not provided, all checks will be run.",
 )
 @click.option(
@@ -44,7 +42,7 @@ def pre_release_check(
     connector_directory: Optional[Path] = None,
     report_path: Optional[Path] = None,
 ) -> None:
-    """Run pre-release checks on a connector.
+    """Run pre-release checks on a connector using pytest.
 
     This command runs quality assurance checks on a connector to ensure it meets
     Airbyte's standards for release. The checks include:
@@ -65,25 +63,32 @@ def pre_release_check(
         connector_directory=connector_directory,
     )
 
-    connector = Connector(connector_name, connector_directory)
+    pytest_args = ["-xvs"]
     
-    checks_to_run = [check for check in ENABLED_CHECKS if type(check).__name__ in selected_checks] if selected_checks else ENABLED_CHECKS
-    
-    check_results = []
-    for check in checks_to_run:
-        result = check.run(connector)
-        check_results.append(result)
-        status_color = {
-            CheckStatus.PASSED: "green",
-            CheckStatus.FAILED: "red",
-            CheckStatus.SKIPPED: "yellow",
-        }[result.status]
-        click.echo(f"[{status_color}]{result.status.value}[/{status_color}] {check.name}: {result.message}")
+    if connector_name:
+        pytest_args.extend(["--connector-name", connector_name])
+    if connector_directory:
+        pytest_args.extend(["--connector-directory", str(connector_directory)])
     
     if report_path:
-        Report(check_results=check_results).write(report_path)
-        click.echo(f"Report written to {report_path}")
+        pytest_args.extend(["--report-path", str(report_path)])
     
-    failed_checks = [check_result for check_result in check_results if check_result.status is CheckStatus.FAILED]
-    if failed_checks:
-        raise click.ClickException(f"{len(failed_checks)} checks failed")
+    if selected_checks:
+        for check in selected_checks:
+            pytest_args.extend(["-k", check])
+    
+    qa_module_path = Path(__file__).parent.parent.parent / "qa"
+    pytest_args.extend(["-p", "airbyte_cdk.qa.pytest_plugin"])
+    
+    test_paths = []
+    for root, _, files in os.walk(qa_module_path / "checks"):
+        for file in files:
+            if file.endswith("_test.py"):
+                test_paths.append(os.path.join(root, file))
+    
+    cmd = [sys.executable, "-m", "pytest"] + pytest_args + test_paths
+    click.echo(f"Running: {' '.join(cmd)}")
+    result = subprocess.run(cmd)
+    
+    if result.returncode != 0:
+        raise click.ClickException(f"Pytest failed with exit code {result.returncode}")
