@@ -234,7 +234,8 @@ class Connector:
             int: The ab_internal_sl of the connector, or 0 if it can't be determined
         """
         if self.metadata:
-            return self.metadata.get("data", {}).get("ab_internal", {}).get("sl", 0)
+            sl_value = self.metadata.get("data", {}).get("ab_internal", {}).get("sl", 0)
+            return int(sl_value) if sl_value is not None else 0
         return 0
 
     @property
