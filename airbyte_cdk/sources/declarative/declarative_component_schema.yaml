@@ -1417,7 +1417,6 @@ definitions:
           - "$ref": "#/definitions/CustomIncrementalSync"
       primary_key:
         title: Primary Key
-        description: The primary key of the stream.
         "$ref": "#/definitions/PrimaryKey"
         default: ""
       schema_loader:
@@ -2085,7 +2084,7 @@ definitions:
               field: "updated_at"
               order: "ascending"
       request_body:
-        title: Request Body Payload to be send as a part of the API request.
+        title: Request Body
         description: Specifies how to populate the body of the request with a payload. Can contain nested objects.
         anyOf:
           - "$ref": "#/definitions/RequestBodyPlainText"
@@ -3155,14 +3154,19 @@ definitions:
     anyOf:
       - type: string
         title: Single Key
+        description: The single top-level field to use as the primary key.
       - type: array
         title: Composite Key
+        description: An array of top-level fields representing a composite primary key.
         items:
           type: string
       - type: array
         title: Composite Key of Nested Fields
+        description: An array of arrays representing a composite primary key where the fields are nested fields.
         items:
           type: array
+          title: Nested Field Path
+          description: Path to the nested field in the record.
           items:
             type: string
     default: ""
