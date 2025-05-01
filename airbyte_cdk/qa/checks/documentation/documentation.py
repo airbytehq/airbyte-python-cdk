@@ -28,7 +28,7 @@ class CheckDocumentationExists(DocumentationCheck):
             CheckResult: The result of the check
         """
         docs_dir = Path("/home/ubuntu/repos/airbyte/docs/integrations")
-        connector_type_dir = docs_dir / connector.connector_type + "s"
+        connector_type_dir = docs_dir / (connector.connector_type + "s")
         
         doc_file = connector_type_dir / (connector.technical_name.replace("source-", "").replace("destination-", "") + ".md")
         

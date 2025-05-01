@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from airbyte_cdk.qa.connector import Connector, ConnectorLanguage
 
@@ -306,7 +306,7 @@ class Report:
         Returns:
             str: The report as a JSON string
         """
-        connectors_report: Dict[str, Dict] = {}
+        connectors_report: Dict[str, Dict[str, Any]] = {}
         for check_result in self.check_results:
             connector = check_result.connector
             connectors_report.setdefault(

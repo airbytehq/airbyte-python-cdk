@@ -5,7 +5,7 @@ import os
 import re
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import yaml
 
@@ -42,8 +42,8 @@ class Connector:
         """
         self._technical_name = technical_name
         self._connector_directory = connector_directory
-        self._metadata_cache = None
-        self._is_released = None
+        self._metadata_cache: Optional[Dict[str, Any]] = None
+        self._is_released: Optional[bool] = None
 
     def __repr__(self) -> str:
         """Return a string representation of the connector.
@@ -119,11 +119,11 @@ class Connector:
         return self.code_directory / "metadata.yaml"
 
     @property
-    def metadata(self) -> Optional[Dict]:
+    def metadata(self) -> Optional[Dict[str, Any]]:
         """The metadata from the metadata.yaml file.
 
         Returns:
-            Dict: The metadata from the metadata.yaml file, or None if the file doesn't exist
+            Dict[str, Any]: The metadata from the metadata.yaml file, or None if the file doesn't exist
         """
         if self._metadata_cache is not None:
             return self._metadata_cache
@@ -167,7 +167,8 @@ class Connector:
             str: The version of the connector, or None if it can't be determined
         """
         if self.metadata:
-            return self.metadata.get("data", {}).get("dockerImageTag")
+            docker_image_tag = self.metadata.get("data", {}).get("dockerImageTag")
+            return str(docker_image_tag) if docker_image_tag is not None else None
         return None
 
     @property
@@ -197,7 +198,8 @@ class Connector:
             str: The name of the connector from the metadata, or None if it can't be determined
         """
         if self.metadata:
-            return self.metadata.get("data", {}).get("name")
+            name = self.metadata.get("data", {}).get("name")
+            return str(name) if name is not None else None
         return None
 
     @property
@@ -208,7 +210,8 @@ class Connector:
             str: The support level of the connector, or None if it can't be determined
         """
         if self.metadata:
-            return self.metadata.get("data", {}).get("supportLevel")
+            support_level = self.metadata.get("data", {}).get("supportLevel")
+            return str(support_level) if support_level is not None else None
         return None
 
     @property
@@ -219,7 +222,8 @@ class Connector:
             str: The cloud usage of the connector, or None if it can't be determined
         """
         if self.metadata:
-            return self.metadata.get("data", {}).get("cloudUsage")
+            cloud_usage = self.metadata.get("data", {}).get("cloudUsage")
+            return str(cloud_usage) if cloud_usage is not None else None
         return None
 
     @property
@@ -244,7 +248,7 @@ class Connector:
             return self._is_released
         
         self._is_released = True
-        return self._is_released
+        return True
 
     @property
     def pyproject_file_path(self) -> Path:
