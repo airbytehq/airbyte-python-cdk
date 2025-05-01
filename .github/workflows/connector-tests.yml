@@ -145,8 +145,6 @@ jobs:
             -f description="Running connector tests..." \
             -f context="${{ matrix.connector }} Test Report"
 
-      - name: Install the latest version of uv
-        uses: astral-sh/setup-uv@v6
       - name: Test Connector
         if: steps.no_changes.outputs.status != 'cancelled'
         timeout-minutes: 90
@@ -155,7 +153,7 @@ jobs:
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
         run: |
           cd airbyte
-          make tools.airbyte-ci-dev.install
+          make tools.airbyte-ci.install
           airbyte-ci \
           --ci-report-bucket-name=airbyte-ci-reports-multi \
           connectors \
