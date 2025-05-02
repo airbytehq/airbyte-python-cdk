@@ -25,7 +25,7 @@ concurrency:
 jobs:
   cdk_changes:
     name: Get Changes
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       statuses: write
       pull-requests: read
@@ -62,7 +62,7 @@ jobs:
     # Forked PRs are handled by the community_ci.yml workflow
     # If the condition is not met the job will be skipped (it will not fail)
     # runs-on: connector-test-large
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 360 # 6 hours
     strategy:
       fail-fast: false
@@ -153,7 +153,7 @@ jobs:
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
         run: |
           cd airbyte
-          make tools.airbyte-ci-dev.install
+          make tools.airbyte-ci.install
           airbyte-ci \
           --ci-report-bucket-name=airbyte-ci-reports-multi \
           connectors \
