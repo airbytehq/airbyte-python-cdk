@@ -14,6 +14,7 @@ from pathlib import Path
 import click
 
 from airbyte_cdk.models.connector_metadata import ConnectorLanguage, MetadataFile
+from airbyte_cdk.utils.connector_paths import resolve_airbyte_repo_root
 from airbyte_cdk.utils.docker_image_templates import (
     DOCKERIGNORE_TEMPLATE,
     JAVA_CONNECTOR_DOCKERFILE_TEMPLATE,
@@ -30,13 +31,11 @@ class ConnectorImageBuildError(Exception):
     build_args: list[str]
 
     def __str__(self) -> str:
-        return "\n".join(
-            [
-                f"ConnectorImageBuildError: Could not build image.",
-                f"Build args: {self.build_args}",
-                f"Error text: {self.error_text}",
-            ]
-        )
+        return "\n".join([
+            f"ConnectorImageBuildError: Could not build image.",
+            f"Build args: {self.build_args}",
+            f"Error text: {self.error_text}",
+        ])
 
 
 logger = logging.getLogger(__name__)
@@ -81,13 +80,11 @@ def _build_image(
                 docker_args.append(f"--build-arg={key}={value}")
             else:
                 docker_args.append(f"--build-arg={key}")
-    docker_args.extend(
-        [
-            "-t",
-            tag,
-            str(context_dir),
-        ]
-    )
+    docker_args.extend([
+        "-t",
+        tag,
+        str(context_dir),
+    ])
 
     print(f"Building image: {tag} ({arch})")
     try:
@@ -145,6 +142,7 @@ def build_connector_image(
     tag: str,
     primary_arch: ArchEnum = ArchEnum.ARM64,  # Assume MacBook M series by default
     no_verify: bool = False,
+    dockerfile_override: Path | None = None,
 ) -> None:
     """Build a connector Docker image.
 
@@ -169,8 +167,18 @@ def build_connector_image(
     connector_kebab_name = connector_name
     connector_snake_name = connector_kebab_name.replace("-", "_")
 
-    dockerfile_path = connector_directory / "build" / "docker" / "Dockerfile"
-    dockerignore_path = connector_directory / "build" / "docker" / "Dockerfile.dockerignore"
+    if dockerfile_override:
+        dockerfile_path = dockerfile_override
+    else:
+        dockerfile_path = connector_directory / "build" / "docker" / "Dockerfile"
+        dockerfile_path.write_text(
+            get_dockerfile_template(
+                metadata,
+                connector_directory,
+            )
+        )
+        dockerignore_path = connector_directory / "build" / "docker" / "Dockerfile.dockerignore"
+        dockerignore_path.write_text(DOCKERIGNORE_TEMPLATE)
 
     extra_build_script: str = ""
     build_customization_path = connector_directory / "build_customization.py"
@@ -185,14 +193,9 @@ def build_connector_image(
         )
 
     base_image = metadata.data.connectorBuildOptions.baseImage
-
-    dockerfile_path.write_text(get_dockerfile_template(metadata))
-    dockerignore_path.write_text(DOCKERIGNORE_TEMPLATE)
-
     build_args: dict[str, str | None] = {
         "BASE_IMAGE": base_image,
-        "CONNECTOR_SNAKE_NAME": connector_snake_name,
-        "CONNECTOR_KEBAB_NAME": connector_kebab_name,
+        "CONNECTOR_NAME": connector_kebab_name,
         "EXTRA_BUILD_SCRIPT": extra_build_script,
     }
 
@@ -248,6 +251,7 @@ def build_connector_image(
 
 def get_dockerfile_template(
     metadata: MetadataFile,
+    connector_directory: Path,
 ) -> str:
     """Get the Dockerfile template for the connector.
 
@@ -258,19 +262,48 @@ def get_dockerfile_template(
     Returns:
         The Dockerfile template as a string.
     """
-    if metadata.data.language == ConnectorLanguage.PYTHON:
-        return PYTHON_CONNECTOR_DOCKERFILE_TEMPLATE
+    if metadata.data.language not in [
+        ConnectorLanguage.PYTHON,
+        ConnectorLanguage.MANIFEST_ONLY,
+        ConnectorLanguage.JAVA,
+    ]:
+        raise ValueError(
+            f"Unsupported connector language: {metadata.data.language}. "
+            "Please check the connector's metadata file."
+        )
 
-    if metadata.data.language == ConnectorLanguage.MANIFEST_ONLY:
-        return MANIFEST_ONLY_DOCKERFILE_TEMPLATE
+    try:
+        airbyte_repo_root = resolve_airbyte_repo_root(
+            from_dir=connector_directory,
+        )
+        # airbyte_repo_root successfully resolved
+        dockerfile_path = (
+            airbyte_repo_root
+            / "docker-images"
+            / f"Dockerfile.{metadata.data.language.value}-connector"
+        )
+        if not dockerfile_path.exists():
+            raise FileNotFoundError(
+                f"Dockerfile for {metadata.data.language.value} connector not found at {dockerfile_path}"
+            )
+        return dockerfile_path.read_text()
 
-    if metadata.data.language == ConnectorLanguage.JAVA:
-        return JAVA_CONNECTOR_DOCKERFILE_TEMPLATE
+    except FileNotFoundError:
+        raise
+        if metadata.data.language == ConnectorLanguage.PYTHON:
+            return PYTHON_CONNECTOR_DOCKERFILE_TEMPLATE
 
-    raise ValueError(
-        f"Unsupported connector language: {metadata.data.language}. "
-        "Please check the connector's metadata file."
-    )
+        if metadata.data.language == ConnectorLanguage.MANIFEST_ONLY:
+            return MANIFEST_ONLY_DOCKERFILE_TEMPLATE
+
+        if metadata.data.language == ConnectorLanguage.JAVA:
+            return JAVA_CONNECTOR_DOCKERFILE_TEMPLATE
+
+        # Should not be reachable but we include to make linter happy:
+        raise ValueError(
+            f"Unsupported connector language: {metadata.data.language}. "
+            "Please check the connector's metadata file."
+        )
 
 
 def run_docker_command(

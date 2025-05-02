@@ -12,7 +12,7 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
 from airbyte_cdk.test.standard_tests._job_runner import IConnector
 from airbyte_cdk.test.standard_tests.models import ConnectorTestScenario
 from airbyte_cdk.test.standard_tests.source_base import SourceTestSuiteBase
-from airbyte_cdk.test.standard_tests.test_resources import MANIFEST_YAML
+from airbyte_cdk.utils.connector_paths import MANIFEST_YAML
 
 
 def md5_checksum(file_path: Path) -> str:

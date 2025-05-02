@@ -43,7 +43,7 @@ from click import style
 from rich.console import Console
 from rich.table import Table
 
-from airbyte_cdk.cli.airbyte_cdk._util import (
+from airbyte_cdk.utils.connector_paths import (
     resolve_connector_name,
     resolve_connector_name_and_directory,
 )

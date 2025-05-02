@@ -24,7 +24,7 @@ from airbyte_cdk.test.standard_tests._job_runner import IConnector, run_test_job
 from airbyte_cdk.test.standard_tests.models import (
     ConnectorTestScenario,
 )
-from airbyte_cdk.test.standard_tests.test_resources import (
+from airbyte_cdk.utils.connector_paths import (
     ACCEPTANCE_TEST_CONFIG,
     find_connector_root,
 )

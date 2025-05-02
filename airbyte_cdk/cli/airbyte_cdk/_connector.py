@@ -44,10 +44,13 @@ from types import ModuleType
 
 import rich_click as click
 
-# from airbyte_cdk.test.standard_tests import pytest_hooks
-from airbyte_cdk.cli.airbyte_cdk._util import resolve_connector_name_and_directory
-from airbyte_cdk.test.standard_tests.test_resources import find_connector_root_from_name
 from airbyte_cdk.test.standard_tests.util import create_connector_test_suite
+
+# from airbyte_cdk.test.standard_tests import pytest_hooks
+from airbyte_cdk.utils.connector_paths import (
+    find_connector_root_from_name,
+    resolve_connector_name_and_directory,
+)
 
 click.rich_click.TEXT_MARKUP = "markdown"
 
