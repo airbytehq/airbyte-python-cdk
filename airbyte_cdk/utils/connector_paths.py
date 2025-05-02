@@ -139,7 +139,7 @@ def resolve_connector_name_and_directory(
         connector_directory = find_connector_root_from_name(connector_name)
     else:
         raise ValueError(
-            f"Could not infer connector_name or connector_directory from input ref: {connector}",
+            f"Could not infer connector_name or connector_directory from input ref: {connector_ref}",
         )
 
     return connector_name, connector_directory
