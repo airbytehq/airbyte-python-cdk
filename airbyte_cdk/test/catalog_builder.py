@@ -2,6 +2,8 @@
 
 from typing import Any, Dict, List, Union, overload
 
+from airbyte_protocol_dataclasses.models import DestinationSyncMode
+
 from airbyte_cdk.models import (
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteStream,
@@ -30,6 +32,10 @@ class ConfiguredAirbyteStreamBuilder:
 
     def with_sync_mode(self, sync_mode: SyncMode) -> "ConfiguredAirbyteStreamBuilder":
         self._stream["sync_mode"] = sync_mode.name
+        return self
+
+    def with_destination_sync_mode(self, sync_mode: DestinationSyncMode) -> "ConfiguredAirbyteStreamBuilder":
+        self._stream["destination_sync_mode"] = sync_mode.name
         return self
 
     def with_primary_key(self, pk: List[List[str]]) -> "ConfiguredAirbyteStreamBuilder":

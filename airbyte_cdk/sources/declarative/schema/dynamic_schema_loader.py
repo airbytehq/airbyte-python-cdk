@@ -114,7 +114,28 @@ class SchemaTypeIdentifier:
 
 
 @deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)
-class AdditionalPropertyFieldsInferer(ABC):
+class AdditionalPropertyFieldsInferrer(ABC):
+    """
+    Infers additional fields to be added to each property. For example, if this inferrer returns {"toto": "tata"}, a property that would have looked like this:
+    ```
+        "properties": {
+            "Id": {
+                "type": ["null", "string"],
+            },
+            <...>
+        }
+    ```
+    ... will look like this:
+        ```
+        "properties": {
+            "Id": {
+                "type": ["null", "string"],
+                "toto": "tata"
+            },
+            <...>
+        }
+    ```
+    """
     @abstractmethod
     def infer(self, property_definition: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
         """
@@ -135,7 +156,8 @@ class DynamicSchemaLoader(SchemaLoader):
     parameters: InitVar[Mapping[str, Any]]
     schema_type_identifier: SchemaTypeIdentifier
     schema_transformations: List[RecordTransformation] = field(default_factory=lambda: [])
-    additional_property_fields_inferrer: Optional[AdditionalPropertyFieldsInferer] = None
+    additional_property_fields_inferrer: Optional[AdditionalPropertyFieldsInferrer] = None
+    allow_additional_properties: bool = True
 
     def get_json_schema(self) -> Mapping[str, Any]:
         """
@@ -168,7 +190,7 @@ class DynamicSchemaLoader(SchemaLoader):
         return {
             "$schema": "https://json-schema.org/draft-07/schema#",
             "type": "object",
-            "additionalProperties": True,
+            "additionalProperties": self.allow_additional_properties,
             "properties": transformed_properties,
         }
 
