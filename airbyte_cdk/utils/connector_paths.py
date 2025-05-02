@@ -51,10 +51,12 @@ def resolve_airbyte_repo_root(
             return parent_dir / "airbyte-enterprise"
 
         # Check children only if no "airbyte" or "airbyte-enterprise" in parent
-        if not any([
-            "airbyte" in current_dir.parts,
-            "airbyte-enterprise" in current_dir.parts,
-        ]):
+        if not any(
+            [
+                "airbyte" in current_dir.parts,
+                "airbyte-enterprise" in current_dir.parts,
+            ]
+        ):
             if _is_airbyte_repo_root(current_dir / "airbyte"):
                 return current_dir / "airbyte"
             if _is_airbyte_repo_root(current_dir / "airbyte-enterprise"):

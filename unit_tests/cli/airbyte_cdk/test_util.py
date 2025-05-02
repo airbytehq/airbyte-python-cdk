@@ -7,18 +7,21 @@ from airbyte_cdk.utils.connector_paths import resolve_airbyte_repo_root
 
 CDK_REPO_ROOT = Path(__file__).resolve().parents[3].absolute()
 
+
 def check_local_repo_structure() -> bool:
     """
     Check if the local repository structure is correct.
     This function checks if the current working directory is 'airbyte-cdk'.
     """
-    return all([
-        CDK_REPO_ROOT.name == "airbyte-python-cdk",
-        (CDK_REPO_ROOT.parent / "airbyte").is_dir(),
-        (CDK_REPO_ROOT.parent / "airbyte-enterprise").is_dir(),
-        (CDK_REPO_ROOT.parent / "airbyte" / "airbyte-integrations").is_dir(),
-        (CDK_REPO_ROOT.parent / "airbyte-enterprise" / "airbyte-integrations").is_dir(),
-    ])
+    return all(
+        [
+            CDK_REPO_ROOT.name == "airbyte-python-cdk",
+            (CDK_REPO_ROOT.parent / "airbyte").is_dir(),
+            (CDK_REPO_ROOT.parent / "airbyte-enterprise").is_dir(),
+            (CDK_REPO_ROOT.parent / "airbyte" / "airbyte-integrations").is_dir(),
+            (CDK_REPO_ROOT.parent / "airbyte-enterprise" / "airbyte-integrations").is_dir(),
+        ]
+    )
 
 
 @pytest.mark.parametrize(
@@ -26,8 +29,8 @@ def check_local_repo_structure() -> bool:
     [
         (CDK_REPO_ROOT / ".." / "airbyte", True),
         (CDK_REPO_ROOT / ".." / "airbyte" / "airbyte-ci", True),
-        (CDK_REPO_ROOT.parent, True), # Parent directory from CDK repo
-        (CDK_REPO_ROOT.parent.parent, False), # Grandparent directory from CDK repo
+        (CDK_REPO_ROOT.parent, True),  # Parent directory from CDK repo
+        (CDK_REPO_ROOT.parent.parent, False),  # Grandparent directory from CDK repo
         (CDK_REPO_ROOT / ".." / "airbyte-enterprise", True),
         (CDK_REPO_ROOT / ".." / "airbyte-enterprise" / "airbyte-integrations", True),
         (Path("/"), False),  # Filesystem root
@@ -77,6 +80,4 @@ def test_resolve_airbyte_repo_root_real_fs(
             )
     except FileNotFoundError:
         if expect_success:
-            raise AssertionError(
-                f"Airbyte repo root not found from '{start_dir_rel!s}'."
-            )
+            raise AssertionError(f"Airbyte repo root not found from '{start_dir_rel!s}'.")
