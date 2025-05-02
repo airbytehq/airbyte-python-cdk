@@ -1722,11 +1722,26 @@ definitions:
           - "$ref": "#/definitions/CustomPaginationStrategy"
       page_size_option:
         title: Inject Page Size Into Outgoing HTTP Request
+        deprecated: true
         "$ref": "#/definitions/RequestOption"
+      page_size_injection:
+        title: Inject Page Size Into Outgoing Request
+        anyOf:
+          - "$ref": "#/definitions/RequestParameterInjection"
+          - "$ref": "#/definitions/RequestHeaderInjection"
+          - "$ref": "#/definitions/RequestBodyInjection"
       page_token_option:
         title: Inject Page Token Into Outgoing HTTP Request
+        deprecated: true
         anyOf:
           - "$ref": "#/definitions/RequestOption"
+          - "$ref": "#/definitions/RequestPath"
+      page_token_injection:
+        title: Inject Page Token Into Outgoing Request
+        anyOf:
+          - "$ref": "#/definitions/RequestParameterInjection"
+          - "$ref": "#/definitions/RequestHeaderInjection"
+          - "$ref": "#/definitions/RequestBodyInjection"
           - "$ref": "#/definitions/RequestPath"
       $parameters:
         type: object
@@ -3370,7 +3385,7 @@ definitions:
           - ["tags"]
           - [["content", "html"], ["content", "plain_text"]]
   RequestPath:
-    title: Request Path
+    title: Request Path Injection
     description: Specifies where in the request path a component's value should be inserted.
     type: object
     required:
@@ -3423,6 +3438,50 @@ definitions:
           - header
           - body_data
           - body_json
+  RequestParameterInjection:
+    title: Request Parameter Injection
+    description: Injects a value into the request parameters.
+    type: object
+    required:
+      - type
+      - parameter_name
+    properties:
+      type:
+        type: string
+        enum: [RequestParameterInjection]
+      parameter_name:
+        type: string
+        description: The name of the parameter to inject the value into.
+  RequestHeaderInjection:
+    title: Request Header Injection
+    description: Injects a value into the request headers.
+    type: object
+    required:
+      - type
+      - header_name
+    properties:
+      type:
+        type: string
+        enum: [RequestHeaderInjection]
+      header_name:
+        type: string
+        description: The name of the header to inject the value into.
+  RequestBodyInjection:
+    title: Request Body Injection
+    description: Injects a value into the request body.
+    type: object
+    required:
+      - type
+      - field_path
+    properties:
+      type:
+        type: string
+        enum: [RequestBodyInjection]
+      field_path:
+        description: The path into the request body to inject the value.
+        type: array
+        items:
+          type: string
   Schemas:
     title: Schemas
     description: The stream schemas representing the shape of the data emitted by the stream.
