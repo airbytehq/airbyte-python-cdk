@@ -34,7 +34,9 @@ def parse_args(args: List[str]) -> argparse.Namespace:
     """
 
     parent_parser = argparse.ArgumentParser(add_help=False)
-    parent_parser.add_argument("--debug", action="store_true", help="enables detailed debug logs related to the sync")
+    parent_parser.add_argument(
+        "--debug", action="store_true", help="enables detailed debug logs related to the sync"
+    )
     main_parser = argparse.ArgumentParser()
     subparsers = main_parser.add_subparsers(title="commands", dest="command")
 
@@ -54,7 +56,9 @@ def parse_args(args: List[str]) -> argparse.Namespace:
 
     # discover
     discover_parser = subparsers.add_parser(
-        "discover", help="discover the objects available in the destination", parents=[parent_parser]
+        "discover",
+        help="discover the objects available in the destination",
+        parents=[parent_parser],
     )
     required_discover_parser = discover_parser.add_argument_group("required named arguments")
     required_discover_parser.add_argument(

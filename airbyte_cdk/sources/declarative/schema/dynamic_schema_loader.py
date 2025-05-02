@@ -136,6 +136,7 @@ class AdditionalPropertyFieldsInferrer(ABC):
         }
     ```
     """
+
     @abstractmethod
     def infer(self, property_definition: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
         """
@@ -182,7 +183,11 @@ class DynamicSchemaLoader(SchemaLoader):
                 self.schema_type_identifier.type_pointer,
             )
 
-            value.update(self.additional_property_fields_inferrer.infer(property_definition) if self.additional_property_fields_inferrer else {})
+            value.update(
+                self.additional_property_fields_inferrer.infer(property_definition)
+                if self.additional_property_fields_inferrer
+                else {}
+            )
             properties[key] = value
 
         transformed_properties = self._transform(properties)

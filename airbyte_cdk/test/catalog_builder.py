@@ -34,7 +34,9 @@ class ConfiguredAirbyteStreamBuilder:
         self._stream["sync_mode"] = sync_mode.name
         return self
 
-    def with_destination_sync_mode(self, sync_mode: DestinationSyncMode) -> "ConfiguredAirbyteStreamBuilder":
+    def with_destination_sync_mode(
+        self, sync_mode: DestinationSyncMode
+    ) -> "ConfiguredAirbyteStreamBuilder":
         self._stream["destination_sync_mode"] = sync_mode.name
         return self
 
