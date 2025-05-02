@@ -154,10 +154,12 @@ class ConnectorTestSuiteBase(abc.ABC):
                 f"Acceptance tests config not found in {cls.acceptance_test_config_path}."
                 f" Found only: {str(all_tests_config)}."
             )
-        if category not in all_tests_config["acceptance_tests"]:
+
+        if (
+            category not in all_tests_config["acceptance_tests"]
+            or "tests" not in all_tests_config["acceptance_tests"][category]
+        ):
             return []
-        if "tests" not in all_tests_config["acceptance_tests"][category]:
-            raise ValueError(f"No tests found for category {category}")
 
         tests_scenarios = [
             ConnectorTestScenario.model_validate(test)
