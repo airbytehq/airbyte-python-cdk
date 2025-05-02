@@ -77,17 +77,43 @@ def resolve_airbyte_repo_root(
 
 
 def resolve_connector_name_and_directory(
-    connector_name: str | None = None,
+    connector_ref: str | Path | None = None,
+    *,
     connector_directory: Path | None = None,
 ) -> tuple[str, Path]:
     """Resolve the connector name and directory.
 
     This function will resolve the connector name and directory based on the provided
-    arguments. If no connector name or directory is provided, it will look within the
+    reference. If no input ref is provided, it will look within the
     current working directory. If the current working directory is not a connector
     directory (e.g. starting with 'source-') and no connector name or path is provided,
     the process will fail.
+    If ref is sent as a string containing "/" or "\\", it will be treated as a path to the
+    connector directory.
+
+    raises:
+        ValueError: If the connector name or directory cannot be resolved.
+        FileNotFoundError: If the connector directory does not exist or cannot be found.
     """
+    connector_name: str | None = None
+
+    # Resolve connector_ref to connector_name or connector_directory (if provided)
+    if connector_ref:
+        if isinstance(connector_ref, str):
+            if "/" in connector_ref or "\\" in connector_ref:
+                # If the connector name is a path, treat it as a directory
+                connector_directory = Path(connector_ref)
+            else:
+                # Otherwise, treat it as a connector name
+                connector_name = connector_ref
+        elif isinstance(connector_ref, Path):
+            connector_directory = connector_ref
+        else:
+            raise ValueError(
+                "connector_ref must be a string or Path. "
+                f"Received type '{type(connector_ref).__name__}': {connector_ref!r}",
+            )
+
     if not connector_directory:
         if connector_name:
             connector_directory = find_connector_root_from_name(connector_name)
@@ -97,8 +123,9 @@ def resolve_connector_name_and_directory(
                 connector_directory = cwd
             else:
                 raise ValueError(
-                    "Either connector_name or connector_directory must be provided if not "
-                    "running from a connector directory."
+                    "The 'connector' input must be provided if not "
+                    "running from a connector directory. "
+                    f"Could not infer connector directory from: {cwd}"
                 )
 
     if not connector_name:
@@ -109,7 +136,9 @@ def resolve_connector_name_and_directory(
     elif connector_name:
         connector_directory = find_connector_root_from_name(connector_name)
     else:
-        raise ValueError("Either connector_name or connector_directory must be provided.")
+        raise ValueError(
+            f"Could not infer connector_name or connector_directory from input ref: {connector}",
+        )
 
     return connector_name, connector_directory
 

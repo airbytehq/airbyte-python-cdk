@@ -59,22 +59,7 @@ def build(
         )
         sys.exit(1)
 
-    connector_name = None
-    connector_directory = None
-    if connector is None:
-        # Use cwd logic in resolve_connector_name_and_directory
-        pass
-    elif "/" in connector or "\\" in connector:
-        # Assume it's a path to a connector directory
-        connector_directory = Path(connector)
-    else:
-        # Otherwise, assume it's a connector name
-        connector_name = connector
-
-    connector_name, connector_directory = resolve_connector_name_and_directory(
-        connector_name=connector_name,
-        connector_directory=connector_directory,
-    )
+    connector_name, connector_directory = resolve_connector_name_and_directory(connector)
 
     metadata_file_path: Path = connector_directory / "metadata.yaml"
     try:
