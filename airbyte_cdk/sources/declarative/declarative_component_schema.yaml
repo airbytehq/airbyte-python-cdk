@@ -299,8 +299,8 @@ definitions:
             - "$ref": "#/definitions/CustomAuthenticator"
             - "$ref": "#/definitions/OAuthAuthenticator"
             - "$ref": "#/definitions/JwtAuthenticator"
-            - "$ref": "#/definitions/NoAuth"
             - "$ref": "#/definitions/SessionTokenAuthenticator"
+            - "$ref": "#/definitions/NoAuth"
             - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
         examples:
           - authenticators:
@@ -1467,18 +1467,18 @@ definitions:
           requester:
             description: Requester component that describes how to prepare HTTP requests to send to the source API.
             anyOf:
-              - "$ref": "#/definitions/CustomRequester"
               - "$ref": "#/definitions/HttpRequester"
+              - "$ref": "#/definitions/CustomRequester"
           download_target_extractor:
             description: Responsible for fetching the url where the file is located. This is applied on each records and not on the HTTP response
             anyOf:
-              - "$ref": "#/definitions/CustomRecordExtractor"
               - "$ref": "#/definitions/DpathExtractor"
+              - "$ref": "#/definitions/CustomRecordExtractor"
           file_extractor:
             description: Responsible for fetching the content of the file. If not defined, the assumption is that the whole response body is the file content
             anyOf:
-              - "$ref": "#/definitions/CustomRecordExtractor"
               - "$ref": "#/definitions/DpathExtractor"
+              - "$ref": "#/definitions/CustomRecordExtractor"
           filename_extractor:
             description: Defines the name to store the file. Stream name is automatically added to the file path. File unique ID can be used to avoid overwriting files. Random UUID will be used if the extractor is not provided.
             type: string
@@ -1918,7 +1918,7 @@ definitions:
         deprecated: true
         deprecation_message: "Use `url` field instead."
         title: API Base URL
-        description: Deprecated, use the `url` instead. Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
+        description: Deprecated, use the `url` instead. Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authenticator component for this.
         linkable: true
         type: string
         interpolation_context:
@@ -1937,7 +1937,7 @@ definitions:
           - "https://example.com/api/v1/resource/{{ next_page_token['id'] }}"
       url:
         title: API Endpoint URL
-        description: The URL of the source API endpoint. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
+        description: The URL of the source API endpoint. Do not put sensitive information (e.g. API tokens) into this field - Use the Authenticator component for this.
         type: string
         interpolation_context:
           - config
@@ -1957,7 +1957,7 @@ definitions:
         deprecated: true
         deprecation_message: "Use `url` field instead."
         title: URL Path
-        description: Deprecated, use the `url` instead. Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
+        description: Deprecated, use the `url` instead. Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authenticator component for this.
         type: string
         interpolation_context:
           - config
@@ -1988,7 +1988,6 @@ definitions:
         linkable: true
         description: Authentication method to use for requests sent to the API.
         anyOf:
-          - "$ref": "#/definitions/NoAuth"
           - "$ref": "#/definitions/ApiKeyAuthenticator"
           - "$ref": "#/definitions/BasicHttpAuthenticator"
           - "$ref": "#/definitions/BearerAuthenticator"
@@ -1997,6 +1996,7 @@ definitions:
           - "$ref": "#/definitions/SessionTokenAuthenticator"
           - "$ref": "#/definitions/SelectiveAuthenticator"
           - "$ref": "#/definitions/CustomAuthenticator"
+          - "$ref": "#/definitions/NoAuth"
           - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
       fetch_properties_from_endpoint:
         title: Fetch Properties from Endpoint
