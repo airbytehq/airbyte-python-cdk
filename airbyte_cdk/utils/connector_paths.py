@@ -33,15 +33,18 @@ def resolve_airbyte_repo_root(
 
     def _is_airbyte_repo_root(path: Path) -> bool:
         """Check if the given path is the Airbyte repository root."""
-        return (path.name == "airbyte" or path.name == "airbyte-enterprise") and (
-            path / "airbyte-integrations"
-        ).is_dir()
+        return all(
+            [
+                (path.name == "airbyte" or path.name == "airbyte-enterprise"),
+                (path / "airbyte-integrations").is_dir(),
+            ]
+        )
 
     def _find_in_adjacent_dirs(current_dir: Path) -> Path | None:
         """Check if 'airbyte' or 'airbyte-enterprise' exists as a sibling, parent, or child."""
         # Check parents
         parent_dir = current_dir.parent
-        if parent_dir.name == "airbyte" or parent_dir.name == "airbyte-enterprise":
+        if _is_airbyte_repo_root(parent_dir):
             return parent_dir
 
         # Check siblings
