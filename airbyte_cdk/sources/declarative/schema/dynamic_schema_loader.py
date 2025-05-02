@@ -257,7 +257,7 @@ class DynamicSchemaLoader(SchemaLoader):
                 f"Invalid data type. Available string or two items list of string. Got {mapped_field_type}."
             )
 
-    def _resolve_complex_type(self, complex_type: ComplexFieldType) -> Mapping[str, Any]:
+    def _resolve_complex_type(self, complex_type: ComplexFieldType) -> Dict[str, Any]:
         if not complex_type.items:
             return self._get_airbyte_type(complex_type.field_type)
 
@@ -292,7 +292,7 @@ class DynamicSchemaLoader(SchemaLoader):
         return field_type
 
     @staticmethod
-    def _get_airbyte_type(field_type: str) -> MutableMapping[str, Any]:
+    def _get_airbyte_type(field_type: str) -> Dict[str, Any]:
         """
         Maps a field type to its corresponding Airbyte type definition.
         """
