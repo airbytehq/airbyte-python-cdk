@@ -15,7 +15,7 @@ from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.source import ExperimentalClassWarning
-from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
+from airbyte_cdk.sources.types import Config
 
 AIRBYTE_DATA_TYPES: Mapping[str, MutableMapping[str, Any]] = {
     "string": {"type": ["null", "string"]},
@@ -299,7 +299,7 @@ class DynamicSchemaLoader(SchemaLoader):
         if field_type not in AIRBYTE_DATA_TYPES:
             raise ValueError(f"Invalid Airbyte data type: {field_type}")
 
-        return deepcopy(AIRBYTE_DATA_TYPES[field_type])
+        return deepcopy(AIRBYTE_DATA_TYPES[field_type])  # type: ignore  # a copy of a dict should be a dict, not a MutableMapping
 
     def _extract_data(
         self,
