@@ -2080,8 +2080,8 @@ class SelectiveAuthenticator(BaseModel):
             CustomAuthenticator,
             OAuthAuthenticator,
             JwtAuthenticator,
-            NoAuth,
             SessionTokenAuthenticator,
+            NoAuth,
             LegacySessionTokenAuthenticator,
         ],
     ] = Field(
@@ -2103,15 +2103,15 @@ class SelectiveAuthenticator(BaseModel):
 
 class FileUploader(BaseModel):
     type: Literal["FileUploader"]
-    requester: Union[CustomRequester, HttpRequester] = Field(
+    requester: Union[HttpRequester, CustomRequester] = Field(
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API.",
     )
-    download_target_extractor: Union[CustomRecordExtractor, DpathExtractor] = Field(
+    download_target_extractor: Union[DpathExtractor, CustomRecordExtractor] = Field(
         ...,
         description="Responsible for fetching the url where the file is located. This is applied on each records and not on the HTTP response",
     )
-    file_extractor: Optional[Union[CustomRecordExtractor, DpathExtractor]] = Field(
+    file_extractor: Optional[Union[DpathExtractor, CustomRecordExtractor]] = Field(
         None,
         description="Responsible for fetching the content of the file. If not defined, the assumption is that the whole response body is the file content",
     )
@@ -2144,9 +2144,7 @@ class DeclarativeStream(BaseModel):
         description="Component used to fetch data incrementally based on a time field in the data.",
         title="Incremental Sync",
     )
-    primary_key: Optional[PrimaryKey] = Field(
-        "", description="The primary key of the stream.", title="Primary Key"
-    )
+    primary_key: Optional[PrimaryKey] = Field("", title="Primary Key")
     schema_loader: Optional[
         Union[
             InlineSchemaLoader,
@@ -2242,7 +2240,7 @@ class HttpRequester(BaseModelWithDeprecations):
         None,
         deprecated=True,
         deprecation_message="Use `url` field instead.",
-        description="Deprecated, use the `url` instead. Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.",
+        description="Deprecated, use the `url` instead. Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authenticator component for this.",
         examples=[
             "https://connect.squareup.com/v2",
             "{{ config['base_url'] or 'https://app.posthog.com'}}/api",
@@ -2253,20 +2251,20 @@ class HttpRequester(BaseModelWithDeprecations):
     )
     url: Optional[str] = Field(
         None,
-        description="The URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.",
+        description="The URL of the source API endpoint. Do not put sensitive information (e.g. API tokens) into this field - Use the Authenticator component for this.",
         examples=[
             "https://connect.squareup.com/v2",
             "{{ config['url'] or 'https://app.posthog.com'}}/api",
             "https://connect.squareup.com/v2/quotes/{{ stream_partition['id'] }}/quote_line_groups",
             "https://example.com/api/v1/resource/{{ next_page_token['id'] }}",
         ],
-        title="The URL of an API endpoint",
+        title="API Endpoint URL",
     )
     path: Optional[str] = Field(
         None,
         deprecated=True,
         deprecation_message="Use `url` field instead.",
-        description="Deprecated, use the `url` instead. Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.",
+        description="Deprecated, use the `url` instead. Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authenticator component for this.",
         examples=[
             "/products",
             "/quotes/{{ stream_partition['id'] }}/quote_line_groups",
@@ -2282,7 +2280,6 @@ class HttpRequester(BaseModelWithDeprecations):
     )
     authenticator: Optional[
         Union[
-            NoAuth,
             ApiKeyAuthenticator,
             BasicHttpAuthenticator,
             BearerAuthenticator,
@@ -2291,6 +2288,7 @@ class HttpRequester(BaseModelWithDeprecations):
             SessionTokenAuthenticator,
             SelectiveAuthenticator,
             CustomAuthenticator,
+            NoAuth,
             LegacySessionTokenAuthenticator,
         ]
     ] = Field(
@@ -2302,6 +2300,25 @@ class HttpRequester(BaseModelWithDeprecations):
         None,
         description="Allows for retrieving a dynamic set of properties from an API endpoint which can be injected into outbound request using the stream_partition.extra_fields.",
         title="Fetch Properties from Endpoint",
+    )
+    request_parameters: Optional[Union[Dict[str, Union[str, QueryProperties]], str]] = Field(
+        None,
+        description="Specifies the query parameters that should be set on an outgoing HTTP request given the inputs.",
+        examples=[
+            {"unit": "day"},
+            {
+                "query": 'last_event_time BETWEEN TIMESTAMP "{{ stream_interval.start_time }}" AND TIMESTAMP "{{ stream_interval.end_time }}"'
+            },
+            {"searchIn": "{{ ','.join(config.get('search_in', [])) }}"},
+            {"sort_by[asc]": "updated_at"},
+        ],
+        title="Query Parameters",
+    )
+    request_headers: Optional[Union[Dict[str, str], str]] = Field(
+        None,
+        description="Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.",
+        examples=[{"Output-Format": "JSON"}, {"Version": "{{ config['version'] }}"}],
+        title="Request Headers",
     )
     request_body_data: Optional[Union[Dict[str, str], str]] = Field(
         None,
@@ -2363,26 +2380,7 @@ class HttpRequester(BaseModelWithDeprecations):
                 },
             },
         ],
-        title="Request Body Payload to be send as a part of the API request.",
-    )
-    request_headers: Optional[Union[Dict[str, str], str]] = Field(
-        None,
-        description="Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.",
-        examples=[{"Output-Format": "JSON"}, {"Version": "{{ config['version'] }}"}],
-        title="Request Headers",
-    )
-    request_parameters: Optional[Union[Dict[str, Union[str, QueryProperties]], str]] = Field(
-        None,
-        description="Specifies the query parameters that should be set on an outgoing HTTP request given the inputs.",
-        examples=[
-            {"unit": "day"},
-            {
-                "query": 'last_event_time BETWEEN TIMESTAMP "{{ stream_interval.start_time }}" AND TIMESTAMP "{{ stream_interval.end_time }}"'
-            },
-            {"searchIn": "{{ ','.join(config.get('search_in', [])) }}"},
-            {"sort_by[asc]": "updated_at"},
-        ],
-        title="Query Parameters",
+        title="Request Body",
     )
     error_handler: Optional[
         Union[DefaultErrorHandler, CompositeErrorHandler, CustomErrorHandler]
@@ -2475,7 +2473,7 @@ class PropertiesFromEndpoint(BaseModel):
         description="Describes the path to the field that should be extracted",
         examples=[["name"]],
     )
-    retriever: Union[CustomRetriever, SimpleRetriever] = Field(
+    retriever: Union[SimpleRetriever, CustomRetriever] = Field(
         ...,
         description="Requester component that describes how to fetch the properties to query from a remote API endpoint.",
     )
@@ -2526,19 +2524,19 @@ class SimpleRetriever(BaseModel):
     )
     decoder: Optional[
         Union[
-            CsvDecoder,
-            GzipDecoder,
             JsonDecoder,
-            JsonlDecoder,
-            IterableDecoder,
             XmlDecoder,
+            CsvDecoder,
+            JsonlDecoder,
+            GzipDecoder,
+            IterableDecoder,
             ZipfileDecoder,
             CustomDecoder,
         ]
     ] = Field(
         None,
         description="Component decoding the response so records can be extracted.",
-        title="Decoder",
+        title="HTTP Response Format",
     )
     record_selector: RecordSelector = Field(
         ...,
