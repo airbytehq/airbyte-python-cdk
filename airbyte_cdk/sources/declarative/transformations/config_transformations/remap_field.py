@@ -1,0 +1,56 @@
+#
+# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+#
+
+from dataclasses import dataclass
+from typing import Any, List, Mapping, Union
+
+from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
+from airbyte_cdk.sources.declarative.transformations.config_transformations.config_transformation import ConfigTransformation
+
+
+@dataclass
+class RemapField(ConfigTransformation):
+    """
+    Transformation that remaps a field's value to another value based on a static map.
+    """
+
+    map: Mapping[str, Any]
+    field_path: List[Union[InterpolatedString, str]]
+
+    def __post_init__(self) -> None:
+        self._field_path = [
+            InterpolatedString.create(path, parameters={}) for path in self.field_path
+        ]
+        for path_index in range(len(self.field_path)):
+            if isinstance(self.field_path[path_index], str):
+                self._field_path[path_index] = InterpolatedString.create(
+                    self.field_path[path_index], parameters={}
+                )
+
+    def transform(
+        self,
+        config: Mapping[str, Any],
+    ) -> None:
+        """
+        Transforms a config by remapping a field value based on the provided map.
+        If the original value is found in the map, it's replaced with the mapped value.
+        If the value is not in the map, the field remains unchanged.
+
+        :param config: The user-provided configuration to be transformed
+        """
+        path_components = [path.eval(config) for path in self._field_path]
+
+        current = config
+        for i, component in enumerate(path_components[:-1]):
+            if component not in current:
+                return
+            current = current[component]
+
+            if not isinstance(current, Mapping):
+                return
+
+        field_name = path_components[-1]
+
+        if field_name in current and current[field_name] in self.map:
+            current[field_name] = self.map[current[field_name]]
