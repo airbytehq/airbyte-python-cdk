@@ -89,7 +89,7 @@ class ConnectorTestSuiteBase(abc.ABC):
     @classmethod
     def create_connector(
         cls,
-        scenario: ConnectorTestScenario,
+        scenario: ConnectorTestScenario | None,
     ) -> IConnector:
         """Instantiate the connector class."""
         connector = cls.connector  # type: ignore
@@ -147,7 +147,7 @@ class ConnectorTestSuiteBase(abc.ABC):
         This has to be a separate function because pytest does not allow
         parametrization of fixtures with arguments from the test class itself.
         """
-        category = "connection"
+        categories = ["connection", "spec"]
         all_tests_config = yaml.safe_load(cls.acceptance_test_config_path.read_text())
         if "acceptance_tests" not in all_tests_config:
             raise ValueError(
@@ -155,22 +155,25 @@ class ConnectorTestSuiteBase(abc.ABC):
                 f" Found only: {str(all_tests_config)}."
             )
 
-        if (
-            category not in all_tests_config["acceptance_tests"]
-            or "tests" not in all_tests_config["acceptance_tests"][category]
-        ):
-            return []
+        test_scenarios: list[ConnectorTestScenario] = []
+        for category in categories:
+            if (
+                category not in all_tests_config["acceptance_tests"]
+                or "tests" not in all_tests_config["acceptance_tests"][category]
+            ):
+                continue
 
-        tests_scenarios = [
-            ConnectorTestScenario.model_validate(test)
-            for test in all_tests_config["acceptance_tests"][category]["tests"]
-            if "iam_role" not in test["config_path"]
-        ]
+            test_scenarios.extend([
+                ConnectorTestScenario.model_validate(test)
+                for test in all_tests_config["acceptance_tests"][category]["tests"]
+                if "config_path" in test and "iam_role" not in test["config_path"]
+            ])
+
         connector_root = cls.get_connector_root_dir().absolute()
-        for test in tests_scenarios:
+        for test in test_scenarios:
             if test.config_path:
                 test.config_path = connector_root / test.config_path
             if test.configured_catalog_path:
                 test.configured_catalog_path = connector_root / test.configured_catalog_path
 
-        return tests_scenarios
+        return test_scenarios

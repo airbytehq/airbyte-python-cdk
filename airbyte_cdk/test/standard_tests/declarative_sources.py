@@ -64,7 +64,7 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
     @classmethod
     def create_connector(
         cls,
-        scenario: ConnectorTestScenario,
+        scenario: ConnectorTestScenario | None,
     ) -> IConnector:
         """Create a connector scenario for the test suite.
 
@@ -73,9 +73,13 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
 
         Subclasses should not need to override this method.
         """
-        config: dict[str, Any] = scenario.get_config_dict()
-
         manifest_dict = yaml.safe_load(cls.manifest_yaml_path.read_text())
+        config = {
+            "__injected_manifest": manifest_dict,
+        }
+        if scenario:
+            config.update(scenario.get_config_dict())
+
         if cls.components_py_path and cls.components_py_path.exists():
             os.environ["AIRBYTE_ENABLE_UNSAFE_CODE"] = "true"
             config["__injected_components_py"] = cls.components_py_path.read_text()

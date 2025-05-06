@@ -64,6 +64,26 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             test_scenario=scenario,
         )
 
+    def test_spec(
+        self,
+        # scenario: ConnectorTestScenario,  # No inputs needed for spec test
+    ) -> None:
+        """Standard test for `spec`."""
+        result = run_test_job(
+            verb="spec",
+            test_scenario=None,
+            connector=self.create_connector(scenario=None),
+        )
+        if result.errors:
+            raise AssertionError(
+                f"Expected no errors but got {len(result.errors)}: \n"
+                + "\n".join([str(e) for e in result.errors])
+            )
+        assert len(result.spec_messages) == 1, (
+            "Expected exactly 1 spec message but got {len(result.spec_messages)}",
+            result.errors,
+        )
+
     def test_basic_read(
         self,
         scenario: ConnectorTestScenario,
