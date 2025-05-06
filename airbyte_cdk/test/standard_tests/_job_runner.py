@@ -121,7 +121,7 @@ def run_test_job(
     result: entrypoint_wrapper.EntrypointOutput = entrypoint_wrapper._run_command(  # noqa: SLF001  # Non-public API
         source=connector_obj,  # type: ignore [arg-type]
         args=args,
-        expecting_exception=False if not test_scenario else expect_exception,
+        expecting_exception=expect_exception,
     )
     if result.errors and not expect_exception:
         raise AssertionError(
