@@ -163,11 +163,13 @@ class ConnectorTestSuiteBase(abc.ABC):
             ):
                 continue
 
-            test_scenarios.extend([
-                ConnectorTestScenario.model_validate(test)
-                for test in all_tests_config["acceptance_tests"][category]["tests"]
-                if "config_path" in test and "iam_role" not in test["config_path"]
-            ])
+            test_scenarios.extend(
+                [
+                    ConnectorTestScenario.model_validate(test)
+                    for test in all_tests_config["acceptance_tests"][category]["tests"]
+                    if "config_path" in test and "iam_role" not in test["config_path"]
+                ]
+            )
 
         connector_root = cls.get_connector_root_dir().absolute()
         for test in test_scenarios:
