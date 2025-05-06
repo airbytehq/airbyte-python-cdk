@@ -63,7 +63,7 @@ except ImportError:
 
 TEST_FILE_TEMPLATE = '''
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
-"""FAST Airbyte Standard Tests for the source_pokeapi_w_components source."""
+"""FAST Airbyte Standard Tests for the {connector_name} source."""
 
 #from airbyte_cdk.test.standard_tests import {base_class_name}
 from airbyte_cdk.test.standard_tests.util import create_connector_test_suite
@@ -78,7 +78,7 @@ TestSuite = create_connector_test_suite(
 )
 
 # class TestSuite({base_class_name}):
-#     """Test suite for the source_pokeapi_w_components source.
+#     """Test suite for the {connector_name} source.
 
 #     This class inherits from SourceTestSuiteBase and implements all of the tests in the suite.
 
@@ -152,7 +152,7 @@ def test(
 
     file_text = TEST_FILE_TEMPLATE.format(
         base_class_name=connector_test_suite.__bases__[0].__name__,
-        connector_directory=str(connector_directory),
+        connector_name=connector_name,
     )
     test_file_path = Path() / ".tmp" / "integration_tests/test_airbyte_standards.py"
     test_file_path = test_file_path.resolve().absolute()
