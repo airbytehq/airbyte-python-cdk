@@ -69,8 +69,8 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
 
         This test does not require a `scenario` input, since `spec`
         does not require any inputs.
-        
-        We assume `spec` should always succeed and it should always generate 
+
+        We assume `spec` should always succeed and it should always generate
         a valid `SPEC` message.
 
         Note: the parsing of messages by type also implicitly validates that
