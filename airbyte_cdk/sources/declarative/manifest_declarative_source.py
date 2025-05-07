@@ -15,6 +15,12 @@ from jsonschema.exceptions import ValidationError
 from jsonschema.validators import validate
 from packaging.version import InvalidVersion, Version
 
+from airbyte_cdk.connector_builder.models import (
+    LogMessage as ConnectorBuilderLogMessage,
+)
+from airbyte_cdk.manifest_migrations.migration_handler import (
+    ManifestMigrationHandler,
+)
 from airbyte_cdk.models import (
     AirbyteConnectionStatus,
     AirbyteMessage,
@@ -91,6 +97,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         debug: bool = False,
         emit_connector_builder_messages: bool = False,
         component_factory: Optional[ModelToComponentFactory] = None,
+        migrate_manifest: Optional[bool] = False,
         normalize_manifest: Optional[bool] = False,
     ) -> None:
         """
@@ -104,12 +111,11 @@ class ManifestDeclarativeSource(DeclarativeSource):
         """
         self.logger = logging.getLogger(f"airbyte.{self.name}")
         self._should_normalize = normalize_manifest
+        self._should_migrate = migrate_manifest
         self._declarative_component_schema = _get_declarative_component_schema()
         # If custom components are needed, locate and/or register them.
         self.components_module: ModuleType | None = get_registered_components_module(config=config)
-        # resolve all components in the manifest
-        self._source_config = self._preprocess_manifest(dict(source_config))
-
+        # set additional attributes
         self._debug = debug
         self._emit_connector_builder_messages = emit_connector_builder_messages
         self._constructor = (
@@ -126,11 +132,12 @@ class ManifestDeclarativeSource(DeclarativeSource):
         )
         self._config = config or {}
 
+        # resolve all components in the manifest
+        self._source_config = self._pre_process_manifest(dict(source_config))
         # validate resolved manifest against the declarative component schema
         self._validate_source()
-
         # apply additional post-processing to the manifest
-        self._postprocess_manifest()
+        self._post_process_manifest()
 
     @property
     def resolved_manifest(self) -> Mapping[str, Any]:
@@ -145,7 +152,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         """
         return self._source_config
 
-    def _preprocess_manifest(self, manifest: Dict[str, Any]) -> Dict[str, Any]:
+    def _pre_process_manifest(self, manifest: Dict[str, Any]) -> Dict[str, Any]:
         """
         Preprocesses the provided manifest dictionary by resolving any manifest references.
 
@@ -169,12 +176,14 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
         return propagated_manifest
 
-    def _postprocess_manifest(self) -> None:
+    def _post_process_manifest(self) -> None:
         """
         Post-processes the manifest after validation.
         This method is responsible for any additional modifications or transformations needed
         after the manifest has been validated and before it is used in the source.
         """
+        # apply manifest migration, if required
+        self._migrate_manifest()
         # apply manifest normalization, if required
         self._normalize_manifest()
 
@@ -189,6 +198,19 @@ class ManifestDeclarativeSource(DeclarativeSource):
         if self._should_normalize:
             normalizer = ManifestNormalizer(self._source_config, self._declarative_component_schema)
             self._source_config = normalizer.normalize()
+
+    def _migrate_manifest(self) -> None:
+        """
+        This method is used to migrate the manifest. It should be called after the manifest has been validated.
+        The migration is done in place, so the original manifest is modified.
+
+        The original manifest is returned if any error occurs during migration.
+        """
+        if self._should_migrate:
+            manifest_migrator = ManifestMigrationHandler(self._source_config)
+            self._source_config = manifest_migrator.apply_migrations()
+            # validate migrated manifest against the declarative component schema
+            self._validate_source()
 
     def _fix_source_type(self, manifest: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -210,6 +232,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
             config=self._config,
             with_dynamic_stream_name=True,
         )
+
+    def deprecation_warnings(self) -> List[ConnectorBuilderLogMessage]:
+        return self._constructor.get_model_deprecations()
 
     @property
     def connection_checker(self) -> ConnectionChecker:

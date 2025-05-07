@@ -41,3 +41,29 @@ def resolve_connector_name_and_directory(
         raise ValueError("Either connector_name or connector_directory must be provided.")
 
     return connector_name, connector_directory
+
+
+def resolve_connector_name(
+    connector_directory: Path,
+) -> str:
+    """Resolve the connector name.
+
+    This function will resolve the connector name based on the provided connector directory.
+    If the current working directory is not a connector directory
+    (e.g. starting with 'source-'), the process will fail.
+
+    Raises:
+        FileNotFoundError: If the connector directory does not exist or cannot be found.
+    """
+    if not connector_directory:
+        raise FileNotFoundError(
+            "Connector directory does not exist or cannot be found. Please provide a valid "
+            "connector directory."
+        )
+    connector_name = connector_directory.absolute().name
+    if not connector_name.startswith("source-") and not connector_name.startswith("destination-"):
+        raise ValueError(
+            f"Connector directory '{connector_name}' does not look like a valid connector directory. "
+            f"Full path: {connector_directory.absolute()}"
+        )
+    return connector_name

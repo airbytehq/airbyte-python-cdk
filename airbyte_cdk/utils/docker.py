@@ -16,6 +16,7 @@ import click
 from airbyte_cdk.models.connector_metadata import ConnectorLanguage, MetadataFile
 from airbyte_cdk.utils.docker_image_templates import (
     DOCKERIGNORE_TEMPLATE,
+    JAVA_CONNECTOR_DOCKERFILE_TEMPLATE,
     MANIFEST_ONLY_DOCKERFILE_TEMPLATE,
     PYTHON_CONNECTOR_DOCKERFILE_TEMPLATE,
 )
@@ -197,6 +198,22 @@ def build_connector_image(
 
     base_tag = f"{metadata.data.dockerRepository}:{tag}"
     arch_images: list[str] = []
+
+    if metadata.data.language == ConnectorLanguage.JAVA:
+        # This assumes that the repo root ('airbyte') is three levels above the
+        # connector directory (airbyte/airbyte-integrations/connectors/source-foo).
+        repo_root = connector_directory.parent.parent.parent
+        # For Java connectors, we need to build the connector tar file first.
+        subprocess.run(
+            [
+                "./gradlew",
+                f":airbyte-integrations:connectors:{connector_name}:distTar",
+            ],
+            cwd=repo_root,
+            text=True,
+            check=True,
+        )
+
     for arch in [ArchEnum.AMD64, ArchEnum.ARM64]:
         docker_tag = f"{base_tag}-{arch.value}"
         docker_tag_parts = docker_tag.split("/")
@@ -248,10 +265,7 @@ def get_dockerfile_template(
         return MANIFEST_ONLY_DOCKERFILE_TEMPLATE
 
     if metadata.data.language == ConnectorLanguage.JAVA:
-        raise ValueError(
-            f"Java and Kotlin connectors are not yet supported. "
-            "Please use airbyte-ci or gradle to build your image."
-        )
+        return JAVA_CONNECTOR_DOCKERFILE_TEMPLATE
 
     raise ValueError(
         f"Unsupported connector language: {metadata.data.language}. "
@@ -322,10 +336,20 @@ def verify_connector_image(
         )
         # check that the output is valid JSON
         if result.stdout:
-            try:
-                json.loads(result.stdout)
-            except json.JSONDecodeError:
-                logger.error("Invalid JSON output from spec command.")
+            found_spec_output = False
+            for line in result.stdout.split("\n"):
+                if line.strip():
+                    try:
+                        # Check if the line is a valid JSON object
+                        msg = json.loads(line)
+                        if isinstance(msg, dict) and "type" in msg and msg["type"] == "SPEC":
+                            found_spec_output = True
+
+                    except json.JSONDecodeError as e:
+                        logger.warning(f"Invalid JSON output from spec command: {e}: {line}")
+
+            if not found_spec_output:
+                logger.error("No valid JSON output found for spec command.")
                 return False
         else:
             logger.error("No output from spec command.")

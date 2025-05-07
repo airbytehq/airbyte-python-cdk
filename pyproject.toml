@@ -55,6 +55,7 @@ PyYAML = "^6.0.1"
 rapidfuzz = "^3.10.1" # TODO: Remove if unused
 requests = "*"
 requests_cache = "*"
+rich = "*"  # Use whichever version meets other constraints
 rich-click = "^1.8.8"
 typing-extensions = "*"  # Transitive dependency used directly in code
 wcmatch = "10.0"

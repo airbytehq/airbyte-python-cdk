@@ -299,8 +299,8 @@ definitions:
             - "$ref": "#/definitions/CustomAuthenticator"
             - "$ref": "#/definitions/OAuthAuthenticator"
             - "$ref": "#/definitions/JwtAuthenticator"
-            - "$ref": "#/definitions/NoAuth"
             - "$ref": "#/definitions/SessionTokenAuthenticator"
+            - "$ref": "#/definitions/NoAuth"
             - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
         examples:
           - authenticators:
@@ -1417,7 +1417,6 @@ definitions:
           - "$ref": "#/definitions/CustomIncrementalSync"
       primary_key:
         title: Primary Key
-        description: The primary key of the stream.
         "$ref": "#/definitions/PrimaryKey"
         default: ""
       schema_loader:
@@ -1464,22 +1463,22 @@ definitions:
         properties:
           type:
             type: string
-            enum: [ FileUploader ]
+            enum: [FileUploader]
           requester:
             description: Requester component that describes how to prepare HTTP requests to send to the source API.
             anyOf:
-              - "$ref": "#/definitions/CustomRequester"
               - "$ref": "#/definitions/HttpRequester"
+              - "$ref": "#/definitions/CustomRequester"
           download_target_extractor:
             description: Responsible for fetching the url where the file is located. This is applied on each records and not on the HTTP response
             anyOf:
-              - "$ref": "#/definitions/CustomRecordExtractor"
               - "$ref": "#/definitions/DpathExtractor"
+              - "$ref": "#/definitions/CustomRecordExtractor"
           file_extractor:
             description: Responsible for fetching the content of the file. If not defined, the assumption is that the whole response body is the file content
             anyOf:
-              - "$ref": "#/definitions/CustomRecordExtractor"
               - "$ref": "#/definitions/DpathExtractor"
+              - "$ref": "#/definitions/CustomRecordExtractor"
           filename_extractor:
             description: Defines the name to store the file. Stream name is automatically added to the file path. File unique ID can be used to avoid overwriting files. Random UUID will be used if the extractor is not provided.
             type: string
@@ -1911,15 +1910,16 @@ definitions:
     type: object
     required:
       - type
-      - url_base
     properties:
       type:
         type: string
         enum: [HttpRequester]
       url_base:
-        linkable: true
+        deprecated: true
+        deprecation_message: "Use `url` field instead."
         title: API Base URL
-        description: The Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
+        description: Deprecated, use the `url` instead. Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authenticator component for this.
+        linkable: true
         type: string
         interpolation_context:
           - config
@@ -1935,9 +1935,29 @@ definitions:
           - "{{ config['base_url'] or 'https://app.posthog.com'}}/api"
           - "https://connect.squareup.com/v2/quotes/{{ stream_partition['id'] }}/quote_line_groups"
           - "https://example.com/api/v1/resource/{{ next_page_token['id'] }}"
+      url:
+        title: API Endpoint URL
+        description: The URL of the source API endpoint. Do not put sensitive information (e.g. API tokens) into this field - Use the Authenticator component for this.
+        type: string
+        interpolation_context:
+          - config
+          - next_page_token
+          - stream_interval
+          - stream_partition
+          - stream_slice
+          - creation_response
+          - polling_response
+          - download_target
+        examples:
+          - "https://connect.squareup.com/v2"
+          - "{{ config['url'] or 'https://app.posthog.com'}}/api"
+          - "https://connect.squareup.com/v2/quotes/{{ stream_partition['id'] }}/quote_line_groups"
+          - "https://example.com/api/v1/resource/{{ next_page_token['id'] }}"
       path:
+        deprecated: true
+        deprecation_message: "Use `url` field instead."
         title: URL Path
-        description: The Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.
+        description: Deprecated, use the `url` instead. Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authenticator component for this.
         type: string
         interpolation_context:
           - config
@@ -1968,7 +1988,6 @@ definitions:
         linkable: true
         description: Authentication method to use for requests sent to the API.
         anyOf:
-          - "$ref": "#/definitions/NoAuth"
           - "$ref": "#/definitions/ApiKeyAuthenticator"
           - "$ref": "#/definitions/BasicHttpAuthenticator"
           - "$ref": "#/definitions/BearerAuthenticator"
@@ -1977,62 +1996,12 @@ definitions:
           - "$ref": "#/definitions/SessionTokenAuthenticator"
           - "$ref": "#/definitions/SelectiveAuthenticator"
           - "$ref": "#/definitions/CustomAuthenticator"
+          - "$ref": "#/definitions/NoAuth"
           - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
-      request_body_data:
-        title: Request Body Payload (Non-JSON)
-        description: Specifies how to populate the body of the request with a non-JSON payload. Plain text will be sent as is, whereas objects will be converted to a urlencoded form.
-        anyOf:
-          - type: object
-            additionalProperties:
-              type: string
-          - type: string
-        interpolation_context:
-          - next_page_token
-          - stream_interval
-          - stream_partition
-          - stream_slice
-        examples:
-          - |
-            [{"clause": {"type": "timestamp", "operator": 10, "parameters":
-                [{"value": {{ stream_interval['start_time'] | int * 1000 }} }]
-              }, "orderBy": 1, "columnName": "Timestamp"}]/
-      request_body_json:
-        title: Request Body JSON Payload
-        description: Specifies how to populate the body of the request with a JSON payload. Can contain nested objects.
-        anyOf:
-          - type: object
-            additionalProperties: true
-          - type: string
-        interpolation_context:
-          - next_page_token
-          - stream_interval
-          - stream_partition
-          - stream_slice
-        examples:
-          - sort_order: "ASC"
-            sort_field: "CREATED_AT"
-          - key: "{{ config['value'] }}"
-          - sort:
-              field: "updated_at"
-              order: "ascending"
-      request_headers:
-        title: Request Headers
-        description: Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.
-        anyOf:
-          - type: object
-            title: Key/Value Pairs
-            additionalProperties:
-              type: string
-          - type: string
-            title: Interpolated Value
-        interpolation_context:
-          - next_page_token
-          - stream_interval
-          - stream_partition
-          - stream_slice
-        examples:
-          - Output-Format: JSON
-          - Version: "{{ config['version'] }}"
+      fetch_properties_from_endpoint:
+        title: Fetch Properties from Endpoint
+        description: Allows for retrieving a dynamic set of properties from an API endpoint which can be injected into outbound request using the stream_partition.extra_fields.
+        "$ref": "#/definitions/PropertiesFromEndpoint"
       request_parameters:
         title: Query Parameters
         description: Specifies the query parameters that should be set on an outgoing HTTP request given the inputs.
@@ -2055,6 +2024,102 @@ definitions:
           - query: 'last_event_time BETWEEN TIMESTAMP "{{ stream_interval.start_time }}" AND TIMESTAMP "{{ stream_interval.end_time }}"'
           - searchIn: "{{ ','.join(config.get('search_in', [])) }}"
           - sort_by[asc]: updated_at
+      request_headers:
+        title: Request Headers
+        description: Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.
+        anyOf:
+          - type: object
+            title: Key/Value Pairs
+            additionalProperties:
+              type: string
+          - type: string
+            title: Interpolated Value
+        interpolation_context:
+          - next_page_token
+          - stream_interval
+          - stream_partition
+          - stream_slice
+        examples:
+          - Output-Format: JSON
+          - Version: "{{ config['version'] }}"
+      request_body_data:
+        deprecated: true
+        deprecation_message: "Use `request_body` field instead."
+        title: Request Body Payload (Non-JSON)
+        description: Specifies how to populate the body of the request with a non-JSON payload. Plain text will be sent as is, whereas objects will be converted to a urlencoded form.
+        anyOf:
+          - type: object
+            additionalProperties:
+              type: string
+          - type: string
+        interpolation_context:
+          - next_page_token
+          - stream_interval
+          - stream_partition
+          - stream_slice
+        examples:
+          - |
+            [{"clause": {"type": "timestamp", "operator": 10, "parameters":
+                [{"value": {{ stream_interval['start_time'] | int * 1000 }} }]
+              }, "orderBy": 1, "columnName": "Timestamp"}]/
+      request_body_json:
+        deprecated: true
+        deprecation_message: "Use `request_body` field instead."
+        title: Request Body JSON Payload
+        description: Specifies how to populate the body of the request with a JSON payload. Can contain nested objects.
+        anyOf:
+          - type: object
+            additionalProperties: true
+          - type: string
+        interpolation_context:
+          - next_page_token
+          - stream_interval
+          - stream_partition
+          - stream_slice
+        examples:
+          - sort_order: "ASC"
+            sort_field: "CREATED_AT"
+          - key: "{{ config['value'] }}"
+          - sort:
+              field: "updated_at"
+              order: "ascending"
+      request_body:
+        title: Request Body
+        description: Specifies how to populate the body of the request with a payload. Can contain nested objects.
+        anyOf:
+          - "$ref": "#/definitions/RequestBodyPlainText"
+          - "$ref": "#/definitions/RequestBodyUrlEncodedForm"
+          - "$ref": "#/definitions/RequestBodyJsonObject"
+          - "$ref": "#/definitions/RequestBodyGraphQL"
+        interpolation_context:
+          - next_page_token
+          - stream_interval
+          - stream_partition
+          - stream_slice
+        examples:
+          - type: RequestBodyJsonObject
+            value:
+              sort_order: "ASC"
+              sort_field: "CREATED_AT"
+          - type: RequestBodyJsonObject
+            value:
+              key: "{{ config['value'] }}"
+          - type: RequestBodyJsonObject
+            value:
+              sort:
+                field: "updated_at"
+                order: "ascending"
+          - type: RequestBodyPlainText
+            value: "plain_text_body"
+          - type: RequestBodyUrlEncodedForm
+            value:
+              param1: "value1"
+              param2: "{{ config['param2_value'] }}"
+          - type: RequestBodyGraphQL
+            value:
+              query:
+                param1: "value1"
+                param2: "{{ config['param2_value'] }}"
       error_handler:
         title: Error Handler
         description: Error handler component that defines how to handle errors.
@@ -2370,7 +2435,7 @@ definitions:
     properties:
       type:
         type: string
-        enum: [ KeyTransformation ]
+        enum: [KeyTransformation]
       prefix:
         title: Key Prefix
         description: Prefix to add for object keys. If not provided original keys remain unchanged.
@@ -3034,7 +3099,7 @@ definitions:
         type: array
         default: []
         items:
-          - type: string
+          type: string
         interpolation_context:
           - config
       parent_key:
@@ -3089,14 +3154,19 @@ definitions:
     anyOf:
       - type: string
         title: Single Key
+        description: The single top-level field to use as the primary key.
       - type: array
         title: Composite Key
+        description: An array of top-level fields representing a composite primary key.
         items:
           type: string
       - type: array
         title: Composite Key of Nested Fields
+        description: An array of arrays representing a composite primary key where the fields are nested fields.
         items:
           type: array
+          title: Nested Field Path
+          description: Path to the nested field in the record.
           items:
             type: string
     default: ""
@@ -3128,8 +3198,8 @@ definitions:
       retriever:
         description: Requester component that describes how to fetch the properties to query from a remote API endpoint.
         anyOf:
-          - "$ref": "#/definitions/CustomRetriever"
           - "$ref": "#/definitions/SimpleRetriever"
+          - "$ref": "#/definitions/CustomRetriever"
       $parameters:
         type: object
         additionalProperties: true
@@ -3360,6 +3430,7 @@ definitions:
     additionalProperties: true
   LegacySessionTokenAuthenticator:
     title: Session Token Authenticator
+    deprecated: true
     description: Deprecated - use SessionTokenAuthenticator instead. Authenticator for requests authenticated using session tokens. A session token is a random value generated by a server to identify a specific user for the duration of one interaction session.
     type: object
     required:
@@ -3468,15 +3539,15 @@ definitions:
           - "$ref": "#/definitions/HttpRequester"
           - "$ref": "#/definitions/CustomRequester"
       decoder:
-        title: Decoder
+        title: HTTP Response Format
         description: Component decoding the response so records can be extracted.
         anyOf:
-          - "$ref": "#/definitions/CsvDecoder"
-          - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
-          - "$ref": "#/definitions/JsonlDecoder"
-          - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/XmlDecoder"
+          - "$ref": "#/definitions/CsvDecoder"
+          - "$ref": "#/definitions/JsonlDecoder"
+          - "$ref": "#/definitions/GzipDecoder"
+          - "$ref": "#/definitions/IterableDecoder"
           - "$ref": "#/definitions/ZipfileDecoder"
           - "$ref": "#/definitions/CustomDecoder"
       record_selector:
@@ -4015,6 +4086,74 @@ definitions:
       - type
       - stream_template
       - components_resolver
+  RequestBodyPlainText:
+    title: Plain-text Body
+    description: Request body value is sent as plain text
+    type: object
+    required:
+      - type
+      - value
+    properties:
+      type:
+        type: string
+        enum: [RequestBodyPlainText]
+      value:
+        type: string
+  RequestBodyUrlEncodedForm:
+    title: URL-encoded Body
+    description: Request body value is converted into a url-encoded form
+    type: object
+    required:
+      - type
+      - value
+    properties:
+      type:
+        type: string
+        enum: [RequestBodyUrlEncodedForm]
+      value:
+        type: object
+        additionalProperties:
+          type: string
+  RequestBodyJsonObject:
+    title: Json Object Body
+    description: Request body value converted into a JSON object
+    type: object
+    required:
+      - type
+      - value
+    properties:
+      type:
+        type: string
+        enum: [RequestBodyJsonObject]
+      value:
+        type: object
+        additionalProperties: true
+  RequestBodyGraphQL:
+    title: GraphQL Body
+    description: Request body value converted into a GraphQL query object
+    type: object
+    required:
+      - type
+      - value
+    properties:
+      type:
+        type: string
+        enum: [RequestBodyGraphQL]
+      value:
+        "$ref": "#/definitions/RequestBodyGraphQlQuery"
+  RequestBodyGraphQlQuery:
+    title: GraphQL Query Body
+    description: Request body GraphQL query object
+    type: object
+    required:
+      - query
+    properties:
+      query:
+        type: object
+        additionalProperties: true
+        description: The GraphQL query to be executed
+        default: {}
+    additionalProperties: true
 interpolation:
   variables:
     - title: config

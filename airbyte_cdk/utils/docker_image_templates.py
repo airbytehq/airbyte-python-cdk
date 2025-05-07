@@ -14,8 +14,9 @@ These templates are used to generate connector images.
 DOCKERIGNORE_TEMPLATE: str = "\n".join(
     [
         "# This file is auto-generated. Do not edit.",
-        # "*,"
+        "*,"  # Ignore everything not explicitly allowed below
         "build/",
+        "!build/distributions/*.tar",
         ".venv/",
         "secrets/",
         "!setup.py",
@@ -36,7 +37,7 @@ DOCKERIGNORE_TEMPLATE: str = "\n".join(
 # PYTHON CONNECTOR IMAGE ##
 ###########################
 
-PYTHON_CONNECTOR_DOCKERFILE_TEMPLATE = """
+PYTHON_CONNECTOR_DOCKERFILE_TEMPLATE = r"""
 # syntax=docker/dockerfile:1
 # check=skip=all
 ARG BASE_IMAGE
@@ -98,4 +99,38 @@ COPY . ./
 
 ENV AIRBYTE_ENTRYPOINT="python ./main.py"
 ENTRYPOINT ["python", "./main.py"]
+"""
+
+#########################
+# JAVA CONNECTOR IMAGE ##
+#########################
+
+JAVA_CONNECTOR_DOCKERFILE_TEMPLATE = """
+# Java connector Dockerfile for Airbyte
+
+# Build arguments
+ARG BASE_IMAGE
+
+# Base image - using Amazon Corretto (Amazon's distribution of OpenJDK)
+FROM ${BASE_IMAGE}
+ARG CONNECTOR_KEBAB_NAME
+
+# Set permissions for downloaded files
+RUN chmod +x /airbyte/base.sh /airbyte/javabase.sh && \
+    chown airbyte:airbyte /airbyte/base.sh /airbyte/javabase.sh /airbyte/dd-java-agent.jar
+
+ENV AIRBYTE_ENTRYPOINT="/airbyte/base.sh"
+ENV APPLICATION="${CONNECTOR_KEBAB_NAME}"
+
+# Add the connector TAR file and extract it
+COPY ./build/distributions/${CONNECTOR_KEBAB_NAME}.tar /tmp/${CONNECTOR_KEBAB_NAME}.tar
+RUN tar xf /tmp/${CONNECTOR_KEBAB_NAME}.tar --strip-components=1 -C /airbyte && \
+    rm -rf /tmp/${CONNECTOR_KEBAB_NAME}.tar && \
+    chown -R airbyte:airbyte /airbyte
+
+# Set the non-root user
+USER airbyte
+
+# Set entrypoint
+ENTRYPOINT ["/airbyte/base.sh"]
 """
