@@ -73,12 +73,12 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
 
         Subclasses should not need to override this method.
         """
+        scenario = scenario or ConnectorTestScenario()  # Use default (empty) scenario if None
         manifest_dict = yaml.safe_load(cls.manifest_yaml_path.read_text())
         config = {
             "__injected_manifest": manifest_dict,
         }
-        if scenario:
-            config.update(scenario.get_config_dict())
+        config.update(scenario.get_config_dict(empty_if_missing=True))
 
         if cls.components_py_path and cls.components_py_path.exists():
             os.environ["AIRBYTE_ENABLE_UNSAFE_CODE"] = "true"

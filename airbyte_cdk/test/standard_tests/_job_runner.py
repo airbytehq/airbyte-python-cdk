@@ -62,6 +62,9 @@ def run_test_job(
     catalog: ConfiguredAirbyteCatalog | dict[str, Any] | None = None,
 ) -> entrypoint_wrapper.EntrypointOutput:
     """Run a test scenario from provided CLI args and return the result."""
+    # Use default (empty) scenario if not provided:
+    test_scenario = test_scenario or ConnectorTestScenario()
+
     if not connector:
         raise ValueError("Connector is required")
 
@@ -81,14 +84,14 @@ def run_test_job(
         )
 
     args: list[str] = [verb]
-    if test_scenario and test_scenario.config_path:
-        args += ["--config", str(test_scenario.config_path)]
-    elif test_scenario and test_scenario.config_dict:
+    config_dict = test_scenario.get_config_dict(empty_if_missing=True)
+    if config_dict and verb != "spec":
+        # Write the config to a temp json file and pass the path to the file as an argument.
         config_path = (
             Path(tempfile.gettempdir()) / "airbyte-test" / f"temp_config_{uuid.uuid4().hex}.json"
         )
         config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(orjson.dumps(test_scenario.config_dict).decode())
+        config_path.write_text(orjson.dumps(config_dict).decode())
         args += ["--config", str(config_path)]
 
     catalog_path: Path | None = None
@@ -103,7 +106,7 @@ def run_test_job(
             )
             catalog_path.parent.mkdir(parents=True, exist_ok=True)
             catalog_path.write_text(orjson.dumps(catalog).decode())
-        elif test_scenario and test_scenario.configured_catalog_path:
+        elif test_scenario.configured_catalog_path:
             catalog_path = Path(test_scenario.configured_catalog_path)
 
         if catalog_path:
@@ -112,18 +115,12 @@ def run_test_job(
     # This is a bit of a hack because the source needs the catalog early.
     # Because it *also* can fail, we have to redundantly wrap it in a try/except block.
 
-    expect_exception = False
-    if test_scenario and test_scenario.expect_exception:
-        # If the test scenario expects an exception, we need to set the
-        # `expect_exception` flag to True.
-        expect_exception = True
-
     result: entrypoint_wrapper.EntrypointOutput = entrypoint_wrapper._run_command(  # noqa: SLF001  # Non-public API
         source=connector_obj,  # type: ignore [arg-type]
         args=args,
-        expecting_exception=expect_exception,
+        expecting_exception=test_scenario.expect_exception,
     )
-    if result.errors and not expect_exception:
+    if result.errors and not test_scenario.expect_exception:
         raise AssertionError(
             f"Expected no errors but got {len(result.errors)}: \n" + _errors_to_str(result)
         )
@@ -138,7 +135,7 @@ def run_test_job(
             + "\n".join([str(msg) for msg in result.connection_status_messages])
             + _errors_to_str(result)
         )
-        if expect_exception:
+        if test_scenario.expect_exception:
             conn_status = result.connection_status_messages[0].connectionStatus
             assert conn_status, (
                 "Expected CONNECTION_STATUS message to be present. Got: \n"
@@ -152,7 +149,7 @@ def run_test_job(
         return result
 
     # For all other verbs, we assert check that an exception is raised (or not).
-    if expect_exception:
+    if test_scenario.expect_exception:
         if not result.errors:
             raise AssertionError("Expected exception but got none.")
 
