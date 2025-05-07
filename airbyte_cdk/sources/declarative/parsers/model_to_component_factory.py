@@ -2339,7 +2339,6 @@ class ModelToComponentFactory:
             primary_key=None,
             stream_slicer=combined_slicers,
             transformations=[],
-            use_cache=True,
         )
         schema_type_identifier = self._create_component_from_model(
             model.schema_type_identifier, config=config, parameters=model.parameters or {}
