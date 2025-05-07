@@ -14,6 +14,9 @@ from airbyte_cdk.connector_builder.models import LogMessage as ConnectorBuilderL
 warnings.formatwarning = (
     lambda message, category, *args, **kwargs: f"{category.__name__}: {message}"
 )
+# ignore the SyntaxWarning in the Airbyte log messages, during the string evaluation
+warnings.filterwarnings("ignore", category=SyntaxWarning)
+
 
 FIELDS_TAG = "__fields__"
 DEPRECATED = "deprecated"
