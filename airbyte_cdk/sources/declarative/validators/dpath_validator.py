@@ -39,11 +39,27 @@ class DpathValidator(Validator):
         :param input_data: Dictionary containing the data to validate
         :raises ValueError: If the path doesn't exist or validation fails
         """
-        try:
-            path = [path.eval(input_data) for path in self._field_path]
-            value = dpath.util.get(input_data, path)
-            self.strategy.validate(value)
-        except KeyError:
-            raise ValueError(f"Path '{self.field_path}' not found in the input data")
-        except Exception as e:
-            raise ValueError(f"Error validating path '{self.field_path}': {e}")
+        path = [path.eval({}) for path in self._field_path]
+
+        if len(path) == 0:
+            raise ValueError("Field path is empty")
+
+        if "*" in path:
+            try:
+                values = dpath.values(input_data, path)
+            except KeyError as e:
+                raise KeyError(f"Error validating path '{self.field_path}': {e}")
+            for value in values:
+                try:
+                    self.strategy.validate(value)
+                except Exception as e:
+                    raise ValueError(f"Error validating value '{value}': {e}")
+        else:
+            try:
+                value = dpath.get(input_data, path)
+            except KeyError as e:
+                raise KeyError(f"Error validating path '{self.field_path}': {e}")
+            try:
+                self.strategy.validate(value)
+            except Exception as e:
+                raise ValueError(f"Error validating value '{value}': {e}")
