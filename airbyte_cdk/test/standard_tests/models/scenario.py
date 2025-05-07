@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import yaml
-from numpy import empty
 from pydantic import BaseModel
 
 
