@@ -670,6 +670,7 @@ class SimpleRetrieverTestReadDecorator(SimpleRetriever):
         stream_slice: StreamSlice,
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Optional[requests.Response]:
+        is_dynamic_schema_call = (self.name == "dynamic_properties")
         return self.requester.send_request(
             path=self._paginator_path(
                 next_page_token=next_page_token,
@@ -704,6 +705,7 @@ class SimpleRetrieverTestReadDecorator(SimpleRetriever):
                 f"Stream '{self.name}' request",
                 f"Request performed in order to extract records for stream '{self.name}'",
                 self.name,
+                is_auxiliary=is_dynamic_schema_call  # Mark schema discovery calls as auxiliary for cleaner logs
             ),
         )
 
