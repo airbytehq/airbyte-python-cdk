@@ -4119,7 +4119,7 @@ def test_simple_retriever_with_query_properties():
     assert request_options_provider.request_parameters.get("nonary") == "{{config['nonary'] }}"
 
 
-def test_simple_retriever_with_properties_from_endpoint():
+def test_simple_retriever_with_request_parameters_properties_from_endpoint():
     content = """
     selector:
       type: RecordSelector
@@ -4214,6 +4214,88 @@ def test_simple_retriever_with_properties_from_endpoint():
     assert isinstance(property_chunking, PropertyChunking)
     assert property_chunking.property_limit_type == PropertyLimitType.property_count
     assert property_chunking.property_limit == 3
+
+
+def test_simple_retriever_with_requester_properties_from_endpoint():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+          type: DpathExtractor
+          field_path: ["extractor_path"]
+      record_filter:
+        type: RecordFilter
+        condition: "{{ record['id'] > stream_state['id'] }}"
+    requester:
+      type: HttpRequester
+      name: "{{ parameters['name'] }}"
+      url_base: "https://api.hubapi.com"
+      http_method: "GET"
+      path: "adAnalytics"
+      fetch_properties_from_endpoint:
+        type: PropertiesFromEndpoint
+        property_field_path: [ "name" ]
+        retriever:
+          type: SimpleRetriever
+          requester:
+            type: HttpRequester
+            url_base: https://api.hubapi.com
+            path: "/properties/v2/dynamics/properties"
+            http_method: GET
+          record_selector:
+            type: RecordSelector
+            extractor:
+              type: DpathExtractor
+              field_path: []
+    dynamic_properties_stream:
+      type: DeclarativeStream
+      incremental_sync:
+        type: DatetimeBasedCursor
+        $parameters:
+          datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+        start_datetime: "{{ config['start_time'] }}"
+        cursor_field: "created"
+      retriever:
+        type: SimpleRetriever
+        name: "{{ parameters['name'] }}"
+        requester:
+          $ref: "#/requester"
+        record_selector:
+          $ref: "#/selector"
+      $parameters:
+        name: "dynamics"
+        """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["dynamic_properties_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    query_properties = stream.retriever.additional_query_properties
+    assert isinstance(query_properties, QueryProperties)
+    assert query_properties.always_include_properties is None
+    assert query_properties.property_chunking is None
+
+    properties_from_endpoint = stream.retriever.additional_query_properties.property_list
+    assert isinstance(properties_from_endpoint, PropertiesFromEndpoint)
+    assert properties_from_endpoint.property_field_path == ["name"]
+
+    properties_from_endpoint_retriever = (
+        stream.retriever.additional_query_properties.property_list.retriever
+    )
+    assert isinstance(properties_from_endpoint_retriever, SimpleRetriever)
+
+    properties_from_endpoint_requester = (
+        stream.retriever.additional_query_properties.property_list.retriever.requester
+    )
+    assert isinstance(properties_from_endpoint_requester, HttpRequester)
+    assert properties_from_endpoint_requester.url_base == "https://api.hubapi.com"
+    assert properties_from_endpoint_requester.path == "/properties/v2/dynamics/properties"
 
 
 def test_request_parameters_raise_error_if_not_of_type_query_properties():
@@ -4327,6 +4409,89 @@ def test_create_simple_retriever_raise_error_if_multiple_request_properties():
             record_merge_strategy:
               type: GroupByKeyMergeStrategy
               key: ["id"]
+    analytics_stream:
+      type: DeclarativeStream
+      incremental_sync:
+        type: DatetimeBasedCursor
+        $parameters:
+          datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+        start_datetime: "{{ config['start_time'] }}"
+        cursor_field: "created"
+      retriever:
+        type: SimpleRetriever
+        name: "{{ parameters['name'] }}"
+        requester:
+          $ref: "#/requester"
+        record_selector:
+          $ref: "#/selector"
+      $parameters:
+        name: "analytics"
+            """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["analytics_stream"], {}
+    )
+
+    with pytest.raises(ValueError):
+        factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_manifest,
+            config=input_config,
+        )
+
+
+def test_create_simple_retriever_raise_error_properties_from_endpoint_defined_multiple_times():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+          type: DpathExtractor
+          field_path: ["extractor_path"]
+      record_filter:
+        type: RecordFilter
+        condition: "{{ record['id'] > stream_state['id'] }}"
+    requester:
+      type: HttpRequester
+      name: "{{ parameters['name'] }}"
+      url_base: "https://api.linkedin.com/rest/"
+      http_method: "GET"
+      path: "adAnalytics"
+      fetch_properties_from_endpoint:
+        type: PropertiesFromEndpoint
+        property_field_path: [ "name" ]
+        retriever:
+          type: SimpleRetriever
+          requester:
+            type: HttpRequester
+            url_base: https://api.hubapi.com
+            path: "/properties/v2/dynamics/properties"
+            http_method: GET
+          record_selector:
+            type: RecordSelector
+            extractor:
+              type: DpathExtractor
+              field_path: []
+      request_parameters:
+        properties:
+          type: QueryProperties
+          property_list:
+            - first_name
+            - last_name
+            - status
+            - organization
+            - created_at
+          always_include_properties:
+            - id
+          property_chunking:
+            type: PropertyChunking
+            property_limit_type: property_count
+            property_limit: 3
+            record_merge_strategy:
+              type: GroupByKeyMergeStrategy
+              key: ["id"]
+        nonary: "{{config['nonary'] }}"
     analytics_stream:
       type: DeclarativeStream
       incremental_sync:

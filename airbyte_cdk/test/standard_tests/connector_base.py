@@ -25,7 +25,7 @@ from airbyte_cdk.test.standard_tests.docker_connectors import DockerConnector
 from airbyte_cdk.test.standard_tests.models import (
     ConnectorTestScenario,
 )
-from airbyte_cdk.test.standard_tests.test_resources import (
+from airbyte_cdk.utils.connector_paths import (
     ACCEPTANCE_TEST_CONFIG,
     find_connector_root,
 )
