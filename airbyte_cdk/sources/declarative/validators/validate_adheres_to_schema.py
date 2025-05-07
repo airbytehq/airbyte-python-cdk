@@ -1,9 +1,9 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Mapping
 
 import jsonschema
 
@@ -16,7 +16,7 @@ class ValidateAdheresToSchema(ValidationStrategy):
     Validates that a value adheres to a specified JSON schema.
     """
 
-    schema: dict[str, Any]
+    schema: Mapping[str, Any]
 
     def validate(self, value: Any) -> None:
         """

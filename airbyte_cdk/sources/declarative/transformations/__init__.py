@@ -12,7 +12,6 @@ from .transformation import RecordTransformation
 
 # isort: split
 from .add_fields import AddFields
-from .remap_field import RemapField
 from .remove_fields import RemoveFields
 
 __all__ = ["AddFields", "RecordTransformation", "RemapField", "RemoveFields"]
