@@ -64,11 +64,18 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             test_scenario=scenario,
         )
 
-    def test_spec(
-        self,
-        # scenario: ConnectorTestScenario,  # No inputs needed for spec test
-    ) -> None:
-        """Standard test for `spec`."""
+    def test_spec(self) -> None:
+        """Standard test for `spec`.
+
+        This test does not require a `scenario` input, since `spec`
+        does not require any inputs.
+        
+        We assume `spec` should always succeed and it should always generate 
+        a valid `SPEC` message.
+
+        Note: the parsing of messages by type also implicitly validates that
+        the generated `SPEC` message is valid JSON.
+        """
         result = run_test_job(
             verb="spec",
             test_scenario=None,
