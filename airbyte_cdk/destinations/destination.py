@@ -14,11 +14,11 @@ import orjson
 from airbyte_cdk.connector import Connector
 from airbyte_cdk.exception_handler import init_uncaught_exception_handler
 from airbyte_cdk.models import (
-    AirbyteCatalog,
     AirbyteMessage,
     AirbyteMessageSerializer,
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteCatalogSerializer,
+    DestinationCatalog,
     Type,
 )
 from airbyte_cdk.sources.utils.schema_helpers import check_config_against_spec_or_exit
@@ -92,7 +92,7 @@ def parse_args(args: List[str]) -> argparse.Namespace:
 class Destination(Connector, ABC):
     VALID_CMDS = {"spec", "check", "discover", "write"}
 
-    def discover(self) -> AirbyteCatalog:
+    def discover(self) -> DestinationCatalog:
         """Implement to define what objects are available in the destination"""
         raise NotImplementedError("Discover method is not implemented")
 
@@ -162,7 +162,7 @@ class Destination(Connector, ABC):
         if cmd == "check":
             yield self._run_check(config=config)
         elif cmd == "discover":
-            yield AirbyteMessage(type=Type.CATALOG, catalog=self.discover())
+            yield AirbyteMessage(type=Type.DESTINATION_CATALOG, destination_catalog=self.discover())
         elif cmd == "write":
             # Wrap in UTF-8 to override any other input encodings
             wrapped_stdin = io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8")

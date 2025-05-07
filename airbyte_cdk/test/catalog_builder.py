@@ -66,7 +66,7 @@ class CatalogBuilder:
     def with_stream(
         self,
         name: Union[str, ConfiguredAirbyteStreamBuilder],
-        sync_mode: Union[SyncMode, None] = None,
+        sync_mode: SyncMode = SyncMode.full_refresh,
     ) -> "CatalogBuilder":
         # As we are introducing a fully fledge ConfiguredAirbyteStreamBuilder, we would like to deprecate the previous interface
         # with_stream(str, SyncMode)
