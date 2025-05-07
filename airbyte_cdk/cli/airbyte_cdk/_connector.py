@@ -182,6 +182,7 @@ def test(
         pytest_args.append("--collect-only")
 
     if use_docker_image:
+        click.echo(f"Using Docker-based test runner...")
         pytest_args.append("--use-docker-image")
         if isinstance(use_docker_image, str):
             pytest_args.append(

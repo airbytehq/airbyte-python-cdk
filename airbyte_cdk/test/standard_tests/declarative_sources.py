@@ -65,6 +65,7 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
     def create_connector(
         cls,
         scenario: ConnectorTestScenario,
+        *,
         use_docker_image: str | bool,
     ) -> IConnector:
         """Create a connector scenario for the test suite.

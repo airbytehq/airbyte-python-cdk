@@ -156,6 +156,7 @@ class ConnectorTestSuiteBase(abc.ABC):
     def test_check(
         self,
         scenario: ConnectorTestScenario,
+        *,
         use_docker_image: str | bool,
     ) -> None:
         """Run `connection` acceptance tests."""

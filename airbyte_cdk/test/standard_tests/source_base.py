@@ -32,6 +32,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
     def test_check(
         self,
         scenario: ConnectorTestScenario,
+        *,
         use_docker_image: str | bool,
     ) -> None:
         """Run standard `check` tests on the connector.
@@ -60,6 +61,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
     def test_discover(
         self,
         scenario: ConnectorTestScenario,
+        *,
         use_docker_image: str | bool,
     ) -> None:
         """Standard test for `discover`."""
@@ -75,6 +77,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
     def test_basic_read(
         self,
         scenario: ConnectorTestScenario,
+        *,
         use_docker_image: str | bool,
     ) -> None:
         """Run standard `read` test on the connector.
@@ -122,6 +125,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
     def test_fail_read_with_bad_catalog(
         self,
         scenario: ConnectorTestScenario,
+        *,
         use_docker_image: str | bool,
     ) -> None:
         """Standard test for `read` when passed a bad catalog file."""

@@ -16,11 +16,6 @@ import requests
 
 from airbyte_cdk.models.connector_metadata import ConnectorLanguage, MetadataFile
 from airbyte_cdk.utils.connector_paths import resolve_airbyte_repo_root
-from airbyte_cdk.utils.docker_image_templates import (
-    DOCKERIGNORE_TEMPLATE,
-    MANIFEST_ONLY_DOCKERFILE_TEMPLATE,
-    PYTHON_CONNECTOR_DOCKERFILE_TEMPLATE,
-)
 
 
 @dataclass(kw_only=True)

@@ -43,7 +43,6 @@ def image_cli_group() -> None:
 )
 def build(
     connector: str | None = None,
-    connector_directory: Path | None = None,
     *,
     tag: str = "dev",
     no_verify: bool = False,
