@@ -152,7 +152,8 @@ from airbyte_cdk.sources.declarative.retrievers import (
     SimpleRetriever,
     SimpleRetrieverTestReadDecorator,
 )
-from airbyte_cdk.sources.declarative.schema import JsonFileSchemaLoader
+from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader, JsonFileSchemaLoader
+from airbyte_cdk.sources.declarative.schema.composite_schema_loader import CompositeSchemaLoader
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
 from airbyte_cdk.sources.declarative.spec import Spec
 from airbyte_cdk.sources.declarative.transformations import AddFields, RemoveFields
@@ -4561,3 +4562,71 @@ def test_create_property_chunking_invalid_property_limit_type():
             component_definition=property_chunking_model,
             config={},
         )
+
+
+def test_create_stream_with_multiple_schema_loaders():
+    content = """
+    retriever:
+      requester:
+        type: "HttpRequester"
+        path: "example"
+      record_selector:
+        extractor:
+          field_path: []
+    stream_A:
+      type: DeclarativeStream
+      name: "A"
+      primary_key: "id"
+      schema_loader:
+        - type: InlineSchemaLoader
+          schema:
+            "#/schemas/first_schema"
+        - type: InlineSchemaLoader
+          schema:
+            "#/schemas/second_schema"
+      $parameters:
+        retriever: "#/retriever"
+        url_base: "https://airbyte.io"
+    schemas:
+      first_schema:
+        $schema: "http://json-schema.org/draft-07/schema"
+        type:
+          - "null"
+          - object
+        additionalProperties: true
+        properties:
+          id:
+            description: The user ID
+            type:
+              - "null"
+              - string
+      second_schema:
+        $schema: "http://json-schema.org/draft-07/schema"
+        type:
+          - "null"
+          - object
+        additionalProperties: true
+        properties:
+          name:
+            description: The user name
+            type:
+              - "null"
+              - string
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["stream_A"], {}
+    )
+
+    declarative_stream = factory.create_component(
+        model_type=DeclarativeStreamModel,
+        component_definition=partition_router_manifest,
+        config=input_config,
+    )
+
+    schema_loader = declarative_stream.schema_loader
+    assert isinstance(schema_loader, CompositeSchemaLoader)
+    assert len(schema_loader.schema_loaders) == 2
+    assert isinstance(schema_loader.schema_loaders[0], InlineSchemaLoader)
+    assert isinstance(schema_loader.schema_loaders[1], InlineSchemaLoader)
