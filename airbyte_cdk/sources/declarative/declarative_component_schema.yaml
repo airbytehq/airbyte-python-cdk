@@ -3803,6 +3803,33 @@ definitions:
         title: Advanced Auth
         description: Advanced specification for configuring the authentication flow.
         "$ref": "#/definitions/AuthFlow"
+      config_normalization_rules:
+        title: Config Normalization Rules
+        type: object
+        additional_properties: false
+        properties:
+          config_migrations:
+            title: Config Migrations
+            description: The config will be migrated according to these transformations and updated within the platform for subsequent syncs.
+            type: array
+            items:
+              anyOf:
+                - "$ref": '#/definitions/ConfigTransformations/RemapField'
+          transformations:
+            title: Transformations
+            description: The list of transformations that will be applied on the incoming config at the start of a sync.
+            type: array
+            items:
+              anyOf:
+                - "$ref": '#/definitions/ConfigTransformations/RemapField'
+          validations:
+            title: Validations
+            description: The list of validations that will be performed on the incoming config before starting a sync
+            type: array
+            items:
+              anyOf:
+                - "$ref": "#/definitions/DpathValidator"
+                - "$ref": "#/definitions/PredicateValidator"
   SubstreamPartitionRouter:
     title: Substream Partition Router
     description: Partition router that is used to retrieve records that have been partitioned according to records from the specified parent streams. An example of a parent stream is automobile brands and the substream would be the various car models associated with each branch.
@@ -4164,6 +4191,159 @@ definitions:
         description: The GraphQL query to be executed
         default: {}
     additionalProperties: true
+  DpathValidator:
+    title: Dpath Validator
+    description: Validator that extracts the value located at a given field path.
+    type: object
+    required:
+      - type
+      - field_path
+      - validation_strategy
+    properties:
+      type:
+        type: string
+        enum: [ DpathValidation ]
+      field_path:
+        title: Field Path
+        description: List of potentially nested fields describing the full path of the field to validate. Use "*" to validate all values from an array.
+        type: array
+        items:
+          type: string
+        interpolation_context:
+          - config
+        examples:
+          - [ "data" ]
+          - [ "data", "records" ]
+          - [ "data", "{{ parameters.name }}" ]
+          - [ "data", "*", "record" ]
+      validation_strategy:
+        title: Validation Stragey
+        description: The condition that the specified config value will be evaluated against
+        anyOf:
+          - "$ref": "#/definitions/ValidateAdheresToSchema"
+  PredicateValidator:
+    title: Predicate Validator
+    description: Validator that applies a validation strategy to a specified value.
+    type: object
+    required:
+      - type
+      - value
+      - validation_strategy
+    properties:
+      type:
+        type: string
+        enum: [PredicateValidator]
+      value:
+        title: Value
+        description: The value to be validated. Can be a literal value or interpolated from configuration.
+        type:
+          - string
+          - number
+          - object
+          - array
+          - boolean
+          - "null"
+        interpolation_context:
+          - config
+        examples:
+          - "test-value"
+          - "{{ config['api_version'] }}"
+          - "{{ config['tenant_id'] }}"
+          - 123
+      validation_strategy:
+        title: Validation Strategy
+        description: The validation strategy to apply to the value.
+        anyOf:
+          - "$ref": "#/definitions/ValidateAdheresToSchema"
+  ValidateAdheresToSchema:
+    title: Validate Adheres To Schema
+    description: Validates that a user-provided schema adheres to a specified JSON schema.
+    type: object
+    required:
+      - type
+      - schema
+    properties:
+      type:
+        type: string
+        enum: [ValidateAdheresToSchema]
+      schema:
+        title: JSON Schema
+        description: The JSON schema used for validation.
+        type:
+          - string
+          - object
+        interpolation_context:
+          - config
+        examples:
+          - "{{ config['report_validation_schema'] }}"
+          - |
+            '{
+              "$schema": "http://json-schema.org/draft-07/schema#",
+              "title": "Person",
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "The person's name"
+                },
+                "age": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "The person's age"
+                }
+              },
+              "required": ["name", "age"]
+            }'
+          - $schema: "http://json-schema.org/draft-07/schema#"
+            title: Person
+            type: object
+            properties:
+              name:
+                type: string
+                description: "The person's name"
+              age:
+                type: integer
+                minimum: 0
+                description: "The person's age"
+            required:
+              - name
+              - age
+  ConfigTransformations:
+    RemapField:
+      title: Remap Field
+      description: Transformation that remaps a field's value to another value based on a static map.
+      type: object
+      required:
+        - type
+        - map
+        - field_path
+      properties:
+        type:
+          type: string
+          enum: [RemapField]
+        map:
+          title: Value Mapping
+          description: A mapping of original values to new values. When a field value matches a key in this map, it will be replaced with the corresponding value.
+          type:
+            - object
+            - string
+          additionalProperties: true
+          examples:
+            - pending: "in_progress"
+              done: "completed"
+              cancelled: "terminated"
+            - "{{ config['status_mapping'] }}"
+        field_path:
+          title: Field Path
+          description: The path to the field whose value should be remapped. Specified as a list of path components to navigate through nested objects.
+          type: array
+          items:
+            type: string
+          examples:
+            - ["status"]
+            - ["data", "status"]
+            - ["data", "{{ parameters.name }}", "status"]
+            - ["data", "*", "status"]
 interpolation:
   variables:
     - title: config

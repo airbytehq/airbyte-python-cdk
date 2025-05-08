@@ -3472,6 +3472,9 @@ class ModelToComponentFactory:
             documentation_url=model.documentation_url,
             advanced_auth=model.advanced_auth,
             parameters={},
+            config_migrations=model.config_normalization_rules.config_migrations,
+            transformations=model.config_normalization_rules.transformations,
+            validations=model.config_normalization_rules.validations,
         )
 
     def create_substream_partition_router(

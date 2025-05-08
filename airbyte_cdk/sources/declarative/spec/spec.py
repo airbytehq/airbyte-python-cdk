@@ -3,14 +3,21 @@
 #
 
 from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional
+import json
+from typing import Any, List, Mapping, MutableMapping, Optional
 
+from airbyte_cdk.config_observation import create_connector_config_control_message
+from airbyte_cdk.entrypoint import AirbyteEntrypoint
 from airbyte_cdk.models import (
     AdvancedAuth,
     ConnectorSpecification,
     ConnectorSpecificationSerializer,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import AuthFlow
+from airbyte_cdk.sources.declarative.transformations.config_transformations.config_transformation import ConfigTransformation
+from airbyte_cdk.sources.declarative.validators.validator import Validator
+from airbyte_cdk.sources.message.repository import InMemoryMessageRepository, MessageRepository
+from airbyte_cdk.sources.source import Source
 
 
 @dataclass
@@ -27,6 +34,10 @@ class Spec:
     parameters: InitVar[Mapping[str, Any]]
     documentation_url: Optional[str] = None
     advanced_auth: Optional[AuthFlow] = None
+    config_migrations: Optional[List[ConfigTransformation]] = None
+    config_transformations: Optional[List[ConfigTransformation]] = None
+    config_validations: Optional[List[Validator]] = None
+    message_repository: MessageRepository = InMemoryMessageRepository()
 
     def generate_spec(self) -> ConnectorSpecification:
         """
@@ -46,3 +57,49 @@ class Spec:
 
         # We remap these keys to camel case because that's the existing format expected by the rest of the platform
         return ConnectorSpecificationSerializer.load(obj)
+
+    def migrate_config(self, args: List[str], source: Source, config: MutableMapping[str, Any]) -> None:
+        """
+        Apply all specified config transformations to the provided config and save the modified config to the given path and emit a control message.
+
+        :param args: Command line arguments
+        :param source: Source instance
+        :param config: The user-provided config to migrate
+        """
+        config_path = AirbyteEntrypoint(source).extract_config(args)
+
+        mutable_config = dict(config)
+        for transformation in self.config_migrations:
+            transformation.transform(mutable_config)
+
+        if mutable_config != config:
+            with open(config_path, "w") as f:
+                json.dump(mutable_config, f)
+            self.message_repository.emit_message(create_connector_config_control_message(mutable_config))
+            for message in self.message_repository.consume_queue():
+                print(message.json(exclude_unset=True))
+
+
+    def transform_config(self, config: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
+        """
+        Apply all config transformations to the provided config.
+
+        :param config: The user-provided configuration
+        :return: The transformed configuration
+        """
+        mutable_config = dict(config)
+
+        for transformation in self.config_transformations:
+            transformation.transform(mutable_config)
+
+        return mutable_config
+
+
+    def validate_config(self, config: MutableMapping[str, Any]) -> None:
+        """
+        Apply all config validations to the provided config.
+
+        :param config: The user-provided configuration
+        """
+        for validator in self.config_validations:
+            validator.validate(config)
