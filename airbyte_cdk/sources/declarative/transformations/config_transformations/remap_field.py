@@ -21,6 +21,8 @@ class RemapField(ConfigTransformation):
     field_path: List[Union[InterpolatedString, str]]
 
     def __post_init__(self) -> None:
+        if not self.field_path:
+            raise Exception("field_path cannot be empty.")
         self._field_path = [
             InterpolatedString.create(path, parameters={}) for path in self.field_path
         ]
