@@ -43,7 +43,7 @@ from click import style
 from rich.console import Console
 from rich.table import Table
 
-from airbyte_cdk.cli.airbyte_cdk._util import (
+from airbyte_cdk.utils.connector_paths import (
     resolve_connector_name,
     resolve_connector_name_and_directory,
 )
@@ -73,15 +73,11 @@ def secrets_cli_group() -> None:
 
 
 @secrets_cli_group.command()
-@click.option(
-    "--connector-name",
+@click.argument(
+    "connector",
+    required=False,
     type=str,
-    help="Name of the connector to fetch secrets for. Ignored if --connector-directory is provided.",
-)
-@click.option(
-    "--connector-directory",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="Path to the connector directory.",
+    metavar="[CONNECTOR]",
 )
 @click.option(
     "--gcp-project-id",
@@ -97,8 +93,7 @@ def secrets_cli_group() -> None:
     default=False,
 )
 def fetch(
-    connector_name: str | None = None,
-    connector_directory: Path | None = None,
+    connector: str | Path | None = None,
     gcp_project_id: str = AIRBYTE_INTERNAL_GCP_PROJECT,
     print_ci_secrets_masks: bool = False,
 ) -> None:
@@ -107,6 +102,9 @@ def fetch(
     This command fetches secrets for a connector from Google Secret Manager and writes them
     to the connector's secrets directory.
 
+    [CONNECTOR] can be a connector name (e.g. 'source-pokeapi'), a path to a connector directory, or omitted to use the current working directory.
+    If a string containing '/' is provided, it is treated as a path. Otherwise, it is treated as a connector name.
+
     If no connector name or directory is provided, we will look within the current working
     directory. If the current working directory is not a connector directory (e.g. starting
     with 'source-') and no connector name or path is provided, the process will fail.
@@ -114,17 +112,14 @@ def fetch(
     The `--print-ci-secrets-masks` option will print the GitHub CI mask for the secrets.
     This is useful for masking secrets in CI logs.
 
-    WARNING: This action causes the secrets to be printed in clear text to `STDOUT`. For security
-    reasons, this function will only execute if the `CI` environment variable is set. Otherwise,
-    masks will not be printed.
+    WARNING: The `--print-ci-secrets-masks` option causes the secrets to be printed in clear text to
+    `STDOUT`. For security reasons, this argument will be ignored if the `CI` environment
+    variable is not set.
     """
     click.echo("Fetching secrets...", err=True)
 
     client = _get_gsm_secrets_client()
-    connector_name, connector_directory = resolve_connector_name_and_directory(
-        connector_name=connector_name,
-        connector_directory=connector_directory,
-    )
+    connector_name, connector_directory = resolve_connector_name_and_directory(connector)
     secrets_dir = _get_secrets_dir(
         connector_directory=connector_directory,
         connector_name=connector_name,
@@ -289,21 +284,7 @@ def _get_secrets_dir(
     connector_name: str,
     ensure_exists: bool = True,
 ) -> Path:
-    try:
-        connector_name, connector_directory = resolve_connector_name_and_directory(
-            connector_name=connector_name,
-            connector_directory=connector_directory,
-        )
-    except FileNotFoundError as e:
-        raise FileNotFoundError(
-            f"Could not find connector directory for '{connector_name}'. "
-            "Please provide the --connector-directory option with the path to the connector. "
-            "Note: This command requires either running from within a connector directory, "
-            "being in the airbyte monorepo, or explicitly providing the connector directory path."
-        ) from e
-    except ValueError as e:
-        raise ValueError(str(e))
-
+    _ = connector_name  # Unused, but it may be used in the future for logging
     secrets_dir = connector_directory / "secrets"
     if ensure_exists:
         secrets_dir.mkdir(parents=True, exist_ok=True)

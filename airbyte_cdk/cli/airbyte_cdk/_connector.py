@@ -44,10 +44,13 @@ from types import ModuleType
 
 import rich_click as click
 
-# from airbyte_cdk.test.standard_tests import pytest_hooks
-from airbyte_cdk.cli.airbyte_cdk._util import resolve_connector_name_and_directory
-from airbyte_cdk.test.standard_tests.test_resources import find_connector_root_from_name
 from airbyte_cdk.test.standard_tests.util import create_connector_test_suite
+
+# from airbyte_cdk.test.standard_tests import pytest_hooks
+from airbyte_cdk.utils.connector_paths import (
+    find_connector_root_from_name,
+    resolve_connector_name_and_directory,
+)
 
 click.rich_click.TEXT_MARKUP = "markdown"
 
@@ -63,7 +66,7 @@ except ImportError:
 
 TEST_FILE_TEMPLATE = '''
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
-"""FAST Airbyte Standard Tests for the source_pokeapi_w_components source."""
+"""FAST Airbyte Standard Tests for the {connector_name} source."""
 
 #from airbyte_cdk.test.standard_tests import {base_class_name}
 from airbyte_cdk.test.standard_tests.util import create_connector_test_suite
@@ -78,7 +81,7 @@ TestSuite = create_connector_test_suite(
 )
 
 # class TestSuite({base_class_name}):
-#     """Test suite for the source_pokeapi_w_components source.
+#     """Test suite for the {connector_name} source.
 
 #     This class inherits from SourceTestSuiteBase and implements all of the tests in the suite.
 
@@ -98,15 +101,11 @@ def connector_cli_group() -> None:
 
 
 @connector_cli_group.command()
-@click.option(
-    "--connector-name",
+@click.argument(
+    "connector",
+    required=False,
     type=str,
-    help="Name of the connector to test. Ignored if --connector-directory is provided.",
-)
-@click.option(
-    "--connector-directory",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="Path to the connector directory.",
+    metavar="[CONNECTOR]",
 )
 @click.option(
     "--collect-only",
@@ -115,14 +114,16 @@ def connector_cli_group() -> None:
     help="Only collect tests, do not run them.",
 )
 def test(
-    connector_name: str | None = None,
-    connector_directory: Path | None = None,
+    connector: str | Path | None = None,
     *,
     collect_only: bool = False,
 ) -> None:
     """Run connector tests.
 
     This command runs the standard connector tests for a specific connector.
+
+    [CONNECTOR] can be a connector name (e.g. 'source-pokeapi'), a path to a connector directory, or omitted to use the current working directory.
+    If a string containing '/' is provided, it is treated as a path. Otherwise, it is treated as a connector name.
 
     If no connector name or directory is provided, we will look within the current working
     directory. If the current working directory is not a connector directory (e.g. starting
@@ -133,10 +134,7 @@ def test(
             "pytest is not installed. Please install pytest to run the connector tests."
         )
     click.echo("Connector test command executed.")
-    connector_name, connector_directory = resolve_connector_name_and_directory(
-        connector_name=connector_name,
-        connector_directory=connector_directory,
-    )
+    connector_name, connector_directory = resolve_connector_name_and_directory(connector)
 
     connector_test_suite = create_connector_test_suite(
         connector_name=connector_name if not connector_directory else None,
@@ -152,7 +150,7 @@ def test(
 
     file_text = TEST_FILE_TEMPLATE.format(
         base_class_name=connector_test_suite.__bases__[0].__name__,
-        connector_directory=str(connector_directory),
+        connector_name=connector_name,
     )
     test_file_path = Path() / ".tmp" / "integration_tests/test_airbyte_standards.py"
     test_file_path = test_file_path.resolve().absolute()
