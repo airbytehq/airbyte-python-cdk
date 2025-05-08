@@ -8,14 +8,14 @@ import logging.config
 from typing import Any, Callable, Mapping, Optional, Tuple
 
 import orjson
-
-from airbyte_cdk.models import (
+from airbyte_protocol_dataclasses.models import (
     AirbyteLogMessage,
     AirbyteMessage,
-    AirbyteMessageSerializer,
     Level,
     Type,
 )
+
+from airbyte_cdk.models import AirbyteMessageSerializer
 from airbyte_cdk.utils import PrintBuffer
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 
