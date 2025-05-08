@@ -3,7 +3,7 @@
 #
 
 from dataclasses import dataclass
-from typing import Any, List, Mapping, Union
+from typing import Any, List, Mapping, MutableMapping, Union
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.transformations.config_transformations.config_transformation import (
@@ -34,7 +34,7 @@ class RemapField(ConfigTransformation):
 
     def transform(
         self,
-        config: Mapping[str, Any],
+        config: MutableMapping[str, Any],
     ) -> None:
         """
         Transforms a config by remapping a field value based on the provided map.
