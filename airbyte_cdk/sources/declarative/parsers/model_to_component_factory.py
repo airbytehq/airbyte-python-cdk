@@ -1915,17 +1915,25 @@ class ModelToComponentFactory:
         else:
             state_transformations = []
 
+        schema_loader: Union[
+            CompositeSchemaLoader,
+            DefaultSchemaLoader,
+            DynamicSchemaLoader,
+            InlineSchemaLoader,
+            JsonFileSchemaLoader,
+        ]
         if model.schema_loader and isinstance(model.schema_loader, list):
             nested_schema_loaders = [
-                self._create_component_from_model(model=schema_loader, config=config)
-                for schema_loader in model.schema_loader
+                self._create_component_from_model(model=nested_schema_loader, config=config)
+                for nested_schema_loader in model.schema_loader
             ]
             schema_loader = CompositeSchemaLoader(
                 schema_loaders=nested_schema_loaders, parameters={}
             )
         elif model.schema_loader:
             schema_loader = self._create_component_from_model(
-                model=model.schema_loader, config=config
+                model=model.schema_loader,  # type: ignore # If defined, schema_loader is guaranteed not to be a list and will be one of the existing base models
+                config=config,
             )
         else:
             options = model.parameters or {}
