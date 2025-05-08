@@ -2,8 +2,8 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
-from dataclasses import dataclass
 import json
+from dataclasses import dataclass
 from typing import Any, Mapping
 
 import jsonschema
