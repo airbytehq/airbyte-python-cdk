@@ -114,9 +114,17 @@ class TestValidateAdheresToSchema(TestCase):
 
         validator = ValidateAdheresToSchema(schema=empty_schema)
 
-        validator.validate(123)
-        validator.validate("string value")
         validator.validate({"complex": "object"})
-        validator.validate([1, 2, 3])
-        validator.validate(None)
-        validator.validate(True)
+
+    def test_given_json_string_when_validate_then_succeeds(self):
+        schema = {
+            "type": "object",
+            "properties": {
+                "id": {"type": "integer"},
+                "name": {"type": "string"},
+            },
+        }
+
+        validator = ValidateAdheresToSchema(schema=schema)
+
+        validator.validate('{"id": 1, "name": "John Doe"}')
