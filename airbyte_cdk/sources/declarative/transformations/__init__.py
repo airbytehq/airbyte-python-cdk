@@ -14,4 +14,4 @@ from .transformation import RecordTransformation
 from .add_fields import AddFields
 from .remove_fields import RemoveFields
 
-__all__ = ["AddFields", "RecordTransformation", "RemapField", "RemoveFields"]
+__all__ = ["AddFields", "RecordTransformation", "RemoveFields"]
