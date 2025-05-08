@@ -1,5 +1,6 @@
-import pytest
 from unittest import TestCase
+
+import pytest
 
 from airbyte_cdk.sources.declarative.validators.predicate_validator import PredicateValidator
 from airbyte_cdk.sources.declarative.validators.validation_strategy import ValidationStrategy

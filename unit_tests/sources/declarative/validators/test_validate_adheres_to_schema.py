@@ -1,6 +1,7 @@
-import pytest
-import jsonschema
 from unittest import TestCase
+
+import jsonschema
+import pytest
 
 from airbyte_cdk.sources.declarative.validators.validate_adheres_to_schema import (
     ValidateAdheresToSchema,

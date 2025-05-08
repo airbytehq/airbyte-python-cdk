@@ -1,5 +1,6 @@
-import pytest
 from unittest import TestCase
+
+import pytest
 
 from airbyte_cdk.sources.declarative.validators.dpath_validator import DpathValidator
 from airbyte_cdk.sources.declarative.validators.validation_strategy import ValidationStrategy

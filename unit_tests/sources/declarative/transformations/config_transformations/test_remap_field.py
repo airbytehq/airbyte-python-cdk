@@ -1,6 +1,7 @@
-import pytest
-from unittest import TestCase
 from copy import deepcopy
+from unittest import TestCase
+
+import pytest
 
 from airbyte_cdk.sources.declarative.transformations.config_transformations.remap_field import (
     RemapField,

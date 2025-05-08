@@ -8,8 +8,8 @@ from typing import Any, List, Union
 import dpath.util
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
-from airbyte_cdk.sources.declarative.validators.validator import Validator
 from airbyte_cdk.sources.declarative.validators.validation_strategy import ValidationStrategy
+from airbyte_cdk.sources.declarative.validators.validator import Validator
 
 
 @dataclass
