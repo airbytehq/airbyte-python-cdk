@@ -242,6 +242,10 @@ class ConcurrentPerPartitionCursor(Cursor):
             if current_time is None:
                 return
             self._last_emission_time = current_time
+            # Skip state emit for global cursor if parent state is empty
+            if self._use_global_cursor and not self._parent_state:
+                return
+
         self._connector_state_manager.update_state_for_stream(
             self._stream_name,
             self._stream_namespace,

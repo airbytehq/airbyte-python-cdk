@@ -1483,7 +1483,6 @@ class ModelToComponentFactory:
             )
         )
         stream_state = self.apply_stream_state_migrations(stream_state_migrations, stream_state)
-
         # Per-partition state doesn't make sense for GroupingPartitionRouter, so force the global state
         use_global_cursor = isinstance(
             partition_router, GroupingPartitionRouter
