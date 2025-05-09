@@ -21,7 +21,7 @@ class ConfiguredAirbyteStreamBuilder:
                 "supported_sync_modes": ["full_refresh", "incremental"],
                 "source_defined_primary_key": [["id"]],
             },
-            "primary_key": [["id"]],
+            "primary_key": None,
             "sync_mode": "full_refresh",
             "destination_sync_mode": "overwrite",
         }
@@ -38,6 +38,10 @@ class ConfiguredAirbyteStreamBuilder:
         self, sync_mode: DestinationSyncMode
     ) -> "ConfiguredAirbyteStreamBuilder":
         self._stream["destination_sync_mode"] = sync_mode.name
+        return self
+
+    def with_destination_object_name(self, name: str) -> "ConfiguredAirbyteStreamBuilder":
+        self._stream["destination_object_name"] = name
         return self
 
     def with_primary_key(self, pk: List[List[str]]) -> "ConfiguredAirbyteStreamBuilder":
