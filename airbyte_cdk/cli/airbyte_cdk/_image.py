@@ -10,8 +10,8 @@ from pathlib import Path
 
 import rich_click as click
 
-from airbyte_cdk.cli.airbyte_cdk._util import resolve_connector_name_and_directory
 from airbyte_cdk.models.connector_metadata import MetadataFile
+from airbyte_cdk.utils.connector_paths import resolve_connector_name_and_directory
 from airbyte_cdk.utils.docker import (
     ConnectorImageBuildError,
     build_connector_image,
@@ -28,30 +28,30 @@ def image_cli_group() -> None:
 
 
 @image_cli_group.command()
-@click.option(
-    "--connector-name",
+@click.argument(
+    "connector",
+    required=False,
     type=str,
-    help="Name of the connector to test. Ignored if --connector-directory is provided.",
-)
-@click.option(
-    "--connector-directory",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="Path to the connector directory.",
+    metavar="[CONNECTOR]",
 )
 @click.option("--tag", default="dev", help="Tag to apply to the built image (default: dev)")
 @click.option("--no-verify", is_flag=True, help="Skip verification of the built image")
+@click.option(
+    "--dockerfile",
+    type=click.Path(exists=True, file_okay=True, path_type=Path),
+    help="Optional. Override the Dockerfile used for building the image.",
+)
 def build(
-    connector_name: str | None = None,
-    connector_directory: Path | None = None,
+    connector: str | None = None,
     *,
     tag: str = "dev",
     no_verify: bool = False,
+    dockerfile: Path | None = None,
 ) -> None:
     """Build a connector Docker image.
 
-    This command builds a Docker image for a connector, using either
-    the connector's Dockerfile or a base image specified in the metadata.
-    The image is built for both AMD64 and ARM64 architectures.
+    [CONNECTOR] can be a connector name (e.g. 'source-pokeapi'), a path to a connector directory, or omitted to use the current working directory.
+    If a string containing '/' is provided, it is treated as a path. Otherwise, it is treated as a connector name.
     """
     if not verify_docker_installation():
         click.echo(
@@ -59,10 +59,7 @@ def build(
         )
         sys.exit(1)
 
-    connector_name, connector_directory = resolve_connector_name_and_directory(
-        connector_name=connector_name,
-        connector_directory=connector_directory,
-    )
+    connector_name, connector_directory = resolve_connector_name_and_directory(connector)
 
     metadata_file_path: Path = connector_directory / "metadata.yaml"
     try:
@@ -81,6 +78,7 @@ def build(
             metadata=metadata,
             tag=tag,
             no_verify=no_verify,
+            dockerfile_override=dockerfile or None,
         )
     except ConnectorImageBuildError as e:
         click.echo(

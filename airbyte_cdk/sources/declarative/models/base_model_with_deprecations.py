@@ -4,6 +4,10 @@
 # WHEN DEPRECATED FIELDS ARE ACCESSED
 
 import warnings
+
+# ignore the SyntaxWarning in the Airbyte log messages, during the string evaluation
+warnings.filterwarnings("ignore", category=SyntaxWarning)
+
 from typing import Any, List
 
 from pydantic.v1 import BaseModel
@@ -12,8 +16,9 @@ from airbyte_cdk.connector_builder.models import LogMessage as ConnectorBuilderL
 
 # format the warning message
 warnings.formatwarning = (
-    lambda message, category, *args, **kwargs: f"{category.__name__}: {message}"
+    lambda message, category, *args, **kwargs: f"{category.__name__}: {message}\n"
 )
+
 
 FIELDS_TAG = "__fields__"
 DEPRECATED = "deprecated"

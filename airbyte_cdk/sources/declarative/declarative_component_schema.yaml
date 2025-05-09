@@ -1421,12 +1421,22 @@ definitions:
         default: ""
       schema_loader:
         title: Schema Loader
-        description: Component used to retrieve the schema for the current stream.
+        description:
+          One or many schema loaders can be used to retrieve the schema for the current stream. When
+          multiple schema loaders are defined, schema properties will be merged together. Schema
+          loaders defined first taking precedence in the event of a conflict.
         anyOf:
           - "$ref": "#/definitions/InlineSchemaLoader"
           - "$ref": "#/definitions/DynamicSchemaLoader"
           - "$ref": "#/definitions/JsonFileSchemaLoader"
           - "$ref": "#/definitions/CustomSchemaLoader"
+          - type: array
+            items:
+              anyOf:
+                - "$ref": "#/definitions/InlineSchemaLoader"
+                - "$ref": "#/definitions/DynamicSchemaLoader"
+                - "$ref": "#/definitions/JsonFileSchemaLoader"
+                - "$ref": "#/definitions/CustomSchemaLoader"
       # TODO we have move the transformation to the RecordSelector level in the code but kept this here for
       # compatibility reason. We should eventually move this to align with the code.
       transformations:

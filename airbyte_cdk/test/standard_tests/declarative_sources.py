@@ -12,7 +12,7 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
 from airbyte_cdk.test.standard_tests._job_runner import IConnector
 from airbyte_cdk.test.standard_tests.models import ConnectorTestScenario
 from airbyte_cdk.test.standard_tests.source_base import SourceTestSuiteBase
-from airbyte_cdk.test.standard_tests.test_resources import MANIFEST_YAML
+from airbyte_cdk.utils.connector_paths import MANIFEST_YAML
 
 
 def md5_checksum(file_path: Path) -> str:
@@ -64,7 +64,7 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
     @classmethod
     def create_connector(
         cls,
-        scenario: ConnectorTestScenario,
+        scenario: ConnectorTestScenario | None,
     ) -> IConnector:
         """Create a connector scenario for the test suite.
 
@@ -73,9 +73,13 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
 
         Subclasses should not need to override this method.
         """
-        config: dict[str, Any] = scenario.get_config_dict()
-
+        scenario = scenario or ConnectorTestScenario()  # Use default (empty) scenario if None
         manifest_dict = yaml.safe_load(cls.manifest_yaml_path.read_text())
+        config = {
+            "__injected_manifest": manifest_dict,
+        }
+        config.update(scenario.get_config_dict(empty_if_missing=True))
+
         if cls.components_py_path and cls.components_py_path.exists():
             os.environ["AIRBYTE_ENABLE_UNSAFE_CODE"] = "true"
             config["__injected_components_py"] = cls.components_py_path.read_text()

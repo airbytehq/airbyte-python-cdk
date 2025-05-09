@@ -32,7 +32,7 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     custom_code_execution_permitted,
     register_components_module_from_string,
 )
-from airbyte_cdk.test.standard_tests.test_resources import MANIFEST_YAML
+from airbyte_cdk.utils.connector_paths import MANIFEST_YAML
 
 SAMPLE_COMPONENTS_PY_TEXT = """
 def sample_function() -> str:
