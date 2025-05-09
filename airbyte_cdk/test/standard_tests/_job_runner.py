@@ -4,15 +4,18 @@
 import logging
 import tempfile
 import uuid
+from abc import abstractmethod
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 import orjson
 from typing_extensions import Protocol, runtime_checkable
 
 from airbyte_cdk.models import (
     ConfiguredAirbyteCatalog,
+    ConnectorSpecification,
     Status,
 )
 from airbyte_cdk.test import entrypoint_wrapper
@@ -50,8 +53,10 @@ class IConnector(Protocol):
     directly on the connector (which doesn't yet exist).
     """
 
-    def spec(self, logger: logging.Logger) -> Any:
+    @abstractmethod
+    def spec(self, logger: logging.Logger) -> ConnectorSpecification:
         """Connectors should have a `spec` method."""
+        ...
 
 
 def run_test_job(

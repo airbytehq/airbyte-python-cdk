@@ -16,6 +16,23 @@ pytest_plugins = [
 import pytest
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    parser.addoption(
+        "--use-docker-image",
+        action="store",
+        dest="use_docker_image",
+        metavar="IMAGE",
+        default=None,
+        help="test connector containerized",
+    )
+
+
+@pytest.fixture
+def use_docker_image(request):
+    """True if pytest was invoked with --use-docker-image."""
+    return request.config.getoption("use_docker_image")
+
+
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     """
     A helper for pytest_generate_tests hook.
@@ -42,12 +59,18 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
     ```
     """
     # Check if the test function requires an 'scenario' argument
-    if "scenario" in metafunc.fixturenames:
-        # Retrieve the test class
-        test_class = metafunc.cls
-        if test_class is None:
-            return
+    if "scenario" not in metafunc.fixturenames and "use_docker_image" not in metafunc.fixturenames:
+        return None
 
+    # Retrieve the test class
+    test_class = metafunc.cls
+    if test_class is None:
+        return
+
+    argnames: list[str] = []
+    argvalues: list[object] = []
+
+    if "scenario" in metafunc.fixturenames:
         # Get the 'scenarios' attribute from the class
         scenarios_attr = getattr(test_class, "get_scenarios", None)
         if scenarios_attr is None:
@@ -58,4 +81,17 @@ def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
 
         scenarios = test_class.get_scenarios()
         ids = [str(scenario) for scenario in scenarios]
+
+        # if "use_docker_image" not in metafunc.fixturenames:
+        #     raise ValueError(
+        #         "The 'use_docker_image' argument should be used in conjunction with 'scenario'. "
+        #         f"Metafunc: {metafunc.function}, Test class: {test_class!s}"
+        #     )
+
         metafunc.parametrize("scenario", scenarios, ids=ids)
+
+    # if "use_docker_image" in metafunc.fixturenames:
+    #     metafunc.parametrize(
+    #         "use_docker_image",
+    #         [metafunc.config.getoption("use_docker_image")],
+    #     )

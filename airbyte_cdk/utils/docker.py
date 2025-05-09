@@ -137,6 +137,7 @@ def _tag_image(
 def build_connector_image(
     connector_name: str,
     connector_directory: Path,
+    *,
     metadata: MetadataFile,
     tag: str,
     primary_arch: ArchEnum = ArchEnum.ARM64,  # Assume MacBook M series by default
@@ -163,8 +164,6 @@ def build_connector_image(
         ValueError: If the connector build options are not defined in metadata.yaml.
         ConnectorImageBuildError: If the image build or tag operation fails.
     """
-    connector_kebab_name = connector_name
-
     if dockerfile_override:
         dockerfile_path = dockerfile_override
     else:
@@ -210,7 +209,7 @@ def build_connector_image(
     base_image = metadata.data.connectorBuildOptions.baseImage
     build_args: dict[str, str | None] = {
         "BASE_IMAGE": base_image,
-        "CONNECTOR_NAME": connector_kebab_name,
+        "CONNECTOR_NAME": connector_name,
         "EXTRA_BUILD_SCRIPT": extra_build_script,
     }
 
