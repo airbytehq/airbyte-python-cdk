@@ -311,14 +311,16 @@ SUBSTREAM_MANIFEST_NO_DEPENDENCY["definitions"]["post_comment_votes_stream"]["re
 
 SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY = deepcopy(SUBSTREAM_MANIFEST)
 # Disable incremental_dependency
-SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY["definitions"]["post_comments_stream"]["retriever"][
-    "partition_router"
-]["parent_stream_configs"][0]["incremental_dependency"] = False
-SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY["definitions"]["post_comment_votes_stream"]["retriever"][
-    "partition_router"
-]["parent_stream_configs"][0]["incremental_dependency"] = False
+SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY["definitions"]["post_comments_stream"][
+    "retriever"
+]["partition_router"]["parent_stream_configs"][0]["incremental_dependency"] = False
+SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY["definitions"]["post_comment_votes_stream"][
+    "retriever"
+]["partition_router"]["parent_stream_configs"][0]["incremental_dependency"] = False
 # Enable global_cursor
-SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY["definitions"]["cursor_incremental_sync"]["global_substream_cursor"] = True
+SUBSTREAM_MANIFEST_WITH_GLOBAL_CURSOR_AND_NO_DEPENDENCY["definitions"]["cursor_incremental_sync"][
+    "global_substream_cursor"
+] = True
 
 
 import orjson
@@ -326,7 +328,14 @@ import requests_mock
 
 
 def run_mocked_test(
-    mock_requests, manifest, config, stream_name, initial_state, expected_records, expected_state, state_count = None
+    mock_requests,
+    manifest,
+    config,
+    stream_name,
+    initial_state,
+    expected_records,
+    expected_state,
+    state_count=None,
 ):
     """
     Helper function to mock requests, run the test, and verify the results.
