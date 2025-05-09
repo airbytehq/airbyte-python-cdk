@@ -23,9 +23,10 @@ from typing import (
     get_origin,
     get_type_hints,
 )
-from requests import  Response
+
 from isodate import parse_duration
 from pydantic.v1 import BaseModel
+from requests import Response
 
 from airbyte_cdk.connector_builder.models import (
     LogMessage as ConnectorBuilderLogMessage,
@@ -1484,7 +1485,6 @@ class ModelToComponentFactory:
             )
         )
         stream_state = self.apply_stream_state_migrations(stream_state_migrations, stream_state)
-
         # Per-partition state doesn't make sense for GroupingPartitionRouter, so force the global state
         use_global_cursor = isinstance(
             partition_router, GroupingPartitionRouter
@@ -2401,13 +2401,15 @@ class ModelToComponentFactory:
             stream_slicer=combined_slicers,
             transformations=[],
             use_cache=True,
-            log_formatter=(lambda response: format_http_message(
+            log_formatter=(
+                lambda response: format_http_message(
                     response,
                     f"Schema loader '{name}' request",
                     f"Request performed in order to extract schema.",
                     name,
                     is_auxiliary=True,
-                )),
+                )
+            ),
         )
         schema_type_identifier = self._create_component_from_model(
             model.schema_type_identifier, config=config, parameters=model.parameters or {}
