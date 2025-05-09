@@ -34,7 +34,7 @@ import logging
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, List, Optional, Tuple, cast
 
 import requests
 import rich_click as click
@@ -43,6 +43,7 @@ from click import style
 from rich.console import Console
 from rich.table import Table
 
+from airbyte_cdk.cli.airbyte_cdk.exceptions import ConnectorSecretWithNoValidVersionsError
 from airbyte_cdk.utils.connector_paths import (
     resolve_connector_name,
     resolve_connector_name_and_directory,
@@ -131,24 +132,51 @@ def fetch(
     )
     # Fetch and write secrets
     secret_count = 0
+    failed_secrets = []
+    failed_secret_urls = []
+    
     for secret in secrets:
         secret_file_path = _get_secret_filepath(
             secrets_dir=secrets_dir,
             secret=secret,
         )
-        _write_secret_file(
+        error = _write_secret_file(
             secret=secret,
             client=client,
             file_path=secret_file_path,
         )
-        click.echo(f"Secret written to: {secret_file_path.absolute()!s}", err=True)
-        secret_count += 1
+        
+        if error:
+            secret_name = secret.name.split("/secrets/")[-1]  # Removes project prefix
+            failed_secrets.append(secret_name)
+            secret_url = f"https://console.cloud.google.com/security/secret-manager/secret/{secret_name}/versions?hl=en&project={gcp_project_id}"
+            failed_secret_urls.append(secret_url)
+            click.echo(f"Failed to retrieve secret '{secret_name}': {error}", err=True)
+        else:
+            click.echo(f"Secret written to: {secret_file_path.absolute()!s}", err=True)
+            secret_count += 1
 
-    if secret_count == 0:
+    if secret_count == 0 and not failed_secrets:
         click.echo(
             f"No secrets found for connector: '{connector_name}'",
             err=True,
         )
+        
+    if failed_secrets:
+        error_message = f"Failed to retrieve {len(failed_secrets)} secret(s)"
+        click.echo(
+            style(
+                error_message,
+                fg="red",
+            ),
+            err=True,
+        )
+        if secret_count == 0:
+            raise ConnectorSecretWithNoValidVersionsError(
+                connector_name=connector_name,
+                secret_names=failed_secrets,
+                connector_secret_urls=failed_secret_urls,
+            )
 
     if not print_ci_secrets_masks:
         return
@@ -272,11 +300,37 @@ def _write_secret_file(
     secret: "Secret",  # type: ignore
     client: "secretmanager.SecretManagerServiceClient",  # type: ignore
     file_path: Path,
-) -> None:
-    version_name = f"{secret.name}/versions/latest"
-    response = client.access_secret_version(name=version_name)
+) -> Optional[str]:
+    """Write the most recent enabled version of a secret to a file.
+    
+    Lists all enabled versions of the secret and selects the most recent one.
+    Returns an error message if no enabled versions are found.
+    
+    Args:
+        secret: The secret to write to a file
+        client: The Secret Manager client
+        file_path: The path to write the secret to
+        
+    Returns:
+        Optional[str]: Error message if no enabled version is found, None otherwise
+    """
+    # List all enabled versions of the secret
+    response = client.list_secret_versions(
+        request={"parent": secret.name, "filter": "state:ENABLED"}
+    )
+    
+    versions = list(response)
+    
+    if not versions:
+        secret_name = secret.name.split("/secrets/")[-1]  # Removes project prefix
+        return f"No enabled version found for secret: {secret_name}"
+    
+    enabled_version = versions[0]
+    
+    response = client.access_secret_version(name=enabled_version.name)
     file_path.write_text(response.payload.data.decode("UTF-8"))
     file_path.chmod(0o600)  # default to owner read/write only
+    return None
 
 
 def _get_secrets_dir(
