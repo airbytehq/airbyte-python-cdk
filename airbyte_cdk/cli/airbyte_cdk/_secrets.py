@@ -269,9 +269,13 @@ def list_(
 def _get_secret_url(secret_name: str, gcp_project_id: str) -> str:
     """Generate a URL for a secret in the GCP Secret Manager console.
 
+    Note: This URL itself does not contain secrets or sensitive information.
+    The URL itself is only useful for valid logged-in users of the project, and it
+    safe to print this URL in logs.
+
     Args:
-        secret_name: The name of the secret
-        gcp_project_id: The GCP project ID
+        secret_name: The name of the secret in GCP.
+        gcp_project_id: The GCP project ID.
 
     Returns:
         str: URL to the secret in the GCP console
