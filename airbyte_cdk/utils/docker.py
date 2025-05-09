@@ -12,14 +12,10 @@ from enum import Enum
 from pathlib import Path
 
 import click
+import requests
 
 from airbyte_cdk.models.connector_metadata import ConnectorLanguage, MetadataFile
-from airbyte_cdk.utils.docker_image_templates import (
-    DOCKERIGNORE_TEMPLATE,
-    JAVA_CONNECTOR_DOCKERFILE_TEMPLATE,
-    MANIFEST_ONLY_DOCKERFILE_TEMPLATE,
-    PYTHON_CONNECTOR_DOCKERFILE_TEMPLATE,
-)
+from airbyte_cdk.utils.connector_paths import resolve_airbyte_repo_root
 
 
 @dataclass(kw_only=True)
@@ -145,6 +141,7 @@ def build_connector_image(
     tag: str,
     primary_arch: ArchEnum = ArchEnum.ARM64,  # Assume MacBook M series by default
     no_verify: bool = False,
+    dockerfile_override: Path | None = None,
 ) -> None:
     """Build a connector Docker image.
 
@@ -167,10 +164,36 @@ def build_connector_image(
         ConnectorImageBuildError: If the image build or tag operation fails.
     """
     connector_kebab_name = connector_name
-    connector_snake_name = connector_kebab_name.replace("-", "_")
 
-    dockerfile_path = connector_directory / "build" / "docker" / "Dockerfile"
-    dockerignore_path = connector_directory / "build" / "docker" / "Dockerfile.dockerignore"
+    if dockerfile_override:
+        dockerfile_path = dockerfile_override
+    else:
+        dockerfile_path = connector_directory / "build" / "docker" / "Dockerfile"
+        dockerignore_path = connector_directory / "build" / "docker" / "Dockerfile.dockerignore"
+        try:
+            dockerfile_text, dockerignore_text = get_dockerfile_templates(
+                metadata=metadata,
+                connector_directory=connector_directory,
+            )
+        except FileNotFoundError:
+            # If the Dockerfile and .dockerignore are not found in the connector directory,
+            # download the templates from the Airbyte repo. This is a fallback
+            # in case the Airbyte repo not checked out locally.
+            try:
+                dockerfile_text, dockerignore_text = _download_dockerfile_defs(
+                    connector_language=metadata.data.language,
+                )
+            except requests.HTTPError as e:
+                raise ConnectorImageBuildError(
+                    build_args=[],
+                    error_text=(
+                        "Could not locate local dockerfile templates and "
+                        f"failed to download Dockerfile templates from github: {e}"
+                    ),
+                ) from e
+
+        dockerfile_path.write_text(dockerfile_text)
+        dockerignore_path.write_text(dockerignore_text)
 
     extra_build_script: str = ""
     build_customization_path = connector_directory / "build_customization.py"
@@ -185,14 +208,9 @@ def build_connector_image(
         )
 
     base_image = metadata.data.connectorBuildOptions.baseImage
-
-    dockerfile_path.write_text(get_dockerfile_template(metadata))
-    dockerignore_path.write_text(DOCKERIGNORE_TEMPLATE)
-
     build_args: dict[str, str | None] = {
         "BASE_IMAGE": base_image,
-        "CONNECTOR_SNAKE_NAME": connector_snake_name,
-        "CONNECTOR_KEBAB_NAME": connector_kebab_name,
+        "CONNECTOR_NAME": connector_kebab_name,
         "EXTRA_BUILD_SCRIPT": extra_build_script,
     }
 
@@ -246,31 +264,100 @@ def build_connector_image(
         sys.exit(0)
 
 
-def get_dockerfile_template(
+def _download_dockerfile_defs(
+    connector_language: ConnectorLanguage,
+) -> tuple[str, str]:
+    """Download the Dockerfile and .dockerignore templates for the specified connector language.
+
+    We use the requests library to download from the master branch hosted on GitHub.
+
+    Args:
+        connector_language: The language of the connector.
+
+    Returns:
+        A tuple containing the Dockerfile and .dockerignore templates as strings.
+
+    Raises:
+        ValueError: If the connector language is not supported.
+        requests.HTTPError: If the download fails.
+    """
+    print("Downloading Dockerfile and .dockerignore templates from GitHub...")
+    # Map ConnectorLanguage to template directory
+    language_to_template_suffix = {
+        ConnectorLanguage.PYTHON: "python-connector",
+        ConnectorLanguage.JAVA: "java-connector",
+        ConnectorLanguage.MANIFEST_ONLY: "manifest-only-connector",
+    }
+
+    if connector_language not in language_to_template_suffix:
+        raise ValueError(f"Unsupported connector language: {connector_language}")
+
+    template_suffix = language_to_template_suffix[connector_language]
+    base_url = f"https://github.com/airbytehq/airbyte/raw/master/docker-images/"
+
+    dockerfile_url = f"{base_url}/Dockerfile.{template_suffix}"
+    dockerignore_url = f"{base_url}/Dockerfile.{template_suffix}.dockerignore"
+
+    dockerfile_resp = requests.get(dockerfile_url)
+    dockerfile_resp.raise_for_status()
+    dockerfile_text = dockerfile_resp.text
+
+    dockerignore_resp = requests.get(dockerignore_url)
+    dockerignore_resp.raise_for_status()
+    dockerignore_text = dockerignore_resp.text
+
+    return dockerfile_text, dockerignore_text
+
+
+def get_dockerfile_templates(
     metadata: MetadataFile,
-) -> str:
+    connector_directory: Path,
+) -> tuple[str, str]:
     """Get the Dockerfile template for the connector.
 
     Args:
         metadata: The metadata of the connector.
         connector_name: The name of the connector.
 
+    Raises:
+        ValueError: If the connector language is not supported.
+        FileNotFoundError: If the Dockerfile or .dockerignore is not found.
+
     Returns:
-        The Dockerfile template as a string.
+        A tuple containing the Dockerfile and .dockerignore templates as strings.
     """
-    if metadata.data.language == ConnectorLanguage.PYTHON:
-        return PYTHON_CONNECTOR_DOCKERFILE_TEMPLATE
+    if metadata.data.language not in [
+        ConnectorLanguage.PYTHON,
+        ConnectorLanguage.MANIFEST_ONLY,
+        ConnectorLanguage.JAVA,
+    ]:
+        raise ValueError(
+            f"Unsupported connector language: {metadata.data.language}. "
+            "Please check the connector's metadata file."
+        )
 
-    if metadata.data.language == ConnectorLanguage.MANIFEST_ONLY:
-        return MANIFEST_ONLY_DOCKERFILE_TEMPLATE
-
-    if metadata.data.language == ConnectorLanguage.JAVA:
-        return JAVA_CONNECTOR_DOCKERFILE_TEMPLATE
-
-    raise ValueError(
-        f"Unsupported connector language: {metadata.data.language}. "
-        "Please check the connector's metadata file."
+    airbyte_repo_root = resolve_airbyte_repo_root(
+        from_dir=connector_directory,
     )
+    # airbyte_repo_root successfully resolved
+    dockerfile_path = (
+        airbyte_repo_root / "docker-images" / f"Dockerfile.{metadata.data.language.value}-connector"
+    )
+    dockerignore_path = (
+        airbyte_repo_root
+        / "docker-images"
+        / f"Dockerfile.{metadata.data.language.value}-connector.dockerignore"
+    )
+    if not dockerfile_path.exists():
+        raise FileNotFoundError(
+            f"Dockerfile for {metadata.data.language.value} connector not found at {dockerfile_path}"
+        )
+    if not dockerignore_path.exists():
+        raise FileNotFoundError(
+            f".dockerignore for {metadata.data.language.value} connector not found at {dockerignore_path}"
+        )
+
+    return dockerfile_path.read_text(), dockerignore_path.read_text()
 
 
 def run_docker_command(

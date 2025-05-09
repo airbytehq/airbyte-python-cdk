@@ -43,7 +43,8 @@ from click import style
 from rich.console import Console
 from rich.table import Table
 
-from airbyte_cdk.cli.airbyte_cdk._util import (
+from airbyte_cdk.cli.airbyte_cdk.exceptions import ConnectorSecretWithNoValidVersionsError
+from airbyte_cdk.utils.connector_paths import (
     resolve_connector_name,
     resolve_connector_name_and_directory,
 )
@@ -73,15 +74,11 @@ def secrets_cli_group() -> None:
 
 
 @secrets_cli_group.command()
-@click.option(
-    "--connector-name",
+@click.argument(
+    "connector",
+    required=False,
     type=str,
-    help="Name of the connector to fetch secrets for. Ignored if --connector-directory is provided.",
-)
-@click.option(
-    "--connector-directory",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="Path to the connector directory.",
+    metavar="[CONNECTOR]",
 )
 @click.option(
     "--gcp-project-id",
@@ -97,8 +94,7 @@ def secrets_cli_group() -> None:
     default=False,
 )
 def fetch(
-    connector_name: str | None = None,
-    connector_directory: Path | None = None,
+    connector: str | Path | None = None,
     gcp_project_id: str = AIRBYTE_INTERNAL_GCP_PROJECT,
     print_ci_secrets_masks: bool = False,
 ) -> None:
@@ -107,6 +103,9 @@ def fetch(
     This command fetches secrets for a connector from Google Secret Manager and writes them
     to the connector's secrets directory.
 
+    [CONNECTOR] can be a connector name (e.g. 'source-pokeapi'), a path to a connector directory, or omitted to use the current working directory.
+    If a string containing '/' is provided, it is treated as a path. Otherwise, it is treated as a connector name.
+
     If no connector name or directory is provided, we will look within the current working
     directory. If the current working directory is not a connector directory (e.g. starting
     with 'source-') and no connector name or path is provided, the process will fail.
@@ -114,17 +113,14 @@ def fetch(
     The `--print-ci-secrets-masks` option will print the GitHub CI mask for the secrets.
     This is useful for masking secrets in CI logs.
 
-    WARNING: This action causes the secrets to be printed in clear text to `STDOUT`. For security
-    reasons, this function will only execute if the `CI` environment variable is set. Otherwise,
-    masks will not be printed.
+    WARNING: The `--print-ci-secrets-masks` option causes the secrets to be printed in clear text to
+    `STDOUT`. For security reasons, this argument will be ignored if the `CI` environment
+    variable is not set.
     """
     click.echo("Fetching secrets...", err=True)
 
     client = _get_gsm_secrets_client()
-    connector_name, connector_directory = resolve_connector_name_and_directory(
-        connector_name=connector_name,
-        connector_directory=connector_directory,
-    )
+    connector_name, connector_directory = resolve_connector_name_and_directory(connector)
     secrets_dir = _get_secrets_dir(
         connector_directory=connector_directory,
         connector_name=connector_name,
@@ -136,24 +132,46 @@ def fetch(
     )
     # Fetch and write secrets
     secret_count = 0
+    exceptions = []
+
     for secret in secrets:
         secret_file_path = _get_secret_filepath(
             secrets_dir=secrets_dir,
             secret=secret,
         )
-        _write_secret_file(
-            secret=secret,
-            client=client,
-            file_path=secret_file_path,
-        )
-        click.echo(f"Secret written to: {secret_file_path.absolute()!s}", err=True)
-        secret_count += 1
+        try:
+            _write_secret_file(
+                secret=secret,
+                client=client,
+                file_path=secret_file_path,
+                connector_name=connector_name,
+                gcp_project_id=gcp_project_id,
+            )
+            click.echo(f"Secret written to: {secret_file_path.absolute()!s}", err=True)
+            secret_count += 1
+        except ConnectorSecretWithNoValidVersionsError as e:
+            exceptions.append(e)
+            click.echo(
+                f"Failed to retrieve secret '{e.secret_name}': No enabled version found", err=True
+            )
 
-    if secret_count == 0:
+    if secret_count == 0 and not exceptions:
         click.echo(
             f"No secrets found for connector: '{connector_name}'",
             err=True,
         )
+
+    if exceptions:
+        error_message = f"Failed to retrieve {len(exceptions)} secret(s)"
+        click.echo(
+            style(
+                error_message,
+                fg="red",
+            ),
+            err=True,
+        )
+        if secret_count == 0:
+            raise exceptions[0]
 
     if not print_ci_secrets_masks:
         return
@@ -235,9 +253,8 @@ def list_(
     table.add_column("Created", justify="left", style="blue", overflow="fold")
     for secret in secrets:
         full_secret_name = secret.name
-        secret_name = full_secret_name.split("/secrets/")[-1]  # Removes project prefix
-        # E.g. https://console.cloud.google.com/security/secret-manager/secret/SECRET_SOURCE-SHOPIFY__CREDS/versions?hl=en&project=<gcp_project_id>
-        secret_url = f"https://console.cloud.google.com/security/secret-manager/secret/{secret_name}/versions?hl=en&project={gcp_project_id}"
+        secret_name = _extract_secret_name(full_secret_name)
+        secret_url = _get_secret_url(secret_name, gcp_project_id)
         table.add_row(
             f"[link={secret_url}]{secret_name}[/link]",
             "\n".join([f"{k}={v}" for k, v in secret.labels.items()]),
@@ -245,6 +262,43 @@ def list_(
         )
 
     console.print(table)
+
+
+def _extract_secret_name(secret_name: str) -> str:
+    """Extract the secret name from a fully qualified secret path.
+
+    Handles different formats of secret names:
+    - Full path: "projects/project-id/secrets/SECRET_NAME"
+    - Already extracted: "SECRET_NAME"
+
+    Args:
+        secret_name: The secret name or path
+
+    Returns:
+        str: The extracted secret name without project prefix
+    """
+    if "/secrets/" in secret_name:
+        return secret_name.split("/secrets/")[-1]
+    return secret_name
+
+
+def _get_secret_url(secret_name: str, gcp_project_id: str) -> str:
+    """Generate a URL for a secret in the GCP Secret Manager console.
+
+    Note: This URL itself does not contain secrets or sensitive information.
+    The URL itself is only useful for valid logged-in users of the project, and it
+    safe to print this URL in logs.
+
+    Args:
+        secret_name: The name of the secret in GCP.
+        gcp_project_id: The GCP project ID.
+
+    Returns:
+        str: URL to the secret in the GCP console
+    """
+    # Ensure we have just the secret name without the project prefix
+    secret_name = _extract_secret_name(secret_name)
+    return f"https://console.cloud.google.com/security/secret-manager/secret/{secret_name}/versions?hl=en&project={gcp_project_id}"
 
 
 def _fetch_secret_handles(
@@ -277,9 +331,44 @@ def _write_secret_file(
     secret: "Secret",  # type: ignore
     client: "secretmanager.SecretManagerServiceClient",  # type: ignore
     file_path: Path,
+    connector_name: str,
+    gcp_project_id: str,
 ) -> None:
-    version_name = f"{secret.name}/versions/latest"
-    response = client.access_secret_version(name=version_name)
+    """Write the most recent enabled version of a secret to a file.
+
+    Lists all enabled versions of the secret and selects the most recent one.
+    Raises ConnectorSecretWithNoValidVersionsError if no enabled versions are found.
+
+    Args:
+        secret: The secret to write to a file
+        client: The Secret Manager client
+        file_path: The path to write the secret to
+        connector_name: The name of the connector
+        gcp_project_id: The GCP project ID
+
+    Raises:
+        ConnectorSecretWithNoValidVersionsError: If no enabled version is found
+    """
+    # List all enabled versions of the secret.
+    response = client.list_secret_versions(
+        request={"parent": secret.name, "filter": "state:ENABLED"}
+    )
+
+    # The API returns versions pre-sorted in descending order, with the
+    # 0th item being the latest version.
+    versions = list(response)
+
+    if not versions:
+        secret_name = _extract_secret_name(secret.name)
+        raise ConnectorSecretWithNoValidVersionsError(
+            connector_name=connector_name,
+            secret_name=secret_name,
+            gcp_project_id=gcp_project_id,
+        )
+
+    enabled_version = versions[0]
+
+    response = client.access_secret_version(name=enabled_version.name)
     file_path.write_text(response.payload.data.decode("UTF-8"))
     file_path.chmod(0o600)  # default to owner read/write only
 
@@ -289,21 +378,7 @@ def _get_secrets_dir(
     connector_name: str,
     ensure_exists: bool = True,
 ) -> Path:
-    try:
-        connector_name, connector_directory = resolve_connector_name_and_directory(
-            connector_name=connector_name,
-            connector_directory=connector_directory,
-        )
-    except FileNotFoundError as e:
-        raise FileNotFoundError(
-            f"Could not find connector directory for '{connector_name}'. "
-            "Please provide the --connector-directory option with the path to the connector. "
-            "Note: This command requires either running from within a connector directory, "
-            "being in the airbyte monorepo, or explicitly providing the connector directory path."
-        ) from e
-    except ValueError as e:
-        raise ValueError(str(e))
-
+    _ = connector_name  # Unused, but it may be used in the future for logging
     secrets_dir = connector_directory / "secrets"
     if ensure_exists:
         secrets_dir.mkdir(parents=True, exist_ok=True)

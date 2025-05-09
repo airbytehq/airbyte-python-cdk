@@ -56,12 +56,15 @@ class IConnector(Protocol):
 
 def run_test_job(
     connector: IConnector | type[IConnector] | Callable[[], IConnector],
-    verb: Literal["read", "check", "discover"],
-    test_scenario: ConnectorTestScenario,
+    verb: Literal["spec", "read", "check", "discover"],
     *,
+    test_scenario: ConnectorTestScenario | None = None,
     catalog: ConfiguredAirbyteCatalog | dict[str, Any] | None = None,
 ) -> entrypoint_wrapper.EntrypointOutput:
     """Run a test scenario from provided CLI args and return the result."""
+    # Use default (empty) scenario if not provided:
+    test_scenario = test_scenario or ConnectorTestScenario()
+
     if not connector:
         raise ValueError("Connector is required")
 
@@ -81,14 +84,14 @@ def run_test_job(
         )
 
     args: list[str] = [verb]
-    if test_scenario.config_path:
-        args += ["--config", str(test_scenario.config_path)]
-    elif test_scenario.config_dict:
+    config_dict = test_scenario.get_config_dict(empty_if_missing=True)
+    if config_dict and verb != "spec":
+        # Write the config to a temp json file and pass the path to the file as an argument.
         config_path = (
             Path(tempfile.gettempdir()) / "airbyte-test" / f"temp_config_{uuid.uuid4().hex}.json"
         )
         config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(orjson.dumps(test_scenario.config_dict).decode())
+        config_path.write_text(orjson.dumps(config_dict).decode())
         args += ["--config", str(config_path)]
 
     catalog_path: Path | None = None

@@ -12,7 +12,7 @@ from airbyte_cdk.test.standard_tests.declarative_sources import (
 )
 from airbyte_cdk.test.standard_tests.destination_base import DestinationTestSuiteBase
 from airbyte_cdk.test.standard_tests.source_base import SourceTestSuiteBase
-from airbyte_cdk.test.standard_tests.test_resources import (
+from airbyte_cdk.utils.connector_paths import (
     METADATA_YAML,
     find_connector_root_from_name,
 )
