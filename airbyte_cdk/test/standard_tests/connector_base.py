@@ -54,6 +54,7 @@ class ConnectorTestSuiteBase(abc.ABC):
     def create_connector(
         cls,
         scenario: ConnectorTestScenario,
+        *,
         use_docker_image: str | bool,
     ) -> IConnector:
         """Instantiate the connector class."""
@@ -108,21 +109,6 @@ class ConnectorTestSuiteBase(abc.ABC):
                 type[IConnector],
                 getattr(module, matching_class_name),
             )()
-
-        _ = scenario
-
-        connector = cls.connector  # type: ignore
-        if connector:
-            if callable(connector) or isinstance(connector, type):
-                # If the connector is a class or factory function, instantiate it:
-                return cast(IConnector, connector())  # type: ignore [redundant-cast]
-
-        # Otherwise, we can't instantiate the connector. Fail with a clear error message.
-        raise NotImplementedError(
-            "No connector class or connector factory function provided. "
-            "Please provide a class or factory function in `cls.connector`, or "
-            "override `cls.create_connector()` to define a custom initialization process."
-        )
 
     @classmethod
     def create_docker_connector(
@@ -198,28 +184,35 @@ class ConnectorTestSuiteBase(abc.ABC):
         This has to be a separate function because pytest does not allow
         parametrization of fixtures with arguments from the test class itself.
         """
-        category = "connection"
+        categories = ["connection", "spec"]
         all_tests_config = yaml.safe_load(cls.acceptance_test_config_path.read_text())
         if "acceptance_tests" not in all_tests_config:
             raise ValueError(
                 f"Acceptance tests config not found in {cls.acceptance_test_config_path}."
                 f" Found only: {str(all_tests_config)}."
             )
-        if category not in all_tests_config["acceptance_tests"]:
-            return []
-        if "tests" not in all_tests_config["acceptance_tests"][category]:
-            raise ValueError(f"No tests found for category {category}")
 
-        tests_scenarios = [
-            ConnectorTestScenario.model_validate(test)
-            for test in all_tests_config["acceptance_tests"][category]["tests"]
-            if "iam_role" not in test["config_path"]
-        ]
+        test_scenarios: list[ConnectorTestScenario] = []
+        for category in categories:
+            if (
+                category not in all_tests_config["acceptance_tests"]
+                or "tests" not in all_tests_config["acceptance_tests"][category]
+            ):
+                continue
+
+            test_scenarios.extend(
+                [
+                    ConnectorTestScenario.model_validate(test)
+                    for test in all_tests_config["acceptance_tests"][category]["tests"]
+                    if "config_path" in test and "iam_role" not in test["config_path"]
+                ]
+            )
+
         connector_root = cls.get_connector_root_dir().absolute()
-        for test in tests_scenarios:
+        for test in test_scenarios:
             if test.config_path:
                 test.config_path = connector_root / test.config_path
             if test.configured_catalog_path:
                 test.configured_catalog_path = connector_root / test.configured_catalog_path
 
-        return tests_scenarios
+        return test_scenarios

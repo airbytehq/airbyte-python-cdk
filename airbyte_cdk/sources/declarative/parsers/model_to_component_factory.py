@@ -504,6 +504,7 @@ from airbyte_cdk.sources.declarative.schema import (
     SchemaTypeIdentifier,
     TypesMap,
 )
+from airbyte_cdk.sources.declarative.schema.composite_schema_loader import CompositeSchemaLoader
 from airbyte_cdk.sources.declarative.spec import Spec
 from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicer
 from airbyte_cdk.sources.declarative.transformations import (
@@ -1914,9 +1915,25 @@ class ModelToComponentFactory:
         else:
             state_transformations = []
 
-        if model.schema_loader:
+        schema_loader: Union[
+            CompositeSchemaLoader,
+            DefaultSchemaLoader,
+            DynamicSchemaLoader,
+            InlineSchemaLoader,
+            JsonFileSchemaLoader,
+        ]
+        if model.schema_loader and isinstance(model.schema_loader, list):
+            nested_schema_loaders = [
+                self._create_component_from_model(model=nested_schema_loader, config=config)
+                for nested_schema_loader in model.schema_loader
+            ]
+            schema_loader = CompositeSchemaLoader(
+                schema_loaders=nested_schema_loaders, parameters={}
+            )
+        elif model.schema_loader:
             schema_loader = self._create_component_from_model(
-                model=model.schema_loader, config=config
+                model=model.schema_loader,  # type: ignore # If defined, schema_loader is guaranteed not to be a list and will be one of the existing base models
+                config=config,
             )
         else:
             options = model.parameters or {}

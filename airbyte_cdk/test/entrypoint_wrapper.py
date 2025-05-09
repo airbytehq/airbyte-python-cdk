@@ -83,6 +83,10 @@ class EntrypointOutput:
         return self._get_message_by_types([Type.STATE])
 
     @property
+    def spec_messages(self) -> List[AirbyteMessage]:
+        return self._get_message_by_types([Type.SPEC])
+
+    @property
     def connection_status_messages(self) -> List[AirbyteMessage]:
         return self._get_message_by_types([Type.CONNECTION_STATUS])
 

@@ -43,17 +43,28 @@ class ConnectorTestScenario(BaseModel):
     file_types: AcceptanceTestFileTypes | None = None
     status: Literal["succeed", "failed"] | None = None
 
-    def get_config_dict(self) -> dict[str, Any]:
+    def get_config_dict(
+        self,
+        *,
+        empty_if_missing: bool,
+    ) -> dict[str, Any]:
         """Return the config dictionary.
 
         If a config dictionary has already been loaded, return it. Otherwise, load
         the config file and return the dictionary.
+
+        If `self.config_dict` and `self.config_path` are both `None`:
+        - return an empty dictionary if `empty_if_missing` is True
+        - raise a ValueError if `empty_if_missing` is False
         """
-        if self.config_dict:
+        if self.config_dict is not None:
             return self.config_dict
 
-        if self.config_path:
+        if self.config_path is not None:
             return cast(dict[str, Any], yaml.safe_load(self.config_path.read_text()))
+
+        if empty_if_missing:
+            return {}
 
         raise ValueError("No config dictionary or path provided.")
 
