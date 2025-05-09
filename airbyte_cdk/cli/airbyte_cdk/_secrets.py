@@ -34,7 +34,7 @@ import logging
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, List, Optional, Tuple, cast
+from typing import Any, cast
 
 import requests
 import rich_click as click
@@ -132,7 +132,7 @@ def fetch(
     )
     # Fetch and write secrets
     secret_count = 0
-    failed_secrets: List[str] = []
+    failed_secrets: list[str] = []
 
     for secret in secrets:
         secret_file_path = _get_secret_filepath(
@@ -313,7 +313,7 @@ def _write_secret_file(
     secret: "Secret",  # type: ignore
     client: "secretmanager.SecretManagerServiceClient",  # type: ignore
     file_path: Path,
-) -> Optional[str]:
+) -> str | None:
     """Write the most recent enabled version of a secret to a file.
 
     Lists all enabled versions of the secret and selects the most recent one.
@@ -325,7 +325,7 @@ def _write_secret_file(
         file_path: The path to write the secret to
 
     Returns:
-        Optional[str]: Error message if no enabled version is found, None otherwise
+        str | None: Error message if no enabled version is found, None otherwise
     """
     # List all enabled versions of the secret.
     response = client.list_secret_versions(

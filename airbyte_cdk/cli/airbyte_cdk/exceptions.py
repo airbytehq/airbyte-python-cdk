@@ -2,7 +2,6 @@
 """Exceptions for the Airbyte CDK CLI."""
 
 from dataclasses import dataclass
-from typing import List
 
 from airbyte_cdk.sql.exceptions import AirbyteConnectorError
 
@@ -12,7 +11,7 @@ class ConnectorSecretWithNoValidVersionsError(AirbyteConnectorError):
     """Error when a connector secret has no valid versions."""
 
     connector_name: str
-    secret_names: List[str]
+    secret_names: list[str]
     gcp_project_id: str
 
     def __str__(self) -> str:
