@@ -528,6 +528,7 @@ from airbyte_cdk.sources.declarative.transformations.keys_to_lower_transformatio
 from airbyte_cdk.sources.declarative.transformations.keys_to_snake_transformation import (
     KeysToSnakeCaseTransformation,
 )
+from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.message import (
     InMemoryMessageRepository,
     LogAppenderMessageRepositoryDecorator,
@@ -2382,6 +2383,8 @@ class ModelToComponentFactory:
             primary_key=None,
             stream_slicer=combined_slicers,
             transformations=[],
+            enable_logs=False,
+            use_cache=True,
         )
         schema_type_identifier = self._create_component_from_model(
             model.schema_type_identifier, config=config, parameters=model.parameters or {}
@@ -2968,6 +2971,7 @@ class ModelToComponentFactory:
             ]
         ] = None,
         use_cache: Optional[bool] = None,
+        enable_logs: bool = True,
         **kwargs: Any,
     ) -> SimpleRetriever:
         def _get_url() -> str:
@@ -3144,6 +3148,12 @@ class ModelToComponentFactory:
                 config=config,
                 maximum_number_of_slices=self._limit_slices_fetched or 5,
                 ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
+                log_formatter=(lambda response: format_http_message(
+                    response,
+                    f"Stream '{name}' request",
+                    f"Request performed in order to extract records for stream '{name}'",
+                    name,
+                )) if enable_logs else None,
                 parameters=model.parameters or {},
             )
         return SimpleRetriever(
