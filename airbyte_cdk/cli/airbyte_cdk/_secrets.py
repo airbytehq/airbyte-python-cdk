@@ -132,8 +132,7 @@ def fetch(
     )
     # Fetch and write secrets
     secret_count = 0
-    failed_secrets = []
-    failed_secret_urls = []
+    failed_secrets: List[str] = []
 
     for secret in secrets:
         secret_file_path = _get_secret_filepath(
@@ -149,8 +148,6 @@ def fetch(
         if error:
             secret_name = secret.name.split("/secrets/")[-1]  # Removes project prefix
             failed_secrets.append(secret_name)
-            secret_url = f"https://console.cloud.google.com/security/secret-manager/secret/{secret_name}/versions?hl=en&project={gcp_project_id}"
-            failed_secret_urls.append(secret_url)
             click.echo(f"Failed to retrieve secret '{secret_name}': {error}", err=True)
         else:
             click.echo(f"Secret written to: {secret_file_path.absolute()!s}", err=True)
@@ -175,7 +172,7 @@ def fetch(
             raise ConnectorSecretWithNoValidVersionsError(
                 connector_name=connector_name,
                 secret_names=failed_secrets,
-                connector_secret_urls=failed_secret_urls,
+                gcp_project_id=gcp_project_id,
             )
 
     if not print_ci_secrets_masks:
@@ -259,8 +256,7 @@ def list_(
     for secret in secrets:
         full_secret_name = secret.name
         secret_name = full_secret_name.split("/secrets/")[-1]  # Removes project prefix
-        # E.g. https://console.cloud.google.com/security/secret-manager/secret/SECRET_SOURCE-SHOPIFY__CREDS/versions?hl=en&project=<gcp_project_id>
-        secret_url = f"https://console.cloud.google.com/security/secret-manager/secret/{secret_name}/versions?hl=en&project={gcp_project_id}"
+        secret_url = _get_secret_url(secret_name, gcp_project_id)
         table.add_row(
             f"[link={secret_url}]{secret_name}[/link]",
             "\n".join([f"{k}={v}" for k, v in secret.labels.items()]),
@@ -268,6 +264,19 @@ def list_(
         )
 
     console.print(table)
+
+
+def _get_secret_url(secret_name: str, gcp_project_id: str) -> str:
+    """Generate a URL for a secret in the GCP Secret Manager console.
+    
+    Args:
+        secret_name: The name of the secret
+        gcp_project_id: The GCP project ID
+        
+    Returns:
+        str: URL to the secret in the GCP console
+    """
+    return f"https://console.cloud.google.com/security/secret-manager/secret/{secret_name}/versions?hl=en&project={gcp_project_id}"
 
 
 def _fetch_secret_handles(
