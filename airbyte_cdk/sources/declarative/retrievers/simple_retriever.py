@@ -22,7 +22,7 @@ from typing import (
 
 import requests
 from typing_extensions import deprecated
-from airbyte_cdk.sources.http_logger import format_http_message
+
 from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
 from airbyte_cdk.sources.declarative.incremental import ResumableFullRefreshCursor
@@ -41,6 +41,7 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
 from airbyte_cdk.sources.declarative.requesters.requester import Requester
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.stream_slicers.stream_slicer import StreamSlicer
+from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import Config, Record, StreamSlice, StreamState
@@ -655,12 +656,18 @@ class SimpleRetrieverTestReadDecorator(SimpleRetriever):
 
     def __post_init__(self, options: Mapping[str, Any]) -> None:
         super().__post_init__(options)
-        self.log_formatter = (lambda response: format_http_message(
+        self.log_formatter = (
+            (
+                lambda response: format_http_message(
                     response,
                     f"Stream '{self.name}' request",
                     f"Request performed in order to extract records for stream '{self.name}'",
                     self.name,
-                )) if not self.log_formatter else self.log_formatter
+                )
+            )
+            if not self.log_formatter
+            else self.log_formatter
+        )
 
         if self.maximum_number_of_slices and self.maximum_number_of_slices < 1:
             raise ValueError(
