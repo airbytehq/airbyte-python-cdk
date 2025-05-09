@@ -22,7 +22,7 @@ from typing import (
 
 import requests
 from typing_extensions import deprecated
-
+from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
 from airbyte_cdk.sources.declarative.incremental import ResumableFullRefreshCursor
@@ -655,6 +655,13 @@ class SimpleRetrieverTestReadDecorator(SimpleRetriever):
 
     def __post_init__(self, options: Mapping[str, Any]) -> None:
         super().__post_init__(options)
+        self.log_formatter = (lambda response: format_http_message(
+                    response,
+                    f"Stream '{self.name}' request",
+                    f"Request performed in order to extract records for stream '{self.name}'",
+                    self.name,
+                )) if not self.log_formatter else self.log_formatter
+
         if self.maximum_number_of_slices and self.maximum_number_of_slices < 1:
             raise ValueError(
                 f"The maximum number of slices on a test read needs to be strictly positive. Got {self.maximum_number_of_slices}"
