@@ -40,7 +40,7 @@ class TestPredicateValidator(TestCase):
         with pytest.raises(ValueError) as context:
             validator.validate()
 
-        assert error_message in str(context.exception)
+        assert error_message in str(context.value)
         assert strategy.validate_called
         assert strategy.validated_value == test_value
 
