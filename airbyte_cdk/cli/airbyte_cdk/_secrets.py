@@ -146,7 +146,7 @@ def fetch(
         )
 
         if error:
-            secret_name = secret.name.split("/secrets/")[-1]  # Removes project prefix
+            secret_name = _extract_secret_name(secret.name)
             failed_secrets.append(secret_name)
             click.echo(f"Failed to retrieve secret '{secret_name}': {error}", err=True)
         else:
@@ -255,7 +255,7 @@ def list_(
     table.add_column("Created", justify="left", style="blue", overflow="fold")
     for secret in secrets:
         full_secret_name = secret.name
-        secret_name = full_secret_name.split("/secrets/")[-1]  # Removes project prefix
+        secret_name = _extract_secret_name(full_secret_name)
         secret_url = _get_secret_url(secret_name, gcp_project_id)
         table.add_row(
             f"[link={secret_url}]{secret_name}[/link]",
@@ -264,6 +264,24 @@ def list_(
         )
 
     console.print(table)
+
+
+def _extract_secret_name(secret_name: str) -> str:
+    """Extract the secret name from a fully qualified secret path.
+    
+    Handles different formats of secret names:
+    - Full path: "projects/project-id/secrets/SECRET_NAME"
+    - Already extracted: "SECRET_NAME"
+    
+    Args:
+        secret_name: The secret name or path
+        
+    Returns:
+        str: The extracted secret name without project prefix
+    """
+    if "/secrets/" in secret_name:
+        return secret_name.split("/secrets/")[-1]
+    return secret_name
 
 
 def _get_secret_url(secret_name: str, gcp_project_id: str) -> str:
@@ -280,6 +298,8 @@ def _get_secret_url(secret_name: str, gcp_project_id: str) -> str:
     Returns:
         str: URL to the secret in the GCP console
     """
+    # Ensure we have just the secret name without the project prefix
+    secret_name = _extract_secret_name(secret_name)
     return f"https://console.cloud.google.com/security/secret-manager/secret/{secret_name}/versions?hl=en&project={gcp_project_id}"
 
 
@@ -337,7 +357,7 @@ def _write_secret_file(
     versions = list(response)
 
     if not versions:
-        secret_name = secret.name.split("/secrets/")[-1]  # Removes project prefix
+        secret_name = _extract_secret_name(secret.name)
         return f"No enabled version found for secret: {secret_name}"
 
     enabled_version = versions[0]
