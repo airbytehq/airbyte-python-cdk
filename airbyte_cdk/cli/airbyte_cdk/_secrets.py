@@ -268,11 +268,11 @@ def list_(
 
 def _get_secret_url(secret_name: str, gcp_project_id: str) -> str:
     """Generate a URL for a secret in the GCP Secret Manager console.
-    
+
     Args:
         secret_name: The name of the secret
         gcp_project_id: The GCP project ID
-        
+
     Returns:
         str: URL to the secret in the GCP console
     """
