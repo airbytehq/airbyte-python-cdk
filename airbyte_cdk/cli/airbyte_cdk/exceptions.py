@@ -7,21 +7,13 @@ from typing import List
 from airbyte_cdk.sql.exceptions import AirbyteConnectorError
 
 
-@dataclass
+@dataclass(kw_only=True)
 class ConnectorSecretWithNoValidVersionsError(AirbyteConnectorError):
     """Error when a connector secret has no valid versions."""
 
     connector_name: str
-    secret_names: List[str] = None  # type: ignore
-    connector_secret_urls: List[str] = None  # type: ignore
-    
-    def __post_init__(self):
-        """Initialize default values for lists."""
-        super().__post_init__()
-        if self.secret_names is None:
-            self.secret_names = []
-        if self.connector_secret_urls is None:
-            self.connector_secret_urls = []
+    secret_names: List[str]
+    connector_secret_urls: List[str]
 
     def __str__(self) -> str:
         """Return a string representation of the exception."""

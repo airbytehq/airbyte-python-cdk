@@ -56,7 +56,9 @@ class TestWriteSecretFile:
         # Verify that no error was returned
         assert result is None
 
-    def test_write_secret_file_with_no_enabled_versions(self, mock_client, mock_secret, mock_file_path):
+    def test_write_secret_file_with_no_enabled_versions(
+        self, mock_client, mock_secret, mock_file_path
+    ):
         # Mock list_secret_versions to return an empty list (no enabled versions)
         mock_client.list_secret_versions.return_value = []
 
@@ -85,91 +87,104 @@ class TestWriteSecretFile:
 @patch("airbyte_cdk.cli.airbyte_cdk._secrets._fetch_secret_handles")
 class TestFetch:
     def test_fetch_with_some_failed_secrets(
-        self, mock_fetch_secret_handles, mock_get_secrets_dir, mock_resolve, mock_get_client, tmp_path
+        self,
+        mock_fetch_secret_handles,
+        mock_get_secrets_dir,
+        mock_resolve,
+        mock_get_client,
+        tmp_path,
     ):
         # Setup mocks
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
-        
+
         mock_resolve.return_value = ("test-connector", tmp_path)
-        
+
         secrets_dir = tmp_path / "secrets"
         mock_get_secrets_dir.return_value = secrets_dir
-        
+
         # Create two secrets, one that will succeed and one that will fail
         secret1 = MagicMock()
         secret1.name = "projects/test-project/secrets/test-secret-1"
         secret1.labels = {}
-        
+
         secret2 = MagicMock()
         secret2.name = "projects/test-project/secrets/test-secret-2"
         secret2.labels = {}
-        
+
         mock_fetch_secret_handles.return_value = [secret1, secret2]
-        
+
         # Mock _write_secret_file to succeed for secret1 and fail for secret2
-        with patch("airbyte_cdk.cli.airbyte_cdk._secrets._write_secret_file") as mock_write_secret_file:
+        with patch(
+            "airbyte_cdk.cli.airbyte_cdk._secrets._write_secret_file"
+        ) as mock_write_secret_file:
             mock_write_secret_file.side_effect = [
                 None,  # Success for secret1
                 "No enabled version found for secret: test-secret-2",  # Failure for secret2
             ]
-            
+
             # Call the function
             runner = CliRunner()
             result = runner.invoke(fetch)
-            
+
             # Verify that _write_secret_file was called twice
             assert mock_write_secret_file.call_count == 2
-            
+
             # Verify that the error message was printed
             assert "Failed to retrieve secret 'test-secret-2'" in result.output
             assert "Failed to retrieve 1 secret(s)" in result.output
-            
+
             # Verify that the function did not raise an exception
             assert result.exit_code == 0
-    
+
     def test_fetch_with_all_failed_secrets(
-        self, mock_fetch_secret_handles, mock_get_secrets_dir, mock_resolve, mock_get_client, tmp_path
+        self,
+        mock_fetch_secret_handles,
+        mock_get_secrets_dir,
+        mock_resolve,
+        mock_get_client,
+        tmp_path,
     ):
         # Setup mocks
         mock_client = MagicMock()
         mock_get_client.return_value = mock_client
-        
+
         mock_resolve.return_value = ("test-connector", tmp_path)
-        
+
         secrets_dir = tmp_path / "secrets"
         mock_get_secrets_dir.return_value = secrets_dir
-        
+
         # Create two secrets that will both fail
         secret1 = MagicMock()
         secret1.name = "projects/test-project/secrets/test-secret-1"
         secret1.labels = {}
-        
+
         secret2 = MagicMock()
         secret2.name = "projects/test-project/secrets/test-secret-2"
         secret2.labels = {}
-        
+
         mock_fetch_secret_handles.return_value = [secret1, secret2]
-        
+
         # Mock _write_secret_file to fail for both secrets
-        with patch("airbyte_cdk.cli.airbyte_cdk._secrets._write_secret_file") as mock_write_secret_file:
+        with patch(
+            "airbyte_cdk.cli.airbyte_cdk._secrets._write_secret_file"
+        ) as mock_write_secret_file:
             mock_write_secret_file.side_effect = [
                 "No enabled version found for secret: test-secret-1",  # Failure for secret1
                 "No enabled version found for secret: test-secret-2",  # Failure for secret2
             ]
-            
+
             # Call the function
             runner = CliRunner()
             result = runner.invoke(fetch)
-            
+
             # Verify that _write_secret_file was called twice
             assert mock_write_secret_file.call_count == 2
-            
+
             # Verify that the error message was printed
             assert "Failed to retrieve secret 'test-secret-1'" in result.output
             assert "Failed to retrieve secret 'test-secret-2'" in result.output
             assert "Failed to retrieve 2 secret(s)" in result.output
-            
+
             # Verify that the function raised an exception
             assert result.exit_code != 0
-

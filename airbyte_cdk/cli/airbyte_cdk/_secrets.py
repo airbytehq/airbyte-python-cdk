@@ -134,7 +134,7 @@ def fetch(
     secret_count = 0
     failed_secrets = []
     failed_secret_urls = []
-    
+
     for secret in secrets:
         secret_file_path = _get_secret_filepath(
             secrets_dir=secrets_dir,
@@ -145,7 +145,7 @@ def fetch(
             client=client,
             file_path=secret_file_path,
         )
-        
+
         if error:
             secret_name = secret.name.split("/secrets/")[-1]  # Removes project prefix
             failed_secrets.append(secret_name)
@@ -161,7 +161,7 @@ def fetch(
             f"No secrets found for connector: '{connector_name}'",
             err=True,
         )
-        
+
     if failed_secrets:
         error_message = f"Failed to retrieve {len(failed_secrets)} secret(s)"
         click.echo(
@@ -302,15 +302,15 @@ def _write_secret_file(
     file_path: Path,
 ) -> Optional[str]:
     """Write the most recent enabled version of a secret to a file.
-    
+
     Lists all enabled versions of the secret and selects the most recent one.
     Returns an error message if no enabled versions are found.
-    
+
     Args:
         secret: The secret to write to a file
         client: The Secret Manager client
         file_path: The path to write the secret to
-        
+
     Returns:
         Optional[str]: Error message if no enabled version is found, None otherwise
     """
@@ -318,15 +318,15 @@ def _write_secret_file(
     response = client.list_secret_versions(
         request={"parent": secret.name, "filter": "state:ENABLED"}
     )
-    
+
     versions = list(response)
-    
+
     if not versions:
         secret_name = secret.name.split("/secrets/")[-1]  # Removes project prefix
         return f"No enabled version found for secret: {secret_name}"
-    
+
     enabled_version = versions[0]
-    
+
     response = client.access_secret_version(name=enabled_version.name)
     file_path.write_text(response.payload.data.decode("UTF-8"))
     file_path.chmod(0o600)  # default to owner read/write only
