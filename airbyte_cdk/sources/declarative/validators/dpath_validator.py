@@ -50,10 +50,10 @@ class DpathValidator(Validator):
                 for value in values:
                     self.strategy.validate(value)
             except KeyError as e:
-                raise KeyError(f"Error validating path '{self.field_path}': {e}")
+                raise ValueError(f"Error validating path '{self.field_path}': {e}")
         else:
             try:
                 value = dpath.get(input_data, path)
                 self.strategy.validate(value)
             except KeyError as e:
-                raise KeyError(f"Error validating path '{self.field_path}': {e}")
+                raise ValueError(f"Error validating path '{self.field_path}': {e}")
