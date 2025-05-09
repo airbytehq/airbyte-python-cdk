@@ -3165,12 +3165,16 @@ class ModelToComponentFactory:
                 config=config,
                 maximum_number_of_slices=self._limit_slices_fetched or 5,
                 ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
-                log_formatter=(lambda response: format_http_message(
-                    response,
-                    f"Stream '{name}' request",
-                    f"Request performed in order to extract records for stream '{name}'",
-                    name,
-                )) if enable_logs else None,
+                log_formatter=(
+                    lambda response: format_http_message(
+                        response,
+                        f"Stream '{name}' request",
+                        f"Request performed in order to extract records for stream '{name}'",
+                        name,
+                    )
+                )
+                if enable_logs
+                else None,
                 parameters=model.parameters or {},
             )
         return SimpleRetriever(
