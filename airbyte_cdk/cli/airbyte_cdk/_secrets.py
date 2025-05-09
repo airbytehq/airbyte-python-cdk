@@ -268,14 +268,14 @@ def list_(
 
 def _extract_secret_name(secret_name: str) -> str:
     """Extract the secret name from a fully qualified secret path.
-    
+
     Handles different formats of secret names:
     - Full path: "projects/project-id/secrets/SECRET_NAME"
     - Already extracted: "SECRET_NAME"
-    
+
     Args:
         secret_name: The secret name or path
-        
+
     Returns:
         str: The extracted secret name without project prefix
     """
