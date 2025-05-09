@@ -41,7 +41,13 @@ class TestWriteSecretFile:
         mock_client.access_secret_version.return_value = mock_response
 
         # Call the function
-        result = _write_secret_file(mock_secret, mock_client, mock_file_path)
+        _write_secret_file(
+            secret=mock_secret,
+            client=mock_client,
+            file_path=mock_file_path,
+            connector_name="test-connector",
+            gcp_project_id="test-project",
+        )
 
         # Verify that list_secret_versions was called with the correct parameters
         mock_client.list_secret_versions.assert_called_once()
@@ -53,17 +59,21 @@ class TestWriteSecretFile:
         # Verify that the file was created with the correct content
         assert mock_file_path.read_text() == '{"key": "value"}'
 
-        # Verify that no error was returned
-        assert result is None
-
     def test_write_secret_file_with_no_enabled_versions(
         self, mock_client, mock_secret, mock_file_path
     ):
         # Mock list_secret_versions to return an empty list (no enabled versions)
         mock_client.list_secret_versions.return_value = []
 
-        # Call the function
-        result = _write_secret_file(mock_secret, mock_client, mock_file_path)
+        # Call the function and expect an exception
+        with pytest.raises(ConnectorSecretWithNoValidVersionsError) as excinfo:
+            _write_secret_file(
+                secret=mock_secret,
+                client=mock_client,
+                file_path=mock_file_path,
+                connector_name="test-connector",
+                gcp_project_id="test-project",
+            )
 
         # Verify that list_secret_versions was called with the correct parameters
         mock_client.list_secret_versions.assert_called_once()
@@ -75,10 +85,10 @@ class TestWriteSecretFile:
         # Verify that the file was not created
         assert not mock_file_path.exists()
 
-        # Verify that an error was returned
-        assert result is not None
-        assert "No enabled version found for secret" in result
-        assert "test-secret" in result
+        # Verify the exception details
+        assert excinfo.value.secret_name == "test-secret"
+        assert excinfo.value.connector_name == "test-connector"
+        assert excinfo.value.gcp_project_id == "test-project"
 
 
 @patch("airbyte_cdk.cli.airbyte_cdk._secrets._get_gsm_secrets_client")
@@ -118,9 +128,14 @@ class TestFetch:
         with patch(
             "airbyte_cdk.cli.airbyte_cdk._secrets._write_secret_file"
         ) as mock_write_secret_file:
+            # First call succeeds, second call raises exception
             mock_write_secret_file.side_effect = [
                 None,  # Success for secret1
-                "No enabled version found for secret: test-secret-2",  # Failure for secret2
+                ConnectorSecretWithNoValidVersionsError(
+                    connector_name="test-connector",
+                    secret_name="test-secret-2",
+                    gcp_project_id="test-project",
+                ),  # Failure for secret2
             ]
 
             # Call the function
@@ -170,8 +185,16 @@ class TestFetch:
             "airbyte_cdk.cli.airbyte_cdk._secrets._write_secret_file"
         ) as mock_write_secret_file:
             mock_write_secret_file.side_effect = [
-                "No enabled version found for secret: test-secret-1",  # Failure for secret1
-                "No enabled version found for secret: test-secret-2",  # Failure for secret2
+                ConnectorSecretWithNoValidVersionsError(
+                    connector_name="test-connector",
+                    secret_name="test-secret-1",
+                    gcp_project_id="test-project",
+                ),  # Failure for secret1
+                ConnectorSecretWithNoValidVersionsError(
+                    connector_name="test-connector",
+                    secret_name="test-secret-2",
+                    gcp_project_id="test-project",
+                ),  # Failure for secret2
             ]
 
             # Call the function

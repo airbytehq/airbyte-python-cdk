@@ -132,35 +132,37 @@ def fetch(
     )
     # Fetch and write secrets
     secret_count = 0
-    failed_secrets: list[str] = []
+    exceptions = []
 
     for secret in secrets:
         secret_file_path = _get_secret_filepath(
             secrets_dir=secrets_dir,
             secret=secret,
         )
-        error = _write_secret_file(
-            secret=secret,
-            client=client,
-            file_path=secret_file_path,
-        )
-
-        if error:
-            secret_name = _extract_secret_name(secret.name)
-            failed_secrets.append(secret_name)
-            click.echo(f"Failed to retrieve secret '{secret_name}': {error}", err=True)
-        else:
+        try:
+            _write_secret_file(
+                secret=secret,
+                client=client,
+                file_path=secret_file_path,
+                connector_name=connector_name,
+                gcp_project_id=gcp_project_id,
+            )
             click.echo(f"Secret written to: {secret_file_path.absolute()!s}", err=True)
             secret_count += 1
+        except ConnectorSecretWithNoValidVersionsError as e:
+            exceptions.append(e)
+            click.echo(
+                f"Failed to retrieve secret '{e.secret_name}': No enabled version found", err=True
+            )
 
-    if secret_count == 0 and not failed_secrets:
+    if secret_count == 0 and not exceptions:
         click.echo(
             f"No secrets found for connector: '{connector_name}'",
             err=True,
         )
 
-    if failed_secrets:
-        error_message = f"Failed to retrieve {len(failed_secrets)} secret(s)"
+    if exceptions:
+        error_message = f"Failed to retrieve {len(exceptions)} secret(s)"
         click.echo(
             style(
                 error_message,
@@ -169,11 +171,7 @@ def fetch(
             err=True,
         )
         if secret_count == 0:
-            raise ConnectorSecretWithNoValidVersionsError(
-                connector_name=connector_name,
-                secret_names=failed_secrets,
-                gcp_project_id=gcp_project_id,
-            )
+            raise exceptions[0]
 
     if not print_ci_secrets_masks:
         return
@@ -333,19 +331,23 @@ def _write_secret_file(
     secret: "Secret",  # type: ignore
     client: "secretmanager.SecretManagerServiceClient",  # type: ignore
     file_path: Path,
-) -> str | None:
+    connector_name: str,
+    gcp_project_id: str,
+) -> None:
     """Write the most recent enabled version of a secret to a file.
 
     Lists all enabled versions of the secret and selects the most recent one.
-    Returns an error message if no enabled versions are found.
+    Raises ConnectorSecretWithNoValidVersionsError if no enabled versions are found.
 
     Args:
         secret: The secret to write to a file
         client: The Secret Manager client
         file_path: The path to write the secret to
+        connector_name: The name of the connector
+        gcp_project_id: The GCP project ID
 
-    Returns:
-        str | None: Error message if no enabled version is found, None otherwise
+    Raises:
+        ConnectorSecretWithNoValidVersionsError: If no enabled version is found
     """
     # List all enabled versions of the secret.
     response = client.list_secret_versions(
@@ -358,14 +360,17 @@ def _write_secret_file(
 
     if not versions:
         secret_name = _extract_secret_name(secret.name)
-        return f"No enabled version found for secret: {secret_name}"
+        raise ConnectorSecretWithNoValidVersionsError(
+            connector_name=connector_name,
+            secret_name=secret_name,
+            gcp_project_id=gcp_project_id,
+        )
 
     enabled_version = versions[0]
 
     response = client.access_secret_version(name=enabled_version.name)
     file_path.write_text(response.payload.data.decode("UTF-8"))
     file_path.chmod(0o600)  # default to owner read/write only
-    return None
 
 
 def _get_secrets_dir(

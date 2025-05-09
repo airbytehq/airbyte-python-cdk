@@ -9,19 +9,15 @@ class ConnectorSecretWithNoValidVersionsError(Exception):
     """Error when a connector secret has no valid versions."""
 
     connector_name: str
-    secret_names: list[str]
+    secret_name: str
     gcp_project_id: str
 
     def __str__(self) -> str:
         """Return a string representation of the exception."""
         from airbyte_cdk.cli.airbyte_cdk._secrets import _get_secret_url
 
-        urls = [
-            _get_secret_url(secret_name, self.gcp_project_id) for secret_name in self.secret_names
-        ]
-        urls_str = "\n".join([f"- {url}" for url in urls])
-        secrets_str = ", ".join(self.secret_names)
+        url = _get_secret_url(self.secret_name, self.gcp_project_id)
         return (
-            f"No valid versions found for the following secrets in connector '{self.connector_name}': {secrets_str}. "
-            f"Please check the following URLs for more information:\n{urls_str}"
+            f"No valid versions found for secret '{self.secret_name}' in connector '{self.connector_name}'. "
+            f"Please check the following URL for more information:\n- {url}"
         )
