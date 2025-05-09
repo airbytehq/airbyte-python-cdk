@@ -3,11 +3,9 @@
 
 from dataclasses import dataclass
 
-from airbyte_cdk.sql.exceptions import AirbyteConnectorError
-
 
 @dataclass(kw_only=True)
-class ConnectorSecretWithNoValidVersionsError(AirbyteConnectorError):
+class ConnectorSecretWithNoValidVersionsError(Exception):
     """Error when a connector secret has no valid versions."""
 
     connector_name: str
