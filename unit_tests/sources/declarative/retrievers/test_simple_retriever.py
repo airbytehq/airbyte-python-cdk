@@ -921,11 +921,8 @@ def test_emit_log_request_response_messages(mocker):
         stream_state={}, stream_slice=StreamSlice(cursor_slice={}, partition={})
     )
 
-    assert requester.send_request.call_args_list[0][1]["log_formatter"] is not None
-    assert (
-        requester.send_request.call_args_list[0][1]["log_formatter"](response)
-        == format_http_message_mock.return_value
-    )
+    assert retriever.log_formatter is not None
+    assert retriever.log_formatter(response) == format_http_message_mock.return_value
 
 
 def test_retriever_last_page_size_for_page_increment():

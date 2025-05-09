@@ -10,7 +10,6 @@ from itertools import islice
 from typing import (
     Any,
     Callable,
-    Dict,
     Iterable,
     List,
     Mapping,
@@ -93,6 +92,7 @@ class SimpleRetriever(Retriever):
     cursor: Optional[DeclarativeCursor] = None
     ignore_stream_slicer_parameters_on_paginated_requests: bool = False
     additional_query_properties: Optional[QueryProperties] = None
+    log_formatter: Optional[Callable[[requests.Response], Any]] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._paginator = self.paginator or NoPagination(parameters=parameters)
@@ -353,6 +353,7 @@ class SimpleRetriever(Retriever):
                 stream_slice=stream_slice,
                 next_page_token=next_page_token,
             ),
+            log_formatter=self.log_formatter,
         )
 
     # This logic is similar to _read_pages in the HttpStream class. When making changes here, consider making changes there as well.
@@ -655,6 +656,19 @@ class SimpleRetrieverTestReadDecorator(SimpleRetriever):
 
     def __post_init__(self, options: Mapping[str, Any]) -> None:
         super().__post_init__(options)
+        self.log_formatter = (
+            (
+                lambda response: format_http_message(
+                    response,
+                    f"Stream '{self.name}' request",
+                    f"Request performed in order to extract records for stream '{self.name}'",
+                    self.name,
+                )
+            )
+            if not self.log_formatter
+            else self.log_formatter
+        )
+
         if self.maximum_number_of_slices and self.maximum_number_of_slices < 1:
             raise ValueError(
                 f"The maximum number of slices on a test read needs to be strictly positive. Got {self.maximum_number_of_slices}"
@@ -663,49 +677,6 @@ class SimpleRetrieverTestReadDecorator(SimpleRetriever):
     # stream_slices is defined with arguments on http stream and fixing this has a long tail of dependencies. Will be resolved by the decoupling of http stream and simple retriever
     def stream_slices(self) -> Iterable[Optional[StreamSlice]]:  # type: ignore
         return islice(super().stream_slices(), self.maximum_number_of_slices)
-
-    def _fetch_next_page(
-        self,
-        stream_state: Mapping[str, Any],
-        stream_slice: StreamSlice,
-        next_page_token: Optional[Mapping[str, Any]] = None,
-    ) -> Optional[requests.Response]:
-        return self.requester.send_request(
-            path=self._paginator_path(
-                next_page_token=next_page_token,
-                stream_state=stream_state,
-                stream_slice=stream_slice,
-            ),
-            stream_state=stream_state,
-            stream_slice=stream_slice,
-            next_page_token=next_page_token,
-            request_headers=self._request_headers(
-                stream_state=stream_state,
-                stream_slice=stream_slice,
-                next_page_token=next_page_token,
-            ),
-            request_params=self._request_params(
-                stream_state=stream_state,
-                stream_slice=stream_slice,
-                next_page_token=next_page_token,
-            ),
-            request_body_data=self._request_body_data(
-                stream_state=stream_state,
-                stream_slice=stream_slice,
-                next_page_token=next_page_token,
-            ),
-            request_body_json=self._request_body_json(
-                stream_state=stream_state,
-                stream_slice=stream_slice,
-                next_page_token=next_page_token,
-            ),
-            log_formatter=lambda response: format_http_message(
-                response,
-                f"Stream '{self.name}' request",
-                f"Request performed in order to extract records for stream '{self.name}'",
-                self.name,
-            ),
-        )
 
 
 @deprecated(
