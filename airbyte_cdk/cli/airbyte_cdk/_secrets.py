@@ -328,6 +328,7 @@ def _write_secret_file(
         Optional[str]: Error message if no enabled version is found, None otherwise
     """
     # List all enabled versions of the secret
+    # This ensures versions[0] will be the most recently created enabled version
     response = client.list_secret_versions(
         request={"parent": secret.name, "filter": "state:ENABLED"}
     )
