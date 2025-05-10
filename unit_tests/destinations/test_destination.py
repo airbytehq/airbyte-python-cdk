@@ -46,11 +46,11 @@ class TestArgParsing:
     @pytest.mark.parametrize(
         ("arg_list", "expected_output"),
         [
-            (["spec"], {"command": "spec"}),
-            (["check", "--config", "bogus_path/"], {"command": "check", "config": "bogus_path/"}),
+            (["spec"], {"command": "spec", "debug": False}),
+            (["check", "--config", "bogus_path/"], {"command": "check", "config": "bogus_path/", "debug": False}),
             (
                 ["write", "--config", "config_path1", "--catalog", "catalog_path1"],
-                {"command": "write", "config": "config_path1", "catalog": "catalog_path1"},
+                {"command": "write", "config": "config_path1", "catalog": "catalog_path1", "debug": False},
             ),
         ],
     )

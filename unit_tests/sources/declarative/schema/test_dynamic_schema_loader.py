@@ -4,7 +4,8 @@
 
 import json
 from copy import deepcopy
-from unittest.mock import MagicMock
+from typing import Any, Mapping, MutableMapping
+from unittest.mock import MagicMock, Mock
 
 import pytest
 
@@ -14,13 +15,21 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
 from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
-from airbyte_cdk.sources.declarative.schema import DynamicSchemaLoader, SchemaTypeIdentifier
+from airbyte_cdk.sources.declarative.retrievers import Retriever
+from airbyte_cdk.sources.declarative.schema import (
+    DynamicSchemaLoader,
+    SchemaTypeIdentifier,
+    TypesMap,
+)
+from airbyte_cdk.sources.declarative.schema.dynamic_schema_loader import (
+    AdditionalPropertyFieldsInferrer,
+)
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 
 _CONFIG = {
     "start_date": "2024-07-01T00:00:00.000Z",
 }
-
+_ANY_PARAMETERS = {}
 _MANIFEST = {
     "version": "6.7.0",
     "definitions": {
@@ -412,3 +421,87 @@ def test_dynamic_schema_loader_with_type_conditions():
 
     assert len(actual_catalog.streams) == 1
     assert actual_catalog.streams[0].json_schema == expected_schema
+
+
+def _mock_schema_loader_retriever(http_response_body) -> Retriever:
+    retriever = Mock(spec=Retriever)
+    retriever.read_records.return_value = iter([http_response_body])
+    return retriever
+
+
+class TestAdditionalPropertyFieldsInferrer(AdditionalPropertyFieldsInferrer):
+    def __init__(self, properties_to_add: Mapping[str, Any]):
+        self._properties_to_add = properties_to_add
+
+    def infer(self, property_definition: MutableMapping[str, Any]) -> Mapping[str, Any]:
+        return self._properties_to_add
+
+
+def test_additional_property_fields_inferrer():
+    properties_to_add = {"added_property": "a_value"}
+    expected_schema = {
+        "$schema": "https://json-schema.org/draft-07/schema#",
+        "additionalProperties": False,
+        "type": "object",
+        "properties": {
+            "id": {"type": ["null", "integer"]} | properties_to_add,
+        },
+    }
+    schema_loader = DynamicSchemaLoader(
+        retriever=_mock_schema_loader_retriever({"fields": [{"name": "id", "type": "integer"}]}),
+        additional_property_fields_inferrer=TestAdditionalPropertyFieldsInferrer(properties_to_add),
+        schema_type_identifier=SchemaTypeIdentifier(
+            key_pointer=["name"],
+            type_pointer=["type"],
+            types_mapping=[
+                TypesMap(
+                    current_type="integer",
+                    target_type="integer",
+                    condition=None,
+                ),
+            ],
+            schema_pointer=["fields"],
+            parameters=_ANY_PARAMETERS,
+        ),
+        allow_additional_properties=False,
+        config={},
+        parameters=_ANY_PARAMETERS,
+    )
+
+    schema = schema_loader.get_json_schema()
+
+    assert schema == expected_schema
+
+
+def test_additional_properties():
+    expected_schema = {
+        "$schema": "https://json-schema.org/draft-07/schema#",
+        "additionalProperties": False,
+        "type": "object",
+        "properties": {
+            "id": {"type": ["null", "integer"]},
+        },
+    }
+    schema_loader = DynamicSchemaLoader(
+        retriever=_mock_schema_loader_retriever({"fields": [{"name": "id", "type": "integer"}]}),
+        schema_type_identifier=SchemaTypeIdentifier(
+            key_pointer=["name"],
+            type_pointer=["type"],
+            types_mapping=[
+                TypesMap(
+                    current_type="integer",
+                    target_type="integer",
+                    condition=None,
+                ),
+            ],
+            schema_pointer=["fields"],
+            parameters=_ANY_PARAMETERS,
+        ),
+        allow_additional_properties=False,
+        config={},
+        parameters=_ANY_PARAMETERS,
+    )
+
+    schema = schema_loader.get_json_schema()
+
+    assert schema == expected_schema

@@ -1,11 +1,10 @@
 #
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
-
-
+from abc import ABC, abstractmethod
 from copy import deepcopy
 from dataclasses import InitVar, dataclass, field
-from typing import Any, List, Mapping, MutableMapping, Optional, Union
+from typing import Any, Dict, List, Mapping, MutableMapping, Optional, Union
 
 import dpath
 from typing_extensions import deprecated
@@ -16,7 +15,7 @@ from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.source import ExperimentalClassWarning
-from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
+from airbyte_cdk.sources.types import Config
 
 AIRBYTE_DATA_TYPES: Mapping[str, MutableMapping[str, Any]] = {
     "string": {"type": ["null", "string"]},
@@ -115,6 +114,38 @@ class SchemaTypeIdentifier:
 
 
 @deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)
+class AdditionalPropertyFieldsInferrer(ABC):
+    """
+    Infers additional fields to be added to each property. For example, if this inferrer returns {"toto": "tata"}, a property that would have looked like this:
+    ```
+        "properties": {
+            "Id": {
+                "type": ["null", "string"],
+            },
+            <...>
+        }
+    ```
+    ... will look like this:
+        ```
+        "properties": {
+            "Id": {
+                "type": ["null", "string"],
+                "toto": "tata"
+            },
+            <...>
+        }
+    ```
+    """
+
+    @abstractmethod
+    def infer(self, property_definition: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
+        """
+        Infers additional property fields from the given property definition.
+        """
+        pass
+
+
+@deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)
 @dataclass
 class DynamicSchemaLoader(SchemaLoader):
     """
@@ -126,6 +157,8 @@ class DynamicSchemaLoader(SchemaLoader):
     parameters: InitVar[Mapping[str, Any]]
     schema_type_identifier: SchemaTypeIdentifier
     schema_transformations: List[RecordTransformation] = field(default_factory=lambda: [])
+    additional_property_fields_inferrer: Optional[AdditionalPropertyFieldsInferrer] = None
+    allow_additional_properties: bool = True
 
     def get_json_schema(self) -> Mapping[str, Any]:
         """
@@ -149,22 +182,26 @@ class DynamicSchemaLoader(SchemaLoader):
                 property_definition,
                 self.schema_type_identifier.type_pointer,
             )
+
+            value.update(
+                self.additional_property_fields_inferrer.infer(property_definition)
+                if self.additional_property_fields_inferrer
+                else {}
+            )
             properties[key] = value
 
-        transformed_properties = self._transform(properties, {})
+        transformed_properties = self._transform(properties)
 
         return {
             "$schema": "https://json-schema.org/draft-07/schema#",
             "type": "object",
-            "additionalProperties": True,
+            "additionalProperties": self.allow_additional_properties,
             "properties": transformed_properties,
         }
 
     def _transform(
         self,
         properties: Mapping[str, Any],
-        stream_state: StreamState,
-        stream_slice: Optional[StreamSlice] = None,
     ) -> Mapping[str, Any]:
         for transformation in self.schema_transformations:
             transformation.transform(
@@ -190,7 +227,7 @@ class DynamicSchemaLoader(SchemaLoader):
         self,
         raw_schema: MutableMapping[str, Any],
         field_type_path: Optional[List[Union[InterpolatedString, str]]],
-    ) -> Union[Mapping[str, Any], List[Mapping[str, Any]]]:
+    ) -> Dict[str, Any]:
         """
         Determines the JSON Schema type for a field, supporting nullable and combined types.
         """
@@ -220,7 +257,7 @@ class DynamicSchemaLoader(SchemaLoader):
                 f"Invalid data type. Available string or two items list of string. Got {mapped_field_type}."
             )
 
-    def _resolve_complex_type(self, complex_type: ComplexFieldType) -> Mapping[str, Any]:
+    def _resolve_complex_type(self, complex_type: ComplexFieldType) -> Dict[str, Any]:
         if not complex_type.items:
             return self._get_airbyte_type(complex_type.field_type)
 
@@ -255,14 +292,14 @@ class DynamicSchemaLoader(SchemaLoader):
         return field_type
 
     @staticmethod
-    def _get_airbyte_type(field_type: str) -> MutableMapping[str, Any]:
+    def _get_airbyte_type(field_type: str) -> Dict[str, Any]:
         """
         Maps a field type to its corresponding Airbyte type definition.
         """
         if field_type not in AIRBYTE_DATA_TYPES:
             raise ValueError(f"Invalid Airbyte data type: {field_type}")
 
-        return deepcopy(AIRBYTE_DATA_TYPES[field_type])
+        return deepcopy(AIRBYTE_DATA_TYPES[field_type])  # type: ignore  # a copy of a dict should be a dict, not a MutableMapping
 
     def _extract_data(
         self,
