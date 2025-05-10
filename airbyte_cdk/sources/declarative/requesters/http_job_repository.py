@@ -320,14 +320,14 @@ class AsyncHttpJobRepository(AsyncJobRepository):
         return polling_response_context
 
     def _get_create_job_stream_slice(self, job: AsyncJob) -> StreamSlice:
-        stream_slice = StreamSlice(
-            partition={},
-            cursor_slice={},
-            extra_fields={
+        return StreamSlice(
+            partition=job.job_parameters().partition,
+            cursor_slice=job.job_parameters().cursor_slice,
+            extra_fields=dict(job.job_parameters().extra_fields)
+            | {
                 "creation_response": self._get_creation_response_interpolation_context(job),
             },
         )
-        return stream_slice
 
     def _get_download_targets(self, job: AsyncJob) -> Iterable[str]:
         if not self.download_target_requester:
