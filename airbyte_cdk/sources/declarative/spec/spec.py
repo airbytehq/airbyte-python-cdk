@@ -34,9 +34,9 @@ class Spec:
     parameters: InitVar[Mapping[str, Any]]
     documentation_url: Optional[str] = None
     advanced_auth: Optional[AuthFlow] = None
-    config_migrations: Optional[List[ConfigTransformation]] = None
-    config_transformations: Optional[List[ConfigTransformation]] = None
-    config_validations: Optional[List[Validator]] = None
+    config_migrations: List[ConfigTransformation] = []
+    transformations: List[ConfigTransformation] = []
+    validations: List[Validator] = []
     message_repository: MessageRepository = InMemoryMessageRepository()
 
     def generate_spec(self) -> ConnectorSpecification:
