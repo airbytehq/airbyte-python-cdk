@@ -4202,7 +4202,7 @@ definitions:
     properties:
       type:
         type: string
-        enum: [ DpathValidation ]
+        enum: [ DpathValidator ]
       field_path:
         title: Field Path
         description: List of potentially nested fields describing the full path of the field to validate. Use "*" to validate all values from an array.
