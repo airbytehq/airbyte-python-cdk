@@ -2,7 +2,7 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from dataclasses import InitVar, dataclass
+from dataclasses import InitVar, dataclass, field
 import json
 from typing import Any, List, Mapping, MutableMapping, Optional
 
@@ -34,9 +34,9 @@ class Spec:
     parameters: InitVar[Mapping[str, Any]]
     documentation_url: Optional[str] = None
     advanced_auth: Optional[AuthFlow] = None
-    config_migrations: List[ConfigTransformation] = []
-    transformations: List[ConfigTransformation] = []
-    validations: List[Validator] = []
+    config_migrations: List[ConfigTransformation] = field(default_factory=list)
+    transformations: List[ConfigTransformation] = field(default_factory=list)
+    validations: List[Validator] = field(default_factory=list)
     message_repository: MessageRepository = InMemoryMessageRepository()
 
     def generate_spec(self) -> ConnectorSpecification:
