@@ -32,6 +32,7 @@ from airbyte_cdk.connector_builder.models import (
 )
 from airbyte_cdk.models import FailureType, Level
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
+from airbyte_cdk.sources.declarative import transformations
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator
 from airbyte_cdk.sources.declarative.async_job.job_tracker import JobTracker
 from airbyte_cdk.sources.declarative.async_job.repository import AsyncJobRepository
@@ -3467,17 +3468,23 @@ class ModelToComponentFactory:
 
     def create_spec(self, model: SpecModel, config: Config, **kwargs: Any) -> Spec:
         config_migrations = []
-        transformations = []
-        validations = []
+        config_transformations = []
+        config_validations = []
 
-        for migration in model.config_normalization_rules.config_migrations:
-            config_migrations.append(self._create_component_from_model(migration, config))
+        if model.config_normalization_rules:
+            if model.config_normalization_rules.config_migrations:
+                for migration in model.config_normalization_rules.config_migrations:
+                    config_migrations.append(self._create_component_from_model(migration, config))
 
-        for transformation in model.config_normalization_rules.transformations:
-            transformations.append(self._create_component_from_model(transformation, config))
+            if model.config_normalization_rules.transformations:
+                for transformation in model.config_normalization_rules.transformations:
+                    config_transformations.append(
+                        self._create_component_from_model(transformation, config)
+                    )
 
-        for validation in model.config_normalization_rules.validations:
-            validations.append(self._create_component_from_model(validation, config))
+            if model.config_normalization_rules.validations:
+                for validation in model.config_normalization_rules.validations:
+                    config_validations.append(self._create_component_from_model(validation, config))
 
         return Spec(
             connection_specification=model.connection_specification,
@@ -3485,8 +3492,8 @@ class ModelToComponentFactory:
             advanced_auth=model.advanced_auth,
             parameters={},
             config_migrations=config_migrations,
-            transformations=transformations,
-            validations=validations,
+            config_transformations=config_transformations,
+            config_validations=config_validations,
         )
 
     def create_substream_partition_router(
