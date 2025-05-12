@@ -167,8 +167,9 @@ def build_connector_image(
     if dockerfile_override:
         dockerfile_path = dockerfile_override
     else:
-        dockerfile_path = connector_directory / "build" / "docker" / "Dockerfile"
-        dockerignore_path = connector_directory / "build" / "docker" / "Dockerfile.dockerignore"
+        dockerfile_dir = connector_directory / "build" / "docker"
+        dockerfile_path = dockerfile_dir / "Dockerfile"
+        dockerignore_path = dockerfile_dir / "Dockerfile.dockerignore"
         try:
             dockerfile_text, dockerignore_text = get_dockerfile_templates(
                 metadata=metadata,
@@ -191,6 +192,7 @@ def build_connector_image(
                     ),
                 ) from e
 
+        dockerfile_dir.mkdir(parents=True, exist_ok=True)
         dockerfile_path.write_text(dockerfile_text)
         dockerignore_path.write_text(dockerignore_text)
 
@@ -339,24 +341,24 @@ def get_dockerfile_templates(
         from_dir=connector_directory,
     )
     # airbyte_repo_root successfully resolved
-    dockerfile_path = (
+    source_dockerfile_path = (
         airbyte_repo_root / "docker-images" / f"Dockerfile.{metadata.data.language.value}-connector"
     )
-    dockerignore_path = (
+    source_dockerignore_path = (
         airbyte_repo_root
         / "docker-images"
         / f"Dockerfile.{metadata.data.language.value}-connector.dockerignore"
     )
-    if not dockerfile_path.exists():
+    if not source_dockerfile_path.exists():
         raise FileNotFoundError(
-            f"Dockerfile for {metadata.data.language.value} connector not found at {dockerfile_path}"
+            f"Dockerfile for {metadata.data.language.value} connector not found at {source_dockerfile_path}"
         )
-    if not dockerignore_path.exists():
+    if not source_dockerignore_path.exists():
         raise FileNotFoundError(
-            f".dockerignore for {metadata.data.language.value} connector not found at {dockerignore_path}"
+            f".dockerignore for {metadata.data.language.value} connector not found at {source_dockerignore_path}"
         )
 
-    return dockerfile_path.read_text(), dockerignore_path.read_text()
+    return source_dockerfile_path.read_text(), source_dockerignore_path.read_text()
 
 
 def run_docker_command(
