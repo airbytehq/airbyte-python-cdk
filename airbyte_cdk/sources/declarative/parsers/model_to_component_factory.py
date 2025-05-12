@@ -3465,16 +3465,28 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
-    @staticmethod
-    def create_spec(model: SpecModel, config: Config, **kwargs: Any) -> Spec:
+    def create_spec(self, model: SpecModel, config: Config, **kwargs: Any) -> Spec:
+        config_migrations = []
+        transformations = []
+        validations = []
+
+        for migration in model.config_normalization_rules.config_migrations:
+            config_migrations.append(self._create_component_from_model(migration, config))
+
+        for transformation in model.config_normalization_rules.transformations:
+            transformations.append(self._create_component_from_model(transformation, config))
+
+        for validation in model.config_normalization_rules.validations:
+            validations.append(self._create_component_from_model(validation, config))
+
         return Spec(
             connection_specification=model.connection_specification,
             documentation_url=model.documentation_url,
             advanced_auth=model.advanced_auth,
             parameters={},
-            config_migrations=model.config_normalization_rules.config_migrations,
-            transformations=model.config_normalization_rules.transformations,
-            validations=model.config_normalization_rules.validations,
+            config_migrations=config_migrations,
+            transformations=transformations,
+            validations=validations,
         )
 
     def create_substream_partition_router(
