@@ -38,10 +38,11 @@ class TestDpathValidator(TestCase):
 
         test_data = {"user": {"profile": {"email": "test@example.com"}}}
 
-        with pytest.raises(KeyError) as context:
+        with pytest.raises(ValueError) as context:
             validator.validate(test_data)
-            assert "Error validating path" in str(context.exception)
-            assert not strategy.validate_called
+
+        assert "Error validating path" in str(context.value)
+        assert not strategy.validate_called
 
     def test_given_strategy_fails_when_validate_then_raise_value_error(self):
         error_message = "Invalid email format"
@@ -53,10 +54,8 @@ class TestDpathValidator(TestCase):
         with pytest.raises(ValueError) as context:
             validator.validate(test_data)
 
-            assert "Error validating value" in str(context.exception)
-            assert error_message in str(context.exception)
-            assert strategy.validate_called
-            assert strategy.validated_value == "invalid-email"
+        assert strategy.validate_called
+        assert strategy.validated_value == "invalid-email"
 
     def test_given_empty_path_list_when_validate_then_validate_raises_exception(self):
         strategy = MockValidationStrategy()
@@ -72,7 +71,7 @@ class TestDpathValidator(TestCase):
 
         test_data = {}
 
-        with pytest.raises(KeyError):
+        with pytest.raises(ValueError):
             validator.validate(test_data)
 
     def test_path_with_wildcard_when_validate_then_validate_is_successful(self):

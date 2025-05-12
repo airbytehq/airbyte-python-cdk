@@ -40,9 +40,9 @@ class TestPredicateValidator(TestCase):
         with pytest.raises(ValueError) as context:
             validator.validate()
 
-            assert error_message in str(context.exception)
-            assert strategy.validate_called
-            assert strategy.validated_value == test_value
+        assert error_message in str(context.value)
+        assert strategy.validate_called
+        assert strategy.validated_value == test_value
 
     def test_given_complex_object_when_validate_then_successful(self):
         strategy = MockValidationStrategy()
