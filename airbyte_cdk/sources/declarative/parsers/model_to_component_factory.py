@@ -2758,9 +2758,11 @@ class ModelToComponentFactory:
     def create_properties_from_endpoint(
         self, model: PropertiesFromEndpointModel, config: Config, **kwargs: Any
     ) -> PropertiesFromEndpoint:
-        parameters = model.retriever.requester.parameters or {}
-        parameters.update(model.parameters or {})
-        model.retriever.requester.parameters = parameters
+        # CustomRetriever doesn't have requester parameter
+        if isinstance(model.retriever, SimpleRetrieverModel):
+            parameters = model.retriever.requester.parameters or {}
+            parameters.update(model.parameters or {})
+            model.retriever.requester.parameters = parameters
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
