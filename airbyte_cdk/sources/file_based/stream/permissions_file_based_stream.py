@@ -7,6 +7,9 @@ from typing import Any, Dict, Iterable
 
 from airbyte_cdk.models import AirbyteLogMessage, AirbyteMessage, Level
 from airbyte_cdk.models import Type as MessageType
+from airbyte_cdk.sources.file_based.file_based_stream_permissions_reader import (
+    AbstractFileBasedStreamPermissionsReader,
+)
 from airbyte_cdk.sources.file_based.stream import DefaultFileBasedStream
 from airbyte_cdk.sources.file_based.types import StreamSlice
 from airbyte_cdk.sources.streams.core import JsonSchema
@@ -26,10 +29,16 @@ class PermissionsFileBasedStream(DefaultFileBasedStream):
     and schema definition, while this class handles the streaming interface.
     """
 
+    def __init__(
+        self, stream_permissions_reader: AbstractFileBasedStreamPermissionsReader, **kwargs: Any
+    ):
+        super().__init__(**kwargs)
+        self.stream_permissions_reader = stream_permissions_reader
+
     def _filter_schema_invalid_properties(
         self, configured_catalog_json_schema: Dict[str, Any]
     ) -> Dict[str, Any]:
-        return self.stream_reader.file_permissions_schema
+        return self.stream_permissions_reader.file_permissions_schema
 
     def read_records_from_slice(self, stream_slice: StreamSlice) -> Iterable[AirbyteMessage]:
         """
@@ -40,7 +49,7 @@ class PermissionsFileBasedStream(DefaultFileBasedStream):
             no_permissions = False
             file_datetime_string = file.last_modified.strftime(self.DATE_TIME_FORMAT)
             try:
-                permissions_record = self.stream_reader.get_file_acl_permissions(
+                permissions_record = self.stream_permissions_reader.get_file_acl_permissions(
                     file, logger=self.logger
                 )
                 if not permissions_record:
@@ -52,9 +61,7 @@ class PermissionsFileBasedStream(DefaultFileBasedStream):
                 permissions_record = self.transform_record(
                     permissions_record, file, file_datetime_string
                 )
-                yield stream_data_to_airbyte_message(
-                    self.name, permissions_record, is_file_transfer_message=False
-                )
+                yield stream_data_to_airbyte_message(self.name, permissions_record)
             except Exception as e:
                 self.logger.error(f"Failed to retrieve permissions for file {file.uri}: {str(e)}")
                 yield AirbyteMessage(
@@ -82,4 +89,4 @@ class PermissionsFileBasedStream(DefaultFileBasedStream):
         Returns:
            The file permissions schema that defines the structure of permission records
         """
-        return self.stream_reader.file_permissions_schema
+        return self.stream_permissions_reader.file_permissions_schema

@@ -34,6 +34,12 @@ class AsyncJob:
 
     def status(self) -> AsyncJobStatus:
         if self._timer.has_timed_out():
+            # TODO: we should account the fact that,
+            # certain APIs could send the `Timeout` status,
+            # thus we should not return `Timeout` in that case,
+            # but act based on the scenario.
+
+            # the default behavior is to return `Timeout` status and retry.
             return AsyncJobStatus.TIMED_OUT
         return self._status
 

@@ -3,7 +3,6 @@
 #
 
 import logging
-import os
 from dataclasses import InitVar, dataclass, field
 from typing import Any, Callable, Mapping, MutableMapping, Optional, Union
 from urllib.parse import urljoin
@@ -16,7 +15,9 @@ from airbyte_cdk.sources.declarative.auth.declarative_authenticator import (
 )
 from airbyte_cdk.sources.declarative.decoders import Decoder
 from airbyte_cdk.sources.declarative.decoders.json_decoder import JsonDecoder
-from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
+from airbyte_cdk.sources.declarative.interpolation.interpolated_string import (
+    InterpolatedString,
+)
 from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_request_options_provider import (
     InterpolatedRequestOptionsProvider,
 )
@@ -25,8 +26,11 @@ from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.sources.streams.call_rate import APIBudget
 from airbyte_cdk.sources.streams.http import HttpClient
 from airbyte_cdk.sources.streams.http.error_handlers import ErrorHandler
-from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
-from airbyte_cdk.utils.mapping_helpers import combine_mappings
+from airbyte_cdk.sources.types import Config, EmptyString, StreamSlice, StreamState
+from airbyte_cdk.utils.mapping_helpers import (
+    combine_mappings,
+    get_interpolation_context,
+)
 
 
 @dataclass
@@ -48,10 +52,12 @@ class HttpRequester(Requester):
     """
 
     name: str
-    url_base: Union[InterpolatedString, str]
-    path: Union[InterpolatedString, str]
     config: Config
     parameters: InitVar[Mapping[str, Any]]
+
+    url: Optional[Union[InterpolatedString, str]] = None
+    url_base: Optional[Union[InterpolatedString, str]] = None
+    path: Optional[Union[InterpolatedString, str]] = None
     authenticator: Optional[DeclarativeAuthenticator] = None
     http_method: Union[str, HttpMethod] = HttpMethod.GET
     request_options_provider: Optional[InterpolatedRequestOptionsProvider] = None
@@ -65,8 +71,17 @@ class HttpRequester(Requester):
     decoder: Decoder = field(default_factory=lambda: JsonDecoder(parameters={}))
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        self._url_base = InterpolatedString.create(self.url_base, parameters=parameters)
-        self._path = InterpolatedString.create(self.path, parameters=parameters)
+        self._url = InterpolatedString.create(
+            self.url if self.url else EmptyString, parameters=parameters
+        )
+        # deprecated
+        self._url_base = InterpolatedString.create(
+            self.url_base if self.url_base else EmptyString, parameters=parameters
+        )
+        # deprecated
+        self._path = InterpolatedString.create(
+            self.path if self.path else EmptyString, parameters=parameters
+        )
         if self.request_options_provider is None:
             self._request_options_provider = InterpolatedRequestOptionsProvider(
                 config=self.config, parameters=parameters
@@ -112,27 +127,78 @@ class HttpRequester(Requester):
     def get_authenticator(self) -> DeclarativeAuthenticator:
         return self._authenticator
 
-    def get_url_base(self) -> str:
-        return os.path.join(self._url_base.eval(self.config), "")
+    def get_url(
+        self,
+        *,
+        stream_state: Optional[StreamState] = None,
+        stream_slice: Optional[StreamSlice] = None,
+        next_page_token: Optional[Mapping[str, Any]] = None,
+    ) -> str:
+        interpolation_context = get_interpolation_context(
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
+        )
+
+        return str(self._url.eval(self.config, **interpolation_context))
+
+    def _get_url(
+        self,
+        *,
+        path: Optional[str] = None,
+        stream_state: Optional[StreamState] = None,
+        stream_slice: Optional[StreamSlice] = None,
+        next_page_token: Optional[Mapping[str, Any]] = None,
+    ) -> str:
+        url = self.get_url(
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
+        )
+
+        url_base = self.get_url_base(
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
+        )
+
+        path = path or self.get_path(
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
+        )
+
+        full_url = self._join_url(url_base, path) if url_base else url + path if path else url
+
+        return full_url
+
+    def get_url_base(
+        self,
+        *,
+        stream_state: Optional[StreamState] = None,
+        stream_slice: Optional[StreamSlice] = None,
+        next_page_token: Optional[Mapping[str, Any]] = None,
+    ) -> str:
+        interpolation_context = get_interpolation_context(
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
+        )
+        return str(self._url_base.eval(self.config, **interpolation_context))
 
     def get_path(
         self,
         *,
-        stream_state: Optional[StreamState],
-        stream_slice: Optional[StreamSlice],
-        next_page_token: Optional[Mapping[str, Any]],
+        stream_state: Optional[StreamState] = None,
+        stream_slice: Optional[StreamSlice] = None,
+        next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> str:
-        kwargs = {
-            "stream_slice": stream_slice,
-            "next_page_token": next_page_token,
-            # update the interpolation context with extra fields, if passed.
-            **(
-                stream_slice.extra_fields
-                if stream_slice is not None and hasattr(stream_slice, "extra_fields")
-                else {}
-            ),
-        }
-        path = str(self._path.eval(self.config, **kwargs))
+        interpolation_context = get_interpolation_context(
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
+        )
+        path = str(self._path.eval(self.config, **interpolation_context))
         return path.lstrip("/")
 
     def get_method(self) -> HttpMethod:
@@ -146,7 +212,9 @@ class HttpRequester(Requester):
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> MutableMapping[str, Any]:
         return self._request_options_provider.get_request_params(
-            stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
         )
 
     def get_request_headers(
@@ -157,7 +225,9 @@ class HttpRequester(Requester):
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Mapping[str, Any]:
         return self._request_options_provider.get_request_headers(
-            stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
         )
 
     # fixing request options provider types has a lot of dependencies
@@ -186,7 +256,9 @@ class HttpRequester(Requester):
         next_page_token: Optional[Mapping[str, Any]] = None,
     ) -> Optional[Mapping[str, Any]]:
         return self._request_options_provider.get_request_body_json(
-            stream_state=stream_state, stream_slice=stream_slice, next_page_token=next_page_token
+            stream_state=stream_state,
+            stream_slice=stream_slice,
+            next_page_token=next_page_token,
         )
 
     @property
@@ -329,7 +401,40 @@ class HttpRequester(Requester):
         return options
 
     @classmethod
-    def _join_url(cls, url_base: str, path: str) -> str:
+    def _join_url(cls, url_base: str, path: Optional[str] = None) -> str:
+        """
+        Joins a base URL with a given path and returns the resulting URL with any trailing slash removed.
+
+        This method ensures that there are no duplicate slashes when concatenating the base URL and the path,
+        which is useful when the full URL is provided from an interpolation context.
+
+        Args:
+            url_base (str): The base URL to which the path will be appended.
+            path (Optional[str]): The path to join with the base URL.
+
+        Returns:
+            str: The resulting joined URL.
+
+        Note:
+            Related issue: https://github.com/airbytehq/airbyte-internal-issues/issues/11869
+            - If the path is an empty string or None, the method returns the base URL with any trailing slash removed.
+
+        Example:
+            1) _join_url("https://example.com/api/", "endpoint") >> 'https://example.com/api/endpoint'
+            2) _join_url("https://example.com/api", "/endpoint") >> 'https://example.com/api/endpoint'
+            3) _join_url("https://example.com/api/", "") >> 'https://example.com/api/'
+            4) _join_url("https://example.com/api", None) >> 'https://example.com/api'
+        """
+
+        # return a full-url if provided directly from interpolation context
+        if path == EmptyString or path is None:
+            return url_base
+        else:
+            # since we didn't provide a full-url, the url_base might not have a trailing slash
+            # so we join the url_base and path correctly
+            if not url_base.endswith("/"):
+                url_base += "/"
+
         return urljoin(url_base, path)
 
     def send_request(
@@ -346,14 +451,11 @@ class HttpRequester(Requester):
     ) -> Optional[requests.Response]:
         request, response = self._http_client.send_request(
             http_method=self.get_method().value,
-            url=self._join_url(
-                self.get_url_base(),
-                path
-                or self.get_path(
-                    stream_state=stream_state,
-                    stream_slice=stream_slice,
-                    next_page_token=next_page_token,
-                ),
+            url=self._get_url(
+                path=path,
+                stream_state=stream_state,
+                stream_slice=stream_slice,
+                next_page_token=next_page_token,
             ),
             request_kwargs={"stream": self.stream_response},
             headers=self._request_headers(

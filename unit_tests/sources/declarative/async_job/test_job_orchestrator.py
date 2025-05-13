@@ -146,6 +146,7 @@ class AsyncJobOrchestratorTest(TestCase):
 
         with pytest.raises(AirbyteTracedException):
             list(orchestrator.create_and_get_completed_partitions())
+
         assert job_tracker.try_to_get_intent()
         assert (
             self._job_repository.start.call_args_list

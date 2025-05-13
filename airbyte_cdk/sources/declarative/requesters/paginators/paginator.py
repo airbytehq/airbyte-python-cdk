@@ -11,7 +11,7 @@ import requests
 from airbyte_cdk.sources.declarative.requesters.request_options.request_options_provider import (
     RequestOptionsProvider,
 )
-from airbyte_cdk.sources.types import Record
+from airbyte_cdk.sources.types import Record, StreamSlice
 
 
 @dataclass
@@ -49,7 +49,12 @@ class Paginator(ABC, RequestOptionsProvider):
         pass
 
     @abstractmethod
-    def path(self, next_page_token: Optional[Mapping[str, Any]]) -> Optional[str]:
+    def path(
+        self,
+        next_page_token: Optional[Mapping[str, Any]],
+        stream_state: Optional[Mapping[str, Any]] = None,
+        stream_slice: Optional[StreamSlice] = None,
+    ) -> Optional[str]:
         """
         Returns the URL path to hit to fetch the next page of records
 

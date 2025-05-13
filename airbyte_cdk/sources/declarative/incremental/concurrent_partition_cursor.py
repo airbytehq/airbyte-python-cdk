@@ -65,6 +65,7 @@ class ConcurrentPerPartitionCursor(Cursor):
     _NO_CURSOR_STATE: Mapping[str, Any] = {}
     _GLOBAL_STATE_KEY = "state"
     _PERPARTITION_STATE_KEY = "states"
+    _IS_PARTITION_DUPLICATION_LOGGED = False
     _KEY = 0
     _VALUE = 1
 
@@ -79,6 +80,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         connector_state_manager: ConnectorStateManager,
         connector_state_converter: AbstractStreamStateConverter,
         cursor_field: CursorField,
+        use_global_cursor: bool = False,
     ) -> None:
         self._global_cursor: Optional[StreamState] = {}
         self._stream_name = stream_name
@@ -106,7 +108,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         self._lookback_window: int = 0
         self._parent_state: Optional[StreamState] = None
         self._number_of_partitions: int = 0
-        self._use_global_cursor: bool = False
+        self._use_global_cursor: bool = use_global_cursor
         self._partition_serializer = PerPartitionKeySerializer()
         # Track the last time a state message was emitted
         self._last_emission_time: float = 0.0
@@ -240,6 +242,10 @@ class ConcurrentPerPartitionCursor(Cursor):
             if current_time is None:
                 return
             self._last_emission_time = current_time
+            # Skip state emit for global cursor if parent state is empty
+            if self._use_global_cursor and not self._parent_state:
+                return
+
         self._connector_state_manager.update_state_for_stream(
             self._stream_name,
             self._stream_namespace,
@@ -278,7 +284,13 @@ class ConcurrentPerPartitionCursor(Cursor):
             with self._lock:
                 self._number_of_partitions += 1
                 self._cursor_per_partition[partition_key] = cursor
-        self._semaphore_per_partition[partition_key] = threading.Semaphore(0)
+
+        if partition_key in self._semaphore_per_partition:
+            if not self._IS_PARTITION_DUPLICATION_LOGGED:
+                logger.warning(f"Partition duplication detected for stream {self._stream_name}")
+                self._IS_PARTITION_DUPLICATION_LOGGED = True
+        else:
+            self._semaphore_per_partition[partition_key] = threading.Semaphore(0)
 
         with self._lock:
             if (

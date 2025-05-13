@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
 from __future__ import annotations
@@ -27,6 +27,9 @@ from typing import (
 from isodate import parse_duration
 from pydantic.v1 import BaseModel
 
+from airbyte_cdk.connector_builder.models import (
+    LogMessage as ConnectorBuilderLogMessage,
+)
 from airbyte_cdk.models import FailureType, Level
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator
@@ -54,9 +57,13 @@ from airbyte_cdk.sources.declarative.auth.token_provider import (
     SessionTokenProvider,
     TokenProvider,
 )
-from airbyte_cdk.sources.declarative.checks import CheckDynamicStream, CheckStream
+from airbyte_cdk.sources.declarative.checks import (
+    CheckDynamicStream,
+    CheckStream,
+    DynamicStreamCheckConfig,
+)
 from airbyte_cdk.sources.declarative.concurrency_level import ConcurrencyLevel
-from airbyte_cdk.sources.declarative.datetime import MinMaxDatetime
+from airbyte_cdk.sources.declarative.datetime.min_max_datetime import MinMaxDatetime
 from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.decoders import (
     Decoder,
@@ -102,7 +109,10 @@ from airbyte_cdk.sources.declarative.migrations.legacy_to_per_partition_state_mi
 )
 from airbyte_cdk.sources.declarative.models import (
     CustomStateMigration,
-    GzipDecoder,
+)
+from airbyte_cdk.sources.declarative.models.base_model_with_deprecations import (
+    DEPRECATION_LOGS_TAG,
+    BaseModelWithDeprecations,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     AddedFieldDefinition as AddedFieldDefinitionModel,
@@ -219,13 +229,25 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     DynamicSchemaLoader as DynamicSchemaLoaderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    DynamicStreamCheckConfig as DynamicStreamCheckConfigModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ExponentialBackoffStrategy as ExponentialBackoffStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    FileUploader as FileUploaderModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     FixedWindowCallRatePolicy as FixedWindowCallRatePolicyModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     FlattenFields as FlattenFieldsModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    GroupByKeyMergeStrategy as GroupByKeyMergeStrategyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    GroupingPartitionRouter as GroupingPartitionRouterModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     GzipDecoder as GzipDecoderModel,
@@ -315,6 +337,18 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     ParentStreamConfig as ParentStreamConfigModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    PropertiesFromEndpoint as PropertiesFromEndpointModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    PropertyChunking as PropertyChunkingModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    PropertyLimitType as PropertyLimitTypeModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    QueryProperties as QueryPropertiesModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     Rate as RateModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -352,6 +386,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import Spec as SpecModel
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    StateDelegatingStream as StateDelegatingStreamModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     StreamConfig as StreamConfigModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -382,6 +419,7 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
 )
 from airbyte_cdk.sources.declarative.partition_routers import (
     CartesianProductStreamSlicer,
+    GroupingPartitionRouter,
     ListPartitionRouter,
     PartitionRouter,
     SinglePartitionRouter,
@@ -418,6 +456,17 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies import (
     PageIncrement,
     StopConditionPaginationStrategyDecorator,
 )
+from airbyte_cdk.sources.declarative.requesters.query_properties import (
+    PropertiesFromEndpoint,
+    PropertyChunking,
+    QueryProperties,
+)
+from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunking import (
+    PropertyLimitType,
+)
+from airbyte_cdk.sources.declarative.requesters.query_properties.strategies import (
+    GroupByKey,
+)
 from airbyte_cdk.sources.declarative.requesters.request_option import RequestOptionType
 from airbyte_cdk.sources.declarative.requesters.request_options import (
     DatetimeBasedRequestOptionsProvider,
@@ -435,8 +484,16 @@ from airbyte_cdk.sources.declarative.resolvers import (
 )
 from airbyte_cdk.sources.declarative.retrievers import (
     AsyncRetriever,
+    LazySimpleRetriever,
     SimpleRetriever,
     SimpleRetrieverTestReadDecorator,
+)
+from airbyte_cdk.sources.declarative.retrievers.file_uploader import (
+    ConnectorBuilderFileUploader,
+    DefaultFileUploader,
+    FileUploader,
+    LocalFileSystemFileWriter,
+    NoopFileWriter,
 )
 from airbyte_cdk.sources.declarative.schema import (
     ComplexFieldType,
@@ -447,6 +504,7 @@ from airbyte_cdk.sources.declarative.schema import (
     SchemaTypeIdentifier,
     TypesMap,
 )
+from airbyte_cdk.sources.declarative.schema.composite_schema_loader import CompositeSchemaLoader
 from airbyte_cdk.sources.declarative.spec import Spec
 from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicer
 from airbyte_cdk.sources.declarative.transformations import (
@@ -457,6 +515,7 @@ from airbyte_cdk.sources.declarative.transformations import (
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
 from airbyte_cdk.sources.declarative.transformations.dpath_flatten_fields import (
     DpathFlattenFields,
+    KeyTransformation,
 )
 from airbyte_cdk.sources.declarative.transformations.flatten_fields import (
     FlattenFields,
@@ -527,6 +586,7 @@ class ModelToComponentFactory:
         disable_resumable_full_refresh: bool = False,
         message_repository: Optional[MessageRepository] = None,
         connector_state_manager: Optional[ConnectorStateManager] = None,
+        max_concurrent_async_job_count: Optional[int] = None,
     ):
         self._init_mappings()
         self._limit_pages_fetched_per_slice = limit_pages_fetched_per_slice
@@ -540,6 +600,9 @@ class ModelToComponentFactory:
         )
         self._connector_state_manager = connector_state_manager or ConnectorStateManager()
         self._api_budget: Optional[Union[APIBudget, HttpAPIBudget]] = None
+        self._job_tracker: JobTracker = JobTracker(max_concurrent_async_job_count or 1)
+        # placeholder for deprecation warnings
+        self._collected_deprecation_logs: List[ConnectorBuilderLogMessage] = []
 
     def _init_mappings(self) -> None:
         self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Mapping[Type[BaseModel], Callable[..., Any]] = {
@@ -549,6 +612,7 @@ class ModelToComponentFactory:
             BasicHttpAuthenticatorModel: self.create_basic_http_authenticator,
             BearerAuthenticatorModel: self.create_bearer_authenticator,
             CheckStreamModel: self.create_check_stream,
+            DynamicStreamCheckConfigModel: self.create_dynamic_stream_check_config,
             CheckDynamicStreamModel: self.create_check_dynamic_stream,
             CompositeErrorHandlerModel: self.create_composite_error_handler,
             ConcurrencyLevelModel: self.create_concurrency_level,
@@ -578,6 +642,7 @@ class ModelToComponentFactory:
             ResponseToFileExtractorModel: self.create_response_to_file_extractor,
             ExponentialBackoffStrategyModel: self.create_exponential_backoff_strategy,
             SessionTokenAuthenticatorModel: self.create_session_token_authenticator,
+            GroupByKeyMergeStrategyModel: self.create_group_by_key,
             HttpRequesterModel: self.create_http_requester,
             HttpResponseFilterModel: self.create_http_response_filter,
             InlineSchemaLoaderModel: self.create_inline_schema_loader,
@@ -607,6 +672,9 @@ class ModelToComponentFactory:
             OffsetIncrementModel: self.create_offset_increment,
             PageIncrementModel: self.create_page_increment,
             ParentStreamConfigModel: self.create_parent_stream_config,
+            PropertiesFromEndpointModel: self.create_properties_from_endpoint,
+            PropertyChunkingModel: self.create_property_chunking,
+            QueryPropertiesModel: self.create_query_properties,
             RecordFilterModel: self.create_record_filter,
             RecordSelectorModel: self.create_record_selector,
             RemoveFieldsModel: self.create_remove_fields,
@@ -615,6 +683,7 @@ class ModelToComponentFactory:
             LegacySessionTokenAuthenticatorModel: self.create_legacy_session_token_authenticator,
             SelectiveAuthenticatorModel: self.create_selective_authenticator,
             SimpleRetrieverModel: self.create_simple_retriever,
+            StateDelegatingStreamModel: self.create_state_delegating_stream,
             SpecModel: self.create_spec,
             SubstreamPartitionRouterModel: self.create_substream_partition_router,
             WaitTimeFromHeaderModel: self.create_wait_time_from_header,
@@ -626,11 +695,13 @@ class ModelToComponentFactory:
             ComponentMappingDefinitionModel: self.create_components_mapping_definition,
             ZipfileDecoderModel: self.create_zipfile_decoder,
             HTTPAPIBudgetModel: self.create_http_api_budget,
+            FileUploaderModel: self.create_file_uploader,
             FixedWindowCallRatePolicyModel: self.create_fixed_window_call_rate_policy,
             MovingWindowCallRatePolicyModel: self.create_moving_window_call_rate_policy,
             UnlimitedCallRatePolicyModel: self.create_unlimited_call_rate_policy,
             RateModel: self.create_rate,
             HttpRequestRegexMatcherModel: self.create_http_request_matcher,
+            GroupingPartitionRouterModel: self.create_grouping_partition_router,
         }
 
         # Needed for the case where we need to perform a second parse on the fields of a custom component
@@ -679,7 +750,33 @@ class ModelToComponentFactory:
         component_constructor = self.PYDANTIC_MODEL_TO_CONSTRUCTOR.get(model.__class__)
         if not component_constructor:
             raise ValueError(f"Could not find constructor for {model.__class__}")
+
+        # collect deprecation warnings for supported models.
+        if isinstance(model, BaseModelWithDeprecations):
+            self._collect_model_deprecations(model)
+
         return component_constructor(model=model, config=config, **kwargs)
+
+    def get_model_deprecations(self) -> List[ConnectorBuilderLogMessage]:
+        """
+        Returns the deprecation warnings that were collected during the creation of components.
+        """
+        return self._collected_deprecation_logs
+
+    def _collect_model_deprecations(self, model: BaseModelWithDeprecations) -> None:
+        """
+        Collects deprecation logs from the given model and appends any new logs to the internal collection.
+
+        This method checks if the provided model has deprecation logs (identified by the presence of the DEPRECATION_LOGS_TAG attribute and a non-None `_deprecation_logs` property). It iterates through each deprecation log in the model and appends it to the `_collected_deprecation_logs` list if it has not already been collected, ensuring that duplicate logs are avoided.
+
+        Args:
+            model (BaseModelWithDeprecations): The model instance from which to collect deprecation logs.
+        """
+        if hasattr(model, DEPRECATION_LOGS_TAG) and model._deprecation_logs is not None:
+            for log in model._deprecation_logs:
+                # avoid duplicates for deprecation logs observed.
+                if log not in self._collected_deprecation_logs:
+                    self._collected_deprecation_logs.append(log)
 
     @staticmethod
     def create_added_field_definition(
@@ -706,7 +803,11 @@ class ModelToComponentFactory:
             )
             for added_field_definition_model in model.fields
         ]
-        return AddFields(fields=added_field_definitions, parameters=model.parameters or {})
+        return AddFields(
+            fields=added_field_definitions,
+            condition=model.condition or "",
+            parameters=model.parameters or {},
+        )
 
     def create_keys_to_lower_transformation(
         self, model: KeysToLowerModel, config: Config, **kwargs: Any
@@ -736,12 +837,24 @@ class ModelToComponentFactory:
         self, model: DpathFlattenFieldsModel, config: Config, **kwargs: Any
     ) -> DpathFlattenFields:
         model_field_path: List[Union[InterpolatedString, str]] = [x for x in model.field_path]
+        key_transformation = (
+            KeyTransformation(
+                config=config,
+                prefix=model.key_transformation.prefix,
+                suffix=model.key_transformation.suffix,
+                parameters=model.parameters or {},
+            )
+            if model.key_transformation is not None
+            else None
+        )
         return DpathFlattenFields(
             config=config,
             field_path=model_field_path,
             delete_origin_value=model.delete_origin_value
             if model.delete_origin_value is not None
             else False,
+            replace_record=model.replace_record if model.replace_record is not None else False,
+            key_transformation=key_transformation,
             parameters=model.parameters or {},
         )
 
@@ -919,8 +1032,36 @@ class ModelToComponentFactory:
         )
 
     @staticmethod
-    def create_check_stream(model: CheckStreamModel, config: Config, **kwargs: Any) -> CheckStream:
-        return CheckStream(stream_names=model.stream_names, parameters={})
+    def create_dynamic_stream_check_config(
+        model: DynamicStreamCheckConfigModel, config: Config, **kwargs: Any
+    ) -> DynamicStreamCheckConfig:
+        return DynamicStreamCheckConfig(
+            dynamic_stream_name=model.dynamic_stream_name,
+            stream_count=model.stream_count or 0,
+        )
+
+    def create_check_stream(
+        self, model: CheckStreamModel, config: Config, **kwargs: Any
+    ) -> CheckStream:
+        if model.dynamic_streams_check_configs is None and model.stream_names is None:
+            raise ValueError(
+                "Expected either stream_names or dynamic_streams_check_configs to be set for CheckStream"
+            )
+
+        dynamic_streams_check_configs = (
+            [
+                self._create_component_from_model(model=dynamic_stream_check_config, config=config)
+                for dynamic_stream_check_config in model.dynamic_streams_check_configs
+            ]
+            if model.dynamic_streams_check_configs
+            else []
+        )
+
+        return CheckStream(
+            stream_names=model.stream_names or [],
+            dynamic_streams_check_configs=dynamic_streams_check_configs,
+            parameters={},
+        )
 
     @staticmethod
     def create_check_dynamic_stream(
@@ -1342,6 +1483,10 @@ class ModelToComponentFactory:
             )
         )
         stream_state = self.apply_stream_state_migrations(stream_state_migrations, stream_state)
+        # Per-partition state doesn't make sense for GroupingPartitionRouter, so force the global state
+        use_global_cursor = isinstance(
+            partition_router, GroupingPartitionRouter
+        ) or component_definition.get("global_substream_cursor", False)
 
         # Return the concurrent cursor and state converter
         return ConcurrentPerPartitionCursor(
@@ -1354,6 +1499,7 @@ class ModelToComponentFactory:
             connector_state_manager=state_manager,
             connector_state_converter=connector_state_converter,
             cursor_field=cursor_field,
+            use_global_cursor=use_global_cursor,
         )
 
     @staticmethod
@@ -1476,7 +1622,19 @@ class ModelToComponentFactory:
         try:
             module_ref = importlib.import_module(module_name_full)
         except ModuleNotFoundError as e:
-            raise ValueError(f"Could not load module `{module_name_full}`.") from e
+            if split[0] == "source_declarative_manifest":
+                # During testing, the modules containing the custom components are not moved to source_declarative_manifest. In order to run the test, add the source folder to your PYTHONPATH or add it runtime using sys.path.append
+                try:
+                    import os
+
+                    module_name_with_source_declarative_manifest = ".".join(split[1:-1])
+                    module_ref = importlib.import_module(
+                        module_name_with_source_declarative_manifest
+                    )
+                except ModuleNotFoundError:
+                    raise ValueError(f"Could not load module `{module_name_full}`.") from e
+            else:
+                raise ValueError(f"Could not load module `{module_name_full}`.") from e
 
         try:
             return getattr(module_ref, class_name)
@@ -1727,6 +1885,12 @@ class ModelToComponentFactory:
                 transformations.append(
                     self._create_component_from_model(model=transformation_model, config=config)
                 )
+        file_uploader = None
+        if model.file_uploader:
+            file_uploader = self._create_component_from_model(
+                model=model.file_uploader, config=config
+            )
+
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
@@ -1737,6 +1901,8 @@ class ModelToComponentFactory:
             stop_condition_on_cursor=stop_condition_on_cursor,
             client_side_incremental_sync=client_side_incremental_sync,
             transformations=transformations,
+            file_uploader=file_uploader,
+            incremental_sync=model.incremental_sync,
         )
         cursor_field = model.incremental_sync.cursor_field if model.incremental_sync else None
 
@@ -1748,9 +1914,25 @@ class ModelToComponentFactory:
         else:
             state_transformations = []
 
-        if model.schema_loader:
+        schema_loader: Union[
+            CompositeSchemaLoader,
+            DefaultSchemaLoader,
+            DynamicSchemaLoader,
+            InlineSchemaLoader,
+            JsonFileSchemaLoader,
+        ]
+        if model.schema_loader and isinstance(model.schema_loader, list):
+            nested_schema_loaders = [
+                self._create_component_from_model(model=nested_schema_loader, config=config)
+                for nested_schema_loader in model.schema_loader
+            ]
+            schema_loader = CompositeSchemaLoader(
+                schema_loaders=nested_schema_loaders, parameters={}
+            )
+        elif model.schema_loader:
             schema_loader = self._create_component_from_model(
-                model=model.schema_loader, config=config
+                model=model.schema_loader,  # type: ignore # If defined, schema_loader is guaranteed not to be a list and will be one of the existing base models
+                config=config,
             )
         else:
             options = model.parameters or {}
@@ -1771,8 +1953,13 @@ class ModelToComponentFactory:
 
     def _build_stream_slicer_from_partition_router(
         self,
-        model: Union[AsyncRetrieverModel, CustomRetrieverModel, SimpleRetrieverModel],
+        model: Union[
+            AsyncRetrieverModel,
+            CustomRetrieverModel,
+            SimpleRetrieverModel,
+        ],
         config: Config,
+        stream_name: Optional[str] = None,
     ) -> Optional[PartitionRouter]:
         if (
             hasattr(model, "partition_router")
@@ -1780,95 +1967,65 @@ class ModelToComponentFactory:
             and model.partition_router
         ):
             stream_slicer_model = model.partition_router
-
             if isinstance(stream_slicer_model, list):
                 return CartesianProductStreamSlicer(
                     [
-                        self._create_component_from_model(model=slicer, config=config)
+                        self._create_component_from_model(
+                            model=slicer, config=config, stream_name=stream_name or ""
+                        )
                         for slicer in stream_slicer_model
                     ],
                     parameters={},
                 )
             else:
-                return self._create_component_from_model(model=stream_slicer_model, config=config)  # type: ignore[no-any-return]
-                # Will be created PartitionRouter as stream_slicer_model is model.partition_router
+                return self._create_component_from_model(  # type: ignore[no-any-return] # Will be created PartitionRouter as stream_slicer_model is model.partition_router
+                    model=stream_slicer_model, config=config, stream_name=stream_name or ""
+                )
         return None
 
-    def _build_resumable_cursor_from_paginator(
+    def _build_incremental_cursor(
         self,
-        model: Union[AsyncRetrieverModel, CustomRetrieverModel, SimpleRetrieverModel],
-        stream_slicer: Optional[StreamSlicer],
+        model: DeclarativeStreamModel,
+        stream_slicer: Optional[PartitionRouter],
+        config: Config,
     ) -> Optional[StreamSlicer]:
-        if hasattr(model, "paginator") and model.paginator and not stream_slicer:
-            # For the regular Full-Refresh streams, we use the high level `ResumableFullRefreshCursor`
-            return ResumableFullRefreshCursor(parameters={})
-        return None
-
-    def _merge_stream_slicers(
-        self, model: DeclarativeStreamModel, config: Config
-    ) -> Optional[StreamSlicer]:
-        stream_slicer = self._build_stream_slicer_from_partition_router(model.retriever, config)
-
         if model.incremental_sync and stream_slicer:
             if model.retriever.type == "AsyncRetriever":
-                if model.incremental_sync.type != "DatetimeBasedCursor":
-                    # We are currently in a transition to the Concurrent CDK and AsyncRetriever can only work with the support or unordered slices (for example, when we trigger reports for January and February, the report in February can be completed first). Once we have support for custom concurrent cursor or have a new implementation available in the CDK, we can enable more cursors here.
-                    raise ValueError(
-                        "AsyncRetriever with cursor other than DatetimeBasedCursor is not supported yet"
-                    )
-                if stream_slicer:
-                    return self.create_concurrent_cursor_from_perpartition_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
-                        state_manager=self._connector_state_manager,
-                        model_type=DatetimeBasedCursorModel,
-                        component_definition=model.incremental_sync.__dict__,
-                        stream_name=model.name or "",
-                        stream_namespace=None,
-                        config=config or {},
-                        stream_state={},
-                        partition_router=stream_slicer,
-                    )
-                return self.create_concurrent_cursor_from_datetime_based_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
+                return self.create_concurrent_cursor_from_perpartition_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
+                    state_manager=self._connector_state_manager,
                     model_type=DatetimeBasedCursorModel,
                     component_definition=model.incremental_sync.__dict__,
                     stream_name=model.name or "",
                     stream_namespace=None,
                     config=config or {},
+                    stream_state={},
+                    partition_router=stream_slicer,
                 )
 
             incremental_sync_model = model.incremental_sync
-            if (
+            cursor_component = self._create_component_from_model(
+                model=incremental_sync_model, config=config
+            )
+            is_global_cursor = (
                 hasattr(incremental_sync_model, "global_substream_cursor")
                 and incremental_sync_model.global_substream_cursor
-            ):
-                cursor_component = self._create_component_from_model(
-                    model=incremental_sync_model, config=config
-                )
+            )
+
+            if is_global_cursor:
                 return GlobalSubstreamCursor(
                     stream_cursor=cursor_component, partition_router=stream_slicer
                 )
-            else:
-                cursor_component = self._create_component_from_model(
-                    model=incremental_sync_model, config=config
-                )
-                return PerPartitionWithGlobalCursor(
-                    cursor_factory=CursorFactory(
-                        lambda: self._create_component_from_model(
-                            model=incremental_sync_model, config=config
-                        ),
+            return PerPartitionWithGlobalCursor(
+                cursor_factory=CursorFactory(
+                    lambda: self._create_component_from_model(
+                        model=incremental_sync_model, config=config
                     ),
-                    partition_router=stream_slicer,
-                    stream_cursor=cursor_component,
-                )
+                ),
+                partition_router=stream_slicer,
+                stream_cursor=cursor_component,
+            )
         elif model.incremental_sync:
             if model.retriever.type == "AsyncRetriever":
-                if model.incremental_sync.type != "DatetimeBasedCursor":
-                    # We are currently in a transition to the Concurrent CDK and AsyncRetriever can only work with the support or unordered slices (for example, when we trigger reports for January and February, the report in February can be completed first). Once we have support for custom concurrent cursor or have a new implementation available in the CDK, we can enable more cursors here.
-                    raise ValueError(
-                        "AsyncRetriever with cursor other than DatetimeBasedCursor is not supported yet"
-                    )
-                if model.retriever.partition_router:
-                    # Note that this development is also done in parallel to the per partition development which once merged we could support here by calling `create_concurrent_cursor_from_perpartition_cursor`
-                    raise ValueError("Per partition state is not supported yet for AsyncRetriever")
                 return self.create_concurrent_cursor_from_datetime_based_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
                     model_type=DatetimeBasedCursorModel,
                     component_definition=model.incremental_sync.__dict__,
@@ -1877,13 +2034,21 @@ class ModelToComponentFactory:
                     config=config or {},
                     stream_state_migrations=model.state_migrations,
                 )
-            return (
-                self._create_component_from_model(model=model.incremental_sync, config=config)
-                if model.incremental_sync
-                else None
-            )
-        elif self._disable_resumable_full_refresh:
-            return stream_slicer
+            return self._create_component_from_model(model=model.incremental_sync, config=config)  # type: ignore[no-any-return]  # Will be created Cursor as stream_slicer_model is model.incremental_sync
+        return None
+
+    def _build_resumable_cursor(
+        self,
+        model: Union[
+            AsyncRetrieverModel,
+            CustomRetrieverModel,
+            SimpleRetrieverModel,
+        ],
+        stream_slicer: Optional[PartitionRouter],
+    ) -> Optional[StreamSlicer]:
+        if hasattr(model, "paginator") and model.paginator and not stream_slicer:
+            # For the regular Full-Refresh streams, we use the high level `ResumableFullRefreshCursor`
+            return ResumableFullRefreshCursor(parameters={})
         elif stream_slicer:
             # For the Full-Refresh sub-streams, we use the nested `ChildPartitionResumableFullRefreshCursor`
             return PerPartitionCursor(
@@ -1892,7 +2057,49 @@ class ModelToComponentFactory:
                 ),
                 partition_router=stream_slicer,
             )
-        return self._build_resumable_cursor_from_paginator(model.retriever, stream_slicer)
+        return None
+
+    def _merge_stream_slicers(
+        self, model: DeclarativeStreamModel, config: Config
+    ) -> Optional[StreamSlicer]:
+        retriever_model = model.retriever
+
+        stream_slicer = self._build_stream_slicer_from_partition_router(
+            retriever_model, config, stream_name=model.name
+        )
+
+        if retriever_model.type == "AsyncRetriever":
+            is_not_datetime_cursor = (
+                model.incremental_sync.type != "DatetimeBasedCursor"
+                if model.incremental_sync
+                else None
+            )
+            is_partition_router = (
+                bool(retriever_model.partition_router) if model.incremental_sync else None
+            )
+
+            if is_not_datetime_cursor:
+                # We are currently in a transition to the Concurrent CDK and AsyncRetriever can only work with the
+                # support or unordered slices (for example, when we trigger reports for January and February, the report
+                # in February can be completed first). Once we have support for custom concurrent cursor or have a new
+                # implementation available in the CDK, we can enable more cursors here.
+                raise ValueError(
+                    "AsyncRetriever with cursor other than DatetimeBasedCursor is not supported yet."
+                )
+
+            if is_partition_router and not stream_slicer:
+                # Note that this development is also done in parallel to the per partition development which once merged
+                # we could support here by calling create_concurrent_cursor_from_perpartition_cursor
+                raise ValueError("Per partition state is not supported yet for AsyncRetriever.")
+
+        if model.incremental_sync:
+            return self._build_incremental_cursor(model, stream_slicer, config)
+
+        return (
+            stream_slicer
+            if self._disable_resumable_full_refresh
+            else self._build_resumable_cursor(retriever_model, stream_slicer)
+        )
 
     def create_default_error_handler(
         self, model: DefaultErrorHandlerModel, config: Config, **kwargs: Any
@@ -1928,6 +2135,7 @@ class ModelToComponentFactory:
         config: Config,
         *,
         url_base: str,
+        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
         decoder: Optional[Decoder] = None,
         cursor_used_for_stop_condition: Optional[DeclarativeCursor] = None,
     ) -> Union[DefaultPaginator, PaginatorTestReadDecorator]:
@@ -1949,7 +2157,10 @@ class ModelToComponentFactory:
             else None
         )
         pagination_strategy = self._create_component_from_model(
-            model=model.pagination_strategy, config=config, decoder=decoder_to_use
+            model=model.pagination_strategy,
+            config=config,
+            decoder=decoder_to_use,
+            extractor_model=extractor_model,
         )
         if cursor_used_for_stop_condition:
             pagination_strategy = StopConditionPaginationStrategyDecorator(
@@ -1987,8 +2198,8 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
+    @staticmethod
     def create_response_to_file_extractor(
-        self,
         model: ResponseToFileExtractorModel,
         **kwargs: Any,
     ) -> ResponseToFileExtractor:
@@ -2002,11 +2213,17 @@ class ModelToComponentFactory:
             factor=model.factor or 5, parameters=model.parameters or {}, config=config
         )
 
+    @staticmethod
+    def create_group_by_key(model: GroupByKeyMergeStrategyModel, config: Config) -> GroupByKey:
+        return GroupByKey(model.key, config=config, parameters=model.parameters or {})
+
     def create_http_requester(
         self,
         model: HttpRequesterModel,
         config: Config,
         decoder: Decoder = JsonDecoder(parameters={}),
+        query_properties_key: Optional[str] = None,
+        use_cache: Optional[bool] = None,
         *,
         name: str,
     ) -> HttpRequester:
@@ -2014,7 +2231,7 @@ class ModelToComponentFactory:
             self._create_component_from_model(
                 model=model.authenticator,
                 config=config,
-                url_base=model.url_base,
+                url_base=model.url or model.url_base,
                 name=name,
                 decoder=decoder,
             )
@@ -2034,11 +2251,22 @@ class ModelToComponentFactory:
 
         api_budget = self._api_budget
 
+        # Removes QueryProperties components from the interpolated mappings because it has been designed
+        # to be used by the SimpleRetriever and will be resolved from the provider from the slice directly
+        # instead of through jinja interpolation
+        request_parameters: Optional[Union[str, Mapping[str, str]]]
+        if isinstance(model.request_parameters, Mapping):
+            request_parameters = self._remove_query_properties(model.request_parameters)
+        else:
+            request_parameters = model.request_parameters
+
         request_options_provider = InterpolatedRequestOptionsProvider(
+            request_body=model.request_body,
             request_body_data=model.request_body_data,
             request_body_json=model.request_body_json,
             request_headers=model.request_headers,
-            request_parameters=model.request_parameters,
+            request_parameters=request_parameters,
+            query_properties_key=query_properties_key,
             config=config,
             parameters=model.parameters or {},
         )
@@ -2046,10 +2274,11 @@ class ModelToComponentFactory:
         assert model.use_cache is not None  # for mypy
         assert model.http_method is not None  # for mypy
 
-        use_cache = model.use_cache and not self._disable_cache
+        should_use_cache = (model.use_cache or bool(use_cache)) and not self._disable_cache
 
         return HttpRequester(
             name=name,
+            url=model.url,
             url_base=model.url_base,
             path=model.path,
             authenticator=authenticator,
@@ -2061,7 +2290,7 @@ class ModelToComponentFactory:
             disable_retries=self._disable_retries,
             parameters=model.parameters or {},
             message_repository=self._message_repository,
-            use_cache=use_cache,
+            use_cache=should_use_cache,
             decoder=decoder,
             stream_response=decoder.is_stream_response() if decoder else False,
         )
@@ -2153,9 +2382,7 @@ class ModelToComponentFactory:
         self, model: DynamicSchemaLoaderModel, config: Config, **kwargs: Any
     ) -> DynamicSchemaLoader:
         stream_slicer = self._build_stream_slicer_from_partition_router(model.retriever, config)
-        combined_slicers = self._build_resumable_cursor_from_paginator(
-            model.retriever, stream_slicer
-        )
+        combined_slicers = self._build_resumable_cursor(model.retriever, stream_slicer)
 
         schema_transformations = []
         if model.schema_transformations:
@@ -2167,10 +2394,11 @@ class ModelToComponentFactory:
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
-            name="",
+            name="dynamic_properties",
             primary_key=None,
             stream_slicer=combined_slicers,
             transformations=[],
+            use_cache=True,
         )
         schema_type_identifier = self._create_component_from_model(
             model.schema_type_identifier, config=config, parameters=model.parameters or {}
@@ -2193,18 +2421,40 @@ class ModelToComponentFactory:
             stream_response=False if self._emit_connector_builder_messages else True,
         )
 
-    @staticmethod
-    def create_jsonl_decoder(model: JsonlDecoderModel, config: Config, **kwargs: Any) -> Decoder:
+    def create_jsonl_decoder(
+        self, model: JsonlDecoderModel, config: Config, **kwargs: Any
+    ) -> Decoder:
         return CompositeRawDecoder(
-            parser=ModelToComponentFactory._get_parser(model, config), stream_response=True
+            parser=ModelToComponentFactory._get_parser(model, config),
+            stream_response=False if self._emit_connector_builder_messages else True,
         )
 
     def create_gzip_decoder(
         self, model: GzipDecoderModel, config: Config, **kwargs: Any
     ) -> Decoder:
-        return CompositeRawDecoder(
-            parser=ModelToComponentFactory._get_parser(model, config),
-            stream_response=False if self._emit_connector_builder_messages else True,
+        _compressed_response_types = {
+            "gzip",
+            "x-gzip",
+            "gzip, deflate",
+            "x-gzip, deflate",
+            "application/zip",
+            "application/gzip",
+            "application/x-gzip",
+            "application/x-zip-compressed",
+        }
+
+        gzip_parser: GzipParser = ModelToComponentFactory._get_parser(model, config)  # type: ignore  # based on the model, we know this will be a GzipParser
+
+        if self._emit_connector_builder_messages:
+            # This is very surprising but if the response is not streamed,
+            # CompositeRawDecoder calls response.content and the requests library actually uncompress the data as opposed to response.raw,
+            # which uses urllib3 directly and does not uncompress the data.
+            return CompositeRawDecoder(gzip_parser.inner_parser, False)
+
+        return CompositeRawDecoder.by_headers(
+            [({"Content-Encoding", "Content-Type"}, _compressed_response_types, gzip_parser)],
+            stream_response=True,
+            fallback_parser=gzip_parser.inner_parser,
         )
 
     @staticmethod
@@ -2418,7 +2668,12 @@ class ModelToComponentFactory:
         )
 
     def create_offset_increment(
-        self, model: OffsetIncrementModel, config: Config, decoder: Decoder, **kwargs: Any
+        self,
+        model: OffsetIncrementModel,
+        config: Config,
+        decoder: Decoder,
+        extractor_model: Optional[Union[CustomRecordExtractorModel, DpathExtractorModel]] = None,
+        **kwargs: Any,
     ) -> OffsetIncrement:
         if isinstance(decoder, PaginationDecoderDecorator):
             inner_decoder = decoder.decoder
@@ -2433,10 +2688,24 @@ class ModelToComponentFactory:
                 self._UNSUPPORTED_DECODER_ERROR.format(decoder_type=type(inner_decoder))
             )
 
+        # Ideally we would instantiate the runtime extractor from highest most level (in this case the SimpleRetriever)
+        # so that it can be shared by OffSetIncrement and RecordSelector. However, due to how we instantiate the
+        # decoder with various decorators here, but not in create_record_selector, it is simpler to retain existing
+        # behavior by having two separate extractors with identical behavior since they use the same extractor model.
+        # When we have more time to investigate we can look into reusing the same component.
+        extractor = (
+            self._create_component_from_model(
+                model=extractor_model, config=config, decoder=decoder_to_use
+            )
+            if extractor_model
+            else None
+        )
+
         return OffsetIncrement(
             page_size=model.page_size,
             config=config,
             decoder=decoder_to_use,
+            extractor=extractor,
             inject_on_first_request=model.inject_on_first_request or False,
             parameters=model.parameters or {},
         )
@@ -2456,12 +2725,24 @@ class ModelToComponentFactory:
     def create_parent_stream_config(
         self, model: ParentStreamConfigModel, config: Config, **kwargs: Any
     ) -> ParentStreamConfig:
-        declarative_stream = self._create_component_from_model(model.stream, config=config)
+        declarative_stream = self._create_component_from_model(
+            model.stream, config=config, **kwargs
+        )
         request_option = (
             self._create_component_from_model(model.request_option, config=config)
             if model.request_option
             else None
         )
+
+        if model.lazy_read_pointer and any("*" in pointer for pointer in model.lazy_read_pointer):
+            raise ValueError(
+                "The '*' wildcard in 'lazy_read_pointer' is not supported — only direct paths are allowed."
+            )
+
+        model_lazy_read_pointer: List[Union[InterpolatedString, str]] = (
+            [x for x in model.lazy_read_pointer] if model.lazy_read_pointer else []
+        )
+
         return ParentStreamConfig(
             parent_key=model.parent_key,
             request_option=request_option,
@@ -2471,6 +2752,80 @@ class ModelToComponentFactory:
             incremental_dependency=model.incremental_dependency or False,
             parameters=model.parameters or {},
             extra_fields=model.extra_fields,
+            lazy_read_pointer=model_lazy_read_pointer,
+        )
+
+    def create_properties_from_endpoint(
+        self, model: PropertiesFromEndpointModel, config: Config, **kwargs: Any
+    ) -> PropertiesFromEndpoint:
+        retriever = self._create_component_from_model(
+            model=model.retriever,
+            config=config,
+            name="dynamic_properties",
+            primary_key=None,
+            stream_slicer=None,
+            transformations=[],
+            use_cache=True,  # Enable caching on the HttpRequester/HttpClient because the properties endpoint will be called for every slice being processed, and it is highly unlikely for the response to different
+        )
+        return PropertiesFromEndpoint(
+            property_field_path=model.property_field_path,
+            retriever=retriever,
+            config=config,
+            parameters=model.parameters or {},
+        )
+
+    def create_property_chunking(
+        self, model: PropertyChunkingModel, config: Config, **kwargs: Any
+    ) -> PropertyChunking:
+        record_merge_strategy = (
+            self._create_component_from_model(
+                model=model.record_merge_strategy, config=config, **kwargs
+            )
+            if model.record_merge_strategy
+            else None
+        )
+
+        property_limit_type: PropertyLimitType
+        match model.property_limit_type:
+            case PropertyLimitTypeModel.property_count:
+                property_limit_type = PropertyLimitType.property_count
+            case PropertyLimitTypeModel.characters:
+                property_limit_type = PropertyLimitType.characters
+            case _:
+                raise ValueError(f"Invalid PropertyLimitType {property_limit_type}")
+
+        return PropertyChunking(
+            property_limit_type=property_limit_type,
+            property_limit=model.property_limit,
+            record_merge_strategy=record_merge_strategy,
+            config=config,
+            parameters=model.parameters or {},
+        )
+
+    def create_query_properties(
+        self, model: QueryPropertiesModel, config: Config, **kwargs: Any
+    ) -> QueryProperties:
+        if isinstance(model.property_list, list):
+            property_list = model.property_list
+        else:
+            property_list = self._create_component_from_model(
+                model=model.property_list, config=config, **kwargs
+            )
+
+        property_chunking = (
+            self._create_component_from_model(
+                model=model.property_chunking, config=config, **kwargs
+            )
+            if model.property_chunking
+            else None
+        )
+
+        return QueryProperties(
+            property_list=property_list,
+            always_include_properties=model.always_include_properties,
+            property_chunking=property_chunking,
+            config=config,
+            parameters=model.parameters or {},
         )
 
     @staticmethod
@@ -2519,6 +2874,7 @@ class ModelToComponentFactory:
         transformations: List[RecordTransformation] | None = None,
         decoder: Decoder | None = None,
         client_side_incremental_sync: Dict[str, Any] | None = None,
+        file_uploader: Optional[DefaultFileUploader] = None,
         **kwargs: Any,
     ) -> RecordSelector:
         extractor = self._create_component_from_model(
@@ -2530,7 +2886,9 @@ class ModelToComponentFactory:
             else None
         )
 
-        transform_before_filtering = False
+        transform_before_filtering = (
+            False if model.transform_before_filtering is None else model.transform_before_filtering
+        )
         if client_side_incremental_sync:
             record_filter = ClientSideIncrementalRecordFilterDecorator(
                 config=config,
@@ -2540,7 +2898,15 @@ class ModelToComponentFactory:
                 else None,
                 **client_side_incremental_sync,
             )
-            transform_before_filtering = True
+            transform_before_filtering = (
+                True
+                if model.transform_before_filtering is None
+                else model.transform_before_filtering
+            )
+
+        if model.schema_normalization is None:
+            # default to no schema normalization if not set
+            model.schema_normalization = SchemaNormalizationModel.None_
 
         schema_normalization = (
             TypeTransformer(SCHEMA_TRANSFORMER_TYPE_MAPPING[model.schema_normalization])
@@ -2554,6 +2920,7 @@ class ModelToComponentFactory:
             config=config,
             record_filter=record_filter,
             transformations=transformations or [],
+            file_uploader=file_uploader,
             schema_normalization=schema_normalization,
             parameters=model.parameters or {},
             transform_before_filtering=transform_before_filtering,
@@ -2611,14 +2978,38 @@ class ModelToComponentFactory:
         stop_condition_on_cursor: bool = False,
         client_side_incremental_sync: Optional[Dict[str, Any]] = None,
         transformations: List[RecordTransformation],
+        file_uploader: Optional[DefaultFileUploader] = None,
+        incremental_sync: Optional[
+            Union[
+                IncrementingCountCursorModel, DatetimeBasedCursorModel, CustomIncrementalSyncModel
+            ]
+        ] = None,
+        use_cache: Optional[bool] = None,
+        **kwargs: Any,
     ) -> SimpleRetriever:
+        def _get_url() -> str:
+            """
+            Closure to get the URL from the requester. This is used to get the URL in the case of a lazy retriever.
+            This is needed because the URL is not set until the requester is created.
+            """
+
+            _url = (
+                model.requester.url
+                if hasattr(model.requester, "url") and model.requester.url is not None
+                else requester.get_url()
+            )
+            _url_base = (
+                model.requester.url_base
+                if hasattr(model.requester, "url_base") and model.requester.url_base is not None
+                else requester.get_url_base()
+            )
+
+            return _url or _url_base
+
         decoder = (
             self._create_component_from_model(model=model.decoder, config=config)
             if model.decoder
             else JsonDecoder(parameters={})
-        )
-        requester = self._create_component_from_model(
-            model=model.requester, decoder=decoder, config=config, name=name
         )
         record_selector = self._create_component_from_model(
             model=model.record_selector,
@@ -2627,11 +3018,60 @@ class ModelToComponentFactory:
             decoder=decoder,
             transformations=transformations,
             client_side_incremental_sync=client_side_incremental_sync,
+            file_uploader=file_uploader,
         )
-        url_base = (
-            model.requester.url_base
-            if hasattr(model.requester, "url_base")
-            else requester.get_url_base()
+
+        query_properties: Optional[QueryProperties] = None
+        query_properties_key: Optional[str] = None
+        if self._query_properties_in_request_parameters(model.requester):
+            # It is better to be explicit about an error if PropertiesFromEndpoint is defined in multiple
+            # places instead of default to request_parameters which isn't clearly documented
+            if (
+                hasattr(model.requester, "fetch_properties_from_endpoint")
+                and model.requester.fetch_properties_from_endpoint
+            ):
+                raise ValueError(
+                    f"PropertiesFromEndpoint should only be specified once per stream, but found in {model.requester.type}.fetch_properties_from_endpoint and {model.requester.type}.request_parameters"
+                )
+
+            query_properties_definitions = []
+            for key, request_parameter in model.requester.request_parameters.items():  # type: ignore # request_parameters is already validated to be a Mapping using _query_properties_in_request_parameters()
+                if isinstance(request_parameter, QueryPropertiesModel):
+                    query_properties_key = key
+                    query_properties_definitions.append(request_parameter)
+
+            if len(query_properties_definitions) > 1:
+                raise ValueError(
+                    f"request_parameters only supports defining one QueryProperties field, but found {len(query_properties_definitions)} usages"
+                )
+
+            if len(query_properties_definitions) == 1:
+                query_properties = self._create_component_from_model(
+                    model=query_properties_definitions[0], config=config
+                )
+        elif (
+            hasattr(model.requester, "fetch_properties_from_endpoint")
+            and model.requester.fetch_properties_from_endpoint
+        ):
+            query_properties_definition = QueryPropertiesModel(
+                type="QueryProperties",
+                property_list=model.requester.fetch_properties_from_endpoint,
+                always_include_properties=None,
+                property_chunking=None,
+            )  # type: ignore # $parameters has a default value
+
+            query_properties = self.create_query_properties(
+                model=query_properties_definition,
+                config=config,
+            )
+
+        requester = self._create_component_from_model(
+            model=model.requester,
+            decoder=decoder,
+            name=name,
+            query_properties_key=query_properties_key,
+            use_cache=use_cache,
+            config=config,
         )
 
         # Define cursor only if per partition or common incremental support is needed
@@ -2656,7 +3096,8 @@ class ModelToComponentFactory:
             self._create_component_from_model(
                 model=model.paginator,
                 config=config,
-                url_base=url_base,
+                url_base=_get_url(),
+                extractor_model=model.record_selector.extractor,
                 decoder=decoder,
                 cursor_used_for_stop_condition=cursor_used_for_stop_condition,
             )
@@ -2667,6 +3108,45 @@ class ModelToComponentFactory:
         ignore_stream_slicer_parameters_on_paginated_requests = (
             model.ignore_stream_slicer_parameters_on_paginated_requests or False
         )
+
+        if (
+            model.partition_router
+            and isinstance(model.partition_router, SubstreamPartitionRouterModel)
+            and not bool(self._connector_state_manager.get_stream_state(name, None))
+            and any(
+                parent_stream_config.lazy_read_pointer
+                for parent_stream_config in model.partition_router.parent_stream_configs
+            )
+        ):
+            if incremental_sync:
+                if incremental_sync.type != "DatetimeBasedCursor":
+                    raise ValueError(
+                        f"LazySimpleRetriever only supports DatetimeBasedCursor. Found: {incremental_sync.type}."
+                    )
+
+                elif incremental_sync.step or incremental_sync.cursor_granularity:
+                    raise ValueError(
+                        f"Found more that one slice per parent. LazySimpleRetriever only supports single slice read for stream - {name}."
+                    )
+
+            if model.decoder and model.decoder.type != "JsonDecoder":
+                raise ValueError(
+                    f"LazySimpleRetriever only supports JsonDecoder. Found: {model.decoder.type}."
+                )
+
+            return LazySimpleRetriever(
+                name=name,
+                paginator=paginator,
+                primary_key=primary_key,
+                requester=requester,
+                record_selector=record_selector,
+                stream_slicer=stream_slicer,
+                request_option_provider=request_options_provider,
+                cursor=cursor,
+                config=config,
+                ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
+                parameters=model.parameters or {},
+            )
 
         if self._limit_slices_fetched or self._emit_connector_builder_messages:
             return SimpleRetrieverTestReadDecorator(
@@ -2694,8 +3174,55 @@ class ModelToComponentFactory:
             cursor=cursor,
             config=config,
             ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
+            additional_query_properties=query_properties,
             parameters=model.parameters or {},
         )
+
+    @staticmethod
+    def _query_properties_in_request_parameters(
+        requester: Union[HttpRequesterModel, CustomRequesterModel],
+    ) -> bool:
+        if not hasattr(requester, "request_parameters"):
+            return False
+        request_parameters = requester.request_parameters
+        if request_parameters and isinstance(request_parameters, Mapping):
+            for request_parameter in request_parameters.values():
+                if isinstance(request_parameter, QueryPropertiesModel):
+                    return True
+        return False
+
+    @staticmethod
+    def _remove_query_properties(
+        request_parameters: Mapping[str, Union[str, QueryPropertiesModel]],
+    ) -> Mapping[str, str]:
+        return {
+            parameter_field: request_parameter
+            for parameter_field, request_parameter in request_parameters.items()
+            if not isinstance(request_parameter, QueryPropertiesModel)
+        }
+
+    def create_state_delegating_stream(
+        self,
+        model: StateDelegatingStreamModel,
+        config: Config,
+        has_parent_state: Optional[bool] = None,
+        **kwargs: Any,
+    ) -> DeclarativeStream:
+        if (
+            model.full_refresh_stream.name != model.name
+            or model.name != model.incremental_stream.name
+        ):
+            raise ValueError(
+                f"state_delegating_stream, full_refresh_stream name and incremental_stream must have equal names. Instead has {model.name}, {model.full_refresh_stream.name} and {model.incremental_stream.name}."
+            )
+
+        stream_model = (
+            model.incremental_stream
+            if self._connector_state_manager.get_stream_state(model.name, None) or has_parent_state
+            else model.full_refresh_stream
+        )
+
+        return self._create_component_from_model(stream_model, config=config, **kwargs)  # type: ignore[no-any-return]  # Will be created DeclarativeStream as stream_model is stream description
 
     def _create_async_job_status_mapping(
         self, model: AsyncJobStatusMapModel, config: Config, **kwargs: Any
@@ -2753,7 +3280,10 @@ class ModelToComponentFactory:
             )
             paginator = (
                 self._create_component_from_model(
-                    model=model.download_paginator, decoder=decoder, config=config, url_base=""
+                    model=model.download_paginator,
+                    decoder=decoder,
+                    config=config,
+                    url_base="",
                 )
                 if model.download_paginator
                 else NoPagination(parameters={})
@@ -2780,6 +3310,27 @@ class ModelToComponentFactory:
                 paginator=paginator,
                 config=config,
                 parameters={},
+            )
+
+        def _get_job_timeout() -> datetime.timedelta:
+            user_defined_timeout: Optional[int] = (
+                int(
+                    InterpolatedString.create(
+                        str(model.polling_job_timeout),
+                        parameters={},
+                    ).eval(config)
+                )
+                if model.polling_job_timeout
+                else None
+            )
+
+            # check for user defined timeout during the test read or 15 minutes
+            test_read_timeout = datetime.timedelta(minutes=user_defined_timeout or 15)
+            # default value for non-connector builder is 60 minutes.
+            default_sync_timeout = datetime.timedelta(minutes=user_defined_timeout or 60)
+
+            return (
+                test_read_timeout if self._emit_connector_builder_messages else default_sync_timeout
             )
 
         decoder = (
@@ -2870,8 +3421,12 @@ class ModelToComponentFactory:
             model=model.status_extractor, decoder=decoder, config=config, name=name
         )
         download_target_extractor = self._create_component_from_model(
-            model=model.download_target_extractor, decoder=decoder, config=config, name=name
+            model=model.download_target_extractor,
+            decoder=decoder,
+            config=config,
+            name=name,
         )
+
         job_repository: AsyncJobRepository = AsyncHttpJobRepository(
             creation_requester=creation_requester,
             polling_requester=polling_requester,
@@ -2882,17 +3437,20 @@ class ModelToComponentFactory:
             status_extractor=status_extractor,
             status_mapping=self._create_async_job_status_mapping(model.status_mapping, config),
             download_target_extractor=download_target_extractor,
+            job_timeout=_get_job_timeout(),
         )
 
         async_job_partition_router = AsyncJobPartitionRouter(
             job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
                 job_repository,
                 stream_slices,
-                JobTracker(1),
-                # FIXME eventually make the number of concurrent jobs in the API configurable. Until then, we limit to 1
+                self._job_tracker,
                 self._message_repository,
-                has_bulk_parent=False,
                 # FIXME work would need to be done here in order to detect if a stream as a parent stream that is bulk
+                has_bulk_parent=False,
+                # set the `job_max_retry` to 1 for the `Connector Builder`` use-case.
+                # `None` == default retry is set to 3 attempts, under the hood.
+                job_max_retry=1 if self._emit_connector_builder_messages else None,
             ),
             stream_slicer=stream_slicer,
             config=config,
@@ -2923,7 +3481,7 @@ class ModelToComponentFactory:
             parent_stream_configs.extend(
                 [
                     self._create_message_repository_substream_wrapper(
-                        model=parent_stream_config, config=config
+                        model=parent_stream_config, config=config, **kwargs
                     )
                     for parent_stream_config in model.parent_stream_configs
                 ]
@@ -2936,7 +3494,7 @@ class ModelToComponentFactory:
         )
 
     def _create_message_repository_substream_wrapper(
-        self, model: ParentStreamConfigModel, config: Config
+        self, model: ParentStreamConfigModel, config: Config, **kwargs: Any
     ) -> Any:
         substream_factory = ModelToComponentFactory(
             limit_pages_fetched_per_slice=self._limit_pages_fetched_per_slice,
@@ -2950,7 +3508,16 @@ class ModelToComponentFactory:
                 self._evaluate_log_level(self._emit_connector_builder_messages),
             ),
         )
-        return substream_factory._create_component_from_model(model=model, config=config)
+
+        # This flag will be used exclusively for StateDelegatingStream when a parent stream is created
+        has_parent_state = bool(
+            self._connector_state_manager.get_stream_state(kwargs.get("stream_name", ""), None)
+            if model.incremental_dependency
+            else False
+        )
+        return substream_factory._create_component_from_model(
+            model=model, config=config, has_parent_state=has_parent_state, **kwargs
+        )
 
     @staticmethod
     def create_wait_time_from_header(
@@ -3006,9 +3573,7 @@ class ModelToComponentFactory:
         self, model: HttpComponentsResolverModel, config: Config
     ) -> Any:
         stream_slicer = self._build_stream_slicer_from_partition_router(model.retriever, config)
-        combined_slicers = self._build_resumable_cursor_from_paginator(
-            model.retriever, stream_slicer
-        )
+        combined_slicers = self._build_resumable_cursor(model.retriever, stream_slicer)
 
         retriever = self._create_component_from_model(
             model=model.retriever,
@@ -3129,6 +3694,40 @@ class ModelToComponentFactory:
             matchers=matchers,
         )
 
+    def create_file_uploader(
+        self, model: FileUploaderModel, config: Config, **kwargs: Any
+    ) -> FileUploader:
+        name = "File Uploader"
+        requester = self._create_component_from_model(
+            model=model.requester,
+            config=config,
+            name=name,
+            **kwargs,
+        )
+        download_target_extractor = self._create_component_from_model(
+            model=model.download_target_extractor,
+            config=config,
+            name=name,
+            **kwargs,
+        )
+        emit_connector_builder_messages = self._emit_connector_builder_messages
+        file_uploader = DefaultFileUploader(
+            requester=requester,
+            download_target_extractor=download_target_extractor,
+            config=config,
+            file_writer=NoopFileWriter()
+            if emit_connector_builder_messages
+            else LocalFileSystemFileWriter(),
+            parameters=model.parameters or {},
+            filename_extractor=model.filename_extractor if model.filename_extractor else None,
+        )
+
+        return (
+            ConnectorBuilderFileUploader(file_uploader)
+            if emit_connector_builder_messages
+            else file_uploader
+        )
+
     def create_moving_window_call_rate_policy(
         self, model: MovingWindowCallRatePolicyModel, config: Config, **kwargs: Any
     ) -> MovingWindowCallRatePolicy:
@@ -3177,4 +3776,35 @@ class ModelToComponentFactory:
     def set_api_budget(self, component_definition: ComponentDefinition, config: Config) -> None:
         self._api_budget = self.create_component(
             model_type=HTTPAPIBudgetModel, component_definition=component_definition, config=config
+        )
+
+    def create_grouping_partition_router(
+        self, model: GroupingPartitionRouterModel, config: Config, **kwargs: Any
+    ) -> GroupingPartitionRouter:
+        underlying_router = self._create_component_from_model(
+            model=model.underlying_partition_router, config=config
+        )
+        if model.group_size < 1:
+            raise ValueError(f"Group size must be greater than 0, got {model.group_size}")
+
+        # Request options in underlying partition routers are not supported for GroupingPartitionRouter
+        # because they are specific to individual partitions and cannot be aggregated or handled
+        # when grouping, potentially leading to incorrect API calls. Any request customization
+        # should be managed at the stream level through the requester's configuration.
+        if isinstance(underlying_router, SubstreamPartitionRouter):
+            if any(
+                parent_config.request_option
+                for parent_config in underlying_router.parent_stream_configs
+            ):
+                raise ValueError("Request options are not supported for GroupingPartitionRouter.")
+
+        if isinstance(underlying_router, ListPartitionRouter):
+            if underlying_router.request_option:
+                raise ValueError("Request options are not supported for GroupingPartitionRouter.")
+
+        return GroupingPartitionRouter(
+            group_size=model.group_size,
+            underlying_partition_router=underlying_router,
+            deduplicate=model.deduplicate if model.deduplicate is not None else True,
+            config=config,
         )

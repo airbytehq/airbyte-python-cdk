@@ -121,7 +121,7 @@ def test_http_requester():
         parameters={},
     )
 
-    assert requester.get_url_base() == "https://airbyte.io/"
+    assert requester.get_url_base() == "https://airbyte.io"
     assert (
         requester.get_path(stream_state={}, stream_slice=stream_slice, next_page_token={})
         == "v1/1234"
@@ -145,9 +145,9 @@ def test_http_requester():
 @pytest.mark.parametrize(
     "test_name, base_url, expected_base_url",
     [
-        ("test_no_trailing_slash", "https://example.com", "https://example.com/"),
+        ("test_no_trailing_slash", "https://example.com", "https://example.com"),
         ("test_with_trailing_slash", "https://example.com/", "https://example.com/"),
-        ("test_with_v1_no_trailing_slash", "https://example.com/v1", "https://example.com/v1/"),
+        ("test_with_v1_no_trailing_slash", "https://example.com/v1", "https://example.com/v1"),
         ("test_with_v1_with_trailing_slash", "https://example.com/v1/", "https://example.com/v1/"),
     ],
 )

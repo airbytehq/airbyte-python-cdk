@@ -1,11 +1,17 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Mapping, MutableMapping, Optional, Union
+from typing import Any, List, Mapping, MutableMapping, Optional, Union
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_nested_mapping import NestedMapping
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    RequestBodyGraphQL,
+    RequestBodyJsonObject,
+    RequestBodyPlainText,
+    RequestBodyUrlEncodedForm,
+)
 from airbyte_cdk.sources.declarative.requesters.request_options.interpolated_nested_request_input_provider import (
     InterpolatedNestedRequestInputProvider,
 )
@@ -38,24 +44,36 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
     config: Config = field(default_factory=dict)
     request_parameters: Optional[RequestInput] = None
     request_headers: Optional[RequestInput] = None
+    request_body: Optional[
+        Union[
+            RequestBodyGraphQL,
+            RequestBodyJsonObject,
+            RequestBodyPlainText,
+            RequestBodyUrlEncodedForm,
+        ]
+    ] = None
     request_body_data: Optional[RequestInput] = None
     request_body_json: Optional[NestedMapping] = None
+    query_properties_key: Optional[str] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if self.request_parameters is None:
             self.request_parameters = {}
         if self.request_headers is None:
             self.request_headers = {}
+        # resolve the request body to either data or json
+        self._resolve_request_body()
+        # If request_body is not provided, set request_body_data and request_body_json to empty dicts
         if self.request_body_data is None:
             self.request_body_data = {}
         if self.request_body_json is None:
             self.request_body_json = {}
-
+        # If both request_body_data and request_body_json are provided, raise an error
         if self.request_body_json and self.request_body_data:
             raise ValueError(
                 "RequestOptionsProvider should only contain either 'request_body_data' or 'request_body_json' not both"
             )
-
+        # set interpolators
         self._parameter_interpolator = InterpolatedRequestInputProvider(
             config=self.config, request_inputs=self.request_parameters, parameters=parameters
         )
@@ -68,6 +86,25 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
         self._body_json_interpolator = InterpolatedNestedRequestInputProvider(
             config=self.config, request_inputs=self.request_body_json, parameters=parameters
         )
+
+    def _resolve_request_body(self) -> None:
+        """
+        Resolves the request body configuration by setting either `request_body_data` or `request_body_json`
+        based on the type specified in `self.request_body`. If neither is provided, both are initialized as empty
+        dictionaries. Raises a ValueError if both `request_body_data` and `request_body_json` are set simultaneously.
+        Raises:
+            ValueError: if an unsupported request body type is provided.
+        """
+        # Resolve the request body to either data or json
+        if self.request_body is not None and self.request_body.type is not None:
+            if self.request_body.type == "RequestBodyUrlEncodedForm":
+                self.request_body_data = self.request_body.value
+            elif self.request_body.type == "RequestBodyGraphQL":
+                self.request_body_json = {"query": self.request_body.value.query}
+            elif self.request_body.type in ("RequestBodyJsonObject", "RequestBodyPlainText"):
+                self.request_body_json = self.request_body.value
+            else:
+                raise ValueError(f"Unsupported request body type: {self.request_body.type}")
 
     def get_request_params(
         self,
@@ -83,6 +120,28 @@ class InterpolatedRequestOptionsProvider(RequestOptionsProvider):
             valid_value_types=ValidRequestTypes,
         )
         if isinstance(interpolated_value, dict):
+            if self.query_properties_key:
+                if not stream_slice:
+                    raise ValueError(
+                        "stream_slice should not be None if query properties in requests is enabled. Please contact Airbyte Support"
+                    )
+                elif (
+                    "query_properties" not in stream_slice.extra_fields
+                    or stream_slice.extra_fields.get("query_properties") is None
+                ):
+                    raise ValueError(
+                        "QueryProperties component is defined but stream_partition does not contain query_properties. Please contact Airbyte Support"
+                    )
+                elif not isinstance(stream_slice.extra_fields.get("query_properties"), List):
+                    raise ValueError(
+                        "QueryProperties component is defined but stream_slice.extra_fields.query_properties is not a List. Please contact Airbyte Support"
+                    )
+                interpolated_value = {
+                    **interpolated_value,
+                    self.query_properties_key: ",".join(
+                        stream_slice.extra_fields.get("query_properties")  # type: ignore  # Earlier type checks validate query_properties type
+                    ),
+                }
             return interpolated_value
         return {}
 

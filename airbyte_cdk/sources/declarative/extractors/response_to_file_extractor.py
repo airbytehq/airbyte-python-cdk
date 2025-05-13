@@ -15,7 +15,6 @@ from numpy import nan
 
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 
-EMPTY_STR: str = ""
 DEFAULT_ENCODING: str = "utf-8"
 DOWNLOAD_CHUNK_SIZE: int = 1024 * 10
 
@@ -136,7 +135,6 @@ class ResponseToFileExtractor(RecordExtractor):
         """
 
         try:
-            # TODO: Add support for other file types, like `json`, with `pd.read_json()`
             with open(path, "r", encoding=file_encoding) as data:
                 chunks = pd.read_csv(
                     data, chunksize=chunk_size, iterator=True, dialect="unix", dtype=object

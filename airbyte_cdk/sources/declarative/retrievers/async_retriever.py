@@ -4,24 +4,17 @@
 from dataclasses import InitVar, dataclass, field
 from typing import Any, Iterable, Mapping, Optional
 
-from typing_extensions import deprecated
-
 from airbyte_cdk.sources.declarative.async_job.job import AsyncJob
 from airbyte_cdk.sources.declarative.extractors.record_selector import RecordSelector
 from airbyte_cdk.sources.declarative.partition_routers.async_job_partition_router import (
     AsyncJobPartitionRouter,
 )
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
-from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
 from airbyte_cdk.sources.utils.slice_logger import AlwaysLogSliceLogger
 
 
-@deprecated(
-    "This class is experimental. Use at your own risk.",
-    category=ExperimentalClassWarning,
-)
 @dataclass
 class AsyncRetriever(Retriever):
     config: Config
@@ -35,6 +28,36 @@ class AsyncRetriever(Retriever):
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self._parameters = parameters
+
+    @property
+    def exit_on_rate_limit(self) -> bool:
+        """
+        Whether to exit on rate limit. This is a property of the job repository
+        and not the stream slicer. The stream slicer is responsible for creating
+        the jobs, but the job repository is responsible for managing the rate
+        limits and other job-related properties.
+
+        Note:
+         - If the `creation_requester` cannot place / create the job - it might be the case of the RateLimits
+         - If the `creation_requester` can place / create the job - it means all other requesters should successfully manage
+           to complete the results.
+        """
+        job_orchestrator = self.stream_slicer._job_orchestrator
+        if job_orchestrator is None:
+            # Default value when orchestrator is not available
+            return False
+        return job_orchestrator._job_repository.creation_requester.exit_on_rate_limit  # type: ignore
+
+    @exit_on_rate_limit.setter
+    def exit_on_rate_limit(self, value: bool) -> None:
+        """
+        Sets the `exit_on_rate_limit` property of the job repository > creation_requester,
+        meaning that the Job cannot be placed / created if the rate limit is reached.
+        Thus no further work on managing jobs is expected to be done.
+        """
+        job_orchestrator = self.stream_slicer._job_orchestrator
+        if job_orchestrator is not None:
+            job_orchestrator._job_repository.creation_requester.exit_on_rate_limit = value  # type: ignore[attr-defined, assignment]
 
     @property
     def state(self) -> StreamState:

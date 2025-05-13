@@ -7,7 +7,7 @@ import dataclasses
 import json
 import logging
 import os
-from typing import Literal
+from typing import List, Literal
 from unittest import mock
 from unittest.mock import MagicMock, patch
 
@@ -20,7 +20,7 @@ from airbyte_cdk.connector_builder.connector_builder_handler import (
     DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE,
     DEFAULT_MAXIMUM_NUMBER_OF_SLICES,
     DEFAULT_MAXIMUM_RECORDS,
-    TestReadLimits,
+    TestLimits,
     create_source,
     get_limits,
     resolve_manifest,
@@ -60,6 +60,7 @@ from airbyte_cdk.sources.declarative.declarative_stream import DeclarativeStream
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.declarative.retrievers import SimpleRetrieverTestReadDecorator
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
+from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets, update_secrets
 from unit_tests.connector_builder.utils import create_configured_catalog
 
@@ -123,7 +124,7 @@ MANIFEST = {
                 "values": ["0", "1", "2", "3", "4", "5", "6", "7"],
                 "cursor_field": "item_id",
             },
-            "" "requester": {
+            "requester": {
                 "path": "/v3/marketing/lists",
                 "authenticator": {
                     "type": "BearerAuthenticator",
@@ -154,6 +155,179 @@ MANIFEST = {
     },
 }
 
+DYNAMIC_STREAM_MANIFEST = {
+    "version": "0.30.3",
+    "definitions": {
+        "retriever": {
+            "paginator": {
+                "type": "DefaultPaginator",
+                "page_size": _page_size,
+                "page_size_option": {"inject_into": "request_parameter", "field_name": "page_size"},
+                "page_token_option": {"inject_into": "path", "type": "RequestPath"},
+                "pagination_strategy": {
+                    "type": "CursorPagination",
+                    "cursor_value": "{{ response._metadata.next }}",
+                    "page_size": _page_size,
+                },
+            },
+            "partition_router": {
+                "type": "ListPartitionRouter",
+                "values": ["0", "1", "2", "3", "4", "5", "6", "7"],
+                "cursor_field": "item_id",
+            },
+            "requester": {
+                "path": "/v3/marketing/lists",
+                "authenticator": {
+                    "type": "BearerAuthenticator",
+                    "api_token": "{{ config.apikey }}",
+                },
+                "request_parameters": {"a_param": "10"},
+            },
+            "record_selector": {"extractor": {"field_path": ["result"]}},
+        },
+    },
+    "streams": [
+        {
+            "type": "DeclarativeStream",
+            "$parameters": _stream_options,
+            "retriever": "#/definitions/retriever",
+        },
+    ],
+    "check": {"type": "CheckStream", "stream_names": ["lists"]},
+    "spec": {
+        "connection_specification": {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object",
+            "required": [],
+            "properties": {},
+            "additionalProperties": True,
+        },
+        "type": "Spec",
+    },
+    "dynamic_streams": [
+        {
+            "type": "DynamicDeclarativeStream",
+            "name": "TestDynamicStream",
+            "stream_template": {
+                "type": "DeclarativeStream",
+                "name": "",
+                "primary_key": [],
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "http://json-schema.org/schema#",
+                        "properties": {
+                            "ABC": {"type": "number"},
+                            "AED": {"type": "number"},
+                        },
+                        "type": "object",
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://api.test.com",
+                        "path": "",
+                        "http_method": "GET",
+                        "authenticator": {
+                            "type": "ApiKeyAuthenticator",
+                            "header": "apikey",
+                            "api_token": "{{ config['api_key'] }}",
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "paginator": {"type": "NoPagination"},
+                },
+            },
+            "components_resolver": {
+                "type": "HttpComponentsResolver",
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://api.test.com",
+                        "path": "parent/{{ stream_partition.parent_id }}/items",
+                        "http_method": "GET",
+                        "authenticator": {
+                            "type": "ApiKeyAuthenticator",
+                            "header": "apikey",
+                            "api_token": "{{ config['api_key'] }}",
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "paginator": {"type": "NoPagination"},
+                    "partition_router": {
+                        "type": "SubstreamPartitionRouter",
+                        "parent_stream_configs": [
+                            {
+                                "type": "ParentStreamConfig",
+                                "parent_key": "id",
+                                "partition_field": "parent_id",
+                                "stream": {
+                                    "type": "DeclarativeStream",
+                                    "name": "parent",
+                                    "retriever": {
+                                        "type": "SimpleRetriever",
+                                        "requester": {
+                                            "type": "HttpRequester",
+                                            "url_base": "https://api.test.com",
+                                            "path": "/parents",
+                                            "http_method": "GET",
+                                            "authenticator": {
+                                                "type": "ApiKeyAuthenticator",
+                                                "header": "apikey",
+                                                "api_token": "{{ config['api_key'] }}",
+                                            },
+                                        },
+                                        "record_selector": {
+                                            "type": "RecordSelector",
+                                            "extractor": {
+                                                "type": "DpathExtractor",
+                                                "field_path": [],
+                                            },
+                                        },
+                                    },
+                                    "schema_loader": {
+                                        "type": "InlineSchemaLoader",
+                                        "schema": {
+                                            "$schema": "http://json-schema.org/schema#",
+                                            "properties": {"id": {"type": "integer"}},
+                                            "type": "object",
+                                        },
+                                    },
+                                },
+                            }
+                        ],
+                    },
+                },
+                "components_mapping": [
+                    {
+                        "type": "ComponentMappingDefinition",
+                        "field_path": ["name"],
+                        "value": "parent_{{stream_slice['parent_id']}}_{{components_values['name']}}",
+                    },
+                    {
+                        "type": "ComponentMappingDefinition",
+                        "field_path": [
+                            "retriever",
+                            "requester",
+                            "path",
+                        ],
+                        "value": "{{ stream_slice['parent_id'] }}/{{ components_values['id'] }}",
+                    },
+                ],
+            },
+        }
+    ],
+}
+
 OAUTH_MANIFEST = {
     "version": "0.30.3",
     "definitions": {
@@ -174,7 +348,7 @@ OAUTH_MANIFEST = {
                 "values": ["0", "1", "2", "3", "4", "5", "6", "7"],
                 "cursor_field": "item_id",
             },
-            "" "requester": {
+            "requester": {
                 "path": "/v3/marketing/lists",
                 "authenticator": {"type": "OAuthAuthenticator", "api_token": "{{ config.apikey }}"},
                 "request_parameters": {"a_param": "10"},
@@ -205,6 +379,12 @@ OAUTH_MANIFEST = {
 RESOLVE_MANIFEST_CONFIG = {
     "__injected_declarative_manifest": MANIFEST,
     "__command": "resolve_manifest",
+}
+
+RESOLVE_DYNAMIC_STREAM_MANIFEST_CONFIG = {
+    "__injected_declarative_manifest": DYNAMIC_STREAM_MANIFEST,
+    "__command": "full_resolve_manifest",
+    "__test_read_config": {"max_streams": 2},
 }
 
 TEST_READ_CONFIG = {
@@ -323,7 +503,7 @@ def test_handle_resolve_manifest(valid_resolve_manifest_config_file, dummy_catal
                 str(valid_resolve_manifest_config_file),
                 "--catalog",
                 str(dummy_catalog),
-            ]
+            ],
         )
         assert patched_handle.call_count == 1
 
@@ -335,7 +515,13 @@ def test_handle_test_read(valid_read_config_file, configured_catalog):
         return_value=AirbyteMessage(type=MessageType.RECORD),
     ) as patch:
         handle_request(
-            ["read", "--config", str(valid_read_config_file), "--catalog", str(configured_catalog)]
+            [
+                "read",
+                "--config",
+                str(valid_read_config_file),
+                "--catalog",
+                str(configured_catalog),
+            ],
         )
         assert patch.call_count == 1
 
@@ -345,7 +531,7 @@ def test_resolve_manifest(valid_resolve_manifest_config_file):
     command = "resolve_manifest"
     config["__command"] = command
     source = ManifestDeclarativeSource(source_config=MANIFEST)
-    limits = TestReadLimits()
+    limits = TestLimits()
     resolved_manifest = handle_connector_builder_request(
         source, command, config, create_configured_catalog("dummy_stream"), _A_STATE, limits
     )
@@ -549,7 +735,7 @@ def test_read():
             emitted_at=1,
         ),
     )
-    limits = TestReadLimits()
+    limits = TestLimits()
     with patch(
         "airbyte_cdk.connector_builder.test_reader.TestReader.run_test_read",
         return_value=stream_read,
@@ -610,7 +796,7 @@ def test_config_update() -> None:
             config,
             ConfiguredAirbyteCatalogSerializer.load(CONFIGURED_CATALOG),
             _A_PER_PARTITION_STATE,
-            TestReadLimits(),
+            TestLimits(),
         )
         assert output.record.data["latest_config_update"]
 
@@ -638,6 +824,9 @@ def test_read_returns_error_response(mock_from_exception):
             connector_specification.connectionSpecification = {}
             return connector_specification
 
+        def deprecation_warnings(self) -> List[AirbyteLogMessage]:
+            return []
+
         @property
         def check_config_against_spec(self) -> Literal[False]:
             return False
@@ -646,7 +835,7 @@ def test_read_returns_error_response(mock_from_exception):
     mock_from_exception.return_value = stack_trace
 
     source = MockManifestDeclarativeSource()
-    limits = TestReadLimits()
+    limits = TestLimits()
     response = read_stream(
         source,
         TEST_READ_CONFIG,
@@ -686,7 +875,7 @@ def test_handle_429_response():
     ] = {"backoff_strategies": [{"type": "ConstantBackoffStrategy", "backoff_time_in_seconds": 5}]}
 
     config = TEST_READ_CONFIG
-    limits = TestReadLimits()
+    limits = TestLimits()
     source = create_source(config, limits)
 
     with patch("requests.Session.send", return_value=response) as mock_send:
@@ -739,7 +928,13 @@ def test_missing_config(valid_resolve_manifest_config_file):
 def test_invalid_config_command(invalid_config_file, dummy_catalog):
     with pytest.raises(ValueError):
         handle_request(
-            ["read", "--config", str(invalid_config_file), "--catalog", str(dummy_catalog)]
+            [
+                "read",
+                "--config",
+                str(invalid_config_file),
+                "--catalog",
+                str(dummy_catalog),
+            ],
         )
 
 
@@ -803,7 +998,7 @@ def test_create_source():
     max_records = 3
     max_pages_per_slice = 2
     max_slices = 1
-    limits = TestReadLimits(max_records, max_pages_per_slice, max_slices)
+    limits = TestLimits(max_records, max_pages_per_slice, max_slices)
 
     config = {"__injected_declarative_manifest": MANIFEST}
 
@@ -885,7 +1080,7 @@ def test_read_source(mock_http_stream):
     max_records = 100
     max_pages_per_slice = 2
     max_slices = 3
-    limits = TestReadLimits(max_records, max_pages_per_slice, max_slices)
+    limits = TestLimits(max_records, max_pages_per_slice, max_slices)
 
     catalog = ConfiguredAirbyteCatalog(
         streams=[
@@ -932,7 +1127,7 @@ def test_read_source_single_page_single_slice(mock_http_stream):
     max_records = 100
     max_pages_per_slice = 1
     max_slices = 1
-    limits = TestReadLimits(max_records, max_pages_per_slice, max_slices)
+    limits = TestLimits(max_records, max_pages_per_slice, max_slices)
 
     catalog = ConfiguredAirbyteCatalog(
         streams=[
@@ -1016,7 +1211,7 @@ def test_handle_read_external_requests(deployment_mode, url_base, expected_error
     endpoints when running on Cloud or OSS deployments
     """
 
-    limits = TestReadLimits(max_records=100, max_pages_per_slice=1, max_slices=1)
+    limits = TestLimits(max_records=100, max_pages_per_slice=1, max_slices=1)
 
     catalog = ConfiguredAirbyteCatalog(
         streams=[
@@ -1041,9 +1236,9 @@ def test_handle_read_external_requests(deployment_mode, url_base, expected_error
             source, config, catalog, _A_PER_PARTITION_STATE, limits
         ).record.data
         if expected_error:
-            assert (
-                len(output_data["logs"]) > 0
-            ), "Expected at least one log message with the expected error"
+            assert len(output_data["logs"]) > 0, (
+                "Expected at least one log message with the expected error"
+            )
             error_message = output_data["logs"][0]
             assert error_message["level"] == "ERROR"
             assert expected_error in error_message["stacktrace"]
@@ -1102,7 +1297,7 @@ def test_handle_read_external_oauth_request(deployment_mode, token_url, expected
     endpoints when running on Cloud or OSS deployments
     """
 
-    limits = TestReadLimits(max_records=100, max_pages_per_slice=1, max_slices=1)
+    limits = TestLimits(max_records=100, max_pages_per_slice=1, max_slices=1)
 
     catalog = ConfiguredAirbyteCatalog(
         streams=[
@@ -1137,9 +1332,9 @@ def test_handle_read_external_oauth_request(deployment_mode, token_url, expected
             source, config, catalog, _A_PER_PARTITION_STATE, limits
         ).record.data
         if expected_error:
-            assert (
-                len(output_data["logs"]) > 0
-            ), "Expected at least one log message with the expected error"
+            assert len(output_data["logs"]) > 0, (
+                "Expected at least one log message with the expected error"
+            )
             error_message = output_data["logs"][0]
             assert error_message["level"] == "ERROR"
             assert expected_error in error_message["stacktrace"]
@@ -1160,7 +1355,7 @@ def test_read_stream_exception_with_secrets():
         ]
     )
     state = []
-    limits = TestReadLimits()
+    limits = TestLimits()
 
     # Add the secret to be filtered
     update_secrets([config["api_key"]])
@@ -1182,3 +1377,399 @@ def test_read_stream_exception_with_secrets():
         assert response.type == Type.TRACE
         assert filtered_message in response.trace.error.message
         assert "super_secret_key" not in response.trace.error.message
+
+
+def test_full_resolve_manifest(valid_resolve_manifest_config_file):
+    config = copy.deepcopy(RESOLVE_DYNAMIC_STREAM_MANIFEST_CONFIG)
+    command = config["__command"]
+    source = ManifestDeclarativeSource(source_config=DYNAMIC_STREAM_MANIFEST)
+    limits = TestLimits(max_streams=2)
+    with HttpMocker() as http_mocker:
+        http_mocker.get(
+            HttpRequest(url="https://api.test.com/parents"),
+            HttpResponse(body=json.dumps([{"id": 1}, {"id": 2}])),
+        )
+        parent_ids = [1, 2]
+        for parent_id in parent_ids:
+            http_mocker.get(
+                HttpRequest(url=f"https://api.test.com/parent/{parent_id}/items"),
+                HttpResponse(
+                    body=json.dumps(
+                        [
+                            {"id": 1, "name": "item_1"},
+                            {"id": 2, "name": "item_2"},
+                        ]
+                    )
+                ),
+            )
+        resolved_manifest = handle_connector_builder_request(
+            source, command, config, create_configured_catalog("dummy_stream"), _A_STATE, limits
+        )
+
+    expected_resolved_manifest = {
+        "version": "0.30.3",
+        "definitions": {
+            "retriever": {
+                "paginator": {
+                    "type": "DefaultPaginator",
+                    "page_size": 2,
+                    "page_size_option": {
+                        "inject_into": "request_parameter",
+                        "field_name": "page_size",
+                    },
+                    "page_token_option": {"inject_into": "path", "type": "RequestPath"},
+                    "pagination_strategy": {
+                        "type": "CursorPagination",
+                        "cursor_value": "{{ response._metadata.next }}",
+                        "page_size": 2,
+                    },
+                },
+                "partition_router": {
+                    "type": "ListPartitionRouter",
+                    "values": ["0", "1", "2", "3", "4", "5", "6", "7"],
+                    "cursor_field": "item_id",
+                },
+                "requester": {
+                    "path": "/v3/marketing/lists",
+                    "authenticator": {
+                        "type": "BearerAuthenticator",
+                        "api_token": "{{ config.apikey }}",
+                    },
+                    "request_parameters": {"a_param": "10"},
+                },
+                "record_selector": {"extractor": {"field_path": ["result"]}},
+            }
+        },
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "retriever": {
+                    "paginator": {
+                        "type": "DefaultPaginator",
+                        "page_size": 2,
+                        "page_size_option": {
+                            "inject_into": "request_parameter",
+                            "field_name": "page_size",
+                            "type": "RequestOption",
+                            "name": "stream_with_custom_requester",
+                            "primary_key": "id",
+                            "url_base": "https://10.0.27.27/api/v1/",
+                            "$parameters": {
+                                "name": "stream_with_custom_requester",
+                                "primary_key": "id",
+                                "url_base": "https://10.0.27.27/api/v1/",
+                            },
+                        },
+                        "page_token_option": {
+                            "inject_into": "path",
+                            "type": "RequestPath",
+                            "name": "stream_with_custom_requester",
+                            "primary_key": "id",
+                            "url_base": "https://10.0.27.27/api/v1/",
+                            "$parameters": {
+                                "name": "stream_with_custom_requester",
+                                "primary_key": "id",
+                                "url_base": "https://10.0.27.27/api/v1/",
+                            },
+                        },
+                        "pagination_strategy": {
+                            "type": "CursorPagination",
+                            "cursor_value": "{{ response._metadata.next }}",
+                            "page_size": 2,
+                            "name": "stream_with_custom_requester",
+                            "primary_key": "id",
+                            "url_base": "https://10.0.27.27/api/v1/",
+                            "$parameters": {
+                                "name": "stream_with_custom_requester",
+                                "primary_key": "id",
+                                "url_base": "https://10.0.27.27/api/v1/",
+                            },
+                        },
+                        "name": "stream_with_custom_requester",
+                        "primary_key": "id",
+                        "url_base": "https://10.0.27.27/api/v1/",
+                        "$parameters": {
+                            "name": "stream_with_custom_requester",
+                            "primary_key": "id",
+                            "url_base": "https://10.0.27.27/api/v1/",
+                        },
+                    },
+                    "partition_router": {
+                        "type": "ListPartitionRouter",
+                        "values": ["0", "1", "2", "3", "4", "5", "6", "7"],
+                        "cursor_field": "item_id",
+                        "name": "stream_with_custom_requester",
+                        "primary_key": "id",
+                        "url_base": "https://10.0.27.27/api/v1/",
+                        "$parameters": {
+                            "name": "stream_with_custom_requester",
+                            "primary_key": "id",
+                            "url_base": "https://10.0.27.27/api/v1/",
+                        },
+                    },
+                    "requester": {
+                        "path": "/v3/marketing/lists",
+                        "authenticator": {
+                            "type": "BearerAuthenticator",
+                            "api_token": "{{ config.apikey }}",
+                            "name": "stream_with_custom_requester",
+                            "primary_key": "id",
+                            "url_base": "https://10.0.27.27/api/v1/",
+                            "$parameters": {
+                                "name": "stream_with_custom_requester",
+                                "primary_key": "id",
+                                "url_base": "https://10.0.27.27/api/v1/",
+                            },
+                        },
+                        "request_parameters": {"a_param": "10"},
+                        "type": "HttpRequester",
+                        "name": "stream_with_custom_requester",
+                        "primary_key": "id",
+                        "url_base": "https://10.0.27.27/api/v1/",
+                        "$parameters": {
+                            "name": "stream_with_custom_requester",
+                            "primary_key": "id",
+                            "url_base": "https://10.0.27.27/api/v1/",
+                        },
+                    },
+                    "record_selector": {
+                        "extractor": {
+                            "field_path": ["result"],
+                            "type": "DpathExtractor",
+                            "name": "stream_with_custom_requester",
+                            "primary_key": "id",
+                            "url_base": "https://10.0.27.27/api/v1/",
+                            "$parameters": {
+                                "name": "stream_with_custom_requester",
+                                "primary_key": "id",
+                                "url_base": "https://10.0.27.27/api/v1/",
+                            },
+                        },
+                        "type": "RecordSelector",
+                        "name": "stream_with_custom_requester",
+                        "primary_key": "id",
+                        "url_base": "https://10.0.27.27/api/v1/",
+                        "$parameters": {
+                            "name": "stream_with_custom_requester",
+                            "primary_key": "id",
+                            "url_base": "https://10.0.27.27/api/v1/",
+                        },
+                    },
+                    "type": "SimpleRetriever",
+                    "name": "stream_with_custom_requester",
+                    "primary_key": "id",
+                    "url_base": "https://10.0.27.27/api/v1/",
+                    "$parameters": {
+                        "name": "stream_with_custom_requester",
+                        "primary_key": "id",
+                        "url_base": "https://10.0.27.27/api/v1/",
+                    },
+                },
+                "name": "stream_with_custom_requester",
+                "primary_key": "id",
+                "url_base": "https://10.0.27.27/api/v1/",
+                "$parameters": {
+                    "name": "stream_with_custom_requester",
+                    "primary_key": "id",
+                    "url_base": "https://10.0.27.27/api/v1/",
+                },
+                "dynamic_stream_name": None,
+            },
+            {
+                "type": "DeclarativeStream",
+                "name": "parent_1_item_1",
+                "primary_key": [],
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "http://json-schema.org/schema#",
+                        "properties": {"ABC": {"type": "number"}, "AED": {"type": "number"}},
+                        "type": "object",
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://api.test.com",
+                        "path": "1/1",
+                        "http_method": "GET",
+                        "authenticator": {
+                            "type": "ApiKeyAuthenticator",
+                            "header": "apikey",
+                            "api_token": "{{ config['api_key'] }}",
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "paginator": {"type": "NoPagination"},
+                },
+                "dynamic_stream_name": "TestDynamicStream",
+            },
+            {
+                "type": "DeclarativeStream",
+                "name": "parent_1_item_2",
+                "primary_key": [],
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {
+                        "$schema": "http://json-schema.org/schema#",
+                        "properties": {"ABC": {"type": "number"}, "AED": {"type": "number"}},
+                        "type": "object",
+                    },
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://api.test.com",
+                        "path": "1/2",
+                        "http_method": "GET",
+                        "authenticator": {
+                            "type": "ApiKeyAuthenticator",
+                            "header": "apikey",
+                            "api_token": "{{ config['api_key'] }}",
+                        },
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                    "paginator": {"type": "NoPagination"},
+                },
+                "dynamic_stream_name": "TestDynamicStream",
+            },
+        ],
+        "check": {"type": "CheckStream", "stream_names": ["lists"]},
+        "spec": {
+            "connection_specification": {
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "type": "object",
+                "required": [],
+                "properties": {},
+                "additionalProperties": True,
+            },
+            "type": "Spec",
+        },
+        "dynamic_streams": [
+            {
+                "type": "DynamicDeclarativeStream",
+                "name": "TestDynamicStream",
+                "stream_template": {
+                    "type": "DeclarativeStream",
+                    "name": "",
+                    "primary_key": [],
+                    "schema_loader": {
+                        "type": "InlineSchemaLoader",
+                        "schema": {
+                            "$schema": "http://json-schema.org/schema#",
+                            "properties": {"ABC": {"type": "number"}, "AED": {"type": "number"}},
+                            "type": "object",
+                        },
+                    },
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url_base": "https://api.test.com",
+                            "path": "",
+                            "http_method": "GET",
+                            "authenticator": {
+                                "type": "ApiKeyAuthenticator",
+                                "header": "apikey",
+                                "api_token": "{{ config['api_key'] }}",
+                            },
+                        },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                        "paginator": {"type": "NoPagination"},
+                    },
+                },
+                "components_resolver": {
+                    "type": "HttpComponentsResolver",
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url_base": "https://api.test.com",
+                            "path": "parent/{{ stream_partition.parent_id }}/items",
+                            "http_method": "GET",
+                            "authenticator": {
+                                "type": "ApiKeyAuthenticator",
+                                "header": "apikey",
+                                "api_token": "{{ config['api_key'] }}",
+                            },
+                            "use_cache": True,
+                        },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                        "paginator": {"type": "NoPagination"},
+                        "partition_router": {
+                            "type": "SubstreamPartitionRouter",
+                            "parent_stream_configs": [
+                                {
+                                    "type": "ParentStreamConfig",
+                                    "parent_key": "id",
+                                    "partition_field": "parent_id",
+                                    "stream": {
+                                        "type": "DeclarativeStream",
+                                        "name": "parent",
+                                        "retriever": {
+                                            "type": "SimpleRetriever",
+                                            "requester": {
+                                                "type": "HttpRequester",
+                                                "url_base": "https://api.test.com",
+                                                "path": "/parents",
+                                                "http_method": "GET",
+                                                "authenticator": {
+                                                    "type": "ApiKeyAuthenticator",
+                                                    "header": "apikey",
+                                                    "api_token": "{{ config['api_key'] }}",
+                                                },
+                                            },
+                                            "record_selector": {
+                                                "type": "RecordSelector",
+                                                "extractor": {
+                                                    "type": "DpathExtractor",
+                                                    "field_path": [],
+                                                },
+                                            },
+                                        },
+                                        "schema_loader": {
+                                            "type": "InlineSchemaLoader",
+                                            "schema": {
+                                                "$schema": "http://json-schema.org/schema#",
+                                                "properties": {"id": {"type": "integer"}},
+                                                "type": "object",
+                                            },
+                                        },
+                                    },
+                                }
+                            ],
+                        },
+                    },
+                    "components_mapping": [
+                        {
+                            "type": "ComponentMappingDefinition",
+                            "field_path": ["name"],
+                            "value": "parent_{{stream_slice['parent_id']}}_{{components_values['name']}}",
+                        },
+                        {
+                            "type": "ComponentMappingDefinition",
+                            "field_path": ["retriever", "requester", "path"],
+                            "value": "{{ stream_slice['parent_id'] }}/{{ components_values['id'] }}",
+                        },
+                    ],
+                },
+            }
+        ],
+        "type": "DeclarativeSource",
+    }
+    assert resolved_manifest.record.data["manifest"] == expected_resolved_manifest
+    assert resolved_manifest.record.stream == "full_resolve_manifest"

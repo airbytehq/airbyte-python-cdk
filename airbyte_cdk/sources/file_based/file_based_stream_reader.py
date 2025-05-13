@@ -8,16 +8,18 @@ from datetime import datetime
 from enum import Enum
 from io import IOBase
 from os import makedirs, path
-from typing import Any, Dict, Iterable, List, Optional, Set
+from typing import Any, Callable, Iterable, List, MutableMapping, Optional, Set, Tuple
 
 from wcmatch.glob import GLOBSTAR, globmatch
 
+from airbyte_cdk.models import AirbyteRecordMessageFileReference
 from airbyte_cdk.sources.file_based.config.abstract_file_based_spec import AbstractFileBasedSpec
 from airbyte_cdk.sources.file_based.config.validate_config_transfer_modes import (
     include_identities_stream,
     preserve_directory_structure,
     use_file_transfer,
 )
+from airbyte_cdk.sources.file_based.file_record_data import FileRecordData
 from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 
 
@@ -28,6 +30,10 @@ class FileReadMode(Enum):
 
 class AbstractFileBasedStreamReader(ABC):
     DATE_TIME_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
+    FILE_RELATIVE_PATH = "file_relative_path"
+    FILE_NAME = "file_name"
+    LOCAL_FILE_PATH = "local_file_path"
+    FILE_FOLDER = "file_folder"
 
     def __init__(self) -> None:
         self._config = None
@@ -148,9 +154,9 @@ class AbstractFileBasedStreamReader(ABC):
         return False
 
     @abstractmethod
-    def get_file(
+    def upload(
         self, file: RemoteFile, local_directory: str, logger: logging.Logger
-    ) -> Dict[str, Any]:
+    ) -> Tuple[FileRecordData, AirbyteRecordMessageFileReference]:
         """
         This is required for connectors that will support writing to
         files. It will handle the logic to download,get,read,acquire or
@@ -162,119 +168,41 @@ class AbstractFileBasedStreamReader(ABC):
                logger (logging.Logger): Logger for logging information and errors.
 
            Returns:
-               dict: A dictionary containing the following:
-                   - "file_url" (str): The absolute path of the downloaded file.
-                   - "bytes" (int): The file size in bytes.
-                   - "file_relative_path" (str): The relative path of the file for local storage. Is relative to local_directory as
-                   this a mounted volume in the pod container.
-
+               AirbyteRecordMessageFileReference: A file reference object containing:
+                   - staging_file_url (str): The absolute path to the referenced file in the staging area.
+                   - file_size_bytes (int): The size of the referenced file in bytes.
+                   - source_file_relative_path (str): The relative path to the referenced file in source.
         """
         ...
 
-    def _get_file_transfer_paths(self, file: RemoteFile, local_directory: str) -> List[str]:
+    def _get_file_transfer_paths(
+        self, source_file_relative_path: str, staging_directory: str
+    ) -> MutableMapping[str, Any]:
+        """
+        This method is used to get the file transfer paths for a given source file relative path and local directory.
+        It returns a dictionary with the following keys:
+            - FILE_RELATIVE_PATH: The relative path to file in reference to the staging directory.
+            - LOCAL_FILE_PATH: The absolute path to the file.
+            - FILE_NAME: The name of the referenced file.
+            - FILE_FOLDER: The folder of the referenced file.
+        """
         preserve_directory_structure = self.preserve_directory_structure()
+
+        file_name = path.basename(source_file_relative_path)
+        file_folder = path.dirname(source_file_relative_path)
         if preserve_directory_structure:
             # Remove left slashes from source path format to make relative path for writing locally
-            file_relative_path = file.uri.lstrip("/")
+            file_relative_path = source_file_relative_path.lstrip("/")
         else:
-            file_relative_path = path.basename(file.uri)
-        local_file_path = path.join(local_directory, file_relative_path)
-
+            file_relative_path = file_name
+        local_file_path = path.join(staging_directory, file_relative_path)
         # Ensure the local directory exists
         makedirs(path.dirname(local_file_path), exist_ok=True)
-        absolute_file_path = path.abspath(local_file_path)
-        return [file_relative_path, local_file_path, absolute_file_path]
 
-    @abstractmethod
-    def get_file_acl_permissions(self, file: RemoteFile, logger: logging.Logger) -> Dict[str, Any]:
-        """
-        This function should return the allow list for a given file, i.e. the list of all identities and their permission levels associated with it
-
-        e.g.
-        def get_file_acl_permissions(self, file: RemoteFile, logger: logging.Logger):
-            api_conn = some_api.conn(credentials=SOME_CREDENTIALS)
-            result = api_conn.get_file_permissions_info(file.id)
-            return MyPermissionsModel(
-                id=result["id"],
-                access_control_list = result["access_control_list"],
-                is_public = result["is_public"],
-                ).dict()
-        """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not implement get_file_acl_permissions(). To support ACL permissions, implement this method and update file_permissions_schema."
-        )
-
-    @abstractmethod
-    def load_identity_groups(self, logger: logging.Logger) -> Iterable[Dict[str, Any]]:
-        """
-        This function should return the Identities in a determined "space" or "domain" where the file metadata (ACLs) are fetched and ACLs items (Identities) exists.
-
-        e.g.
-        def load_identity_groups(self, logger: logging.Logger) -> Dict[str, Any]:
-            api_conn = some_api.conn(credentials=SOME_CREDENTIALS)
-            users_api = api_conn.users()
-            groups_api = api_conn.groups()
-            members_api = self.google_directory_service.members()
-            for user in users_api.list():
-                yield my_identity_model(id=user.id, name=user.name, email_address=user.email, type="user").dict()
-            for group in groups_api.list():
-                group_obj = my_identity_model(id=group.id, name=groups.name, email_address=user.email, type="group").dict()
-                for member in members_api.list(group=group):
-                    group_obj.member_email_addresses = group_obj.member_email_addresses or []
-                    group_obj.member_email_addresses.append(member.email)
-                yield group_obj.dict()
-        """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not implement load_identity_groups(). To support identities, implement this method and update identities_schema."
-        )
-
-    @property
-    @abstractmethod
-    def file_permissions_schema(self) -> Dict[str, Any]:
-        """
-        This function should return the permissions schema for file permissions stream.
-
-        e.g.
-        def file_permissions_schema(self) -> Dict[str, Any]:
-            # you can also follow the patter we have for python connectors and have a json file and read from there e.g. schemas/identities.json
-            return {
-                  "type": "object",
-                  "properties": {
-                    "id": { "type": "string" },
-                    "file_path": { "type": "string" },
-                    "access_control_list": {
-                      "type": "array",
-                      "items": { "type": "string" }
-                    },
-                    "publicly_accessible": { "type": "boolean" }
-                  }
-                }
-        """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not implement file_permissions_schema, please return json schema for your permissions streams."
-        )
-
-    @property
-    @abstractmethod
-    def identities_schema(self) -> Dict[str, Any]:
-        """
-        This function should return the identities schema for file identity stream.
-
-        e.g.
-        def identities_schema(self) -> Dict[str, Any]:
-            # you can also follow the patter we have for python connectors and have a json file and read from there e.g. schemas/identities.json
-            return {
-              "type": "object",
-              "properties": {
-                "id": { "type": "string" },
-                "remote_id": { "type": "string" },
-                "name": { "type": ["null", "string"] },
-                "email_address": { "type": ["null", "string"] },
-                "member_email_addresses": { "type": ["null", "array"] },
-                "type": { "type": "string" },
-              }
-            }
-        """
-        raise NotImplementedError(
-            f"{self.__class__.__name__} does not implement identities_schema, please return json schema for your identities stream."
-        )
+        file_paths = {
+            self.FILE_RELATIVE_PATH: file_relative_path,
+            self.LOCAL_FILE_PATH: local_file_path,
+            self.FILE_NAME: file_name,
+            self.FILE_FOLDER: file_folder,
+        }
+        return file_paths

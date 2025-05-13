@@ -36,7 +36,7 @@ repos:
       - id: check-toml
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.3
+    rev: v0.11.5
     hooks:
       # Run the linter with repo-defined settings
       - id: ruff

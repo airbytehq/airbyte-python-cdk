@@ -8,6 +8,8 @@ from typing import Any, Generator, MutableMapping
 
 import requests
 
+DECODER_OUTPUT_TYPE = Generator[MutableMapping[str, Any], None, None]
+
 
 @dataclass
 class Decoder:
@@ -22,9 +24,7 @@ class Decoder:
         """
 
     @abstractmethod
-    def decode(
-        self, response: requests.Response
-    ) -> Generator[MutableMapping[str, Any], None, None]:
+    def decode(self, response: requests.Response) -> DECODER_OUTPUT_TYPE:
         """
         Decodes a requests.Response into a Mapping[str, Any] or an array
         :param response: the response to decode

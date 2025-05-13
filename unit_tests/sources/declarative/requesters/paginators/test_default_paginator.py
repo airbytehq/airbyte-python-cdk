@@ -3,12 +3,13 @@
 #
 
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, Mock
 
 import pytest
 import requests
 
 from airbyte_cdk.sources.declarative.decoders import JsonDecoder, XmlDecoder
+from airbyte_cdk.sources.declarative.extractors import DpathExtractor
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.requesters.paginators.default_paginator import (
     DefaultPaginator,
@@ -26,7 +27,7 @@ from airbyte_cdk.sources.declarative.requesters.paginators.strategies.page_incre
     PageIncrement,
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
-from airbyte_cdk.sources.declarative.types import Record
+from airbyte_cdk.sources.declarative.types import Record, StreamSlice, StreamState
 
 
 @pytest.mark.parametrize(
@@ -327,7 +328,13 @@ def test_initial_token_with_offset_pagination():
     )
     url_base = "https://airbyte.io"
     config = {}
-    strategy = OffsetIncrement(config={}, page_size=2, parameters={}, inject_on_first_request=True)
+    strategy = OffsetIncrement(
+        config={},
+        page_size=2,
+        extractor=DpathExtractor(field_path=[], parameters={}, config={}),
+        parameters={},
+        inject_on_first_request=True,
+    )
     paginator = DefaultPaginator(
         strategy,
         config,
@@ -348,7 +355,13 @@ def test_initial_token_with_offset_pagination():
     "pagination_strategy,last_page_size,expected_next_page_token,expected_second_next_page_token",
     [
         pytest.param(
-            OffsetIncrement(config={}, page_size=10, parameters={}, inject_on_first_request=True),
+            OffsetIncrement(
+                config={},
+                page_size=10,
+                extractor=DpathExtractor(field_path=["results"], parameters={}, config={}),
+                parameters={},
+                inject_on_first_request=True,
+            ),
             10,
             {"next_page_token": 10},
             {"next_page_token": 20},
@@ -373,10 +386,23 @@ def test_no_inject_on_first_request_offset_pagination(
     """
     Validate that the stateless next_page_token() works when the first page does not inject the value
     """
-
+    response_body = {
+        "results": [
+            {"id": 1},
+            {"id": 2},
+            {"id": 3},
+            {"id": 4},
+            {"id": 5},
+            {"id": 6},
+            {"id": 7},
+            {"id": 8},
+            {"id": 9},
+            {"id": 10},
+        ]
+    }
     response = requests.Response()
     response.headers = {"A_HEADER": "HEADER_VALUE"}
-    response._content = {}
+    response._content = json.dumps(response_body).encode("utf-8")
 
     last_record = Record(data={}, stream_name="test")
 
@@ -430,7 +456,12 @@ def test_limit_page_fetched():
 
 
 def test_paginator_with_page_option_no_page_size():
-    pagination_strategy = OffsetIncrement(config={}, page_size=None, parameters={})
+    pagination_strategy = OffsetIncrement(
+        config={},
+        page_size=None,
+        extractor=DpathExtractor(field_path=[], parameters={}, config={}),
+        parameters={},
+    )
 
     with pytest.raises(ValueError):
         (
@@ -473,3 +504,77 @@ def test_request_option_mapping_validator():
                 parameters={},
             ),
         )
+
+
+def test_path_returns_none_when_no_token() -> None:
+    page_token_option = RequestPath(parameters={})
+    paginator = DefaultPaginator(
+        pagination_strategy=Mock(),
+        config={},
+        url_base="https://domain.com",
+        parameters={},
+        page_token_option=page_token_option,
+    )
+    result = paginator.path(None)
+
+    assert result is None
+
+
+def test_path_returns_none_when_option_not_request_path() -> None:
+    token_value = "https://domain.com/next_url"
+    next_page_token = {"next_page_token": token_value}
+
+    # Use a RequestOption instead of RequestPath.
+    page_token_option = RequestOption(
+        inject_into=RequestOptionType.request_parameter,
+        field_name="some_field",
+        parameters={},
+    )
+    paginator = DefaultPaginator(
+        pagination_strategy=Mock(),
+        config={},
+        url_base="https://domain.com",
+        parameters={},
+        page_token_option=page_token_option,
+    )
+    result = paginator.path(next_page_token)
+    assert result is None
+
+
+def test_path_with_additional_interpolation_context() -> None:
+    page_token_option = RequestPath(parameters={})
+    paginator = DefaultPaginator(
+        pagination_strategy=Mock(),
+        config={},
+        url_base="https://api.domain.com/{{ stream_slice['campaign_id'] }}",
+        parameters={},
+        page_token_option=page_token_option,
+    )
+    # define stream_state here
+    stream_state = {"state": "state_value"}
+    # define stream_slice here
+    stream_slice = StreamSlice(
+        partition={
+            "campaign_id": "123_abcd",
+        },
+        cursor_slice={
+            "start": "A",
+            "end": "B",
+        },
+        extra_fields={
+            "extra_field_A": "value_A",
+            "extra_field_B": "value_B",
+        },
+    )
+    # define next_page_token here
+    next_page_token = {
+        "next_page_token": "https://api.domain.com/123_abcd/some_next_page_token_here"
+    }
+
+    expected_after_interpolation = "/some_next_page_token_here"
+
+    assert expected_after_interpolation == paginator.path(
+        next_page_token=next_page_token,
+        stream_state=stream_state,
+        stream_slice=stream_slice,
+    )

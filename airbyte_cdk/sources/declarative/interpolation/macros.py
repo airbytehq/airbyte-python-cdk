@@ -12,6 +12,8 @@ import pytz
 from dateutil import parser
 from isodate import parse_duration
 
+from airbyte_cdk.sources.declarative.datetime.datetime_parser import DatetimeParser
+
 """
 This file contains macros that can be evaluated by a `JinjaInterpolation` object
 """
@@ -154,7 +156,7 @@ def duration(datestring: str) -> Union[datetime.timedelta, isodate.Duration]:
 
 
 def format_datetime(
-    dt: Union[str, datetime.datetime], format: str, input_format: Optional[str] = None
+    dt: Union[str, datetime.datetime, int], format: str, input_format: Optional[str] = None
 ) -> str:
     """
     Converts datetime to another format
@@ -168,12 +170,16 @@ def format_datetime(
     """
     if isinstance(dt, datetime.datetime):
         return dt.strftime(format)
-    dt_datetime = (
-        datetime.datetime.strptime(dt, input_format) if input_format else str_to_datetime(dt)
-    )
-    if format == "%s":
-        return str(int(dt_datetime.timestamp()))
-    return dt_datetime.strftime(format)
+
+    if isinstance(dt, int):
+        dt_datetime = DatetimeParser().parse(dt, input_format if input_format else "%s")
+    else:
+        dt_datetime = (
+            datetime.datetime.strptime(dt, input_format) if input_format else str_to_datetime(dt)
+        )
+    if dt_datetime.tzinfo is None:
+        dt_datetime = dt_datetime.replace(tzinfo=pytz.utc)
+    return DatetimeParser().format(dt=dt_datetime, format=format)
 
 
 _macros_list = [

@@ -276,7 +276,7 @@ class StreamPartition(Partition):
     def read(self) -> Iterable[Record]:
         """
         Read messages from the stream.
-        If the StreamData is a Mapping, it will be converted to a Record.
+        If the StreamData is a Mapping or an AirbyteMessage of type RECORD, it will be converted to a Record.
         Otherwise, the message will be emitted on the message repository.
         """
         try:
@@ -292,6 +292,8 @@ class StreamPartition(Partition):
                 stream_slice=copy.deepcopy(self._slice),
                 stream_state=self._state,
             ):
+                # Noting we'll also need to support FileTransferRecordMessage if we want to support file-based connectors in this facade
+                # For now, file-based connectors have their own stream facade
                 if isinstance(record_data, Mapping):
                     data_to_return = dict(record_data)
                     self._stream.transformer.transform(
@@ -299,6 +301,12 @@ class StreamPartition(Partition):
                     )
                     yield Record(
                         data=data_to_return,
+                        stream_name=self.stream_name(),
+                        associated_slice=self._slice,  # type: ignore [arg-type]
+                    )
+                elif isinstance(record_data, AirbyteMessage) and record_data.record is not None:
+                    yield Record(
+                        data=record_data.record.data or {},
                         stream_name=self.stream_name(),
                         associated_slice=self._slice,  # type: ignore [arg-type]
                     )

@@ -1,12 +1,16 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+
+
 import copy
+import json
 import logging
 from dataclasses import InitVar, dataclass
 from typing import TYPE_CHECKING, Any, Iterable, List, Mapping, MutableMapping, Optional, Union
 
 import dpath
+import requests
 
 from airbyte_cdk.models import AirbyteMessage
 from airbyte_cdk.models import Type as MessageType
@@ -46,6 +50,7 @@ class ParentStreamConfig:
     )
     request_option: Optional[RequestOption] = None
     incremental_dependency: bool = False
+    lazy_read_pointer: Optional[List[Union[InterpolatedString, str]]] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.parent_key = InterpolatedString.create(self.parent_key, parameters=parameters)
@@ -58,6 +63,17 @@ class ParentStreamConfig:
                 [InterpolatedString.create(path, parameters=parameters) for path in key_path]
                 for key_path in self.extra_fields
             ]
+
+        self.lazy_read_pointer = (
+            [
+                InterpolatedString.create(path, parameters=parameters)
+                if isinstance(path, str)
+                else path
+                for path in self.lazy_read_pointer
+            ]
+            if self.lazy_read_pointer
+            else None
+        )
 
 
 @dataclass
@@ -196,6 +212,15 @@ class SubstreamPartitionRouter(PartitionRouter):
                     # Add extra fields
                     extracted_extra_fields = self._extract_extra_fields(parent_record, extra_fields)
 
+                    if parent_stream_config.lazy_read_pointer:
+                        extracted_extra_fields = {
+                            "child_response": self._extract_child_response(
+                                parent_record,
+                                parent_stream_config.lazy_read_pointer,  # type: ignore[arg-type]  # lazy_read_pointer type handeled in __post_init__ of parent_stream_config
+                            ),
+                            **extracted_extra_fields,
+                        }
+
                     yield StreamSlice(
                         partition={
                             partition_field: partition_value,
@@ -204,6 +229,21 @@ class SubstreamPartitionRouter(PartitionRouter):
                         cursor_slice={},
                         extra_fields=extracted_extra_fields,
                     )
+
+    def _extract_child_response(
+        self, parent_record: Mapping[str, Any] | AirbyteMessage, pointer: List[InterpolatedString]
+    ) -> requests.Response:
+        """Extract child records from a parent record based on lazy pointers."""
+
+        def _create_response(data: MutableMapping[str, Any]) -> SafeResponse:
+            """Create a SafeResponse with the given data."""
+            response = SafeResponse()
+            response.content = json.dumps(data).encode("utf-8")
+            response.status_code = 200
+            return response
+
+        path = [path.eval(self.config) for path in pointer]
+        return _create_response(dpath.get(parent_record, path, default=[]))  # type: ignore # argunet will be a MutableMapping, given input data structure
 
     def _extract_extra_fields(
         self,
@@ -280,20 +320,15 @@ class SubstreamPartitionRouter(PartitionRouter):
 
         parent_state = stream_state.get("parent_state", {})
 
-        # If `parent_state` doesn't exist and at least one parent stream has an incremental dependency,
-        # copy the child state to parent streams with incremental dependencies.
-        incremental_dependency = any(
-            [parent_config.incremental_dependency for parent_config in self.parent_stream_configs]
-        )
-        if not parent_state and not incremental_dependency:
-            return
-
-        if not parent_state and incremental_dependency:
-            # Migrate child state to parent state format
-            parent_state = self._migrate_child_state_to_parent_state(stream_state)
-
         # Set state for each parent stream with an incremental dependency
         for parent_config in self.parent_stream_configs:
+            if (
+                not parent_state.get(parent_config.stream.name, {})
+                and parent_config.incremental_dependency
+            ):
+                # Migrate child state to parent state format
+                parent_state = self._migrate_child_state_to_parent_state(stream_state)
+
             if parent_config.incremental_dependency:
                 parent_config.stream.state = parent_state.get(parent_config.stream.name, {})
 
@@ -339,7 +374,11 @@ class SubstreamPartitionRouter(PartitionRouter):
         # Ignore per-partition states or invalid formats.
         if isinstance(substream_state, (list, dict)) or len(substream_state_values) != 1:
             # If a global state is present under the key "state", use its first value.
-            if "state" in stream_state and isinstance(stream_state["state"], dict):
+            if (
+                "state" in stream_state
+                and isinstance(stream_state["state"], dict)
+                and stream_state["state"] != {}
+            ):
                 substream_state = list(stream_state["state"].values())[0]
             else:
                 return {}
@@ -381,3 +420,22 @@ class SubstreamPartitionRouter(PartitionRouter):
     @property
     def logger(self) -> logging.Logger:
         return logging.getLogger("airbyte.SubstreamPartitionRouter")
+
+
+class SafeResponse(requests.Response):
+    """
+    A subclass of requests.Response that acts as an interface to migrate parsed child records
+    into a response object. This allows seamless interaction with child records as if they
+    were original response, ensuring compatibility with methods that expect requests.Response data type.
+    """
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(requests.Response, name, None)
+
+    @property
+    def content(self) -> Optional[bytes]:
+        return super().content
+
+    @content.setter
+    def content(self, value: Union[str, bytes]) -> None:
+        self._content = value.encode() if isinstance(value, str) else value

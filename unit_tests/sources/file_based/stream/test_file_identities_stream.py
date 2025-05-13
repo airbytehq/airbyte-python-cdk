@@ -12,7 +12,9 @@ from airbyte_cdk.sources.file_based.discovery_policy import AbstractDiscoveryPol
 from airbyte_cdk.sources.file_based.exceptions import (
     FileBasedErrorsCollector,
 )
-from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
+from airbyte_cdk.sources.file_based.file_based_stream_permissions_reader import (
+    AbstractFileBasedStreamPermissionsReader,
+)
 from airbyte_cdk.sources.file_based.stream import FileIdentitiesStream
 
 
@@ -59,20 +61,23 @@ class IdentitiesFileBasedStreamTest(unittest.TestCase):
 
     def setUp(self) -> None:
         self._catalog_schema = Mock()
-        self._stream_reader = Mock(spec=AbstractFileBasedStreamReader)
+        self._stream_permissions_reader = Mock(spec=AbstractFileBasedStreamPermissionsReader)
         self._discovery_policy = Mock(spec=AbstractDiscoveryPolicy)
 
-        self._stream_reader.identities_schema = self._IDENTITIES_SCHEMA
+        self._stream_permissions_reader.identities_schema = self._IDENTITIES_SCHEMA
 
         self._stream = FileIdentitiesStream(
             catalog_schema=self._catalog_schema,
-            stream_reader=self._stream_reader,
+            stream_permissions_reader=self._stream_permissions_reader,
             discovery_policy=self._discovery_policy,
             errors_collector=FileBasedErrorsCollector(),
         )
 
     def test_when_read_records_then_return_records(self) -> None:
-        self._stream_reader.load_identity_groups.return_value = [self._A_RECORD, self._GROUP_RECORD]
+        self._stream_permissions_reader.load_identity_groups.return_value = [
+            self._A_RECORD,
+            self._GROUP_RECORD,
+        ]
         messages = list(self._stream.read_records(SyncMode.full_refresh))
         assert list(map(lambda message: message.record.data, messages)) == [
             self._A_RECORD,
@@ -84,7 +89,7 @@ class IdentitiesFileBasedStreamTest(unittest.TestCase):
         assert returned_schema == self._IDENTITIES_SCHEMA
 
     def test_when_read_records_and_raise_exception(self) -> None:
-        self._stream_reader.load_identity_groups.side_effect = Exception(
+        self._stream_permissions_reader.load_identity_groups.side_effect = Exception(
             "Identities retrieval failed"
         )
 

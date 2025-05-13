@@ -14,6 +14,7 @@ from airbyte_cdk.sources.declarative.incremental import (
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.migrations.state_migration import StateMigration
 from airbyte_cdk.sources.declarative.retrievers import SimpleRetriever
+from airbyte_cdk.sources.declarative.retrievers.async_retriever import AsyncRetriever
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.schema import DefaultSchemaLoader
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
@@ -76,11 +77,17 @@ class DeclarativeStream(Stream):
 
     @property
     def exit_on_rate_limit(self) -> bool:
+        if isinstance(self.retriever, AsyncRetriever):
+            return self.retriever.exit_on_rate_limit
+
         return self.retriever.requester.exit_on_rate_limit  # type: ignore # abstract Retriever class has not requester attribute
 
     @exit_on_rate_limit.setter
     def exit_on_rate_limit(self, value: bool) -> None:
-        self.retriever.requester.exit_on_rate_limit = value  # type: ignore[attr-defined]
+        if isinstance(self.retriever, AsyncRetriever):
+            self.retriever.exit_on_rate_limit = value
+        else:
+            self.retriever.requester.exit_on_rate_limit = value  # type: ignore[attr-defined]
 
     @property  # type: ignore
     def name(self) -> str:

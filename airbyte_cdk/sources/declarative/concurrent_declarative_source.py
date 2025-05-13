@@ -19,12 +19,16 @@ from airbyte_cdk.sources.declarative.extractors import RecordSelector
 from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
-from airbyte_cdk.sources.declarative.incremental import ConcurrentPerPartitionCursor
+from airbyte_cdk.sources.declarative.incremental import (
+    ConcurrentPerPartitionCursor,
+    GlobalSubstreamCursor,
+)
 from airbyte_cdk.sources.declarative.incremental.datetime_based_cursor import DatetimeBasedCursor
 from airbyte_cdk.sources.declarative.incremental.per_partition_with_global import (
     PerPartitionWithGlobalCursor,
 )
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
+from airbyte_cdk.sources.declarative.models import FileUploader
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConcurrencyLevel as ConcurrencyLevelModel,
 )
@@ -162,6 +166,10 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         else:
             filtered_catalog = catalog
 
+        # It is no need run read for synchronous streams if they are not exists.
+        if not filtered_catalog.streams:
+            return
+
         yield from super().read(logger, config, filtered_catalog, state)
 
     def discover(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteCatalog:
@@ -201,6 +209,27 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             # Some low-code sources use a combination of DeclarativeStream and regular Python streams. We can't inspect
             # these legacy Python streams the way we do low-code streams to determine if they are concurrent compatible,
             # so we need to treat them as synchronous
+
+            supports_file_transfer = (
+                isinstance(declarative_stream, DeclarativeStream)
+                and "file_uploader" in name_to_stream_mapping[declarative_stream.name]
+            )
+
+            if (
+                isinstance(declarative_stream, DeclarativeStream)
+                and name_to_stream_mapping[declarative_stream.name]["type"]
+                == "StateDelegatingStream"
+            ):
+                stream_state = self._connector_state_manager.get_stream_state(
+                    stream_name=declarative_stream.name, namespace=declarative_stream.namespace
+                )
+
+                name_to_stream_mapping[declarative_stream.name] = (
+                    name_to_stream_mapping[declarative_stream.name]["incremental_stream"]
+                    if stream_state
+                    else name_to_stream_mapping[declarative_stream.name]["full_refresh_stream"]
+                )
+
             if isinstance(declarative_stream, DeclarativeStream) and (
                 name_to_stream_mapping[declarative_stream.name]["retriever"]["type"]
                 == "SimpleRetriever"
@@ -276,6 +305,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                                 stream_name=declarative_stream.name,
                                 stream_namespace=declarative_stream.namespace,
                                 config=config or {},
+                                stream_state_migrations=declarative_stream.state_migrations,
                             )
                         partition_generator = StreamSlicerPartitionGenerator(
                             partition_factory=DeclarativePartitionFactory(
@@ -302,6 +332,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             else None,
                             logger=self.logger,
                             cursor=cursor,
+                            supports_file_transfer=supports_file_transfer,
                         )
                     )
                 elif (
@@ -333,6 +364,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             cursor_field=None,
                             logger=self.logger,
                             cursor=final_state_cursor,
+                            supports_file_transfer=supports_file_transfer,
                         )
                     )
                 elif (
@@ -341,7 +373,8 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                     == DatetimeBasedCursorModel.__name__
                     and hasattr(declarative_stream.retriever, "stream_slicer")
                     and isinstance(
-                        declarative_stream.retriever.stream_slicer, PerPartitionWithGlobalCursor
+                        declarative_stream.retriever.stream_slicer,
+                        (GlobalSubstreamCursor, PerPartitionWithGlobalCursor),
                     )
                 ):
                     stream_state = self._connector_state_manager.get_stream_state(
@@ -386,6 +419,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
                             cursor_field=perpartition_cursor.cursor_field.cursor_field_key,
                             logger=self.logger,
                             cursor=perpartition_cursor,
+                            supports_file_transfer=supports_file_transfer,
                         )
                     )
                 else:
