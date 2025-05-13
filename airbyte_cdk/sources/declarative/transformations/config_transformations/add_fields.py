@@ -34,7 +34,7 @@ class ParsedAddFieldDefinition:
 
 
 @dataclass
-class AddFields(ConfigTransformation):
+class ConfigAddFields(ConfigTransformation):
     """
     Transformation which adds fields to a config. The path of the added field can be nested. Adding nested fields will create all
     necessary parent objects (like mkdir -p).
@@ -42,7 +42,7 @@ class AddFields(ConfigTransformation):
     This transformation has access to the config being transformed.
 
     Examples of instantiating this transformation via YAML:
-    - type: AddFields
+    - type: ConfigAddFields
       fields:
         # hardcoded constant
         - path: ["path"]

@@ -12,7 +12,7 @@ from airbyte_cdk.sources.declarative.transformations.config_transformations.conf
 
 
 @dataclass
-class RemapField(ConfigTransformation):
+class ConfigRemapField(ConfigTransformation):
     """
     Transformation that remaps a field's value to another value based on a static map.
     """
