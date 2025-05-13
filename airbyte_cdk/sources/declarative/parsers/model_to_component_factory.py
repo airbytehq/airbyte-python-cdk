@@ -2812,7 +2812,9 @@ class ModelToComponentFactory:
             property_list = model.property_list
         else:
             property_list_model = model.property_list
-            parameters = property_list_model.parameters if property_list_model.parameters is not None else {}
+            parameters = (
+                property_list_model.parameters if property_list_model.parameters is not None else {}
+            )
             parameters.update(model.parameters or {})
             property_list_model.parameters = parameters
             property_list = self._create_component_from_model(
@@ -3054,7 +3056,11 @@ class ModelToComponentFactory:
 
             if len(query_properties_definitions) == 1:
                 query_properties_definition_model = query_properties_definitions[0]
-                parameters = query_properties_definition_model.parameters if query_properties_definition_model.parameters is not None else {}
+                parameters = (
+                    query_properties_definition_model.parameters
+                    if query_properties_definition_model.parameters is not None
+                    else {}
+                )
                 parameters.update(model.parameters or {})
                 query_properties_definition_model.parameters = parameters
                 query_properties = self._create_component_from_model(
