@@ -6,6 +6,8 @@ import pytest
 
 from airbyte_cdk.sources.declarative.transformations.config_transformations.add_fields import (
     AddedFieldDefinition,
+)
+from airbyte_cdk.sources.declarative.transformations.config_transformations.add_fields import (
     ConfigAddFields as AddFields,
 )
 
