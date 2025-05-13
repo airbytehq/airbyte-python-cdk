@@ -3,18 +3,13 @@ from unittest import TestCase
 
 import pytest
 
-from airbyte_cdk.sources.declarative.transformations.config_transformations.remap_field import (
-    RemapField,
+from airbyte_cdk.sources.declarative.transformations.config_transformations import (
+    ConfigRemapField as RemapField,
 )
 
 
 class TestRemapField(TestCase):
     def test_given_valid_inputs_when_transform_then_field_is_remapped(self):
-        remap_transform = RemapField(
-            field_path=["authorization", "auth_type"],
-            map={"client_credentials": "oauth2", "api_key": "key_auth"},
-        )
-
         config = {
             "authorization": {
                 "auth_type": "client_credentials",
@@ -22,6 +17,12 @@ class TestRemapField(TestCase):
                 "client_secret": "secret",
             }
         }
+        remap_transform = RemapField(
+            field_path=["authorization", "auth_type"],
+            map={"client_credentials": "oauth2", "api_key": "key_auth"},
+            config=config,
+        )
+
         original_config = deepcopy(config)
 
         remap_transform.transform(config)
@@ -110,3 +111,21 @@ class TestRemapField(TestCase):
 
         assert config["auth"]["type"] == "oauth2"
         assert config["environment"] == "development"
+
+    def test_amazon_seller_partner_marketplace_remap_with_interpolated_mapping(self):
+        mapping = {
+            "endpoint": {
+                "ES": "{{ 'https://sellingpartnerapi' if config.environment == 'production' else 'https://sandbox.sellingpartnerapi' }}-eu.amazon.com",
+            }
+        }
+        sandbox_config = {"environment": "sandbox", "marketplace": "ES"}
+        production_config = {"environment": "production", "marketplace": "ES"}
+        RemapField(
+            field_path=["marketplace"], map=mapping["endpoint"], config=sandbox_config
+        ).transform(sandbox_config)
+        RemapField(
+            field_path=["marketplace"], map=mapping["endpoint"], config=production_config
+        ).transform(production_config)
+
+        assert sandbox_config["marketplace"] == "https://sandbox.sellingpartnerapi-eu.amazon.com"
+        assert production_config["marketplace"] == "https://sellingpartnerapi-eu.amazon.com"

@@ -34,7 +34,7 @@ class ParsedAddFieldDefinition:
 
 
 @dataclass
-class AddFields(ConfigTransformation):
+class ConfigAddFields(ConfigTransformation):
     """
     Transformation which adds fields to a config. The path of the added field can be nested. Adding nested fields will create all
     necessary parent objects (like mkdir -p).
@@ -42,7 +42,7 @@ class AddFields(ConfigTransformation):
     This transformation has access to the config being transformed.
 
     Examples of instantiating this transformation via YAML:
-    - type: AddFields
+    - type: ConfigAddFields
       fields:
         # hardcoded constant
         - path: ["path"]
@@ -113,8 +113,7 @@ class AddFields(ConfigTransformation):
         for parsed_field in self._parsed_fields:
             valid_types = (parsed_field.value_type,) if parsed_field.value_type else None
             value = parsed_field.value.eval(config, valid_types=valid_types)
-            is_empty_condition = not self.condition
-            if is_empty_condition or self._filter_interpolator.eval(
+            if not self.condition or self._filter_interpolator.eval(
                 config, value=value, path=parsed_field.path
             ):
                 dpath.new(config, parsed_field.path, value)

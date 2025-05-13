@@ -2,10 +2,8 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
-import pytest
-
 from airbyte_cdk.sources.declarative.transformations.config_transformations.remove_fields import (
-    RemoveFields,
+    ConfigRemoveFields as RemoveFields,
 )
 
 

@@ -2,9 +2,11 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, List, Mapping, MutableMapping, Union
 
+from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
+from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.transformations.config_transformations.config_transformation import (
     ConfigTransformation,
@@ -12,13 +14,14 @@ from airbyte_cdk.sources.declarative.transformations.config_transformations.conf
 
 
 @dataclass
-class RemapField(ConfigTransformation):
+class ConfigRemapField(ConfigTransformation):
     """
     Transformation that remaps a field's value to another value based on a static map.
     """
 
     map: Mapping[str, Any]
     field_path: List[Union[InterpolatedString, str]]
+    config: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.field_path:
@@ -31,6 +34,7 @@ class RemapField(ConfigTransformation):
                 self._field_path[path_index] = InterpolatedString.create(
                     self.field_path[path_index], parameters={}
                 )
+        self._map = InterpolatedMapping(self.map, parameters={}).eval(config=self.config)
 
     def transform(
         self,
@@ -51,10 +55,10 @@ class RemapField(ConfigTransformation):
                 return
             current = current[component]
 
-            if not isinstance(current, Mapping):
+            if not isinstance(current, MutableMapping):
                 return
 
         field_name = path_components[-1]
 
-        if field_name in current and current[field_name] in self.map:
-            current[field_name] = self.map[current[field_name]]
+        if field_name in current and current[field_name] in self._map:
+            current[field_name] = self._map[current[field_name]]

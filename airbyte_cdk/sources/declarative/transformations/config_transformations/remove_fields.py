@@ -1,7 +1,6 @@
 #
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
-import logging
 from dataclasses import dataclass
 from typing import Any, List, MutableMapping
 
@@ -14,11 +13,9 @@ from airbyte_cdk.sources.declarative.transformations.config_transformations.conf
 )
 from airbyte_cdk.sources.types import FieldPointer
 
-logger = logging.getLogger("airbyte")
-
 
 @dataclass
-class RemoveFields(ConfigTransformation):
+class ConfigRemoveFields(ConfigTransformation):
     """
     A transformation which removes fields from a config. The fields removed are designated using FieldPointers.
     During transformation, if a field or any of its parents does not exist in the config, no error is thrown.
@@ -67,6 +64,3 @@ class RemoveFields(ConfigTransformation):
                 dpath.delete(config, pointer)
             except dpath.exceptions.PathNotFound:
                 pass
-            except Exception as e:
-                logger.error(f"Error removing field {pointer}: {e}")
-                raise e
