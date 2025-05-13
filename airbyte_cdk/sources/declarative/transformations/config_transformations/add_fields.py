@@ -113,8 +113,7 @@ class ConfigAddFields(ConfigTransformation):
         for parsed_field in self._parsed_fields:
             valid_types = (parsed_field.value_type,) if parsed_field.value_type else None
             value = parsed_field.value.eval(config, valid_types=valid_types)
-            is_empty_condition = not self.condition
-            if is_empty_condition or self._filter_interpolator.eval(
+            if not self.condition or self._filter_interpolator.eval(
                 config, value=value, path=parsed_field.path
             ):
                 dpath.new(config, parsed_field.path, value)
