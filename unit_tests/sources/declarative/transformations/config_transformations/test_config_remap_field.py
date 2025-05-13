@@ -20,7 +20,7 @@ class TestRemapField(TestCase):
         remap_transform = RemapField(
             field_path=["authorization", "auth_type"],
             map={"client_credentials": "oauth2", "api_key": "key_auth"},
-            config=config
+            config=config,
         )
 
         original_config = deepcopy(config)
@@ -113,7 +113,6 @@ class TestRemapField(TestCase):
         assert config["environment"] == "development"
 
     def test_amazon_seller_partner_marketplace_remap_with_interpolated_mapping(self):
-
         mapping = {
             "endpoint": {
                 "ES": "{{ 'https://sellingpartnerapi' if config.environment == 'production' else 'https://sandbox.sellingpartnerapi' }}-eu.amazon.com",
@@ -121,8 +120,12 @@ class TestRemapField(TestCase):
         }
         sandbox_config = {"environment": "sandbox", "marketplace": "ES"}
         production_config = {"environment": "production", "marketplace": "ES"}
-        RemapField(field_path=["marketplace"], map=mapping["endpoint"], config=sandbox_config).transform(sandbox_config)
-        RemapField(field_path=["marketplace"], map=mapping["endpoint"], config=production_config).transform(production_config)
+        RemapField(
+            field_path=["marketplace"], map=mapping["endpoint"], config=sandbox_config
+        ).transform(sandbox_config)
+        RemapField(
+            field_path=["marketplace"], map=mapping["endpoint"], config=production_config
+        ).transform(production_config)
 
         assert sandbox_config["marketplace"] == "https://sandbox.sellingpartnerapi-eu.amazon.com"
         assert production_config["marketplace"] == "https://sellingpartnerapi-eu.amazon.com"
