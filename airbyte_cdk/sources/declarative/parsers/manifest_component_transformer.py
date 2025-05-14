@@ -130,27 +130,39 @@ class ManifestComponentTransformer:
             else {**current_parameters, **component_parameters}
         )
 
-        # When processing request parameters which is an object that does not have a type, so $parameters will not be passes to the object.
-        # But request parameters can have PropertyChunking object that needs to be updated with paranet $parameters.
-        # When there is a PropertyChunking object _process_property_chunking_property() is called to update PropertyChunking object with $parameters
-        # and set updated object to propagated_component, then it's returned without propagation.
-        if "type" not in propagated_component and self._is_property_chunking_component(
-            propagated_component
-        ):
-            propagated_component = self._process_property_chunking_property(
-                propagated_component,
-                parent_field_identifier,
-                current_parameters,
-                use_parent_parameters,
-            )
-
         # When there is no resolved type, we're not processing a component (likely a regular object) and don't need to propagate parameters
         # When the type refers to a json schema, we're not processing a component as well. This check is currently imperfect as there could
         # be json_schema are not objects but we believe this is not likely in our case because:
         # * records are Mapping so objects hence SchemaLoader root should be an object
         # * connection_specification is a Mapping
+        if self._is_json_schema_object(propagated_component):
+            return propagated_component
 
-        if "type" not in propagated_component or self._is_json_schema_object(propagated_component):
+        # For objects that don't have type check if their object fields have nested components which should have parameters in it.
+        # For example, QueryProperties in requester.request_parameters:
+        # requester:
+        #   $ref: "#/definitions/base_requester"
+        #   path: /path/to/entity/{{ parameters.entity }}
+        #   request_parameters:
+        #     archived: 'false'
+        #     properties:
+        #     type: QueryProperties
+        #     property_list:
+        #       retriever:
+        #       type: SimpleRetriever
+        #       requester:
+        #           $ref: "#/definitions/base_requester"
+        #            path: /path/to//{{ parameters.entity }}/properties
+        #     ....
+        # Update propagated_component value with components if needed and return propagated_component.
+        if "type" not in propagated_component:
+            if self._has_nested_components(propagated_component):
+                propagated_component = self._process_nested_components(
+                    propagated_component,
+                    parent_field_identifier,
+                    current_parameters,
+                    use_parent_parameters,
+                )
             return propagated_component
 
         # Parameters should be applied to the current component fields with the existing field taking precedence over parameters if
@@ -196,17 +208,20 @@ class ManifestComponentTransformer:
 
     @staticmethod
     def _is_json_schema_object(propagated_component: Mapping[str, Any]) -> bool:
-        return propagated_component.get("type") == "object"
+        return propagated_component.get("type") == "object" or propagated_component.get("type") == [
+            "null",
+            "object",
+        ]
 
     @staticmethod
-    def _is_property_chunking_component(propagated_component: Mapping[str, Any]) -> bool:
-        has_property_chunking = False
+    def _has_nested_components(propagated_component: Mapping[str, Any]) -> bool:
+        has_nested_components = False
         for k, v in propagated_component.items():
-            if isinstance(v, dict) and v.get("type") == "QueryProperties":
-                has_property_chunking = True
-        return has_property_chunking
+            if isinstance(v, dict) and v.get("type"):
+                has_nested_components = True
+        return has_nested_components
 
-    def _process_property_chunking_property(
+    def _process_nested_components(
         self,
         propagated_component: Dict[str, Any],
         parent_field_identifier: str,
@@ -214,13 +229,13 @@ class ManifestComponentTransformer:
         use_parent_parameters: Optional[bool] = None,
     ) -> Dict[str, Any]:
         for k, v in propagated_component.items():
-            if isinstance(v, dict) and v.get("type") == "QueryProperties":
-                property_chunking_with_parameters = self.propagate_types_and_parameters(
+            if isinstance(v, dict) and v.get("type"):
+                nested_component_with_parameters = self.propagate_types_and_parameters(
                     parent_field_identifier,
                     v,
                     current_parameters,
                     use_parent_parameters=use_parent_parameters,
                 )
-                propagated_component[k] = property_chunking_with_parameters
+                propagated_component[k] = nested_component_with_parameters
 
         return propagated_component
