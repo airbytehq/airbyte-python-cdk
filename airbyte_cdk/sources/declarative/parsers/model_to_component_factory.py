@@ -2758,11 +2758,6 @@ class ModelToComponentFactory:
     def create_properties_from_endpoint(
         self, model: PropertiesFromEndpointModel, config: Config, **kwargs: Any
     ) -> PropertiesFromEndpoint:
-        # CustomRetriever doesn't have requester parameter
-        if isinstance(model.retriever, SimpleRetrieverModel):
-            parameters = model.retriever.requester.parameters or {}
-            parameters.update(model.parameters or {})
-            model.retriever.requester.parameters = parameters
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
@@ -2813,14 +2808,8 @@ class ModelToComponentFactory:
         if isinstance(model.property_list, list):
             property_list = model.property_list
         else:
-            property_list_model = model.property_list
-            parameters = (
-                property_list_model.parameters if property_list_model.parameters is not None else {}
-            )
-            parameters.update(model.parameters or {})
-            property_list_model.parameters = parameters
             property_list = self._create_component_from_model(
-                model=property_list_model, config=config, **kwargs
+                model=model.property_list, config=config, **kwargs
             )
 
         property_chunking = (
@@ -3057,16 +3046,8 @@ class ModelToComponentFactory:
                 )
 
             if len(query_properties_definitions) == 1:
-                query_properties_definition_model = query_properties_definitions[0]
-                parameters = (
-                    query_properties_definition_model.parameters
-                    if query_properties_definition_model.parameters is not None
-                    else {}
-                )
-                parameters.update(model.parameters or {})
-                query_properties_definition_model.parameters = parameters
                 query_properties = self._create_component_from_model(
-                    model=query_properties_definition_model, config=config
+                    model=query_properties_definitions[0], config=config
                 )
         elif (
             hasattr(model.requester, "fetch_properties_from_endpoint")
