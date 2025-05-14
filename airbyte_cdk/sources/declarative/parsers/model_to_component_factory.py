@@ -1490,6 +1490,9 @@ class ModelToComponentFactory:
             partition_router, GroupingPartitionRouter
         ) or component_definition.get("global_substream_cursor", False)
 
+        if not stream_state:
+            stream_state = self._connector_state_manager.get_stream_state(stream_name, stream_namespace)
+
         # Return the concurrent cursor and state converter
         return ConcurrentPerPartitionCursor(
             cursor_factory=cursor_factory,
