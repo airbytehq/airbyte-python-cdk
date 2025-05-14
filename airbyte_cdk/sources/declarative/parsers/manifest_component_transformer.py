@@ -138,23 +138,9 @@ class ManifestComponentTransformer:
         if self._is_json_schema_object(propagated_component):
             return propagated_component
 
-        # For objects that don't have type check if their object fields have nested components which should have parameters in it.
-        # For example, QueryProperties in requester.request_parameters:
-        # requester:
-        #   $ref: "#/definitions/base_requester"
-        #   path: /path/to/entity/{{ parameters.entity }}
-        #   request_parameters:
-        #     archived: 'false'
-        #     properties:
-        #     type: QueryProperties
-        #     property_list:
-        #       retriever:
-        #       type: SimpleRetriever
-        #       requester:
-        #           $ref: "#/definitions/base_requester"
-        #            path: /path/to//{{ parameters.entity }}/properties
-        #     ....
-        # Update propagated_component value with components if needed and return propagated_component.
+        # For objects that don't have type check if their object fields have nested components which should have `$parameters` in it.
+        # For example, QueryProperties in requester.request_parameters, etc.
+        # Update propagated_component value with nested components with parent `$parameters` if needed and return propagated_component.
         if "type" not in propagated_component:
             if self._has_nested_components(propagated_component):
                 propagated_component = self._process_nested_components(
