@@ -3,7 +3,7 @@
 #
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict
+from typing import Any, MutableMapping
 
 
 class ConfigTransformation(ABC):
@@ -14,7 +14,7 @@ class ConfigTransformation(ABC):
     @abstractmethod
     def transform(
         self,
-        config: Dict[str, Any],
+        config: MutableMapping[str, Any],
     ) -> None:
         """
         Transform a configuration by adding, deleting, or mutating fields directly from the config reference passed in argument.
