@@ -168,7 +168,7 @@ definitions:
           - X-Auth-Token
       inject_into:
         title: Inject API Key Into Outgoing HTTP Request
-        description: Configure how the API Key will be sent in requests to the source API. Either inject_into or header has to be defined.
+        description: Configure how the API Key will be sent in requests to the source API.
         "$ref": "#/definitions/RequestOption"
         examples:
           - inject_into: header
@@ -3811,17 +3811,31 @@ definitions:
           config_migrations:
             title: Config Migrations
             description: The config will be migrated according to these transformations and updated within the platform for subsequent syncs.
-            type: array
-            items:
-              anyOf:
-                - "$ref": '#/definitions/ConfigTransformations/RemapField'
+            type: object
+            required:
+              - description
+              - transformations
+            properties:
+              description:
+                type: string
+                description: The description/purpose of the config migration.
+              transformations:
+                type: array
+                items:
+                  anyOf:
+                    - "$ref": "#/definitions/ConfigRemapField"
+                    - "$ref": "#/definitions/ConfigAddFields"
+                    - "$ref": "#/definitions/ConfigRemoveFields"
+                default: []
           transformations:
             title: Transformations
             description: The list of transformations that will be applied on the incoming config at the start of a sync.
             type: array
             items:
               anyOf:
-                - "$ref": '#/definitions/ConfigTransformations/RemapField'
+                - "$ref": "#/definitions/ConfigRemapField"
+                - "$ref": "#/definitions/ConfigAddFields"
+                - "$ref": "#/definitions/ConfigRemoveFields"
           validations:
             title: Validations
             description: The list of validations that will be performed on the incoming config before starting a sync
@@ -4202,7 +4216,7 @@ definitions:
     properties:
       type:
         type: string
-        enum: [ DpathValidator ]
+        enum: [DpathValidator]
       field_path:
         title: Field Path
         description: List of potentially nested fields describing the full path of the field to validate. Use "*" to validate all values from an array.
@@ -4212,10 +4226,10 @@ definitions:
         interpolation_context:
           - config
         examples:
-          - [ "data" ]
-          - [ "data", "records" ]
-          - [ "data", "{{ parameters.name }}" ]
-          - [ "data", "*", "record" ]
+          - ["data"]
+          - ["data", "records"]
+          - ["data", "{{ parameters.name }}"]
+          - ["data", "*", "record"]
       validation_strategy:
         title: Validation Stragey
         description: The condition that the specified config value will be evaluated against
@@ -4308,42 +4322,106 @@ definitions:
             required:
               - name
               - age
-  ConfigTransformations:
-    RemapField:
-      title: Remap Field
-      description: Transformation that remaps a field's value to another value based on a static map.
-      type: object
-      required:
-        - type
-        - map
-        - field_path
-      properties:
+  ConfigRemapField:
+    title: Remap Field
+    description: Transformation that remaps a field's value to another value based on a static map.
+    type: object
+    required:
+      - type
+      - map
+      - field_path
+    properties:
+      type:
+        type: string
+        enum: [RemapField]
+      map:
+        title: Value Mapping
+        description: A mapping of original values to new values. When a field value matches a key in this map, it will be replaced with the corresponding value.
+        interpolation_context:
+          - config
         type:
+          - object
+          - string
+        additionalProperties: true
+        examples:
+          - pending: "in_progress"
+            done: "completed"
+            cancelled: "terminated"
+          - "{{ config['status_mapping'] }}"
+      field_path:
+        title: Field Path
+        description: The path to the field whose value should be remapped. Specified as a list of path components to navigate through nested objects.
+        interpolation_context:
+          - config
+        type: array
+        items:
           type: string
-          enum: [RemapField]
-        map:
-          title: Value Mapping
-          description: A mapping of original values to new values. When a field value matches a key in this map, it will be replaced with the corresponding value.
-          type:
-            - object
-            - string
-          additionalProperties: true
-          examples:
-            - pending: "in_progress"
-              done: "completed"
-              cancelled: "terminated"
-            - "{{ config['status_mapping'] }}"
-        field_path:
-          title: Field Path
-          description: The path to the field whose value should be remapped. Specified as a list of path components to navigate through nested objects.
-          type: array
-          items:
-            type: string
-          examples:
-            - ["status"]
-            - ["data", "status"]
-            - ["data", "{{ parameters.name }}", "status"]
-            - ["data", "*", "status"]
+        examples:
+          - ["status"]
+          - ["data", "status"]
+          - ["data", "{{ config.name }}", "status"]
+          - ["data", "*", "status"]
+  ConfigAddFields:
+    title: Config Add Fields
+    description: Transformation that adds fields to a config. The path of the added field can be nested.
+    type: object
+    required:
+      - type
+      - fields
+    properties:
+      type:
+        type: string
+        enum: [ConfigAddFields]
+      fields:
+        title: Fields
+        description: A list of transformations (path and corresponding value) that will be added to the config.
+        type: array
+        items:
+          "$ref": "#/definitions/AddedFieldDefinition"
+      condition:
+        description: Fields will be added if expression is evaluated to True.
+        type: string
+        default: ""
+        interpolation_context:
+          - config
+          - property
+        examples:
+          - "{{ config['environemnt'] == 'sandbox' }}"
+          - "{{ property is integer }}"
+          - "{{ property|length > 5 }}"
+          - "{{ property == 'some_string_to_match' }}"
+  ConfigRemoveFields:
+    title: Config Remove Fields
+    description: Transformation that removes a field from the config.
+    type: object
+    required:
+      - type
+      - field_pointers
+    properties:
+      type:
+        type: string
+        enum: [ConfigRemoveFields]
+      field_pointers:
+        title: Field Pointers
+        description: A list of field pointers to be removed from the config.
+        type: array
+        items:
+          type: string
+        examples:
+          - ["marketplace"]
+          - [["content", "html"], ["content", "plain_text"]]
+      condition:
+        description: Fields will be removed if expression is evaluated to True.
+        type: string
+        default: ""
+        interpolation_context:
+          - config
+          - property
+        examples:
+          - "{{ config['environemnt'] == 'sandbox' }}"
+          - "{{ property is integer }}"
+          - "{{ property|length > 5 }}"
+          - "{{ property == 'some_string_to_match' }}"
 interpolation:
   variables:
     - title: config
