@@ -34,7 +34,7 @@ class ConfigRemapField(ConfigTransformation):
                 self._field_path[path_index] = InterpolatedString.create(
                     self.field_path[path_index], parameters={}
                 )
-        self._map = InterpolatedMapping(self.map, parameters={}).eval(config=self.config)
+        self._map = InterpolatedMapping(self.map, parameters={})
 
     def transform(
         self,
@@ -60,5 +60,7 @@ class ConfigRemapField(ConfigTransformation):
 
         field_name = path_components[-1]
 
-        if field_name in current and current[field_name] in self._map:
-            current[field_name] = self._map[current[field_name]]
+        mapping = self._map.eval(config=self.config)
+
+        if field_name in current and current[field_name] in mapping:
+            current[field_name] = mapping[current[field_name]]
