@@ -160,6 +160,7 @@ from airbyte_cdk.sources.declarative.validators.validate_adheres_to_schema impor
 def test_spec(spec, expected_connection_specification) -> None:
     assert spec.generate_spec() == expected_connection_specification
 
+
 @pytest.fixture
 def migration_mocks(monkeypatch):
     mock_message_repository = Mock()
@@ -168,7 +169,9 @@ def migration_mocks(monkeypatch):
     mock_source = Mock()
     mock_entrypoint = Mock()
     mock_entrypoint.extract_config.return_value = "/fake/config/path"
-    monkeypatch.setattr("airbyte_cdk.sources.declarative.spec.spec.AirbyteEntrypoint", lambda _: mock_entrypoint)
+    monkeypatch.setattr(
+        "airbyte_cdk.sources.declarative.spec.spec.AirbyteEntrypoint", lambda _: mock_entrypoint
+    )
 
     _mock_open = mock_open()
     mock_json_dump = Mock()
@@ -182,7 +185,10 @@ def migration_mocks(monkeypatch):
     monkeypatch.setattr("builtins.open", _mock_open)
     monkeypatch.setattr("json.dump", mock_json_dump)
     monkeypatch.setattr("builtins.print", mock_print)
-    monkeypatch.setattr("airbyte_cdk.models.airbyte_protocol_serializers.AirbyteMessageSerializer.dump", mock_serializer_dump)
+    monkeypatch.setattr(
+        "airbyte_cdk.models.airbyte_protocol_serializers.AirbyteMessageSerializer.dump",
+        mock_serializer_dump,
+    )
     monkeypatch.setattr("airbyte_cdk.sources.declarative.spec.spec.orjson.dumps", mock_orjson_dumps)
 
     return {
@@ -193,8 +199,9 @@ def migration_mocks(monkeypatch):
         "print": mock_print,
         "serializer_dump": mock_serializer_dump,
         "orjson_dumps": mock_orjson_dumps,
-        "decoded_bytes": mock_decoded_bytes
+        "decoded_bytes": mock_decoded_bytes,
     }
+
 
 def test_given_unmigrated_config_when_migrating_then_config_is_migrated(migration_mocks) -> None:
     input_config = {"planet": "CRSC"}
@@ -207,13 +214,11 @@ def test_given_unmigrated_config_when_migrating_then_config_is_migrated(migratio
                 description="Test migration",
                 transformations=[
                     ConfigRemapField(
-                        map={"CRSC": "Coruscant"},
-                        field_path=["planet"],
-                        config=input_config
+                        map={"CRSC": "Coruscant"}, field_path=["planet"], config=input_config
                     )
-                ]
+                ],
             )
-        ]
+        ],
     )
     spec.message_repository = migration_mocks["message_repository"]
 
@@ -239,13 +244,11 @@ def test_given_already_migrated_config_no_control_message_is_emitted(migration_m
                 description="Test migration",
                 transformations=[
                     ConfigRemapField(
-                        map={"CRSC": "Coruscant"},
-                        field_path=["planet"],
-                        config=input_config
+                        map={"CRSC": "Coruscant"}, field_path=["planet"], config=input_config
                     )
-                ]
+                ],
             )
-        ]
+        ],
     )
     spec.message_repository = migration_mocks["message_repository"]
 
@@ -259,58 +262,63 @@ def test_given_already_migrated_config_no_control_message_is_emitted(migration_m
     migration_mocks["orjson_dumps"].assert_not_called()
     migration_mocks["decoded_bytes"].decode.assert_not_called()
 
+
 def test_given_list_of_transformations_when_transform_config_then_config_is_transformed() -> None:
     input_config = {"planet_code": "CRSC"}
     spec = component_spec(
-            connection_specification={},
-            parameters={},
-            config_transformations=[
-                ConfigAddFields(
-                    fields=[
-                        AddedFieldDefinition(
-                            path=["planet_name"],
-                            value="{{ config['planet_code'] }}",
-                            value_type=None,
-                            parameters={}
-                        ),
-                        AddedFieldDefinition(
-                            path=["planet_population"],
-                            value="{{ config['planet_code'] }}",
-                            value_type=None,
-                            parameters={}
-                        ),
-                    ]
-                ),
-                ConfigRemapField(
-                    map={
-                        "CRSC": "Coruscant",
-                    },
-                    field_path=["planet_name"],
-                    config=input_config
-                ),
-                ConfigRemapField(
-                    map={
-                        "CRSC": 3_000_000_000_000,
-                    },
-                    field_path=["planet_population"],
-                    config=input_config
-                ),
-                ConfigRemoveFields(
-                    field_pointers=["planet_code"],
-                )
-            ]
-        )
-    assert spec.transform_config(input_config) == {"planet_name": "Coruscant", "planet_population": 3_000_000_000_000}
+        connection_specification={},
+        parameters={},
+        config_transformations=[
+            ConfigAddFields(
+                fields=[
+                    AddedFieldDefinition(
+                        path=["planet_name"],
+                        value="{{ config['planet_code'] }}",
+                        value_type=None,
+                        parameters={},
+                    ),
+                    AddedFieldDefinition(
+                        path=["planet_population"],
+                        value="{{ config['planet_code'] }}",
+                        value_type=None,
+                        parameters={},
+                    ),
+                ]
+            ),
+            ConfigRemapField(
+                map={
+                    "CRSC": "Coruscant",
+                },
+                field_path=["planet_name"],
+                config=input_config,
+            ),
+            ConfigRemapField(
+                map={
+                    "CRSC": 3_000_000_000_000,
+                },
+                field_path=["planet_population"],
+                config=input_config,
+            ),
+            ConfigRemoveFields(
+                field_pointers=["planet_code"],
+            ),
+        ],
+    )
+    assert spec.transform_config(input_config) == {
+        "planet_name": "Coruscant",
+        "planet_population": 3_000_000_000_000,
+    }
 
 
 def test_given_valid_config_value_when_validating_then_no_exception_is_raised() -> None:
     spec = component_spec(
-            connection_specification={},
-            parameters={},
-            config_validations=[
-                DpathValidator(
-                    field_path=["test_field"],
-                    strategy=ValidateAdheresToSchema(schema={
+        connection_specification={},
+        parameters={},
+        config_validations=[
+            DpathValidator(
+                field_path=["test_field"],
+                strategy=ValidateAdheresToSchema(
+                    schema={
                         "$schema": "http://json-schema.org/draft-07/schema#",
                         "title": "Test Spec",
                         "type": "object",
@@ -323,34 +331,41 @@ def test_given_valid_config_value_when_validating_then_no_exception_is_raised() 
                                 "description": "The name of the test spec",
                                 "airbyte_secret": False,
                             }
-                        }
-                    })
-                )
-            ]
-        )
+                        },
+                    }
+                ),
+            )
+        ],
+    )
     input_config = {"test_field": {"field_to_validate": "test"}}
     spec.validate_config(input_config)
+
 
 def test_given_invalid_config_value_when_validating_then_exception_is_raised() -> None:
     spec = component_spec(
         connection_specification={},
         parameters={},
         config_validations=[
-            DpathValidator(field_path=["test_field"], strategy=ValidateAdheresToSchema(schema={
-                "$schema": "http://json-schema.org/draft-07/schema#",
-                "title": "Test Spec",
-                "type": "object",
-                "required": [],
-                "properties": {
-                    "field_to_validate": {
-                        "type": "string",
-                        "title": "Name",
-                        "description": "The name of the test spec",
-                        "airbyte_secret": False,
+            DpathValidator(
+                field_path=["test_field"],
+                strategy=ValidateAdheresToSchema(
+                    schema={
+                        "$schema": "http://json-schema.org/draft-07/schema#",
+                        "title": "Test Spec",
+                        "type": "object",
+                        "required": [],
+                        "properties": {
+                            "field_to_validate": {
+                                "type": "string",
+                                "title": "Name",
+                                "description": "The name of the test spec",
+                                "airbyte_secret": False,
+                            }
+                        },
                     }
-                }
-            }))
-        ]
+                ),
+            )
+        ],
     )
     input_config = {"test_field": {"field_to_validate": 123}}
 

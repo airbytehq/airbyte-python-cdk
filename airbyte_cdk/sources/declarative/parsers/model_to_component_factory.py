@@ -820,8 +820,9 @@ class ModelToComponentFactory:
                 if log not in self._collected_deprecation_logs:
                     self._collected_deprecation_logs.append(log)
 
-
-    def create_config_migration(self, model: ConfigMigrationModel, config: Config) -> ConfigMigration:
+    def create_config_migration(
+        self, model: ConfigMigrationModel, config: Config
+    ) -> ConfigMigration:
         transformations = []
         for transformation in model.transformations:
             transformations.append(self._create_component_from_model(transformation, config))
@@ -831,7 +832,9 @@ class ModelToComponentFactory:
             transformations=transformations,
         )
 
-    def create_config_add_fields(self, model: ConfigAddFieldsModel, config: Config) -> ConfigAddFields:
+    def create_config_add_fields(
+        self, model: ConfigAddFieldsModel, config: Config
+    ) -> ConfigAddFields:
         fields = [self._create_component_from_model(field, config) for field in model.fields]
         return ConfigAddFields(
             fields=fields,
@@ -854,9 +857,7 @@ class ModelToComponentFactory:
             config=config,
         )
 
-
     def create_dpath_validator(self, model: DpathValidatorModel, config: Config) -> DpathValidator:
-
         strategy = self._create_component_from_model(model.validation_strategy, config)
 
         return DpathValidator(
@@ -864,7 +865,9 @@ class ModelToComponentFactory:
             strategy=strategy,
         )
 
-    def create_predicate_validator(self, model: PredicateValidatorModel, config: Config) -> PredicateValidator:
+    def create_predicate_validator(
+        self, model: PredicateValidatorModel, config: Config
+    ) -> PredicateValidator:
         strategy = self._create_component_from_model(model.validation_strategy, config)
 
         return PredicateValidator(
@@ -873,7 +876,9 @@ class ModelToComponentFactory:
         )
 
     @staticmethod
-    def create_validate_adheres_to_schema(model: ValidateAdheresToSchemaModel) -> ValidateAdheresToSchema:
+    def create_validate_adheres_to_schema(
+        model: ValidateAdheresToSchemaModel,
+    ) -> ValidateAdheresToSchema:
         base_schema = cast(Mapping[str, Any], model.base_schema)
         return ValidateAdheresToSchema(
             schema=base_schema,
