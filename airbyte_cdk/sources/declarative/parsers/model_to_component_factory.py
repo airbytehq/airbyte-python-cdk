@@ -27,6 +27,7 @@ from typing import (
 
 from isodate import parse_duration
 from pydantic.v1 import BaseModel
+from requests import Response
 
 from airbyte_cdk.connector_builder.models import (
     LogMessage as ConnectorBuilderLogMessage,
@@ -562,6 +563,7 @@ from airbyte_cdk.sources.declarative.validators import (
     PredicateValidator,
     ValidateAdheresToSchema,
 )
+from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.message import (
     InMemoryMessageRepository,
     LogAppenderMessageRepositoryDecorator,
@@ -1582,7 +1584,6 @@ class ModelToComponentFactory:
             )
         )
         stream_state = self.apply_stream_state_migrations(stream_state_migrations, stream_state)
-
         # Per-partition state doesn't make sense for GroupingPartitionRouter, so force the global state
         use_global_cursor = isinstance(
             partition_router, GroupingPartitionRouter
@@ -2490,15 +2491,24 @@ class ModelToComponentFactory:
                 schema_transformations.append(
                     self._create_component_from_model(model=transformation_model, config=config)
                 )
-
+        name = "dynamic_properties"
         retriever = self._create_component_from_model(
             model=model.retriever,
             config=config,
-            name="dynamic_properties",
+            name=name,
             primary_key=None,
             stream_slicer=combined_slicers,
             transformations=[],
             use_cache=True,
+            log_formatter=(
+                lambda response: format_http_message(
+                    response,
+                    f"Schema loader '{name}' request",
+                    f"Request performed in order to extract schema.",
+                    name,
+                    is_auxiliary=True,
+                )
+            ),
         )
         schema_type_identifier = self._create_component_from_model(
             model.schema_type_identifier, config=config, parameters=model.parameters or {}
@@ -3085,6 +3095,7 @@ class ModelToComponentFactory:
             ]
         ] = None,
         use_cache: Optional[bool] = None,
+        log_formatter: Optional[Callable[[Response], Any]] = None,
         **kwargs: Any,
     ) -> SimpleRetriever:
         def _get_url() -> str:
@@ -3261,6 +3272,7 @@ class ModelToComponentFactory:
                 config=config,
                 maximum_number_of_slices=self._limit_slices_fetched or 5,
                 ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
+                log_formatter=log_formatter,
                 parameters=model.parameters or {},
             )
         return SimpleRetriever(
