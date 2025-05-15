@@ -168,7 +168,7 @@ definitions:
           - X-Auth-Token
       inject_into:
         title: Inject API Key Into Outgoing HTTP Request
-        description: Configure how the API Key will be sent in requests to the source API.
+        description: Configure how the API Key will be sent in requests to the source API. Either inject_into or header has to be defined.
         "$ref": "#/definitions/RequestOption"
         examples:
           - inject_into: header
