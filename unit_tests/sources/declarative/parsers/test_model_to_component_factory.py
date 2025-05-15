@@ -944,8 +944,23 @@ list_stream:
     assert list_stream_slicer._cursor_field.string == "a_key"
 
 
+@pytest.mark.parametrize(
+    "use_legacy_state",
+    [
+        False,
+        True,
+    ],
+    ids=[
+        "running_with_newest_state",
+        "running_with_legacy_state",
+    ],
+)
 @freezegun.freeze_time("2025-05-14")
-def test_stream_with_incremental_and_async_retriever_with_partition_router():
+def test_stream_with_incremental_and_async_retriever_with_partition_router(use_legacy_state):
+    """
+    This test is to check the behavior of the stream with async retriever and partition router
+    when the state is in the legacy format or the newest format.
+    """
     content = read_yaml_file(
         "resources/stream_with_incremental_and_aync_retriever_with_partition_router.yaml"
     )
@@ -956,26 +971,34 @@ def test_stream_with_incremental_and_async_retriever_with_partition_router():
     )
     cursor_time_period_value = "2025-05-06T12:00:00+0000"
     cursor_field_key = "TimePeriod"
-    parent_user_id = "102023653"
-    per_partition_key = {
-        "account_id": 999999999,
-        "parent_slice": {"parent_slice": {}, "user_id": parent_user_id},
-    }
+    account_id = 999999999
+    per_partition_key = {"account_id": account_id}
+
+    legacy_stream_state = {account_id: {cursor_field_key: cursor_time_period_value}}
+    states = [
+        {"partition": per_partition_key, "cursor": {cursor_field_key: cursor_time_period_value}}
+    ]
+
     stream_state = {
         "use_global_cursor": False,
-        "states": [
-            {"partition": per_partition_key, "cursor": {cursor_field_key: cursor_time_period_value}}
-        ],
-        "state": {cursor_field_key: "2025-05-12T12:00:00+0000"},
-        "lookback_window": 46,
+        "states": states,
+        "lookback_window": 0,
     }
+    if not use_legacy_state:
+        # to check it keeps other data in the newest state format
+        stream_state["state"] = {cursor_field_key: "2025-05-12T12:00:00+0000"}
+        stream_state["lookback_window"] = 46
+        stream_state["use_global_cursor"] = False
+        per_partition_key["parent_slice"] = {"parent_slice": {}, "user_id": "102023653"}
+
+    state_to_test = legacy_stream_state if use_legacy_state else stream_state
     connector_state_manager = ConnectorStateManager(
         state=[
             AirbyteStateMessage(
                 type=AirbyteStateType.STREAM,
                 stream=AirbyteStreamState(
                     stream_descriptor=StreamDescriptor(name="lists"),
-                    stream_state=AirbyteStateBlob(stream_state),
+                    stream_state=AirbyteStateBlob(state_to_test),
                 ),
             )
         ]

@@ -88,6 +88,9 @@ class LegacyToPerPartitionStateMigration(StateMigration):
                     if keys[0] != self._cursor_field:
                         # Unexpected key. Found {keys[0]}. Expected {self._cursor.cursor_field}
                         return False
+                # it is expected the internal value to be a dictionary according to docstring
+                else:
+                    return False
         return True
 
     def migrate(self, stream_state: Mapping[str, Any]) -> Mapping[str, Any]:
