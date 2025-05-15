@@ -1531,10 +1531,9 @@ class RequestBodyGraphQlQuery(BaseModel):
 
 class ValidateAdheresToSchema(BaseModel):
     type: Literal["ValidateAdheresToSchema"]
-    schema_: Union[str, Dict[str, Any]] = Field(
+    base_schema: Union[str, Dict[str, Any]] = Field(
         ...,
-        alias="schema",
-        description="The JSON schema used for validation.",
+        description="The base JSON schema against which the user-provided schema will be validated.",
         examples=[
             "{{ config['report_validation_schema'] }}",
             '\'{\n  "$schema": "http://json-schema.org/draft-07/schema#",\n  "title": "Person",\n  "type": "object",\n  "properties": {\n    "name": {\n      "type": "string",\n      "description": "The person\'s name"\n    },\n    "age": {\n      "type": "integer",\n      "minimum": 0,\n      "description": "The person\'s age"\n    }\n  },\n  "required": ["name", "age"]\n}\'\n',
@@ -1553,7 +1552,7 @@ class ValidateAdheresToSchema(BaseModel):
                 "required": ["name", "age"],
             },
         ],
-        title="JSON Schema",
+        title="Base JSON Schema",
     )
 
 
@@ -1583,10 +1582,10 @@ class ConfigRemapField(BaseModel):
 
 class ConfigRemoveFields(BaseModel):
     type: Literal["ConfigRemoveFields"]
-    field_pointers: List[str] = Field(
+    field_pointers: List[List[str]] = Field(
         ...,
         description="A list of field pointers to be removed from the config.",
-        examples=[["marketplace"], [["content", "html"], ["content", "plain_text"]]],
+        examples=[["tags"], [["content", "html"], ["content", "plain_text"]]],
         title="Field Pointers",
     )
     condition: Optional[str] = Field(
@@ -2104,29 +2103,35 @@ class ZipfileDecoder(BaseModel):
     )
 
 
-class ConfigMigrations(BaseModel):
-    description: str = Field(
-        ..., description="The description/purpose of the config migration."
+class ConfigMigration(BaseModel):
+    description: Optional[str] = Field(
+        None, description="The description/purpose of the config migration."
     )
-    transformations: List[Union[ConfigRemapField, ConfigAddFields, ConfigRemoveFields]]
+    transformations: List[
+        Union[ConfigRemapField, ConfigAddFields, ConfigRemoveFields]
+    ] = Field(
+        ...,
+        description="The list of transformations that will attempt to be applied on an incoming unmigrated config. The transformations will be applied in the order they are defined.",
+        title="Transformations",
+    )
 
 
 class ConfigNormalizationRules(BaseModel):
-    config_migrations: Optional[ConfigMigrations] = Field(
+    config_migrations: Optional[List[ConfigMigration]] = Field(
         None,
-        description="The config will be migrated according to these transformations and updated within the platform for subsequent syncs.",
+        description="The discrete migrations that will be applied on the incoming config. Each migration will be applied in the order they are defined.",
         title="Config Migrations",
     )
     transformations: Optional[
         List[Union[ConfigRemapField, ConfigAddFields, ConfigRemoveFields]]
     ] = Field(
         None,
-        description="The list of transformations that will be applied on the incoming config at the start of a sync.",
+        description="The list of transformations that will be applied on the incoming config at the start of each sync. The transformations will be applied in the order they are defined.",
         title="Transformations",
     )
     validations: Optional[List[Union[DpathValidator, PredicateValidator]]] = Field(
         None,
-        description="The list of validations that will be performed on the incoming config before starting a sync",
+        description="The list of validations that will be performed on the incoming config at the start of each sync.",
         title="Validations",
     )
 

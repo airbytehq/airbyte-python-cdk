@@ -3810,26 +3810,13 @@ definitions:
         properties:
           config_migrations:
             title: Config Migrations
-            description: The config will be migrated according to these transformations and updated within the platform for subsequent syncs.
-            type: object
-            required:
-              - description
-              - transformations
-            properties:
-              description:
-                type: string
-                description: The description/purpose of the config migration.
-              transformations:
-                type: array
-                items:
-                  anyOf:
-                    - "$ref": "#/definitions/ConfigRemapField"
-                    - "$ref": "#/definitions/ConfigAddFields"
-                    - "$ref": "#/definitions/ConfigRemoveFields"
-                default: []
+            description: The discrete migrations that will be applied on the incoming config. Each migration will be applied in the order they are defined.
+            type: array
+            items:
+              "$ref": "#/definitions/ConfigMigration"
           transformations:
             title: Transformations
-            description: The list of transformations that will be applied on the incoming config at the start of a sync.
+            description: The list of transformations that will be applied on the incoming config at the start of each sync. The transformations will be applied in the order they are defined.
             type: array
             items:
               anyOf:
@@ -3838,12 +3825,32 @@ definitions:
                 - "$ref": "#/definitions/ConfigRemoveFields"
           validations:
             title: Validations
-            description: The list of validations that will be performed on the incoming config before starting a sync
+            description: The list of validations that will be performed on the incoming config at the start of each sync.
             type: array
             items:
               anyOf:
                 - "$ref": "#/definitions/DpathValidator"
                 - "$ref": "#/definitions/PredicateValidator"
+  ConfigMigration:
+    title: Config Migration
+    description: A config migration that will be applied on the incoming config at the start of a sync.
+    type: object
+    required:
+      - transformations
+    properties:
+      description:
+        type: string
+        description: The description/purpose of the config migration.
+      transformations:
+        title: Transformations
+        description: The list of transformations that will attempt to be applied on an incoming unmigrated config. The transformations will be applied in the order they are defined.
+        type: array
+        items:
+          anyOf:
+            - "$ref": "#/definitions/ConfigRemapField"
+            - "$ref": "#/definitions/ConfigAddFields"
+            - "$ref": "#/definitions/ConfigRemoveFields"
+        default: []
   SubstreamPartitionRouter:
     title: Substream Partition Router
     description: Partition router that is used to retrieve records that have been partitioned according to records from the specified parent streams. An example of a parent stream is automobile brands and the substream would be the various car models associated with each branch.
@@ -4275,14 +4282,14 @@ definitions:
     type: object
     required:
       - type
-      - schema
+      - base_schema
     properties:
       type:
         type: string
         enum: [ValidateAdheresToSchema]
-      schema:
-        title: JSON Schema
-        description: The JSON schema used for validation.
+      base_schema:
+        title: Base JSON Schema
+        description: The base JSON schema against which the user-provided schema will be validated.
         type:
           - string
           - object
@@ -4406,9 +4413,10 @@ definitions:
         description: A list of field pointers to be removed from the config.
         type: array
         items:
-          type: string
+          items:
+            type: string
         examples:
-          - ["marketplace"]
+          - ["tags"]
           - [["content", "html"], ["content", "plain_text"]]
       condition:
         description: Fields will be removed if expression is evaluated to True.

@@ -26,6 +26,12 @@ from airbyte_cdk.sources.source import Source
 
 
 @dataclass
+class ConfigMigration:
+    transformations: List[ConfigTransformation]
+    description: Optional[str] = None
+
+
+@dataclass
 class Spec:
     """
     Returns a connection specification made up of information about the connector and how it can be configured
@@ -39,7 +45,7 @@ class Spec:
     parameters: InitVar[Mapping[str, Any]]
     documentation_url: Optional[str] = None
     advanced_auth: Optional[AuthFlow] = None
-    config_migrations: List[ConfigTransformation] = field(default_factory=list)
+    config_migrations: List[ConfigMigration] = field(default_factory=list)
     config_transformations: List[ConfigTransformation] = field(default_factory=list)
     config_validations: List[Validator] = field(default_factory=list)
     message_repository: MessageRepository = InMemoryMessageRepository()
@@ -79,8 +85,9 @@ class Spec:
             return
 
         mutable_config = dict(config)
-        for transformation in self.config_migrations:
-            transformation.transform(mutable_config)
+        for migration in self.config_migrations:
+            for transformation in migration.transformations:
+                transformation.transform(mutable_config)
 
         if mutable_config != config:
             with open(config_path, "w") as f:

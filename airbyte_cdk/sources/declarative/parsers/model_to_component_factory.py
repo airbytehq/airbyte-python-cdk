@@ -19,6 +19,7 @@ from typing import (
     Optional,
     Type,
     Union,
+    cast,
     get_args,
     get_origin,
     get_type_hints,
@@ -155,7 +156,19 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     ConcurrencyLevel as ConcurrencyLevelModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ConfigAddFields as ConfigAddFieldsModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConfigComponentsResolver as ConfigComponentsResolverModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ConfigMigration as ConfigMigrationModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ConfigRemapField as ConfigRemapFieldModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ConfigRemoveFields as ConfigRemoveFieldsModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConstantBackoffStrategy as ConstantBackoffStrategyModel,
@@ -225,6 +238,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DpathFlattenFields as DpathFlattenFieldsModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    DpathValidator as DpathValidatorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DynamicSchemaLoader as DynamicSchemaLoaderModel,
@@ -338,6 +354,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     ParentStreamConfig as ParentStreamConfigModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    PredicateValidator as PredicateValidatorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     PropertiesFromEndpoint as PropertiesFromEndpointModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -400,6 +419,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     UnlimitedCallRatePolicy as UnlimitedCallRatePolicyModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ValidateAdheresToSchema as ValidateAdheresToSchemaModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import ValueType
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -506,7 +528,7 @@ from airbyte_cdk.sources.declarative.schema import (
     TypesMap,
 )
 from airbyte_cdk.sources.declarative.schema.composite_schema_loader import CompositeSchemaLoader
-from airbyte_cdk.sources.declarative.spec import Spec
+from airbyte_cdk.sources.declarative.spec import ConfigMigration, Spec
 from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicer
 from airbyte_cdk.sources.declarative.transformations import (
     AddFields,
@@ -514,6 +536,11 @@ from airbyte_cdk.sources.declarative.transformations import (
     RemoveFields,
 )
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
+from airbyte_cdk.sources.declarative.transformations.config_transformations import (
+    ConfigAddFields,
+    ConfigRemapField,
+    ConfigRemoveFields,
+)
 from airbyte_cdk.sources.declarative.transformations.dpath_flatten_fields import (
     DpathFlattenFields,
     KeyTransformation,
@@ -529,6 +556,11 @@ from airbyte_cdk.sources.declarative.transformations.keys_to_lower_transformatio
 )
 from airbyte_cdk.sources.declarative.transformations.keys_to_snake_transformation import (
     KeysToSnakeCaseTransformation,
+)
+from airbyte_cdk.sources.declarative.validators import (
+    DpathValidator,
+    PredicateValidator,
+    ValidateAdheresToSchema,
 )
 from airbyte_cdk.sources.message import (
     InMemoryMessageRepository,
@@ -617,6 +649,10 @@ class ModelToComponentFactory:
             CheckDynamicStreamModel: self.create_check_dynamic_stream,
             CompositeErrorHandlerModel: self.create_composite_error_handler,
             ConcurrencyLevelModel: self.create_concurrency_level,
+            ConfigMigrationModel: self.create_config_migration,
+            ConfigAddFieldsModel: self.create_config_add_fields,
+            ConfigRemapFieldModel: self.create_config_remap_field,
+            ConfigRemoveFieldsModel: self.create_config_remove_fields,
             ConstantBackoffStrategyModel: self.create_constant_backoff_strategy,
             CsvDecoderModel: self.create_csv_decoder,
             CursorPaginationModel: self.create_cursor_pagination,
@@ -640,6 +676,7 @@ class ModelToComponentFactory:
             DefaultErrorHandlerModel: self.create_default_error_handler,
             DefaultPaginatorModel: self.create_default_paginator,
             DpathExtractorModel: self.create_dpath_extractor,
+            DpathValidatorModel: self.create_dpath_validator,
             ResponseToFileExtractorModel: self.create_response_to_file_extractor,
             ExponentialBackoffStrategyModel: self.create_exponential_backoff_strategy,
             SessionTokenAuthenticatorModel: self.create_session_token_authenticator,
@@ -673,6 +710,7 @@ class ModelToComponentFactory:
             OffsetIncrementModel: self.create_offset_increment,
             PageIncrementModel: self.create_page_increment,
             ParentStreamConfigModel: self.create_parent_stream_config,
+            PredicateValidatorModel: self.create_predicate_validator,
             PropertiesFromEndpointModel: self.create_properties_from_endpoint,
             PropertyChunkingModel: self.create_property_chunking,
             QueryPropertiesModel: self.create_query_properties,
@@ -687,6 +725,7 @@ class ModelToComponentFactory:
             StateDelegatingStreamModel: self.create_state_delegating_stream,
             SpecModel: self.create_spec,
             SubstreamPartitionRouterModel: self.create_substream_partition_router,
+            ValidateAdheresToSchemaModel: self.create_validate_adheres_to_schema,
             WaitTimeFromHeaderModel: self.create_wait_time_from_header,
             WaitUntilTimeFromHeaderModel: self.create_wait_until_time_from_header,
             AsyncRetrieverModel: self.create_async_retriever,
@@ -778,6 +817,65 @@ class ModelToComponentFactory:
                 # avoid duplicates for deprecation logs observed.
                 if log not in self._collected_deprecation_logs:
                     self._collected_deprecation_logs.append(log)
+
+
+    def create_config_migration(self, model: ConfigMigrationModel, config: Config) -> ConfigMigration:
+        transformations = []
+        for transformation in model.transformations:
+            transformations.append(self._create_component_from_model(transformation, config))
+
+        return ConfigMigration(
+            description=model.description,
+            transformations=transformations,
+        )
+
+    def create_config_add_fields(self, model: ConfigAddFieldsModel, config: Config) -> ConfigAddFields:
+        fields = [self._create_component_from_model(field, config) for field in model.fields]
+        return ConfigAddFields(
+            fields=fields,
+            condition=model.condition or "",
+        )
+
+    @staticmethod
+    def create_config_remove_fields(model: ConfigRemoveFieldsModel) -> ConfigRemoveFields:
+        return ConfigRemoveFields(
+            field_pointers=model.field_pointers,
+            condition=model.condition or "",
+        )
+
+    @staticmethod
+    def create_config_remap_field(model: ConfigRemapFieldModel, config: Config) -> ConfigRemapField:
+        mapping = cast(Mapping[str, Any], model.map)
+        return ConfigRemapField(
+            map=mapping,
+            field_path=model.field_path,
+            config=config,
+        )
+
+
+    def create_dpath_validator(self, model: DpathValidatorModel, config: Config) -> DpathValidator:
+
+        strategy = self._create_component_from_model(model.validation_strategy, config)
+
+        return DpathValidator(
+            field_path=model.field_path,
+            strategy=strategy,
+        )
+
+    def create_predicate_validator(self, model: PredicateValidatorModel, config: Config) -> PredicateValidator:
+        strategy = self._create_component_from_model(model.validation_strategy, config)
+
+        return PredicateValidator(
+            value=model.value,
+            strategy=strategy,
+        )
+
+    @staticmethod
+    def create_validate_adheres_to_schema(model: ValidateAdheresToSchemaModel) -> ValidateAdheresToSchema:
+        base_schema = cast(Mapping[str, Any], model.base_schema)
+        return ValidateAdheresToSchema(
+            schema=base_schema,
+        )
 
     @staticmethod
     def create_added_field_definition(

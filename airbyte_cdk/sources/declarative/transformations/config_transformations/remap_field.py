@@ -20,7 +20,7 @@ class ConfigRemapField(ConfigTransformation):
     """
 
     map: Mapping[str, Any]
-    field_path: List[Union[InterpolatedString, str]]
+    field_path: List[str]
     config: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
