@@ -2315,9 +2315,9 @@ definitions:
         title: Retriever
         description: Component used to coordinate how records are extracted across stream slices and request pages.
         anyOf:
+          - "$ref": "#/definitions/SimpleRetriever"
           - "$ref": "#/definitions/AsyncRetriever"
           - "$ref": "#/definitions/CustomRetriever"
-          - "$ref": "#/definitions/SimpleRetriever"
       schema_transformations:
         title: Schema Transformations
         description: A list of transformations to be applied to the schema.
@@ -3751,7 +3751,7 @@ definitions:
                 - "$ref": "#/definitions/GroupingPartitionRouter"
                 - "$ref": "#/definitions/CustomPartitionRouter"
       decoder:
-        title: Decoder
+        title: HTTP Response Format
         description: Component decoding the response so records can be extracted.
         anyOf:
           - "$ref": "#/definitions/CsvDecoder"
@@ -3763,7 +3763,7 @@ definitions:
           - "$ref": "#/definitions/ZipfileDecoder"
           - "$ref": "#/definitions/CustomDecoder"
       download_decoder:
-        title: Download Decoder
+        title: Download HTTP Response Format
         description: Component decoding the download response so records can be extracted.
         anyOf:
           - "$ref": "#/definitions/CsvDecoder"
