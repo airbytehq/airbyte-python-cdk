@@ -49,7 +49,10 @@ from airbyte_cdk.utils.connector_paths import (
     resolve_connector_name_and_directory,
 )
 
-AIRBYTE_INTERNAL_GCP_PROJECT = "dataline-integration-testing"
+AIRBYTE_GCP_PROJECT_ID = os.environ.get(
+    "AIRBYTE_GCP_PROJECT_ID",
+    "dataline-integration-testing",
+)
 CONNECTOR_LABEL = "connector"
 GLOBAL_MASK_KEYS_URL = "https://connectors.airbyte.com/files/registries/v0/specs_secrets_mask.yaml"
 
@@ -83,8 +86,8 @@ def secrets_cli_group() -> None:
 @click.option(
     "--gcp-project-id",
     type=str,
-    default=AIRBYTE_INTERNAL_GCP_PROJECT,
-    help=f"GCP project ID. Defaults to '{AIRBYTE_INTERNAL_GCP_PROJECT}'.",
+    default=AIRBYTE_GCP_PROJECT_ID,
+    help=f"GCP project ID. Defaults to '{AIRBYTE_GCP_PROJECT_ID}'.",
 )
 @click.option(
     "--print-ci-secrets-masks",
@@ -95,7 +98,7 @@ def secrets_cli_group() -> None:
 )
 def fetch(
     connector: str | Path | None = None,
-    gcp_project_id: str = AIRBYTE_INTERNAL_GCP_PROJECT,
+    gcp_project_id: str = AIRBYTE_GCP_PROJECT_ID,
     print_ci_secrets_masks: bool = False,
 ) -> None:
     """Fetch secrets for a connector from Google Secret Manager.
@@ -205,13 +208,13 @@ def fetch(
 @click.option(
     "--gcp-project-id",
     type=str,
-    default=AIRBYTE_INTERNAL_GCP_PROJECT,
-    help=f"GCP project ID. Defaults to '{AIRBYTE_INTERNAL_GCP_PROJECT}'.",
+    default=AIRBYTE_GCP_PROJECT_ID,
+    help=f"GCP project ID. Defaults to '{AIRBYTE_GCP_PROJECT_ID}'.",
 )
 def list_(
     connector_name: str | None = None,
     connector_directory: Path | None = None,
-    gcp_project_id: str = AIRBYTE_INTERNAL_GCP_PROJECT,
+    gcp_project_id: str = AIRBYTE_GCP_PROJECT_ID,
 ) -> None:
     """List secrets for a connector from Google Secret Manager.
 
@@ -303,7 +306,7 @@ def _get_secret_url(secret_name: str, gcp_project_id: str) -> str:
 
 def _fetch_secret_handles(
     connector_name: str,
-    gcp_project_id: str = AIRBYTE_INTERNAL_GCP_PROJECT,
+    gcp_project_id: str = AIRBYTE_GCP_PROJECT_ID,
 ) -> list["Secret"]:  # type: ignore
     """Fetch secrets from Google Secret Manager."""
     if not secretmanager:
