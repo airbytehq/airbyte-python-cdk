@@ -1,0 +1,140 @@
+decoder:
+  type: JsonDecoder
+extractor:
+  type: DpathExtractor
+selector:
+  type: RecordSelector
+  record_filter:
+    type: RecordFilter
+    condition: "{{ record['id'] > stream_state['id'] }}"
+requester:
+  type: HttpRequester
+  name: "{{ parameters['name'] }}"
+  url_base: "https://api.sendgrid.com/v3/"
+  http_method: "GET"
+  authenticator:
+    type: SessionTokenAuthenticator
+    decoder:
+      type: JsonDecoder
+    expiration_duration: P10D
+    login_requester:
+      path: /session
+      type: HttpRequester
+      url_base: 'https://api.sendgrid.com'
+      http_method: POST
+      request_body_json:
+        password: '{{ config.apikey }}'
+        username: '{{ parameters.name }}'
+    session_token_path:
+      - id
+    request_authentication:
+      type: ApiKey
+      inject_into:
+        type: RequestOption
+        field_name: X-Metabase-Session
+        inject_into: header
+  request_parameters:
+    unit: "day"
+list_stream:
+  type: DeclarativeStream
+  name: lists
+  schema_loader:
+    type: JsonFileSchemaLoader
+    file_path: "./source_sendgrid/schemas/{{ parameters.name }}.json"
+  incremental_sync:
+    type: DatetimeBasedCursor
+    $parameters:
+      datetime_format: "%Y-%m-%dT%H:%M:%S%z"
+    start_datetime:
+      type: MinMaxDatetime
+      datetime: "{{ config['reports_start_date'] }}"
+      datetime_format: "%Y-%m-%d"
+    end_datetime:
+      type: MinMaxDatetime
+      datetime: "{{ format_datetime(now_utc(), '%Y-%m-%d') }}"
+      datetime_format: "%Y-%m-%d"
+    cursor_field: TimePeriod
+    cursor_datetime_formats:
+      - "%Y-%m-%dT%H:%M:%S%z"
+  retriever:
+    type: AsyncRetriever
+    name: "{{ parameters['name'] }}"
+    decoder:
+      $ref: "#/decoder"
+    partition_router:
+      type: ListPartitionRouter
+      values: "{{config['repos']}}"
+      cursor_field: a_key
+      request_option:
+        inject_into: header
+        field_name: a_key
+    status_mapping:
+      failed:
+        - Error
+      running:
+        - Pending
+      completed:
+        - Success
+      timeout: [ ]
+    status_extractor:
+      type: DpathExtractor
+      field_path:
+        - ReportRequestStatus
+        - Status
+    download_target_extractor:
+      type: DpathExtractor
+      field_path:
+        - ReportRequestStatus
+        - ReportDownloadUrl
+    creation_requester:
+      type: HttpRequester
+      url_base: https://reporting.api.bingads.microsoft.com/
+      path: Reporting/v13/GenerateReport/Submit
+      http_method: POST
+      request_headers:
+        Content-Type: application/json
+        DeveloperToken: "{{ config['developer_token'] }}"
+        CustomerId: "'{{ stream_partition['customer_id'] }}'"
+        CustomerAccountId: "'{{ stream_partition['account_id'] }}'"
+      request_body_json:
+        ReportRequest:
+          ExcludeColumnHeaders: false
+    polling_requester:
+      type: HttpRequester
+      url_base: https://fakerporting.api.bingads.microsoft.com/
+      path: Reporting/v13/GenerateReport/Poll
+      http_method: POST
+      request_headers:
+        Content-Type: application/json
+        DeveloperToken: "{{ config['developer_token'] }}"
+        CustomerId: "'{{ stream_partition['customer_id'] }}'"
+        CustomerAccountId: "'{{ stream_partition['account_id'] }}'"
+      request_body_json:
+        ReportRequestId: "'{{ creation_response['ReportRequestId'] }}'"
+    download_requester:
+      type: HttpRequester
+      url_base: "{{download_target}}"
+      http_method: GET
+    paginator:
+      type: DefaultPaginator
+      page_size_option:
+        inject_into: request_parameter
+        field_name: page_size
+      page_token_option:
+        inject_into: path
+        type: RequestPath
+      pagination_strategy:
+        type: "CursorPagination"
+        cursor_value: "{{ response._metadata.next }}"
+        page_size: 10
+    requester:
+      $ref: "#/requester"
+      path: "{{ next_page_token['next_page_url'] }}"
+    record_selector:
+      $ref: "#/selector"
+  $parameters:
+    name: "lists"
+    primary_key: "id"
+    extractor:
+      $ref: "#/extractor"
+      field_path: ["{{ parameters['name'] }}"]
