@@ -200,12 +200,11 @@ class ManifestComponentTransformer:
         ]
 
     @staticmethod
-    def _has_nested_components(propagated_component: Mapping[str, Any]) -> bool:
-        has_nested_components = False
+    def _has_nested_components(propagated_component: Dict[str, Any]) -> bool:
         for k, v in propagated_component.items():
             if isinstance(v, dict) and v.get("type"):
-                has_nested_components = True
-        return has_nested_components
+                return True
+        return False
 
     def _process_nested_components(
         self,
@@ -214,14 +213,14 @@ class ManifestComponentTransformer:
         current_parameters: Mapping[str, Any],
         use_parent_parameters: Optional[bool] = None,
     ) -> Dict[str, Any]:
-        for k, v in propagated_component.items():
-            if isinstance(v, dict) and v.get("type"):
+        for field_name, field_value in propagated_component.items():
+            if isinstance(field_value, dict) and field_value.get("type"):
                 nested_component_with_parameters = self.propagate_types_and_parameters(
                     parent_field_identifier,
-                    v,
+                    field_value,
                     current_parameters,
                     use_parent_parameters=use_parent_parameters,
                 )
-                propagated_component[k] = nested_component_with_parameters
+                propagated_component[field_name] = nested_component_with_parameters
 
         return propagated_component
