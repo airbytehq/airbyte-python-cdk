@@ -49,10 +49,7 @@ from airbyte_cdk.utils.connector_paths import (
     resolve_connector_name_and_directory,
 )
 
-GCP_PROJECT_ID: str = os.environ.get(
-    "GCP_PROJECT_ID",
-    "dataline-integration-testing",
-)
+GCP_PROJECT_ID: str = os.environ.get("GCP_PROJECT_ID", "") or "dataline-integration-testing"
 """The GCP project ID to use for fetching integration test secrets."""
 
 CONNECTOR_LABEL = "connector"
