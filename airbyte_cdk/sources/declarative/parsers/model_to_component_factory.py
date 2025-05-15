@@ -833,7 +833,7 @@ class ModelToComponentFactory:
         )
 
     def create_config_add_fields(
-        self, model: ConfigAddFieldsModel, config: Config
+        self, model: ConfigAddFieldsModel, config: Config, **kwargs: Any
     ) -> ConfigAddFields:
         fields = [self._create_component_from_model(field, config) for field in model.fields]
         return ConfigAddFields(
@@ -842,14 +842,18 @@ class ModelToComponentFactory:
         )
 
     @staticmethod
-    def create_config_remove_fields(model: ConfigRemoveFieldsModel) -> ConfigRemoveFields:
+    def create_config_remove_fields(
+        model: ConfigRemoveFieldsModel, config: Config, **kwargs: Any
+    ) -> ConfigRemoveFields:
         return ConfigRemoveFields(
             field_pointers=model.field_pointers,
             condition=model.condition or "",
         )
 
     @staticmethod
-    def create_config_remap_field(model: ConfigRemapFieldModel, config: Config) -> ConfigRemapField:
+    def create_config_remap_field(
+        model: ConfigRemapFieldModel, config: Config, **kwargs: Any
+    ) -> ConfigRemapField:
         mapping = cast(Mapping[str, Any], model.map)
         return ConfigRemapField(
             map=mapping,
@@ -877,7 +881,7 @@ class ModelToComponentFactory:
 
     @staticmethod
     def create_validate_adheres_to_schema(
-        model: ValidateAdheresToSchemaModel,
+        model: ValidateAdheresToSchemaModel, config: Config, **kwargs: Any
     ) -> ValidateAdheresToSchema:
         base_schema = cast(Mapping[str, Any], model.base_schema)
         return ValidateAdheresToSchema(

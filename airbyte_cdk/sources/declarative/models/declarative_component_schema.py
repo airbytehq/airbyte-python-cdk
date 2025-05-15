@@ -1549,7 +1549,7 @@ class ValidateAdheresToSchema(BaseModel):
 
 
 class ConfigRemapField(BaseModel):
-    type: Literal["RemapField"]
+    type: Literal["ConfigRemapField"]
     map: Union[Dict[str, Any], str] = Field(
         ...,
         description="A mapping of original values to new values. When a field value matches a key in this map, it will be replaced with the corresponding value.",
@@ -2105,6 +2105,9 @@ class ConfigMigration(BaseModel):
 
 
 class ConfigNormalizationRules(BaseModel):
+    class Config:
+        extra = Extra.forbid
+
     config_migrations: Optional[List[ConfigMigration]] = Field(
         None,
         description="The discrete migrations that will be applied on the incoming config. Each migration will be applied in the order they are defined.",
