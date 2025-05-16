@@ -131,6 +131,9 @@ source-declarative-manifest = "airbyte_cdk.cli.source_declarative_manifest:run"
 install = { shell = "poetry install --all-extras", help = "Install all dependencies." }
 lock = { shell = "poetry lock", help = "Lock all dependencies." }
 
+# Pre-commit tasks
+pre-commit = {cmd = "poetry run pre-commit run --all-files", help = "Run all pre-commit hooks on all files."}
+
 # Build tasks
 assemble = {cmd = "bin/generate-component-manifest-dagger.sh", help = "Generate component manifest files."}
 build-package = {cmd = "poetry build", help = "Build the python package: source and wheels archives."}
