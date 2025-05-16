@@ -229,10 +229,10 @@ class ConcurrentPerPartitionCursor(Cursor):
 
     def _throttle_state_message(self) -> Optional[float]:
         """
-        Throttles the state message emission to once every 60 seconds.
+        Throttles the state message emission to once every 600 seconds.
         """
         current_time = time.time()
-        if current_time - self._last_emission_time <= 60:
+        if current_time - self._last_emission_time <= 600:
             return None
         return current_time
 
