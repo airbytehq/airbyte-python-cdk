@@ -10,15 +10,18 @@ from abc import ABC, abstractmethod
 from typing import Any, Iterable, List, Mapping
 
 import orjson
+from airbyte_protocol_dataclasses.models import (
+    AirbyteMessage,
+    ConfiguredAirbyteCatalog,
+    DestinationCatalog,
+    Type,
+)
 
 from airbyte_cdk.connector import Connector
 from airbyte_cdk.exception_handler import init_uncaught_exception_handler
 from airbyte_cdk.models import (
-    AirbyteMessage,
     AirbyteMessageSerializer,
-    ConfiguredAirbyteCatalog,
     ConfiguredAirbyteCatalogSerializer,
-    Type,
 )
 from airbyte_cdk.sources.utils.schema_helpers import check_config_against_spec_or_exit
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
@@ -26,8 +29,74 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 logger = logging.getLogger("airbyte")
 
 
+def parse_args(args: List[str]) -> argparse.Namespace:
+    """
+    :param args: commandline arguments
+    :return:
+    """
+
+    parent_parser = argparse.ArgumentParser(add_help=False)
+    parent_parser.add_argument(
+        "--debug", action="store_true", help="enables detailed debug logs related to the sync"
+    )
+    main_parser = argparse.ArgumentParser()
+    subparsers = main_parser.add_subparsers(title="commands", dest="command")
+
+    # spec
+    subparsers.add_parser(
+        "spec", help="outputs the json configuration specification", parents=[parent_parser]
+    )
+
+    # check
+    check_parser = subparsers.add_parser(
+        "check", help="checks the config can be used to connect", parents=[parent_parser]
+    )
+    required_check_parser = check_parser.add_argument_group("required named arguments")
+    required_check_parser.add_argument(
+        "--config", type=str, required=True, help="path to the json configuration file"
+    )
+
+    # discover
+    discover_parser = subparsers.add_parser(
+        "discover",
+        help="discover the objects available in the destination",
+        parents=[parent_parser],
+    )
+    required_discover_parser = discover_parser.add_argument_group("required named arguments")
+    required_discover_parser.add_argument(
+        "--config", type=str, required=True, help="path to the json configuration file"
+    )
+
+    # write
+    write_parser = subparsers.add_parser(
+        "write", help="Writes data to the destination", parents=[parent_parser]
+    )
+    write_required = write_parser.add_argument_group("required named arguments")
+    write_required.add_argument(
+        "--config", type=str, required=True, help="path to the JSON configuration file"
+    )
+    write_required.add_argument(
+        "--catalog", type=str, required=True, help="path to the configured catalog JSON file"
+    )
+
+    parsed_args = main_parser.parse_args(args)
+    cmd = parsed_args.command
+    if not cmd:
+        raise Exception("No command entered. ")
+    elif cmd not in ["spec", "check", "discover", "write"]:
+        # This is technically dead code since parse_args() would fail if this was the case
+        # But it's non-obvious enough to warrant placing it here anyways
+        raise Exception(f"Unknown command entered: {cmd}")
+
+    return parsed_args
+
+
 class Destination(Connector, ABC):
-    VALID_CMDS = {"spec", "check", "write"}
+    VALID_CMDS = {"spec", "check", "discover", "write"}
+
+    def discover(self) -> DestinationCatalog:
+        """Implement to define what objects are available in the destination"""
+        raise NotImplementedError("Discover method is not implemented")
 
     @abstractmethod
     def write(
@@ -68,52 +137,9 @@ class Destination(Connector, ABC):
         )
         logger.info("Writing complete.")
 
-    def parse_args(self, args: List[str]) -> argparse.Namespace:
-        """
-        :param args: commandline arguments
-        :return:
-        """
-
-        parent_parser = argparse.ArgumentParser(add_help=False)
-        main_parser = argparse.ArgumentParser()
-        subparsers = main_parser.add_subparsers(title="commands", dest="command")
-
-        # spec
-        subparsers.add_parser(
-            "spec", help="outputs the json configuration specification", parents=[parent_parser]
-        )
-
-        # check
-        check_parser = subparsers.add_parser(
-            "check", help="checks the config can be used to connect", parents=[parent_parser]
-        )
-        required_check_parser = check_parser.add_argument_group("required named arguments")
-        required_check_parser.add_argument(
-            "--config", type=str, required=True, help="path to the json configuration file"
-        )
-
-        # write
-        write_parser = subparsers.add_parser(
-            "write", help="Writes data to the destination", parents=[parent_parser]
-        )
-        write_required = write_parser.add_argument_group("required named arguments")
-        write_required.add_argument(
-            "--config", type=str, required=True, help="path to the JSON configuration file"
-        )
-        write_required.add_argument(
-            "--catalog", type=str, required=True, help="path to the configured catalog JSON file"
-        )
-
-        parsed_args = main_parser.parse_args(args)
-        cmd = parsed_args.command
-        if not cmd:
-            raise Exception("No command entered. ")
-        elif cmd not in ["spec", "check", "write"]:
-            # This is technically dead code since parse_args() would fail if this was the case
-            # But it's non-obvious enough to warrant placing it here anyways
-            raise Exception(f"Unknown command entered: {cmd}")
-
-        return parsed_args
+    @staticmethod
+    def parse_args(args: List[str]) -> argparse.Namespace:
+        return parse_args(args)
 
     def run_cmd(self, parsed_args: argparse.Namespace) -> Iterable[AirbyteMessage]:
         cmd = parsed_args.command
@@ -137,6 +163,8 @@ class Destination(Connector, ABC):
 
         if cmd == "check":
             yield self._run_check(config=config)
+        elif cmd == "discover":
+            yield AirbyteMessage(type=Type.DESTINATION_CATALOG, destination_catalog=self.discover())
         elif cmd == "write":
             # Wrap in UTF-8 to override any other input encodings
             wrapped_stdin = io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8")

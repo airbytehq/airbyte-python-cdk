@@ -72,7 +72,11 @@ class HttpRequest:
         elif isinstance(body, bytes):
             return json.loads(body.decode())  # type: ignore  # assumes return type of Mapping[str, Any]
         elif isinstance(body, str):
-            return json.loads(body)  # type: ignore  # assumes return type of Mapping[str, Any]
+            try:
+                return json.loads(body)  # type: ignore  # assumes return type of Mapping[str, Any]
+            except json.JSONDecodeError:
+                # one of the body is a mapping while the other isn't so comparison should fail anyway
+                return None
         return None
 
     @staticmethod
