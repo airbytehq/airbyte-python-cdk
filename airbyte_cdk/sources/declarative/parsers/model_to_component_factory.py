@@ -928,9 +928,9 @@ class ModelToComponentFactory:
         declarative_stream: DeclarativeStreamModel,
     ) -> LegacyToPerPartitionStateMigration:
         retriever = declarative_stream.retriever
-        if not isinstance(retriever, SimpleRetrieverModel):
+        if not isinstance(retriever, (SimpleRetrieverModel, AsyncRetrieverModel)):
             raise ValueError(
-                f"LegacyToPerPartitionStateMigrations can only be applied on a DeclarativeStream with a SimpleRetriever. Got {type(retriever)}"
+                f"LegacyToPerPartitionStateMigrations can only be applied on a DeclarativeStream with a SimpleRetriever or AsyncRetriever. Got {type(retriever)}"
             )
         partition_router = retriever.partition_router
         if not isinstance(
@@ -1999,6 +1999,17 @@ class ModelToComponentFactory:
                 stream_state = self._connector_state_manager.get_stream_state(
                     stream_name, stream_namespace
                 )
+                state_transformations = (
+                    [
+                        self._create_component_from_model(
+                            state_migration, config, declarative_stream=model
+                        )
+                        for state_migration in model.state_migrations
+                    ]
+                    if model.state_migrations
+                    else []
+                )
+
                 return self.create_concurrent_cursor_from_perpartition_cursor(  # type: ignore # This is a known issue that we are creating and returning a ConcurrentCursor which does not technically implement the (low-code) StreamSlicer. However, (low-code) StreamSlicer and ConcurrentCursor both implement StreamSlicer.stream_slices() which is the primary method needed for checkpointing
                     state_manager=self._connector_state_manager,
                     model_type=DatetimeBasedCursorModel,
@@ -2007,6 +2018,7 @@ class ModelToComponentFactory:
                     stream_namespace=stream_namespace,
                     config=config or {},
                     stream_state=stream_state,
+                    stream_state_migrations=state_transformations,
                     partition_router=stream_slicer,
                 )
 
