@@ -51,7 +51,7 @@ from airbyte_cdk.utils.connector_paths import (
 
 GCP_PROJECT_ID: str = os.environ.get("GCP_PROJECT_ID", "") or "dataline-integration-testing"
 # We put the `or` outside the `get()` because we want the `GCP_PROJECT_ID`
-# value to be ignored if it contains an empty string, such as in CI where the
+# env var to be ignored if it contains an empty string, such as in CI where the
 # workflow might set it to a value that is itself actually missing or unset.
 """The GCP project ID to use for fetching integration test secrets."""
 
