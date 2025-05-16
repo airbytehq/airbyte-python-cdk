@@ -3,15 +3,14 @@
 exclude: |
   (?x)(
     # Python/system files
-    ^.*/__init__\.py$|
     ^.*?/\.venv/.*$|
     ^.*?/node_modules/.*$|
-    
+
     # Generated/test files
     ^.*?/\.pytest_cache/.*$|
     ^.*?/__pycache__/.*$|
     ^.*?/\.mypy_cache/.*$|
-    ^.*?/\.ruff_cache/.*$
+    ^.*?/\.ruff_cache/.*$|
 
     # Package management
     ^.*?/poetry\.lock$|
@@ -22,7 +21,7 @@ exclude: |
     ^.*?/build/.*$|
     ^.*?/dist/.*$|
     ^.*?/\.coverage$|
-    ^.*?/coverage\.xml$|
+    ^.*?/coverage\.xml$
   )
 
 repos:
@@ -38,18 +37,15 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.11.5
     hooks:
-      # Run the linter with repo-defined settings
       - id: ruff
         args: [--fix]
-
-      # Run the formatter with repo-defined settings
       - id: ruff-format
 
   - repo: https://github.com/pre-commit/mirrors-prettier
     rev: v3.0.3
     hooks:
       - id: prettier
-        types_or: [json, yaml]
+        args: [--write]
         additional_dependencies:
           - prettier@3.0.3
 
@@ -61,3 +57,20 @@ repos:
         language: golang
         additional_dependencies: [github.com/google/addlicense@v1.1.1]
         files: \.py$
+
+      - id: poetry-check
+        name: Check Poetry lockfile
+        entry: poetry check
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.8.0
+    hooks:
+      - id: mypy
+        name: mypy
+        entry: mypy
+        args: [--config-file=mypy.ini, --show-column-numbers]
+        files: ^airbyte_cdk/
+        pass_filenames: true
