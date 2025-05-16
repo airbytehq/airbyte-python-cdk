@@ -8,10 +8,10 @@ import importlib
 import inspect
 import os
 import sys
-from collections.abc import Callable
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
+import pytest
 import yaml
 from boltons.typeutils import classproperty
 
@@ -21,6 +21,7 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.test import entrypoint_wrapper
 from airbyte_cdk.test.standard_tests._job_runner import IConnector, run_test_job
+from airbyte_cdk.test.standard_tests.docker_connectors import DockerConnector
 from airbyte_cdk.test.standard_tests.models import (
     ConnectorTestScenario,
 )
@@ -30,19 +31,43 @@ from airbyte_cdk.utils.connector_paths import (
 )
 
 
+@pytest.fixture
+def use_docker_image(request: pytest.FixtureRequest) -> str | bool:
+    """Fixture to determine if a Docker image should be used for the test."""
+    return request.config.getoption("use_docker_image")
+
+
 class ConnectorTestSuiteBase(abc.ABC):
     """Base class for connector test suites."""
 
-    connector: type[IConnector] | Callable[[], IConnector] | None  # type: ignore [reportRedeclaration]
+    connector_class: type[IConnector] | None = None
     """The connector class or a factory function that returns an scenario of IConnector."""
 
-    @classproperty  # type: ignore [no-redef]
-    def connector(cls) -> type[IConnector] | Callable[[], IConnector] | None:
+    @classmethod
+    def get_test_class_dir(cls) -> Path:
+        """Get the file path that contains the class."""
+        module = sys.modules[cls.__module__]
+        # Get the directory containing the test file
+        return Path(inspect.getfile(module)).parent
+
+    @classmethod
+    def create_connector(
+        cls,
+        scenario: ConnectorTestScenario,
+        *,
+        use_docker_image: str | bool,
+    ) -> IConnector:
+        """Instantiate the connector class."""
         """Get the connector class for the test suite.
 
         This assumes a python connector and should be overridden by subclasses to provide the
         specific connector class to be tested.
         """
+        if use_docker_image:
+            return cls.create_docker_connector(
+                docker_image=use_docker_image,
+            )
+
         connector_root = cls.get_connector_root_dir()
         connector_name = connector_root.absolute().name
 
@@ -65,7 +90,10 @@ class ConnectorTestSuiteBase(abc.ABC):
 
         # Dynamically get the class from the module
         try:
-            return cast(type[IConnector], getattr(module, expected_class_name))
+            return cast(
+                type[IConnector],
+                getattr(module, expected_class_name),
+            )()
         except AttributeError as e:
             # We did not find it based on our expectations, so let's check if we can find it
             # with a case-insensitive match.
@@ -77,43 +105,84 @@ class ConnectorTestSuiteBase(abc.ABC):
                 raise ImportError(
                     f"Module '{expected_module_name}' does not have a class named '{expected_class_name}'."
                 ) from e
-            return cast(type[IConnector], getattr(module, matching_class_name))
+            return cast(
+                type[IConnector],
+                getattr(module, matching_class_name),
+            )()
 
     @classmethod
-    def get_test_class_dir(cls) -> Path:
-        """Get the file path that contains the class."""
-        module = sys.modules[cls.__module__]
-        # Get the directory containing the test file
-        return Path(inspect.getfile(module)).parent
-
-    @classmethod
-    def create_connector(
+    def create_docker_connector(
         cls,
-        scenario: ConnectorTestScenario | None,
+        docker_image: str | Literal[True],
     ) -> IConnector:
-        """Instantiate the connector class."""
-        connector = cls.connector  # type: ignore
-        if connector:
-            if callable(connector) or isinstance(connector, type):
-                # If the connector is a class or factory function, instantiate it:
-                return cast(IConnector, connector())  # type: ignore [redundant-cast]
+        """Create a connector instance using Docker."""
+        if not docker_image:
+            raise ValueError("Docker image is required to create a Docker connector.")
 
-        # Otherwise, we can't instantiate the connector. Fail with a clear error message.
-        raise NotImplementedError(
-            "No connector class or connector factory function provided. "
-            "Please provide a class or factory function in `cls.connector`, or "
-            "override `cls.create_connector()` to define a custom initialization process."
+        # Create the connector object by building the connector
+        if docker_image is True:
+            return DockerConnector.from_connector_directory(
+                connector_directory=cls.get_connector_root_dir(),
+            )
+
+        if not isinstance(docker_image, str):
+            raise ValueError(
+                "Expected `docker_image` to be 'True' or of type `str`. "
+                f"Type found: {type(docker_image).__name__}"
+            )
+
+        # Create the connector object using the provided Docker image
+        return DockerConnector(
+            connector_name=cls.get_connector_root_dir().name,
+            docker_image=docker_image,
         )
 
-    # Test Definitions
+    # Test Definitions (Generic for all connectors)
+
+    def test_spec(
+        self,
+        *,
+        use_docker_image: str | bool,
+    ) -> None:
+        """Standard test for `spec`.
+
+        This test does not require a `scenario` input, since `spec`
+        does not require any inputs.
+
+        We assume `spec` should always succeed and it should always generate
+        a valid `SPEC` message.
+
+        Note: the parsing of messages by type also implicitly validates that
+        the generated `SPEC` message is valid JSON.
+        """
+        scenario = ConnectorTestScenario()  # Empty scenario, empty config
+        result = run_test_job(
+            verb="spec",
+            test_scenario=scenario,
+            connector=self.create_connector(
+                scenario=scenario,
+                use_docker_image=use_docker_image,
+            ),
+        )
+        # If an error occurs, it will be raised above.
+
+        assert len(result.spec_messages) == 1, (
+            "Expected exactly 1 spec message but got {len(result.spec_messages)}",
+            result.errors,
+        )
 
     def test_check(
         self,
         scenario: ConnectorTestScenario,
+        *,
+        use_docker_image: str | bool,
     ) -> None:
         """Run `connection` acceptance tests."""
         result: entrypoint_wrapper.EntrypointOutput = run_test_job(
-            self.create_connector(scenario),
+            self.create_connector(
+                scenario,
+                use_docker_image=use_docker_image,
+            ),
             "check",
             test_scenario=scenario,
         )
