@@ -39,6 +39,7 @@ poetry run airbyte-cdk connector --help
 """
 
 import os
+import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -166,10 +167,11 @@ def test(
     click.echo(f"Collect only: {collect_only}")
     click.echo(f"Pytest args: {pytest_args}")
     click.echo("Invoking Pytest...")
-    pytest.main(
+    exit_code = pytest.main(
         pytest_args,
         plugins=[],
     )
+    sys.exit(exit_code)
 
 
 __all__ = [
