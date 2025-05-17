@@ -3655,12 +3655,16 @@ class ModelToComponentFactory:
     def create_config_components_resolver(
         self, model: ConfigComponentsResolverModel, config: Config
     ) -> Any:
+        model_stream_configs = (
+            model.stream_config if isinstance(model.stream_config, list) else [model.stream_config]
+        )
 
-        model_stream_configs = model.stream_config if isinstance(model.stream_config, list) else [model.stream_config]
-
-        stream_configs = [self._create_component_from_model(
-            stream_config, config=config, parameters=model.parameters or {}
-        ) for stream_config in model_stream_configs]
+        stream_configs = [
+            self._create_component_from_model(
+                stream_config, config=config, parameters=model.parameters or {}
+            )
+            for stream_config in model_stream_configs
+        ]
 
         components_mapping = [
             self._create_component_from_model(
