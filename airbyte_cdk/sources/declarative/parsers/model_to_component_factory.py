@@ -3686,6 +3686,7 @@ class ModelToComponentFactory:
         return ConfigComponentsResolver(
             stream_config=stream_config,
             config=config,
+            components_mapping=components_mapping,
             parameters=model.parameters or {},
         )
 
