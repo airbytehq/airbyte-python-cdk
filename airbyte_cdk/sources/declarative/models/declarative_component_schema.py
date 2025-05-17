@@ -1498,7 +1498,7 @@ class StreamConfig(BaseModel):
         examples=[["data"], ["data", "streams"], ["data", "{{ parameters.name }}"]],
         title="Configs Pointer",
     )
-    default_values: Optional[List] = Field(
+    default_values: Optional[List[Dict[str, Any]]] = Field(
         None, description="placeholder", title="Default Values"
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")

@@ -109,7 +109,7 @@ class ConfigComponentsResolver(ComponentsResolver):
                 stream_configs = dpath.get(dict(self.config), path, default=[])
                 stream_configs = normalize_configs(stream_configs)
                 if stream_config.default_values:
-                    stream_configs += stream_config.default_values
+                    stream_configs.extend(stream_config.default_values)
                 yield [(i, item) for i, item in enumerate(stream_configs)]
 
         def merge_combination(combo):
