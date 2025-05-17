@@ -4,8 +4,7 @@
 
 from copy import deepcopy
 from dataclasses import InitVar, dataclass, field
-from itertools import product
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Union
+from typing import Any, Dict, Iterable, List, Mapping, Union
 
 import dpath
 from typing_extensions import deprecated
@@ -29,7 +28,6 @@ class StreamConfig:
 
     configs_pointer: List[Union[InterpolatedString, str]]
     parameters: InitVar[Mapping[str, Any]]
-    default_values: Optional[List[Any]] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.configs_pointer = [
@@ -50,7 +48,7 @@ class ConfigComponentsResolver(ComponentsResolver):
         parameters (InitVar[Mapping[str, Any]]): Additional parameters for interpolation.
     """
 
-    stream_configs: List[StreamConfig]
+    stream_config: StreamConfig
     config: Config
     components_mapping: List[ComponentMappingDefinition]
     parameters: InitVar[Mapping[str, Any]]
@@ -84,7 +82,6 @@ class ConfigComponentsResolver(ComponentsResolver):
                         field_path=field_path,
                         value=interpolated_value,
                         value_type=component_mapping.value_type,
-                        create_or_update=component_mapping.create_or_update,
                         parameters=parameters,
                     )
                 )
@@ -94,35 +91,17 @@ class ConfigComponentsResolver(ComponentsResolver):
                 )
 
     @property
-    def _stream_config(self):
-        def resolve_path(pointer):
-            return [
-                node.eval(self.config) if not isinstance(node, str) else node for node in pointer
-            ]
+    def _stream_config(self) -> Iterable[Mapping[str, Any]]:
+        path = [
+            node.eval(self.config) if not isinstance(node, str) else node
+            for node in self.stream_config.configs_pointer
+        ]
+        stream_config = dpath.get(dict(self.config), path, default=[])
 
-        def normalize_configs(configs):
-            return configs if isinstance(configs, list) else [configs]
+        if not isinstance(stream_config, list):
+            stream_config = [stream_config]
 
-        def prepare_streams():
-            for stream_config in self.stream_configs:
-                path = resolve_path(stream_config.configs_pointer)
-                stream_configs = dpath.get(dict(self.config), path, default=[])
-                stream_configs = normalize_configs(stream_configs)
-                if stream_config.default_values:
-                    stream_configs += stream_config.default_values
-                yield [(i, item) for i, item in enumerate(stream_configs)]
-
-        def merge_combination(combo):
-            result = {}
-            for config_index, (elem_index, elem) in enumerate(combo):
-                if isinstance(elem, dict):
-                    result.update(elem)
-                else:
-                    result.setdefault(f"source_config_{config_index}", (elem_index, elem))
-            return result
-
-        all_indexed_streams = list(prepare_streams())
-        return [merge_combination(combo) for combo in product(*all_indexed_streams)]
+        return stream_config
 
     def resolve_components(
         self, stream_template_config: Dict[str, Any]
@@ -151,21 +130,7 @@ class ConfigComponentsResolver(ComponentsResolver):
                 )
 
                 path = [path.eval(self.config, **kwargs) for path in resolved_component.field_path]
-                parsed_value = self._parse_yaml_if_possible(value)
-                updated = dpath.set(updated_config, path, parsed_value)
 
-                if parsed_value and not updated and resolved_component.create_or_update:
-                    dpath.new(updated_config, path, parsed_value)
+                dpath.set(updated_config, path, value)
 
             yield updated_config
-
-    @staticmethod
-    def _parse_yaml_if_possible(value: Any) -> Any:
-        if isinstance(value, str):
-            try:
-                import yaml
-
-                return yaml.safe_load(value)
-            except Exception:
-                return value
-        return value
