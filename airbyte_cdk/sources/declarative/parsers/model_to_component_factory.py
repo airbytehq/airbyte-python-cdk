@@ -84,6 +84,7 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
 )
 from airbyte_cdk.sources.declarative.extractors import (
     DpathExtractor,
+    KeyValueExtractor,
     RecordFilter,
     RecordSelector,
     ResponseToFileExtractor,
@@ -303,6 +304,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     KeysToSnakeCase as KeysToSnakeCaseModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    KeyValueExtractor as KeyValueExtractorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     LegacySessionTokenAuthenticator as LegacySessionTokenAuthenticatorModel,
@@ -641,6 +645,7 @@ class ModelToComponentFactory:
             DefaultErrorHandlerModel: self.create_default_error_handler,
             DefaultPaginatorModel: self.create_default_paginator,
             DpathExtractorModel: self.create_dpath_extractor,
+            KeyValueExtractorModel: self.create_key_value_extractor,
             ResponseToFileExtractorModel: self.create_response_to_file_extractor,
             ExponentialBackoffStrategyModel: self.create_exponential_backoff_strategy,
             SessionTokenAuthenticatorModel: self.create_session_token_authenticator,
@@ -2217,6 +2222,22 @@ class ModelToComponentFactory:
             config=config,
             parameters=model.parameters or {},
         )
+
+    def create_key_value_extractor(
+        self,
+        model: KeyValueExtractorModel,
+        config: Config,
+        decoder: Optional[Decoder] = JsonDecoder(parameters={}),
+        **kwargs: Any,
+    ) -> KeyValueExtractor:
+        keys_extractor = self._create_component_from_model(
+            model=model.keys_extractor, decoder=decoder, config=config
+        )
+        values_extractor = self._create_component_from_model(
+            model=model.values_extractor, decoder=decoder, config=config
+        )
+
+        return KeyValueExtractor(keys_extractor=keys_extractor, values_extractor=values_extractor)
 
     @staticmethod
     def create_response_to_file_extractor(

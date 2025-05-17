@@ -1741,6 +1741,29 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  KeyValueExtractor:
+    title: Key Value Extractor
+    description: Record extractor that combines keys and values from two separate extractors.
+    type: object
+    required:
+      - type
+      - keys_extractor
+      - values_extractor
+    properties:
+      type:
+        type: string
+        enum: [ KeyValueExtractor ]
+      keys_extractor:
+        anyOf:
+          - "$ref": "#/definitions/DpathExtractor"
+          - "$ref": "#/definitions/CustomRecordExtractor"
+      values_extractor:
+        anyOf:
+          - "$ref": "#/definitions/DpathExtractor"
+          - "$ref": "#/definitions/CustomRecordExtractor"
+      $parameters:
+        type: object
+        additionalProperties: true
   DpathExtractor:
     title: Dpath Extractor
     description: Record extractor that searches a decoded response over a path defined as an array of fields.
@@ -3315,6 +3338,7 @@ definitions:
       extractor:
         anyOf:
           - "$ref": "#/definitions/DpathExtractor"
+          - "$ref": "#/definitions/KeyValueExtractor"
           - "$ref": "#/definitions/CustomRecordExtractor"
       record_filter:
         title: Record Filter
