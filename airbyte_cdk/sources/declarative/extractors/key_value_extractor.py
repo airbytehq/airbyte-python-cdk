@@ -3,10 +3,11 @@
 #
 
 from dataclasses import dataclass
+from itertools import islice
 from typing import Any, Iterable, MutableMapping
 
 import requests
-from itertools import islice
+
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 
 

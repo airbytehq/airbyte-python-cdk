@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable, List, MutableMapping
 
 import requests
+
 from airbyte_cdk.sources.declarative.extractors.record_extractor import RecordExtractor
 
 
