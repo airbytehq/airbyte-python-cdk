@@ -14,6 +14,7 @@ from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import I
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
+from airbyte_cdk.sources.declarative.extractors.record_filter import RecordFilter
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
@@ -126,6 +127,7 @@ class DynamicSchemaLoader(SchemaLoader):
     parameters: InitVar[Mapping[str, Any]]
     schema_type_identifier: SchemaTypeIdentifier
     schema_transformations: List[RecordTransformation] = field(default_factory=lambda: [])
+    schema_filter: Optional[RecordFilter] = None
 
     def get_json_schema(self) -> Mapping[str, Any]:
         """
@@ -151,20 +153,18 @@ class DynamicSchemaLoader(SchemaLoader):
             )
             properties[key] = value
 
-        transformed_properties = self._transform(properties, {})
+        filtred_transformed_properties = self._transform(self._filter(properties))
 
         return {
             "$schema": "https://json-schema.org/draft-07/schema#",
             "type": "object",
             "additionalProperties": True,
-            "properties": transformed_properties,
+            "properties": filtred_transformed_properties,
         }
 
     def _transform(
         self,
         properties: Mapping[str, Any],
-        stream_state: StreamState,
-        stream_slice: Optional[StreamSlice] = None,
     ) -> Mapping[str, Any]:
         for transformation in self.schema_transformations:
             transformation.transform(
@@ -172,6 +172,18 @@ class DynamicSchemaLoader(SchemaLoader):
                 config=self.config,
             )
         return properties
+
+    def _filter(
+        self,
+        properties: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        if self.schema_filter:
+            filtered_properties = {}
+            for property in self.schema_filter.filter_records(properties.items(), {}):
+                filtered_properties[property[0]] = property[1]
+            return filtered_properties
+        else:
+            return properties
 
     def _get_key(
         self,
