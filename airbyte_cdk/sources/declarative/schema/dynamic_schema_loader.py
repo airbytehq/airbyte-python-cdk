@@ -10,11 +10,11 @@ from typing import Any, List, Mapping, MutableMapping, Optional, Union
 import dpath
 from typing_extensions import deprecated
 
+from airbyte_cdk.sources.declarative.extractors.record_filter import RecordFilter
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
-from airbyte_cdk.sources.declarative.extractors.record_filter import RecordFilter
 from airbyte_cdk.sources.declarative.transformations import RecordTransformation
 from airbyte_cdk.sources.source import ExperimentalClassWarning
 from airbyte_cdk.sources.types import Config, StreamSlice, StreamState
@@ -174,16 +174,16 @@ class DynamicSchemaLoader(SchemaLoader):
         return properties
 
     def _filter(
-            self,
-            properties: Mapping[str, Any],
+        self,
+        properties: Mapping[str, Any],
     ) -> Mapping[str, Any]:
         if not self.schema_filter:
             return properties
 
         filtered_properties: MutableMapping[str, Any] = {}
         for item in self.schema_filter.filter_records(
-                ({k: v} for k, v in properties.items()),
-                {},
+            ({k: v} for k, v in properties.items()),
+            {},
         ):
             filtered_properties.update(item)
         return filtered_properties
