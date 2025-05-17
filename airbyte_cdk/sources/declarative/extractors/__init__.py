@@ -2,7 +2,6 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from airbyte_cdk.sources.declarative.extractors.combined_extractor import CombinedExtractor
 from airbyte_cdk.sources.declarative.extractors.dpath_extractor import DpathExtractor
 from airbyte_cdk.sources.declarative.extractors.http_selector import HttpSelector
 from airbyte_cdk.sources.declarative.extractors.key_value_extractor import KeyValueExtractor
@@ -21,5 +20,4 @@ __all__ = [
     "RecordSelector",
     "ResponseToFileExtractor",
     "KeyValueExtractor",
-    "CombinedExtractor",
 ]
