@@ -2,10 +2,10 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
-from itertools import product
 from copy import deepcopy
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Dict, Iterable, List, Mapping, Union, Optional
+from itertools import product
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Union
 
 import dpath
 from typing_extensions import deprecated
@@ -97,8 +97,7 @@ class ConfigComponentsResolver(ComponentsResolver):
     def _stream_config(self):
         def resolve_path(pointer):
             return [
-                node.eval(self.config) if not isinstance(node, str) else node
-                for node in pointer
+                node.eval(self.config) if not isinstance(node, str) else node for node in pointer
             ]
 
         def normalize_configs(configs):
@@ -165,6 +164,7 @@ class ConfigComponentsResolver(ComponentsResolver):
         if isinstance(value, str):
             try:
                 import yaml
+
                 return yaml.safe_load(value)
             except Exception:
                 return value
