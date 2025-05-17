@@ -83,9 +83,9 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     Parser,
 )
 from airbyte_cdk.sources.declarative.extractors import (
+    CombinedExtractor,
     DpathExtractor,
     KeyValueExtractor,
-    CombinedExtractor,
     RecordFilter,
     RecordSelector,
     ResponseToFileExtractor,
@@ -143,6 +143,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CheckStream as CheckStreamModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CombinedExtractor as CombinedExtractorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ComplexFieldType as ComplexFieldTypeModel,
@@ -226,12 +229,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     DpathExtractor as DpathExtractorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    KeyValueExtractor as KeyValueExtractorModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    CombinedExtractor as CombinedExtractorModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DpathFlattenFields as DpathFlattenFieldsModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -311,6 +308,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     KeysToSnakeCase as KeysToSnakeCaseModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    KeyValueExtractor as KeyValueExtractorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     LegacySessionTokenAuthenticator as LegacySessionTokenAuthenticatorModel,
@@ -2252,9 +2252,7 @@ class ModelToComponentFactory:
         **kwargs: Any,
     ) -> CombinedExtractor:
         extractors = [
-            self._create_component_from_model(
-                model=extractor, decoder=decoder, config=config
-            )
+            self._create_component_from_model(model=extractor, decoder=decoder, config=config)
             for extractor in model.extractors
         ]
 
@@ -3697,12 +3695,16 @@ class ModelToComponentFactory:
     def create_config_components_resolver(
         self, model: ConfigComponentsResolverModel, config: Config
     ) -> Any:
+        model_stream_configs = (
+            model.stream_config if isinstance(model.stream_config, list) else [model.stream_config]
+        )
 
-        model_stream_configs = model.stream_config if isinstance(model.stream_config, list) else [model.stream_config]
-
-        stream_configs = [self._create_component_from_model(
-            stream_config, config=config, parameters=model.parameters or {}
-        ) for stream_config in model_stream_configs]
+        stream_configs = [
+            self._create_component_from_model(
+                stream_config, config=config, parameters=model.parameters or {}
+            )
+            for stream_config in model_stream_configs
+        ]
 
         components_mapping = [
             self._create_component_from_model(
