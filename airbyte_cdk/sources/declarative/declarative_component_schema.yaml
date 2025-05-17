@@ -1743,7 +1743,7 @@ definitions:
         additionalProperties: true
   KeyValueExtractor:
     title: Key Value Extractor
-    description: Record extractor that extract with .
+    description: Record extractor that combines keys and values from two separate extractors.
     type: object
     required:
       - type
@@ -1754,12 +1754,10 @@ definitions:
         type: string
         enum: [ KeyValueExtractor ]
       keys_extractor:
-        description: placeholder
         anyOf:
           - "$ref": "#/definitions/DpathExtractor"
           - "$ref": "#/definitions/CustomRecordExtractor"
       values_extractor:
-        description: placeholder
         anyOf:
           - "$ref": "#/definitions/DpathExtractor"
           - "$ref": "#/definitions/CustomRecordExtractor"

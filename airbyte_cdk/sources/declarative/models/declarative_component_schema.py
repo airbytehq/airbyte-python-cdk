@@ -1852,12 +1852,8 @@ class DefaultPaginator(BaseModel):
 
 class KeyValueExtractor(BaseModel):
     type: Literal["KeyValueExtractor"]
-    keys_extractor: Union[DpathExtractor, CustomRecordExtractor] = Field(
-        ..., description="placeholder"
-    )
-    values_extractor: Union[DpathExtractor, CustomRecordExtractor] = Field(
-        ..., description="placeholder"
-    )
+    keys_extractor: Union[DpathExtractor, CustomRecordExtractor]
+    values_extractor: Union[DpathExtractor, CustomRecordExtractor]
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
