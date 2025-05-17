@@ -22,9 +22,10 @@ import sys
 import traceback
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Dict, cast
 
 import orjson
+import yaml
 
 from airbyte_cdk.entrypoint import AirbyteEntrypoint, launch
 from airbyte_cdk.models import (
@@ -211,12 +212,59 @@ def _parse_inputs_into_config_catalog_state(
     ConfiguredAirbyteCatalog | None,
     list[AirbyteStateMessage],
 ]:
-    parsed_args = AirbyteEntrypoint.parse_args(args)
-    config = (
-        ConcurrentDeclarativeSource.read_config(parsed_args.config)
-        if hasattr(parsed_args, "config")
-        else None
-    )
+    # Extract the --manifest-path argument if present
+    manifest_path = None
+    modified_args = []
+    i = 0
+    while i < len(args):
+        if args[i] == "--manifest-path":
+            if i + 1 < len(args):
+                manifest_path = args[i + 1]
+                i += 2  # Skip both the option and its value
+            else:
+                raise ValueError("--manifest-path option requires a path value")
+        else:
+            modified_args.append(args[i])
+            i += 1
+    
+    # Parse the modified arguments
+    parsed_args = AirbyteEntrypoint.parse_args(modified_args)
+    
+    # For spec command, we don't need config or manifest
+    is_spec_command = len(modified_args) > 0 and modified_args[0] == "spec"
+    
+    # Read config from file if provided
+    config = None
+    if hasattr(parsed_args, "config"):
+        config = ConcurrentDeclarativeSource.read_config(parsed_args.config)
+    
+    # If manifest_path is provided, read the manifest and inject it into the config
+    if manifest_path:
+        try:
+            with open(manifest_path, "r") as manifest_file:
+                manifest_content = yaml.safe_load(manifest_file)
+                
+                # For commands other than spec, a config must be provided
+                if not is_spec_command and config is None:
+                    raise ValueError(
+                        "When using --manifest-path with commands other than 'spec', "
+                        "a valid --config must also be provided."
+                    )
+                
+                # For spec command, we can create an empty config if needed
+                if config is None:
+                    config = {}
+                
+                # Convert to a mutable dictionary if it's not already
+                if not isinstance(config, dict):
+                    config = dict(config)
+                
+                # Inject the manifest into the config
+                config["__injected_declarative_manifest"] = manifest_content
+        except Exception as error:
+            raise ValueError(f"Failed to load manifest file from {manifest_path}: {error}")
+    
+    # Read catalog and state if provided
     catalog = (
         ConcurrentDeclarativeSource.read_catalog(parsed_args.catalog)
         if hasattr(parsed_args, "catalog")
@@ -233,4 +281,71 @@ def _parse_inputs_into_config_catalog_state(
 
 def run() -> None:
     args: list[str] = sys.argv[1:]
-    handle_command(args)
+    
+    # First check if this is a local manifest command - if so, proceed with the standard flow
+    if _is_local_manifest_command(args):
+        handle_command(args)
+        return
+
+    # Check for --manifest-path argument
+    try:
+        manifest_path_index = args.index("--manifest-path")
+        # Ensure there's a value after --manifest-path
+        if manifest_path_index + 1 >= len(args):
+            print("Error: --manifest-path option requires a path value")
+            sys.exit(1)
+            
+        # Extract the manifest path and remove both the option and its value from args
+        manifest_path = args[manifest_path_index + 1]
+        filtered_args = args.copy()
+        filtered_args.pop(manifest_path_index + 1)  # Remove the path value first
+        filtered_args.pop(manifest_path_index)      # Then remove the --manifest-path option
+        
+        # For non-spec commands, we need to inject the manifest into the config
+        if filtered_args and filtered_args[0] != "spec":
+            # Check for config argument
+            if "--config" not in filtered_args:
+                print("Error: When using --manifest-path with commands other than 'spec', --config must also be provided")
+                sys.exit(1)
+                
+            config_index = filtered_args.index("--config")
+            if config_index + 1 >= len(filtered_args):
+                print("Error: --config option requires a value")
+                sys.exit(1)
+                
+            config_path = filtered_args[config_index + 1]
+            
+            # Read and modify the config file
+            with open(config_path, "r") as f:
+                config = json.load(f)
+                
+            with open(manifest_path, "r") as f:
+                manifest = yaml.safe_load(f)
+                
+            # Inject the manifest
+            config["__injected_declarative_manifest"] = manifest
+            
+            # Write to a temporary file
+            temp_config_path = f"{config_path}.temp"
+            with open(temp_config_path, "w") as f:
+                json.dump(config, f)
+                
+            # Replace the config path
+            filtered_args[config_index + 1] = temp_config_path
+            
+        # Process the command with the modified arguments
+        handle_remote_manifest_command(filtered_args)
+        
+    except ValueError:  # --manifest-path not found in args
+        # For spec command, it's fine to proceed without manifest
+        if args and args[0] == "spec":
+            handle_remote_manifest_command(args)
+        else:
+            # For other commands, provide a helpful error message
+            print("Error: When using the source-declarative-manifest command locally, you must either:")
+            print("  1. Provide the --manifest-path option pointing to your YAML manifest file, or")
+            print("  2. Include the '__injected_declarative_manifest' key in your config JSON with the manifest content")
+            sys.exit(1)
+    except Exception as e:
+        print(f"Error processing arguments: {e}")
+        sys.exit(1)
