@@ -84,6 +84,8 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
 )
 from airbyte_cdk.sources.declarative.extractors import (
     DpathExtractor,
+    KeyValueExtractor,
+    CombinedExtractor,
     RecordFilter,
     RecordSelector,
     ResponseToFileExtractor,
@@ -222,6 +224,12 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DpathExtractor as DpathExtractorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    KeyValueExtractor as KeyValueExtractorModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CombinedExtractor as CombinedExtractorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DpathFlattenFields as DpathFlattenFieldsModel,
@@ -641,6 +649,8 @@ class ModelToComponentFactory:
             DefaultErrorHandlerModel: self.create_default_error_handler,
             DefaultPaginatorModel: self.create_default_paginator,
             DpathExtractorModel: self.create_dpath_extractor,
+            KeyValueExtractorModel: self.create_key_value_extractor,
+            CombinedExtractorModel: self.create_combined_extractor,
             ResponseToFileExtractorModel: self.create_response_to_file_extractor,
             ExponentialBackoffStrategyModel: self.create_exponential_backoff_strategy,
             SessionTokenAuthenticatorModel: self.create_session_token_authenticator,
@@ -2218,6 +2228,38 @@ class ModelToComponentFactory:
             parameters=model.parameters or {},
         )
 
+    def create_key_value_extractor(
+        self,
+        model: KeyValueExtractorModel,
+        config: Config,
+        decoder: Optional[Decoder] = JsonDecoder(parameters={}),
+        **kwargs: Any,
+    ) -> KeyValueExtractor:
+        keys_extractor = self._create_component_from_model(
+            model=model.keys_extractor, decoder=decoder, config=config
+        )
+        values_extractor = self._create_component_from_model(
+            model=model.values_extractor, decoder=decoder, config=config
+        )
+
+        return KeyValueExtractor(keys_extractor=keys_extractor, values_extractor=values_extractor)
+
+    def create_combined_extractor(
+        self,
+        model: CombinedExtractorModel,
+        config: Config,
+        decoder: Optional[Decoder] = JsonDecoder(parameters={}),
+        **kwargs: Any,
+    ) -> CombinedExtractor:
+        extractors = [
+            self._create_component_from_model(
+                model=extractor, decoder=decoder, config=config
+            )
+            for extractor in model.extractors
+        ]
+
+        return CombinedExtractor(extractors=extractors)
+
     @staticmethod
     def create_response_to_file_extractor(
         model: ResponseToFileExtractorModel,
@@ -2432,10 +2474,14 @@ class ModelToComponentFactory:
         schema_type_identifier = self._create_component_from_model(
             model.schema_type_identifier, config=config, parameters=model.parameters or {}
         )
+        schema_filter = self._create_component_from_model(
+            model.schema_filter, config=config, parameters=model.parameters or {}
+        )
         return DynamicSchemaLoader(
             retriever=retriever,
             config=config,
             schema_transformations=schema_transformations,
+            schema_filter=schema_filter,
             schema_type_identifier=schema_type_identifier,
             parameters=model.parameters or {},
         )
@@ -3597,6 +3643,7 @@ class ModelToComponentFactory:
             field_path=field_path,  # type: ignore[arg-type] # field_path can be str and InterpolatedString
             value=interpolated_value,
             value_type=ModelToComponentFactory._json_schema_type_name_to_type(model.value_type),
+            create_or_update=model.create_or_update,
             parameters=model.parameters or {},
         )
 
@@ -3643,15 +3690,19 @@ class ModelToComponentFactory:
 
         return StreamConfig(
             configs_pointer=model_configs_pointer,
+            default_values=model.default_values,
             parameters=model.parameters or {},
         )
 
     def create_config_components_resolver(
         self, model: ConfigComponentsResolverModel, config: Config
     ) -> Any:
-        stream_config = self._create_component_from_model(
-            model.stream_config, config=config, parameters=model.parameters or {}
-        )
+
+        model_stream_configs = model.stream_config if isinstance(model.stream_config, list) else [model.stream_config]
+
+        stream_configs = [self._create_component_from_model(
+            stream_config, config=config, parameters=model.parameters or {}
+        ) for stream_config in model_stream_configs]
 
         components_mapping = [
             self._create_component_from_model(
@@ -3665,7 +3716,7 @@ class ModelToComponentFactory:
         ]
 
         return ConfigComponentsResolver(
-            stream_config=stream_config,
+            stream_configs=stream_configs,
             config=config,
             components_mapping=components_mapping,
             parameters=model.parameters or {},
