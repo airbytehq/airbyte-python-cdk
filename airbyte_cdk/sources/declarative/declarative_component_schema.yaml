@@ -1741,34 +1741,9 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
-  KeyValueExtractor:
-    title: Key Value Extractor
-    description: Record extractor that extract with .
-    type: object
-    required:
-      - type
-      - keys_extractor
-      - values_extractor
-    properties:
-      type:
-        type: string
-        enum: [ KeyValueExtractor ]
-      keys_extractor:
-        description: placeholder
-        anyOf:
-          - "$ref": "#/definitions/DpathExtractor"
-          - "$ref": "#/definitions/CustomRecordExtractor"
-      values_extractor:
-        description: placeholder
-        anyOf:
-          - "$ref": "#/definitions/DpathExtractor"
-          - "$ref": "#/definitions/CustomRecordExtractor"
-      $parameters:
-        type: object
-        additionalProperties: true
   CombinedExtractor:
     title: Combined Extractor
-    description: Record extractor that extract with .
+    description: Record extractor that merges the output of multiple sub-extractors into a single record.
     type: object
     required:
       - type
@@ -2366,12 +2341,6 @@ definitions:
           - "$ref": "#/definitions/AsyncRetriever"
           - "$ref": "#/definitions/CustomRetriever"
           - "$ref": "#/definitions/SimpleRetriever"
-      schema_filter:
-        title: Schema Filter
-        description: placeholder
-        anyOf:
-          - "$ref": "#/definitions/RecordFilter"
-          - "$ref": "#/definitions/CustomRecordFilter"
       schema_transformations:
         title: Schema Transformations
         description: A list of transformations to be applied to the schema.
@@ -3370,7 +3339,6 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/DpathExtractor"
           - "$ref": "#/definitions/CombinedExtractor"
-          - "$ref": "#/definitions/KeyValueExtractor"
           - "$ref": "#/definitions/CustomRecordExtractor"
       record_filter:
         title: Record Filter
@@ -4050,9 +4018,6 @@ definitions:
         title: Value Type
         description: The expected data type of the value. If omitted, the type will be inferred from the value provided.
         "$ref": "#/definitions/ValueType"
-      create_or_update:
-        type: boolean
-        default: false
       $parameters:
         type: object
         additionalProperties: true
@@ -4104,10 +4069,6 @@ definitions:
           - ["data"]
           - ["data", "streams"]
           - ["data", "{{ parameters.name }}"]
-      default_values:
-        title: Default Values
-        description: placeholder
-        type: array
       $parameters:
         type: object
         additionalProperties: true
@@ -4119,11 +4080,7 @@ definitions:
         type: string
         enum: [ConfigComponentsResolver]
       stream_config:
-        anyOf:
-          - type: array
-            items:
-              "$ref": "#/definitions/StreamConfig"
-          - "$ref": "#/definitions/StreamConfig"
+        "$ref": "#/definitions/StreamConfig"
       components_mapping:
         type: array
         items:
