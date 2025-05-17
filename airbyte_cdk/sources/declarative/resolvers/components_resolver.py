@@ -22,7 +22,6 @@ class ComponentMappingDefinition:
     value: Union["InterpolatedString", str]
     value_type: Optional[Type[Any]]
     parameters: InitVar[Mapping[str, Any]]
-    create_or_update: Optional[bool] = False
 
 
 @dataclass(frozen=True)
@@ -35,7 +34,6 @@ class ResolvedComponentMappingDefinition:
     value: "InterpolatedString"
     value_type: Optional[Type[Any]]
     parameters: InitVar[Mapping[str, Any]]
-    create_or_update: Optional[bool] = False
 
 
 @deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)
