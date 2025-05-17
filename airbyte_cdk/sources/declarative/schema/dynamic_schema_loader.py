@@ -180,7 +180,7 @@ class DynamicSchemaLoader(SchemaLoader):
         if not self.schema_filter:
             return properties
 
-        filtered_properties = {}
+        filtered_properties: MutableMapping[str, Any] = {}
         for item in self.schema_filter.filter_records(
                 ({k: v} for k, v in properties.items()),
                 {},
