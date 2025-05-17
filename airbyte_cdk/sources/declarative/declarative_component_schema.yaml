@@ -2320,7 +2320,7 @@ definitions:
           - "$ref": "#/definitions/SimpleRetriever"
       schema_filter:
         title: Schema Filter
-        description: placeholder
+        description: Responsible for filtering fields to be added to json schema.
         anyOf:
           - "$ref": "#/definitions/RecordFilter"
           - "$ref": "#/definitions/CustomRecordFilter"
