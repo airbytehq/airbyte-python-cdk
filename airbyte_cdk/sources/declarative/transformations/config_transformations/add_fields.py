@@ -9,28 +9,13 @@ import dpath
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
+from airbyte_cdk.sources.declarative.transformations.add_fields import (
+    AddedFieldDefinition,
+    ParsedAddFieldDefinition,
+)
 from airbyte_cdk.sources.declarative.transformations.config_transformations.config_transformation import (
     ConfigTransformation,
 )
-from airbyte_cdk.sources.types import FieldPointer
-
-
-@dataclass(frozen=True)
-class AddedFieldDefinition:
-    """Defines the field to add on a config"""
-
-    path: FieldPointer
-    value: Union[InterpolatedString, str]
-    value_type: Optional[Type[Any]] = None
-
-
-@dataclass(frozen=True)
-class ParsedAddFieldDefinition:
-    """Defines the field to add on a config"""
-
-    path: FieldPointer
-    value: InterpolatedString
-    value_type: Optional[Type[Any]] = None
 
 
 @dataclass
@@ -44,19 +29,19 @@ class ConfigAddFields(ConfigTransformation):
     Examples of instantiating this transformation via YAML:
     - type: ConfigAddFields
       fields:
-        # hardcoded constant
+        ### hardcoded constant
         - path: ["path"]
           value: "static_value"
 
-        # nested path
+        ### nested path
         - path: ["path", "to", "field"]
           value: "static"
 
-        # from config
+        ### from config
         - path: ["derived_field"]
           value: "{{ config.original_field }}"
 
-        # by supplying any valid Jinja template directive or expression
+        ### by supplying any valid Jinja template directive or expression
         - path: ["two_times_two"]
           value: "{{ 2 * 2 }}"
 
@@ -90,6 +75,7 @@ class ConfigAddFields(ConfigTransformation):
                             add_field.path,
                             InterpolatedString.create(add_field.value, parameters={}),
                             value_type=add_field.value_type,
+                            parameters={},
                         )
                     )
             else:
@@ -98,6 +84,7 @@ class ConfigAddFields(ConfigTransformation):
                         add_field.path,
                         add_field.value,
                         value_type=add_field.value_type,
+                        parameters={},
                     )
                 )
 
