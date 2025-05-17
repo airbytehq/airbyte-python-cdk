@@ -10,6 +10,7 @@ from typing import Any, List, Mapping, MutableMapping, Optional, Union
 import dpath
 from typing_extensions import deprecated
 
+from airbyte_cdk.sources.declarative.extractors.record_filter import RecordFilter
 from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
@@ -126,6 +127,7 @@ class DynamicSchemaLoader(SchemaLoader):
     parameters: InitVar[Mapping[str, Any]]
     schema_type_identifier: SchemaTypeIdentifier
     schema_transformations: List[RecordTransformation] = field(default_factory=lambda: [])
+    schema_filter: Optional[RecordFilter] = None
 
     def get_json_schema(self) -> Mapping[str, Any]:
         """
@@ -151,20 +153,18 @@ class DynamicSchemaLoader(SchemaLoader):
             )
             properties[key] = value
 
-        transformed_properties = self._transform(properties, {})
+        filtered_transformed_properties = self._transform(self._filter(properties))
 
         return {
             "$schema": "https://json-schema.org/draft-07/schema#",
             "type": "object",
             "additionalProperties": True,
-            "properties": transformed_properties,
+            "properties": filtered_transformed_properties,
         }
 
     def _transform(
         self,
         properties: Mapping[str, Any],
-        stream_state: StreamState,
-        stream_slice: Optional[StreamSlice] = None,
     ) -> Mapping[str, Any]:
         for transformation in self.schema_transformations:
             transformation.transform(
@@ -172,6 +172,21 @@ class DynamicSchemaLoader(SchemaLoader):
                 config=self.config,
             )
         return properties
+
+    def _filter(
+        self,
+        properties: Mapping[str, Any],
+    ) -> Mapping[str, Any]:
+        if not self.schema_filter:
+            return properties
+
+        filtered_properties: MutableMapping[str, Any] = {}
+        for item in self.schema_filter.filter_records(
+            ({k: v} for k, v in properties.items()),
+            {},
+        ):
+            filtered_properties.update(item)
+        return filtered_properties
 
     def _get_key(
         self,

@@ -2318,6 +2318,12 @@ definitions:
           - "$ref": "#/definitions/AsyncRetriever"
           - "$ref": "#/definitions/CustomRetriever"
           - "$ref": "#/definitions/SimpleRetriever"
+      schema_filter:
+        title: Schema Filter
+        description: Responsible for filtering fields to be added to json schema.
+        anyOf:
+          - "$ref": "#/definitions/RecordFilter"
+          - "$ref": "#/definitions/CustomRecordFilter"
       schema_transformations:
         title: Schema Transformations
         description: A list of transformations to be applied to the schema.
