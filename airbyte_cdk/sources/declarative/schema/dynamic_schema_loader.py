@@ -174,16 +174,19 @@ class DynamicSchemaLoader(SchemaLoader):
         return properties
 
     def _filter(
-        self,
-        properties: Mapping[str, Any],
+            self,
+            properties: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        if self.schema_filter:
-            filtered_properties = {}
-            for property in self.schema_filter.filter_records(properties.items(), {}):
-                filtered_properties[property[0]] = property[1]
-            return filtered_properties
-        else:
+        if not self.schema_filter:
             return properties
+
+        filtered_properties = {}
+        for item in self.schema_filter.filter_records(
+                ({k: v} for k, v in properties.items()),
+                {},
+        ):
+            filtered_properties.update(item)
+        return filtered_properties
 
     def _get_key(
         self,
