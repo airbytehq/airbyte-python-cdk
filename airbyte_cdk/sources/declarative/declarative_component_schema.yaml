@@ -1422,7 +1422,9 @@ definitions:
       schema_loader:
         title: Schema Loader
         description:
-          Component used to retrieve the schema for the current stream.
+          One or many schema loaders can be used to retrieve the schema for the current stream. When
+          multiple schema loaders are defined, schema properties will be merged together. Schema
+          loaders defined first taking precedence in the event of a conflict.
         anyOf:
           - "$ref": "#/definitions/InlineSchemaLoader"
           - "$ref": "#/definitions/DynamicSchemaLoader"
