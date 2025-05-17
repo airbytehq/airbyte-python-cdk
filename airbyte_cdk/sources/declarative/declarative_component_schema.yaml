@@ -3994,6 +3994,9 @@ definitions:
         title: Value Type
         description: The expected data type of the value. If omitted, the type will be inferred from the value provided.
         "$ref": "#/definitions/ValueType"
+      create_or_update:
+        type: boolean
+        default: false
       $parameters:
         type: object
         additionalProperties: true
@@ -4045,6 +4048,12 @@ definitions:
           - ["data"]
           - ["data", "streams"]
           - ["data", "{{ parameters.name }}"]
+      default_values:
+        title: Default Values
+        description: placeholder
+        type: array
+        items:
+          type: object
       $parameters:
         type: object
         additionalProperties: true
@@ -4056,7 +4065,11 @@ definitions:
         type: string
         enum: [ConfigComponentsResolver]
       stream_config:
-        "$ref": "#/definitions/StreamConfig"
+        anyOf:
+          - type: array
+            items:
+              "$ref": "#/definitions/StreamConfig"
+          - "$ref": "#/definitions/StreamConfig"
       components_mapping:
         type: array
         items:
