@@ -1759,7 +1759,6 @@ definitions:
           anyOf:
             - "$ref": "#/definitions/DpathExtractor"
             - "$ref": "#/definitions/CombinedExtractor"
-            - "$ref": "#/definitions/KeyValueExtractor"
             - "$ref": "#/definitions/CustomRecordExtractor"
       $parameters:
         type: object
