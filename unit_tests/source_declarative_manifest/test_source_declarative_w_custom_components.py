@@ -6,6 +6,7 @@ import datetime
 import json
 import logging
 import sys
+import tempfile
 import types
 from collections.abc import Callable, Mapping
 from pathlib import Path
@@ -17,6 +18,8 @@ import yaml
 from airbyte_protocol_dataclasses.models.airbyte_protocol import AirbyteCatalog
 
 from airbyte_cdk.cli.source_declarative_manifest._run import (
+    _parse_components_from_args,
+    _register_components_from_file,
     create_declarative_source,
 )
 from airbyte_cdk.models import ConfiguredAirbyteCatalog, ConfiguredAirbyteStream
@@ -288,3 +291,89 @@ def test_sync_with_injected_py_components(
                 _read_fn()
         else:
             _read_fn()
+
+
+def test_register_components_from_file() -> None:
+    """Test that components can be properly loaded from a file."""
+    # Create a temporary file with the sample components
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as temp_file:
+        temp_file.write(SAMPLE_COMPONENTS_PY_TEXT)
+        temp_file.flush()
+        file_path = temp_file.name
+
+    try:
+        # Register the components
+        _register_components_from_file(file_path)
+
+        # Verify the components were loaded correctly
+        import components
+
+        assert hasattr(components, "sample_function")
+        assert components.sample_function() == "Hello, World!"
+
+        # Verify the components module is registered in sys.modules
+        assert "components" in sys.modules
+        assert "source_declarative_manifest.components" in sys.modules
+
+        # Verify they are the same module
+        assert sys.modules["components"] is sys.modules["source_declarative_manifest.components"]
+
+        # Clean up the modules
+        if "components" in sys.modules:
+            del sys.modules["components"]
+        if "source_declarative_manifest.components" in sys.modules:
+            del sys.modules["source_declarative_manifest.components"]
+    finally:
+        # Clean up the temporary file
+        Path(file_path).unlink(missing_ok=True)
+
+
+def test_parse_components_from_args(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Test that components can be loaded from command line arguments."""
+    # Create a temporary file with sample components
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as temp_file:
+        temp_file.write(SAMPLE_COMPONENTS_PY_TEXT)
+        temp_file.flush()
+        file_path = temp_file.name
+
+    # Mock the arguments
+    class MockArgs:
+        components_path = file_path
+
+    # Mock the parse_args function to return our mock args
+    def mock_parse_args(*args: Any, **kwargs: Any) -> Any:
+        return MockArgs()
+
+    # Apply the monkeypatch
+    from airbyte_cdk.entrypoint import AirbyteEntrypoint
+
+    monkeypatch.setattr(AirbyteEntrypoint, "parse_args", mock_parse_args)
+
+    try:
+        # Call the function with any args (they'll be ignored due to the mock)
+        result = _parse_components_from_args(["some", "args"])
+
+        # Verify result
+        assert result is True  # Should return True when successful
+
+        # Verify the components were loaded
+        import components
+
+        assert hasattr(components, "sample_function")
+        assert components.sample_function() == "Hello, World!"
+
+        # Verify both module names are registered
+        assert "components" in sys.modules
+        assert "source_declarative_manifest.components" in sys.modules
+
+        # Verify they are the same module
+        assert sys.modules["components"] is sys.modules["source_declarative_manifest.components"]
+
+        # Clean up the modules
+        if "components" in sys.modules:
+            del sys.modules["components"]
+        if "source_declarative_manifest.components" in sys.modules:
+            del sys.modules["source_declarative_manifest.components"]
+    finally:
+        # Clean up the temporary file
+        Path(file_path).unlink(missing_ok=True)
