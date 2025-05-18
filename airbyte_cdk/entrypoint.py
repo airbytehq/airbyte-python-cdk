@@ -84,6 +84,12 @@ class AirbyteEntrypoint(object):
         required_check_parser.add_argument(
             "--config", type=str, required=True, help="path to the json configuration file"
         )
+        check_parser.add_argument(
+            "--manifest-path",
+            type=str,
+            required=False,
+            help="path to the YAML manifest file to inject into the config",
+        )
 
         # discover
         discover_parser = subparsers.add_parser(
@@ -94,6 +100,12 @@ class AirbyteEntrypoint(object):
         required_discover_parser = discover_parser.add_argument_group("required named arguments")
         required_discover_parser.add_argument(
             "--config", type=str, required=True, help="path to the json configuration file"
+        )
+        discover_parser.add_argument(
+            "--manifest-path",
+            type=str,
+            required=False,
+            help="path to the YAML manifest file to inject into the config",
         )
 
         # read
@@ -113,6 +125,12 @@ class AirbyteEntrypoint(object):
             type=str,
             required=True,
             help="path to the catalog used to determine which data to read",
+        )
+        read_parser.add_argument(
+            "--manifest-path",
+            type=str,
+            required=False,
+            help="path to the YAML manifest file to inject into the config",
         )
 
         return main_parser.parse_args(args)

@@ -20,11 +20,12 @@ import json
 import pkgutil
 import sys
 import traceback
-from collections.abc import Mapping
+from collections.abc import Mapping, MutableMapping
 from pathlib import Path
 from typing import Any, cast
 
 import orjson
+import yaml
 
 from airbyte_cdk.entrypoint import AirbyteEntrypoint, launch
 from airbyte_cdk.models import (
@@ -54,7 +55,7 @@ class SourceLocalYaml(YamlDeclarativeSource):
     def __init__(
         self,
         catalog: ConfiguredAirbyteCatalog | None,
-        config: Mapping[str, Any] | None,
+        config: MutableMapping[str, Any] | None,
         state: TState,
         **kwargs: Any,
     ) -> None:
@@ -162,14 +163,27 @@ def create_declarative_source(
     connector builder.
     """
     try:
-        config: Mapping[str, Any] | None
+        config: MutableMapping[str, Any] | None
         catalog: ConfiguredAirbyteCatalog | None
         state: list[AirbyteStateMessage]
         config, catalog, state = _parse_inputs_into_config_catalog_state(args)
-        if config is None or "__injected_declarative_manifest" not in config:
+
+        if config is None:
             raise ValueError(
                 "Invalid config: `__injected_declarative_manifest` should be provided at the root "
-                f"of the config but config only has keys: {list(config.keys() if config else [])}"
+                "of the config or using the --manifest-path argument."
+            )
+
+        # If a manifest_path is provided in the args, inject it into the config
+        injected_manifest = _parse_manifest_from_args(args)
+        if injected_manifest:
+            config["__injected_declarative_manifest"] = injected_manifest
+
+        if "__injected_declarative_manifest" not in config:
+            raise ValueError(
+                "Invalid config: `__injected_declarative_manifest` should be provided at the root "
+                "of the config or using the --manifest-path argument. "
+                f"Config only has keys: {list(config.keys() if config else [])}"
             )
         if not isinstance(config["__injected_declarative_manifest"], dict):
             raise ValueError(
@@ -207,7 +221,7 @@ def create_declarative_source(
 def _parse_inputs_into_config_catalog_state(
     args: list[str],
 ) -> tuple[
-    Mapping[str, Any] | None,
+    MutableMapping[str, Any] | None,
     ConfiguredAirbyteCatalog | None,
     list[AirbyteStateMessage],
 ]:
@@ -229,6 +243,27 @@ def _parse_inputs_into_config_catalog_state(
     )
 
     return config, catalog, state
+
+
+def _parse_manifest_from_args(args: list[str]) -> dict[str, Any] | None:
+    """Extracts and parse the manifest file if specified in the args."""
+    parsed_args = AirbyteEntrypoint.parse_args(args)
+
+    # Safely check if manifest_path is provided in the args
+    if hasattr(parsed_args, "manifest_path") and parsed_args.manifest_path:
+        try:
+            # Read the manifest file
+            with open(parsed_args.manifest_path, "r") as manifest_file:
+                manifest_content = yaml.safe_load(manifest_file)
+                if not isinstance(manifest_content, dict):
+                    raise ValueError(f"Manifest must be a dictionary, got {type(manifest_content)}")
+                return manifest_content
+        except Exception as error:
+            raise ValueError(
+                f"Failed to load manifest file from {parsed_args.manifest_path}: {error}"
+            )
+
+    return None
 
 
 def run() -> None:
