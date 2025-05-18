@@ -90,6 +90,12 @@ class AirbyteEntrypoint(object):
             required=False,
             help="path to the YAML manifest file to inject into the config",
         )
+        check_parser.add_argument(
+            "--components-path",
+            type=str,
+            required=False,
+            help="path to the custom components file, if it exists",
+        )
 
         # discover
         discover_parser = subparsers.add_parser(
@@ -106,6 +112,12 @@ class AirbyteEntrypoint(object):
             type=str,
             required=False,
             help="path to the YAML manifest file to inject into the config",
+        )
+        discover_parser.add_argument(
+            "--components-path",
+            type=str,
+            required=False,
+            help="path to the custom components file, if it exists",
         )
 
         # read
@@ -131,6 +143,12 @@ class AirbyteEntrypoint(object):
             type=str,
             required=False,
             help="path to the YAML manifest file to inject into the config",
+        )
+        read_parser.add_argument(
+            "--components-path",
+            type=str,
+            required=False,
+            help="path to the custom components file, if it exists",
         )
 
         return main_parser.parse_args(args)

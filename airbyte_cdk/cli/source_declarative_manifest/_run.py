@@ -191,6 +191,9 @@ def create_declarative_source(
                 f"but got type: {type(config['__injected_declarative_manifest'])}"
             )
 
+        # Load custom components if provided - this will register them in sys.modules
+        _parse_components_from_args(args)
+
         return ConcurrentDeclarativeSource(
             config=config,
             catalog=catalog,
@@ -264,6 +267,63 @@ def _parse_manifest_from_args(args: list[str]) -> dict[str, Any] | None:
             )
 
     return None
+
+
+def _register_components_from_file(filepath: str) -> None:
+    """Load and register components from a Python file for CLI usage.
+
+    This is a special case for CLI usage that bypasses the checksum validation
+    since the user is explicitly providing the file to execute.
+    """
+    import importlib.util
+    import sys
+
+    # Use Python's import mechanism to properly load the module
+    components_path = Path(filepath)
+
+    # Standard module names that the rest of the system expects
+    module_name = "components"
+    sdm_module_name = "source_declarative_manifest.components"
+
+    # Create module spec
+    spec = importlib.util.spec_from_file_location(module_name, components_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load module from {components_path}")
+
+    # Create module and execute code
+    module = importlib.util.module_from_spec(spec)
+
+    # Register the module BEFORE executing its code
+    # This is critical for features like dataclasses that look up the module
+    sys.modules[module_name] = module
+    sys.modules[sdm_module_name] = module
+
+    # Now execute the module code
+    spec.loader.exec_module(module)
+
+
+def _parse_components_from_args(args: list[str]) -> bool:
+    """Loads and registers the custom components.py module if it exists.
+
+    This function imports the components module from a provided path
+    and registers it in sys.modules so it can be found by the source.
+
+    Returns True if components were registered, False otherwise.
+    """
+    parsed_args = AirbyteEntrypoint.parse_args(args)
+
+    # Safely check if components_path is provided in the args
+    if hasattr(parsed_args, "components_path") and parsed_args.components_path:
+        try:
+            # Use our CLI-specific function that bypasses checksum validation
+            _register_components_from_file(parsed_args.components_path)
+            return True
+        except Exception as error:
+            raise ValueError(
+                f"Failed to load components from {parsed_args.components_path}: {error}"
+            )
+
+    return False
 
 
 def run() -> None:
