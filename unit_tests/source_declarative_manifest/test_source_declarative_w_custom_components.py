@@ -11,7 +11,7 @@ import types
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any
+from typing import Any, Generator
 
 import pytest
 import yaml
@@ -36,15 +36,10 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     register_components_module_from_string,
 )
 from airbyte_cdk.utils.connector_paths import MANIFEST_YAML
-
-SAMPLE_COMPONENTS_PY_TEXT = """
-def sample_function() -> str:
-    return "Hello, World!"
-
-class SimpleClass:
-    def sample_method(self) -> str:
-        return sample_function()
-"""
+from unit_tests.source_declarative_manifest.conftest import (
+    SAMPLE_COMPONENTS_PY_TEXT,
+    verify_components_loaded,
+)
 
 
 def get_resource_path(file_name) -> str:
@@ -293,52 +288,21 @@ def test_sync_with_injected_py_components(
             _read_fn()
 
 
-def test_register_components_from_file() -> None:
+def test_register_components_from_file(components_file: str) -> None:
     """Test that components can be properly loaded from a file."""
-    # Create a temporary file with the sample components
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as temp_file:
-        temp_file.write(SAMPLE_COMPONENTS_PY_TEXT)
-        temp_file.flush()
-        file_path = temp_file.name
+    # Register the components
+    _register_components_from_file(components_file)
 
-    try:
-        # Register the components
-        _register_components_from_file(file_path)
-
-        # Verify the components were loaded correctly
-        import components
-
-        assert hasattr(components, "sample_function")
-        assert components.sample_function() == "Hello, World!"
-
-        # Verify the components module is registered in sys.modules
-        assert "components" in sys.modules
-        assert "source_declarative_manifest.components" in sys.modules
-
-        # Verify they are the same module
-        assert sys.modules["components"] is sys.modules["source_declarative_manifest.components"]
-
-        # Clean up the modules
-        if "components" in sys.modules:
-            del sys.modules["components"]
-        if "source_declarative_manifest.components" in sys.modules:
-            del sys.modules["source_declarative_manifest.components"]
-    finally:
-        # Clean up the temporary file
-        Path(file_path).unlink(missing_ok=True)
+    # Verify the components were loaded correctly
+    verify_components_loaded()
 
 
-def test_parse_components_from_args(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_parse_components_from_args(monkeypatch: pytest.MonkeyPatch, components_file: str) -> None:
     """Test that components can be loaded from command line arguments."""
-    # Create a temporary file with sample components
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False) as temp_file:
-        temp_file.write(SAMPLE_COMPONENTS_PY_TEXT)
-        temp_file.flush()
-        file_path = temp_file.name
 
     # Mock the arguments
     class MockArgs:
-        components_path = file_path
+        components_path = components_file
 
     # Mock the parse_args function to return our mock args
     def mock_parse_args(*args: Any, **kwargs: Any) -> Any:
@@ -349,31 +313,11 @@ def test_parse_components_from_args(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(AirbyteEntrypoint, "parse_args", mock_parse_args)
 
-    try:
-        # Call the function with any args (they'll be ignored due to the mock)
-        result = _parse_components_from_args(["some", "args"])
+    # Call the function with any args (they'll be ignored due to the mock)
+    result = _parse_components_from_args(["some", "args"])
 
-        # Verify result
-        assert result is True  # Should return True when successful
+    # Verify result
+    assert result is True  # Should return True when successful
 
-        # Verify the components were loaded
-        import components
-
-        assert hasattr(components, "sample_function")
-        assert components.sample_function() == "Hello, World!"
-
-        # Verify both module names are registered
-        assert "components" in sys.modules
-        assert "source_declarative_manifest.components" in sys.modules
-
-        # Verify they are the same module
-        assert sys.modules["components"] is sys.modules["source_declarative_manifest.components"]
-
-        # Clean up the modules
-        if "components" in sys.modules:
-            del sys.modules["components"]
-        if "source_declarative_manifest.components" in sys.modules:
-            del sys.modules["source_declarative_manifest.components"]
-    finally:
-        # Clean up the temporary file
-        Path(file_path).unlink(missing_ok=True)
+    # Verify the components were loaded
+    verify_components_loaded()
