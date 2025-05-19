@@ -120,14 +120,6 @@ class ManifestComponentTransformer:
             if found_type:
                 propagated_component["type"] = found_type
 
-        # When there is no resolved type, we're not processing a component (likely a regular object) and don't need to propagate parameters
-        # When the type refers to a json schema, we're not processing a component as well. This check is currently imperfect as there could
-        # be json_schema are not objects but we believe this is not likely in our case because:
-        # * records are Mapping so objects hence SchemaLoader root should be an object
-        # * connection_specification is a Mapping
-        if "type" not in propagated_component or self._is_json_schema_object(propagated_component):
-            return propagated_component
-
         # Combines parameters defined at the current level with parameters from parent components. Parameters at the current
         # level take precedence
         current_parameters = dict(copy.deepcopy(parent_parameters))
@@ -137,6 +129,27 @@ class ManifestComponentTransformer:
             if use_parent_parameters
             else {**current_parameters, **component_parameters}
         )
+
+        # When there is no resolved type, we're not processing a component (likely a regular object) and don't need to propagate parameters
+        # When the type refers to a json schema, we're not processing a component as well. This check is currently imperfect as there could
+        # be json_schema are not objects but we believe this is not likely in our case because:
+        # * records are Mapping so objects hence SchemaLoader root should be an object
+        # * connection_specification is a Mapping
+        if self._is_json_schema_object(propagated_component):
+            return propagated_component
+
+        # For objects that don't have type check if their object fields have nested components which should have `$parameters` in it.
+        # For example, QueryProperties in requester.request_parameters, etc.
+        # Update propagated_component value with nested components with parent `$parameters` if needed and return propagated_component.
+        if "type" not in propagated_component:
+            if self._has_nested_components(propagated_component):
+                propagated_component = self._process_nested_components(
+                    propagated_component,
+                    parent_field_identifier,
+                    current_parameters,
+                    use_parent_parameters,
+                )
+            return propagated_component
 
         # Parameters should be applied to the current component fields with the existing field taking precedence over parameters if
         # both exist
@@ -181,4 +194,33 @@ class ManifestComponentTransformer:
 
     @staticmethod
     def _is_json_schema_object(propagated_component: Mapping[str, Any]) -> bool:
-        return propagated_component.get("type") == "object"
+        return propagated_component.get("type") == "object" or propagated_component.get("type") == [
+            "null",
+            "object",
+        ]
+
+    @staticmethod
+    def _has_nested_components(propagated_component: Dict[str, Any]) -> bool:
+        for k, v in propagated_component.items():
+            if isinstance(v, dict) and v.get("type"):
+                return True
+        return False
+
+    def _process_nested_components(
+        self,
+        propagated_component: Dict[str, Any],
+        parent_field_identifier: str,
+        current_parameters: Mapping[str, Any],
+        use_parent_parameters: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        for field_name, field_value in propagated_component.items():
+            if isinstance(field_value, dict) and field_value.get("type"):
+                nested_component_with_parameters = self.propagate_types_and_parameters(
+                    parent_field_identifier,
+                    field_value,
+                    current_parameters,
+                    use_parent_parameters=use_parent_parameters,
+                )
+                propagated_component[field_name] = nested_component_with_parameters
+
+        return propagated_component

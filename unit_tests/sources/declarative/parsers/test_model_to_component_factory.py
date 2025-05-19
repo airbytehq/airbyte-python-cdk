@@ -1,14 +1,17 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from copy import deepcopy
 
 # mypy: ignore-errors
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable, Mapping
+from pathlib import Path
+from typing import Any, Iterable, Mapping, Optional, Union
 
 import freezegun
 import pytest
 import requests
+from freezegun.api import FakeDatetime
 from pydantic.v1 import ValidationError
 
 from airbyte_cdk import AirbyteTracedException
@@ -42,6 +45,7 @@ from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
 from airbyte_cdk.sources.declarative.incremental import (
+    ConcurrentPerPartitionCursor,
     CursorFactory,
     DatetimeBasedCursor,
     PerPartitionCursor,
@@ -166,7 +170,7 @@ from airbyte_cdk.sources.streams.concurrent.clamping import (
     MonthClampingStrategy,
     WeekClampingStrategy,
 )
-from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
+from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
 )
@@ -188,6 +192,21 @@ resolver = ManifestReferenceResolver()
 transformer = ManifestComponentTransformer()
 
 input_config = {"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"]}
+
+
+def get_factory_with_parameters(
+    connector_state_manager: Optional[ConnectorStateManager] = None,
+) -> ModelToComponentFactory:
+    return ModelToComponentFactory(
+        connector_state_manager=connector_state_manager,
+    )
+
+
+def read_yaml_file(resource_path: Union[str, Path]) -> str:
+    yaml_path = Path(__file__).parent / resource_path
+    with open(yaml_path, "r") as file:
+        content = file.read()
+    return content
 
 
 def test_create_check_stream():
@@ -923,6 +942,120 @@ list_stream:
     assert isinstance(list_stream_slicer, ListPartitionRouter)
     assert list_stream_slicer.values == ["airbyte", "airbyte-cloud"]
     assert list_stream_slicer._cursor_field.string == "a_key"
+
+
+@pytest.mark.parametrize(
+    "use_legacy_state",
+    [
+        False,
+        True,
+    ],
+    ids=[
+        "running_with_newest_state",
+        "running_with_legacy_state",
+    ],
+)
+@freezegun.freeze_time("2025-05-14")
+def test_stream_with_incremental_and_async_retriever_with_partition_router(use_legacy_state):
+    """
+    This test is to check the behavior of the stream with async retriever and partition router
+    when the state is in the legacy format or the newest format.
+    """
+    content = read_yaml_file(
+        "resources/stream_with_incremental_and_aync_retriever_with_partition_router.yaml"
+    )
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["list_stream"], {}
+    )
+    cursor_time_period_value = "2025-05-06T12:00:00+0000"
+    cursor_field_key = "TimePeriod"
+    account_id = 999999999
+    per_partition_key = {"account_id": account_id}
+
+    legacy_stream_state = {account_id: {cursor_field_key: cursor_time_period_value}}
+    states = [
+        {"partition": per_partition_key, "cursor": {cursor_field_key: cursor_time_period_value}}
+    ]
+
+    stream_state = {
+        "use_global_cursor": False,
+        "states": states,
+        "lookback_window": 0,
+    }
+    if not use_legacy_state:
+        # to check it keeps other data in the newest state format
+        stream_state["state"] = {cursor_field_key: "2025-05-12T12:00:00+0000"}
+        stream_state["lookback_window"] = 46
+        stream_state["use_global_cursor"] = False
+        per_partition_key["parent_slice"] = {"parent_slice": {}, "user_id": "102023653"}
+
+    state_to_test = legacy_stream_state if use_legacy_state else stream_state
+    connector_state_manager = ConnectorStateManager(
+        state=[
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="lists"),
+                    stream_state=AirbyteStateBlob(state_to_test),
+                ),
+            )
+        ]
+    )
+
+    factory_with_parameters = get_factory_with_parameters(
+        connector_state_manager=connector_state_manager
+    )
+    connector_config = deepcopy(input_config)
+    connector_config["reports_start_date"] = "2025-01-01"
+    stream = factory_with_parameters.create_component(
+        model_type=DeclarativeStreamModel,
+        component_definition=stream_manifest,
+        config=connector_config,
+    )
+
+    assert isinstance(stream, DeclarativeStream)
+    assert isinstance(stream.retriever, AsyncRetriever)
+    stream_slicer = stream.retriever.stream_slicer.stream_slicer
+    assert isinstance(stream_slicer, ConcurrentPerPartitionCursor)
+    assert stream_slicer.state == stream_state
+    import json
+
+    cursor_perpartition = stream_slicer._cursor_per_partition
+    expected_cursor_perpartition_key = json.dumps(per_partition_key, sort_keys=True).replace(
+        " ", ""
+    )
+    assert (
+        cursor_perpartition[expected_cursor_perpartition_key].cursor_field.cursor_field_key
+        == cursor_field_key
+    )
+    assert cursor_perpartition[expected_cursor_perpartition_key].start == datetime(
+        2025, 5, 6, 12, 0, tzinfo=timezone.utc
+    )
+    assert (
+        cursor_perpartition[expected_cursor_perpartition_key].state[cursor_field_key]
+        == cursor_time_period_value
+    )
+
+    concurrent_cursor = cursor_perpartition[expected_cursor_perpartition_key]
+    assert concurrent_cursor._concurrent_state == {
+        "legacy": {cursor_field_key: cursor_time_period_value},
+        "slices": [
+            {
+                "end": FakeDatetime(2025, 5, 6, 12, 0, tzinfo=timezone.utc),
+                "most_recent_cursor_value": FakeDatetime(2025, 5, 6, 12, 0, tzinfo=timezone.utc),
+                "start": FakeDatetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc),
+            }
+        ],
+        "state_type": "date-range",
+    }
+
+    stream_slices = list(concurrent_cursor.stream_slices())
+    expected_stream_slices = [
+        {"start_time": cursor_time_period_value, "end_time": "2025-05-14T00:00:00+0000"}
+    ]
+    assert stream_slices == expected_stream_slices
 
 
 def test_resumable_full_refresh_stream():
