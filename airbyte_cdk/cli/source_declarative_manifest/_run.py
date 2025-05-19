@@ -257,6 +257,8 @@ def _parse_manifest_from_file(filepath: str) -> dict[str, Any] | None:
     try:
         with open(filepath, "r") as manifest_file:
             manifest_content = yaml.safe_load(manifest_file)
+            if manifest_content is None:
+                raise ValueError(f"Manifest file at {filepath} is empty")
             if not isinstance(manifest_content, dict):
                 raise ValueError(f"Manifest must be a dictionary, got {type(manifest_content)}")
             return manifest_content
