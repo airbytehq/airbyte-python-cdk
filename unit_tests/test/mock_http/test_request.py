@@ -156,3 +156,10 @@ class HttpRequestMatcherTest(TestCase):
         request_to_match = HttpRequest("mock://test.com/path", ANY_QUERY_PARAMS)
         actual_request = HttpRequest("mock://test.com/path", ANY_QUERY_PARAMS)
         assert actual_request.matches(request_to_match)
+
+    def test_given_on_match_is_mapping_but_not_input_when_matches_then_return_false(self):
+        request_to_match = HttpRequest(
+            "mock://test.com/path", body={"first_field": "another value"}
+        )
+        actual_request = HttpRequest("mock://test.com/path", body="another_request_body")
+        assert not actual_request.matches(request_to_match)

@@ -35,6 +35,8 @@ from .airbyte_protocol import (
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteStream,
     ConnectorSpecification,
+    DestinationCatalog,
+    DestinationOperation,
     DestinationSyncMode,
     EstimateType,
     FailureType,
