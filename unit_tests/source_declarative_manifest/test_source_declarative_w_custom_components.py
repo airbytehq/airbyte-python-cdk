@@ -17,6 +17,7 @@ import yaml
 from airbyte_protocol_dataclasses.models.airbyte_protocol import AirbyteCatalog
 
 from airbyte_cdk.cli.source_declarative_manifest._run import (
+    _register_components_from_file,
     create_declarative_source,
 )
 from airbyte_cdk.models import ConfiguredAirbyteCatalog, ConfiguredAirbyteStream
@@ -33,15 +34,10 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     register_components_module_from_string,
 )
 from airbyte_cdk.utils.connector_paths import MANIFEST_YAML
-
-SAMPLE_COMPONENTS_PY_TEXT = """
-def sample_function() -> str:
-    return "Hello, World!"
-
-class SimpleClass:
-    def sample_method(self) -> str:
-        return sample_function()
-"""
+from unit_tests.source_declarative_manifest.conftest import (
+    SAMPLE_COMPONENTS_PY_TEXT,
+    verify_components_loaded,
+)
 
 
 def get_resource_path(file_name) -> str:
@@ -288,3 +284,12 @@ def test_sync_with_injected_py_components(
                 _read_fn()
         else:
             _read_fn()
+
+
+def test_register_components_from_file(components_file: str) -> None:
+    """Test that components can be properly loaded from a file."""
+    # Register the components
+    _register_components_from_file(components_file)
+
+    # Verify the components were loaded correctly
+    verify_components_loaded()
