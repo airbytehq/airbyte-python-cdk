@@ -70,7 +70,7 @@ _MANIFEST = {
                 },
                 "schema_filter": {
                     "type": "RecordFilter",
-                    "condition": "{{ 'filtered_field' not in record }}"
+                    "condition": "{{ 'filtered_field' not in record }}",
                 },
                 "schema_transformations": [
                     {
