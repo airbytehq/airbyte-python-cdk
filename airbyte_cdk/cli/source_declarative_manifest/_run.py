@@ -255,7 +255,7 @@ def _parse_inputs_into_config_catalog_state(
 def _parse_manifest_from_file(filepath: str) -> dict[str, Any] | None:
     """Extract and parse a manifest file specified in the args."""
     try:
-        with open(filepath, "r") as manifest_file:
+        with open(filepath, "r", encoding="utf-8") as manifest_file:
             manifest_content = yaml.safe_load(manifest_file)
             if not isinstance(manifest_content, dict):
                 raise ValueError(f"Manifest must be a dictionary, got {type(manifest_content)}")
