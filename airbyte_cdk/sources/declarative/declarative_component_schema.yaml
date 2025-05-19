@@ -1741,6 +1741,28 @@ definitions:
       $parameters:
         type: object
         additionalProperties: true
+  CombinedExtractor:
+    title: Combined Extractor
+    description: Record extractor that merges the output of multiple sub-extractors into a single record.
+    type: object
+    required:
+      - type
+      - extractors
+    properties:
+      type:
+        type: string
+        enum: [ CombinedExtractor ]
+      extractors:
+        description: placeholder
+        type: array
+        items:
+          anyOf:
+            - "$ref": "#/definitions/DpathExtractor"
+            - "$ref": "#/definitions/CombinedExtractor"
+            - "$ref": "#/definitions/CustomRecordExtractor"
+      $parameters:
+        type: object
+        additionalProperties: true
   DpathExtractor:
     title: Dpath Extractor
     description: Record extractor that searches a decoded response over a path defined as an array of fields.
@@ -3315,6 +3337,7 @@ definitions:
       extractor:
         anyOf:
           - "$ref": "#/definitions/DpathExtractor"
+          - "$ref": "#/definitions/CombinedExtractor"
           - "$ref": "#/definitions/CustomRecordExtractor"
       record_filter:
         title: Record Filter

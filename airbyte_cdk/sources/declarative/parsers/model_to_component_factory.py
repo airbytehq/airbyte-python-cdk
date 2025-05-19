@@ -83,6 +83,7 @@ from airbyte_cdk.sources.declarative.decoders.composite_raw_decoder import (
     Parser,
 )
 from airbyte_cdk.sources.declarative.extractors import (
+    CombinedExtractor,
     DpathExtractor,
     RecordFilter,
     RecordSelector,
@@ -141,6 +142,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     CheckStream as CheckStreamModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    CombinedExtractor as CombinedExtractorModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ComplexFieldType as ComplexFieldTypeModel,
@@ -641,6 +645,7 @@ class ModelToComponentFactory:
             DefaultErrorHandlerModel: self.create_default_error_handler,
             DefaultPaginatorModel: self.create_default_paginator,
             DpathExtractorModel: self.create_dpath_extractor,
+            CombinedExtractorModel: self.create_combined_extractor,
             ResponseToFileExtractorModel: self.create_response_to_file_extractor,
             ExponentialBackoffStrategyModel: self.create_exponential_backoff_strategy,
             SessionTokenAuthenticatorModel: self.create_session_token_authenticator,
@@ -2217,6 +2222,20 @@ class ModelToComponentFactory:
             config=config,
             parameters=model.parameters or {},
         )
+
+    def create_combined_extractor(
+        self,
+        model: CombinedExtractorModel,
+        config: Config,
+        decoder: Optional[Decoder] = JsonDecoder(parameters={}),
+        **kwargs: Any,
+    ) -> CombinedExtractor:
+        extractors = [
+            self._create_component_from_model(model=extractor, decoder=decoder, config=config)
+            for extractor in model.extractors
+        ]
+
+        return CombinedExtractor(extractors=extractors)
 
     @staticmethod
     def create_response_to_file_extractor(
