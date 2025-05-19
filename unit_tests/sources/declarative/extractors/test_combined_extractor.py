@@ -127,4 +127,4 @@ def test_combined_extractor():
         ]
 
     assert len(records) == 1
-    assert records[0].data == {"customer_segment": "enterprise", "metrics": {"revenue": 295000}}
+    assert records[0].data == {"customer_segment": "enterprise", "revenue": 295000}
