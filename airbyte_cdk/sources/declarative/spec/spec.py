@@ -98,19 +98,14 @@ class Spec:
             for message in self.message_repository.consume_queue():
                 print(orjson.dumps(AirbyteMessageSerializer.dump(message)).decode())
 
-    def transform_config(self, config: MutableMapping[str, Any]) -> MutableMapping[str, Any]:
+    def transform_config(self, config: MutableMapping[str, Any]) -> None:
         """
         Apply all config transformations to the provided config.
 
         :param config: The user-provided configuration
-        :return: The transformed configuration
         """
-        mutable_config = dict(config)
-
         for transformation in self.config_transformations:
-            transformation.transform(mutable_config)
-
-        return mutable_config
+            transformation.transform(config)
 
     def validate_config(self, config: MutableMapping[str, Any]) -> None:
         """

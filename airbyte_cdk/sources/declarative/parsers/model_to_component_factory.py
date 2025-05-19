@@ -499,7 +499,7 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
     RequestOptionsProvider,
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
-from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
+from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod, Requester
 from airbyte_cdk.sources.declarative.resolvers import (
     ComponentMappingDefinition,
     ConfigComponentsResolver,
@@ -541,6 +541,9 @@ from airbyte_cdk.sources.declarative.transformations.config_transformations impo
     ConfigAddFields,
     ConfigRemapField,
     ConfigRemoveFields,
+)
+from airbyte_cdk.sources.declarative.transformations.config_transformations.config_transformation import (
+    ConfigTransformation,
 )
 from airbyte_cdk.sources.declarative.transformations.dpath_flatten_fields import (
     DpathFlattenFields,
@@ -823,9 +826,10 @@ class ModelToComponentFactory:
     def create_config_migration(
         self, model: ConfigMigrationModel, config: Config
     ) -> ConfigMigration:
-        transformations = []
-        for transformation in model.transformations:
-            transformations.append(self._create_component_from_model(transformation, config))
+        transformations: List[ConfigTransformation] = [
+            self._create_component_from_model(transformation, config)
+            for transformation in model.transformations
+        ]
 
         return ConfigMigration(
             description=model.description,
@@ -3604,24 +3608,39 @@ class ModelToComponentFactory:
         )
 
     def create_spec(self, model: SpecModel, config: Config, **kwargs: Any) -> Spec:
-        config_migrations = []
-        config_transformations = []
-        config_validations = []
-
-        if model.config_normalization_rules:
-            if model.config_normalization_rules.config_migrations:
-                for migration in model.config_normalization_rules.config_migrations:
-                    config_migrations.append(self._create_component_from_model(migration, config))
-
-            if model.config_normalization_rules.transformations:
-                for transformation in model.config_normalization_rules.transformations:
-                    config_transformations.append(
-                        self._create_component_from_model(transformation, config)
-                    )
-
-            if model.config_normalization_rules.validations:
-                for validation in model.config_normalization_rules.validations:
-                    config_validations.append(self._create_component_from_model(validation, config))
+        config_migrations = [
+            self._create_component_from_model(migration, config)
+            for migration in (
+                model.config_normalization_rules.config_migrations
+                if (
+                    model.config_normalization_rules
+                    and model.config_normalization_rules.config_migrations
+                )
+                else []
+            )
+        ]
+        config_transformations = [
+            self._create_component_from_model(transformation, config)
+            for transformation in (
+                model.config_normalization_rules.transformations
+                if (
+                    model.config_normalization_rules
+                    and model.config_normalization_rules.transformations
+                )
+                else []
+            )
+        ]
+        config_validations = [
+            self._create_component_from_model(validation, config)
+            for validation in (
+                model.config_normalization_rules.validations
+                if (
+                    model.config_normalization_rules
+                    and model.config_normalization_rules.validations
+                )
+                else []
+            )
+        ]
 
         return Spec(
             connection_specification=model.connection_specification,

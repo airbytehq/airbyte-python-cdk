@@ -3814,6 +3814,7 @@ definitions:
             type: array
             items:
               "$ref": "#/definitions/ConfigMigration"
+            default: []
           transformations:
             title: Transformations
             description: The list of transformations that will be applied on the incoming config at the start of each sync. The transformations will be applied in the order they are defined.
@@ -3823,6 +3824,7 @@ definitions:
                 - "$ref": "#/definitions/ConfigRemapField"
                 - "$ref": "#/definitions/ConfigAddFields"
                 - "$ref": "#/definitions/ConfigRemoveFields"
+            default: []
           validations:
             title: Validations
             description: The list of validations that will be performed on the incoming config at the start of each sync.
@@ -3831,13 +3833,18 @@ definitions:
               anyOf:
                 - "$ref": "#/definitions/DpathValidator"
                 - "$ref": "#/definitions/PredicateValidator"
+            default: []
   ConfigMigration:
     title: Config Migration
     description: A config migration that will be applied on the incoming config at the start of a sync.
     type: object
     required:
+      - type
       - transformations
     properties:
+      type:
+        type: string
+        enum: [ConfigMigration]
       description:
         type: string
         description: The description/purpose of the config migration.
@@ -4238,7 +4245,7 @@ definitions:
           - ["data", "{{ parameters.name }}"]
           - ["data", "*", "record"]
       validation_strategy:
-        title: Validation Stragey
+        title: Validation Strategy
         description: The condition that the specified config value will be evaluated against
         anyOf:
           - "$ref": "#/definitions/ValidateAdheresToSchema"
