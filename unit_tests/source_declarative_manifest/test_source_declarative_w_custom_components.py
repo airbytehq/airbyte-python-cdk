@@ -6,19 +6,17 @@ import datetime
 import json
 import logging
 import sys
-import tempfile
 import types
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, Generator
+from typing import Any
 
 import pytest
 import yaml
 from airbyte_protocol_dataclasses.models.airbyte_protocol import AirbyteCatalog
 
 from airbyte_cdk.cli.source_declarative_manifest._run import (
-    _parse_components_from_args,
     _register_components_from_file,
     create_declarative_source,
 )
@@ -294,30 +292,4 @@ def test_register_components_from_file(components_file: str) -> None:
     _register_components_from_file(components_file)
 
     # Verify the components were loaded correctly
-    verify_components_loaded()
-
-
-def test_parse_components_from_args(monkeypatch: pytest.MonkeyPatch, components_file: str) -> None:
-    """Test that components can be loaded from command line arguments."""
-
-    # Mock the arguments
-    class MockArgs:
-        components_path = components_file
-
-    # Mock the parse_args function to return our mock args
-    def mock_parse_args(*args: Any, **kwargs: Any) -> Any:
-        return MockArgs()
-
-    # Apply the monkeypatch
-    from airbyte_cdk.entrypoint import AirbyteEntrypoint
-
-    monkeypatch.setattr(AirbyteEntrypoint, "parse_args", mock_parse_args)
-
-    # Call the function with any args (they'll be ignored due to the mock)
-    result = _parse_components_from_args(["some", "args"])
-
-    # Verify result
-    assert result is True  # Should return True when successful
-
-    # Verify the components were loaded
     verify_components_loaded()

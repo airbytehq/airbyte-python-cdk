@@ -16,11 +16,12 @@ source-declarative-manifest spec
 
 from __future__ import annotations
 
+import argparse
 import json
 import pkgutil
 import sys
 import traceback
-from collections.abc import Mapping, MutableMapping
+from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -92,7 +93,8 @@ def handle_command(args: list[str]) -> None:
 
 def _get_local_yaml_source(args: list[str]) -> SourceLocalYaml:
     try:
-        config, catalog, state = _parse_inputs_into_config_catalog_state(args)
+        parsed_args = AirbyteEntrypoint.parse_args(args)
+        config, catalog, state = _parse_inputs_into_config_catalog_state(parsed_args)
         return SourceLocalYaml(config=config, catalog=catalog, state=state)
     except Exception as error:
         print(
@@ -166,7 +168,9 @@ def create_declarative_source(
         config: MutableMapping[str, Any] | None
         catalog: ConfiguredAirbyteCatalog | None
         state: list[AirbyteStateMessage]
-        config, catalog, state = _parse_inputs_into_config_catalog_state(args)
+
+        parsed_args = AirbyteEntrypoint.parse_args(args)
+        config, catalog, state = _parse_inputs_into_config_catalog_state(parsed_args)
 
         if config is None:
             raise ValueError(
@@ -175,9 +179,10 @@ def create_declarative_source(
             )
 
         # If a manifest_path is provided in the args, inject it into the config
-        injected_manifest = _parse_manifest_from_args(args)
-        if injected_manifest:
-            config["__injected_declarative_manifest"] = injected_manifest
+        if hasattr(parsed_args, "manifest_path") and parsed_args.manifest_path:
+            injected_manifest = _parse_manifest_from_file(parsed_args.manifest_path)
+            if injected_manifest:
+                config["__injected_declarative_manifest"] = injected_manifest
 
         if "__injected_declarative_manifest" not in config:
             raise ValueError(
@@ -191,8 +196,8 @@ def create_declarative_source(
                 f"but got type: {type(config['__injected_declarative_manifest'])}"
             )
 
-        # Load custom components if provided - this will register them in sys.modules
-        _parse_components_from_args(args)
+        if hasattr(parsed_args, "components_path") and parsed_args.components_path:
+            _register_components_from_file(parsed_args.components_path)
 
         return ConcurrentDeclarativeSource(
             config=config,
@@ -222,13 +227,12 @@ def create_declarative_source(
 
 
 def _parse_inputs_into_config_catalog_state(
-    args: list[str],
+    parsed_args: argparse.Namespace,
 ) -> tuple[
     MutableMapping[str, Any] | None,
     ConfiguredAirbyteCatalog | None,
     list[AirbyteStateMessage],
 ]:
-    parsed_args = AirbyteEntrypoint.parse_args(args)
     config = (
         ConcurrentDeclarativeSource.read_config(parsed_args.config)
         if hasattr(parsed_args, "config")
@@ -248,40 +252,25 @@ def _parse_inputs_into_config_catalog_state(
     return config, catalog, state
 
 
-def _parse_manifest_from_args(args: list[str]) -> dict[str, Any] | None:
-    """Extracts and parse the manifest file if specified in the args."""
-    parsed_args = AirbyteEntrypoint.parse_args(args)
-
-    # Safely check if manifest_path is provided in the args
-    if hasattr(parsed_args, "manifest_path") and parsed_args.manifest_path:
-        try:
-            # Read the manifest file
-            with open(parsed_args.manifest_path, "r") as manifest_file:
-                manifest_content = yaml.safe_load(manifest_file)
-                if not isinstance(manifest_content, dict):
-                    raise ValueError(f"Manifest must be a dictionary, got {type(manifest_content)}")
-                return manifest_content
-        except Exception as error:
-            raise ValueError(
-                f"Failed to load manifest file from {parsed_args.manifest_path}: {error}"
-            )
-
-    return None
+def _parse_manifest_from_file(filepath: str) -> dict[str, Any] | None:
+    """Extract and parse a manifest file specified in the args."""
+    try:
+        with open(filepath, "r") as manifest_file:
+            manifest_content = yaml.safe_load(manifest_file)
+            if not isinstance(manifest_content, dict):
+                raise ValueError(f"Manifest must be a dictionary, got {type(manifest_content)}")
+            return manifest_content
+    except Exception as error:
+        raise ValueError(f"Failed to load manifest file from {filepath}: {error}")
 
 
 def _register_components_from_file(filepath: str) -> None:
-    """Load and register components from a Python file for CLI usage.
-
-    This is a special case for CLI usage that bypasses the checksum validation
-    since the user is explicitly providing the file to execute.
-    """
+    """Load and register components from a Python file specified in the args."""
     import importlib.util
     import sys
 
-    # Use Python's import mechanism to properly load the module
     components_path = Path(filepath)
 
-    # Standard module names that the rest of the system expects
     module_name = "components"
     sdm_module_name = "source_declarative_manifest.components"
 
@@ -290,40 +279,13 @@ def _register_components_from_file(filepath: str) -> None:
     if spec is None or spec.loader is None:
         raise ImportError(f"Could not load module from {components_path}")
 
-    # Create module and execute code
+    # Create module and execute code, registering the module before executing its code
+    # To avoid issues with dataclasses that look up the module
     module = importlib.util.module_from_spec(spec)
-
-    # Register the module BEFORE executing its code
-    # This is critical for features like dataclasses that look up the module
     sys.modules[module_name] = module
     sys.modules[sdm_module_name] = module
 
-    # Now execute the module code
     spec.loader.exec_module(module)
-
-
-def _parse_components_from_args(args: list[str]) -> bool:
-    """Loads and registers the custom components.py module if it exists.
-
-    This function imports the components module from a provided path
-    and registers it in sys.modules so it can be found by the source.
-
-    Returns True if components were registered, False otherwise.
-    """
-    parsed_args = AirbyteEntrypoint.parse_args(args)
-
-    # Safely check if components_path is provided in the args
-    if hasattr(parsed_args, "components_path") and parsed_args.components_path:
-        try:
-            # Use our CLI-specific function that bypasses checksum validation
-            _register_components_from_file(parsed_args.components_path)
-            return True
-        except Exception as error:
-            raise ValueError(
-                f"Failed to load components from {parsed_args.components_path}: {error}"
-            )
-
-    return False
 
 
 def run() -> None:
