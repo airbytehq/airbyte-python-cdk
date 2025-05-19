@@ -5,7 +5,7 @@
 from copy import deepcopy
 from dataclasses import InitVar, dataclass, field
 from itertools import product
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Union
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Union, Tuple
 
 import dpath
 from typing_extensions import deprecated
@@ -94,25 +94,22 @@ class ConfigComponentsResolver(ComponentsResolver):
                 )
 
     @property
-    def _stream_config(self):
-        def resolve_path(pointer):
+    def _stream_config(self) -> List[Dict[str, Any]]:
+        def resolve_path(pointer: List[Union[InterpolatedString, str]]) -> List[str]:
             return [
                 node.eval(self.config) if not isinstance(node, str) else node for node in pointer
             ]
 
-        def normalize_configs(configs):
-            return configs if isinstance(configs, list) else [configs]
-
-        def prepare_streams():
+        def prepare_streams() -> Iterable[List[Tuple[int, Any]]]:
             for stream_config in self.stream_configs:
                 path = resolve_path(stream_config.configs_pointer)
                 stream_configs = dpath.get(dict(self.config), path, default=[])
-                stream_configs = normalize_configs(stream_configs)
+                stream_configs = stream_configs if isinstance(stream_configs, list) else [stream_configs]
                 if stream_config.default_values:
                     stream_configs.extend(stream_config.default_values)
                 yield [(i, item) for i, item in enumerate(stream_configs)]
 
-        def merge_combination(combo):
+        def merge_combination(combo: Iterable[Tuple[int, Any]]) -> Dict[str, Any]:
             result = {}
             for config_index, (elem_index, elem) in enumerate(combo):
                 if isinstance(elem, dict):
