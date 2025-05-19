@@ -41,6 +41,7 @@ def to_configured_catalog(
 
 _CONFIG = {
     "start_date": "2024-07-01T00:00:00.000Z",
+    "api_key": "dummy_api_key",
 }
 
 _MANIFEST = {
