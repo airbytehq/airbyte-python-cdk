@@ -265,6 +265,10 @@ def test_given_already_migrated_config_no_control_message_is_emitted(migration_m
 
 def test_given_list_of_transformations_when_transform_config_then_config_is_transformed() -> None:
     input_config = {"planet_code": "CRSC"}
+    expected_config = {
+        "planet_name": "Coruscant",
+        "planet_population": 3_000_000_000_000,
+    }
     spec = component_spec(
         connection_specification={},
         parameters={},
@@ -304,10 +308,9 @@ def test_given_list_of_transformations_when_transform_config_then_config_is_tran
             ),
         ],
     )
-    assert spec.transform_config(input_config) == {
-        "planet_name": "Coruscant",
-        "planet_population": 3_000_000_000_000,
-    }
+    spec.transform_config(input_config)
+
+    assert input_config == expected_config
 
 
 def test_given_valid_config_value_when_validating_then_no_exception_is_raised() -> None:
