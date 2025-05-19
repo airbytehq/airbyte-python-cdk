@@ -43,15 +43,6 @@ _CONFIG = {
     "start_date": "2024-07-01T00:00:00.000Z",
 }
 
-_CONFIG_WITH_STREAM_DUPLICATION = {
-    "start_date": "2024-07-01T00:00:00.000Z",
-    "custom_streams": [
-        {"id": 1, "name": "item_1"},
-        {"id": 2, "name": "item_2"},
-        {"id": 3, "name": "item_2"},
-    ],
-}
-
 _MANIFEST = {
     "version": "6.7.0",
     "type": "DeclarativeSource",
