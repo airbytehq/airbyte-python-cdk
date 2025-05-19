@@ -120,7 +120,9 @@ class ConfigComponentsResolver(ComponentsResolver):
                 path = resolve_path(stream_config.configs_pointer)
                 stream_configs_raw = dpath.get(dict(self.config), path, default=[])
                 stream_configs = (
-                    list(stream_configs_raw) if isinstance(stream_configs_raw, list) else [stream_configs_raw]
+                    list(stream_configs_raw)
+                    if isinstance(stream_configs_raw, list)
+                    else [stream_configs_raw]
                 )
 
                 if stream_config.default_values:

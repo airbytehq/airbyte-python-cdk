@@ -3,8 +3,8 @@
 #
 
 import json
-from unittest.mock import MagicMock
 from copy import deepcopy
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -141,7 +141,9 @@ _MANIFEST = {
 
 # Manifest with a placeholder for custom stream config list override
 _MANIFEST_WITH_STREAM_CONFIGS_LIST = deepcopy(_MANIFEST)
-_MANIFEST_WITH_STREAM_CONFIGS_LIST["dynamic_streams"][0]["components_resolver"]["stream_config"] = [STREAM_CONFIG]
+_MANIFEST_WITH_STREAM_CONFIGS_LIST["dynamic_streams"][0]["components_resolver"]["stream_config"] = [
+    STREAM_CONFIG
+]
 
 
 @pytest.mark.parametrize(
