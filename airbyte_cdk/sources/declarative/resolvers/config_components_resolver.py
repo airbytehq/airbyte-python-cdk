@@ -95,12 +95,27 @@ class ConfigComponentsResolver(ComponentsResolver):
 
     @property
     def _stream_config(self) -> List[Dict[str, Any]]:
-        def resolve_path(pointer: List[Union[InterpolatedString, str]]) -> List[str]:
+        """
+        Builds a list of stream configuration dictionaries.
+
+        Each resulting config represents a unique combination of configurations
+        defined by the `configs_pointer` and any provided `default_values`.
+        """
+
+        def resolve_path(pointer: List[Union["InterpolatedString", str]]) -> List[str]:
+            """
+            Resolves a list of JSON pointer elements by evaluating interpolated strings
+            or using the raw strings directly.
+            """
             return [
                 node.eval(self.config) if not isinstance(node, str) else node for node in pointer
             ]
 
         def prepare_streams() -> Iterable[List[Tuple[int, Any]]]:
+            """
+            Prepares all stream configs to an iterable where each item
+            is a list of (index, config) pairs for a particular stream.
+            """
             for stream_config in self.stream_configs:
                 path = resolve_path(stream_config.configs_pointer)
                 stream_configs = dpath.get(dict(self.config), path, default=[])
@@ -110,6 +125,9 @@ class ConfigComponentsResolver(ComponentsResolver):
                 yield [(i, item) for i, item in enumerate(stream_configs)]
 
         def merge_combination(combo: Iterable[Tuple[int, Any]]) -> Dict[str, Any]:
+            """
+            Merges a combination of indexed config items into a single config dict.
+            """
             result = {}
             for config_index, (elem_index, elem) in enumerate(combo):
                 if isinstance(elem, dict):
