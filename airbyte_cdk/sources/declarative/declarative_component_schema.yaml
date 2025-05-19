@@ -4050,7 +4050,7 @@ definitions:
           - ["data", "{{ parameters.name }}"]
       default_values:
         title: Default Values
-        description: placeholder
+        description: A list of default values, each matching the structure expected from the parsed component value.
         type: array
         items:
           type: object

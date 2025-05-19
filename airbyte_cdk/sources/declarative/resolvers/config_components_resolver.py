@@ -118,12 +118,14 @@ class ConfigComponentsResolver(ComponentsResolver):
             """
             for stream_config in self.stream_configs:
                 path = resolve_path(stream_config.configs_pointer)
-                stream_configs = dpath.get(dict(self.config), path, default=[])
+                stream_configs_raw = dpath.get(dict(self.config), path, default=[])
                 stream_configs = (
-                    stream_configs if isinstance(stream_configs, list) else [stream_configs]
+                    list(stream_configs_raw) if isinstance(stream_configs_raw, list) else [stream_configs_raw]
                 )
+
                 if stream_config.default_values:
                     stream_configs.extend(stream_config.default_values)
+
                 yield [(i, item) for i, item in enumerate(stream_configs)]
 
         def merge_combination(combo: Iterable[Tuple[int, Any]]) -> Dict[str, Any]:
