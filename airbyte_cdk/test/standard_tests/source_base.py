@@ -105,13 +105,22 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         obtain the catalog of streams, and then it runs a `read` job to fetch
         records from those streams.
         """
+        check_result: entrypoint_wrapper.EntrypointOutput = run_test_job(
+            self.create_connector(scenario),
+            "check",
+            test_scenario=scenario,
+        )
+        if scenario.expect_exception and check_result.errors:
+            # Expected failure and we got it. Return early.
+            return
+
         discover_result = run_test_job(
             self.create_connector(scenario),
             "discover",
             test_scenario=scenario,
         )
-        if scenario.expect_exception:
-            assert discover_result.errors, "Expected exception but got none."
+        if scenario.expect_exception and check_result.errors:
+            # Expected failure and we got it. Return early.
             return
 
         configured_catalog = ConfiguredAirbyteCatalog(
@@ -130,6 +139,11 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             test_scenario=scenario,
             catalog=configured_catalog,
         )
+        if scenario.expect_exception and not result.errors:
+            # By now we should have raised an exception.
+            raise AssertionError(
+                "Expected an error but got none."
+            )
 
         if not result.records:
             raise AssertionError("Expected records but got none.")  # noqa: TRY003
