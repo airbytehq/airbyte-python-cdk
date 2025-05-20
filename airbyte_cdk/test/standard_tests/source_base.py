@@ -62,7 +62,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         """Standard test for `discover`."""
         if scenario.expect_exception:
             pytest.skip(
-                "Skipping discover test because the scenario is expected to raise an exception."
+                "Skipping `discover` test because the scenario is expected to raise an exception."
             )
         run_test_job(
             self.create_connector(scenario),
