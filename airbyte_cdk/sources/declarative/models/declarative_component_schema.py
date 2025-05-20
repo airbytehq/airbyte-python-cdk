@@ -10,6 +10,10 @@ from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic.v1 import BaseModel, Extra, Field
 
+from airbyte_cdk.sources.declarative.models.base_model_with_deprecations import (
+    BaseModelWithDeprecations,
+)
+
 
 class AuthFlowType(Enum):
     oauth2_0 = "oauth2.0"
@@ -417,15 +421,18 @@ class JwtAuthenticator(BaseModel):
         ...,
         description="Secret used to sign the JSON web token.",
         examples=["{{ config['secret_key'] }}"],
+        title="Secret Key",
     )
     base64_encode_secret_key: Optional[bool] = Field(
         False,
         description='When set to true, the secret key will be base64 encoded prior to being encoded as part of the JWT. Only set to "true" when required by the API.',
+        title="Base64-encode Secret Key",
     )
     algorithm: Algorithm = Field(
         ...,
         description="Algorithm used to sign the JSON web token.",
         examples=["ES256", "HS256", "RS256", "{{ config['algorithm'] }}"],
+        title="Algorithm",
     )
     token_duration: Optional[int] = Field(
         1200,
@@ -879,6 +886,22 @@ class FlattenFields(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class KeyTransformation(BaseModel):
+    type: Literal["KeyTransformation"]
+    prefix: Optional[str] = Field(
+        None,
+        description="Prefix to add for object keys. If not provided original keys remain unchanged.",
+        examples=["flattened_"],
+        title="Key Prefix",
+    )
+    suffix: Optional[str] = Field(
+        None,
+        description="Suffix to add for object keys. If not provided original keys remain unchanged.",
+        examples=["_flattened"],
+        title="Key Suffix",
+    )
+
+
 class DpathFlattenFields(BaseModel):
     type: Literal["DpathFlattenFields"]
     field_path: List[str] = Field(
@@ -896,6 +919,11 @@ class DpathFlattenFields(BaseModel):
         None,
         description="Whether to replace the origin record or not. Default is False.",
         title="Replace Origin Record",
+    )
+    key_transformation: Optional[KeyTransformation] = Field(
+        None,
+        description="Transformation for object keys. If not provided, original key will be used.",
+        title="Key transformation",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -1236,13 +1264,14 @@ class RecordFilter(BaseModel):
             "{{ record['created_at'] >= stream_interval['start_time'] }}",
             "{{ record.status in ['active', 'expired'] }}",
         ],
+        title="Condition",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
 class SchemaNormalization(Enum):
-    None_ = "None"
     Default = "Default"
+    None_ = "None"
 
 
 class RemoveFields(BaseModel):
@@ -1470,6 +1499,28 @@ class ConfigComponentsResolver(BaseModel):
     stream_config: StreamConfig
     components_mapping: List[ComponentMappingDefinition]
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class RequestBodyPlainText(BaseModel):
+    type: Literal["RequestBodyPlainText"]
+    value: str
+
+
+class RequestBodyUrlEncodedForm(BaseModel):
+    type: Literal["RequestBodyUrlEncodedForm"]
+    value: Dict[str, str]
+
+
+class RequestBodyJsonObject(BaseModel):
+    type: Literal["RequestBodyJsonObject"]
+    value: Dict[str, Any]
+
+
+class RequestBodyGraphQlQuery(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    query: Dict[str, Any] = Field(..., description="The GraphQL query to be executed")
 
 
 class AddedFieldDefinition(BaseModel):
@@ -1778,14 +1829,18 @@ class DefaultErrorHandler(BaseModel):
 class DefaultPaginator(BaseModel):
     type: Literal["DefaultPaginator"]
     pagination_strategy: Union[
-        CursorPagination, CustomPaginationStrategy, OffsetIncrement, PageIncrement
+        PageIncrement, OffsetIncrement, CursorPagination, CustomPaginationStrategy
     ] = Field(
         ...,
         description="Strategy defining how records are paginated.",
         title="Pagination Strategy",
     )
-    page_size_option: Optional[RequestOption] = None
-    page_token_option: Optional[Union[RequestOption, RequestPath]] = None
+    page_size_option: Optional[RequestOption] = Field(
+        None, title="Inject Page Size Into Outgoing HTTP Request"
+    )
+    page_token_option: Optional[Union[RequestOption, RequestPath]] = Field(
+        None, title="Inject Page Token Into Outgoing HTTP Request"
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -1826,20 +1881,21 @@ class ListPartitionRouter(BaseModel):
 
 class RecordSelector(BaseModel):
     type: Literal["RecordSelector"]
-    extractor: Union[CustomRecordExtractor, DpathExtractor]
-    record_filter: Optional[Union[CustomRecordFilter, RecordFilter]] = Field(
+    extractor: Union[DpathExtractor, CustomRecordExtractor]
+    record_filter: Optional[Union[RecordFilter, CustomRecordFilter]] = Field(
         None,
         description="Responsible for filtering records to be emitted by the Source.",
         title="Record Filter",
     )
     schema_normalization: Optional[Union[SchemaNormalization, CustomSchemaNormalization]] = Field(
-        SchemaNormalization.None_,
+        None,
         description="Responsible for normalization according to the schema.",
         title="Schema Normalization",
     )
     transform_before_filtering: Optional[bool] = Field(
-        False,
+        None,
         description="If true, transformation will be applied before record filtering.",
+        title="Transform Before Filtering",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -1867,6 +1923,11 @@ class Spec(BaseModel):
         description="Advanced specification for configuring the authentication flow.",
         title="Advanced Auth",
     )
+
+
+class RequestBodyGraphQL(BaseModel):
+    type: Literal["RequestBodyGraphQL"]
+    value: RequestBodyGraphQlQuery
 
 
 class CompositeErrorHandler(BaseModel):
@@ -2021,8 +2082,8 @@ class SelectiveAuthenticator(BaseModel):
             CustomAuthenticator,
             OAuthAuthenticator,
             JwtAuthenticator,
-            NoAuth,
             SessionTokenAuthenticator,
+            NoAuth,
             LegacySessionTokenAuthenticator,
         ],
     ] = Field(
@@ -2042,33 +2103,64 @@ class SelectiveAuthenticator(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class FileUploader(BaseModel):
+    type: Literal["FileUploader"]
+    requester: Union[HttpRequester, CustomRequester] = Field(
+        ...,
+        description="Requester component that describes how to prepare HTTP requests to send to the source API.",
+    )
+    download_target_extractor: Union[DpathExtractor, CustomRecordExtractor] = Field(
+        ...,
+        description="Responsible for fetching the url where the file is located. This is applied on each records and not on the HTTP response",
+    )
+    file_extractor: Optional[Union[DpathExtractor, CustomRecordExtractor]] = Field(
+        None,
+        description="Responsible for fetching the content of the file. If not defined, the assumption is that the whole response body is the file content",
+    )
+    filename_extractor: Optional[str] = Field(
+        None,
+        description="Defines the name to store the file. Stream name is automatically added to the file path. File unique ID can be used to avoid overwriting files. Random UUID will be used if the extractor is not provided.",
+        examples=[
+            "{{ record.id }}/{{ record.file_name }}/",
+            "{{ record.id }}_{{ record.file_name }}/",
+        ],
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class DeclarativeStream(BaseModel):
     class Config:
         extra = Extra.allow
 
     type: Literal["DeclarativeStream"]
-    retriever: Union[AsyncRetriever, CustomRetriever, SimpleRetriever] = Field(
+    name: Optional[str] = Field("", description="The stream name.", example=["Users"], title="Name")
+    retriever: Union[SimpleRetriever, AsyncRetriever, CustomRetriever] = Field(
         ...,
         description="Component used to coordinate how records are extracted across stream slices and request pages.",
         title="Retriever",
     )
     incremental_sync: Optional[
-        Union[CustomIncrementalSync, DatetimeBasedCursor, IncrementingCountCursor]
+        Union[DatetimeBasedCursor, IncrementingCountCursor, CustomIncrementalSync]
     ] = Field(
         None,
         description="Component used to fetch data incrementally based on a time field in the data.",
         title="Incremental Sync",
     )
-    name: Optional[str] = Field("", description="The stream name.", example=["Users"], title="Name")
-    primary_key: Optional[PrimaryKey] = Field(
-        "", description="The primary key of the stream.", title="Primary Key"
-    )
+    primary_key: Optional[PrimaryKey] = Field("", title="Primary Key")
     schema_loader: Optional[
         Union[
-            DynamicSchemaLoader,
             InlineSchemaLoader,
+            DynamicSchemaLoader,
             JsonFileSchemaLoader,
             CustomSchemaLoader,
+            List[
+                Union[
+                    InlineSchemaLoader,
+                    DynamicSchemaLoader,
+                    JsonFileSchemaLoader,
+                    CustomSchemaLoader,
+                ]
+            ],
         ]
     ] = Field(
         None,
@@ -2099,6 +2191,11 @@ class DeclarativeStream(BaseModel):
         [],
         description="Array of state migrations to be applied on the input state",
         title="State Migrations",
+    )
+    file_uploader: Optional[FileUploader] = Field(
+        None,
+        description="(experimental) Describes how to fetch a file",
+        title="File Uploader",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -2147,11 +2244,13 @@ class SessionTokenAuthenticator(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
-class HttpRequester(BaseModel):
+class HttpRequester(BaseModelWithDeprecations):
     type: Literal["HttpRequester"]
-    url_base: str = Field(
-        ...,
-        description="Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.",
+    url_base: Optional[str] = Field(
+        None,
+        deprecated=True,
+        deprecation_message="Use `url` field instead.",
+        description="Deprecated, use the `url` instead. Base URL of the API source. Do not put sensitive information (e.g. API tokens) into this field - Use the Authenticator component for this.",
         examples=[
             "https://connect.squareup.com/v2",
             "{{ config['base_url'] or 'https://app.posthog.com'}}/api",
@@ -2160,9 +2259,22 @@ class HttpRequester(BaseModel):
         ],
         title="API Base URL",
     )
+    url: Optional[str] = Field(
+        None,
+        description="The URL of the source API endpoint. Do not put sensitive information (e.g. API tokens) into this field - Use the Authenticator component for this.",
+        examples=[
+            "https://connect.squareup.com/v2",
+            "{{ config['url'] or 'https://app.posthog.com'}}/api",
+            "https://connect.squareup.com/v2/quotes/{{ stream_partition['id'] }}/quote_line_groups",
+            "https://example.com/api/v1/resource/{{ next_page_token['id'] }}",
+        ],
+        title="API Endpoint URL",
+    )
     path: Optional[str] = Field(
         None,
-        description="Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authentication component for this.",
+        deprecated=True,
+        deprecation_message="Use `url` field instead.",
+        description="Deprecated, use the `url` instead. Path the specific API endpoint that this stream represents. Do not put sensitive information (e.g. API tokens) into this field - Use the Authenticator component for this.",
         examples=[
             "/products",
             "/quotes/{{ stream_partition['id'] }}/quote_line_groups",
@@ -2170,62 +2282,36 @@ class HttpRequester(BaseModel):
         ],
         title="URL Path",
     )
-    authenticator: Optional[
-        Union[
-            ApiKeyAuthenticator,
-            BasicHttpAuthenticator,
-            BearerAuthenticator,
-            CustomAuthenticator,
-            OAuthAuthenticator,
-            JwtAuthenticator,
-            NoAuth,
-            SessionTokenAuthenticator,
-            LegacySessionTokenAuthenticator,
-            SelectiveAuthenticator,
-        ]
-    ] = Field(
-        None,
-        description="Authentication method to use for requests sent to the API.",
-        title="Authenticator",
-    )
-    error_handler: Optional[
-        Union[DefaultErrorHandler, CustomErrorHandler, CompositeErrorHandler]
-    ] = Field(
-        None,
-        description="Error handler component that defines how to handle errors.",
-        title="Error Handler",
-    )
     http_method: Optional[HttpMethod] = Field(
         HttpMethod.GET,
         description="The HTTP method used to fetch data from the source (can be GET or POST).",
         examples=["GET", "POST"],
         title="HTTP Method",
     )
-    request_body_data: Optional[Union[str, Dict[str, str]]] = Field(
+    authenticator: Optional[
+        Union[
+            ApiKeyAuthenticator,
+            BasicHttpAuthenticator,
+            BearerAuthenticator,
+            OAuthAuthenticator,
+            JwtAuthenticator,
+            SessionTokenAuthenticator,
+            SelectiveAuthenticator,
+            CustomAuthenticator,
+            NoAuth,
+            LegacySessionTokenAuthenticator,
+        ]
+    ] = Field(
         None,
-        description="Specifies how to populate the body of the request with a non-JSON payload. Plain text will be sent as is, whereas objects will be converted to a urlencoded form.",
-        examples=[
-            '[{"clause": {"type": "timestamp", "operator": 10, "parameters":\n    [{"value": {{ stream_interval[\'start_time\'] | int * 1000 }} }]\n  }, "orderBy": 1, "columnName": "Timestamp"}]/\n'
-        ],
-        title="Request Body Payload (Non-JSON)",
+        description="Authentication method to use for requests sent to the API.",
+        title="Authenticator",
     )
-    request_body_json: Optional[Union[str, Dict[str, Any]]] = Field(
+    fetch_properties_from_endpoint: Optional[PropertiesFromEndpoint] = Field(
         None,
-        description="Specifies how to populate the body of the request with a JSON payload. Can contain nested objects.",
-        examples=[
-            {"sort_order": "ASC", "sort_field": "CREATED_AT"},
-            {"key": "{{ config['value'] }}"},
-            {"sort": {"field": "updated_at", "order": "ascending"}},
-        ],
-        title="Request Body JSON Payload",
+        description="Allows for retrieving a dynamic set of properties from an API endpoint which can be injected into outbound request using the stream_partition.extra_fields.",
+        title="Fetch Properties from Endpoint",
     )
-    request_headers: Optional[Union[str, Dict[str, str]]] = Field(
-        None,
-        description="Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.",
-        examples=[{"Output-Format": "JSON"}, {"Version": "{{ config['version'] }}"}],
-        title="Request Headers",
-    )
-    request_parameters: Optional[Union[str, Dict[str, Union[str, Any]]]] = Field(
+    request_parameters: Optional[Union[Dict[str, Union[str, QueryProperties]], str]] = Field(
         None,
         description="Specifies the query parameters that should be set on an outgoing HTTP request given the inputs.",
         examples=[
@@ -2237,6 +2323,81 @@ class HttpRequester(BaseModel):
             {"sort_by[asc]": "updated_at"},
         ],
         title="Query Parameters",
+    )
+    request_headers: Optional[Union[Dict[str, str], str]] = Field(
+        None,
+        description="Return any non-auth headers. Authentication headers will overwrite any overlapping headers returned from this method.",
+        examples=[{"Output-Format": "JSON"}, {"Version": "{{ config['version'] }}"}],
+        title="Request Headers",
+    )
+    request_body_data: Optional[Union[Dict[str, str], str]] = Field(
+        None,
+        deprecated=True,
+        deprecation_message="Use `request_body` field instead.",
+        description="Specifies how to populate the body of the request with a non-JSON payload. Plain text will be sent as is, whereas objects will be converted to a urlencoded form.",
+        examples=[
+            '[{"clause": {"type": "timestamp", "operator": 10, "parameters":\n    [{"value": {{ stream_interval[\'start_time\'] | int * 1000 }} }]\n  }, "orderBy": 1, "columnName": "Timestamp"}]/\n'
+        ],
+        title="Request Body Payload (Non-JSON)",
+    )
+    request_body_json: Optional[Union[Dict[str, Any], str]] = Field(
+        None,
+        deprecated=True,
+        deprecation_message="Use `request_body` field instead.",
+        description="Specifies how to populate the body of the request with a JSON payload. Can contain nested objects.",
+        examples=[
+            {"sort_order": "ASC", "sort_field": "CREATED_AT"},
+            {"key": "{{ config['value'] }}"},
+            {"sort": {"field": "updated_at", "order": "ascending"}},
+        ],
+        title="Request Body JSON Payload",
+    )
+    request_body: Optional[
+        Union[
+            RequestBodyPlainText,
+            RequestBodyUrlEncodedForm,
+            RequestBodyJsonObject,
+            RequestBodyGraphQL,
+        ]
+    ] = Field(
+        None,
+        description="Specifies how to populate the body of the request with a payload. Can contain nested objects.",
+        examples=[
+            {
+                "type": "RequestBodyJsonObject",
+                "value": {"sort_order": "ASC", "sort_field": "CREATED_AT"},
+            },
+            {
+                "type": "RequestBodyJsonObject",
+                "value": {"key": "{{ config['value'] }}"},
+            },
+            {
+                "type": "RequestBodyJsonObject",
+                "value": {"sort": {"field": "updated_at", "order": "ascending"}},
+            },
+            {"type": "RequestBodyPlainText", "value": "plain_text_body"},
+            {
+                "type": "RequestBodyUrlEncodedForm",
+                "value": {"param1": "value1", "param2": "{{ config['param2_value'] }}"},
+            },
+            {
+                "type": "RequestBodyGraphQL",
+                "value": {
+                    "query": {
+                        "param1": "value1",
+                        "param2": "{{ config['param2_value'] }}",
+                    }
+                },
+            },
+        ],
+        title="Request Body",
+    )
+    error_handler: Optional[
+        Union[DefaultErrorHandler, CompositeErrorHandler, CustomErrorHandler]
+    ] = Field(
+        None,
+        description="Error handler component that defines how to handle errors.",
+        title="Error Handler",
     )
     use_cache: Optional[bool] = Field(
         False,
@@ -2322,7 +2483,7 @@ class PropertiesFromEndpoint(BaseModel):
         description="Describes the path to the field that should be extracted",
         examples=[["name"]],
     )
-    retriever: Union[CustomRetriever, SimpleRetriever] = Field(
+    retriever: Union[SimpleRetriever, CustomRetriever] = Field(
         ...,
         description="Requester component that describes how to fetch the properties to query from a remote API endpoint.",
     )
@@ -2355,25 +2516,41 @@ class StateDelegatingStream(BaseModel):
     full_refresh_stream: DeclarativeStream = Field(
         ...,
         description="Component used to coordinate how records are extracted across stream slices and request pages when the state is empty or not provided.",
-        title="Retriever",
+        title="Full Refresh Stream",
     )
     incremental_stream: DeclarativeStream = Field(
         ...,
         description="Component used to coordinate how records are extracted across stream slices and request pages when the state provided.",
-        title="Retriever",
+        title="Incremental Stream",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
 class SimpleRetriever(BaseModel):
     type: Literal["SimpleRetriever"]
+    requester: Union[HttpRequester, CustomRequester] = Field(
+        ...,
+        description="Requester component that describes how to prepare HTTP requests to send to the source API.",
+    )
+    decoder: Optional[
+        Union[
+            JsonDecoder,
+            XmlDecoder,
+            CsvDecoder,
+            JsonlDecoder,
+            GzipDecoder,
+            IterableDecoder,
+            ZipfileDecoder,
+            CustomDecoder,
+        ]
+    ] = Field(
+        None,
+        description="Component decoding the response so records can be extracted.",
+        title="HTTP Response Format",
+    )
     record_selector: RecordSelector = Field(
         ...,
         description="Component that describes how to extract records from a HTTP response.",
-    )
-    requester: Union[CustomRequester, HttpRequester] = Field(
-        ...,
-        description="Requester component that describes how to prepare HTTP requests to send to the source API.",
     )
     paginator: Optional[Union[DefaultPaginator, NoPagination]] = Field(
         None,
@@ -2385,16 +2562,16 @@ class SimpleRetriever(BaseModel):
     )
     partition_router: Optional[
         Union[
-            CustomPartitionRouter,
             ListPartitionRouter,
             SubstreamPartitionRouter,
             GroupingPartitionRouter,
+            CustomPartitionRouter,
             List[
                 Union[
-                    CustomPartitionRouter,
                     ListPartitionRouter,
                     SubstreamPartitionRouter,
                     GroupingPartitionRouter,
+                    CustomPartitionRouter,
                 ]
             ],
         ]
@@ -2402,22 +2579,6 @@ class SimpleRetriever(BaseModel):
         [],
         description="PartitionRouter component that describes how to partition the stream, enabling incremental syncs and checkpointing.",
         title="Partition Router",
-    )
-    decoder: Optional[
-        Union[
-            CustomDecoder,
-            CsvDecoder,
-            GzipDecoder,
-            JsonDecoder,
-            JsonlDecoder,
-            IterableDecoder,
-            XmlDecoder,
-            ZipfileDecoder,
-        ]
-    ] = Field(
-        None,
-        description="Component decoding the response so records can be extracted.",
-        title="Decoder",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -2431,21 +2592,21 @@ class AsyncRetriever(BaseModel):
     status_mapping: AsyncJobStatusMap = Field(
         ..., description="Async Job Status to Airbyte CDK Async Job Status mapping."
     )
-    status_extractor: Union[CustomRecordExtractor, DpathExtractor] = Field(
+    status_extractor: Union[DpathExtractor, CustomRecordExtractor] = Field(
         ..., description="Responsible for fetching the actual status of the async job."
     )
-    download_target_extractor: Union[CustomRecordExtractor, DpathExtractor] = Field(
+    download_target_extractor: Union[DpathExtractor, CustomRecordExtractor] = Field(
         ...,
         description="Responsible for fetching the final result `urls` provided by the completed / finished / ready async job.",
     )
     download_extractor: Optional[
-        Union[CustomRecordExtractor, DpathExtractor, ResponseToFileExtractor]
+        Union[DpathExtractor, CustomRecordExtractor, ResponseToFileExtractor]
     ] = Field(None, description="Responsible for fetching the records from provided urls.")
-    creation_requester: Union[CustomRequester, HttpRequester] = Field(
+    creation_requester: Union[HttpRequester, CustomRequester] = Field(
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to create the async server-side job.",
     )
-    polling_requester: Union[CustomRequester, HttpRequester] = Field(
+    polling_requester: Union[HttpRequester, CustomRequester] = Field(
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to fetch the status of the running async job.",
     )
@@ -2453,11 +2614,11 @@ class AsyncRetriever(BaseModel):
         None,
         description="The time in minutes after which the single Async Job should be considered as Timed Out.",
     )
-    download_target_requester: Optional[Union[CustomRequester, HttpRequester]] = Field(
+    download_target_requester: Optional[Union[HttpRequester, CustomRequester]] = Field(
         None,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to extract the url from polling response by the completed async job.",
     )
-    download_requester: Union[CustomRequester, HttpRequester] = Field(
+    download_requester: Union[HttpRequester, CustomRequester] = Field(
         ...,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to download the data provided by the completed async job.",
     )
@@ -2465,26 +2626,26 @@ class AsyncRetriever(BaseModel):
         None,
         description="Paginator component that describes how to navigate through the API's pages during download.",
     )
-    abort_requester: Optional[Union[CustomRequester, HttpRequester]] = Field(
+    abort_requester: Optional[Union[HttpRequester, CustomRequester]] = Field(
         None,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to abort a job once it is timed out from the source's perspective.",
     )
-    delete_requester: Optional[Union[CustomRequester, HttpRequester]] = Field(
+    delete_requester: Optional[Union[HttpRequester, CustomRequester]] = Field(
         None,
         description="Requester component that describes how to prepare HTTP requests to send to the source API to delete a job once the records are extracted.",
     )
     partition_router: Optional[
         Union[
-            CustomPartitionRouter,
             ListPartitionRouter,
             SubstreamPartitionRouter,
             GroupingPartitionRouter,
+            CustomPartitionRouter,
             List[
                 Union[
-                    CustomPartitionRouter,
                     ListPartitionRouter,
                     SubstreamPartitionRouter,
                     GroupingPartitionRouter,
+                    CustomPartitionRouter,
                 ]
             ],
         ]
@@ -2495,7 +2656,6 @@ class AsyncRetriever(BaseModel):
     )
     decoder: Optional[
         Union[
-            CustomDecoder,
             CsvDecoder,
             GzipDecoder,
             JsonDecoder,
@@ -2503,6 +2663,7 @@ class AsyncRetriever(BaseModel):
             IterableDecoder,
             XmlDecoder,
             ZipfileDecoder,
+            CustomDecoder,
         ]
     ] = Field(
         None,
@@ -2511,7 +2672,6 @@ class AsyncRetriever(BaseModel):
     )
     download_decoder: Optional[
         Union[
-            CustomDecoder,
             CsvDecoder,
             GzipDecoder,
             JsonDecoder,
@@ -2519,6 +2679,7 @@ class AsyncRetriever(BaseModel):
             IterableDecoder,
             XmlDecoder,
             ZipfileDecoder,
+            CustomDecoder,
         ]
     ] = Field(
         None,
@@ -2593,8 +2754,10 @@ CompositeErrorHandler.update_forward_refs()
 DeclarativeSource1.update_forward_refs()
 DeclarativeSource2.update_forward_refs()
 SelectiveAuthenticator.update_forward_refs()
+FileUploader.update_forward_refs()
 DeclarativeStream.update_forward_refs()
 SessionTokenAuthenticator.update_forward_refs()
+HttpRequester.update_forward_refs()
 DynamicSchemaLoader.update_forward_refs()
 ParentStreamConfig.update_forward_refs()
 PropertiesFromEndpoint.update_forward_refs()

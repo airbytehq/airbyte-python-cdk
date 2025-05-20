@@ -46,7 +46,7 @@ class TestBaseConfig:
                             "name": {"title": "Name", "type": "string"},
                             "selected_strategy": {
                                 "const": "option1",
-                                "title": "Selected " "Strategy",
+                                "title": "Selected Strategy",
                                 "type": "string",
                                 "default": "option1",
                             },
@@ -59,7 +59,7 @@ class TestBaseConfig:
                         "properties": {
                             "selected_strategy": {
                                 "const": "option2",
-                                "title": "Selected " "Strategy",
+                                "title": "Selected Strategy",
                                 "type": "string",
                                 "default": "option2",
                             },

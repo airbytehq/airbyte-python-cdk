@@ -189,7 +189,7 @@ def test_get_new_session_token(requests_mock):
     )
 
     session_token = get_new_session_token(
-        f'{config["instance_api_url"]}session',
+        f"{config['instance_api_url']}session",
         config["username"],
         config["password"],
         config["session_token_response_key"],

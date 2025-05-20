@@ -65,6 +65,7 @@ class ConcurrentPerPartitionCursor(Cursor):
     _NO_CURSOR_STATE: Mapping[str, Any] = {}
     _GLOBAL_STATE_KEY = "state"
     _PERPARTITION_STATE_KEY = "states"
+    _IS_PARTITION_DUPLICATION_LOGGED = False
     _KEY = 0
     _VALUE = 1
 
@@ -228,10 +229,10 @@ class ConcurrentPerPartitionCursor(Cursor):
 
     def _throttle_state_message(self) -> Optional[float]:
         """
-        Throttles the state message emission to once every 60 seconds.
+        Throttles the state message emission to once every 600 seconds.
         """
         current_time = time.time()
-        if current_time - self._last_emission_time <= 60:
+        if current_time - self._last_emission_time <= 600:
             return None
         return current_time
 
@@ -241,6 +242,10 @@ class ConcurrentPerPartitionCursor(Cursor):
             if current_time is None:
                 return
             self._last_emission_time = current_time
+            # Skip state emit for global cursor if parent state is empty
+            if self._use_global_cursor and not self._parent_state:
+                return
+
         self._connector_state_manager.update_state_for_stream(
             self._stream_name,
             self._stream_namespace,
@@ -279,7 +284,13 @@ class ConcurrentPerPartitionCursor(Cursor):
             with self._lock:
                 self._number_of_partitions += 1
                 self._cursor_per_partition[partition_key] = cursor
-        self._semaphore_per_partition[partition_key] = threading.Semaphore(0)
+
+        if partition_key in self._semaphore_per_partition:
+            if not self._IS_PARTITION_DUPLICATION_LOGGED:
+                logger.warning(f"Partition duplication detected for stream {self._stream_name}")
+                self._IS_PARTITION_DUPLICATION_LOGGED = True
+        else:
+            self._semaphore_per_partition[partition_key] = threading.Semaphore(0)
 
         with self._lock:
             if (

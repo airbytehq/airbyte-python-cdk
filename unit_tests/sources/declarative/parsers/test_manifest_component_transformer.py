@@ -460,3 +460,112 @@ def test_do_not_propagate_parameters_on_json_schema_object():
     actual_component = transformer.propagate_types_and_parameters("", component, {})
 
     assert actual_component == expected_component
+
+
+def test_propagate_property_chunking():
+    component = {
+        "type": "DeclarativeStream",
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://test.com",
+                        "request_parameters": {
+                            "properties": {
+                                "type": "QueryProperties",
+                                "property_list": {
+                                    "type": "PropertiesFromEndpoint",
+                                    "property_field_path": ["name"],
+                                    "retriever": {
+                                        "type": "SimpleRetriever",
+                                        "requester": {
+                                            "type": "HttpRequester",
+                                            "url_base": "https://test.com",
+                                            "authenticator": {
+                                                "$ref": "#/definitions/authenticator"
+                                            },
+                                            "path": "/properties/{{ parameters.entity }}/properties",
+                                            "http_method": "GET",
+                                            "request_headers": {"Content-Type": "application/json"},
+                                        },
+                                    },
+                                },
+                                "property_chunking": {
+                                    "type": "PropertyChunking",
+                                    "property_limit_type": "characters",
+                                    "property_limit": 15000,
+                                },
+                            }
+                        },
+                    },
+                },
+                "$parameters": {"entity": "test_entity"},
+            }
+        ],
+    }
+    expected_component = {
+        "streams": [
+            {
+                "$parameters": {"entity": "test_entity"},
+                "entity": "test_entity",
+                "retriever": {
+                    "$parameters": {"entity": "test_entity"},
+                    "entity": "test_entity",
+                    "requester": {
+                        "$parameters": {"entity": "test_entity"},
+                        "entity": "test_entity",
+                        "request_parameters": {
+                            "properties": {
+                                "$parameters": {"entity": "test_entity"},
+                                "entity": "test_entity",
+                                "property_chunking": {
+                                    "$parameters": {"entity": "test_entity"},
+                                    "entity": "test_entity",
+                                    "property_limit": 15000,
+                                    "property_limit_type": "characters",
+                                    "type": "PropertyChunking",
+                                },
+                                "property_list": {
+                                    "$parameters": {"entity": "test_entity"},
+                                    "entity": "test_entity",
+                                    "property_field_path": ["name"],
+                                    "retriever": {
+                                        "$parameters": {"entity": "test_entity"},
+                                        "entity": "test_entity",
+                                        "requester": {
+                                            "$parameters": {"entity": "test_entity"},
+                                            "authenticator": {
+                                                "$ref": "#/definitions/authenticator"
+                                            },
+                                            "entity": "test_entity",
+                                            "http_method": "GET",
+                                            "path": "/properties/{{ "
+                                            "parameters.entity "
+                                            "}}/properties",
+                                            "request_headers": {"Content-Type": "application/json"},
+                                            "type": "HttpRequester",
+                                            "url_base": "https://test.com",
+                                        },
+                                        "type": "SimpleRetriever",
+                                    },
+                                    "type": "PropertiesFromEndpoint",
+                                },
+                                "type": "QueryProperties",
+                            }
+                        },
+                        "type": "HttpRequester",
+                        "url_base": "https://test.com",
+                    },
+                    "type": "SimpleRetriever",
+                },
+                "type": "DeclarativeStream",
+            }
+        ],
+        "type": "DeclarativeStream",
+    }
+    transformer = ManifestComponentTransformer()
+    actual_component = transformer.propagate_types_and_parameters("", component, {})
+    assert actual_component == expected_component

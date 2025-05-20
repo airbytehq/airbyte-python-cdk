@@ -18,9 +18,19 @@ JsonSchemaSupportedType = Union[List[str], Literal["string"], str]
 SchemaType = Mapping[str, Mapping[str, JsonSchemaSupportedType]]
 
 schemaless_schema = {"type": "object", "properties": {"data": {"type": "object"}}}
+
 file_transfer_schema = {
     "type": "object",
-    "properties": {"data": {"type": "object"}, "file": {"type": "object"}},
+    "properties": {
+        "folder": {"type": "string"},
+        "file_name": {"type": "string"},
+        "source_uri": {"type": "string"},
+        "bytes": {"type": "integer"},
+        "id": {"type": ["null", "string"]},
+        "created_at": {"type": ["null", "string"]},
+        "updated_at": {"type": ["null", "string"]},
+        "mime_type": {"type": ["null", "string"]},
+    },
 }
 
 

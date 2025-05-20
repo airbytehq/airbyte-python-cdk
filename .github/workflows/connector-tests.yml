@@ -25,7 +25,7 @@ concurrency:
 jobs:
   cdk_changes:
     name: Get Changes
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       statuses: write
       pull-requests: read
@@ -62,7 +62,7 @@ jobs:
     # Forked PRs are handled by the community_ci.yml workflow
     # If the condition is not met the job will be skipped (it will not fail)
     # runs-on: connector-test-large
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 360 # 6 hours
     strategy:
       fail-fast: false
@@ -75,11 +75,11 @@ jobs:
           # Chargebee is being flaky:
           # - connector: source-chargebee
           #   cdk_extra: n/a
-          # These two are behind in CDK updates and can't be used as tests until they are updated:
-          # - connector: source-s3
-          #   cdk_extra: file-based
+          # This one is behind in CDK updates and can't be used as tests until it is updated:
           # - connector: destination-pinecone
           #   cdk_extra: vector-db-based
+          - connector: source-google-drive
+            cdk_extra: file-based
           - connector: destination-motherduck
             cdk_extra: sql
           # ZenDesk currently failing (as of 2024-12-02)
@@ -96,7 +96,7 @@ jobs:
     name: "Check: '${{matrix.connector}}' (skip=${{needs.cdk_changes.outputs['src'] == 'false' || needs.cdk_changes.outputs[matrix.cdk_extra] == 'false'}})"
     permissions:
       checks: write
-      contents: write  # Required for creating commit statuses
+      contents: write # Required for creating commit statuses
       pull-requests: read
     steps:
       - name: Abort if extra not changed (${{matrix.cdk_extra}})
@@ -153,7 +153,7 @@ jobs:
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
         run: |
           cd airbyte
-          make tools.airbyte-ci-dev.install
+          make tools.airbyte-ci.install
           airbyte-ci \
           --ci-report-bucket-name=airbyte-ci-reports-multi \
           connectors \

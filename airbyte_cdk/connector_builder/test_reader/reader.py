@@ -4,7 +4,8 @@
 
 
 import logging
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Union
+from math import log
+from typing import Any, ClassVar, Dict, Iterator, List, Mapping, Optional, Union
 
 from airbyte_cdk.connector_builder.models import (
     AuxiliaryRequest,
@@ -66,6 +67,8 @@ class TestReader:
 
     """
 
+    __test__: ClassVar[bool] = False  # Tell Pytest this is not a Pytest class, despite its name
+
     logger = logging.getLogger("airbyte.connector-builder")
 
     def __init__(
@@ -110,11 +113,16 @@ class TestReader:
         record_limit = self._check_record_limit(record_limit)
         # The connector builder currently only supports reading from a single stream at a time
         stream = source.streams(config)[0]
+
+        # get any deprecation warnings during the component creation
+        deprecation_warnings: List[LogMessage] = source.deprecation_warnings()
+
         schema_inferrer = SchemaInferrer(
             self._pk_to_nested_and_composite_field(stream.primary_key),
             self._cursor_field_to_nested_and_composite_field(stream.cursor_field),
         )
         datetime_format_inferrer = DatetimeFormatInferrer()
+
         message_group = get_message_groups(
             self._read_stream(source, config, configured_catalog, state),
             schema_inferrer,
@@ -125,6 +133,10 @@ class TestReader:
         slices, log_messages, auxiliary_requests, latest_config_update = self._categorise_groups(
             message_group
         )
+
+        # extend log messages with deprecation warnings
+        log_messages.extend(deprecation_warnings)
+
         schema, log_messages = self._get_infered_schema(
             configured_catalog, schema_inferrer, log_messages
         )
@@ -267,6 +279,7 @@ class TestReader:
         auxiliary_requests = []
         latest_config_update: Optional[AirbyteControlMessage] = None
 
+        # process the message groups first
         for message_group in message_groups:
             match message_group:
                 case AirbyteLogMessage():

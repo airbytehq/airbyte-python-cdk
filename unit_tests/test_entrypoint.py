@@ -124,12 +124,24 @@ def test_airbyte_entrypoint_init(mocker):
         (
             "check",
             {"config": "config_path"},
-            {"command": "check", "config": "config_path", "debug": False},
+            {
+                "command": "check",
+                "config": "config_path",
+                "debug": False,
+                "components_path": None,
+                "manifest_path": None,
+            },
         ),
         (
             "discover",
             {"config": "config_path", "debug": ""},
-            {"command": "discover", "config": "config_path", "debug": True},
+            {
+                "command": "discover",
+                "config": "config_path",
+                "debug": True,
+                "components_path": None,
+                "manifest_path": None,
+            },
         ),
         (
             "read",
@@ -140,6 +152,8 @@ def test_airbyte_entrypoint_init(mocker):
                 "catalog": "catalog_path",
                 "state": "None",
                 "debug": False,
+                "components_path": None,
+                "manifest_path": None,
             },
         ),
         (
@@ -156,6 +170,8 @@ def test_airbyte_entrypoint_init(mocker):
                 "catalog": "catalog_path",
                 "state": "state_path",
                 "debug": True,
+                "components_path": None,
+                "manifest_path": None,
             },
         ),
     ],
@@ -166,6 +182,55 @@ def test_parse_valid_args(
     arglist = _as_arglist(cmd, args)
     parsed_args = entrypoint.parse_args(arglist)
     assert vars(parsed_args) == expected_args
+
+
+@pytest.mark.parametrize(
+    ["cmd", "args", "param_keys"],
+    [
+        (
+            "check",
+            {"config": "config_path", "manifest_path": "manifest_file.yaml"},
+            ["manifest_path"],
+        ),
+        (
+            "read",
+            {
+                "config": "config_path",
+                "catalog": "catalog_path",
+                "state": "state_path",
+                "components_path": "components.py",
+                "manifest_path": "manifest.yaml",
+            },
+            ["components_path", "manifest_path"],
+        ),
+    ],
+)
+def test_parse_new_args(
+    cmd: str, args: Mapping[str, Any], param_keys: List[str], mocker: MagicMock
+) -> None:
+    """Test that new arguments are properly handled if they are supported."""
+    mock_parser = MagicMock()
+    mock_parse_args = MagicMock()
+    mock_parser.parse_args = mock_parse_args
+
+    # Create a namespace with expected values
+    expected_namespace = Namespace(
+        command=cmd,
+        debug=False,
+        **{k: v for k, v in args.items() if k != "debug"},
+    )
+    mock_parse_args.return_value = expected_namespace
+
+    mocker.patch.object(AirbyteEntrypoint, "parse_args", return_value=expected_namespace)
+
+    entrypoint = AirbyteEntrypoint(MockSource())
+
+    arglist = _as_arglist(cmd, args)
+    parsed_args = entrypoint.parse_args(arglist)
+
+    for key in param_keys:
+        assert hasattr(parsed_args, key)
+        assert getattr(parsed_args, key) == args[key]
 
 
 @pytest.mark.parametrize(
@@ -764,9 +829,9 @@ def test_handle_record_counts(
         assert message_count == expected_records_by_stream[stream_descriptor]
 
     if actual_message.type == Type.STATE:
-        assert isinstance(
-            actual_message.state.sourceStats.recordCount, float
-        ), "recordCount value should be expressed as a float"
+        assert isinstance(actual_message.state.sourceStats.recordCount, float), (
+            "recordCount value should be expressed as a float"
+        )
 
 
 def test_given_serialization_error_using_orjson_then_fallback_on_json(

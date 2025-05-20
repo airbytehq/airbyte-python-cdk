@@ -810,6 +810,42 @@ def test_given_stream_data_is_not_record_when_read_records_then_update_slice_wit
         cursor.close_slice.assert_called_once_with(stream_slice, None)
 
 
+def test_given_initial_token_is_zero_when_read_records_then_pass_initial_token():
+    record_selector = MagicMock()
+    record_selector.select_records.return_value = []
+    cursor = MagicMock(spec=DeclarativeCursor)
+    paginator = MagicMock()
+    paginator.get_initial_token.return_value = 0
+    paginator.next_page_token.return_value = None
+
+    retriever = SimpleRetriever(
+        name="stream_name",
+        primary_key=primary_key,
+        requester=MagicMock(),
+        paginator=paginator,
+        record_selector=record_selector,
+        stream_slicer=cursor,
+        cursor=cursor,
+        parameters={},
+        config={},
+    )
+    stream_slice = StreamSlice(cursor_slice={}, partition={})
+
+    response = requests.Response()
+    response.status_code = 200
+    response._content = "{}".encode()
+
+    with patch.object(
+        SimpleRetriever,
+        "_fetch_next_page",
+        return_value=response,
+    ) as fetch_next_page_mock:
+        list(retriever.read_records(stream_slice=stream_slice, records_schema={}))
+        fetch_next_page_mock.assert_called_once_with(
+            cursor.get_stream_state(), stream_slice, {"next_page_token": 0}
+        )
+
+
 def _generate_slices(number_of_slices):
     return [{"date": f"2022-01-0{day + 1}"} for day in range(number_of_slices)]
 
@@ -885,11 +921,8 @@ def test_emit_log_request_response_messages(mocker):
         stream_state={}, stream_slice=StreamSlice(cursor_slice={}, partition={})
     )
 
-    assert requester.send_request.call_args_list[0][1]["log_formatter"] is not None
-    assert (
-        requester.send_request.call_args_list[0][1]["log_formatter"](response)
-        == format_http_message_mock.return_value
-    )
+    assert retriever.log_formatter is not None
+    assert retriever.log_formatter(response) == format_http_message_mock.return_value
 
 
 def test_retriever_last_page_size_for_page_increment():
@@ -1112,6 +1145,14 @@ def test_simple_retriever_with_additional_query_properties():
                 "last_name": "hongou",
                 "nonary": "second",
                 "bracelet": "1",
+                "dict_field": {
+                    "key1": "value1",
+                    "key2": "value2",
+                    "affiliation": {
+                        "company": "cradle",
+                        "industry": "pharmaceutical",
+                    },
+                },
             },
             associated_slice=None,
             stream_name=stream_name,
@@ -1134,6 +1175,7 @@ def test_simple_retriever_with_additional_query_properties():
                 "last_name": "kurashiki",
                 "nonary": "second",
                 "bracelet": "6",
+                "allies": ["aoi_kurashiki"],
             },
             associated_slice=None,
             stream_name=stream_name,
@@ -1180,7 +1222,12 @@ def test_simple_retriever_with_additional_query_properties():
     record_selector.select_records.side_effect = [
         [
             Record(
-                data={"id": "a", "first_name": "gentarou", "last_name": "hongou"},
+                data={
+                    "id": "a",
+                    "first_name": "gentarou",
+                    "last_name": "hongou",
+                    "dict_field": {"key1": "value1", "affiliation": {"company": "cradle"}},
+                },
                 associated_slice=None,
                 stream_name=stream_name,
             ),
@@ -1190,7 +1237,12 @@ def test_simple_retriever_with_additional_query_properties():
                 stream_name=stream_name,
             ),
             Record(
-                data={"id": "c", "first_name": "akane", "last_name": "kurashiki"},
+                data={
+                    "id": "c",
+                    "first_name": "akane",
+                    "last_name": "kurashiki",
+                    "allies": ["aoi_kurashiki"],
+                },
                 associated_slice=None,
                 stream_name=stream_name,
             ),
@@ -1227,7 +1279,12 @@ def test_simple_retriever_with_additional_query_properties():
                 stream_name=stream_name,
             ),
             Record(
-                data={"id": "a", "nonary": "second", "bracelet": "1"},
+                data={
+                    "id": "a",
+                    "nonary": "second",
+                    "bracelet": "1",
+                    "dict_field": {"key2": "value2", "affiliation": {"industry": "pharmaceutical"}},
+                },
                 associated_slice=None,
                 stream_name=stream_name,
             ),

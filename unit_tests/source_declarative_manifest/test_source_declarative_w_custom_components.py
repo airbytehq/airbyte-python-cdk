@@ -5,7 +5,6 @@
 import datetime
 import json
 import logging
-import os
 import sys
 import types
 from collections.abc import Callable, Mapping
@@ -18,6 +17,7 @@ import yaml
 from airbyte_protocol_dataclasses.models.airbyte_protocol import AirbyteCatalog
 
 from airbyte_cdk.cli.source_declarative_manifest._run import (
+    _register_components_from_file,
     create_declarative_source,
 )
 from airbyte_cdk.models import ConfiguredAirbyteCatalog, ConfiguredAirbyteStream
@@ -33,19 +33,15 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
     custom_code_execution_permitted,
     register_components_module_from_string,
 )
-
-SAMPLE_COMPONENTS_PY_TEXT = """
-def sample_function() -> str:
-    return "Hello, World!"
-
-class SimpleClass:
-    def sample_method(self) -> str:
-        return sample_function()
-"""
+from airbyte_cdk.utils.connector_paths import MANIFEST_YAML
+from unit_tests.source_declarative_manifest.conftest import (
+    SAMPLE_COMPONENTS_PY_TEXT,
+    verify_components_loaded,
+)
 
 
-def get_fixture_path(file_name) -> str:
-    return os.path.join(os.path.dirname(__file__), file_name)
+def get_resource_path(file_name) -> str:
+    return Path(__file__).parent.parent / "resources" / file_name
 
 
 def test_components_module_from_string() -> None:
@@ -90,19 +86,18 @@ def get_py_components_config_dict(
     *,
     failing_components: bool = False,
 ) -> dict[str, Any]:
-    connector_dir = Path(get_fixture_path("resources/source_pokeapi_w_components_py"))
-    manifest_yml_path: Path = connector_dir / "manifest.yaml"
+    connector_dir = Path(get_resource_path("source_pokeapi_w_components_py"))
+    manifest_yaml_path: Path = connector_dir / MANIFEST_YAML
     custom_py_code_path: Path = connector_dir / (
         "components.py" if not failing_components else "components_failing.py"
     )
     config_yaml_path: Path = connector_dir / "valid_config.yaml"
-    secrets_yaml_path: Path = connector_dir / "secrets.yaml"
 
-    manifest_dict = yaml.safe_load(manifest_yml_path.read_text())
+    manifest_dict = yaml.safe_load(manifest_yaml_path.read_text())
     assert manifest_dict, "Failed to load the manifest file."
-    assert isinstance(
-        manifest_dict, Mapping
-    ), f"Manifest file is type {type(manifest_dict).__name__}, not a mapping: {manifest_dict}"
+    assert isinstance(manifest_dict, Mapping), (
+        f"Manifest file is type {type(manifest_dict).__name__}, not a mapping: {manifest_dict}"
+    )
 
     custom_py_code = custom_py_code_path.read_text()
     combined_config_dict = {
@@ -266,8 +261,8 @@ def test_sync_with_injected_py_components(
             streams=[
                 ConfiguredAirbyteStream(
                     stream=stream,
-                    sync_mode="full_refresh",
-                    destination_sync_mode="overwrite",
+                    sync_mode="full_refresh",  # type: ignore (intentional bad value)
+                    destination_sync_mode="overwrite",  # type: ignore (intentional bad value)
                 )
                 for stream in catalog.streams
             ]
@@ -289,3 +284,12 @@ def test_sync_with_injected_py_components(
                 _read_fn()
         else:
             _read_fn()
+
+
+def test_register_components_from_file(components_file: str) -> None:
+    """Test that components can be properly loaded from a file."""
+    # Register the components
+    _register_components_from_file(components_file)
+
+    # Verify the components were loaded correctly
+    verify_components_loaded()

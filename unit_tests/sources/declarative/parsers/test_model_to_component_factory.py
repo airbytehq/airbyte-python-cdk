@@ -1,14 +1,17 @@
 #
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
+from copy import deepcopy
 
 # mypy: ignore-errors
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable, Mapping
+from pathlib import Path
+from typing import Any, Iterable, Mapping, Optional, Union
 
 import freezegun
 import pytest
 import requests
+from freezegun.api import FakeDatetime
 from pydantic.v1 import ValidationError
 
 from airbyte_cdk import AirbyteTracedException
@@ -42,6 +45,7 @@ from airbyte_cdk.sources.declarative.extractors.record_filter import (
     ClientSideIncrementalRecordFilterDecorator,
 )
 from airbyte_cdk.sources.declarative.incremental import (
+    ConcurrentPerPartitionCursor,
     CursorFactory,
     DatetimeBasedCursor,
     PerPartitionCursor,
@@ -66,6 +70,7 @@ from airbyte_cdk.sources.declarative.models import CustomSchemaLoader as CustomS
 from airbyte_cdk.sources.declarative.models import DatetimeBasedCursor as DatetimeBasedCursorModel
 from airbyte_cdk.sources.declarative.models import DeclarativeStream as DeclarativeStreamModel
 from airbyte_cdk.sources.declarative.models import DefaultPaginator as DefaultPaginatorModel
+from airbyte_cdk.sources.declarative.models import DpathExtractor as DpathExtractorModel
 from airbyte_cdk.sources.declarative.models import (
     GroupingPartitionRouter as GroupingPartitionRouterModel,
 )
@@ -151,7 +156,8 @@ from airbyte_cdk.sources.declarative.retrievers import (
     SimpleRetriever,
     SimpleRetrieverTestReadDecorator,
 )
-from airbyte_cdk.sources.declarative.schema import JsonFileSchemaLoader
+from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader, JsonFileSchemaLoader
+from airbyte_cdk.sources.declarative.schema.composite_schema_loader import CompositeSchemaLoader
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
 from airbyte_cdk.sources.declarative.spec import Spec
 from airbyte_cdk.sources.declarative.transformations import AddFields, RemoveFields
@@ -164,7 +170,7 @@ from airbyte_cdk.sources.streams.concurrent.clamping import (
     MonthClampingStrategy,
     WeekClampingStrategy,
 )
-from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor
+from airbyte_cdk.sources.streams.concurrent.cursor import ConcurrentCursor, CursorField
 from airbyte_cdk.sources.streams.concurrent.state_converters.datetime_stream_state_converter import (
     CustomFormatConcurrentStreamStateConverter,
 )
@@ -186,6 +192,21 @@ resolver = ManifestReferenceResolver()
 transformer = ManifestComponentTransformer()
 
 input_config = {"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"]}
+
+
+def get_factory_with_parameters(
+    connector_state_manager: Optional[ConnectorStateManager] = None,
+) -> ModelToComponentFactory:
+    return ModelToComponentFactory(
+        connector_state_manager=connector_state_manager,
+    )
+
+
+def read_yaml_file(resource_path: Union[str, Path]) -> str:
+    yaml_path = Path(__file__).parent / resource_path
+    with open(yaml_path, "r") as file:
+        content = file.read()
+    return content
 
 
 def test_create_check_stream():
@@ -921,6 +942,120 @@ list_stream:
     assert isinstance(list_stream_slicer, ListPartitionRouter)
     assert list_stream_slicer.values == ["airbyte", "airbyte-cloud"]
     assert list_stream_slicer._cursor_field.string == "a_key"
+
+
+@pytest.mark.parametrize(
+    "use_legacy_state",
+    [
+        False,
+        True,
+    ],
+    ids=[
+        "running_with_newest_state",
+        "running_with_legacy_state",
+    ],
+)
+@freezegun.freeze_time("2025-05-14")
+def test_stream_with_incremental_and_async_retriever_with_partition_router(use_legacy_state):
+    """
+    This test is to check the behavior of the stream with async retriever and partition router
+    when the state is in the legacy format or the newest format.
+    """
+    content = read_yaml_file(
+        "resources/stream_with_incremental_and_aync_retriever_with_partition_router.yaml"
+    )
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["list_stream"], {}
+    )
+    cursor_time_period_value = "2025-05-06T12:00:00+0000"
+    cursor_field_key = "TimePeriod"
+    account_id = 999999999
+    per_partition_key = {"account_id": account_id}
+
+    legacy_stream_state = {account_id: {cursor_field_key: cursor_time_period_value}}
+    states = [
+        {"partition": per_partition_key, "cursor": {cursor_field_key: cursor_time_period_value}}
+    ]
+
+    stream_state = {
+        "use_global_cursor": False,
+        "states": states,
+        "lookback_window": 0,
+    }
+    if not use_legacy_state:
+        # to check it keeps other data in the newest state format
+        stream_state["state"] = {cursor_field_key: "2025-05-12T12:00:00+0000"}
+        stream_state["lookback_window"] = 46
+        stream_state["use_global_cursor"] = False
+        per_partition_key["parent_slice"] = {"parent_slice": {}, "user_id": "102023653"}
+
+    state_to_test = legacy_stream_state if use_legacy_state else stream_state
+    connector_state_manager = ConnectorStateManager(
+        state=[
+            AirbyteStateMessage(
+                type=AirbyteStateType.STREAM,
+                stream=AirbyteStreamState(
+                    stream_descriptor=StreamDescriptor(name="lists"),
+                    stream_state=AirbyteStateBlob(state_to_test),
+                ),
+            )
+        ]
+    )
+
+    factory_with_parameters = get_factory_with_parameters(
+        connector_state_manager=connector_state_manager
+    )
+    connector_config = deepcopy(input_config)
+    connector_config["reports_start_date"] = "2025-01-01"
+    stream = factory_with_parameters.create_component(
+        model_type=DeclarativeStreamModel,
+        component_definition=stream_manifest,
+        config=connector_config,
+    )
+
+    assert isinstance(stream, DeclarativeStream)
+    assert isinstance(stream.retriever, AsyncRetriever)
+    stream_slicer = stream.retriever.stream_slicer.stream_slicer
+    assert isinstance(stream_slicer, ConcurrentPerPartitionCursor)
+    assert stream_slicer.state == stream_state
+    import json
+
+    cursor_perpartition = stream_slicer._cursor_per_partition
+    expected_cursor_perpartition_key = json.dumps(per_partition_key, sort_keys=True).replace(
+        " ", ""
+    )
+    assert (
+        cursor_perpartition[expected_cursor_perpartition_key].cursor_field.cursor_field_key
+        == cursor_field_key
+    )
+    assert cursor_perpartition[expected_cursor_perpartition_key].start == datetime(
+        2025, 5, 6, 12, 0, tzinfo=timezone.utc
+    )
+    assert (
+        cursor_perpartition[expected_cursor_perpartition_key].state[cursor_field_key]
+        == cursor_time_period_value
+    )
+
+    concurrent_cursor = cursor_perpartition[expected_cursor_perpartition_key]
+    assert concurrent_cursor._concurrent_state == {
+        "legacy": {cursor_field_key: cursor_time_period_value},
+        "slices": [
+            {
+                "end": FakeDatetime(2025, 5, 6, 12, 0, tzinfo=timezone.utc),
+                "most_recent_cursor_value": FakeDatetime(2025, 5, 6, 12, 0, tzinfo=timezone.utc),
+                "start": FakeDatetime(2025, 1, 1, 0, 0, tzinfo=timezone.utc),
+            }
+        ],
+        "state_type": "date-range",
+    }
+
+    stream_slices = list(concurrent_cursor.stream_slices())
+    expected_stream_slices = [
+        {"start_time": cursor_time_period_value, "end_time": "2025-05-14T00:00:00+0000"}
+    ]
+    assert stream_slices == expected_stream_slices
 
 
 def test_resumable_full_refresh_stream():
@@ -1831,6 +1966,7 @@ def test_create_default_paginator():
         component_definition=paginator_manifest,
         config=input_config,
         url_base="https://airbyte.io",
+        extractor_model=DpathExtractor(field_path=["results"], config=input_config, parameters={}),
         decoder=JsonDecoder(parameters={}),
     )
 
@@ -1968,6 +2104,7 @@ def test_create_default_paginator():
             DefaultPaginator(
                 pagination_strategy=OffsetIncrement(
                     page_size=10,
+                    extractor=None,
                     config={"apikey": "verysecrettoken", "repos": ["airbyte", "airbyte-cloud"]},
                     parameters={},
                 ),
@@ -2641,17 +2778,30 @@ def test_create_offset_increment():
         page_size=10,
         inject_on_first_request=True,
     )
+
+    expected_extractor = DpathExtractor(field_path=["results"], config=input_config, parameters={})
+    extractor_model = DpathExtractorModel(
+        type="DpathExtractor", field_path=expected_extractor.field_path
+    )
+
     expected_strategy = OffsetIncrement(
-        page_size=10, inject_on_first_request=True, parameters={}, config=input_config
+        page_size=10,
+        inject_on_first_request=True,
+        extractor=expected_extractor,
+        parameters={},
+        config=input_config,
     )
 
     strategy = factory.create_offset_increment(
-        model, input_config, decoder=JsonDecoder(parameters={})
+        model, input_config, extractor_model=extractor_model, decoder=JsonDecoder(parameters={})
     )
 
     assert strategy.page_size == expected_strategy.page_size
     assert strategy.inject_on_first_request == expected_strategy.inject_on_first_request
     assert strategy.config == input_config
+
+    assert isinstance(strategy.extractor, DpathExtractor)
+    assert strategy.extractor.field_path == expected_extractor.field_path
 
 
 class MyCustomSchemaLoader(SchemaLoader):
@@ -3413,9 +3563,9 @@ def test_create_concurrent_cursor_from_perpartition_cursor_runs_state_migrations
         stream_state_migrations=[DummyStateMigration()],
     )
     assert cursor.state["lookback_window"] != 10, "State migration wasn't called"
-    assert (
-        cursor.state["lookback_window"] == 20
-    ), "State migration was called, but actual state don't match expected"
+    assert cursor.state["lookback_window"] == 20, (
+        "State migration was called, but actual state don't match expected"
+    )
 
 
 def test_create_concurrent_cursor_uses_min_max_datetime_format_if_defined():
@@ -4103,7 +4253,7 @@ def test_simple_retriever_with_query_properties():
     assert request_options_provider.request_parameters.get("nonary") == "{{config['nonary'] }}"
 
 
-def test_simple_retriever_with_properties_from_endpoint():
+def test_simple_retriever_with_request_parameters_properties_from_endpoint():
     content = """
     selector:
       type: RecordSelector
@@ -4198,6 +4348,88 @@ def test_simple_retriever_with_properties_from_endpoint():
     assert isinstance(property_chunking, PropertyChunking)
     assert property_chunking.property_limit_type == PropertyLimitType.property_count
     assert property_chunking.property_limit == 3
+
+
+def test_simple_retriever_with_requester_properties_from_endpoint():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+          type: DpathExtractor
+          field_path: ["extractor_path"]
+      record_filter:
+        type: RecordFilter
+        condition: "{{ record['id'] > stream_state['id'] }}"
+    requester:
+      type: HttpRequester
+      name: "{{ parameters['name'] }}"
+      url_base: "https://api.hubapi.com"
+      http_method: "GET"
+      path: "adAnalytics"
+      fetch_properties_from_endpoint:
+        type: PropertiesFromEndpoint
+        property_field_path: [ "name" ]
+        retriever:
+          type: SimpleRetriever
+          requester:
+            type: HttpRequester
+            url_base: https://api.hubapi.com
+            path: "/properties/v2/dynamics/properties"
+            http_method: GET
+          record_selector:
+            type: RecordSelector
+            extractor:
+              type: DpathExtractor
+              field_path: []
+    dynamic_properties_stream:
+      type: DeclarativeStream
+      incremental_sync:
+        type: DatetimeBasedCursor
+        $parameters:
+          datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+        start_datetime: "{{ config['start_time'] }}"
+        cursor_field: "created"
+      retriever:
+        type: SimpleRetriever
+        name: "{{ parameters['name'] }}"
+        requester:
+          $ref: "#/requester"
+        record_selector:
+          $ref: "#/selector"
+      $parameters:
+        name: "dynamics"
+        """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["dynamic_properties_stream"], {}
+    )
+
+    stream = factory.create_component(
+        model_type=DeclarativeStreamModel, component_definition=stream_manifest, config=input_config
+    )
+
+    query_properties = stream.retriever.additional_query_properties
+    assert isinstance(query_properties, QueryProperties)
+    assert query_properties.always_include_properties is None
+    assert query_properties.property_chunking is None
+
+    properties_from_endpoint = stream.retriever.additional_query_properties.property_list
+    assert isinstance(properties_from_endpoint, PropertiesFromEndpoint)
+    assert properties_from_endpoint.property_field_path == ["name"]
+
+    properties_from_endpoint_retriever = (
+        stream.retriever.additional_query_properties.property_list.retriever
+    )
+    assert isinstance(properties_from_endpoint_retriever, SimpleRetriever)
+
+    properties_from_endpoint_requester = (
+        stream.retriever.additional_query_properties.property_list.retriever.requester
+    )
+    assert isinstance(properties_from_endpoint_requester, HttpRequester)
+    assert properties_from_endpoint_requester.url_base == "https://api.hubapi.com"
+    assert properties_from_endpoint_requester.path == "/properties/v2/dynamics/properties"
 
 
 def test_request_parameters_raise_error_if_not_of_type_query_properties():
@@ -4344,6 +4576,89 @@ def test_create_simple_retriever_raise_error_if_multiple_request_properties():
         )
 
 
+def test_create_simple_retriever_raise_error_properties_from_endpoint_defined_multiple_times():
+    content = """
+    selector:
+      type: RecordSelector
+      extractor:
+          type: DpathExtractor
+          field_path: ["extractor_path"]
+      record_filter:
+        type: RecordFilter
+        condition: "{{ record['id'] > stream_state['id'] }}"
+    requester:
+      type: HttpRequester
+      name: "{{ parameters['name'] }}"
+      url_base: "https://api.linkedin.com/rest/"
+      http_method: "GET"
+      path: "adAnalytics"
+      fetch_properties_from_endpoint:
+        type: PropertiesFromEndpoint
+        property_field_path: [ "name" ]
+        retriever:
+          type: SimpleRetriever
+          requester:
+            type: HttpRequester
+            url_base: https://api.hubapi.com
+            path: "/properties/v2/dynamics/properties"
+            http_method: GET
+          record_selector:
+            type: RecordSelector
+            extractor:
+              type: DpathExtractor
+              field_path: []
+      request_parameters:
+        properties:
+          type: QueryProperties
+          property_list:
+            - first_name
+            - last_name
+            - status
+            - organization
+            - created_at
+          always_include_properties:
+            - id
+          property_chunking:
+            type: PropertyChunking
+            property_limit_type: property_count
+            property_limit: 3
+            record_merge_strategy:
+              type: GroupByKeyMergeStrategy
+              key: ["id"]
+        nonary: "{{config['nonary'] }}"
+    analytics_stream:
+      type: DeclarativeStream
+      incremental_sync:
+        type: DatetimeBasedCursor
+        $parameters:
+          datetime_format: "%Y-%m-%dT%H:%M:%S.%f%z"
+        start_datetime: "{{ config['start_time'] }}"
+        cursor_field: "created"
+      retriever:
+        type: SimpleRetriever
+        name: "{{ parameters['name'] }}"
+        requester:
+          $ref: "#/requester"
+        record_selector:
+          $ref: "#/selector"
+      $parameters:
+        name: "analytics"
+            """
+
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["analytics_stream"], {}
+    )
+
+    with pytest.raises(ValueError):
+        factory.create_component(
+            model_type=DeclarativeStreamModel,
+            component_definition=stream_manifest,
+            config=input_config,
+        )
+
+
 def test_create_property_chunking_characters():
     property_chunking_model = {
         "type": "PropertyChunking",
@@ -4380,3 +4695,71 @@ def test_create_property_chunking_invalid_property_limit_type():
             component_definition=property_chunking_model,
             config={},
         )
+
+
+def test_create_stream_with_multiple_schema_loaders():
+    content = """
+    retriever:
+      requester:
+        type: "HttpRequester"
+        path: "example"
+      record_selector:
+        extractor:
+          field_path: []
+    stream_A:
+      type: DeclarativeStream
+      name: "A"
+      primary_key: "id"
+      schema_loader:
+        - type: InlineSchemaLoader
+          schema:
+            "#/schemas/first_schema"
+        - type: InlineSchemaLoader
+          schema:
+            "#/schemas/second_schema"
+      $parameters:
+        retriever: "#/retriever"
+        url_base: "https://airbyte.io"
+    schemas:
+      first_schema:
+        $schema: "http://json-schema.org/draft-07/schema"
+        type:
+          - "null"
+          - object
+        additionalProperties: true
+        properties:
+          id:
+            description: The user ID
+            type:
+              - "null"
+              - string
+      second_schema:
+        $schema: "http://json-schema.org/draft-07/schema"
+        type:
+          - "null"
+          - object
+        additionalProperties: true
+        properties:
+          name:
+            description: The user name
+            type:
+              - "null"
+              - string
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    partition_router_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["stream_A"], {}
+    )
+
+    declarative_stream = factory.create_component(
+        model_type=DeclarativeStreamModel,
+        component_definition=partition_router_manifest,
+        config=input_config,
+    )
+
+    schema_loader = declarative_stream.schema_loader
+    assert isinstance(schema_loader, CompositeSchemaLoader)
+    assert len(schema_loader.schema_loaders) == 2
+    assert isinstance(schema_loader.schema_loaders[0], InlineSchemaLoader)
+    assert isinstance(schema_loader.schema_loaders[1], InlineSchemaLoader)

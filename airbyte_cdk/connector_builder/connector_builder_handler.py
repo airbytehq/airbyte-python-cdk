@@ -4,7 +4,7 @@
 
 
 from dataclasses import asdict, dataclass, field
-from typing import Any, Dict, List, Mapping
+from typing import Any, ClassVar, Dict, List, Mapping
 
 from airbyte_cdk.connector_builder.test_reader import TestReader
 from airbyte_cdk.models import (
@@ -37,6 +37,8 @@ MAX_STREAMS_KEY = "max_streams"
 
 @dataclass
 class TestLimits:
+    __test__: ClassVar[bool] = False  # Tell Pytest this is not a Pytest class, despite its name
+
     max_records: int = field(default=DEFAULT_MAXIMUM_RECORDS)
     max_pages_per_slice: int = field(default=DEFAULT_MAXIMUM_NUMBER_OF_PAGES_PER_SLICE)
     max_slices: int = field(default=DEFAULT_MAXIMUM_NUMBER_OF_SLICES)
@@ -54,12 +56,33 @@ def get_limits(config: Mapping[str, Any]) -> TestLimits:
     return TestLimits(max_records, max_pages_per_slice, max_slices, max_streams)
 
 
+def should_migrate_manifest(config: Mapping[str, Any]) -> bool:
+    """
+    Determines whether the manifest should be migrated,
+    based on the presence of the "__should_migrate" key in the config.
+
+    This flag is set by the UI.
+    """
+    return config.get("__should_migrate", False)
+
+
+def should_normalize_manifest(config: Mapping[str, Any]) -> bool:
+    """
+    Check if the manifest should be normalized.
+    :param config: The configuration to check
+    :return: True if the manifest should be normalized, False otherwise.
+    """
+    return config.get("__should_normalize", False)
+
+
 def create_source(config: Mapping[str, Any], limits: TestLimits) -> ManifestDeclarativeSource:
     manifest = config["__injected_declarative_manifest"]
     return ManifestDeclarativeSource(
         config=config,
         emit_connector_builder_messages=True,
         source_config=manifest,
+        migrate_manifest=should_migrate_manifest(config),
+        normalize_manifest=should_normalize_manifest(config),
         component_factory=ModelToComponentFactory(
             emit_connector_builder_messages=True,
             limit_pages_fetched_per_slice=limits.max_pages_per_slice,

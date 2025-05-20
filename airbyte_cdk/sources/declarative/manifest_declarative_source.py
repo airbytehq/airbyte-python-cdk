@@ -15,6 +15,12 @@ from jsonschema.exceptions import ValidationError
 from jsonschema.validators import validate
 from packaging.version import InvalidVersion, Version
 
+from airbyte_cdk.connector_builder.models import (
+    LogMessage as ConnectorBuilderLogMessage,
+)
+from airbyte_cdk.manifest_migrations.migration_handler import (
+    ManifestMigrationHandler,
+)
 from airbyte_cdk.models import (
     AirbyteConnectionStatus,
     AirbyteMessage,
@@ -29,7 +35,9 @@ from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DeclarativeStream as DeclarativeStreamModel,
 )
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import Spec as SpecModel
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    Spec as SpecModel,
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     StateDelegatingStream as StateDelegatingStreamModel,
 )
@@ -38,6 +46,9 @@ from airbyte_cdk.sources.declarative.parsers.custom_code_compiler import (
 )
 from airbyte_cdk.sources.declarative.parsers.manifest_component_transformer import (
     ManifestComponentTransformer,
+)
+from airbyte_cdk.sources.declarative.parsers.manifest_normalizer import (
+    ManifestNormalizer,
 )
 from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import (
     ManifestReferenceResolver,
@@ -58,6 +69,24 @@ from airbyte_cdk.sources.utils.slice_logger import (
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
+def _get_declarative_component_schema() -> Dict[str, Any]:
+    try:
+        raw_component_schema = pkgutil.get_data(
+            "airbyte_cdk", "sources/declarative/declarative_component_schema.yaml"
+        )
+        if raw_component_schema is not None:
+            declarative_component_schema = yaml.load(raw_component_schema, Loader=yaml.SafeLoader)
+            return declarative_component_schema  # type: ignore
+        else:
+            raise RuntimeError(
+                "Failed to read manifest component json schema required for deduplication"
+            )
+    except FileNotFoundError as e:
+        raise FileNotFoundError(
+            f"Failed to read manifest component json schema required for deduplication: {e}"
+        )
+
+
 class ManifestDeclarativeSource(DeclarativeSource):
     """Declarative source defined by a manifest of low-code components that define source connector behavior"""
 
@@ -69,7 +98,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
         debug: bool = False,
         emit_connector_builder_messages: bool = False,
         component_factory: Optional[ModelToComponentFactory] = None,
-    ):
+        migrate_manifest: Optional[bool] = False,
+        normalize_manifest: Optional[bool] = False,
+    ) -> None:
         """
         Args:
             config: The provided config dict.
@@ -77,21 +108,15 @@ class ManifestDeclarativeSource(DeclarativeSource):
             debug: True if debug mode is enabled.
             emit_connector_builder_messages: True if messages should be emitted to the connector builder.
             component_factory: optional factory if ModelToComponentFactory's default behavior needs to be tweaked.
+            normalize_manifest: Optional flag to indicate if the manifest should be normalized.
         """
         self.logger = logging.getLogger(f"airbyte.{self.name}")
-        # For ease of use we don't require the type to be specified at the top level manifest, but it should be included during processing
-        manifest = dict(source_config)
-        if "type" not in manifest:
-            manifest["type"] = "DeclarativeSource"
-
+        self._should_normalize = normalize_manifest
+        self._should_migrate = migrate_manifest
+        self._declarative_component_schema = _get_declarative_component_schema()
         # If custom components are needed, locate and/or register them.
         self.components_module: ModuleType | None = get_registered_components_module(config=config)
-
-        resolved_source_config = ManifestReferenceResolver().preprocess_manifest(manifest)
-        propagated_source_config = ManifestComponentTransformer().propagate_types_and_parameters(
-            "", resolved_source_config, {}
-        )
-        self._source_config = propagated_source_config
+        # set additional attributes
         self._debug = debug
         self._emit_connector_builder_messages = emit_connector_builder_messages
         self._constructor = (
@@ -106,15 +131,98 @@ class ManifestDeclarativeSource(DeclarativeSource):
         self._slice_logger: SliceLogger = (
             AlwaysLogSliceLogger() if emit_connector_builder_messages else DebugSliceLogger()
         )
-
         self._config = config or {}
+
+        # resolve all components in the manifest
+        self._source_config = self._pre_process_manifest(dict(source_config))
+        # validate resolved manifest against the declarative component schema
         self._validate_source()
+        # apply additional post-processing to the manifest
+        self._post_process_manifest()
 
         self.check_config_during_discover = self._uses_dynamic_schema_loader()
 
     @property
     def resolved_manifest(self) -> Mapping[str, Any]:
+        """
+        Returns the resolved manifest configuration for the source.
+
+        This property provides access to the internal source configuration as a mapping,
+        which contains all settings and parameters required to define the source's behavior.
+
+        Returns:
+            Mapping[str, Any]: The resolved source configuration manifest.
+        """
         return self._source_config
+
+    def _pre_process_manifest(self, manifest: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Preprocesses the provided manifest dictionary by resolving any manifest references.
+
+        This method modifies the input manifest in place, resolving references using the
+        ManifestReferenceResolver to ensure all references within the manifest are properly handled.
+
+        Args:
+            manifest (Dict[str, Any]): The manifest dictionary to preprocess and resolve references in.
+
+        Returns:
+            None
+        """
+        # For ease of use we don't require the type to be specified at the top level manifest, but it should be included during processing
+        manifest = self._fix_source_type(manifest)
+        # Resolve references in the manifest
+        resolved_manifest = ManifestReferenceResolver().preprocess_manifest(manifest)
+        # Propagate types and parameters throughout the manifest
+        propagated_manifest = ManifestComponentTransformer().propagate_types_and_parameters(
+            "", resolved_manifest, {}
+        )
+
+        return propagated_manifest
+
+    def _post_process_manifest(self) -> None:
+        """
+        Post-processes the manifest after validation.
+        This method is responsible for any additional modifications or transformations needed
+        after the manifest has been validated and before it is used in the source.
+        """
+        # apply manifest migration, if required
+        self._migrate_manifest()
+        # apply manifest normalization, if required
+        self._normalize_manifest()
+
+    def _normalize_manifest(self) -> None:
+        """
+        This method is used to normalize the manifest. It should be called after the manifest has been validated.
+
+        Connector Builder UI rendering requires the manifest to be in a specific format.
+         - references have been resolved
+         - the commonly used definitions are extracted to the `definitions.linked.*`
+        """
+        if self._should_normalize:
+            normalizer = ManifestNormalizer(self._source_config, self._declarative_component_schema)
+            self._source_config = normalizer.normalize()
+
+    def _migrate_manifest(self) -> None:
+        """
+        This method is used to migrate the manifest. It should be called after the manifest has been validated.
+        The migration is done in place, so the original manifest is modified.
+
+        The original manifest is returned if any error occurs during migration.
+        """
+        if self._should_migrate:
+            manifest_migrator = ManifestMigrationHandler(self._source_config)
+            self._source_config = manifest_migrator.apply_migrations()
+            # validate migrated manifest against the declarative component schema
+            self._validate_source()
+
+    def _fix_source_type(self, manifest: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Fix the source type in the manifest. This is necessary because the source type is not always set in the manifest.
+        """
+        if "type" not in manifest:
+            manifest["type"] = "DeclarativeSource"
+
+        return manifest
 
     @property
     def message_repository(self) -> MessageRepository:
@@ -123,8 +231,13 @@ class ManifestDeclarativeSource(DeclarativeSource):
     @property
     def dynamic_streams(self) -> List[Dict[str, Any]]:
         return self._dynamic_stream_configs(
-            manifest=self._source_config, config=self._config, with_dynamic_stream_name=True
+            manifest=self._source_config,
+            config=self._config,
+            with_dynamic_stream_name=True,
         )
+
+    def deprecation_warnings(self) -> List[ConnectorBuilderLogMessage]:
+        return self._constructor.get_model_deprecations()
 
     @property
     def connection_checker(self) -> ConnectionChecker:
@@ -146,7 +259,10 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
     def streams(self, config: Mapping[str, Any]) -> List[Stream]:
         self._emit_manifest_debug_message(
-            extra_args={"source_name": self.name, "parsed_config": json.dumps(self._source_config)}
+            extra_args={
+                "source_name": self.name,
+                "parsed_config": json.dumps(self._source_config),
+            }
         )
 
         stream_configs = self._stream_configs(self._source_config) + self._dynamic_stream_configs(
@@ -159,9 +275,11 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
         source_streams = [
             self._constructor.create_component(
-                StateDelegatingStreamModel
-                if stream_config.get("type") == StateDelegatingStreamModel.__name__
-                else DeclarativeStreamModel,
+                (
+                    StateDelegatingStreamModel
+                    if stream_config.get("type") == StateDelegatingStreamModel.__name__
+                    else DeclarativeStreamModel
+                ),
                 stream_config,
                 config,
                 emit_connector_builder_messages=self._emit_connector_builder_messages,
@@ -177,7 +295,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
     ) -> List[Dict[str, Any]]:
         parent_streams = set()
 
-        def update_with_cache_parent_configs(parent_configs: list[dict[str, Any]]) -> None:
+        def update_with_cache_parent_configs(
+            parent_configs: list[dict[str, Any]],
+        ) -> None:
             for parent_config in parent_configs:
                 parent_streams.add(parent_config["stream"]["name"])
                 if parent_config["stream"]["type"] == "StateDelegatingStream":
@@ -232,7 +352,10 @@ class ManifestDeclarativeSource(DeclarativeSource):
         """
         self._configure_logger_level(logger)
         self._emit_manifest_debug_message(
-            extra_args={"source_name": self.name, "parsed_config": json.dumps(self._source_config)}
+            extra_args={
+                "source_name": self.name,
+                "parsed_config": json.dumps(self._source_config),
+            }
         )
 
         spec = self._source_config.get("spec")
@@ -269,32 +392,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
         """
         Validates the connector manifest against the declarative component schema
         """
-        try:
-            raw_component_schema = pkgutil.get_data(
-                "airbyte_cdk", "sources/declarative/declarative_component_schema.yaml"
-            )
-            if raw_component_schema is not None:
-                declarative_component_schema = yaml.load(
-                    raw_component_schema, Loader=yaml.SafeLoader
-                )
-            else:
-                raise RuntimeError(
-                    "Failed to read manifest component json schema required for validation"
-                )
-        except FileNotFoundError as e:
-            raise FileNotFoundError(
-                f"Failed to read manifest component json schema required for validation: {e}"
-            )
-
-        streams = self._source_config.get("streams")
-        dynamic_streams = self._source_config.get("dynamic_streams")
-        if not (streams or dynamic_streams):
-            raise ValidationError(
-                f"A valid manifest should have at least one stream defined. Got {streams}"
-            )
 
         try:
-            validate(self._source_config, declarative_component_schema)
+            validate(self._source_config, self._declarative_component_schema)
         except ValidationError as e:
             raise ValidationError(
                 "Validation against json schema defined in declarative_component_schema.yaml schema failed"
@@ -392,7 +492,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
             # Create a resolver for dynamic components based on type
             components_resolver = self._constructor.create_component(
-                COMPONENTS_RESOLVER_TYPE_MAPPING[resolver_type], components_resolver_config, config
+                COMPONENTS_RESOLVER_TYPE_MAPPING[resolver_type],
+                components_resolver_config,
+                config,
             )
 
             stream_template_config = dynamic_definition["stream_template"]
