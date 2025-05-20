@@ -13,12 +13,10 @@ from pathlib import Path
 from typing import cast
 
 import yaml
+from airbyte_protocol_dataclasses.models.airbyte_protocol import AirbyteConnectionStatus
 from boltons.typeutils import classproperty
 
-from airbyte_cdk.models import (
-    AirbyteMessage,
-    Type,
-)
+from airbyte_cdk.models import Status
 from airbyte_cdk.test import entrypoint_wrapper
 from airbyte_cdk.test.standard_tests._job_runner import IConnector, run_test_job
 from airbyte_cdk.test.standard_tests.models import (
@@ -117,12 +115,22 @@ class ConnectorTestSuiteBase(abc.ABC):
             "check",
             test_scenario=scenario,
         )
-        conn_status_messages: list[AirbyteMessage] = [
-            msg for msg in result._messages if msg.type == Type.CONNECTION_STATUS
-        ]  # noqa: SLF001  # Non-public API
-        assert len(conn_status_messages) == 1, (
-            f"Expected exactly one CONNECTION_STATUS message. Got: {result._messages}"
+        assert len(result.connection_status_messages) == 1, (
+            f"Expected exactly one CONNECTION_STATUS message. Got {len(result.connection_status_messages)}: \n"
+            + "\n".join([str(m) for m in result._messages])
+            + "\nErrors: "
+            + str(result.errors)
+            or "None"
         )
+        conn_status = cast(
+            AirbyteConnectionStatus, result.connection_status_messages[0].connectionStatus
+        )
+        if (
+            scenario.expect_exception
+            and conn_status.status == Status.SUCCEEDED
+            and not result.errors
+        ):
+            raise AssertionError(f"Expected error in `check` but got success.")
 
     @classmethod
     def get_connector_root_dir(cls) -> Path:

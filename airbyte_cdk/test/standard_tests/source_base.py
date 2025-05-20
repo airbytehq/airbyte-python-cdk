@@ -3,6 +3,8 @@
 
 from dataclasses import asdict
 
+import pytest
+
 from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteStream,
@@ -58,6 +60,10 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         scenario: ConnectorTestScenario,
     ) -> None:
         """Standard test for `discover`."""
+        if scenario.expect_exception:
+            pytest.skip(
+                "Skipping `discover` test because the scenario is expected to raise an exception."
+            )
         run_test_job(
             self.create_connector(scenario),
             "discover",
@@ -99,13 +105,22 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         obtain the catalog of streams, and then it runs a `read` job to fetch
         records from those streams.
         """
+        check_result: entrypoint_wrapper.EntrypointOutput = run_test_job(
+            self.create_connector(scenario),
+            "check",
+            test_scenario=scenario,
+        )
+        if scenario.expect_exception and check_result.errors:
+            # Expected failure and we got it. Return early.
+            return
+
         discover_result = run_test_job(
             self.create_connector(scenario),
             "discover",
             test_scenario=scenario,
         )
-        if scenario.expect_exception:
-            assert discover_result.errors, "Expected exception but got none."
+        if scenario.expect_exception and check_result.errors:
+            # Expected failure and we got it. Return early.
             return
 
         configured_catalog = ConfiguredAirbyteCatalog(
@@ -124,6 +139,9 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             test_scenario=scenario,
             catalog=configured_catalog,
         )
+        if scenario.expect_exception and not result.errors:
+            # By now we should have raised an exception.
+            raise AssertionError("Expected an error but got none.")
 
         if not result.records:
             raise AssertionError("Expected records but got none.")  # noqa: TRY003
@@ -133,6 +151,11 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         scenario: ConnectorTestScenario,
     ) -> None:
         """Standard test for `read` when passed a bad catalog file."""
+        # Recreate the scenario with the same config but set the status to "failed".
+        scenario = ConnectorTestScenario(
+            config_dict=scenario.get_config_dict(empty_if_missing=False),
+            status="failed",
+        )
         invalid_configured_catalog = ConfiguredAirbyteCatalog(
             streams=[
                 # Create ConfiguredAirbyteStream which is deliberately invalid
@@ -153,7 +176,6 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             ]
         )
         # Set expected status to "failed" to ensure the test fails if the connector.
-        scenario.status = "failed"
         result: entrypoint_wrapper.EntrypointOutput = run_test_job(
             self.create_connector(scenario),
             "read",
