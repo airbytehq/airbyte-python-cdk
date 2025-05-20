@@ -151,6 +151,11 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         scenario: ConnectorTestScenario,
     ) -> None:
         """Standard test for `read` when passed a bad catalog file."""
+        # Recreate the scenario with the same config but set the status to "failed".
+        scenario = ConnectorTestScenario(
+            config_dict=scenario.get_config_dict(empty_if_missing=False),
+            status="failed",
+        )
         invalid_configured_catalog = ConfiguredAirbyteCatalog(
             streams=[
                 # Create ConfiguredAirbyteStream which is deliberately invalid
@@ -171,7 +176,6 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             ]
         )
         # Set expected status to "failed" to ensure the test fails if the connector.
-        scenario.status = "failed"
         result: entrypoint_wrapper.EntrypointOutput = run_test_job(
             self.create_connector(scenario),
             "read",

@@ -148,8 +148,9 @@ def run_test_job(
 
         return result
 
-    assert not result.errors, (
-        f"Expected no errors but got {len(result.errors)}: \n" + _errors_to_str(result)
-    )
+    if not test_scenario.expect_exception:
+        assert not result.errors, (
+            f"Expected no errors but got {len(result.errors)}: \n" + _errors_to_str(result)
+        )
 
     return result
