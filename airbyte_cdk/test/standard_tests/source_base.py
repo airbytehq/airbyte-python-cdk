@@ -3,6 +3,8 @@
 
 from dataclasses import asdict
 
+import pytest
+
 from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteStream,
@@ -58,6 +60,10 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         scenario: ConnectorTestScenario,
     ) -> None:
         """Standard test for `discover`."""
+        if scenario.expect_exception:
+            pytest.skip(
+                "Skipping discover test because the scenario is expected to raise an exception."
+            )
         run_test_job(
             self.create_connector(scenario),
             "discover",
