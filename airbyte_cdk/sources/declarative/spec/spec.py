@@ -73,8 +73,7 @@ class Spec:
         """
         Apply all specified config transformations to the provided config and save the modified config to the given path and emit a control message.
 
-        :param args: Command line arguments
-        :param source: Source instance
+        :param config_path: The path to the config file
         :param config: The user-provided config to migrate
         """
 
