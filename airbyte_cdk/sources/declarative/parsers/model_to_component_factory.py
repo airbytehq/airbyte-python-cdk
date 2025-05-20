@@ -2544,10 +2544,19 @@ class ModelToComponentFactory:
         schema_type_identifier = self._create_component_from_model(
             model.schema_type_identifier, config=config, parameters=model.parameters or {}
         )
+        schema_filter = (
+            self._create_component_from_model(
+                model.schema_filter, config=config, parameters=model.parameters or {}
+            )
+            if model.schema_filter is not None
+            else None
+        )
+
         return DynamicSchemaLoader(
             retriever=retriever,
             config=config,
             schema_transformations=schema_transformations,
+            schema_filter=schema_filter,
             schema_type_identifier=schema_type_identifier,
             parameters=model.parameters or {},
         )
