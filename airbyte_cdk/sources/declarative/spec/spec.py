@@ -104,11 +104,7 @@ class Spec:
         for transformation in self.config_transformations:
             transformation.transform(config)
 
-<<<<<<< HEAD
     def validate_config(self, config: Mapping[str, Any]) -> None:
-=======
-    def validate_config(self, config: MutableMapping[str, Any]) -> None:
->>>>>>> main
         """
         Apply all config validations to the provided config.
 
