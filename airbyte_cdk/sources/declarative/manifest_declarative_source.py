@@ -8,7 +8,7 @@ import pkgutil
 from copy import deepcopy
 from importlib import metadata
 from types import ModuleType
-from typing import Any, Dict, Iterator, List, Mapping, MutableMapping, Optional, Set, cast
+from typing import Any, Dict, Iterator, List, Mapping, MutableMapping, Optional, Set
 
 import yaml
 from jsonschema.exceptions import ValidationError
@@ -296,7 +296,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
         return source_streams
 
-    def migrate_config(self, config_path: Optional[Any], config: MutableMapping[str, Any]) -> None:
+    def migrate_config(self, config_path: Optional[str], config: MutableMapping[str, Any]) -> None:
         self._spec_component.migrate_config(config_path, config) if self._spec_component else None
 
     def transform_config(self, config: MutableMapping[str, Any]) -> None:

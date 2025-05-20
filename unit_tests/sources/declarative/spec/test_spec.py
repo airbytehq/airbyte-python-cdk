@@ -222,7 +222,7 @@ def test_given_unmigrated_config_when_migrating_then_config_is_migrated(migratio
     )
     spec.message_repository = migration_mocks["message_repository"]
 
-    spec.migrate_config(["spec"], migration_mocks["source"], input_config)
+    spec.migrate_config("/fake/config/path", input_config)
 
     migration_mocks["message_repository"].emit_message.assert_called_once()
     migration_mocks["open"].assert_called_once_with("/fake/config/path", "w")
@@ -252,7 +252,7 @@ def test_given_already_migrated_config_no_control_message_is_emitted(migration_m
     )
     spec.message_repository = migration_mocks["message_repository"]
 
-    spec.migrate_config(["spec"], migration_mocks["source"], input_config)
+    spec.migrate_config("/fake/config/path", input_config)
 
     migration_mocks["message_repository"].emit_message.assert_not_called()
     migration_mocks["open"].assert_not_called()

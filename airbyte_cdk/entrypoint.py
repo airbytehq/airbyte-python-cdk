@@ -187,7 +187,7 @@ class AirbyteEntrypoint(object):
                     raw_config = self.source.read_config(parsed_args.config)
                     config = self.source.configure(raw_config, temp_dir)
                     mutable_config = dict(config)
-                    config_path = self.extract_config(sys.argv[1:])
+                    config_path = parsed_args.config if parsed_args.config else None
                     if config_path:
                         self.source.migrate_config(config_path, mutable_config)
                     self.source.transform_config(mutable_config)
