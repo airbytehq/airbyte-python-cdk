@@ -4140,7 +4140,9 @@ definitions:
       stream_template:
         title: Stream Template
         description: Reference to the stream template.
-        "$ref": "#/definitions/DeclarativeStream"
+        anyOf:
+          - "$ref": "#/definitions/DeclarativeStream"
+          - "$ref": "#/definitions/StateDelegatingStream"
       components_resolver:
         title: Components Resolver
         description: Component resolve and populates stream templates with components values.
