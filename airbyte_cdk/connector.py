@@ -34,9 +34,9 @@ class BaseConnector(ABC, Generic[TConfig]):
     check_config_against_spec: bool = True
     """Configure whether `check_config_against_spec_or_exit()` needs to be called."""
 
-    check_config_during_discover: bool = False
+    check_config_during_discover: bool = True
     """Determines whether config validation should be skipped during discovery.
-    
+
     By default, config validation is not skipped during discovery. This can be overridden
     by sources that can provide catalog information without requiring authentication.
     """

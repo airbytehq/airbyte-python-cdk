@@ -90,6 +90,9 @@ def _get_declarative_component_schema() -> Dict[str, Any]:
 class ManifestDeclarativeSource(DeclarativeSource):
     """Declarative source defined by a manifest of low-code components that define source connector behavior"""
 
+    check_config_during_discover: bool = False
+    """Declarative sources default to not checking config before discovery."""
+
     def __init__(
         self,
         source_config: ConnectionDefinition,
