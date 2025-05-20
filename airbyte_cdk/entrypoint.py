@@ -197,6 +197,9 @@ class AirbyteEntrypoint(object):
                         AirbyteEntrypoint.airbyte_message_to_string,
                         self.discover(source_spec, empty_config),
                     )
+                elif parsed_args.config is None:
+                    # Raise a helpful error message if we reach here with no config.
+                    raise ValueError("The '--config' arg is required but was not provided.")
                 else:
                     raw_config = self.source.read_config(parsed_args.config)
                     config = self.source.configure(raw_config, temp_dir)
