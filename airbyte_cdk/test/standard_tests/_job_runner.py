@@ -148,13 +148,6 @@ def run_test_job(
 
         return result
 
-    # For all other verbs, we assert check that an exception is raised (or not).
-    if test_scenario.expect_exception:
-        if not result.errors:
-            raise AssertionError("Expected exception but got none.")
-
-        return result
-
     assert not result.errors, (
         f"Expected no errors but got {len(result.errors)}: \n" + _errors_to_str(result)
     )
