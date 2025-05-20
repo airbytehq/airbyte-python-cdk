@@ -2738,7 +2738,7 @@ class DynamicDeclarativeStream(BaseModel):
     name: Optional[str] = Field(
         "", description="The dynamic stream name.", example=["Tables"], title="Name"
     )
-    stream_template: DeclarativeStream = Field(
+    stream_template: Union[DeclarativeStream, StateDelegatingStream] = Field(
         ..., description="Reference to the stream template.", title="Stream Template"
     )
     components_resolver: Union[HttpComponentsResolver, ConfigComponentsResolver] = Field(
