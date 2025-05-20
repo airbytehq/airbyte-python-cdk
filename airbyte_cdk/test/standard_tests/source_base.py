@@ -141,9 +141,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         )
         if scenario.expect_exception and not result.errors:
             # By now we should have raised an exception.
-            raise AssertionError(
-                "Expected an error but got none."
-            )
+            raise AssertionError("Expected an error but got none.")
 
         if not result.records:
             raise AssertionError("Expected records but got none.")  # noqa: TRY003
