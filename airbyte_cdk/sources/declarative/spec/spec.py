@@ -69,9 +69,7 @@ class Spec:
         # We remap these keys to camel case because that's the existing format expected by the rest of the platform
         return ConnectorSpecificationSerializer.load(obj)
 
-    def migrate_config(
-        self, args: List[str], source: Source, config: MutableMapping[str, Any]
-    ) -> None:
+    def migrate_config(self, config_path: Optional[Any], config: Mapping[str, Any]) -> None:
         """
         Apply all specified config transformations to the provided config and save the modified config to the given path and emit a control message.
 
@@ -79,7 +77,6 @@ class Spec:
         :param source: Source instance
         :param config: The user-provided config to migrate
         """
-        config_path = AirbyteEntrypoint(source).extract_config(args)
 
         if not config_path:
             return
@@ -107,7 +104,7 @@ class Spec:
         for transformation in self.config_transformations:
             transformation.transform(config)
 
-    def validate_config(self, config: MutableMapping[str, Any]) -> None:
+    def validate_config(self, config: Mapping[str, Any]) -> None:
         """
         Apply all config validations to the provided config.
 

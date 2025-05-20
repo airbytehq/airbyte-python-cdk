@@ -5,7 +5,7 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Generic, Iterable, List, Mapping, Optional, TypeVar
+from typing import Any, Generic, Iterable, List, Mapping, MutableMapping, Optional, TypeVar
 
 from airbyte_cdk.connector import BaseConnector, DefaultConnectorMixin, TConfig
 from airbyte_cdk.models import (
@@ -93,3 +93,9 @@ class Source(
     def name(self) -> str:
         """Source name"""
         return self.__class__.__name__
+
+    def migrate_config(self, config_path: str, config: MutableMapping[str, Any]) -> None:
+        pass
+
+    def transform_config(self, config: MutableMapping[str, Any]) -> None:
+        pass

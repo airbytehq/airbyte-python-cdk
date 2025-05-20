@@ -8,7 +8,7 @@ import pkgutil
 from copy import deepcopy
 from importlib import metadata
 from types import ModuleType
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Set
+from typing import Any, Dict, Iterator, List, Mapping, MutableMapping, Optional, Set, cast
 
 import yaml
 from jsonschema.exceptions import ValidationError
@@ -57,6 +57,7 @@ from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
 from airbyte_cdk.sources.declarative.resolvers import COMPONENTS_RESOLVER_TYPE_MAPPING
+from airbyte_cdk.sources.declarative.spec.spec import Spec
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.types import ConnectionDefinition
@@ -138,6 +139,12 @@ class ManifestDeclarativeSource(DeclarativeSource):
         self._validate_source()
         # apply additional post-processing to the manifest
         self._post_process_manifest()
+
+        self._spec_component: Optional[Spec] = None
+        if spec := self._source_config.get("spec"):
+            if "type" not in spec:
+                spec["type"] = "Spec"
+            self._spec_component = self._constructor.create_component(SpecModel, spec, dict())
 
     @property
     def resolved_manifest(self) -> Mapping[str, Any]:
@@ -255,6 +262,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
             )
 
     def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+        if self._spec_component:
+            self._spec_component.validate_config(config)
+
         self._emit_manifest_debug_message(
             extra_args={
                 "source_name": self.name,
@@ -285,6 +295,12 @@ class ManifestDeclarativeSource(DeclarativeSource):
         ]
 
         return source_streams
+
+    def migrate_config(self, config_path: Optional[Any], config: MutableMapping[str, Any]) -> None:
+        self._spec_component.migrate_config(config_path, config) if self._spec_component else None
+
+    def transform_config(self, config: MutableMapping[str, Any]) -> None:
+        self._spec_component.transform_config(config) if self._spec_component else None
 
     @staticmethod
     def _initialize_cache_for_parent_streams(
@@ -355,14 +371,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
             }
         )
 
-        spec = self._source_config.get("spec")
-        if spec:
-            if "type" not in spec:
-                spec["type"] = "Spec"
-            spec_component = self._constructor.create_component(SpecModel, spec, dict())
-            return spec_component.generate_spec()
-        else:
-            return super().spec(logger)
+        return (
+            self._spec_component.generate_spec() if self._spec_component else super().spec(logger)
+        )
 
     def check(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteConnectionStatus:
         self._configure_logger_level(logger)

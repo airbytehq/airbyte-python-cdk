@@ -166,6 +166,7 @@ class AirbyteEntrypoint(object):
             self.logger.setLevel(logging.INFO)
 
         source_spec: ConnectorSpecification = self.source.spec(self.logger)
+
         try:
             with tempfile.TemporaryDirectory(
                 # Cleanup can fail on Windows due to file locks. Ignore if so,
@@ -185,6 +186,12 @@ class AirbyteEntrypoint(object):
                 else:
                     raw_config = self.source.read_config(parsed_args.config)
                     config = self.source.configure(raw_config, temp_dir)
+                    mutable_config = dict(config)
+                    config_path = self.extract_config(sys.argv[1:])
+                    if config_path:
+                        self.source.migrate_config(config_path, mutable_config)
+                    self.source.transform_config(mutable_config)
+                    config = mutable_config
 
                     yield from [
                         self.airbyte_message_to_string(queued_message)
