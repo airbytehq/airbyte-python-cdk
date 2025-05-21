@@ -2279,3 +2279,131 @@ def test_given_already_migrated_config_no_control_message_is_emitted(migration_m
     migration_mocks["serializer_dump"].assert_not_called()
     migration_mocks["orjson_dumps"].assert_not_called()
     migration_mocks["decoded_bytes"].decode.assert_not_called()
+
+
+def test_given_valid_config_streams_validates_config_and_does_not_raise():
+    input_config = {"schema_to_validate": {"planet": "Coruscant"}}
+
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+            "parameters": {},
+            "config_normalization_rules": {
+                "validations": [
+                    {
+                        "type": "DpathValidator",
+                        "field_path": ["schema_to_validate"],
+                        "validation_strategy": {
+                            "type": "ValidateAdheresToSchema",
+                            "base_schema": {
+                                "$schema": "http://json-schema.org/draft-07/schema#",
+                                "title": "Test Spec",
+                                "type": "object",
+                                "properties": {"planet": {"type": "string"}},
+                                "required": ["planet"],
+                                "additionalProperties": False,
+                            },
+                        },
+                    }
+                ],
+            },
+        },
+    }
+
+    source = ManifestDeclarativeSource(
+        source_config=manifest,
+    )
+
+    source.streams(input_config)
+
+
+def test_given_invalid_config_streams_validates_config_and_raises():
+    input_config = {"schema_to_validate": {"will_fail": "Coruscant"}}
+
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+            "parameters": {},
+            "config_normalization_rules": {
+                "validations": [
+                    {
+                        "type": "DpathValidator",
+                        "field_path": ["schema_to_validate"],
+                        "validation_strategy": {
+                            "type": "ValidateAdheresToSchema",
+                            "base_schema": {
+                                "$schema": "http://json-schema.org/draft-07/schema#",
+                                "title": "Test Spec",
+                                "type": "object",
+                                "properties": {"planet": {"type": "string"}},
+                                "required": ["planet"],
+                                "additionalProperties": False,
+                            },
+                        },
+                    }
+                ],
+            },
+        },
+    }
+    source = ManifestDeclarativeSource(
+        source_config=manifest,
+    )
+
+    with pytest.raises(ValueError):
+        source.streams(input_config)
