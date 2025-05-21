@@ -58,6 +58,7 @@ class SourceLocalYaml(YamlDeclarativeSource):
         catalog: ConfiguredAirbyteCatalog | None,
         config: MutableMapping[str, Any] | None,
         state: TState,
+        config_path: str | None,
         **kwargs: Any,
     ) -> None:
         """
@@ -76,6 +77,7 @@ class SourceLocalYaml(YamlDeclarativeSource):
             config=config,
             state=state,  # type: ignore [arg-type]
             path_to_yaml="manifest.yaml",
+            config_path=config_path,
         )
 
 
