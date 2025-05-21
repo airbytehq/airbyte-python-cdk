@@ -9,9 +9,10 @@ import os
 import pkgutil
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any, Generic, Mapping, Optional, Self, TypeVar
+from typing import Any, Generic, Mapping, Optional, TypeVar
 
 import yaml
+from typing_extensions import Self
 
 from airbyte_cdk.models import (
     AirbyteConnectionStatus,
