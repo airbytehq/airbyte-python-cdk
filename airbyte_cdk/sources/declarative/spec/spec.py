@@ -41,7 +41,6 @@ class Spec:
     config_migrations: List[ConfigMigration] = field(default_factory=list)
     config_transformations: List[ConfigTransformation] = field(default_factory=list)
     config_validations: List[Validator] = field(default_factory=list)
-    message_repository: MessageRepository = InMemoryMessageRepository()
 
     def generate_spec(self) -> ConnectorSpecification:
         """
@@ -68,7 +67,6 @@ class Spec:
 
         :param config: The user-provided config to migrate
         """
-
         for migration in self.config_migrations:
             for transformation in migration.transformations:
                 transformation.transform(config)

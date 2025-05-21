@@ -62,6 +62,7 @@ from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
 from airbyte_cdk.sources.declarative.resolvers import COMPONENTS_RESOLVER_TYPE_MAPPING
 from airbyte_cdk.sources.declarative.spec.spec import Spec
 from airbyte_cdk.sources.message import MessageRepository
+from airbyte_cdk.sources.message.repository import InMemoryMessageRepository
 from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.types import ConnectionDefinition
 from airbyte_cdk.sources.utils.slice_logger import (
@@ -146,7 +147,8 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
         self._config: Mapping[str, Any]
         self._spec_component: Optional[Spec] = None
-        if spec := self._source_config.get("spec"):
+        spec = self._source_config.get("spec")
+        if spec:
             if "type" not in spec:
                 spec["type"] = "Spec"
             self._spec_component = self._constructor.create_component(SpecModel, spec, dict())
