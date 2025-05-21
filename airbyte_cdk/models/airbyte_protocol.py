@@ -1,7 +1,5 @@
-#
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
-#
-
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+from collections.abc import Callable
 from dataclasses import InitVar, dataclass
 from functools import cached_property
 from typing import Annotated, Any, Dict, List, Mapping, Optional, Union
@@ -10,8 +8,6 @@ import orjson
 from airbyte_protocol_dataclasses.models import *  # noqa: F403  # Allow '*'
 from serpyco_rs import CustomType, Serializer
 from serpyco_rs.metadata import Alias
-
-# ruff: noqa: F405  # ignore fuzzy import issues with 'import *'
 
 
 @dataclass
@@ -53,19 +49,18 @@ class AirbyteStateBlob:
         )
 
 
-class AirbyteStateBlobType(CustomType[AirbyteStateBlob, dict[str, Any]]):
-    def serialize(self, value: AirbyteStateBlob) -> dict[str, Any]:
-        # cant use orjson.dumps() directly because private attributes are excluded, e.g. "__ab_full_refresh_sync_complete"
-        return {k: v for k, v in value.__dict__.items()}
+def _custom_state_resolver(t: type) -> CustomType[AirbyteStateBlob, dict[str, Any]] | None:
+    class AirbyteStateBlobType(CustomType[AirbyteStateBlob, Dict[str, Any]]):
+        def serialize(self, value: AirbyteStateBlob) -> Dict[str, Any]:
+            # cant use orjson.dumps() directly because private attributes are excluded, e.g. "__ab_full_refresh_sync_complete"
+            return {k: v for k, v in value.__dict__.items()}
 
-    def deserialize(self, value: dict[str, Any]) -> AirbyteStateBlob:
-        return AirbyteStateBlob(value)
+        def deserialize(self, value: Dict[str, Any]) -> AirbyteStateBlob:
+            return AirbyteStateBlob(value)
 
-    def get_json_schema(self) -> dict[str, Any]:
-        return {"type": "object"}
+        def get_json_schema(self) -> Dict[str, Any]:
+            return {"type": "object"}
 
-
-def custom_type_resolver(t: type) -> CustomType[AirbyteStateBlob, dict[str, Any]] | None:
     return AirbyteStateBlobType() if t is AirbyteStateBlob else None
 
 
@@ -93,33 +88,6 @@ class AirbyteStateMessage:
     sourceStats: Optional[AirbyteStateStats] = None  # type: ignore [name-defined]
     destinationStats: Optional[AirbyteStateStats] = None  # type: ignore [name-defined]
 
-    def to_dict(self) -> dict:
-        return self._serializer.dump(self)
-
-    def to_string(self) -> str:
-        return orjson.dumps(self.to_dict()).decode("utf-8")
-
-    def from_string(self, string: str, /) -> "AirbyteMessage":
-        """Deserialize a string into an AirbyteMessage object."""
-        return self._serializer.load(orjson.loads(string))
-
-    def from_dict(self, dictionary: dict, /) -> "AirbyteMessage":
-        """Deserialize a dictionary into an AirbyteMessage object."""
-        return self._serializer.load(dictionary)
-
-    @cached_property
-    @classmethod
-    def _serializer(cls) -> Serializer:
-        """
-        Returns a serializer for the AirbyteMessage class.
-        The serializer is cached for performance reasons.
-        """
-        return Serializer(
-            AirbyteStateMessage,
-            omit_none=True,
-            custom_type_resolver=custom_type_resolver,
-        )
-
 
 @dataclass
 class AirbyteMessage:
@@ -133,29 +101,32 @@ class AirbyteMessage:
     trace: Optional[AirbyteTraceMessage] = None  # type: ignore [name-defined]
     control: Optional[AirbyteControlMessage] = None  # type: ignore [name-defined]
 
-    def to_dict(self) -> dict:
-        return self._serializer.dump(self)
+    @property
+    def _serializer(self):
+        raise NotImplementedError
 
-    def to_string(self) -> str:
-        return orjson.dumps(self.to_dict()).decode("utf-8")
+    @_serializer.setter
+    def _serializer(self, value):
+        raise NotImplementedError
 
-    def from_string(self, string: str, /) -> "AirbyteMessage":
-        """Deserialize a string into an AirbyteMessage object."""
-        return self._serializer.load(orjson.loads(string))
 
-    def from_dict(self, dictionary: dict, /) -> "AirbyteMessage":
-        """Deserialize a dictionary into an AirbyteMessage object."""
-        return self._serializer.load(dictionary)
+def _with_serdes(
+    cls,
+    type_resolver: Callable[[type], CustomType[Any, Any] | None] | None = None,
+) -> type:
+    """Decorator to add SerDes (serialize/deserialize) methods to a dataclass."""
+    cls._serializer = Serializer(cls, omit_none=True, custom_type_resolver=type_resolver)
+    cls.to_dict = lambda self: self._serializer.dump(self)
+    cls.to_json = lambda self: orjson.dumps(self._serializer.dump(self)).decode("utf-8")
+    cls.from_json = lambda self, string: self._serializer.load(orjson.loads(string))
+    cls.from_dict = lambda self, dictionary: self._serializer.load(dictionary)
+    return cls
 
-    @cached_property
-    @classmethod
-    def _serializer(cls) -> Serializer:
-        """
-        Returns a serializer for the AirbyteMessage class.
-        The serializer is cached for performance reasons.
-        """
-        return Serializer(
-            AirbyteMessage,
-            omit_none=True,
-            custom_type_resolver=custom_type_resolver,
-        )
+# Add serdes capabilities to all data classes that need to serialize and deserialize:
+AirbyteMessage = _with_serdes(AirbyteMessage, _custom_state_resolver)
+AirbyteStateMessage = _with_serdes(AirbyteStateMessage, _custom_state_resolver)
+AirbyteStreamState = _with_serdes(AirbyteStreamState, _custom_state_resolver)
+# These don't need the custom resolver:
+ConnectorSpecification = _with_serdes(ConnectorSpecification)
+ConfiguredAirbyteCatalog = _with_serdes(ConfiguredAirbyteCatalog)
+AirbyteStream = _with_serdes(AirbyteStream)

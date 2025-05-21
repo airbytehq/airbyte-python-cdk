@@ -14,12 +14,8 @@ from typing import Any, Generic, Mapping, Optional, TypeVar
 import yaml
 from typing_extensions import Self
 
-from airbyte_cdk.models import (
-    AirbyteConnectionStatus,
-    ConnectorSpecification,
-    ConnectorSpecificationSerializer,
-)
-from airbyte_cdk.models.airbyte_protocol import AirbyteMessage, Type
+from airbyte_cdk.models import AirbyteConnectionStatus
+from airbyte_cdk.models.airbyte_protocol import AirbyteMessage, ConnectorSpecification, Type
 from airbyte_cdk.sources.message.repository import MessageRepository, PassthroughMessageRepository
 from airbyte_cdk.utils.cli_arg_parse import ConnectorCLIArgs, parse_cli_args
 
@@ -86,7 +82,7 @@ class BaseConnector(ABC, Generic[TConfig]):
         else:
             raise FileNotFoundError("Unable to find spec.yaml or spec.json in the package.")
 
-        return ConnectorSpecificationSerializer.load(spec_obj)
+        return ConnectorSpecification.from_dict(spec_obj)
 
     @abstractmethod
     def check(self, logger: logging.Logger, config: TConfig) -> AirbyteConnectionStatus:
