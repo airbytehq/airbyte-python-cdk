@@ -1,28 +1,21 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
-import json
 from dataclasses import InitVar, dataclass, field
 from typing import Any, List, Mapping, MutableMapping, Optional
 
-import orjson
-
-from airbyte_cdk.config_observation import create_connector_config_control_message
-from airbyte_cdk.entrypoint import AirbyteEntrypoint
 from airbyte_cdk.models import (
     AdvancedAuth,
     ConnectorSpecification,
     ConnectorSpecificationSerializer,
 )
-from airbyte_cdk.models.airbyte_protocol_serializers import AirbyteMessageSerializer
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import AuthFlow
 from airbyte_cdk.sources.declarative.transformations.config_transformations.config_transformation import (
     ConfigTransformation,
 )
 from airbyte_cdk.sources.declarative.validators.validator import Validator
 from airbyte_cdk.sources.message.repository import InMemoryMessageRepository, MessageRepository
-from airbyte_cdk.sources.source import Source
 
 
 @dataclass
