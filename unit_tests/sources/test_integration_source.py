@@ -77,11 +77,11 @@ def test_external_request_source(
             args = ["read", "--config", "config.json", "--catalog", "configured_catalog.json"]
             if expected_error:
                 with pytest.raises(AirbyteTracedException):
-                    launch(source, args)
+                    source.launch_with_cli_args(args)
                     messages = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
                     assert contains_error_trace_message(messages, expected_error)
             else:
-                launch(source, args)
+                source.launch_with_cli_args(args)
 
 
 @pytest.mark.parametrize(
@@ -138,11 +138,11 @@ def test_external_oauth_request_source(
         args = ["read", "--config", "config.json", "--catalog", "configured_catalog.json"]
         if expected_error:
             with pytest.raises(AirbyteTracedException):
-                launch(source, args)
+                source.launch_with_cli_args(args)
                 messages = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
                 assert contains_error_trace_message(messages, expected_error)
         else:
-            launch(source, args)
+            source.launch_with_cli_args(args)
 
 
 def contains_error_trace_message(messages: List[Mapping[str, Any]], expected_error: str) -> bool:

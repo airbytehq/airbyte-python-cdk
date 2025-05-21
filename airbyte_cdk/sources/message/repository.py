@@ -4,6 +4,7 @@
 
 import json
 import logging
+import sys
 from abc import ABC, abstractmethod
 from collections import deque
 from typing import Callable, Deque, Iterable, List, Optional
@@ -58,6 +59,43 @@ class MessageRepository(ABC):
     @abstractmethod
     def consume_queue(self) -> Iterable[AirbyteMessage]:
         raise NotImplementedError()
+
+
+class PassthroughMessageRepository(MessageRepository):
+    """A message repository which simply passes output on to STDOUT."""
+
+    def __init__(
+        self,
+        log_level: Level = Level.WARN,
+    ) -> None:
+        """Initialize the message repository.
+
+        Log level is configurable.
+        """
+        self._log_level: Level = log_level
+
+    def emit_message(self, message: AirbyteMessage) -> None:
+        """Passthrough message to STDOUT."""
+        sys.stdout.write(message.to_string())
+
+    def log_message(
+        self,
+        level: Level,
+        message_provider: Callable[[], LogMessage],
+    ) -> None:
+        if _is_severe_enough(self._log_level, level):
+            self.emit_message(
+                AirbyteMessage(
+                    type=Type.LOG,
+                    log=AirbyteLogMessage(
+                        level=level, message=filter_secrets(json.dumps(message_provider()))
+                    ),
+                )
+            )
+
+    def consume_queue(self) -> Iterable[AirbyteMessage]:
+        """No-op, since nothing is queued in the passthrough message repository."""
+        return []
 
 
 class NoopMessageRepository(MessageRepository):

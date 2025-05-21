@@ -2,9 +2,10 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
-from dataclasses import InitVar, dataclass
+from dataclasses import InitVar, asdict, dataclass
 from typing import Annotated, Any, Dict, List, Mapping, Optional, Union
 
+import orjson
 from airbyte_protocol_dataclasses.models import *  # noqa: F403  # Allow '*'
 from serpyco_rs.metadata import Alias
 
@@ -86,3 +87,9 @@ class AirbyteMessage:
     state: Optional[AirbyteStateMessage] = None
     trace: Optional[AirbyteTraceMessage] = None  # type: ignore [name-defined]
     control: Optional[AirbyteControlMessage] = None  # type: ignore [name-defined]
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    def to_string(self) -> str:
+        return orjson.dumps(self.to_dict()).decode("utf-8")
