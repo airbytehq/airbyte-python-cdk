@@ -48,21 +48,6 @@ class AirbyteStateBlob:
         )
 
 
-def _custom_state_resolver(t: type) -> CustomType[AirbyteStateBlob, dict[str, Any]] | None:
-    class AirbyteStateBlobType(CustomType[AirbyteStateBlob, Dict[str, Any]]):
-        def serialize(self, value: AirbyteStateBlob) -> Dict[str, Any]:
-            # cant use orjson.dumps() directly because private attributes are excluded, e.g. "__ab_full_refresh_sync_complete"
-            return {k: v for k, v in value.__dict__.items()}
-
-        def deserialize(self, value: Dict[str, Any]) -> AirbyteStateBlob:
-            return AirbyteStateBlob(value)
-
-        def get_json_schema(self) -> Dict[str, Any]:
-            return {"type": "object"}
-
-    return AirbyteStateBlobType() if t is AirbyteStateBlob else None
-
-
 # The following dataclasses have been redeclared to include the new version of AirbyteStateBlob
 @dataclass
 class AirbyteStreamState:
@@ -99,6 +84,21 @@ class AirbyteMessage:
     state: Optional[AirbyteStateMessage] = None
     trace: Optional[AirbyteTraceMessage] = None  # type: ignore [name-defined]
     control: Optional[AirbyteControlMessage] = None  # type: ignore [name-defined]
+
+
+def _custom_state_resolver(t: type) -> CustomType[AirbyteStateBlob, dict[str, Any]] | None:
+    class AirbyteStateBlobType(CustomType[AirbyteStateBlob, Dict[str, Any]]):
+        def serialize(self, value: AirbyteStateBlob) -> Dict[str, Any]:
+            # cant use orjson.dumps() directly because private attributes are excluded, e.g. "__ab_full_refresh_sync_complete"
+            return {k: v for k, v in value.__dict__.items()}
+
+        def deserialize(self, value: Dict[str, Any]) -> AirbyteStateBlob:
+            return AirbyteStateBlob(value)
+
+        def get_json_schema(self) -> Dict[str, Any]:
+            return {"type": "object"}
+
+    return AirbyteStateBlobType() if t is AirbyteStateBlob else None
 
 
 def _with_serdes(
