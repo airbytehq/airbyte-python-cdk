@@ -93,15 +93,3 @@ class Source(
     def name(self) -> str:
         """Source name"""
         return self.__class__.__name__
-
-    def migrate_config(self, config_path: Optional[str], config: MutableMapping[str, Any]) -> None:
-        """
-        Optional method to migrate config.
-        """
-        pass
-
-    def transform_config(self, config: MutableMapping[str, Any]) -> None:
-        """
-        Optional method to transform config.
-        """
-        pass

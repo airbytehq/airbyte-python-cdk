@@ -69,30 +69,16 @@ class Spec:
         # We remap these keys to camel case because that's the existing format expected by the rest of the platform
         return ConnectorSpecificationSerializer.load(obj)
 
-    def migrate_config(self, config_path: Optional[str], config: Mapping[str, Any]) -> None:
+    def migrate_config(self, config: MutableMapping[str, Any]) -> None:
         """
-        Apply all specified config transformations to the provided config and save the modified config to the given path and emit a control message.
+        Apply all specified config transformations to the provided config and emit a control message.
 
-        :param config_path: The path to the config file
         :param config: The user-provided config to migrate
         """
 
-        if not config_path:
-            return
-
-        mutable_config = dict(config)
         for migration in self.config_migrations:
             for transformation in migration.transformations:
-                transformation.transform(mutable_config)
-
-        if mutable_config != config:
-            with open(config_path, "w") as f:
-                json.dump(mutable_config, f)
-            self.message_repository.emit_message(
-                create_connector_config_control_message(mutable_config)
-            )
-            for message in self.message_repository.consume_queue():
-                print(orjson.dumps(AirbyteMessageSerializer.dump(message)).decode())
+                transformation.transform(config)
 
     def transform_config(self, config: MutableMapping[str, Any]) -> None:
         """
