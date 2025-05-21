@@ -95,7 +95,12 @@ def _get_local_yaml_source(args: list[str]) -> SourceLocalYaml:
     try:
         parsed_args = AirbyteEntrypoint.parse_args(args)
         config, catalog, state = _parse_inputs_into_config_catalog_state(parsed_args)
-        return SourceLocalYaml(config=config, catalog=catalog, state=state)
+        return SourceLocalYaml(
+            config=config,
+            catalog=catalog,
+            state=state,
+            config_path=parsed_args.config if hasattr(parsed_args, "config") else None,
+        )
     except Exception as error:
         print(
             orjson.dumps(
@@ -204,6 +209,7 @@ def create_declarative_source(
             catalog=catalog,
             state=state,
             source_config=cast(dict[str, Any], config["__injected_declarative_manifest"]),
+            config_path=parsed_args.config if hasattr(parsed_args, "config") else None,
         )
     except Exception as error:
         print(
