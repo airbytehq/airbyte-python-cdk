@@ -32,7 +32,7 @@ from requests import Response
 from airbyte_cdk.connector_builder.models import (
     LogMessage as ConnectorBuilderLogMessage,
 )
-from airbyte_cdk.models import FailureType, Level
+from airbyte_cdk.models import ConfiguredAirbyteCatalog, ConfiguredAirbyteStream, FailureType, Level
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative import transformations
 from airbyte_cdk.sources.declarative.async_job.job_orchestrator import AsyncJobOrchestrator
@@ -622,6 +622,7 @@ class ModelToComponentFactory:
         disable_retries: bool = False,
         disable_cache: bool = False,
         disable_resumable_full_refresh: bool = False,
+        catalog: ConfiguredAirbyteCatalog = None,
         message_repository: Optional[MessageRepository] = None,
         connector_state_manager: Optional[ConnectorStateManager] = None,
         max_concurrent_async_job_count: Optional[int] = None,
@@ -641,6 +642,9 @@ class ModelToComponentFactory:
         self._job_tracker: JobTracker = JobTracker(max_concurrent_async_job_count or 1)
         # placeholder for deprecation warnings
         self._collected_deprecation_logs: List[ConnectorBuilderLogMessage] = []
+        self._catalog_with_streams_name = (
+            self._get_catalog_with_streams_name(catalog) if catalog else None
+        )
 
     def _init_mappings(self) -> None:
         self.PYDANTIC_MODEL_TO_CONSTRUCTOR: Mapping[Type[BaseModel], Callable[..., Any]] = {
@@ -2002,8 +2006,9 @@ class ModelToComponentFactory:
                 )
         file_uploader = None
         if model.file_uploader:
+            include_files = self._get_include_files(model)
             file_uploader = self._create_component_from_model(
-                model=model.file_uploader, config=config
+                model=model.file_uploader, config=config, include_files=include_files
             )
 
         retriever = self._create_component_from_model(
@@ -3883,7 +3888,7 @@ class ModelToComponentFactory:
         )
 
     def create_file_uploader(
-        self, model: FileUploaderModel, config: Config, **kwargs: Any
+        self, model: FileUploaderModel, config: Config, include_files: bool, **kwargs: Any
     ) -> FileUploader:
         name = "File Uploader"
         requester = self._create_component_from_model(
@@ -3904,7 +3909,7 @@ class ModelToComponentFactory:
             download_target_extractor=download_target_extractor,
             config=config,
             file_writer=NoopFileWriter()
-            if emit_connector_builder_messages
+            if emit_connector_builder_messages or not include_files
             else LocalFileSystemFileWriter(),
             parameters=model.parameters or {},
             filename_extractor=model.filename_extractor if model.filename_extractor else None,
@@ -3996,3 +4001,27 @@ class ModelToComponentFactory:
             deduplicate=model.deduplicate if model.deduplicate is not None else True,
             config=config,
         )
+
+    @staticmethod
+    def _get_catalog_with_streams_name(
+        catalog: ConfiguredAirbyteCatalog,
+    ) -> Mapping[str, ConfiguredAirbyteStream]:
+        """
+        Returns a dict mapping stream names to their corresponding ConfiguredAirbyteStream objects.
+        """
+        return {
+            configured_stream.stream.name: configured_stream
+            for configured_stream in catalog.streams
+        }
+
+    def _get_include_files(
+        self,
+        stream_model: DeclarativeStreamModel,
+    ) -> bool:
+        """
+        Returns the include_files for the stream if it exists in the catalog.
+        """
+        if stream_model.name and self._catalog_with_streams_name:
+            configured_catalog_stream = self._catalog_with_streams_name.get(stream_model.name)
+            return bool(configured_catalog_stream and configured_catalog_stream.include_files)
+        return False

@@ -99,6 +99,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         component_factory: Optional[ModelToComponentFactory] = None,
         migrate_manifest: Optional[bool] = False,
         normalize_manifest: Optional[bool] = False,
+        catalog: Optional[ConfiguredAirbyteCatalog] = None,
     ) -> None:
         """
         Args:
@@ -124,6 +125,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
             else ModelToComponentFactory(
                 emit_connector_builder_messages,
                 max_concurrent_async_job_count=source_config.get("max_concurrent_async_job_count"),
+                catalog=catalog,
             )
         )
         self._message_repository = self._constructor.get_message_repository()

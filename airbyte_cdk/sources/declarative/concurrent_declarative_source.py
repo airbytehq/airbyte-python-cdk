@@ -88,6 +88,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             emit_connector_builder_messages=emit_connector_builder_messages,
             disable_resumable_full_refresh=True,
             connector_state_manager=self._connector_state_manager,
+            catalog=catalog,
         )
 
         super().__init__(
