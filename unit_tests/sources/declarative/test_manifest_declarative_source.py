@@ -2281,6 +2281,60 @@ def test_given_already_migrated_config_no_control_message_is_emitted(migration_m
     migration_mocks["decoded_bytes"].decode.assert_not_called()
 
 
+def test_given_transformations_config_is_transformed():
+    input_config = {"planet": "Coruscant"}
+
+    manifest = {
+        "version": "0.34.2",
+        "type": "DeclarativeSource",
+        "check": {"type": "CheckStream", "stream_names": ["Test"]},
+        "streams": [
+            {
+                "type": "DeclarativeStream",
+                "name": "Test",
+                "schema_loader": {
+                    "type": "InlineSchemaLoader",
+                    "schema": {"type": "object"},
+                },
+                "retriever": {
+                    "type": "SimpleRetriever",
+                    "requester": {
+                        "type": "HttpRequester",
+                        "url_base": "https://example.org",
+                        "path": "/test",
+                        "authenticator": {"type": "NoAuth"},
+                    },
+                    "record_selector": {
+                        "type": "RecordSelector",
+                        "extractor": {"type": "DpathExtractor", "field_path": []},
+                    },
+                },
+            }
+        ],
+        "spec": {
+            "type": "Spec",
+            "documentation_url": "https://example.org",
+            "connection_specification": {},
+            "config_normalization_rules": {
+                "transformations": [
+                    {
+                        "type": "ConfigRemapField",
+                        "map": {"CRSC": "Coruscant"},
+                        "field_path": ["planet"],
+                    }
+                ],
+            },
+        },
+    }
+
+    source = ManifestDeclarativeSource(
+        source_config=manifest,
+        config=input_config,
+    )
+
+    assert source._config == {"planet": "Coruscant"}
+
+
 def test_given_valid_config_streams_validates_config_and_does_not_raise():
     input_config = {"schema_to_validate": {"planet": "Coruscant"}}
 
