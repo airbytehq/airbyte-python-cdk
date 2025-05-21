@@ -1,7 +1,15 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import InitVar, dataclass
-from typing import Annotated, Any, Dict, List, Mapping, Optional, Union
+from typing import (
+    Annotated,
+    Any,
+    Dict,
+    List,
+    Optional,
+    Type,
+    TypeVar,
+)
 
 import orjson
 from airbyte_protocol_dataclasses.models import *  # noqa: F403  # Allow '*'
@@ -48,57 +56,36 @@ class AirbyteStateBlob:
         )
 
 
-# The following dataclasses have been redeclared to include the new version of AirbyteStateBlob
-@dataclass
-class AirbyteStreamState:
-    stream_descriptor: StreamDescriptor  # type: ignore [name-defined]
-    stream_state: Optional[AirbyteStateBlob] = None
+T = TypeVar("T", bound="SerDeMixin")
 
 
-@dataclass
-class AirbyteGlobalState:
-    stream_states: List[AirbyteStreamState]
-    shared_state: Optional[AirbyteStateBlob] = None
+class SerDeMixin:
+    # allow subclasses to override their resolver if they need one
+    _type_resolver: Callable[[type], CustomType[Any, Any] | None] | None = None
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        # build a Serializer *once* for each subclass
+        cls._serializer = Serializer(
+            cls,
+            omit_none=True,
+            custom_type_resolver=cls._type_resolver,
+        )
 
-@dataclass
-class AirbyteStateMessage:
-    type: Optional[AirbyteStateType] = None  # type: ignore [name-defined]
-    stream: Optional[AirbyteStreamState] = None
-    global_: Annotated[AirbyteGlobalState | None, Alias("global")] = (
-        None  # "global" is a reserved keyword in python ⇒ Alias is used for (de-)serialization
-    )
-    data: Optional[Dict[str, Any]] = None
-    sourceStats: Optional[AirbyteStateStats] = None  # type: ignore [name-defined]
-    destinationStats: Optional[AirbyteStateStats] = None  # type: ignore [name-defined]
+    def to_dict(self) -> Dict[str, Any]:
+        return self._serializer.dump(self)
 
+    def to_json(self) -> str:
+        # use to_dict so you only have one canonical dump
+        return orjson.dumps(self.to_dict()).decode("utf-8")
 
-@dataclass
-class AirbyteMessage:
-    type: Type  # type: ignore [name-defined]
-    log: Optional[AirbyteLogMessage] = None  # type: ignore [name-defined]
-    spec: Optional[ConnectorSpecification] = None  # type: ignore [name-defined]
-    connectionStatus: Optional[AirbyteConnectionStatus] = None  # type: ignore [name-defined]
-    catalog: Optional[AirbyteCatalog] = None  # type: ignore [name-defined]
-    record: Optional[AirbyteRecordMessage] = None  # type: ignore [name-defined]
-    state: Optional[AirbyteStateMessage] = None
-    trace: Optional[AirbyteTraceMessage] = None  # type: ignore [name-defined]
-    control: Optional[AirbyteControlMessage] = None  # type: ignore [name-defined]
+    @classmethod
+    def from_dict(cls: type[T], data: Dict[str, Any]) -> T:
+        return cls._serializer.load(data)
 
-
-# Add optimized serdes methods to the protocol data classes:
-
-def _with_serdes(
-    cls,
-    type_resolver: Callable[[type], CustomType[Any, Any] | None] | None = None,
-) -> type:
-    """Decorator to add SerDes (serialize/deserialize) methods to a dataclass."""
-    cls._serializer = Serializer(cls, omit_none=True, custom_type_resolver=type_resolver)
-    cls.to_dict = lambda self: self._serializer.dump(self)
-    cls.to_json = lambda self: orjson.dumps(self._serializer.dump(self)).decode("utf-8")
-    cls.from_json = lambda self, string: self._serializer.load(orjson.loads(string))
-    cls.from_dict = lambda self, dictionary: self._serializer.load(dictionary)
-    return cls
+    @classmethod
+    def from_json(cls: type[T], s: str) -> T:
+        return cls._serializer.load(orjson.loads(s))
 
 
 def _custom_state_resolver(t: type) -> CustomType[AirbyteStateBlob, dict[str, Any]] | None:
@@ -116,11 +103,64 @@ def _custom_state_resolver(t: type) -> CustomType[AirbyteStateBlob, dict[str, An
     return AirbyteStateBlobType() if t is AirbyteStateBlob else None
 
 
-# Add serdes capabilities to all data classes that need to serialize and deserialize:
-AirbyteMessage = _with_serdes(AirbyteMessage, _custom_state_resolver)
-AirbyteStateMessage = _with_serdes(AirbyteStateMessage, _custom_state_resolver)
-AirbyteStreamState = _with_serdes(AirbyteStreamState, _custom_state_resolver)
+# The following dataclasses have been redeclared to include the new version of AirbyteStateBlob
+@dataclass
+class AirbyteStreamState(SerDeMixin):
+    stream_descriptor: StreamDescriptor  # type: ignore [name-defined]
+    stream_state: Optional[AirbyteStateBlob] = None
+
+    # override the resolver for AirbyteStreamState to use the custom one
+    _type_resolver = _custom_state_resolver
+
+
+@dataclass
+class AirbyteGlobalState(SerDeMixin):
+    stream_states: List[AirbyteStreamState]
+    shared_state: Optional[AirbyteStateBlob] = None
+
+    # override the resolver for AirbyteStreamState to use the custom one
+    _type_resolver = _custom_state_resolver
+
+
+@dataclass
+class AirbyteStateMessage(SerDeMixin):
+    type: Optional[AirbyteStateType] = None  # type: ignore [name-defined]
+    stream: Optional[AirbyteStreamState] = None
+    global_: Annotated[AirbyteGlobalState | None, Alias("global")] = (
+        None  # "global" is a reserved keyword in python ⇒ Alias is used for (de-)serialization
+    )
+    data: Optional[Dict[str, Any]] = None
+    sourceStats: Optional[AirbyteStateStats] = None  # type: ignore [name-defined]
+    destinationStats: Optional[AirbyteStateStats] = None  # type: ignore [name-defined]
+
+    # override the resolver for AirbyteStreamState to use the custom one
+    _type_resolver = _custom_state_resolver
+
+
+@dataclass
+class AirbyteMessage(SerDeMixin):
+    type: Type  # type: ignore [name-defined]
+    log: Optional[AirbyteLogMessage] = None  # type: ignore [name-defined]
+    spec: Optional[ConnectorSpecification] = None  # type: ignore [name-defined]
+    connectionStatus: Optional[AirbyteConnectionStatus] = None  # type: ignore [name-defined]
+    catalog: Optional[AirbyteCatalog] = None  # type: ignore [name-defined]
+    record: Optional[AirbyteRecordMessage] = None  # type: ignore [name-defined]
+    state: Optional[AirbyteStateMessage] = None
+    trace: Optional[AirbyteTraceMessage] = None  # type: ignore [name-defined]
+    control: Optional[AirbyteControlMessage] = None  # type: ignore [name-defined]
+
+    # override the resolver for AirbyteStreamState to use the custom one
+    _type_resolver = _custom_state_resolver
+
+
 # These don't need the custom resolver:
-ConnectorSpecification = _with_serdes(ConnectorSpecification)
-ConfiguredAirbyteCatalog = _with_serdes(ConfiguredAirbyteCatalog)
-AirbyteStream = _with_serdes(AirbyteStream)
+class ConnectorSpecification(ConnectorSpecification, SerDeMixin):
+    pass
+
+
+class ConfiguredAirbyteCatalog(ConfiguredAirbyteCatalog, SerDeMixin):
+    pass
+
+
+class AirbyteStream(AirbyteStream, SerDeMixin):
+    pass
