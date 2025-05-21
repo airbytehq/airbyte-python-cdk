@@ -8,8 +8,6 @@ import logging
 import os
 import pkgutil
 from abc import ABC, abstractmethod
-from email import message
-from io import StringIO
 from pathlib import Path
 from typing import Any, Generic, Mapping, Optional, Self, TypeVar
 
@@ -22,7 +20,6 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.models.airbyte_protocol import AirbyteMessage, Type
 from airbyte_cdk.sources.message.repository import MessageRepository, PassthroughMessageRepository
-from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.utils.cli_arg_parse import ConnectorCLIArgs, parse_cli_args
 
 
@@ -32,6 +29,7 @@ def _load_optional_package_file(package: str, filename: str) -> Optional[bytes]:
         return pkgutil.get_data(package, filename)
     except FileNotFoundError:
         return None
+
 
 def _write_config(config: Mapping[str, Any], config_path: str) -> None:
     Path(config_path).write_text(json.dumps(config))

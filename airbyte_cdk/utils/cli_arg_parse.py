@@ -1,7 +1,6 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 """CLI Argument Parsing Utilities."""
 
-
 import argparse
 import json
 from collections.abc import MutableMapping

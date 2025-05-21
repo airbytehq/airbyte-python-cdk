@@ -235,11 +235,13 @@ def spec(capsys: CaptureFixture[str], scenario: TestScenario[AbstractSource]) ->
 def check(
     capsys: CaptureFixture[str], tmp_path: PosixPath, scenario: TestScenario[AbstractSource]
 ) -> Dict[str, Any]:
-    scenario.source.launch_with_cli_args([
-        "check",
-        "--config",
-        make_file(tmp_path / "config.json", scenario.config),
-    ])
+    scenario.source.launch_with_cli_args(
+        [
+            "check",
+            "--config",
+            make_file(tmp_path / "config.json", scenario.config),
+        ]
+    )
     captured = capsys.readouterr()
     return _find_connection_status(captured.out.splitlines())
 
