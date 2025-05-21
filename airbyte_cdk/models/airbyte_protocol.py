@@ -1,4 +1,5 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+import json
 from collections.abc import Callable, Mapping
 from dataclasses import InitVar, dataclass
 from typing import (
@@ -72,32 +73,73 @@ class SerDeMixin:
             custom_type_resolver=cls._type_resolver,
         )
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize the object to a dictionary.
+
+        This method uses the `Serializer` to serialize the object to a dict as quickly as possible.
+        """
         return self._serializer.dump(self)
 
     def to_json(self) -> str:
-        # use to_dict so you only have one canonical dump
+        """Serialize the object to JSON.
+
+        This method uses `orjson` to serialize the object to JSON as quickly as possible.
+        """
         return orjson.dumps(self.to_dict()).decode("utf-8")
 
+    def __str__(self) -> str:
+        """Casting to `str` is the same as casting to JSON.
+
+        These are equivalent:
+        >>> msg = AirbyteMessage(...)
+        >>> str(msg)
+        >>> msg.to_json()
+        """
+        return self.to_json()
+
     @classmethod
-    def from_dict(cls: type[T], data: Dict[str, Any]) -> T:
+    def from_dict(cls: type[T], data: dict[str, Any], /) -> T:
         return cls._serializer.load(data)
 
     @classmethod
-    def from_json(cls: type[T], s: str) -> T:
-        return cls._serializer.load(orjson.loads(s))
+    def from_json(cls: type[T], str_value: str, /) -> T:
+        """Load the object from JSON.
+
+        This method first tries to deserialize the JSON string using `orjson.loads()`,
+        falling back to `json.loads()` if it fails. This is because `orjson` does not support
+        all JSON features, such as `NaN` and `Infinity`, which are supported by the standard
+        `json` module. The `orjson` library is used for its speed and efficiency, while the
+        standard `json` library is used as a fallback for compatibility with more complex JSON
+        structures.
+
+        Raises:
+            orjson.JSONDecodeError: If the JSON string cannot be deserialized by either
+            `orjson` or `json`.
+        """
+        try:
+            dict_value = orjson.loads(str_value)
+        except orjson.JSONDecodeError as orjson_error:
+            try:
+                dict_value = json.loads(str_value)
+            except json.JSONDecodeError as json_error:
+                # Callers will expect `orjson.JSONDecodeError`, so we raise the original
+                # `orjson` error when both options fail.
+                # We also attach the second error, in case it is useful for debugging.
+                raise orjson_error from json_error
+
+        return cls.from_dict(dict_value)
 
 
 def _custom_state_resolver(t: type) -> CustomType[AirbyteStateBlob, dict[str, Any]] | None:
-    class AirbyteStateBlobType(CustomType[AirbyteStateBlob, Dict[str, Any]]):
-        def serialize(self, value: AirbyteStateBlob) -> Dict[str, Any]:
+    class AirbyteStateBlobType(CustomType[AirbyteStateBlob, dict[str, Any]]):
+        def serialize(self, value: AirbyteStateBlob) -> dict[str, Any]:
             # cant use orjson.dumps() directly because private attributes are excluded, e.g. "__ab_full_refresh_sync_complete"
             return {k: v for k, v in value.__dict__.items()}
 
-        def deserialize(self, value: Dict[str, Any]) -> AirbyteStateBlob:
+        def deserialize(self, value: dict[str, Any]) -> AirbyteStateBlob:
             return AirbyteStateBlob(value)
 
-        def get_json_schema(self) -> Dict[str, Any]:
+        def get_json_schema(self) -> dict[str, Any]:
             return {"type": "object"}
 
     return AirbyteStateBlobType() if t is AirbyteStateBlob else None
