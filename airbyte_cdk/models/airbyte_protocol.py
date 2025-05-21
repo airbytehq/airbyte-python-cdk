@@ -1,7 +1,6 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 from collections.abc import Callable
 from dataclasses import InitVar, dataclass
-from functools import cached_property
 from typing import Annotated, Any, Dict, List, Mapping, Optional, Union
 
 import orjson
@@ -100,14 +99,6 @@ class AirbyteMessage:
     state: Optional[AirbyteStateMessage] = None
     trace: Optional[AirbyteTraceMessage] = None  # type: ignore [name-defined]
     control: Optional[AirbyteControlMessage] = None  # type: ignore [name-defined]
-
-    @property
-    def _serializer(self):
-        raise NotImplementedError
-
-    @_serializer.setter
-    def _serializer(self, value):
-        raise NotImplementedError
 
 
 def _with_serdes(
