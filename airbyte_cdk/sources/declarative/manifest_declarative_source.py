@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
 import json
@@ -10,11 +10,13 @@ from importlib import metadata
 from types import ModuleType
 from typing import Any, Dict, Iterator, List, Mapping, Optional, Set
 
+import orjson
 import yaml
 from jsonschema.exceptions import ValidationError
 from jsonschema.validators import validate
 from packaging.version import InvalidVersion, Version
 
+from airbyte_cdk.config_observation import create_connector_config_control_message
 from airbyte_cdk.connector_builder.models import (
     LogMessage as ConnectorBuilderLogMessage,
 )
@@ -29,6 +31,7 @@ from airbyte_cdk.models import (
     ConnectorSpecification,
     FailureType,
 )
+from airbyte_cdk.models.airbyte_protocol_serializers import AirbyteMessageSerializer
 from airbyte_cdk.sources.declarative.checks import COMPONENTS_CHECKER_TYPE_MAPPING
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
@@ -57,6 +60,7 @@ from airbyte_cdk.sources.declarative.parsers.model_to_component_factory import (
     ModelToComponentFactory,
 )
 from airbyte_cdk.sources.declarative.resolvers import COMPONENTS_RESOLVER_TYPE_MAPPING
+from airbyte_cdk.sources.declarative.spec.spec import Spec
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.types import ConnectionDefinition
@@ -99,6 +103,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         component_factory: Optional[ModelToComponentFactory] = None,
         migrate_manifest: Optional[bool] = False,
         normalize_manifest: Optional[bool] = False,
+        config_path: Optional[str] = None,
     ) -> None:
         """
         Args:
@@ -108,6 +113,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
             emit_connector_builder_messages: True if messages should be emitted to the connector builder.
             component_factory: optional factory if ModelToComponentFactory's default behavior needs to be tweaked.
             normalize_manifest: Optional flag to indicate if the manifest should be normalized.
+            config_path: Optional path to the config file.
         """
         self.logger = logging.getLogger(f"airbyte.{self.name}")
         self._should_normalize = normalize_manifest
@@ -130,7 +136,6 @@ class ManifestDeclarativeSource(DeclarativeSource):
         self._slice_logger: SliceLogger = (
             AlwaysLogSliceLogger() if emit_connector_builder_messages else DebugSliceLogger()
         )
-        self._config = config or {}
 
         # resolve all components in the manifest
         self._source_config = self._pre_process_manifest(dict(source_config))
@@ -138,6 +143,35 @@ class ManifestDeclarativeSource(DeclarativeSource):
         self._validate_source()
         # apply additional post-processing to the manifest
         self._post_process_manifest()
+
+        self._config: Mapping[str, Any]
+        self._spec_component: Optional[Spec] = None
+        spec = self._source_config.get("spec")
+        if spec:
+            if "type" not in spec:
+                spec["type"] = "Spec"
+            self._spec_component = self._constructor.create_component(SpecModel, spec, dict())
+            mutable_config = dict(config) if config else {}
+
+            if config_path:
+                self._spec_component.migrate_config(mutable_config)
+                try:
+                    if mutable_config != config:
+                        with open(config_path, "w") as f:
+                            json.dump(mutable_config, f)
+                        self.message_repository.emit_message(
+                            create_connector_config_control_message(mutable_config)
+                        )
+                        # We have no mechanism for consuming the queue, so we print the messages to stdout
+                        for message in self.message_repository.consume_queue():
+                            print(orjson.dumps(AirbyteMessageSerializer.dump(message)).decode())
+                except Exception as e:
+                    self.logger.error(f"Error migrating config: {str(e)}")
+                    mutable_config = dict(config) if config else {}
+            self._spec_component.transform_config(mutable_config)
+            self._config = mutable_config
+        else:
+            self._config = config or {}
 
     @property
     def resolved_manifest(self) -> Mapping[str, Any]:
@@ -255,6 +289,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
             )
 
     def streams(self, config: Mapping[str, Any]) -> List[Stream]:
+        if self._spec_component:
+            self._spec_component.validate_config(config)
+
         self._emit_manifest_debug_message(
             extra_args={
                 "source_name": self.name,
@@ -355,14 +392,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
             }
         )
 
-        spec = self._source_config.get("spec")
-        if spec:
-            if "type" not in spec:
-                spec["type"] = "Spec"
-            spec_component = self._constructor.create_component(SpecModel, spec, dict())
-            return spec_component.generate_spec()
-        else:
-            return super().spec(logger)
+        return (
+            self._spec_component.generate_spec() if self._spec_component else super().spec(logger)
+        )
 
     def check(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteConnectionStatus:
         self._configure_logger_level(logger)
