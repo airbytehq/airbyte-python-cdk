@@ -86,6 +86,21 @@ class AirbyteMessage:
     control: Optional[AirbyteControlMessage] = None  # type: ignore [name-defined]
 
 
+# Add optimized serdes methods to the protocol data classes:
+
+def _with_serdes(
+    cls,
+    type_resolver: Callable[[type], CustomType[Any, Any] | None] | None = None,
+) -> type:
+    """Decorator to add SerDes (serialize/deserialize) methods to a dataclass."""
+    cls._serializer = Serializer(cls, omit_none=True, custom_type_resolver=type_resolver)
+    cls.to_dict = lambda self: self._serializer.dump(self)
+    cls.to_json = lambda self: orjson.dumps(self._serializer.dump(self)).decode("utf-8")
+    cls.from_json = lambda self, string: self._serializer.load(orjson.loads(string))
+    cls.from_dict = lambda self, dictionary: self._serializer.load(dictionary)
+    return cls
+
+
 def _custom_state_resolver(t: type) -> CustomType[AirbyteStateBlob, dict[str, Any]] | None:
     class AirbyteStateBlobType(CustomType[AirbyteStateBlob, Dict[str, Any]]):
         def serialize(self, value: AirbyteStateBlob) -> Dict[str, Any]:
@@ -100,18 +115,6 @@ def _custom_state_resolver(t: type) -> CustomType[AirbyteStateBlob, dict[str, An
 
     return AirbyteStateBlobType() if t is AirbyteStateBlob else None
 
-
-def _with_serdes(
-    cls,
-    type_resolver: Callable[[type], CustomType[Any, Any] | None] | None = None,
-) -> type:
-    """Decorator to add SerDes (serialize/deserialize) methods to a dataclass."""
-    cls._serializer = Serializer(cls, omit_none=True, custom_type_resolver=type_resolver)
-    cls.to_dict = lambda self: self._serializer.dump(self)
-    cls.to_json = lambda self: orjson.dumps(self._serializer.dump(self)).decode("utf-8")
-    cls.from_json = lambda self, string: self._serializer.load(orjson.loads(string))
-    cls.from_dict = lambda self, dictionary: self._serializer.load(dictionary)
-    return cls
 
 # Add serdes capabilities to all data classes that need to serialize and deserialize:
 AirbyteMessage = _with_serdes(AirbyteMessage, _custom_state_resolver)
