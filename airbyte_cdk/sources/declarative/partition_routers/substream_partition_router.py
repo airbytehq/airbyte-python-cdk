@@ -223,8 +223,8 @@ class SubstreamPartitionRouter(PartitionRouter):
                         }
 
                     slice_partition = {
-                            partition_field: partition_value,
-                        }
+                        partition_field: partition_value,
+                    }
 
                     if self.include_parent_slice:
                         slice_partition["parent_slice"] = parent_partition or {}

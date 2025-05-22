@@ -383,6 +383,151 @@ def test_substream_partition_router(parent_stream_configs, expected_slices):
     assert slices == expected_slices
 
 
+@pytest.mark.parametrize(
+    "parent_stream_configs, expected_slices",
+    [
+        (
+            [
+                ParentStreamConfig(
+                    stream=MockStream([{}], parent_records, "first_stream"),
+                    parent_key="id",
+                    partition_field="first_stream_id",
+                    parameters={},
+                    config={},
+                )
+            ],
+            [
+                {"first_stream_id": 1},
+                {"first_stream_id": 2},
+            ],
+        ),
+        (
+            [
+                ParentStreamConfig(
+                    stream=MockStream(parent_slices, all_parent_data, "first_stream"),
+                    parent_key="id",
+                    partition_field="first_stream_id",
+                    parameters={},
+                    config={},
+                )
+            ],
+            [
+                {"first_stream_id": 0},
+                {"first_stream_id": 1},
+                {"first_stream_id": 2},
+            ],
+        ),
+        (
+            [
+                ParentStreamConfig(
+                    stream=MockStream(
+                        [
+                            StreamSlice(partition=p, cursor_slice={"start": 0, "end": 1})
+                            for p in parent_slices
+                        ],
+                        all_parent_data,
+                        "first_stream",
+                    ),
+                    parent_key="id",
+                    partition_field="first_stream_id",
+                    parameters={},
+                    config={},
+                )
+            ],
+            [
+                {"first_stream_id": 0},
+                {"first_stream_id": 1},
+                {"first_stream_id": 2},
+            ],
+        ),
+        (
+            [
+                ParentStreamConfig(
+                    stream=MockStream(
+                        parent_slices,
+                        data_first_parent_slice + data_second_parent_slice,
+                        "first_stream",
+                    ),
+                    parent_key="id",
+                    partition_field="first_stream_id",
+                    parameters={},
+                    config={},
+                ),
+                ParentStreamConfig(
+                    stream=MockStream(second_parent_stream_slice, more_records, "second_stream"),
+                    parent_key="id",
+                    partition_field="second_stream_id",
+                    parameters={},
+                    config={},
+                ),
+            ],
+            [
+                {"first_stream_id": 0},
+                {"first_stream_id": 1},
+                {"first_stream_id": 2},
+                {"second_stream_id": 10},
+                {"second_stream_id": 20},
+            ],
+        ),
+        (
+            [
+                ParentStreamConfig(
+                    stream=MockStream(
+                        [{}], [{"id": 0}, {"id": 1}, {"_id": 2}, {"id": 3}], "first_stream"
+                    ),
+                    parent_key="id",
+                    partition_field="first_stream_id",
+                    parameters={},
+                    config={},
+                )
+            ],
+            [
+                {"first_stream_id": 0},
+                {"first_stream_id": 1},
+                {"first_stream_id": 3},
+            ],
+        ),
+        (
+            [
+                ParentStreamConfig(
+                    stream=MockStream(
+                        [{}],
+                        [{"a": {"b": 0}}, {"a": {"b": 1}}, {"a": {"c": 2}}, {"a": {"b": 3}}],
+                        "first_stream",
+                    ),
+                    parent_key="a/b",
+                    partition_field="first_stream_id",
+                    parameters={},
+                    config={},
+                )
+            ],
+            [
+                {"first_stream_id": 0},
+                {"first_stream_id": 1},
+                {"first_stream_id": 3},
+            ],
+        ),
+    ],
+    ids=[
+        "test_single_parent_slices_with_records",
+        "test_with_parent_slices_and_records",
+        "test_multiple_parent_streams",
+        "test_cursor_values_are_removed_from_parent_slices",
+        "test_missed_parent_key",
+        "test_dpath_extraction",
+    ],
+)
+def test_substream_partition_router_without_parent_slice(parent_stream_configs, expected_slices):
+    partition_router = SubstreamPartitionRouter(
+        parent_stream_configs=parent_stream_configs,
+        parameters={},
+        config={},
+        include_parent_slice=False,
+    )
+    slices = [s for s in partition_router.stream_slices()]
+    assert slices == expected_slices
+
+
 def test_substream_partition_router_invalid_parent_record_type():
     partition_router = SubstreamPartitionRouter(
         parent_stream_configs=[
