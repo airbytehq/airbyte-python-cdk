@@ -58,7 +58,7 @@ class SourceLocalYaml(YamlDeclarativeSource):
         catalog: ConfiguredAirbyteCatalog | None,
         config: MutableMapping[str, Any] | None,
         state: TState,
-        config_path: str | None,
+        config_path: str | None = None,
         **kwargs: Any,
     ) -> None:
         """

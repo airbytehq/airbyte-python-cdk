@@ -8,7 +8,7 @@ import pkgutil
 from copy import deepcopy
 from importlib import metadata
 from types import ModuleType
-from typing import Any, Dict, Iterator, List, Mapping, Optional, Set
+from typing import Any, Dict, Iterator, List, Mapping, MutableMapping, Optional, Set
 
 import orjson
 import yaml
@@ -63,7 +63,7 @@ from airbyte_cdk.sources.declarative.resolvers import COMPONENTS_RESOLVER_TYPE_M
 from airbyte_cdk.sources.declarative.spec.spec import Spec
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.core import Stream
-from airbyte_cdk.sources.types import ConnectionDefinition
+from airbyte_cdk.sources.types import Config, ConnectionDefinition
 from airbyte_cdk.sources.utils.slice_logger import (
     AlwaysLogSliceLogger,
     DebugSliceLogger,
@@ -144,34 +144,11 @@ class ManifestDeclarativeSource(DeclarativeSource):
         # apply additional post-processing to the manifest
         self._post_process_manifest()
 
-        self._config: Mapping[str, Any]
-        self._spec_component: Optional[Spec] = None
-        spec = self._source_config.get("spec")
-        if spec:
-            if "type" not in spec:
-                spec["type"] = "Spec"
-            self._spec_component = self._constructor.create_component(SpecModel, spec, dict())
-            mutable_config = dict(config) if config else {}
-
-            if config_path:
-                self._spec_component.migrate_config(mutable_config)
-                try:
-                    if mutable_config != config:
-                        with open(config_path, "w") as f:
-                            json.dump(mutable_config, f)
-                        self.message_repository.emit_message(
-                            create_connector_config_control_message(mutable_config)
-                        )
-                        # We have no mechanism for consuming the queue, so we print the messages to stdout
-                        for message in self.message_repository.consume_queue():
-                            print(orjson.dumps(AirbyteMessageSerializer.dump(message)).decode())
-                except Exception as e:
-                    self.logger.error(f"Error migrating config: {str(e)}")
-                    mutable_config = dict(config) if config else {}
-            self._spec_component.transform_config(mutable_config)
-            self._config = mutable_config
-        else:
-            self._config = config or {}
+        spec: Optional[Mapping[str, Any]] = self._source_config.get("spec")
+        self._spec_component: Optional[Spec] = (
+            self._constructor.create_component(SpecModel, spec, dict()) if spec else None
+        )
+        self._config = self._migrate_and_transform_config(config_path, config) or {}
 
     @property
     def resolved_manifest(self) -> Mapping[str, Any]:
@@ -232,6 +209,30 @@ class ManifestDeclarativeSource(DeclarativeSource):
         if self._should_normalize:
             normalizer = ManifestNormalizer(self._source_config, self._declarative_component_schema)
             self._source_config = normalizer.normalize()
+
+    def _migrate_and_transform_config(
+        self,
+        config_path: Optional[str],
+        config: Optional[Config],
+    ) -> Optional[Config]:
+        if not config:
+            return None
+        if not self._spec_component:
+            return config
+        mutable_config = dict(config)
+        self._spec_component.migrate_config(mutable_config)
+        if mutable_config != config:
+            if config_path:
+                with open(config_path, "w") as f:
+                    json.dump(mutable_config, f)
+            self.message_repository.emit_message(
+                create_connector_config_control_message(mutable_config)
+            )
+            # We have no mechanism for consuming the queue, so we print the messages to stdout
+            for message in self.message_repository.consume_queue():
+                print(orjson.dumps(AirbyteMessageSerializer.dump(message)).decode())
+        self._spec_component.transform_config(mutable_config)
+        return mutable_config
 
     def _migrate_manifest(self) -> None:
         """
