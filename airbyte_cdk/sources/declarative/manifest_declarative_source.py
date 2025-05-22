@@ -145,12 +145,15 @@ class ManifestDeclarativeSource(DeclarativeSource):
         self._post_process_manifest()
 
         self._config: Mapping[str, Any]
-        self._spec_component: Spec
-        spec: Mapping[str, Any] = self._source_config["spec"]
-        self._spec_component = self._constructor.create_component(SpecModel, spec, dict())
+        self._spec_component: Optional[Spec]
+        spec: Optional[Mapping[str, Any]] = self._source_config.get("spec")
+        self._spec_component = (
+            self._constructor.create_component(SpecModel, spec, dict()) if spec else None
+        )
         mutable_config = dict(config) if config else {}
         self._migrate_config(config_path, mutable_config, config)
-        self._spec_component.transform_config(mutable_config)
+        if self._spec_component:
+            self._spec_component.transform_config(mutable_config)
         self._config = mutable_config
 
     @property
@@ -219,7 +222,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         mutable_config: MutableMapping[str, Any],
         config: Optional[Mapping[str, Any]],
     ) -> None:
-        if config_path and config:
+        if config_path and config and self._spec_component:
             self._spec_component.migrate_config(mutable_config)
             if mutable_config != config:
                 if config_path:
