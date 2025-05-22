@@ -63,7 +63,7 @@ from airbyte_cdk.sources.declarative.resolvers import COMPONENTS_RESOLVER_TYPE_M
 from airbyte_cdk.sources.declarative.spec.spec import Spec
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams.core import Stream
-from airbyte_cdk.sources.types import ConnectionDefinition
+from airbyte_cdk.sources.types import Config, ConnectionDefinition
 from airbyte_cdk.sources.utils.slice_logger import (
     AlwaysLogSliceLogger,
     DebugSliceLogger,
@@ -150,11 +150,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         self._spec_component = (
             self._constructor.create_component(SpecModel, spec, dict()) if spec else None
         )
-        mutable_config = dict(config) if config else {}
-        self._migrate_config(config_path, mutable_config, config)
-        if self._spec_component:
-            self._spec_component.transform_config(mutable_config)
-        self._config = mutable_config
+        self._config = self._migrate_and_transform_config(config_path, config)
 
     @property
     def resolved_manifest(self) -> Mapping[str, Any]:
@@ -216,13 +212,13 @@ class ManifestDeclarativeSource(DeclarativeSource):
             normalizer = ManifestNormalizer(self._source_config, self._declarative_component_schema)
             self._source_config = normalizer.normalize()
 
-    def _migrate_config(
+    def _migrate_and_transform_config(
         self,
         config_path: Optional[str],
-        mutable_config: MutableMapping[str, Any],
-        config: Optional[Mapping[str, Any]],
-    ) -> None:
-        if config_path and config and self._spec_component:
+        config: Optional[Config],
+    ) -> Config:
+        mutable_config = dict(config) if config else {}
+        if self._spec_component:
             self._spec_component.migrate_config(mutable_config)
             if mutable_config != config:
                 if config_path:
@@ -234,6 +230,10 @@ class ManifestDeclarativeSource(DeclarativeSource):
                 # We have no mechanism for consuming the queue, so we print the messages to stdout
                 for message in self.message_repository.consume_queue():
                     print(orjson.dumps(AirbyteMessageSerializer.dump(message)).decode())
+
+            self._spec_component.transform_config(mutable_config)
+
+        return mutable_config
 
     def _migrate_manifest(self) -> None:
         """
