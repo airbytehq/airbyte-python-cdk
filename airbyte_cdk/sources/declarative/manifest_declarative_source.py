@@ -144,13 +144,11 @@ class ManifestDeclarativeSource(DeclarativeSource):
         # apply additional post-processing to the manifest
         self._post_process_manifest()
 
-        self._config: Mapping[str, Any]
-        self._spec_component: Optional[Spec]
         spec: Optional[Mapping[str, Any]] = self._source_config.get("spec")
-        self._spec_component = (
+        self._spec_component: Optional[Spec] = (
             self._constructor.create_component(SpecModel, spec, dict()) if spec else None
         )
-        self._config = self._migrate_and_transform_config(config_path, config)
+        self._config = self._migrate_and_transform_config(config_path, config) or {}
 
     @property
     def resolved_manifest(self) -> Mapping[str, Any]:
@@ -216,23 +214,24 @@ class ManifestDeclarativeSource(DeclarativeSource):
         self,
         config_path: Optional[str],
         config: Optional[Config],
-    ) -> Config:
-        mutable_config = dict(config) if config else {}
-        if self._spec_component:
-            self._spec_component.migrate_config(mutable_config)
-            if mutable_config != config:
-                if config_path:
-                    with open(config_path, "w") as f:
-                        json.dump(mutable_config, f)
-                self.message_repository.emit_message(
-                    create_connector_config_control_message(mutable_config)
-                )
-                # We have no mechanism for consuming the queue, so we print the messages to stdout
-                for message in self.message_repository.consume_queue():
-                    print(orjson.dumps(AirbyteMessageSerializer.dump(message)).decode())
-
-            self._spec_component.transform_config(mutable_config)
-
+    ) -> Optional[Config]:
+        if not config:
+            return None
+        if not self._spec_component:
+            return config
+        mutable_config = dict(config)
+        self._spec_component.migrate_config(mutable_config)
+        if mutable_config != config:
+            if config_path:
+                with open(config_path, "w") as f:
+                    json.dump(mutable_config, f)
+            self.message_repository.emit_message(
+                create_connector_config_control_message(mutable_config)
+            )
+            # We have no mechanism for consuming the queue, so we print the messages to stdout
+            for message in self.message_repository.consume_queue():
+                print(orjson.dumps(AirbyteMessageSerializer.dump(message)).decode())
+        self._spec_component.transform_config(mutable_config)
         return mutable_config
 
     def _migrate_manifest(self) -> None:
