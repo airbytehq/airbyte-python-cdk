@@ -3881,6 +3881,11 @@ definitions:
         type: array
         items:
           "$ref": "#/definitions/ParentStreamConfig"
+      include_parent_slice:
+        title: Include Parent Slice
+        description: If False, the parent stream slice will not be included in the child stream slice.
+        type: boolean
+        default: true
       $parameters:
         type: object
         additionalProperties: true

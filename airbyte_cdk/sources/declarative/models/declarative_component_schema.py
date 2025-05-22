@@ -2867,6 +2867,10 @@ class SubstreamPartitionRouter(BaseModel):
         description="Specifies which parent streams are being iterated over and how parent records should be used to partition the child stream data set.",
         title="Parent Stream Configs",
     )
+    include_parent_slice: Optional[bool] = Field(True,
+                                                 description="If False, the parent stream slice will not be included in the child stream slice.",
+                                                 title="Include Parent Slice",
+                                                 )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 

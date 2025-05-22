@@ -89,6 +89,7 @@ class SubstreamPartitionRouter(PartitionRouter):
     parent_stream_configs: List[ParentStreamConfig]
     config: Config
     parameters: InitVar[Mapping[str, Any]]
+    include_parent_slice: Optional[bool] = True
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         if not self.parent_stream_configs:
@@ -221,11 +222,15 @@ class SubstreamPartitionRouter(PartitionRouter):
                             **extracted_extra_fields,
                         }
 
-                    yield StreamSlice(
-                        partition={
+                    slice_partition = {
                             partition_field: partition_value,
-                            "parent_slice": parent_partition or {},
-                        },
+                        }
+
+                    if self.include_parent_slice:
+                        slice_partition["parent_slice"] = parent_partition or {}
+
+                    yield StreamSlice(
+                        partition=slice_partition,
                         cursor_slice={},
                         extra_fields=extracted_extra_fields,
                     )
