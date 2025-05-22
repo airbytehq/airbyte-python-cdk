@@ -3754,6 +3754,7 @@ class ModelToComponentFactory:
             field_path=field_path,  # type: ignore[arg-type] # field_path can be str and InterpolatedString
             value=interpolated_value,
             value_type=ModelToComponentFactory._json_schema_type_name_to_type(model.value_type),
+            create_or_update=model.create_or_update,
             parameters=model.parameters or {},
         )
 
@@ -3800,15 +3801,23 @@ class ModelToComponentFactory:
 
         return StreamConfig(
             configs_pointer=model_configs_pointer,
+            default_values=model.default_values,
             parameters=model.parameters or {},
         )
 
     def create_config_components_resolver(
         self, model: ConfigComponentsResolverModel, config: Config
     ) -> Any:
-        stream_config = self._create_component_from_model(
-            model.stream_config, config=config, parameters=model.parameters or {}
+        model_stream_configs = (
+            model.stream_config if isinstance(model.stream_config, list) else [model.stream_config]
         )
+
+        stream_configs = [
+            self._create_component_from_model(
+                stream_config, config=config, parameters=model.parameters or {}
+            )
+            for stream_config in model_stream_configs
+        ]
 
         components_mapping = [
             self._create_component_from_model(
@@ -3822,7 +3831,7 @@ class ModelToComponentFactory:
         ]
 
         return ConfigComponentsResolver(
-            stream_config=stream_config,
+            stream_configs=stream_configs,
             config=config,
             components_mapping=components_mapping,
             parameters=model.parameters or {},

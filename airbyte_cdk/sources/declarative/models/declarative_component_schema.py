@@ -1478,6 +1478,7 @@ class ComponentMappingDefinition(BaseModel):
         description="The expected data type of the value. If omitted, the type will be inferred from the value provided.",
         title="Value Type",
     )
+    create_or_update: Optional[bool] = False
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
@@ -1489,12 +1490,17 @@ class StreamConfig(BaseModel):
         examples=[["data"], ["data", "streams"], ["data", "{{ parameters.name }}"]],
         title="Configs Pointer",
     )
+    default_values: Optional[List[Dict[str, Any]]] = Field(
+        None,
+        description="A list of default values, each matching the structure expected from the parsed component value.",
+        title="Default Values",
+    )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
 class ConfigComponentsResolver(BaseModel):
     type: Literal["ConfigComponentsResolver"]
-    stream_config: StreamConfig
+    stream_config: Union[List[StreamConfig], StreamConfig]
     components_mapping: List[ComponentMappingDefinition]
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 

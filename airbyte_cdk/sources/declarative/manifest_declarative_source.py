@@ -300,9 +300,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
             }
         )
 
-        stream_configs = self._stream_configs(self._source_config) + self._dynamic_stream_configs(
-            self._source_config, config
-        )
+        stream_configs = self._stream_configs(self._source_config) + self.dynamic_streams
 
         api_budget_model = self._source_config.get("api_budget")
         if api_budget_model:
