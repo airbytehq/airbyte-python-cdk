@@ -30,7 +30,7 @@ enable = true
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
-airbyte-protocol-models-dataclasses = { version = "0.15.0.dev1746648278", source = "testpypi" }
+airbyte-protocol-models-dataclasses = { version = "0.15.0.dev1747993111", source = "testpypi" }
 
 backoff = "*"
 boltons = "^25.0.0"
