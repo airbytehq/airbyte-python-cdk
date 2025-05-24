@@ -32,6 +32,7 @@ from airbyte_cdk.models import (
     SyncMode,
     Type,
 )
+from airbyte_cdk.utils.cli_arg_parse import ConnectorCLIArgs, parse_cli_args
 
 
 @pytest.fixture(name="destination")
@@ -57,7 +58,7 @@ class TestArgParsing:
     def test_successful_parse(
         self, arg_list: List[str], expected_output: Mapping[str, Any], destination: Destination
     ):
-        parsed_args = vars(destination.parse_args(arg_list))
+        parsed_args: ConnectorCLIArgs = parse_cli_args(arg_list)
         assert parsed_args == expected_output, (
             f"Expected parsing {arg_list} to return parsed args {expected_output} but instead found {parsed_args}"
         )
@@ -80,7 +81,7 @@ class TestArgParsing:
         # We use BaseException because it encompasses SystemExit (raised by failed parsing) and other exceptions (raised by additional semantic
         # checks)
         with pytest.raises(BaseException):
-            destination.parse_args(arg_list)
+            parse_cli_args(arg_list)
 
 
 def _state(state: Dict[str, Any]) -> AirbyteStateMessage:
@@ -156,7 +157,6 @@ class TestRun:
         destination: Destination,
     ) -> None:
         mocker.patch.object(destination_module, "init_uncaught_exception_handler")
-        mocker.patch.object(destination, "parse_args")
         mocker.patch.object(destination, "run_cmd")
         destination.run(["dummy"])
         destination_module.init_uncaught_exception_handler.assert_called_once_with(

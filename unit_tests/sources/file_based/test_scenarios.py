@@ -227,10 +227,7 @@ def verify_check(
 
 
 def spec(capsys: CaptureFixture[str], scenario: TestScenario[AbstractSource]) -> Mapping[str, Any]:
-    launch(
-        scenario.source,
-        ["spec"],
-    )
+    scenario.source.launch_with_cli_args(["spec"])
     captured = capsys.readouterr()
     return json.loads(captured.out.splitlines()[0])["spec"]  # type: ignore
 
@@ -238,9 +235,12 @@ def spec(capsys: CaptureFixture[str], scenario: TestScenario[AbstractSource]) ->
 def check(
     capsys: CaptureFixture[str], tmp_path: PosixPath, scenario: TestScenario[AbstractSource]
 ) -> Dict[str, Any]:
-    launch(
-        scenario.source,
-        ["check", "--config", make_file(tmp_path / "config.json", scenario.config)],
+    scenario.source.launch_with_cli_args(
+        [
+            "check",
+            "--config",
+            make_file(tmp_path / "config.json", scenario.config),
+        ]
     )
     captured = capsys.readouterr()
     return _find_connection_status(captured.out.splitlines())
@@ -257,8 +257,7 @@ def _find_connection_status(output: List[str]) -> Mapping[str, Any]:
 def discover(
     capsys: CaptureFixture[str], tmp_path: PosixPath, scenario: TestScenario[AbstractSource]
 ) -> Dict[str, Any]:
-    launch(
-        scenario.source,
+    scenario.source.launch_with_cli_args(
         ["discover", "--config", make_file(tmp_path / "config.json", scenario.config)],
     )
     output = [json.loads(line) for line in capsys.readouterr().out.splitlines()]

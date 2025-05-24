@@ -27,6 +27,7 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
 from airbyte_cdk.sources.source import Source
+from airbyte_cdk.utils.cli_arg_parse import parse_cli_args
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 
@@ -35,7 +36,7 @@ def get_config_and_catalog_from_args(
 ) -> Tuple[str, Mapping[str, Any], Optional[ConfiguredAirbyteCatalog], Any]:
     # TODO: Add functionality for the `debug` logger.
     #  Currently, no one `debug` level log will be displayed during `read` a stream for a connector created through `connector-builder`.
-    parsed_args = AirbyteEntrypoint.parse_args(args)
+    parsed_args = parse_cli_args(args)
     config_path, catalog_path, state_path = (
         parsed_args.config,
         parsed_args.catalog,

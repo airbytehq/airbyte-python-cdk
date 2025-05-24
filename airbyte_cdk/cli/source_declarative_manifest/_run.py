@@ -45,6 +45,7 @@ from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
 )
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from airbyte_cdk.sources.source import TState
+from airbyte_cdk.utils.cli_arg_parse import parse_cli_args
 from airbyte_cdk.utils.datetime_helpers import ab_datetime_now
 
 
@@ -95,7 +96,7 @@ def handle_command(args: list[str]) -> None:
 
 def _get_local_yaml_source(args: list[str]) -> SourceLocalYaml:
     try:
-        parsed_args = AirbyteEntrypoint.parse_args(args)
+        parsed_args = parse_cli_args(args)
         config, catalog, state = _parse_inputs_into_config_catalog_state(parsed_args)
         return SourceLocalYaml(
             config=config,
@@ -126,10 +127,7 @@ def _get_local_yaml_source(args: list[str]) -> SourceLocalYaml:
 
 def handle_local_manifest_command(args: list[str]) -> None:
     source = _get_local_yaml_source(args)
-    launch(
-        source=source,
-        args=args,
-    )
+    source.launch_with_cli_args(args)
 
 
 def handle_remote_manifest_command(args: list[str]) -> None:
@@ -156,10 +154,7 @@ def handle_remote_manifest_command(args: list[str]) -> None:
         print(AirbyteEntrypoint.airbyte_message_to_string(message))
     else:
         source = create_declarative_source(args)
-        launch(
-            source=source,
-            args=args,
-        )
+        source.launch_with_cli_args(args=args)
 
 
 def create_declarative_source(
@@ -176,7 +171,7 @@ def create_declarative_source(
         catalog: ConfiguredAirbyteCatalog | None
         state: list[AirbyteStateMessage]
 
-        parsed_args = AirbyteEntrypoint.parse_args(args)
+        parsed_args = parse_cli_args(args)
         config, catalog, state = _parse_inputs_into_config_catalog_state(parsed_args)
 
         if config is None:

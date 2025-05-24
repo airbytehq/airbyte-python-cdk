@@ -7,6 +7,7 @@ import io
 import logging
 import sys
 from abc import ABC, abstractmethod
+from multiprocessing import Value
 from typing import Any, Iterable, List, Mapping
 
 import orjson
@@ -21,6 +22,7 @@ from airbyte_cdk.models import (
     Type,
 )
 from airbyte_cdk.sources.utils.schema_helpers import check_config_against_spec_or_exit
+from airbyte_cdk.utils.cli_arg_parse import ConnectorCLIArgs, parse_cli_args
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
 logger = logging.getLogger("airbyte")
@@ -68,54 +70,10 @@ class Destination(Connector, ABC):
         )
         logger.info("Writing complete.")
 
-    def parse_args(self, args: List[str]) -> argparse.Namespace:
-        """
-        :param args: commandline arguments
-        :return:
-        """
-
-        parent_parser = argparse.ArgumentParser(add_help=False)
-        main_parser = argparse.ArgumentParser()
-        subparsers = main_parser.add_subparsers(title="commands", dest="command")
-
-        # spec
-        subparsers.add_parser(
-            "spec", help="outputs the json configuration specification", parents=[parent_parser]
-        )
-
-        # check
-        check_parser = subparsers.add_parser(
-            "check", help="checks the config can be used to connect", parents=[parent_parser]
-        )
-        required_check_parser = check_parser.add_argument_group("required named arguments")
-        required_check_parser.add_argument(
-            "--config", type=str, required=True, help="path to the json configuration file"
-        )
-
-        # write
-        write_parser = subparsers.add_parser(
-            "write", help="Writes data to the destination", parents=[parent_parser]
-        )
-        write_required = write_parser.add_argument_group("required named arguments")
-        write_required.add_argument(
-            "--config", type=str, required=True, help="path to the JSON configuration file"
-        )
-        write_required.add_argument(
-            "--catalog", type=str, required=True, help="path to the configured catalog JSON file"
-        )
-
-        parsed_args = main_parser.parse_args(args)
-        cmd = parsed_args.command
-        if not cmd:
-            raise Exception("No command entered. ")
-        elif cmd not in ["spec", "check", "write"]:
-            # This is technically dead code since parse_args() would fail if this was the case
-            # But it's non-obvious enough to warrant placing it here anyways
-            raise Exception(f"Unknown command entered: {cmd}")
-
-        return parsed_args
-
-    def run_cmd(self, parsed_args: argparse.Namespace) -> Iterable[AirbyteMessage]:
+    def run_cmd(
+        self,
+        parsed_args: ConnectorCLIArgs,
+    ) -> Iterable[AirbyteMessage]:
         cmd = parsed_args.command
         if cmd not in self.VALID_CMDS:
             raise Exception(f"Unrecognized command: {cmd}")
@@ -138,6 +96,9 @@ class Destination(Connector, ABC):
         if cmd == "check":
             yield self._run_check(config=config)
         elif cmd == "write":
+            if not parsed_args.catalog:
+                raise ValueError("Catalog path is required for write command.")
+
             # Wrap in UTF-8 to override any other input encodings
             wrapped_stdin = io.TextIOWrapper(sys.stdin.buffer, encoding="utf-8")
             yield from self._run_write(
@@ -148,7 +109,11 @@ class Destination(Connector, ABC):
 
     def run(self, args: List[str]) -> None:
         init_uncaught_exception_handler(logger)
-        parsed_args = self.parse_args(args)
+        parsed_args: ConnectorCLIArgs = parse_cli_args(
+            args,
+            with_write=True,
+            with_read=False,
+        )
         output_messages = self.run_cmd(parsed_args)
         for message in output_messages:
             print(orjson.dumps(AirbyteMessageSerializer.dump(message)).decode())
