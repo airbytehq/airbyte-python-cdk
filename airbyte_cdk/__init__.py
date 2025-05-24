@@ -52,7 +52,7 @@ from .config_observation import (
     create_connector_config_control_message,
     emit_configuration_as_airbyte_control_message,
 )
-from .connector import BaseConnector
+from .connector import BaseConnector, Connector
 from .destinations import Destination
 from .entrypoint import AirbyteEntrypoint, launch
 from .logger import AirbyteLogFormatter, init_logger
