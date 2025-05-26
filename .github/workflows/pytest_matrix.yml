@@ -95,10 +95,10 @@ jobs:
 
       - name: Publish Test Results
         uses: EnricoMi/publish-unit-test-result-action@v2
-        if: always() && !cancelled() && steps.changes.outputs.src == 'true'
+        if: always() && !cancelled() && steps.changes.outputs.src == 'true' && matrix.python-version == '3.11'
         continue-on-error: true
         with:
-          check_name: "PyTest Results (Matrix, Python ${{ matrix.python-version }}, ${{ matrix.os }})"
+          check_name: "PyTest Results (Full)"
           large_files: true
           files: |
             build/test-results/**/*.xml
