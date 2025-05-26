@@ -9,7 +9,6 @@ from airbyte_protocol_dataclasses.models import (  # type: ignore[attr-defined] 
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteStream,
     ConnectorSpecification,
-    DestinationOperation,
 )
 from serpyco_rs import CustomType, Serializer
 
@@ -26,24 +25,8 @@ class AirbyteStateBlobType(CustomType[AirbyteStateBlob, Dict[str, Any]]):
         return {"type": "object"}
 
 
-class DestinationOperationType(CustomType[DestinationOperation, Dict[str, Any]]):
-    def serialize(self, value: DestinationOperation) -> Dict[str, Any]:
-        # one field is named `schema` in the DestinationOperation which renders it as `schema_`. We need to reserialize this properly
-        return {"schema" if k == "schema_" else k: v for k, v in value.__dict__.items()}
-
-    def deserialize(self, value: Dict[str, Any]) -> DestinationOperation:
-        return DestinationOperation(value)
-
-    def get_json_schema(self) -> Dict[str, Any]:
-        return {"type": "object"}
-
-
-def custom_type_resolver(t: type) -> CustomType[Any, Dict[str, Any]] | None:
-    if t is AirbyteStateBlob:
-        return AirbyteStateBlobType()
-    elif t is DestinationOperation:
-        return DestinationOperationType()
-    return None
+def custom_type_resolver(t: type) -> CustomType[AirbyteStateBlob, Dict[str, Any]] | None:
+    return AirbyteStateBlobType() if t is AirbyteStateBlob else None
 
 
 AirbyteStreamStateSerializer = Serializer(
