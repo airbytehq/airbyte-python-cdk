@@ -1,16 +1,17 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 from typing import Any, Dict
 
+from serpyco_rs import CustomType, Serializer
+
 from .airbyte_protocol import (  # type: ignore[attr-defined] # all classes are imported to airbyte_protocol via *
     AirbyteMessage,
     AirbyteStateBlob,
+    AirbyteStateMessage,
     AirbyteStreamState,
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteStream,
     ConnectorSpecification,
 )
-from serpyco_rs import CustomType, Serializer
-
 
 
 class AirbyteStateBlobType(CustomType[AirbyteStateBlob, Dict[str, Any]]):
