@@ -2,6 +2,10 @@
 # Copyright (c) 2023 Airbyte, Inc., all rights reserved.
 #
 
+"""
+This file is necessary because the `AirbyteStateBlob` implementation in the protocol lib is incomplete and given we use the incomplete implementation, we will get `TypeError: AirbyteStateBlob.__init__() takes 1 positional argument but 2 were given`. Hence, we need to redefine all the classes that could serialize AirbyteStateBlob to use the CDK implementation, not the protocol lib one.
+"""
+
 from dataclasses import InitVar, dataclass
 from typing import Annotated, Any, Dict, List, Mapping, Optional, Union
 
@@ -86,3 +90,4 @@ class AirbyteMessage:
     state: Optional[AirbyteStateMessage] = None
     trace: Optional[AirbyteTraceMessage] = None  # type: ignore [name-defined]
     control: Optional[AirbyteControlMessage] = None  # type: ignore [name-defined]
+    destination_catalog: Optional[DestinationCatalog] = None  # type: ignore [name-defined]
