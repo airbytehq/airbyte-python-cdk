@@ -131,15 +131,15 @@ frozenlist = ">=1.1.0"
 
 [[package]]
 name = "airbyte-protocol-models-dataclasses"
-version = "0.15.0.dev1746648278"
+version = "0.15.0.dev1747996344"
 description = "Declares the Airbyte Protocol using Python Dataclasses. Dataclasses in Python have less performance overhead compared to Pydantic models, making them a more efficient choice for scenarios where speed and memory usage are critical"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
-    {file = "airbyte_protocol_models_dataclasses-0.15.0.dev1746648278-py3-none-any.whl", hash = "sha256:b977d295c707edcd62fe41d14c0f3afb090d05f58e0271ad54c99d1a0274892e"},
-    {file = "airbyte_protocol_models_dataclasses-0.15.0.dev1746648278.tar.gz", hash = "sha256:620cd913e4b7337912be403a0e5fdfe519b9a2c6060550ba23e3c486f0967a02"},
+    {file = "airbyte_protocol_models_dataclasses-0.15.0.dev1747996344-py3-none-any.whl", hash = "sha256:49158cb2db73f90faa67f6fe5d04016d58fe56235e75bb9e3c99a536f31d692b"},
+    {file = "airbyte_protocol_models_dataclasses-0.15.0.dev1747996344.tar.gz", hash = "sha256:4829b538ffe3a6faa797648d11b34c13d58455d397e857a80004bffa42b95555"},
 ]
 
 [package.source]
@@ -5835,4 +5835,4 @@ vector-db-based = ["cohere", "langchain", "openai", "tiktoken"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.13"
-content-hash = "429a2d37777945553e29545e71a9f05d108504e31b12c97d817f483f58f4bee8"
+content-hash = "0935103ffb800571ea2e5db6648e80d96573ecfb160857b909f84499f6fa4760"
