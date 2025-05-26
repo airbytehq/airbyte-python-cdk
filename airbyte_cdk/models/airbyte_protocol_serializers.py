@@ -3,7 +3,6 @@ from typing import Any, Dict
 
 from airbyte_protocol_dataclasses.models import (  # type: ignore[attr-defined] # all classes are imported to airbyte_protocol via *
     AirbyteMessage,
-    AirbyteStateBlob,
     AirbyteStateMessage,
     AirbyteStreamState,
     ConfiguredAirbyteCatalog,
@@ -11,6 +10,8 @@ from airbyte_protocol_dataclasses.models import (  # type: ignore[attr-defined] 
     ConnectorSpecification,
 )
 from serpyco_rs import CustomType, Serializer
+
+from .airbyte_protocol import AirbyteStateBlob
 
 
 class AirbyteStateBlobType(CustomType[AirbyteStateBlob, Dict[str, Any]]):
