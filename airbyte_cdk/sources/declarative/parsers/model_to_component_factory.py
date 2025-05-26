@@ -3312,6 +3312,7 @@ class ModelToComponentFactory:
                 config=config,
                 maximum_number_of_slices=self._limit_slices_fetched or 5,
                 ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
+                additional_query_properties=query_properties,
                 log_formatter=log_formatter,
                 parameters=model.parameters or {},
             )
