@@ -131,21 +131,16 @@ frozenlist = ">=1.1.0"
 
 [[package]]
 name = "airbyte-protocol-models-dataclasses"
-version = "0.15.0.dev1747996344"
+version = "0.16.0"
 description = "Declares the Airbyte Protocol using Python Dataclasses. Dataclasses in Python have less performance overhead compared to Pydantic models, making them a more efficient choice for scenarios where speed and memory usage are critical"
 optional = false
 python-versions = ">=3.9"
 groups = ["main"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
-    {file = "airbyte_protocol_models_dataclasses-0.15.0.dev1747996344-py3-none-any.whl", hash = "sha256:49158cb2db73f90faa67f6fe5d04016d58fe56235e75bb9e3c99a536f31d692b"},
-    {file = "airbyte_protocol_models_dataclasses-0.15.0.dev1747996344.tar.gz", hash = "sha256:4829b538ffe3a6faa797648d11b34c13d58455d397e857a80004bffa42b95555"},
+    {file = "airbyte_protocol_models_dataclasses-0.16.0-py3-none-any.whl", hash = "sha256:46ee2958b39945530f9c88c97d7e20ef1b4adba6d25017f781e01625feb61542"},
+    {file = "airbyte_protocol_models_dataclasses-0.16.0.tar.gz", hash = "sha256:e35db71f364916b290ce3b970eecaa71e9fd3ce7358df2a3f4851f38857d010b"},
 ]
-
-[package.source]
-type = "legacy"
-url = "https://test.pypi.org/simple"
-reference = "testpypi"
 
 [[package]]
 name = "annotated-types"
@@ -5835,4 +5830,4 @@ vector-db-based = ["cohere", "langchain", "openai", "tiktoken"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.13"
-content-hash = "0935103ffb800571ea2e5db6648e80d96573ecfb160857b909f84499f6fa4760"
+content-hash = "9576b23825c27a0ce75bdd53ad7e997db7aa2fde7c8588b92cd516ae3f8f155a"
