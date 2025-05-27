@@ -8,7 +8,9 @@ from itertools import product
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
 import dpath
+import yaml
 from typing_extensions import deprecated
+from yaml.parser import ParserError
 
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.resolvers.components_resolver import (
@@ -93,57 +95,45 @@ class ConfigComponentsResolver(ComponentsResolver):
                     f"Expected a string or InterpolatedString for value in mapping: {component_mapping}"
                 )
 
+    @staticmethod
+    def _merge_combination(combo: Iterable[Tuple[int, Any]]) -> Dict[str, Any]:
+        """Collapse a combination of ``(idx, elem)`` into one config dict."""
+        result: Dict[str, Any] = {}
+        for config_index, (elem_index, elem) in enumerate(combo):
+            if isinstance(elem, dict):
+                result.update(elem)
+            else:
+                # keep non-dict values under an artificial name
+                result.setdefault(f"source_config_{config_index}", (elem_index, elem))
+        return result
+
     @property
     def _stream_config(self) -> List[Dict[str, Any]]:
         """
-        Builds a list of stream configuration dictionaries.
-
-        Each resulting config represents a unique combination of configurations
-        defined by the `configs_pointer` and any provided `default_values`.
+        Build every unique stream-configuration combination defined by
+        each ``StreamConfig`` and any ``default_values``.
         """
-
-        def resolve_path(pointer: List[Union["InterpolatedString", str]]) -> List[str]:
-            """
-            Resolves a list of JSON pointer elements by evaluating interpolated strings
-            or using the raw strings directly.
-            """
-            return [
-                node.eval(self.config) if not isinstance(node, str) else node for node in pointer
+        all_indexed_streams = []
+        for stream_config in self.stream_configs:
+            path = [
+                node.eval(self.config) if not isinstance(node, str) else node
+                for node in stream_config.configs_pointer
             ]
+            stream_configs_raw = dpath.get(dict(self.config), path, default=[])
+            stream_configs = (
+                list(stream_configs_raw)
+                if isinstance(stream_configs_raw, list)
+                else [stream_configs_raw]
+            )
 
-        def prepare_streams() -> Iterable[List[Tuple[int, Any]]]:
-            """
-            Prepares all stream configs to an iterable where each item
-            is a list of (index, config) pairs for a particular stream.
-            """
-            for stream_config in self.stream_configs:
-                path = resolve_path(stream_config.configs_pointer)
-                stream_configs_raw = dpath.get(dict(self.config), path, default=[])
-                stream_configs = (
-                    list(stream_configs_raw)
-                    if isinstance(stream_configs_raw, list)
-                    else [stream_configs_raw]
-                )
+            if stream_config.default_values:
+                stream_configs.extend(stream_config.default_values)
 
-                if stream_config.default_values:
-                    stream_configs.extend(stream_config.default_values)
-
-                yield [(i, item) for i, item in enumerate(stream_configs)]
-
-        def merge_combination(combo: Iterable[Tuple[int, Any]]) -> Dict[str, Any]:
-            """
-            Merges a combination of indexed config items into a single config dict.
-            """
-            result = {}
-            for config_index, (elem_index, elem) in enumerate(combo):
-                if isinstance(elem, dict):
-                    result.update(elem)
-                else:
-                    result.setdefault(f"source_config_{config_index}", (elem_index, elem))
-            return result
-
-        all_indexed_streams = list(prepare_streams())
-        return [merge_combination(combo) for combo in product(*all_indexed_streams)]
+            all_indexed_streams.append([(i, item) for i, item in enumerate(stream_configs)])
+        return [
+            self._merge_combination(combo)  # type: ignore[arg-type]
+            for combo in product(*all_indexed_streams)
+        ]
 
     def resolve_components(
         self, stream_template_config: Dict[str, Any]
@@ -182,11 +172,17 @@ class ConfigComponentsResolver(ComponentsResolver):
 
     @staticmethod
     def _parse_yaml_if_possible(value: Any) -> Any:
+        """
+        Try to turn value into a Python object by YAML-parsing it.
+
+        * If value is a `str` and can be parsed by `yaml.safe_load`,
+          return the parsed result.
+        * If parsing fails (`yaml.parser.ParserError`) – or value is not
+          a string at all – return the original value unchanged.
+        """
         if isinstance(value, str):
             try:
-                import yaml
-
                 return yaml.safe_load(value)
-            except Exception:
+            except ParserError:  # "{{ record[0] in ['cohortActiveUsers'] }}"   # not valid YAML
                 return value
         return value
