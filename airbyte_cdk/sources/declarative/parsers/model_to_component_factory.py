@@ -3299,24 +3299,10 @@ class ModelToComponentFactory:
                 parameters=model.parameters or {},
             )
 
-        if self._limit_slices_fetched or self._emit_connector_builder_messages:
-            return SimpleRetrieverTestReadDecorator(
-                name=name,
-                paginator=paginator,
-                primary_key=primary_key,
-                requester=requester,
-                record_selector=record_selector,
-                stream_slicer=stream_slicer,
-                request_option_provider=request_options_provider,
-                cursor=cursor,
-                config=config,
-                maximum_number_of_slices=self._limit_slices_fetched or 5,
-                ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
-                additional_query_properties=query_properties,
-                log_formatter=log_formatter,
-                parameters=model.parameters or {},
-            )
-        return SimpleRetriever(
+        test_read_enabled = self._limit_slices_fetched or self._emit_connector_builder_messages
+        maximum_number_of_slices = self._limit_slices_fetched or 5 if test_read_enabled else 0
+        retriever_log_formatter = log_formatter if test_read_enabled else None
+        return SimpleRetrieverTestReadDecorator(
             name=name,
             paginator=paginator,
             primary_key=primary_key,
@@ -3326,8 +3312,11 @@ class ModelToComponentFactory:
             request_option_provider=request_options_provider,
             cursor=cursor,
             config=config,
+            maximum_number_of_slices=maximum_number_of_slices,
+            emit_connector_builder_messages=self._emit_connector_builder_messages,
             ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
             additional_query_properties=query_properties,
+            log_formatter=retriever_log_formatter,
             parameters=model.parameters or {},
         )
 
@@ -3441,21 +3430,10 @@ class ModelToComponentFactory:
                 if model.download_paginator
                 else NoPagination(parameters={})
             )
-            maximum_number_of_slices = self._limit_slices_fetched or 5
+            test_read_enabled = self._limit_slices_fetched or self._emit_connector_builder_messages
+            maximum_number_of_slices = self._limit_slices_fetched or 5 if test_read_enabled else 0
 
-            if self._limit_slices_fetched or self._emit_connector_builder_messages:
-                return SimpleRetrieverTestReadDecorator(
-                    requester=download_requester,
-                    record_selector=record_selector,
-                    primary_key=None,
-                    name=job_download_components_name,
-                    paginator=paginator,
-                    config=config,
-                    parameters={},
-                    maximum_number_of_slices=maximum_number_of_slices,
-                )
-
-            return SimpleRetriever(
+            return SimpleRetrieverTestReadDecorator(
                 requester=download_requester,
                 record_selector=record_selector,
                 primary_key=None,
@@ -3463,6 +3441,8 @@ class ModelToComponentFactory:
                 paginator=paginator,
                 config=config,
                 parameters={},
+                maximum_number_of_slices=maximum_number_of_slices,
+                emit_connector_builder_messages=self._emit_connector_builder_messages,
             )
 
         def _get_job_timeout() -> datetime.timedelta:

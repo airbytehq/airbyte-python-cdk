@@ -915,6 +915,7 @@ def test_emit_log_request_response_messages(mocker):
         stream_slicer=SinglePartitionRouter(parameters={}),
         parameters={},
         config={},
+        maximum_number_of_slices=1,
     )
 
     retriever._fetch_next_page(
