@@ -74,6 +74,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
         debug: bool = False,
         emit_connector_builder_messages: bool = False,
         component_factory: Optional[ModelToComponentFactory] = None,
+        config_path: Optional[str] = None,
         **kwargs: Any,
     ) -> None:
         # todo: We could remove state from initialization. Now that streams are grouped during the read(), a source
@@ -96,6 +97,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             debug=debug,
             emit_connector_builder_messages=emit_connector_builder_messages,
             component_factory=component_factory,
+            config_path=config_path,
         )
 
         concurrency_level_from_manifest = self._source_config.get("concurrency_level")

@@ -1,9 +1,9 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
-from dataclasses import InitVar, dataclass
-from typing import Any, Mapping, Optional
+from dataclasses import InitVar, dataclass, field
+from typing import Any, List, Mapping, MutableMapping, Optional
 
 from airbyte_cdk.models import (
     AdvancedAuth,
@@ -11,6 +11,17 @@ from airbyte_cdk.models import (
     ConnectorSpecificationSerializer,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import AuthFlow
+from airbyte_cdk.sources.declarative.transformations.config_transformations.config_transformation import (
+    ConfigTransformation,
+)
+from airbyte_cdk.sources.declarative.validators.validator import Validator
+from airbyte_cdk.sources.message.repository import InMemoryMessageRepository, MessageRepository
+
+
+@dataclass
+class ConfigMigration:
+    transformations: List[ConfigTransformation]
+    description: Optional[str] = None
 
 
 @dataclass
@@ -27,6 +38,9 @@ class Spec:
     parameters: InitVar[Mapping[str, Any]]
     documentation_url: Optional[str] = None
     advanced_auth: Optional[AuthFlow] = None
+    config_migrations: List[ConfigMigration] = field(default_factory=list)
+    config_transformations: List[ConfigTransformation] = field(default_factory=list)
+    config_validations: List[Validator] = field(default_factory=list)
 
     def generate_spec(self) -> ConnectorSpecification:
         """
@@ -46,3 +60,31 @@ class Spec:
 
         # We remap these keys to camel case because that's the existing format expected by the rest of the platform
         return ConnectorSpecificationSerializer.load(obj)
+
+    def migrate_config(self, config: MutableMapping[str, Any]) -> None:
+        """
+        Apply all specified config transformations to the provided config and emit a control message.
+
+        :param config: The user-provided config to migrate
+        """
+        for migration in self.config_migrations:
+            for transformation in migration.transformations:
+                transformation.transform(config)
+
+    def transform_config(self, config: MutableMapping[str, Any]) -> None:
+        """
+        Apply all config transformations to the provided config.
+
+        :param config: The user-provided configuration
+        """
+        for transformation in self.config_transformations:
+            transformation.transform(config)
+
+    def validate_config(self, config: Mapping[str, Any]) -> None:
+        """
+        Apply all config validations to the provided config.
+
+        :param config: The user-provided configuration
+        """
+        for validator in self.config_validations:
+            validator.validate(config)
