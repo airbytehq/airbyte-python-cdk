@@ -4056,6 +4056,8 @@ definitions:
         description: The expected data type of the value. If omitted, the type will be inferred from the value provided.
         "$ref": "#/definitions/ValueType"
       create_or_update:
+        title: Create or Update
+        description: Determines whether to create a new path if it doesn't exist (true) or only update existing paths (false). When set to true, the resolver will create new paths in the stream template if they don't exist. When false (default), it will only update existing paths.
         type: boolean
         default: false
       $parameters:
