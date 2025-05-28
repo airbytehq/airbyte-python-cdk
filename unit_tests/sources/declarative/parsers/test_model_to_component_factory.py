@@ -151,15 +151,12 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
-from airbyte_cdk.sources.declarative.retrievers import (
-    AsyncRetriever,
-    SimpleRetriever,
-    SimpleRetrieverTestReadDecorator,
-)
+from airbyte_cdk.sources.declarative.retrievers import AsyncRetriever, SimpleRetriever
 from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader, JsonFileSchemaLoader
 from airbyte_cdk.sources.declarative.schema.composite_schema_loader import CompositeSchemaLoader
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
 from airbyte_cdk.sources.declarative.spec import Spec
+from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
 from airbyte_cdk.sources.declarative.transformations import AddFields, RemoveFields
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
@@ -2715,6 +2712,13 @@ def test_simple_retriever_emit_log_messages():
             "path": "/v1/api",
         },
     }
+    request = requests.PreparedRequest()
+    request.headers = {"header": "value"}
+    request.url = "http://byrde.enterprises.com/casinos"
+
+    response = requests.Response()
+    response.request = request
+    response.status_code = 200
 
     connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
     retriever = connector_builder_factory.create_component(
@@ -2727,8 +2731,12 @@ def test_simple_retriever_emit_log_messages():
         transformations=[],
     )
 
-    assert isinstance(retriever, SimpleRetrieverTestReadDecorator)
+    assert isinstance(retriever, SimpleRetriever)
     assert connector_builder_factory._message_repository._log_level == Level.DEBUG
+    assert retriever.log_formatter is not None
+    assert retriever.log_formatter(response) == connector_builder_factory._get_log_formatter(
+        None, retriever.name
+    )(response)
 
 
 def test_create_page_increment():
@@ -3078,7 +3086,8 @@ def test_use_request_options_provider_for_datetime_based_cursor():
     assert retriever.name == "Test"
 
     assert isinstance(retriever.cursor, DatetimeBasedCursor)
-    assert isinstance(retriever.stream_slicer, DatetimeBasedCursor)
+    assert isinstance(retriever.stream_slicer, StreamSlicerTestReadDecorator)
+    assert isinstance(retriever.stream_slicer.wrapped_slicer, DatetimeBasedCursor)
 
     assert isinstance(retriever.request_option_provider, DatetimeBasedRequestOptionsProvider)
     assert (
@@ -3166,7 +3175,8 @@ def test_do_not_separate_request_options_provider_for_non_datetime_based_cursor(
     assert retriever.name == "Test"
 
     assert isinstance(retriever.cursor, PerPartitionCursor)
-    assert isinstance(retriever.stream_slicer, PerPartitionCursor)
+    assert isinstance(retriever.stream_slicer, StreamSlicerTestReadDecorator)
+    assert isinstance(retriever.stream_slicer.wrapped_slicer, PerPartitionCursor)
 
     assert isinstance(retriever.request_option_provider, PerPartitionCursor)
     assert isinstance(retriever.request_option_provider._cursor_factory, CursorFactory)
@@ -3207,7 +3217,8 @@ def test_use_default_request_options_provider():
     assert retriever.primary_key == "id"
     assert retriever.name == "Test"
 
-    assert isinstance(retriever.stream_slicer, SinglePartitionRouter)
+    assert isinstance(retriever.stream_slicer, StreamSlicerTestReadDecorator)
+    assert isinstance(retriever.stream_slicer.wrapped_slicer, SinglePartitionRouter)
     assert isinstance(retriever.request_option_provider, DefaultRequestOptionsProvider)
 
 

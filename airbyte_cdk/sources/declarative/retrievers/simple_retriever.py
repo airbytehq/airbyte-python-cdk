@@ -645,54 +645,6 @@ def _deep_merge(
             target[key] = value
 
 
-@dataclass
-class SimpleRetrieverTestReadDecorator(SimpleRetriever):
-    """
-    In some cases, we want to limit the number of requests that are made to the backend source. This class allows for limiting the number of
-    slices that are queried throughout a read command.
-
-    maximum_number_of_slices must be provided when test read is enabled.
-    """
-
-    maximum_number_of_slices: int = 0
-    emit_connector_builder_messages: bool = False
-
-    def __post_init__(self, parameters: Mapping[str, Any]) -> None:
-        super().__post_init__(parameters)
-        if self.test_read_enabled():
-            self.log_formatter = (
-                (
-                    lambda response: format_http_message(
-                        response,
-                        f"Stream '{self.name}' request",
-                        f"Request performed in order to extract records for stream '{self.name}'",
-                        self.name,
-                    )
-                )
-                if not self.log_formatter
-                else self.log_formatter
-            )
-
-            if self.maximum_number_of_slices and self.maximum_number_of_slices < 1:
-                raise ValueError(
-                    f"The maximum number of slices on a test read needs to be strictly positive. Got {self.maximum_number_of_slices}"
-                )
-
-    def test_read_enabled(self) -> bool:
-        """
-        Indicates whether the retriever is in test read mode.
-        This is used to limit the number of slices processed during a test read.
-        """
-        return bool(self.maximum_number_of_slices or self.emit_connector_builder_messages)
-
-    # stream_slices is defined with arguments on http stream and fixing this has a long tail of dependencies. Will be resolved by the decoupling of http stream and simple retriever
-    def stream_slices(self) -> Iterable[Optional[StreamSlice]]:  # type: ignore
-        if not self.test_read_enabled():
-            return super().stream_slices()
-        else:
-            return islice(super().stream_slices(), self.maximum_number_of_slices)
-
-
 @deprecated(
     "This class is experimental. Use at your own risk.",
     category=ExperimentalClassWarning,

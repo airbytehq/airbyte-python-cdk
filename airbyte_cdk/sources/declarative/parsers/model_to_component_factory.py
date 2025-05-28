@@ -510,7 +510,6 @@ from airbyte_cdk.sources.declarative.retrievers import (
     AsyncRetriever,
     LazySimpleRetriever,
     SimpleRetriever,
-    SimpleRetrieverTestReadDecorator,
 )
 from airbyte_cdk.sources.declarative.retrievers.file_uploader import (
     ConnectorBuilderFileUploader,
@@ -530,7 +529,10 @@ from airbyte_cdk.sources.declarative.schema import (
 )
 from airbyte_cdk.sources.declarative.schema.composite_schema_loader import CompositeSchemaLoader
 from airbyte_cdk.sources.declarative.spec import ConfigMigration, Spec
-from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicer
+from airbyte_cdk.sources.declarative.stream_slicers import (
+    StreamSlicer,
+    StreamSlicerTestReadDecorator,
+)
 from airbyte_cdk.sources.declarative.transformations import (
     AddFields,
     RecordTransformation,
@@ -3241,6 +3243,11 @@ class ModelToComponentFactory:
             request_options_provider = DefaultRequestOptionsProvider(parameters={})
 
         stream_slicer = stream_slicer or SinglePartitionRouter(parameters={})
+        if self._should_limit_slices_fetched():
+            stream_slicer = StreamSlicerTestReadDecorator(
+                wrapped_slicer=stream_slicer,
+                maximum_number_of_slices=self._limit_slices_fetched or 5,
+            )
 
         cursor_used_for_stop_condition = cursor if stop_condition_on_cursor else None
         paginator = (
@@ -3299,10 +3306,7 @@ class ModelToComponentFactory:
                 parameters=model.parameters or {},
             )
 
-        test_read_enabled = self._limit_slices_fetched or self._emit_connector_builder_messages
-        maximum_number_of_slices = self._limit_slices_fetched or 5 if test_read_enabled else 0
-        retriever_log_formatter = log_formatter if test_read_enabled else None
-        return SimpleRetrieverTestReadDecorator(
+        return SimpleRetriever(
             name=name,
             paginator=paginator,
             primary_key=primary_key,
@@ -3312,13 +3316,36 @@ class ModelToComponentFactory:
             request_option_provider=request_options_provider,
             cursor=cursor,
             config=config,
-            maximum_number_of_slices=maximum_number_of_slices,
-            emit_connector_builder_messages=self._emit_connector_builder_messages,
             ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
             additional_query_properties=query_properties,
-            log_formatter=retriever_log_formatter,
+            log_formatter=self._get_log_formatter(log_formatter, name),
             parameters=model.parameters or {},
         )
+
+    def _get_log_formatter(
+        self, log_formatter: Callable[[Response], Any] | None, name: str
+    ) -> Callable[[Response], Any] | None:
+        if self._should_limit_slices_fetched():
+            return (
+                (
+                    lambda response: format_http_message(
+                        response,
+                        f"Stream '{name}' request",
+                        f"Request performed in order to extract records for stream '{name}'",
+                        name,
+                    )
+                )
+                if not log_formatter
+                else log_formatter
+            )
+        return None
+
+    def _should_limit_slices_fetched(self) -> bool:
+        """
+        Returns True if the number of slices fetched should be limited, False otherwise.
+        This is used to limit the number of slices fetched during tests.
+        """
+        return bool(self._limit_slices_fetched or self._emit_connector_builder_messages)
 
     @staticmethod
     def _query_properties_in_request_parameters(
@@ -3410,7 +3437,7 @@ class ModelToComponentFactory:
         transformations: List[RecordTransformation],
         **kwargs: Any,
     ) -> AsyncRetriever:
-        def _get_download_retriever() -> SimpleRetrieverTestReadDecorator | SimpleRetriever:
+        def _get_download_retriever() -> SimpleRetriever:
             record_selector = RecordSelector(
                 extractor=download_extractor,
                 name=name,
@@ -3430,10 +3457,8 @@ class ModelToComponentFactory:
                 if model.download_paginator
                 else NoPagination(parameters={})
             )
-            test_read_enabled = self._limit_slices_fetched or self._emit_connector_builder_messages
-            maximum_number_of_slices = self._limit_slices_fetched or 5 if test_read_enabled else 0
 
-            return SimpleRetrieverTestReadDecorator(
+            return SimpleRetriever(
                 requester=download_requester,
                 record_selector=record_selector,
                 primary_key=None,
@@ -3441,8 +3466,6 @@ class ModelToComponentFactory:
                 paginator=paginator,
                 config=config,
                 parameters={},
-                maximum_number_of_slices=maximum_number_of_slices,
-                emit_connector_builder_messages=self._emit_connector_builder_messages,
             )
 
         def _get_job_timeout() -> datetime.timedelta:
@@ -3479,7 +3502,14 @@ class ModelToComponentFactory:
             transformations=transformations,
             client_side_incremental_sync=client_side_incremental_sync,
         )
+
         stream_slicer = stream_slicer or SinglePartitionRouter(parameters={})
+        if self._should_limit_slices_fetched():
+            stream_slicer = StreamSlicerTestReadDecorator(
+                wrapped_slicer=stream_slicer,
+                maximum_number_of_slices=self._limit_slices_fetched or 5,
+            )
+
         creation_requester = self._create_component_from_model(
             model=model.creation_requester,
             decoder=decoder,
