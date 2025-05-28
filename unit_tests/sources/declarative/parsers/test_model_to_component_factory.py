@@ -2737,6 +2737,7 @@ def test_simple_retriever_emit_log_messages():
     assert retriever.log_formatter(response) == connector_builder_factory._get_log_formatter(
         None, retriever.name
     )(response)
+    assert isinstance(retriever.stream_slicer, StreamSlicerTestReadDecorator)
 
 
 def test_create_page_increment():
