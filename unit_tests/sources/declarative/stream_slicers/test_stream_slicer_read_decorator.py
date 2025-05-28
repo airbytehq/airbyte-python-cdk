@@ -45,7 +45,8 @@ def mocked_partition_router():
 
 def test_show_as_wrapped_instance():
     first_partition = {"first_partition_key": "first_partition_value"}
-    mocked_partition_router().stream_slices.return_value = [
+    partition_router = mocked_partition_router()
+    partition_router.stream_slices.return_value = [
         StreamSlice(
             partition=first_partition, cursor_slice={}, extra_fields={"extra_field": "extra_value"}
         ),
@@ -56,7 +57,7 @@ def test_show_as_wrapped_instance():
         .build()
     )
 
-    global_cursor = GlobalSubstreamCursor(cursor, mocked_partition_router)
+    global_cursor = GlobalSubstreamCursor(cursor, partition_router)
     wrapped_slicer = StreamSlicerTestReadDecorator(
         wrapped_slicer=global_cursor,
         maximum_number_of_slices=5,
