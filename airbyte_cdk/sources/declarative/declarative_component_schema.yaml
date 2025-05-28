@@ -4055,6 +4055,11 @@ definitions:
         title: Value Type
         description: The expected data type of the value. If omitted, the type will be inferred from the value provided.
         "$ref": "#/definitions/ValueType"
+      create_or_update:
+        title: Create or Update
+        description: Determines whether to create a new path if it doesn't exist (true) or only update existing paths (false). When set to true, the resolver will create new paths in the stream template if they don't exist. When false (default), it will only update existing paths.
+        type: boolean
+        default: false
       $parameters:
         type: object
         additionalProperties: true
@@ -4106,6 +4111,12 @@ definitions:
           - ["data"]
           - ["data", "streams"]
           - ["data", "{{ parameters.name }}"]
+      default_values:
+        title: Default Values
+        description: A list of default values, each matching the structure expected from the parsed component value.
+        type: array
+        items:
+          type: object
       $parameters:
         type: object
         additionalProperties: true
@@ -4117,7 +4128,11 @@ definitions:
         type: string
         enum: [ConfigComponentsResolver]
       stream_config:
-        "$ref": "#/definitions/StreamConfig"
+        anyOf:
+          - type: array
+            items:
+              "$ref": "#/definitions/StreamConfig"
+          - "$ref": "#/definitions/StreamConfig"
       components_mapping:
         type: array
         items:
