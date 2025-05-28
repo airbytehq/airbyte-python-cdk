@@ -33,7 +33,10 @@ from airbyte_cdk.sources.declarative.partition_routers.partition_router import P
 from airbyte_cdk.sources.declarative.partition_routers.single_partition_router import (
     SinglePartitionRouter,
 )
-from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
+from airbyte_cdk.sources.declarative.stream_slicers import (
+    StreamSlicer,
+    StreamSlicerTestReadDecorator,
+)
 from airbyte_cdk.sources.message import NoopMessageRepository
 from unit_tests.sources.declarative.async_job.test_integration import MockAsyncJobRepository
 
@@ -80,6 +83,24 @@ def date_time_based_cursor_factory() -> DatetimeBasedCursor:
         cursor_granularity="P1D",
         config={},
         parameters={},
+    )
+
+
+def create_substream_partition_router():
+    return SubstreamPartitionRouter(
+        config={},
+        parameters={},
+        parent_stream_configs=[
+            ParentStreamConfig(
+                type="ParentStreamConfig",
+                parent_key="id",
+                partition_field="id",
+                stream=DeclarativeStream(
+                    type="DeclarativeStream",
+                    retriever=CustomRetriever(type="CustomRetriever", class_name="a_class_name"),
+                ),
+            )
+        ],
     )
 
 
@@ -142,21 +163,7 @@ def test_isinstance_global_cursor_aysnc_job_partition_router():
 
 
 def test_isinstance_substrea_partition_router():
-    partition_router = SubstreamPartitionRouter(
-        config={},
-        parameters={},
-        parent_stream_configs=[
-            ParentStreamConfig(
-                type="ParentStreamConfig",
-                parent_key="id",
-                partition_field="id",
-                stream=DeclarativeStream(
-                    type="DeclarativeStream",
-                    retriever=CustomRetriever(type="CustomRetriever", class_name="a_class_name"),
-                ),
-            )
-        ],
-    )
+    partition_router = create_substream_partition_router()
 
     wrapped_slicer = StreamSlicerTestReadDecorator(
         wrapped_slicer=partition_router,
@@ -175,21 +182,7 @@ def test_isinstance_substrea_partition_router():
 
 
 def test_isinstance_perpartition_with_global_cursor():
-    partition_router = SubstreamPartitionRouter(
-        config={},
-        parameters={},
-        parent_stream_configs=[
-            ParentStreamConfig(
-                type="ParentStreamConfig",
-                parent_key="id",
-                partition_field="id",
-                stream=DeclarativeStream(
-                    type="DeclarativeStream",
-                    retriever=CustomRetriever(type="CustomRetriever", class_name="a_class_name"),
-                ),
-            )
-        ],
-    )
+    partition_router = create_substream_partition_router()
     date_time_based_cursor = date_time_based_cursor_factory()
 
     cursor_factory = CursorFactory(date_time_based_cursor_factory)
@@ -221,3 +214,21 @@ def test_isinstance_perpartition_with_global_cursor():
     assert substream_cursor._global_cursor._stream_cursor == date_time_based_cursor
 
     assert substream_cursor._get_active_cursor() == wrapped_slicer._get_active_cursor()
+
+
+def test_slice_limiting_functionality():
+    # Create a slicer that returns many slices
+    mock_slicer = Mock(spec=StreamSlicer)
+    mock_slicer.stream_slices.return_value = [
+        StreamSlice(partition={f"key_{i}": f"value_{i}"}, cursor_slice={}) for i in range(10)
+    ]
+
+    # Wrap with decorator limiting to 3 slices
+    wrapped_slicer = StreamSlicerTestReadDecorator(
+        wrapped_slicer=mock_slicer,
+        maximum_number_of_slices=3,
+    )
+
+    # Verify only 3 slices are returned
+    slices = list(wrapped_slicer.stream_slices())
+    assert len(slices) == 3
