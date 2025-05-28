@@ -166,7 +166,7 @@ def test_isinstance_substrea_partition_router():
     assert isinstance(wrapped_slicer, SubstreamPartitionRouter)
     assert not isinstance(wrapped_slicer, GlobalSubstreamCursor)
     assert not isinstance(wrapped_slicer, AsyncJobPartitionRouter)
-    assert not isinstance(partition_router, PerPartitionWithGlobalCursor)
+    assert not isinstance(wrapped_slicer, PerPartitionWithGlobalCursor)
 
     assert isinstance(partition_router, SubstreamPartitionRouter)
     assert not isinstance(partition_router, GlobalSubstreamCursor)
