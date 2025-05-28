@@ -6,7 +6,7 @@ import copy
 import logging
 import threading
 import time
-from collections import OrderedDict
+from collections import deque, OrderedDict
 from copy import deepcopy
 from datetime import timedelta
 from typing import Any, Callable, Iterable, Mapping, MutableMapping, Optional
@@ -99,9 +99,13 @@ class ConcurrentPerPartitionCursor(Cursor):
         self._semaphore_per_partition: OrderedDict[str, threading.Semaphore] = OrderedDict()
 
         # Parent-state tracking: store each partition’s parent state in creation order
-        self._partition_parent_state_map: OrderedDict[str, Mapping[str, Any]] = OrderedDict()
+        self._partition_parent_state_map: OrderedDict[str, tuple[Mapping[str, Any], int]] = OrderedDict()
 
         self._finished_partitions: set[str] = set()
+        self._open_seqs: deque[int] = deque()
+        self._next_seq: int = 0
+        self._seq_by_partition: dict[str, int] = {}
+
         self._lock = threading.Lock()
         self._timer = Timer()
         self._new_global_cursor: Optional[StreamState] = None
@@ -162,55 +166,28 @@ class ConcurrentPerPartitionCursor(Cursor):
                 ):
                     self._update_global_cursor(cursor.state[self.cursor_field.cursor_field_key])
 
+            # Clean up the partition if it is fully processed
+            self._cleanup_if_done(partition_key)
+
             self._check_and_update_parent_state()
 
             self._emit_state_message()
 
     def _check_and_update_parent_state(self) -> None:
-        """
-        Pop the leftmost partition state from _partition_parent_state_map only if
-        *all partitions* up to (and including) that partition key in _semaphore_per_partition
-        are fully finished (i.e. in _finished_partitions and semaphore._value == 0).
-        Additionally, delete finished semaphores with a value of 0 to free up memory,
-        as they are only needed to track errors and completion status.
-        """
         last_closed_state = None
 
         while self._partition_parent_state_map:
-            # Look at the earliest partition key in creation order
-            earliest_key = next(iter(self._partition_parent_state_map))
+            earliest_key, (candidate_state, candidate_seq) = \
+                next(iter(self._partition_parent_state_map.items()))
 
-            # Verify ALL partitions from the left up to earliest_key are finished
-            all_left_finished = True
-            for p_key, sem in list(
-                self._semaphore_per_partition.items()
-            ):  # Use list to allow modification during iteration
-                # If any earlier partition is still not finished, we must stop
-                if p_key not in self._finished_partitions or sem._value != 0:
-                    all_left_finished = False
-                    break
-                # Once we've reached earliest_key in the semaphore order, we can stop checking
-                if p_key == earliest_key:
-                    break
-
-            # If the partitions up to earliest_key are not all finished, break the while-loop
-            if not all_left_finished:
+            # if any partition that started <= candidate_seq is still open, we must wait
+            if self._open_seqs and self._open_seqs[0] <= candidate_seq:
                 break
 
-            # Pop the leftmost entry from parent-state map
-            _, closed_parent_state = self._partition_parent_state_map.popitem(last=False)
-            last_closed_state = closed_parent_state
+            # safe to pop
+            self._partition_parent_state_map.popitem(last=False)
+            last_closed_state = candidate_state
 
-            # Clean up finished semaphores with value 0 up to and including earliest_key
-            for p_key in list(self._semaphore_per_partition.keys()):
-                sem = self._semaphore_per_partition[p_key]
-                if p_key in self._finished_partitions and sem._value == 0:
-                    del self._semaphore_per_partition[p_key]
-                    logger.debug(f"Deleted finished semaphore for partition {p_key} with value 0")
-                if p_key == earliest_key:
-                    break
-
-        # Update _parent_state if we popped at least one partition
         if last_closed_state is not None:
             self._parent_state = last_closed_state
 
@@ -293,14 +270,19 @@ class ConcurrentPerPartitionCursor(Cursor):
             self._semaphore_per_partition[partition_key] = threading.Semaphore(0)
 
         with self._lock:
+            seq = self._next_seq
+            self._next_seq += 1
+            self._open_seqs.append(seq)
+            self._seq_by_partition[partition_key] = seq
+
             if (
                 len(self._partition_parent_state_map) == 0
                 or self._partition_parent_state_map[
                     next(reversed(self._partition_parent_state_map))
-                ]
+                ][0]
                 != parent_state
             ):
-                self._partition_parent_state_map[partition_key] = deepcopy(parent_state)
+                self._partition_parent_state_map[partition_key] = (deepcopy(parent_state), seq)
 
         for cursor_slice, is_last_slice, _ in iterate_with_last_flag_and_state(
             cursor.stream_slices(),
@@ -338,10 +320,7 @@ class ConcurrentPerPartitionCursor(Cursor):
             while len(self._cursor_per_partition) > self.DEFAULT_MAX_PARTITIONS_NUMBER - 1:
                 # Try removing finished partitions first
                 for partition_key in list(self._cursor_per_partition.keys()):
-                    if partition_key in self._finished_partitions and (
-                        partition_key not in self._semaphore_per_partition
-                        or self._semaphore_per_partition[partition_key]._value == 0
-                    ):
+                    if partition_key not in self._seq_by_partition:
                         oldest_partition = self._cursor_per_partition.pop(
                             partition_key
                         )  # Remove the oldest partition
@@ -473,6 +452,25 @@ class ConcurrentPerPartitionCursor(Cursor):
             or self._new_global_cursor[self.cursor_field.cursor_field_key] < value
         ):
             self._new_global_cursor = {self.cursor_field.cursor_field_key: copy.deepcopy(value)}
+
+    def _cleanup_if_done(self, partition_key: str) -> None:
+        """
+        Free every in-memory structure that belonged to a completed partition:
+        cursor, semaphore, flag inside `_finished_partitions`
+        """
+        if not (
+                partition_key in self._finished_partitions
+                and self._semaphore_per_partition[partition_key]._value == 0
+        ):
+           return
+
+        self._semaphore_per_partition.pop(partition_key, None)
+        self._finished_partitions.discard(partition_key)
+
+        seq = self._seq_by_partition.pop(partition_key)
+        self._open_seqs.remove(seq)
+
+        logger.debug(f"Partition {partition_key} fully processed and cleaned up.")
 
     def _to_partition_key(self, partition: Mapping[str, Any]) -> str:
         return self._partition_serializer.to_partition_key(partition)
