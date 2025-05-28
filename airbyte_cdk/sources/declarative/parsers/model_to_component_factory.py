@@ -3244,9 +3244,12 @@ class ModelToComponentFactory:
 
         stream_slicer = stream_slicer or SinglePartitionRouter(parameters={})
         if self._should_limit_slices_fetched():
-            stream_slicer = StreamSlicerTestReadDecorator(
-                wrapped_slicer=stream_slicer,
-                maximum_number_of_slices=self._limit_slices_fetched or 5,
+            stream_slicer = cast(
+                StreamSlicer,
+                StreamSlicerTestReadDecorator(
+                    wrapped_slicer=stream_slicer,
+                    maximum_number_of_slices=self._limit_slices_fetched or 5,
+                ),
             )
 
         cursor_used_for_stop_condition = cursor if stop_condition_on_cursor else None
@@ -3505,9 +3508,12 @@ class ModelToComponentFactory:
 
         stream_slicer = stream_slicer or SinglePartitionRouter(parameters={})
         if self._should_limit_slices_fetched():
-            stream_slicer = StreamSlicerTestReadDecorator(
-                wrapped_slicer=stream_slicer,
-                maximum_number_of_slices=self._limit_slices_fetched or 5,
+            stream_slicer = cast(
+                StreamSlicer,
+                StreamSlicerTestReadDecorator(
+                    wrapped_slicer=stream_slicer,
+                    maximum_number_of_slices=self._limit_slices_fetched or 5,
+                ),
             )
 
         creation_requester = self._create_component_from_model(
