@@ -245,7 +245,7 @@ def test_given_invalid_date_str_to_datetime_raises_value_error():
         ("test_non_url_string", "hello world", "hello+world"),
     ],
 )
-def test_sanitize(test_name, input_value, expected_output):
-    sanitize = macros["sanitize"]
-    actual_output = sanitize(input_value)
+def test_sanitize_url(test_name, input_value, expected_output):
+    sanitize_url = macros["sanitize_url"]
+    actual_output = sanitize_url(input_value)
     assert actual_output == expected_output

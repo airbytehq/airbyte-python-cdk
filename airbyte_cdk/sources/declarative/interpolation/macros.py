@@ -183,12 +183,12 @@ def format_datetime(
     return DatetimeParser().format(dt=dt_datetime, format=format)
 
 
-def sanitize(value: str) -> str:
+def sanitize_url(value: str) -> str:
     """
     Sanitizes a value by via urllib.parse.quote_plus
 
     Usage:
-    `"{{ sanitize('https://example.com/path?query=value') }}"`
+    `"{{ sanitize_url('https://example.com/path?query=value') }}"`
     """
     sanitization_strategy = quote_plus
     return sanitization_strategy(value)
@@ -205,6 +205,6 @@ _macros_list = [
     format_datetime,
     today_with_timezone,
     str_to_datetime,
-    sanitize,
+    sanitize_url,
 ]
 macros = {f.__name__: f for f in _macros_list}
