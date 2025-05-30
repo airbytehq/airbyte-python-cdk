@@ -11,8 +11,11 @@ parameters = {"hello": "world"}
 kwargs = {"c": "airbyte"}
 
 JINJA_FLOAT_PARSING = "{{ record['some_calculation'] | float if record.get('some_calculation') is not none and record.get('some_calculation') != '' else none }}"
-JINJA_FLOAT_PARSING_MULTILINE = "{% set v = record.get('some_calculation') %}\n" \
-                    "{{ v | replace('%', '') | float if v is not none and v != '' else None }}"
+JINJA_FLOAT_PARSING_MULTILINE = (
+    "{% set v = record.get('some_calculation') %}\n"
+    "{{ v | replace('%', '') | float if v is not none and v != '' else None }}"
+)
+
 
 @pytest.mark.parametrize(
     "test_name, input_string, expected_value",
@@ -59,4 +62,6 @@ def test_parsing_record_data(test_name, input_string, record_value, expected_val
     if expected_value is None:
         assert val is None, f"Expected None for value {record_value} in test {test_name}"
     else:
-        assert float == type(val), f"Expected float, got {type(val)} for value {val} in test {test_name}"
+        assert float == type(val), (
+            f"Expected float, got {type(val)} for value {val} in test {test_name}"
+        )
