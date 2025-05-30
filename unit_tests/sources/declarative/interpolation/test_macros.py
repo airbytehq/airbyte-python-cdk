@@ -222,3 +222,30 @@ def test_given_invalid_date_str_to_datetime_raises_value_error():
     str_to_datetime_fn = macros["str_to_datetime"]
     with pytest.raises(ValueError):
         str_to_datetime_fn("invalid-date")
+
+
+@pytest.mark.parametrize(
+    "test_name, input_value, expected_output",
+    [
+        (
+            "test_basic_url",
+            "https://example.com/path?query=value",
+            "https%3A%2F%2Fexample.com%2Fpath%3Fquery%3Dvalue",
+        ),
+        (
+            "test_url_with_spaces",
+            "https://example.com/path with spaces?query=some value",
+            "https%3A%2F%2Fexample.com%2Fpath+with+spaces%3Fquery%3Dsome+value",
+        ),
+        (
+            "test_url_with_special_chars",
+            "https://example.com/path?query=value&other=123+456#fragment",
+            "https%3A%2F%2Fexample.com%2Fpath%3Fquery%3Dvalue%26other%3D123%2B456%23fragment",
+        ),
+        ("test_non_url_string", "hello world", "hello+world"),
+    ],
+)
+def test_sanitize_url(test_name, input_value, expected_output):
+    sanitize_url = macros["sanitize_url"]
+    actual_output = sanitize_url(input_value)
+    assert actual_output == expected_output
