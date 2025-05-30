@@ -3436,8 +3436,8 @@ def test_given_unfinished_first_parent_partition_no_parent_state_update():
     }
     assert mock_cursor_1.stream_slices.call_count == 1  # Called once for each partition
     assert mock_cursor_2.stream_slices.call_count == 1  # Called once for each partition
-    assert len(cursor._semaphore_per_partition) == 2
-
+    assert len(cursor._semaphore_per_partition) == 1  # Semaphore cleaned after partiton is completed
+    # ToDo: Add check for other interal values
 
 def test_given_unfinished_last_parent_partition_with_partial_parent_state_update():
     # Create two mock cursors with different states for each partition
@@ -3520,7 +3520,8 @@ def test_given_unfinished_last_parent_partition_with_partial_parent_state_update
     }
     assert mock_cursor_1.stream_slices.call_count == 1  # Called once for each partition
     assert mock_cursor_2.stream_slices.call_count == 1  # Called once for each partition
-    assert len(cursor._semaphore_per_partition) == 1
+    assert len(cursor._semaphore_per_partition) == 0
+    # ToDo: Add check for other interal values
 
 
 def test_given_all_partitions_finished_when_close_partition_then_final_state_emitted():
