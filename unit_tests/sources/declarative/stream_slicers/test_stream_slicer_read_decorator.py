@@ -124,18 +124,26 @@ def test_isinstance_global_cursor():
         maximum_number_of_slices=5,
     )
     assert isinstance(wrapped_slicer, GlobalSubstreamCursor)
+    assert isinstance(wrapped_slicer.wrapped_slicer, GlobalSubstreamCursor)
+    assert isinstance(wrapped_slicer, StreamSlicerTestReadDecorator)
+
+    assert not isinstance(wrapped_slicer.wrapped_slicer, StreamSlicerTestReadDecorator)
     assert not isinstance(wrapped_slicer, AsyncJobPartitionRouter)
+    assert not isinstance(wrapped_slicer.wrapped_slicer, AsyncJobPartitionRouter)
     assert not isinstance(wrapped_slicer, PerPartitionWithGlobalCursor)
+    assert not isinstance(wrapped_slicer.wrapped_slicer, PerPartitionWithGlobalCursor)
     assert not isinstance(wrapped_slicer, SubstreamPartitionRouter)
+    assert not isinstance(wrapped_slicer.wrapped_slicer, SubstreamPartitionRouter)
 
     assert isinstance(global_cursor, GlobalSubstreamCursor)
+    assert not isinstance(global_cursor, StreamSlicerTestReadDecorator)
     assert not isinstance(global_cursor, AsyncJobPartitionRouter)
     assert not isinstance(global_cursor, PerPartitionWithGlobalCursor)
     assert not isinstance(global_cursor, SubstreamPartitionRouter)
 
 
 def test_isinstance_global_cursor_aysnc_job_partition_router():
-    partition_router = AsyncJobPartitionRouter(
+    async_job_partition_router = AsyncJobPartitionRouter(
         stream_slicer=SinglePartitionRouter(parameters={}),
         job_orchestrator_factory=lambda stream_slices: AsyncJobOrchestrator(
             MockAsyncJobRepository(),
@@ -148,21 +156,29 @@ def test_isinstance_global_cursor_aysnc_job_partition_router():
     )
 
     wrapped_slicer = StreamSlicerTestReadDecorator(
-        wrapped_slicer=partition_router,
+        wrapped_slicer=async_job_partition_router,
         maximum_number_of_slices=5,
     )
     assert isinstance(wrapped_slicer, AsyncJobPartitionRouter)
+    assert isinstance(wrapped_slicer.wrapped_slicer, AsyncJobPartitionRouter)
+    assert isinstance(wrapped_slicer, StreamSlicerTestReadDecorator)
+
+    assert not isinstance(wrapped_slicer.wrapped_slicer, StreamSlicerTestReadDecorator)
     assert not isinstance(wrapped_slicer, GlobalSubstreamCursor)
+    assert not isinstance(wrapped_slicer.wrapped_slicer, GlobalSubstreamCursor)
     assert not isinstance(wrapped_slicer, PerPartitionWithGlobalCursor)
+    assert not isinstance(wrapped_slicer.wrapped_slicer, PerPartitionWithGlobalCursor)
     assert not isinstance(wrapped_slicer, SubstreamPartitionRouter)
+    assert not isinstance(wrapped_slicer.wrapped_slicer, SubstreamPartitionRouter)
 
-    assert isinstance(partition_router, AsyncJobPartitionRouter)
-    assert not isinstance(partition_router, GlobalSubstreamCursor)
-    assert not isinstance(partition_router, PerPartitionWithGlobalCursor)
-    assert not isinstance(partition_router, SubstreamPartitionRouter)
+    assert isinstance(async_job_partition_router, AsyncJobPartitionRouter)
+    assert not isinstance(async_job_partition_router, StreamSlicerTestReadDecorator)
+    assert not isinstance(async_job_partition_router, GlobalSubstreamCursor)
+    assert not isinstance(async_job_partition_router, PerPartitionWithGlobalCursor)
+    assert not isinstance(async_job_partition_router, SubstreamPartitionRouter)
 
 
-def test_isinstance_substrea_partition_router():
+def test_isinstance_substream_partition_router():
     partition_router = create_substream_partition_router()
 
     wrapped_slicer = StreamSlicerTestReadDecorator(
@@ -171,11 +187,19 @@ def test_isinstance_substrea_partition_router():
     )
 
     assert isinstance(wrapped_slicer, SubstreamPartitionRouter)
+    assert isinstance(wrapped_slicer.wrapped_slicer, SubstreamPartitionRouter)
+    assert isinstance(wrapped_slicer, StreamSlicerTestReadDecorator)
+
+    assert not isinstance(wrapped_slicer.wrapped_slicer, StreamSlicerTestReadDecorator)
     assert not isinstance(wrapped_slicer, GlobalSubstreamCursor)
+    assert not isinstance(wrapped_slicer.wrapped_slicer, GlobalSubstreamCursor)
     assert not isinstance(wrapped_slicer, AsyncJobPartitionRouter)
+    assert not isinstance(wrapped_slicer.wrapped_slicer, AsyncJobPartitionRouter)
     assert not isinstance(wrapped_slicer, PerPartitionWithGlobalCursor)
+    assert not isinstance(wrapped_slicer.wrapped_slicer, PerPartitionWithGlobalCursor)
 
     assert isinstance(partition_router, SubstreamPartitionRouter)
+    assert not isinstance(partition_router, StreamSlicerTestReadDecorator)
     assert not isinstance(partition_router, GlobalSubstreamCursor)
     assert not isinstance(partition_router, AsyncJobPartitionRouter)
     assert not isinstance(partition_router, PerPartitionWithGlobalCursor)
@@ -198,17 +222,27 @@ def test_isinstance_perpartition_with_global_cursor():
     )
 
     assert isinstance(wrapped_slicer, PerPartitionWithGlobalCursor)
+    assert isinstance(wrapped_slicer.wrapped_slicer, PerPartitionWithGlobalCursor)
+    assert isinstance(wrapped_slicer, StreamSlicerTestReadDecorator)
+
+    assert not isinstance(wrapped_slicer.wrapped_slicer, StreamSlicerTestReadDecorator)
     assert not isinstance(wrapped_slicer, GlobalSubstreamCursor)
+    assert not isinstance(wrapped_slicer.wrapped_slicer, GlobalSubstreamCursor)
     assert not isinstance(wrapped_slicer, AsyncJobPartitionRouter)
+    assert not isinstance(wrapped_slicer.wrapped_slicer, AsyncJobPartitionRouter)
     assert not isinstance(wrapped_slicer, SubstreamPartitionRouter)
+    assert not isinstance(wrapped_slicer.wrapped_slicer, SubstreamPartitionRouter)
+
     assert wrapped_slicer._per_partition_cursor._cursor_factory == cursor_factory
     assert wrapped_slicer._partition_router == partition_router
     assert wrapped_slicer._global_cursor._stream_cursor == date_time_based_cursor
 
     assert isinstance(substream_cursor, PerPartitionWithGlobalCursor)
+    assert not isinstance(substream_cursor, StreamSlicerTestReadDecorator)
     assert not isinstance(substream_cursor, GlobalSubstreamCursor)
     assert not isinstance(substream_cursor, AsyncJobPartitionRouter)
     assert not isinstance(substream_cursor, SubstreamPartitionRouter)
+
     assert substream_cursor._per_partition_cursor._cursor_factory == cursor_factory
     assert substream_cursor._partition_router == partition_router
     assert substream_cursor._global_cursor._stream_cursor == date_time_based_cursor
@@ -232,3 +266,4 @@ def test_slice_limiting_functionality():
     # Verify only 3 slices are returned
     slices = list(wrapped_slicer.stream_slices())
     assert len(slices) == 3
+    assert slices == mock_slicer.stream_slices.return_value[:3]
