@@ -128,7 +128,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
             component_factory
             if component_factory
             else ModelToComponentFactory(
-                emit_connector_builder_messages,
+                emit_connector_builder_messages=emit_connector_builder_messages,
                 max_concurrent_async_job_count=source_config.get("max_concurrent_async_job_count"),
             )
         )

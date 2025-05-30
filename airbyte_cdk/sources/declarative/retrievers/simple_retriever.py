@@ -645,40 +645,6 @@ def _deep_merge(
             target[key] = value
 
 
-@dataclass
-class SimpleRetrieverTestReadDecorator(SimpleRetriever):
-    """
-    In some cases, we want to limit the number of requests that are made to the backend source. This class allows for limiting the number of
-    slices that are queried throughout a read command.
-    """
-
-    maximum_number_of_slices: int = 5
-
-    def __post_init__(self, options: Mapping[str, Any]) -> None:
-        super().__post_init__(options)
-        self.log_formatter = (
-            (
-                lambda response: format_http_message(
-                    response,
-                    f"Stream '{self.name}' request",
-                    f"Request performed in order to extract records for stream '{self.name}'",
-                    self.name,
-                )
-            )
-            if not self.log_formatter
-            else self.log_formatter
-        )
-
-        if self.maximum_number_of_slices and self.maximum_number_of_slices < 1:
-            raise ValueError(
-                f"The maximum number of slices on a test read needs to be strictly positive. Got {self.maximum_number_of_slices}"
-            )
-
-    # stream_slices is defined with arguments on http stream and fixing this has a long tail of dependencies. Will be resolved by the decoupling of http stream and simple retriever
-    def stream_slices(self) -> Iterable[Optional[StreamSlice]]:  # type: ignore
-        return islice(super().stream_slices(), self.maximum_number_of_slices)
-
-
 @deprecated(
     "This class is experimental. Use at your own risk.",
     category=ExperimentalClassWarning,
