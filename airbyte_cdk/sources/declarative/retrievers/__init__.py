@@ -7,13 +7,11 @@ from airbyte_cdk.sources.declarative.retrievers.retriever import Retriever
 from airbyte_cdk.sources.declarative.retrievers.simple_retriever import (
     LazySimpleRetriever,
     SimpleRetriever,
-    SimpleRetrieverTestReadDecorator,
 )
 
 __all__ = [
     "Retriever",
     "SimpleRetriever",
-    "SimpleRetrieverTestReadDecorator",
     "AsyncRetriever",
     "LazySimpleRetriever",
 ]

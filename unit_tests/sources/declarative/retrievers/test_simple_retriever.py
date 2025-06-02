@@ -40,10 +40,8 @@ from airbyte_cdk.sources.declarative.requesters.query_properties.property_chunki
 )
 from airbyte_cdk.sources.declarative.requesters.request_option import RequestOptionType
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
-from airbyte_cdk.sources.declarative.retrievers.simple_retriever import (
-    SimpleRetriever,
-    SimpleRetrieverTestReadDecorator,
-)
+from airbyte_cdk.sources.declarative.retrievers.simple_retriever import SimpleRetriever
+from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
 
@@ -704,14 +702,17 @@ def test_limit_stream_slices():
     maximum_number_of_slices = 4
     stream_slicer = MagicMock()
     stream_slicer.stream_slices.return_value = _generate_slices(maximum_number_of_slices * 2)
-    retriever = SimpleRetrieverTestReadDecorator(
+    stream_slicer_wrapped = StreamSlicerTestReadDecorator(
+        wrapped_slicer=stream_slicer,
+        maximum_number_of_slices=maximum_number_of_slices,
+    )
+    retriever = SimpleRetriever(
         name="stream_name",
         primary_key=primary_key,
         requester=MagicMock(),
         paginator=MagicMock(),
         record_selector=MagicMock(),
-        stream_slicer=stream_slicer,
-        maximum_number_of_slices=maximum_number_of_slices,
+        stream_slicer=stream_slicer_wrapped,
         parameters={},
         config={},
     )
@@ -874,55 +875,6 @@ def test_given_state_selector_when_read_records_use_stream_state(http_stream_rea
     list(retriever.read_records(stream_slice=A_STREAM_SLICE, records_schema={}))
 
     http_stream_read_pages.assert_called_once_with(mocker.ANY, A_STREAM_STATE, A_STREAM_SLICE)
-
-
-def test_emit_log_request_response_messages(mocker):
-    record_selector = MagicMock()
-    record_selector.select_records.return_value = records
-
-    request = requests.PreparedRequest()
-    request.headers = {"header": "value"}
-    request.url = "http://byrde.enterprises.com/casinos"
-
-    response = requests.Response()
-    response.request = request
-    response.status_code = 200
-
-    format_http_message_mock = mocker.patch(
-        "airbyte_cdk.sources.declarative.retrievers.simple_retriever.format_http_message"
-    )
-    requester = MagicMock()
-
-    # Add __name__ to mock methods
-    requester.get_request_params.__name__ = "get_request_params"
-    requester.get_request_headers.__name__ = "get_request_headers"
-    requester.get_request_body_data.__name__ = "get_request_body_data"
-    requester.get_request_body_json.__name__ = "get_request_body_json"
-
-    # The paginator mock also needs __name__ attributes
-    paginator = MagicMock()
-    paginator.get_request_params.__name__ = "get_request_params"
-    paginator.get_request_headers.__name__ = "get_request_headers"
-    paginator.get_request_body_data.__name__ = "get_request_body_data"
-    paginator.get_request_body_json.__name__ = "get_request_body_json"
-
-    retriever = SimpleRetrieverTestReadDecorator(
-        name="stream_name",
-        primary_key=primary_key,
-        requester=requester,
-        paginator=paginator,
-        record_selector=record_selector,
-        stream_slicer=SinglePartitionRouter(parameters={}),
-        parameters={},
-        config={},
-    )
-
-    retriever._fetch_next_page(
-        stream_state={}, stream_slice=StreamSlice(cursor_slice={}, partition={})
-    )
-
-    assert retriever.log_formatter is not None
-    assert retriever.log_formatter(response) == format_http_message_mock.return_value
 
 
 def test_retriever_last_page_size_for_page_increment():
