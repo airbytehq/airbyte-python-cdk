@@ -170,7 +170,7 @@ fix-and-check = {sequence = ["fix-all", "check-all"], help = "Lint-fix and forma
 
 # PyTest tasks
 pytest = {cmd = "poetry run coverage run -m pytest --durations=10", help = "Run all pytest tests."}
-pytest-fast = {cmd = "poetry run coverage run -m pytest --skipslow --durations=5 --exitfirst -m 'not flaky and not slow and not requires_creds'", help = "Run pytest tests, failing fast and excluding slow tests."}
+pytest-fast = {cmd = "poetry run coverage run -m pytest unit_tests --durations=5 --exitfirst -m 'not flaky and not slow and not requires_creds'", help = "Run pytest tests, failing fast and excluding slow tests."}
 unit-test-with-cov = {cmd = "poetry run pytest -s unit_tests --cov=airbyte_cdk --cov-report=term --cov-config ./pyproject.toml", help = "Run unit tests and create a coverage report."}
 
 # Combined check tasks (other)

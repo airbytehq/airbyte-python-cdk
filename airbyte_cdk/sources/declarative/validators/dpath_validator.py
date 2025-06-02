@@ -19,7 +19,7 @@ class DpathValidator(Validator):
     and applies a validation strategy to it.
     """
 
-    field_path: List[Union[InterpolatedString, str]]
+    field_path: List[str]
     strategy: ValidationStrategy
 
     def __post_init__(self) -> None:

@@ -2,9 +2,13 @@
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
 
+from pathlib import Path
+from unittest.mock import mock_open, patch
+
 import pytest
 
 from airbyte_cdk.cli.source_declarative_manifest._run import (
+    _parse_manifest_from_file,
     create_declarative_source,
     handle_command,
 )
@@ -27,3 +31,11 @@ def test_given_no_injected_declarative_manifest_then_raise_value_error(invalid_r
 def test_given_injected_declarative_manifest_then_return_declarative_manifest(valid_remote_config):
     source = create_declarative_source(["check", "--config", str(valid_remote_config)])
     assert isinstance(source, ManifestDeclarativeSource)
+
+
+def test_parse_manifest_from_file(valid_remote_config: Path) -> None:
+    mock_manifest_content = '{"test_manifest": "fancy_declarative_components"}'
+    with patch("builtins.open", mock_open(read_data=mock_manifest_content)):
+        # Test with manifest path
+        result = _parse_manifest_from_file("manifest.yaml")
+        assert result == {"test_manifest": "fancy_declarative_components"}
