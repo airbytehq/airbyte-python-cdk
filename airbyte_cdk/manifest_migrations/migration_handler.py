@@ -5,6 +5,7 @@
 
 import copy
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Tuple, Type
 
@@ -26,7 +27,7 @@ from airbyte_cdk.manifest_migrations.migrations_registry import (
 METADATA_TAG = "metadata"
 MANIFEST_VERSION_TAG = "version"
 APPLIED_MIGRATIONS_TAG = "applied_migrations"
-
+WILDCARD_VERSION_PATTERN = ".*"
 LOGGER = logging.getLogger("airbyte.cdk.manifest_migrations")
 
 
@@ -132,7 +133,7 @@ class ManifestMigrationHandler:
            – Interpret both strings as concrete versions and return
              ``manifest_version <= migration_version``.
         """
-        if migration_version == "*":
+        if re.match(WILDCARD_VERSION_PATTERN, migration_version):
             return True, False
 
         if migration_version.startswith(("=", "!", ">", "<", "~")):
