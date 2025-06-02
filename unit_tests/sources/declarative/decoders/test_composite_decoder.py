@@ -51,12 +51,14 @@ def generate_csv(
         {"id": "2", "name": "Alice", "age": "34"},
         {"id": "3", "name": "Bob", "age": "25"},
     ]
+    fieldnames = ["id", "name", "age"]
     if add_empty_strings:
         for row in data:
             row["gender"] = ""
+        fieldnames.append("gender")
 
     output = StringIO()
-    writer = csv.DictWriter(output, fieldnames=["id", "name", "age"], delimiter=delimiter)
+    writer = csv.DictWriter(output, fieldnames=fieldnames, delimiter=delimiter)
     writer.writeheader()
     for row in data:
         writer.writerow(row)
@@ -282,7 +284,7 @@ def test_composite_raw_decoder_parse_empty_strings(requests_mock, set_empty_cell
         {"id": "3", "name": "Bob", "age": "25"},
     ]
     for expected_record in expected_data:
-        expected_recordp["gender"] = None if set_empty_cell_to_none else ""
+        expected_record["gender"] = None if set_empty_cell_to_none else ""
 
     parsed_records = list(composite_raw_decoder.decode(response))
     assert parsed_records == expected_data
