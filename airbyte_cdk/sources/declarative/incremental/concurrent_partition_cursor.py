@@ -99,23 +99,29 @@ class ConcurrentPerPartitionCursor(Cursor):
         self._semaphore_per_partition: OrderedDict[str, threading.Semaphore] = OrderedDict()
 
         # Parent-state tracking: store each partition’s parent state in creation order
-        self._partition_parent_state_map: OrderedDict[str, tuple[Mapping[str, Any], int]] = OrderedDict()
+        self._partition_parent_state_map: OrderedDict[str, tuple[Mapping[str, Any], int]] = (
+            OrderedDict()
+        )
+        self._parent_state: Optional[StreamState] = None
 
+        # Tracks when the last slice for partition is emitted
         self._finished_partitions: set[str] = set()
+        # Used to track the sequence numbers of open partitions
         self._open_seqs: deque[int] = deque()
         self._next_seq: int = 0
+        # Dictionary to map partition keys to their sequence numbers
         self._seq_by_partition: dict[str, int] = {}
 
         self._lock = threading.Lock()
-        self._timer = Timer()
-        self._new_global_cursor: Optional[StreamState] = None
         self._lookback_window: int = 0
-        self._parent_state: Optional[StreamState] = None
+        self._new_global_cursor: Optional[StreamState] = None
         self._number_of_partitions: int = 0
         self._use_global_cursor: bool = use_global_cursor
         self._partition_serializer = PerPartitionKeySerializer()
+
         # Track the last time a state message was emitted
         self._last_emission_time: float = 0.0
+        self._timer = Timer()
 
         self._set_initial_state(stream_state)
 
@@ -177,8 +183,9 @@ class ConcurrentPerPartitionCursor(Cursor):
         last_closed_state = None
 
         while self._partition_parent_state_map:
-            earliest_key, (candidate_state, candidate_seq) = \
-                next(iter(self._partition_parent_state_map.items()))
+            earliest_key, (candidate_state, candidate_seq) = next(
+                iter(self._partition_parent_state_map.items())
+            )
 
             # if any partition that started <= candidate_seq is still open, we must wait
             if self._open_seqs and self._open_seqs[0] <= candidate_seq:
@@ -459,10 +466,10 @@ class ConcurrentPerPartitionCursor(Cursor):
         cursor, semaphore, flag inside `_finished_partitions`
         """
         if not (
-                partition_key in self._finished_partitions
-                and self._semaphore_per_partition[partition_key]._value == 0
+            partition_key in self._finished_partitions
+            and self._semaphore_per_partition[partition_key]._value == 0
         ):
-           return
+            return
 
         self._semaphore_per_partition.pop(partition_key, None)
         self._finished_partitions.discard(partition_key)

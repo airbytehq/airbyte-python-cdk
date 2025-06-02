@@ -3436,8 +3436,12 @@ def test_given_unfinished_first_parent_partition_no_parent_state_update():
     }
     assert mock_cursor_1.stream_slices.call_count == 1  # Called once for each partition
     assert mock_cursor_2.stream_slices.call_count == 1  # Called once for each partition
-    assert len(cursor._semaphore_per_partition) == 1  # Semaphore cleaned after partiton is completed
-    # ToDo: Add check for other interal values
+
+    assert len(cursor._semaphore_per_partition) == 1
+    assert len(cursor._finished_partitions) == 1
+    assert len(cursor._open_seqs) == 1
+    assert len(cursor._seq_by_partition) == 1
+
 
 def test_given_unfinished_last_parent_partition_with_partial_parent_state_update():
     # Create two mock cursors with different states for each partition
@@ -3520,8 +3524,11 @@ def test_given_unfinished_last_parent_partition_with_partial_parent_state_update
     }
     assert mock_cursor_1.stream_slices.call_count == 1  # Called once for each partition
     assert mock_cursor_2.stream_slices.call_count == 1  # Called once for each partition
-    assert len(cursor._semaphore_per_partition) == 0
-    # ToDo: Add check for other interal values
+
+    assert len(cursor._semaphore_per_partition) == 1
+    assert len(cursor._finished_partitions) == 1
+    assert len(cursor._open_seqs) == 1
+    assert len(cursor._seq_by_partition) == 1
 
 
 def test_given_all_partitions_finished_when_close_partition_then_final_state_emitted():
@@ -3596,7 +3603,12 @@ def test_given_all_partitions_finished_when_close_partition_then_final_state_emi
     assert final_state["lookback_window"] == 1
     assert cursor._message_repository.emit_message.call_count == 2
     assert mock_cursor.stream_slices.call_count == 2  # Called once for each partition
-    assert len(cursor._semaphore_per_partition) == 1
+
+    # Checks that all internal variables are cleaned up
+    assert len(cursor._semaphore_per_partition) == 0
+    assert len(cursor._finished_partitions) == 0
+    assert len(cursor._open_seqs) == 0
+    assert len(cursor._seq_by_partition) == 0
 
 
 def test_given_partition_limit_exceeded_when_close_partition_then_switch_to_global_cursor():
@@ -3715,18 +3727,20 @@ def test_semaphore_cleanup():
     # Verify initial state
     assert len(cursor._semaphore_per_partition) == 2
     assert len(cursor._partition_parent_state_map) == 2
-    assert cursor._partition_parent_state_map['{"id":"1"}'] == {"parent": {"state": "state1"}}
-    assert cursor._partition_parent_state_map['{"id":"2"}'] == {"parent": {"state": "state2"}}
+    assert len(cursor._open_seqs) == 2
+    assert len(cursor._seq_by_partition) == 2
+    assert cursor._partition_parent_state_map['{"id":"1"}'][0] == {"parent": {"state": "state1"}}
+    assert cursor._partition_parent_state_map['{"id":"2"}'][0] == {"parent": {"state": "state2"}}
 
     # Close partitions to acquire semaphores (value back to 0)
     for s in generated_slices:
         cursor.close_partition(DeclarativePartition("test_stream", {}, MagicMock(), MagicMock(), s))
 
     # Check state after closing partitions
-    assert len(cursor._finished_partitions) == 2
+    assert len(cursor._finished_partitions) == 0
     assert len(cursor._semaphore_per_partition) == 0
-    assert '{"id":"1"}' not in cursor._semaphore_per_partition
-    assert '{"id":"2"}' not in cursor._semaphore_per_partition
+    assert len(cursor._open_seqs) == 0
+    assert len(cursor._seq_by_partition) == 0
     assert len(cursor._partition_parent_state_map) == 0  # All parent states should be popped
     assert cursor._parent_state == {"parent": {"state": "state2"}}  # Last parent state
 
