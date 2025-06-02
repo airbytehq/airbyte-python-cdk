@@ -1,21 +1,39 @@
 #
-# Copyright (c) 2023 Airbyte, Inc., all rights reserved.
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
+from unittest.mock import patch
 
 from freezegun import freeze_time
 
+from airbyte_cdk.manifest_migrations import migrations_registry
 from airbyte_cdk.manifest_migrations.migration_handler import (
     ManifestMigrationHandler,
 )
-from airbyte_cdk.sources.declarative.manifest_declarative_source import ManifestDeclarativeSource
+from airbyte_cdk.manifest_migrations.migrations import (
+    HttpRequesterPathToUrl,
+    HttpRequesterRequestBodyJsonDataToRequestBody,
+    HttpRequesterUrlBaseToUrl,
+)
 from airbyte_cdk.sources.declarative.parsers.manifest_reference_resolver import (
     ManifestReferenceResolver,
 )
+from unit_tests.manifest_migrations.conftest import DummyMigration
 
 resolver = ManifestReferenceResolver()
 
 
 @freeze_time("2025-04-01")
+@patch.dict(
+    migrations_registry.MANIFEST_MIGRATIONS,
+    {
+        ">=6.48.2,<6.50.0": [
+            HttpRequesterUrlBaseToUrl,
+            HttpRequesterPathToUrl,
+            HttpRequesterRequestBodyJsonDataToRequestBody,
+        ]
+    },
+    clear=True,
+)
 def test_manifest_resolve_migrate_url_base_and_path_to_url(
     manifest_with_url_base_to_migrate_to_url,
     expected_manifest_with_url_base_migrated_to_url,
@@ -25,7 +43,9 @@ def test_manifest_resolve_migrate_url_base_and_path_to_url(
     when the `url_base` is migrated to `url` and the `path` is joined to `url`.
     """
 
-    resolved_manifest = resolver.preprocess_manifest(manifest_with_url_base_to_migrate_to_url)
+    resolved_manifest = ManifestReferenceResolver().preprocess_manifest(
+        manifest_with_url_base_to_migrate_to_url
+    )
     migrated_manifest = ManifestMigrationHandler(dict(resolved_manifest)).apply_migrations()
 
     assert migrated_manifest == expected_manifest_with_url_base_migrated_to_url
@@ -50,6 +70,7 @@ def test_manifest_resolve_migrate_request_body_json_and_data_to_request_body(
 
 
 @freeze_time("2025-04-01")
+@patch.dict(migrations_registry.MANIFEST_MIGRATIONS, {"0.0.0": [DummyMigration]}, clear=True)
 def test_manifest_resolve_do_not_migrate(
     manifest_with_migrated_url_base_and_path_is_joined_to_url,
 ) -> None:
@@ -58,7 +79,7 @@ def test_manifest_resolve_do_not_migrate(
     after the `url_base` and `path` is joined to `url`.
     """
 
-    resolved_manifest = resolver.preprocess_manifest(
+    resolved_manifest = ManifestReferenceResolver().preprocess_manifest(
         manifest_with_migrated_url_base_and_path_is_joined_to_url
     )
     migrated_manifest = ManifestMigrationHandler(dict(resolved_manifest)).apply_migrations()
