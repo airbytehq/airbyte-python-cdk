@@ -2648,7 +2648,11 @@ class ModelToComponentFactory:
         elif isinstance(model, JsonlDecoderModel):
             return JsonLineParser()
         elif isinstance(model, CsvDecoderModel):
-            return CsvParser(encoding=model.encoding, delimiter=model.delimiter)
+            return CsvParser(
+                encoding=model.encoding,
+                delimiter=model.delimiter,
+                set_empty_cell_to_none=model.set_empty_cell_to_none,
+            )
         elif isinstance(model, GzipDecoderModel):
             return GzipParser(
                 inner_parser=ModelToComponentFactory._get_parser(model.decoder, config)
