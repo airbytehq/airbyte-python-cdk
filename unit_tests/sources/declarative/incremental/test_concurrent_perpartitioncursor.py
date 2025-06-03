@@ -3793,14 +3793,14 @@ def test_given_global_state_when_read_then_state_is_not_per_partition() -> None:
 def _make_inner_cursor(ts: str) -> MagicMock:
     """Return an inner cursor that yields exactly one slice and has a proper state."""
     inner = MagicMock()
-    inner.stream_slices.return_value = iter([{"dummy": "slice"}])
+    inner.stream_slices.side_effect = lambda: iter([{"dummy": "slice"}])
     inner.state = {"updated_at": ts}
     inner.close_partition.return_value = None
     inner.observe.return_value = None
     return inner
 
 
-def test_duplicate_partition_after_cleanup():
+def test_duplicate_partition_after_closing_partition_cursor_deleted():
     inner_cursors = [
         _make_inner_cursor("2024-01-01T00:00:00Z"),  # for first "1"
         _make_inner_cursor("2024-01-02T00:00:00Z"),  # for "2"
@@ -3861,6 +3861,74 @@ def test_duplicate_partition_after_cleanup():
     assert len(cursor._semaphore_per_partition) == 0
     assert len(cursor._processing_partitions_indexes) == 0
     assert len(cursor._partition_key_to_index) == 0
+    assert len(cursor._partitions_done_generating_stream_slices) == 0
+
+
+def test_duplicate_partition_after_closing_partition_cursor_exists():
+    inner_cursors = [
+        _make_inner_cursor("2024-01-01T00:00:00Z"),  # for first "1"
+        _make_inner_cursor("2024-01-02T00:00:00Z"),  # for "2"
+        _make_inner_cursor("2024-01-03T00:00:00Z"),  # for second "1"
+    ]
+    cursor_factory_mock = MagicMock()
+    cursor_factory_mock.create.side_effect = inner_cursors
+
+    converter = CustomFormatConcurrentStreamStateConverter(
+        datetime_format="%Y-%m-%dT%H:%M:%SZ",
+        input_datetime_formats=["%Y-%m-%dT%H:%M:%SZ"],
+        is_sequential_state=True,
+        cursor_granularity=timedelta(0),
+    )
+
+    cursor = ConcurrentPerPartitionCursor(
+        cursor_factory=cursor_factory_mock,
+        partition_router=MagicMock(),
+        stream_name="dup_stream",
+        stream_namespace=None,
+        stream_state={},
+        message_repository=MagicMock(),
+        connector_state_manager=MagicMock(),
+        connector_state_converter=converter,
+        cursor_field=CursorField(cursor_field_key="updated_at"),
+    )
+
+    # ── Partition sequence: 1 → 2 → 1 ──────────────────────────────────
+    partitions = [
+        StreamSlice(partition={"id": "1"}, cursor_slice={}, extra_fields={}),
+        StreamSlice(partition={"id": "2"}, cursor_slice={}, extra_fields={}),
+        StreamSlice(partition={"id": "1"}, cursor_slice={}, extra_fields={}),
+    ]
+    pr = cursor._partition_router
+    pr.stream_slices.return_value = iter(partitions)
+    pr.get_stream_state.return_value = {}
+
+    # Iterate lazily so that the first "1" gets cleaned before
+    # the second "1" arrives.
+    slice_gen = cursor.stream_slices()
+
+    first_1 = next(slice_gen)
+    cursor.close_partition(
+        DeclarativePartition("dup_stream", {}, MagicMock(), MagicMock(), first_1)
+    )
+
+    two = next(slice_gen)
+    cursor.close_partition(DeclarativePartition("dup_stream", {}, MagicMock(), MagicMock(), two))
+
+    # Second “1” should appear because the semaphore was cleaned up
+    second_1 = next(slice_gen)
+    cursor.close_partition(
+        DeclarativePartition("dup_stream", {}, MagicMock(), MagicMock(), second_1)
+    )
+
+    with pytest.raises(StopIteration):
+        next(slice_gen)
+
+    assert cursor._IS_PARTITION_DUPLICATION_LOGGED is False  # no duplicate warning
+    assert len(cursor._cursor_per_partition) == 2  # only “1” & “2” kept
+    assert len(cursor._semaphore_per_partition) == 0  # all semaphores cleaned
+    assert len(cursor._processing_partitions_indexes) == 0
+    assert len(cursor._partition_key_to_index) == 0
+    assert len(cursor._partitions_done_generating_stream_slices) == 0
 
 
 def test_duplicate_partition_while_processing():
@@ -3912,3 +3980,4 @@ def test_duplicate_partition_while_processing():
     assert len(cursor._semaphore_per_partition) == 0
     assert len(cursor._processing_partitions_indexes) == 0
     assert len(cursor._partition_key_to_index) == 0
+    assert len(cursor._partitions_done_generating_stream_slices) == 0
