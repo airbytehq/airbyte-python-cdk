@@ -6,10 +6,10 @@ import copy
 import logging
 import threading
 import time
-from collections import OrderedDict, deque
+from collections import OrderedDict
 from copy import deepcopy
 from datetime import timedelta
-from typing import Any, Callable, Iterable, Mapping, MutableMapping, Optional
+from typing import Any, Callable, Iterable, List, Mapping, MutableMapping, Optional
 
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.declarative.incremental.global_substream_cursor import (
@@ -66,8 +66,8 @@ class ConcurrentPerPartitionCursor(Cursor):
     _GLOBAL_STATE_KEY = "state"
     _PERPARTITION_STATE_KEY = "states"
     _IS_PARTITION_DUPLICATION_LOGGED = False
-    _KEY = 0
-    _VALUE = 1
+    _PARENT_STATE = 0
+    _GENERATION_SEQUENCE = 1
 
     def __init__(
         self,
@@ -105,12 +105,12 @@ class ConcurrentPerPartitionCursor(Cursor):
         self._parent_state: Optional[StreamState] = None
 
         # Tracks when the last slice for partition is emitted
-        self._finished_partitions: set[str] = set()
-        # Used to track the sequence numbers of open partitions
-        self._open_seqs: deque[int] = deque()
-        self._next_seq: int = 0
-        # Dictionary to map partition keys to their sequence numbers
-        self._seq_by_partition: dict[str, int] = {}
+        self._partitions_done_generating_stream_slices: set[str] = set()
+        # Used to track the index of partitions that are not closed yet
+        self._processing_partitions_indexes: List[int] = list()
+        self._generated_partitions_count: int = 0
+        # Dictionary to map partition keys to their index
+        self._partition_key_to_index: dict[str, int] = {}
 
         self._lock = threading.Lock()
         self._lookback_window: int = 0
@@ -167,7 +167,7 @@ class ConcurrentPerPartitionCursor(Cursor):
                 self._cursor_per_partition[partition_key].close_partition(partition=partition)
                 cursor = self._cursor_per_partition[partition_key]
                 if (
-                    partition_key in self._finished_partitions
+                    partition_key in self._partitions_done_generating_stream_slices
                     and self._semaphore_per_partition[partition_key]._value == 0
                 ):
                     self._update_global_cursor(cursor.state[self.cursor_field.cursor_field_key])
@@ -188,7 +188,10 @@ class ConcurrentPerPartitionCursor(Cursor):
             )
 
             # if any partition that started <= candidate_seq is still open, we must wait
-            if self._open_seqs and self._open_seqs[0] <= candidate_seq:
+            if (
+                self._processing_partitions_indexes
+                and self._processing_partitions_indexes[0] <= candidate_seq
+            ):
                 break
 
             # safe to pop
@@ -273,20 +276,21 @@ class ConcurrentPerPartitionCursor(Cursor):
             if not self._IS_PARTITION_DUPLICATION_LOGGED:
                 logger.warning(f"Partition duplication detected for stream {self._stream_name}")
                 self._IS_PARTITION_DUPLICATION_LOGGED = True
+            return
         else:
             self._semaphore_per_partition[partition_key] = threading.Semaphore(0)
 
         with self._lock:
-            seq = self._next_seq
-            self._next_seq += 1
-            self._open_seqs.append(seq)
-            self._seq_by_partition[partition_key] = seq
+            seq = self._generated_partitions_count
+            self._generated_partitions_count += 1
+            self._processing_partitions_indexes.append(seq)
+            self._partition_key_to_index[partition_key] = seq
 
             if (
                 len(self._partition_parent_state_map) == 0
                 or self._partition_parent_state_map[
                     next(reversed(self._partition_parent_state_map))
-                ][0]
+                ][self._PARENT_STATE]
                 != parent_state
             ):
                 self._partition_parent_state_map[partition_key] = (deepcopy(parent_state), seq)
@@ -297,7 +301,7 @@ class ConcurrentPerPartitionCursor(Cursor):
         ):
             self._semaphore_per_partition[partition_key].release()
             if is_last_slice:
-                self._finished_partitions.add(partition_key)
+                self._partitions_done_generating_stream_slices.add(partition_key)
             yield StreamSlice(
                 partition=partition, cursor_slice=cursor_slice, extra_fields=partition.extra_fields
             )
@@ -327,7 +331,7 @@ class ConcurrentPerPartitionCursor(Cursor):
             while len(self._cursor_per_partition) > self.DEFAULT_MAX_PARTITIONS_NUMBER - 1:
                 # Try removing finished partitions first
                 for partition_key in list(self._cursor_per_partition.keys()):
-                    if partition_key not in self._seq_by_partition:
+                    if partition_key not in self._partition_key_to_index:
                         oldest_partition = self._cursor_per_partition.pop(
                             partition_key
                         )  # Remove the oldest partition
@@ -466,16 +470,16 @@ class ConcurrentPerPartitionCursor(Cursor):
         cursor, semaphore, flag inside `_finished_partitions`
         """
         if not (
-            partition_key in self._finished_partitions
+            partition_key in self._partitions_done_generating_stream_slices
             and self._semaphore_per_partition[partition_key]._value == 0
         ):
             return
 
         self._semaphore_per_partition.pop(partition_key, None)
-        self._finished_partitions.discard(partition_key)
+        self._partitions_done_generating_stream_slices.discard(partition_key)
 
-        seq = self._seq_by_partition.pop(partition_key)
-        self._open_seqs.remove(seq)
+        seq = self._partition_key_to_index.pop(partition_key)
+        self._processing_partitions_indexes.remove(seq)
 
         logger.debug(f"Partition {partition_key} fully processed and cleaned up.")
 
