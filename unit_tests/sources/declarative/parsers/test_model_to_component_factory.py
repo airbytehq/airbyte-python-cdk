@@ -3828,13 +3828,29 @@ def test_create_async_retriever():
         },
     }
 
+    transformations = [
+        AddFields(
+            fields=[
+                AddedFieldDefinition(
+                    path=["field1"],
+                    value=InterpolatedString(
+                        string="static_value", default="static_value", parameters={}
+                    ),
+                    value_type=None,
+                    parameters={},
+                )
+            ],
+            parameters={},
+        )
+    ]
+
     component = factory.create_component(
         model_type=AsyncRetrieverModel,
         component_definition=definition,
         name="test_stream",
         primary_key="id",
         stream_slicer=None,
-        transformations=[],
+        transformations=transformations,
         config=config,
     )
 
@@ -3863,6 +3879,16 @@ def test_create_async_retriever():
     assert isinstance(selector, RecordSelector)
     assert isinstance(extractor, DpathExtractor)
     assert extractor.field_path == ["data"]
+
+    # Validate the transformations are just passed to the async retriever record_selector but not the download retriever record_selector
+    assert selector.transformations == transformations
+    download_retriever_record_selector: RecordSelector = (
+        job_repository.download_retriever.record_selector
+    )  # type: ignore
+    assert download_retriever_record_selector.transformations != transformations
+    assert not download_retriever_record_selector.transformations
+    assert download_retriever_record_selector.record_filter is None
+    assert download_retriever_record_selector.schema_normalization._config.name == "NoTransform"
 
 
 def test_api_budget():

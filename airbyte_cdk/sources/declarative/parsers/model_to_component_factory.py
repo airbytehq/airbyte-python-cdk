@@ -3445,11 +3445,14 @@ class ModelToComponentFactory:
         **kwargs: Any,
     ) -> AsyncRetriever:
         def _get_download_retriever() -> SimpleRetriever:
+            # We create a record selector for the download retriever
+            # with no schema normalization and no transformations, neither record filter
+            # as all this occurs in the record_selector of the AsyncRetriever
             record_selector = RecordSelector(
                 extractor=download_extractor,
                 name=name,
                 record_filter=None,
-                transformations=transformations,
+                transformations=[],
                 schema_normalization=TypeTransformer(TransformConfig.NoTransform),
                 config=config,
                 parameters={},

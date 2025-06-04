@@ -203,6 +203,8 @@ def test_dynamic_streams_read_with_config_components_resolver(
             ]
 
         assert len(actual_catalog.streams) == len(expected_stream_names)
-        assert [stream.name for stream in actual_catalog.streams] == expected_stream_names
+        # Use set comparison to avoid relying on deterministic ordering
+        assert set(stream.name for stream in actual_catalog.streams) == set(expected_stream_names)
         assert len(records) == len(expected_stream_names)
-        assert [record.stream for record in records] == expected_stream_names
+        # Use set comparison to avoid relying on deterministic ordering
+        assert set(record.stream for record in records) == set(expected_stream_names)
