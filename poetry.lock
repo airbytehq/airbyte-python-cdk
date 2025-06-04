@@ -172,9 +172,9 @@ files = [
 name = "anyio"
 version = "4.9.0"
 description = "High level compatibility layer for multiple asynchronous event loop implementations"
-optional = true
+optional = false
 python-versions = ">=3.9"
-groups = ["main"]
+groups = ["main", "dev"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "anyio-4.9.0-py3-none-any.whl", hash = "sha256:9f76d541cad6e36af7beb62e978876f3b41e3e04f2c1fbf0884604c0a9c4d93c"},
@@ -239,7 +239,7 @@ version = "24.3.0"
 description = "Classes Without Boilerplate"
 optional = false
 python-versions = ">=3.8"
-groups = ["main"]
+groups = ["main", "dev"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "attrs-24.3.0-py3-none-any.whl", hash = "sha256:ac96cd038792094f438ad1f6ff80837353805ac950cd2aa0e0625ef19850c308"},
@@ -277,12 +277,32 @@ version = "2.2.1"
 description = "Function decoration for backoff and retry"
 optional = false
 python-versions = ">=3.7,<4.0"
-groups = ["main"]
+groups = ["main", "dev"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "backoff-2.2.1-py3-none-any.whl", hash = "sha256:63579f9a0628e06278f7e47b7d7d5b6ce20dc65c5e96a6f3ca99a6adca0396e8"},
     {file = "backoff-2.2.1.tar.gz", hash = "sha256:03f829f5bb1923180821643f8753b0502c3b682293992485b0eef2807afa5cba"},
 ]
+
+[[package]]
+name = "beartype"
+version = "0.21.0"
+description = "Unbearably fast near-real-time hybrid runtime-static type-checking in pure Python."
+optional = false
+python-versions = ">=3.9"
+groups = ["dev"]
+markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
+files = [
+    {file = "beartype-0.21.0-py3-none-any.whl", hash = "sha256:b6a1bd56c72f31b0a496a36cc55df6e2f475db166ad07fa4acc7e74f4c7f34c0"},
+    {file = "beartype-0.21.0.tar.gz", hash = "sha256:f9a5078f5ce87261c2d22851d19b050b64f6a805439e8793aecf01ce660d3244"},
+]
+
+[package.extras]
+dev = ["autoapi (>=0.9.0)", "click", "coverage (>=5.5)", "equinox", "jax[cpu]", "jaxtyping", "langchain", "mypy (>=0.800)", "nuitka (>=1.2.6)", "numba", "numpy", "pandera", "pydata-sphinx-theme (<=0.7.2)", "pygments", "pyright (>=1.1.370)", "pytest (>=4.0.0)", "rich-click", "sphinx", "sphinx (>=4.2.0,<6.0.0)", "sphinxext-opengraph (>=0.7.5)", "sqlalchemy", "tox (>=3.20.1)", "typing-extensions (>=3.10.0.0)", "xarray"]
+doc-rtd = ["autoapi (>=0.9.0)", "pydata-sphinx-theme (<=0.7.2)", "sphinx (>=4.2.0,<6.0.0)", "sphinxext-opengraph (>=0.7.5)"]
+test = ["click", "coverage (>=5.5)", "equinox", "jax[cpu]", "jaxtyping", "langchain", "mypy (>=0.800)", "nuitka (>=1.2.6)", "numba", "numpy", "pandera", "pygments", "pyright (>=1.1.370)", "pytest (>=4.0.0)", "rich-click", "sphinx", "sqlalchemy", "tox (>=3.20.1)", "typing-extensions (>=3.10.0.0)", "xarray"]
+test-tox = ["click", "equinox", "jax[cpu]", "jaxtyping", "langchain", "mypy (>=0.800)", "nuitka (>=1.2.6)", "numba", "numpy", "pandera", "pygments", "pyright (>=1.1.370)", "pytest (>=4.0.0)", "rich-click", "sphinx", "sqlalchemy", "typing-extensions (>=3.10.0.0)", "xarray"]
+test-tox-coverage = ["coverage (>=5.5)"]
 
 [[package]]
 name = "beautifulsoup4"
@@ -352,7 +372,7 @@ version = "24.1.2"
 description = "Composable complex class support for attrs and dataclasses."
 optional = false
 python-versions = ">=3.8"
-groups = ["main"]
+groups = ["main", "dev"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "cattrs-24.1.2-py3-none-any.whl", hash = "sha256:67c7495b760168d931a10233f979b28dc04daf853b30752246f4f8471c6d68d0"},
@@ -969,6 +989,30 @@ docs = ["ipython", "matplotlib", "numpydoc", "sphinx"]
 tests = ["pytest", "pytest-cov", "pytest-xdist"]
 
 [[package]]
+name = "dagger-io"
+version = "0.18.9"
+description = "A client package for running Dagger pipelines in Python."
+optional = false
+python-versions = ">=3.10"
+groups = ["dev"]
+markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
+files = [
+    {file = "dagger_io-0.18.9-py3-none-any.whl", hash = "sha256:efcf910954509a62c3005b848e55e77b4864a4b5447cc50b070133e7ebad25bb"},
+    {file = "dagger_io-0.18.9.tar.gz", hash = "sha256:30994f7c012c40831d6c8f2c29bb83d0d9bf9b6f857a2230d48f3ea17fdd509f"},
+]
+
+[package.dependencies]
+anyio = ">=3.6.2"
+beartype = ">=0.18.2"
+cattrs = ">=24.1.0"
+gql = {version = ">=3.5.0", extras = ["httpx"]}
+opentelemetry-exporter-otlp-proto-http = ">=1.23.0"
+opentelemetry-sdk = ">=1.23.0"
+platformdirs = ">=2.6.2"
+rich = ">=10.11.0"
+typing-extensions = ">=4.13.0"
+
+[[package]]
 name = "dataclasses-json"
 version = "0.6.7"
 description = "Easily serialize dataclasses to and from JSON."
@@ -1461,7 +1505,7 @@ version = "1.70.0"
 description = "Common protobufs used in Google APIs"
 optional = false
 python-versions = ">=3.7"
-groups = ["main"]
+groups = ["main", "dev"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "googleapis_common_protos-1.70.0-py3-none-any.whl", hash = "sha256:b8bfcca8c25a2bb253e0e0b0adaf8c00773e5e6af6fd92397576680b807e0fd8"},
@@ -1474,6 +1518,50 @@ protobuf = ">=3.20.2,<4.21.1 || >4.21.1,<4.21.2 || >4.21.2,<4.21.3 || >4.21.3,<4
 
 [package.extras]
 grpc = ["grpcio (>=1.44.0,<2.0.0)"]
+
+[[package]]
+name = "gql"
+version = "3.5.3"
+description = "GraphQL client for Python"
+optional = false
+python-versions = "*"
+groups = ["dev"]
+markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
+files = [
+    {file = "gql-3.5.3-py2.py3-none-any.whl", hash = "sha256:e1fcbde2893fcafdd28114ece87ff47f1cc339a31db271fc4e1d528f5a1d4fbc"},
+    {file = "gql-3.5.3.tar.gz", hash = "sha256:393b8c049d58e0d2f5461b9d738a2b5f904186a40395500b4a84dd092d56e42b"},
+]
+
+[package.dependencies]
+anyio = ">=3.0,<5"
+backoff = ">=1.11.1,<3.0"
+graphql-core = ">=3.2,<3.2.7"
+httpx = {version = ">=0.23.1,<1", optional = true, markers = "extra == \"httpx\""}
+yarl = ">=1.6,<2.0"
+
+[package.extras]
+aiohttp = ["aiohttp (>=3.8.0,<4)", "aiohttp (>=3.9.0b0,<4)"]
+all = ["aiohttp (>=3.8.0,<4)", "aiohttp (>=3.9.0b0,<4)", "botocore (>=1.21,<2)", "httpx (>=0.23.1,<1)", "requests (>=2.26,<3)", "requests-toolbelt (>=1.0.0,<2)", "websockets (>=10,<12)"]
+botocore = ["botocore (>=1.21,<2)"]
+dev = ["aiofiles", "aiohttp (>=3.8.0,<4)", "aiohttp (>=3.9.0b0,<4)", "black (==22.3.0)", "botocore (>=1.21,<2)", "check-manifest (>=0.42,<1)", "flake8 (==3.8.1)", "httpx (>=0.23.1,<1)", "isort (==4.3.21)", "mock (==4.0.2)", "mypy (==0.910)", "parse (==1.15.0)", "pytest (==7.4.2)", "pytest-asyncio (==0.21.1)", "pytest-console-scripts (==1.3.1)", "pytest-cov (==3.0.0)", "requests (>=2.26,<3)", "requests-toolbelt (>=1.0.0,<2)", "sphinx (>=5.3.0,<6)", "sphinx-argparse (==0.2.5)", "sphinx-rtd-theme (>=0.4,<1)", "types-aiofiles", "types-mock", "types-requests", "vcrpy (==4.4.0)", "vcrpy (==7.0.0)", "websockets (>=10,<12)"]
+httpx = ["httpx (>=0.23.1,<1)"]
+requests = ["requests (>=2.26,<3)", "requests-toolbelt (>=1.0.0,<2)"]
+test = ["aiofiles", "aiohttp (>=3.8.0,<4)", "aiohttp (>=3.9.0b0,<4)", "botocore (>=1.21,<2)", "httpx (>=0.23.1,<1)", "mock (==4.0.2)", "parse (==1.15.0)", "pytest (==7.4.2)", "pytest-asyncio (==0.21.1)", "pytest-console-scripts (==1.3.1)", "pytest-cov (==3.0.0)", "requests (>=2.26,<3)", "requests-toolbelt (>=1.0.0,<2)", "vcrpy (==4.4.0)", "vcrpy (==7.0.0)", "websockets (>=10,<12)"]
+test-no-transport = ["aiofiles", "mock (==4.0.2)", "parse (==1.15.0)", "pytest (==7.4.2)", "pytest-asyncio (==0.21.1)", "pytest-console-scripts (==1.3.1)", "pytest-cov (==3.0.0)", "vcrpy (==4.4.0)", "vcrpy (==7.0.0)"]
+websockets = ["websockets (>=10,<12)"]
+
+[[package]]
+name = "graphql-core"
+version = "3.2.6"
+description = "GraphQL implementation for Python, a port of GraphQL.js, the JavaScript reference implementation for GraphQL."
+optional = false
+python-versions = "<4,>=3.6"
+groups = ["dev"]
+markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
+files = [
+    {file = "graphql_core-3.2.6-py3-none-any.whl", hash = "sha256:78b016718c161a6fb20a7d97bbf107f331cd1afe53e45566c59f776ed7f0b45f"},
+    {file = "graphql_core-3.2.6.tar.gz", hash = "sha256:c08eec22f9e40f0bd61d805907e3b3b1b9a320bc606e23dc145eebca07c8fbab"},
+]
 
 [[package]]
 name = "greenlet"
@@ -1626,9 +1714,9 @@ protobuf = ">=4.21.6"
 name = "h11"
 version = "0.16.0"
 description = "A pure-Python, bring-your-own-I/O implementation of HTTP/1.1"
-optional = true
+optional = false
 python-versions = ">=3.8"
-groups = ["main"]
+groups = ["main", "dev"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "h11-0.16.0-py3-none-any.whl", hash = "sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86"},
@@ -1639,9 +1727,9 @@ files = [
 name = "httpcore"
 version = "1.0.9"
 description = "A minimal low-level HTTP client."
-optional = true
+optional = false
 python-versions = ">=3.8"
-groups = ["main"]
+groups = ["main", "dev"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "httpcore-1.0.9-py3-none-any.whl", hash = "sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55"},
@@ -1662,9 +1750,9 @@ trio = ["trio (>=0.22.0,<1.0)"]
 name = "httpx"
 version = "0.28.1"
 description = "The next generation HTTP client."
-optional = true
+optional = false
 python-versions = ">=3.8"
-groups = ["main"]
+groups = ["main", "dev"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "httpx-0.28.1-py3-none-any.whl", hash = "sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad"},
@@ -1704,14 +1792,14 @@ all = ["flake8 (>=7.1.1)", "mypy (>=1.11.2)", "pytest (>=8.3.2)", "ruff (>=0.6.2
 name = "importlib-metadata"
 version = "6.11.0"
 description = "Read metadata from Python packages"
-optional = true
+optional = false
 python-versions = ">=3.8"
-groups = ["main"]
-markers = "(python_version <= \"3.11\" or python_version >= \"3.12\") and extra == \"vector-db-based\""
+groups = ["main", "dev"]
 files = [
     {file = "importlib_metadata-6.11.0-py3-none-any.whl", hash = "sha256:f0afba6205ad8f8947c7d338b5342d5db2afbfd82f9cbef7879a9539cc12eb9b"},
     {file = "importlib_metadata-6.11.0.tar.gz", hash = "sha256:1231cf92d825c9e03cfc4da076a16de6422c863558229ea0b22b675657463443"},
 ]
+markers = {main = "(python_version <= \"3.11\" or python_version >= \"3.12\") and extra == \"vector-db-based\"", dev = "python_version <= \"3.11\" or python_version >= \"3.12\""}
 
 [package.dependencies]
 zipp = ">=0.5"
@@ -2584,10 +2672,9 @@ test = ["Cython", "greenlet", "ipython", "packaging", "pytest", "pytest-cov", "p
 name = "multidict"
 version = "6.1.0"
 description = "multidict implementation"
-optional = true
+optional = false
 python-versions = ">=3.8"
-groups = ["main"]
-markers = "(python_version <= \"3.11\" or python_version >= \"3.12\") and extra == \"vector-db-based\""
+groups = ["main", "dev"]
 files = [
     {file = "multidict-6.1.0-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:3380252550e372e8511d49481bd836264c009adb826b23fefcc5dd3c69692f60"},
     {file = "multidict-6.1.0-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:99f826cbf970077383d7de805c0681799491cb939c25450b9b5b3ced03ca99f1"},
@@ -2682,6 +2769,7 @@ files = [
     {file = "multidict-6.1.0-py3-none-any.whl", hash = "sha256:48e171e52d1c4d33888e529b999e5900356b9ae588c2f09a52dcefb158b27506"},
     {file = "multidict-6.1.0.tar.gz", hash = "sha256:22ae2ebf9b0c69d206c003e2f6a914ea33f0a932d4aa16f236afc049d9958f4a"},
 ]
+markers = {main = "(python_version <= \"3.11\" or python_version >= \"3.12\") and extra == \"vector-db-based\"", dev = "python_version <= \"3.11\" or python_version >= \"3.12\""}
 
 [package.dependencies]
 typing-extensions = {version = ">=4.1.0", markers = "python_version < \"3.11\""}
@@ -2882,6 +2970,112 @@ files = [
 
 [package.dependencies]
 et-xmlfile = "*"
+
+[[package]]
+name = "opentelemetry-api"
+version = "1.34.0"
+description = "OpenTelemetry Python API"
+optional = false
+python-versions = ">=3.9"
+groups = ["dev"]
+markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
+files = [
+    {file = "opentelemetry_api-1.34.0-py3-none-any.whl", hash = "sha256:390b81984affe4453180820ca518de55e3be051111e70cc241bb3b0071ca3a2c"},
+    {file = "opentelemetry_api-1.34.0.tar.gz", hash = "sha256:48d167589134799093005b7f7f347c69cc67859c693b17787f334fbe8871279f"},
+]
+
+[package.dependencies]
+importlib-metadata = ">=6.0,<8.8.0"
+typing-extensions = ">=4.5.0"
+
+[[package]]
+name = "opentelemetry-exporter-otlp-proto-common"
+version = "1.34.0"
+description = "OpenTelemetry Protobuf encoding"
+optional = false
+python-versions = ">=3.9"
+groups = ["dev"]
+markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
+files = [
+    {file = "opentelemetry_exporter_otlp_proto_common-1.34.0-py3-none-any.whl", hash = "sha256:a5ab7a9b7c3c7ba957c8ddcb08c0c93b1d732e066f544682a250ecf4d7a9ceef"},
+    {file = "opentelemetry_exporter_otlp_proto_common-1.34.0.tar.gz", hash = "sha256:5916d9ceda8c733adbec5e9cecf654fbf359e9f619ff43214277076fba888557"},
+]
+
+[package.dependencies]
+opentelemetry-proto = "1.34.0"
+
+[[package]]
+name = "opentelemetry-exporter-otlp-proto-http"
+version = "1.34.0"
+description = "OpenTelemetry Collector Protobuf over HTTP Exporter"
+optional = false
+python-versions = ">=3.9"
+groups = ["dev"]
+markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
+files = [
+    {file = "opentelemetry_exporter_otlp_proto_http-1.34.0-py3-none-any.whl", hash = "sha256:b3cc9dd5152fae2dd32f3566bbfbc7d26d6ab3ef6c6b3f85bc9f6adc059d713f"},
+    {file = "opentelemetry_exporter_otlp_proto_http-1.34.0.tar.gz", hash = "sha256:3f674dbc32549a2fae413a77428d59b38e8c8b4caaf7f594ae2c2f8d2f018014"},
+]
+
+[package.dependencies]
+googleapis-common-protos = ">=1.52,<2.0"
+opentelemetry-api = ">=1.15,<2.0"
+opentelemetry-exporter-otlp-proto-common = "1.34.0"
+opentelemetry-proto = "1.34.0"
+opentelemetry-sdk = ">=1.34.0,<1.35.0"
+requests = ">=2.7,<3.0"
+typing-extensions = ">=4.5.0"
+
+[[package]]
+name = "opentelemetry-proto"
+version = "1.34.0"
+description = "OpenTelemetry Python Proto"
+optional = false
+python-versions = ">=3.9"
+groups = ["dev"]
+markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
+files = [
+    {file = "opentelemetry_proto-1.34.0-py3-none-any.whl", hash = "sha256:ffb1f1b27552fda5a1cd581e34243cc0b6f134fb14c1c2a33cc3b4b208c9bf97"},
+    {file = "opentelemetry_proto-1.34.0.tar.gz", hash = "sha256:73e40509b692630a47192888424f7e0b8fb19d9ecf2f04e6f708170cd3346dfe"},
+]
+
+[package.dependencies]
+protobuf = ">=5.0,<6.0"
+
+[[package]]
+name = "opentelemetry-sdk"
+version = "1.34.0"
+description = "OpenTelemetry Python SDK"
+optional = false
+python-versions = ">=3.9"
+groups = ["dev"]
+markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
+files = [
+    {file = "opentelemetry_sdk-1.34.0-py3-none-any.whl", hash = "sha256:7850bcd5b5c95f9aae48603d6592bdad5c7bdef50c03e06393f8f457d891fe32"},
+    {file = "opentelemetry_sdk-1.34.0.tar.gz", hash = "sha256:719559622afcd515c2aec462ccb749ba2e70075a01df45837623643814d33716"},
+]
+
+[package.dependencies]
+opentelemetry-api = "1.34.0"
+opentelemetry-semantic-conventions = "0.55b0"
+typing-extensions = ">=4.5.0"
+
+[[package]]
+name = "opentelemetry-semantic-conventions"
+version = "0.55b0"
+description = "OpenTelemetry Semantic Conventions"
+optional = false
+python-versions = ">=3.9"
+groups = ["dev"]
+markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
+files = [
+    {file = "opentelemetry_semantic_conventions-0.55b0-py3-none-any.whl", hash = "sha256:63bb15b67377700e51c422d0d24092ca6ce9f3a4cb6f032375aa8af1fc2aab65"},
+    {file = "opentelemetry_semantic_conventions-0.55b0.tar.gz", hash = "sha256:933d2e20c2dbc0f9b2f4f52138282875b4b14c66c491f5273bcdef1781368e9c"},
+]
+
+[package.dependencies]
+opentelemetry-api = "1.34.0"
+typing-extensions = ">=4.5.0"
 
 [[package]]
 name = "orjson"
@@ -3313,10 +3507,9 @@ poetry-plugin = ["poetry (>=1.0,<2.0)"]
 name = "propcache"
 version = "0.2.1"
 description = "Accelerated property cache"
-optional = true
+optional = false
 python-versions = ">=3.9"
-groups = ["main"]
-markers = "(python_version <= \"3.11\" or python_version >= \"3.12\") and extra == \"vector-db-based\""
+groups = ["main", "dev"]
 files = [
     {file = "propcache-0.2.1-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:6b3f39a85d671436ee3d12c017f8fdea38509e4f25b28eb25877293c98c243f6"},
     {file = "propcache-0.2.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:39d51fbe4285d5db5d92a929e3e21536ea3dd43732c5b177c7ef03f918dff9f2"},
@@ -3401,6 +3594,7 @@ files = [
     {file = "propcache-0.2.1-py3-none-any.whl", hash = "sha256:52277518d6aae65536e9cea52d4e7fd2f7a66f4aa2d30ed3f2fcea620ace3c54"},
     {file = "propcache-0.2.1.tar.gz", hash = "sha256:3f77ce728b19cb537714499928fe800c3dda29e8d9428778fc7c186da4c09a64"},
 ]
+markers = {main = "(python_version <= \"3.11\" or python_version >= \"3.12\") and extra == \"vector-db-based\"", dev = "python_version <= \"3.11\" or python_version >= \"3.12\""}
 
 [[package]]
 name = "proto-plus"
@@ -3427,7 +3621,7 @@ version = "5.29.4"
 description = ""
 optional = false
 python-versions = ">=3.8"
-groups = ["main"]
+groups = ["main", "dev"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "protobuf-5.29.4-cp310-abi3-win32.whl", hash = "sha256:13eb236f8eb9ec34e63fc8b1d6efd2777d062fa6aaa68268fb67cf77f6839ad7"},
@@ -4937,9 +5131,9 @@ files = [
 name = "sniffio"
 version = "1.3.1"
 description = "Sniff out which async library your code is running under"
-optional = true
+optional = false
 python-versions = ">=3.7"
-groups = ["main"]
+groups = ["main", "dev"]
 markers = "python_version <= \"3.11\" or python_version >= \"3.12\""
 files = [
     {file = "sniffio-1.3.1-py3-none-any.whl", hash = "sha256:2f6da418d1f1e0fddd844478f41680e794e6051915791a034ff65e5f100525a2"},
@@ -5666,10 +5860,9 @@ files = [
 name = "yarl"
 version = "1.18.3"
 description = "Yet another URL library"
-optional = true
+optional = false
 python-versions = ">=3.9"
-groups = ["main"]
-markers = "(python_version <= \"3.11\" or python_version >= \"3.12\") and extra == \"vector-db-based\""
+groups = ["main", "dev"]
 files = [
     {file = "yarl-1.18.3-cp310-cp310-macosx_10_9_universal2.whl", hash = "sha256:7df647e8edd71f000a5208fe6ff8c382a1de8edfbccdbbfe649d263de07d8c34"},
     {file = "yarl-1.18.3-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:c69697d3adff5aa4f874b19c0e4ed65180ceed6318ec856ebc423aa5850d84f7"},
@@ -5754,6 +5947,7 @@ files = [
     {file = "yarl-1.18.3-py3-none-any.whl", hash = "sha256:b57f4f58099328dfb26c6a771d09fb20dbbae81d20cfb66141251ea063bd101b"},
     {file = "yarl-1.18.3.tar.gz", hash = "sha256:ac1801c45cbf77b6c99242eeff4fffb5e4e73a800b5c4ad4fc0be5def634d2e1"},
 ]
+markers = {main = "(python_version <= \"3.11\" or python_version >= \"3.12\") and extra == \"vector-db-based\"", dev = "python_version <= \"3.11\" or python_version >= \"3.12\""}
 
 [package.dependencies]
 idna = ">=2.0"
@@ -5764,14 +5958,14 @@ propcache = ">=0.2.0"
 name = "zipp"
 version = "3.21.0"
 description = "Backport of pathlib-compatible object wrapper for zip files"
-optional = true
+optional = false
 python-versions = ">=3.9"
-groups = ["main"]
-markers = "(python_version <= \"3.11\" or python_version >= \"3.12\") and extra == \"vector-db-based\""
+groups = ["main", "dev"]
 files = [
     {file = "zipp-3.21.0-py3-none-any.whl", hash = "sha256:ac1bbe05fd2991f160ebce24ffbac5f6d11d83dc90891255885223d42b3cd931"},
     {file = "zipp-3.21.0.tar.gz", hash = "sha256:2c9958f6430a2040341a52eb608ed6dd93ef4392e02ffe219417c1b28b5dd1f4"},
 ]
+markers = {main = "(python_version <= \"3.11\" or python_version >= \"3.12\") and extra == \"vector-db-based\"", dev = "python_version <= \"3.11\" or python_version >= \"3.12\""}
 
 [package.extras]
 check = ["pytest-checkdocs (>=2.4)", "pytest-ruff (>=0.2.1)"]
@@ -5790,4 +5984,4 @@ vector-db-based = ["cohere", "langchain", "openai", "tiktoken"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.13"
-content-hash = "3462b02e03e9f7edd9dec23acde60ad4f7128ace08ce1787556aa0b4bcd25a86"
+content-hash = "4123988df8bfc83fcffb2057b5b9d97637749a4515b0afa1a06d0baba2228f4d"
