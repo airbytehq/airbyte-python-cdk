@@ -23,7 +23,7 @@ class TestValidateInLineCondition:
         with pytest.raises(ValueError) as exc_info:
             validation_strategy.validate("{{ config['test_key'] == 'wrong_value' }}")
 
-        assert "Validation failed: Condition" in str(exc_info.value)
+        assert "Condition evaluated to False" in str(exc_info.value)
         assert "evaluated to False" in str(exc_info.value)
 
     def test_given_non_string_condition_raises_error(self):
@@ -34,7 +34,7 @@ class TestValidateInLineCondition:
             with pytest.raises(ValueError) as exc_info:
                 validation_strategy.validate(value)
 
-            assert f"Invalid condition: {value}. Should be a string." in str(exc_info.value)
+            assert f"Invalid condition argument: {value}. Should be a string." in str(exc_info.value)
 
     @pytest.mark.parametrize(
         "config, condition, expected_evaluation",
@@ -62,7 +62,7 @@ class TestValidateInLineCondition:
             with pytest.raises(ValueError) as exc_info:
                 validation_strategy.validate(condition)
 
-            assert "Validation failed: Condition" in str(exc_info.value)
+            assert "Condition evaluated to False" in str(exc_info.value)
             assert "evaluated to False" in str(exc_info.value)
 
     def test_given_empty_string_condition_raises_error(self):
@@ -72,7 +72,7 @@ class TestValidateInLineCondition:
         with pytest.raises(ValueError) as exc_info:
             validation_strategy.validate("")
 
-        assert "Validation failed: Condition '' evaluated to False" in str(exc_info.value)
+        assert "Condition evaluated to False" in str(exc_info.value)
 
     def test_given_invalid_jinja_syntax_raises_error(self):
         config = {}
