@@ -4275,6 +4275,7 @@ definitions:
         description: The condition that the specified config value will be evaluated against
         anyOf:
           - "$ref": "#/definitions/ValidateAdheresToSchema"
+          - "$ref": "#/definitions/ValidateInLineCondition"
   PredicateValidator:
     title: Predicate Validator
     description: Validator that applies a validation strategy to a specified value.
@@ -4303,12 +4304,24 @@ definitions:
           - "test-value"
           - "{{ config['api_version'] }}"
           - "{{ config['tenant_id'] }}"
+          - "{{ config['start_date'] < now_utc() }}"
           - 123
       validation_strategy:
         title: Validation Strategy
         description: The validation strategy to apply to the value.
         anyOf:
           - "$ref": "#/definitions/ValidateAdheresToSchema"
+          - "$ref": "#/definitions/ValidateInLineCondition"
+  ValidateInLineCondition:
+    title: Validate In Line Condition
+    description: Validation strategy that evalutaes the value as an InterpolatedBoolean.
+    type: object
+    required:
+      - type
+    properties:
+      type:
+        type: string
+        enum: [ValidateInLineCondition]
   ValidateAdheresToSchema:
     title: Validate Adheres To Schema
     description: Validates that a user-provided schema adheres to a specified JSON schema.

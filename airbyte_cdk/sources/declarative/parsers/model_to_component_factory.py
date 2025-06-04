@@ -424,6 +424,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ValidateAdheresToSchema as ValidateAdheresToSchemaModel,
 )
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ValidateInLineCondition as ValidateInLineConditionModel,
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import ValueType
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     WaitTimeFromHeader as WaitTimeFromHeaderModel,
@@ -567,6 +570,7 @@ from airbyte_cdk.sources.declarative.validators import (
     DpathValidator,
     PredicateValidator,
     ValidateAdheresToSchema,
+    ValidateInLineCondition,
 )
 from airbyte_cdk.sources.http_logger import format_http_message
 from airbyte_cdk.sources.message import (
@@ -893,6 +897,12 @@ class ModelToComponentFactory:
         return ValidateAdheresToSchema(
             schema=base_schema,
         )
+
+    @staticmethod
+    def create_validate_in_line_condition(
+        model: ValidateInLineConditionModel, config: Config, **kwargs: Any
+    ) -> ValidateInLineCondition:
+        return ValidateInLineCondition(config=config)
 
     @staticmethod
     def create_added_field_definition(
