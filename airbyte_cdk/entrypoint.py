@@ -339,6 +339,7 @@ class AirbyteEntrypoint(object):
                     f"There was an error during the serialization of an AirbyteMessage: `{exception}`. This might impact the sync performances."
                 )
                 _HAS_LOGGED_FOR_SERIALIZATION_ERROR = True
+            print(airbyte_message.record.data)
             return json.dumps(serialized_message)
 
     @classmethod
