@@ -291,6 +291,7 @@ class AirbyteEntrypoint(object):
 
     @staticmethod
     def airbyte_message_to_string(airbyte_message: AirbyteMessage) -> str:
+        print(airbyte_message.record.data)
         return orjson.dumps(AirbyteMessageSerializer.dump(airbyte_message)).decode()
 
     @classmethod
