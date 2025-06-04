@@ -3630,9 +3630,10 @@ definitions:
       delimiter:
         type: string
         default: ","
-      set_empty_cell_to_none:
-        type: boolean
-        default: false
+      set_values_to_none:
+        type: array
+        items:
+          type: string
   AsyncJobStatusMap:
     description: Matches the api job status to Async Job Status.
     type: object

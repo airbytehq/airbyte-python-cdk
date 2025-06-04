@@ -2651,7 +2651,7 @@ class ModelToComponentFactory:
             return CsvParser(
                 encoding=model.encoding,
                 delimiter=model.delimiter,
-                set_empty_cell_to_none=model.set_empty_cell_to_none,
+                set_values_to_none=model.set_values_to_none,
             )
         elif isinstance(model, GzipDecoderModel):
             return GzipParser(
