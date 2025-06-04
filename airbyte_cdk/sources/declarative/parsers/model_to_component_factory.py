@@ -737,6 +737,7 @@ class ModelToComponentFactory:
             SpecModel: self.create_spec,
             SubstreamPartitionRouterModel: self.create_substream_partition_router,
             ValidateAdheresToSchemaModel: self.create_validate_adheres_to_schema,
+            ValidateInLineConditionModel: self.create_validate_in_line_condition,
             WaitTimeFromHeaderModel: self.create_wait_time_from_header,
             WaitUntilTimeFromHeaderModel: self.create_wait_until_time_from_header,
             AsyncRetrieverModel: self.create_async_retriever,
