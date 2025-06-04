@@ -4314,7 +4314,7 @@ definitions:
           - "$ref": "#/definitions/ValidateInLineCondition"
   ValidateInLineCondition:
     title: Validate In Line Condition
-    description: Validation strategy that evalutaes the value as an InterpolatedBoolean.
+    description: Validation strategy that evaluates the value as an InterpolatedBoolean.
     type: object
     required:
       - type
