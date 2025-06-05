@@ -89,6 +89,7 @@ class ConcurrentDeclarativeSource(ManifestDeclarativeSource, Generic[TState]):
             emit_connector_builder_messages=emit_connector_builder_messages,
             disable_resumable_full_refresh=True,
             connector_state_manager=self._connector_state_manager,
+            max_concurrent_async_job_count=source_config.get("max_concurrent_async_job_count"),
         )
 
         super().__init__(
