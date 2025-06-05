@@ -1,7 +1,7 @@
 #
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
-
+import logging
 
 from copy import deepcopy
 from dataclasses import InitVar, dataclass, field
@@ -45,6 +45,8 @@ AIRBYTE_DATA_TYPES: Mapping[str, MutableMapping[str, Any]] = {
     "object": {"type": ["null", "object"]},
 }
 
+
+logger = logging.getLogger("airbyte")
 
 @deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)
 @dataclass(frozen=True)
@@ -153,6 +155,12 @@ class DynamicSchemaLoader(SchemaLoader):
             )
             properties[key] = value
 
+        logger.info(f"Properties before filter: {properties}")
+        logger.info(f"Schema filter: {self.schema_filter}, type: {type(self.schema_filter)}, is None: {self.schema_filter is None}")
+        if self.schema_filter:
+            properties = self._filter(properties)
+        logger.info(f"Properties after filter: {properties}")
+
         filtered_transformed_properties = self._transform(properties)
 
         return {
@@ -177,7 +185,7 @@ class DynamicSchemaLoader(SchemaLoader):
         self,
         properties: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        if not self.schema_filter:
+        if self.schema_filter is None:
             return properties
 
         filtered_properties: MutableMapping[str, Any] = {}
