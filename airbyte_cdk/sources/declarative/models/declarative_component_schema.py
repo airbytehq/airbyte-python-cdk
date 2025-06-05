@@ -1383,7 +1383,7 @@ class CsvDecoder(BaseModel):
     type: Literal["CsvDecoder"]
     encoding: Optional[str] = "utf-8"
     delimiter: Optional[str] = ","
-    set_empty_cell_to_none: Optional[bool] = False
+    set_values_to_none: Optional[List[str]] = None
 
 
 class AsyncJobStatusMap(BaseModel):
