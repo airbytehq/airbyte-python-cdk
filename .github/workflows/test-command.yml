@@ -115,7 +115,7 @@ jobs:
 
       - name: Publish Test Results
         uses: EnricoMi/publish-unit-test-result-action@v2
-        if: always() && !cancelled()
+        if: always() && !cancelled() && matrix.python-version == '3.11'
         continue-on-error: true
         with:
           check_name: "PyTest Results (On-Demand)"
