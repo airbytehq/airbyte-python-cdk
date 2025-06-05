@@ -352,3 +352,12 @@ def test_given_complex_when_eval_then_return_string():
     val = interpolation.eval(s, config)
 
     assert isinstance(val, str)
+
+
+def test_given_valid_type_complex_when_eval_then_return_string():
+    s = "9173710294242221J"
+    config = {}
+
+    val = interpolation.eval(s, config, valid_types=(complex,))
+
+    assert isinstance(val, complex)
