@@ -138,6 +138,8 @@ class DynamicSchemaLoader(SchemaLoader):
         properties = {}
         retrieved_record = next(self.retriever.read_records({}), None)  # type: ignore[call-overload] # read_records return Iterable data type
 
+        logger.info(f"Retrieved record: {retrieved_record}")
+
         raw_schema = (
             self._extract_data(
                 retrieved_record,  # type: ignore[arg-type] # Expected that retrieved_record will be only Mapping[str, Any]
@@ -147,6 +149,8 @@ class DynamicSchemaLoader(SchemaLoader):
             else []
         )
 
+        logger.info(f"Raw schema: {raw_schema}")
+
         for property_definition in raw_schema:
             key = self._get_key(property_definition, self.schema_type_identifier.key_pointer)
             value = self._get_type(
@@ -155,13 +159,9 @@ class DynamicSchemaLoader(SchemaLoader):
             )
             properties[key] = value
 
-        logger.info(f"Properties before filter: {properties}")
-        logger.info(f"Schema filter: {self.schema_filter}, type: {type(self.schema_filter)}, is None: {self.schema_filter is None}")
-        if self.schema_filter:
-            properties = self._filter(properties)
-        logger.info(f"Properties after filter: {properties}")
+        logger.info(f"Properties: {properties}")
 
-        filtered_transformed_properties = self._transform(properties)
+        filtered_transformed_properties = self._transform(self._filter(properties))
 
         return {
             "$schema": "https://json-schema.org/draft-07/schema#",
