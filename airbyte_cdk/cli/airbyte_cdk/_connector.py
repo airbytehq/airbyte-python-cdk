@@ -163,11 +163,10 @@ def test(
 
     pytest_args.append(str(test_file_path))
 
-    if connector_directory:
-        build_dir = connector_directory / "build" / "test-results"
-        build_dir.mkdir(parents=True, exist_ok=True)
-        junit_xml_path = build_dir / "standard-tests-junit.xml"
-        pytest_args.extend(["--junitxml", str(junit_xml_path)])
+    build_dir = connector_directory / "build" / "test-results"
+    build_dir.mkdir(parents=True, exist_ok=True)
+    junit_xml_path = build_dir / "standard-tests-junit.xml"
+    pytest_args.extend(["--junitxml", str(junit_xml_path)])
 
     click.echo(f"Running tests from connector directory: {connector_directory}...")
     click.echo(f"Test file: {test_file_path}")
