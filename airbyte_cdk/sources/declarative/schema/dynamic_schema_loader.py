@@ -153,7 +153,7 @@ class DynamicSchemaLoader(SchemaLoader):
             )
             properties[key] = value
 
-        filtered_transformed_properties = self._transform(self._filter(properties))
+        filtered_transformed_properties = self._transform(properties)
 
         return {
             "$schema": "https://json-schema.org/draft-07/schema#",
