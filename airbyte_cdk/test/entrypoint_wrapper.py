@@ -44,6 +44,7 @@ from airbyte_cdk.models import (
     Type,
 )
 from airbyte_cdk.sources import Source
+from airbyte_cdk.utils.cli_arg_parse import ConnectorCLIArgs, parse_cli_args
 
 
 class EntrypointOutput:
@@ -166,7 +167,7 @@ def _run_command(
     parent_logger = logging.getLogger("")
     parent_logger.addHandler(stream_handler)
 
-    parsed_args = AirbyteEntrypoint.parse_args(args)
+    parsed_args: ConnectorCLIArgs = parse_cli_args(args)
 
     source_entrypoint = AirbyteEntrypoint(source)
     messages = []

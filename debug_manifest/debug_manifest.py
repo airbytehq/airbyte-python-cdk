@@ -19,7 +19,7 @@ def debug_manifest(source: YamlDeclarativeSource, args: list[str]) -> None:
     """
     Run the debug manifest with the given source and arguments.
     """
-    launch(source, args)
+    source.launch_with_cli_args(args)
 
 
 if __name__ == "__main__":

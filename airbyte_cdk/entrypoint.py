@@ -19,10 +19,11 @@ from urllib.parse import urlparse
 import orjson
 import requests
 from requests import PreparedRequest, Response, Session
+from typing_extensions import deprecated
 
 from airbyte_cdk.connector import TConfig
 from airbyte_cdk.exception_handler import init_uncaught_exception_handler
-from airbyte_cdk.logger import PRINT_BUFFER, init_logger
+from airbyte_cdk.logger import init_logger
 from airbyte_cdk.models import (
     AirbyteConnectionStatus,
     AirbyteMessage,
@@ -40,6 +41,7 @@ from airbyte_cdk.sources.utils.schema_helpers import check_config_against_spec_o
 # from airbyte_cdk.utils import PrintBuffer, is_cloud_environment, message_utils  # add PrintBuffer back once fixed
 from airbyte_cdk.utils import is_cloud_environment, message_utils
 from airbyte_cdk.utils.airbyte_secrets_utils import get_secrets, update_secrets
+from airbyte_cdk.utils.cli_arg_parse import ConnectorCLIArgs, parse_cli_args
 from airbyte_cdk.utils.constants import ENV_REQUEST_CACHE_PATH
 from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 
@@ -61,99 +63,7 @@ class AirbyteEntrypoint(object):
         self.source = source
         self.logger = logging.getLogger(f"airbyte.{getattr(source, 'name', '')}")
 
-    @staticmethod
-    def parse_args(args: List[str]) -> argparse.Namespace:
-        # set up parent parsers
-        parent_parser = argparse.ArgumentParser(add_help=False)
-        parent_parser.add_argument(
-            "--debug", action="store_true", help="enables detailed debug logs related to the sync"
-        )
-        main_parser = argparse.ArgumentParser()
-        subparsers = main_parser.add_subparsers(title="commands", dest="command")
-
-        # spec
-        subparsers.add_parser(
-            "spec", help="outputs the json configuration specification", parents=[parent_parser]
-        )
-
-        # check
-        check_parser = subparsers.add_parser(
-            "check", help="checks the config can be used to connect", parents=[parent_parser]
-        )
-        required_check_parser = check_parser.add_argument_group("required named arguments")
-        required_check_parser.add_argument(
-            "--config", type=str, required=True, help="path to the json configuration file"
-        )
-        check_parser.add_argument(
-            "--manifest-path",
-            type=str,
-            required=False,
-            help="path to the YAML manifest file to inject into the config",
-        )
-        check_parser.add_argument(
-            "--components-path",
-            type=str,
-            required=False,
-            help="path to the custom components file, if it exists",
-        )
-
-        # discover
-        discover_parser = subparsers.add_parser(
-            "discover",
-            help="outputs a catalog describing the source's schema",
-            parents=[parent_parser],
-        )
-        required_discover_parser = discover_parser.add_argument_group("required named arguments")
-        required_discover_parser.add_argument(
-            "--config", type=str, required=True, help="path to the json configuration file"
-        )
-        discover_parser.add_argument(
-            "--manifest-path",
-            type=str,
-            required=False,
-            help="path to the YAML manifest file to inject into the config",
-        )
-        discover_parser.add_argument(
-            "--components-path",
-            type=str,
-            required=False,
-            help="path to the custom components file, if it exists",
-        )
-
-        # read
-        read_parser = subparsers.add_parser(
-            "read", help="reads the source and outputs messages to STDOUT", parents=[parent_parser]
-        )
-
-        read_parser.add_argument(
-            "--state", type=str, required=False, help="path to the json-encoded state file"
-        )
-        required_read_parser = read_parser.add_argument_group("required named arguments")
-        required_read_parser.add_argument(
-            "--config", type=str, required=True, help="path to the json configuration file"
-        )
-        required_read_parser.add_argument(
-            "--catalog",
-            type=str,
-            required=True,
-            help="path to the catalog used to determine which data to read",
-        )
-        read_parser.add_argument(
-            "--manifest-path",
-            type=str,
-            required=False,
-            help="path to the YAML manifest file to inject into the config",
-        )
-        read_parser.add_argument(
-            "--components-path",
-            type=str,
-            required=False,
-            help="path to the custom components file, if it exists",
-        )
-
-        return main_parser.parse_args(args)
-
-    def run(self, parsed_args: argparse.Namespace) -> Iterable[str]:
+    def run(self, parsed_args: argparse.Namespace | ConnectorCLIArgs) -> Iterable[str]:
         cmd = parsed_args.command
         if not cmd:
             raise Exception("No command passed")
@@ -343,21 +253,21 @@ class AirbyteEntrypoint(object):
 
     @classmethod
     def extract_state(cls, args: List[str]) -> Optional[Any]:
-        parsed_args = cls.parse_args(args)
+        parsed_args = parse_cli_args(args)
         if hasattr(parsed_args, "state"):
             return parsed_args.state
         return None
 
     @classmethod
     def extract_catalog(cls, args: List[str]) -> Optional[Any]:
-        parsed_args = cls.parse_args(args)
+        parsed_args = parse_cli_args(args)
         if hasattr(parsed_args, "catalog"):
             return parsed_args.catalog
         return None
 
     @classmethod
     def extract_config(cls, args: List[str]) -> Optional[Any]:
-        parsed_args = cls.parse_args(args)
+        parsed_args: ConnectorCLIArgs = parse_cli_args(args)
         if hasattr(parsed_args, "config"):
             return parsed_args.config
         return None
@@ -368,16 +278,10 @@ class AirbyteEntrypoint(object):
         return
 
 
+@deprecated("The `launch()` method is deprecated. Use `source.launch_with_cli_args()` instead.")
 def launch(source: Source, args: List[str]) -> None:
-    source_entrypoint = AirbyteEntrypoint(source)
-    parsed_args = source_entrypoint.parse_args(args)
-    # temporarily removes the PrintBuffer because we're seeing weird print behavior for concurrent syncs
-    # Refer to: https://github.com/airbytehq/oncall/issues/6235
-    with PRINT_BUFFER:
-        for message in source_entrypoint.run(parsed_args):
-            # simply printing is creating issues for concurrent CDK as Python uses different two instructions to print: one for the message and
-            # the other for the break line. Adding `\n` to the message ensure that both are printed at the same time
-            print(f"{message}\n", end="")
+    """Deprecated."""
+    source.launch_with_cli_args(args)
 
 
 def _init_internal_request_filter() -> None:
@@ -447,4 +351,4 @@ def main() -> None:
     if not isinstance(source, Source):
         raise Exception("Source implementation provided does not implement Source class!")
 
-    launch(source, sys.argv[1:])
+    source.launch_with_cli_args(sys.argv[1:])

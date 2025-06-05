@@ -1,5 +1,17 @@
 # CDK Migration Guide
 
+## Upgrading to 6.XX.YY
+
+This version deprecates (but does not remove) the AirbyteEntrypoint class and related methods.
+Deprecation warnings will be emitted beginning in this version if `launch()` is called, or any
+other now-deprecated methods or classes.
+
+Beginning in this version, all connectors have a `launch_with_cli_args()` class method, which
+can be called directly from the class itself.
+
+Most connector classes will not need to modify this class method, although it can be overriden as
+needed, if any custom behavior is required.
+
 ## Upgrading to 6.34.0
 
 [Version 6.34.0](https://github.com/airbytehq/airbyte-python-cdk/releases/tag/v6.34.0) of the CDK removes support for `stream_state` in the Jinja interpolation context. This change is breaking for any low-code connectors that use `stream_state` in the interpolation context.
