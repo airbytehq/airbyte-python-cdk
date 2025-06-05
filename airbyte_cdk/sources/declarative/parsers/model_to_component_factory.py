@@ -510,7 +510,6 @@ from airbyte_cdk.sources.declarative.retrievers import (
     AsyncRetriever,
     LazySimpleRetriever,
     SimpleRetriever,
-    SimpleRetrieverTestReadDecorator,
 )
 from airbyte_cdk.sources.declarative.retrievers.file_uploader import (
     ConnectorBuilderFileUploader,
@@ -530,7 +529,10 @@ from airbyte_cdk.sources.declarative.schema import (
 )
 from airbyte_cdk.sources.declarative.schema.composite_schema_loader import CompositeSchemaLoader
 from airbyte_cdk.sources.declarative.spec import ConfigMigration, Spec
-from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicer
+from airbyte_cdk.sources.declarative.stream_slicers import (
+    StreamSlicer,
+    StreamSlicerTestReadDecorator,
+)
 from airbyte_cdk.sources.declarative.transformations import (
     AddFields,
     RecordTransformation,
@@ -2646,7 +2648,11 @@ class ModelToComponentFactory:
         elif isinstance(model, JsonlDecoderModel):
             return JsonLineParser()
         elif isinstance(model, CsvDecoderModel):
-            return CsvParser(encoding=model.encoding, delimiter=model.delimiter)
+            return CsvParser(
+                encoding=model.encoding,
+                delimiter=model.delimiter,
+                set_empty_cell_to_none=model.set_empty_cell_to_none,
+            )
         elif isinstance(model, GzipDecoderModel):
             return GzipParser(
                 inner_parser=ModelToComponentFactory._get_parser(model.decoder, config)
@@ -3241,6 +3247,14 @@ class ModelToComponentFactory:
             request_options_provider = DefaultRequestOptionsProvider(parameters={})
 
         stream_slicer = stream_slicer or SinglePartitionRouter(parameters={})
+        if self._should_limit_slices_fetched():
+            stream_slicer = cast(
+                StreamSlicer,
+                StreamSlicerTestReadDecorator(
+                    wrapped_slicer=stream_slicer,
+                    maximum_number_of_slices=self._limit_slices_fetched or 5,
+                ),
+            )
 
         cursor_used_for_stop_condition = cursor if stop_condition_on_cursor else None
         paginator = (
@@ -3299,22 +3313,6 @@ class ModelToComponentFactory:
                 parameters=model.parameters or {},
             )
 
-        if self._limit_slices_fetched or self._emit_connector_builder_messages:
-            return SimpleRetrieverTestReadDecorator(
-                name=name,
-                paginator=paginator,
-                primary_key=primary_key,
-                requester=requester,
-                record_selector=record_selector,
-                stream_slicer=stream_slicer,
-                request_option_provider=request_options_provider,
-                cursor=cursor,
-                config=config,
-                maximum_number_of_slices=self._limit_slices_fetched or 5,
-                ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
-                log_formatter=log_formatter,
-                parameters=model.parameters or {},
-            )
         return SimpleRetriever(
             name=name,
             paginator=paginator,
@@ -3327,8 +3325,34 @@ class ModelToComponentFactory:
             config=config,
             ignore_stream_slicer_parameters_on_paginated_requests=ignore_stream_slicer_parameters_on_paginated_requests,
             additional_query_properties=query_properties,
+            log_formatter=self._get_log_formatter(log_formatter, name),
             parameters=model.parameters or {},
         )
+
+    def _get_log_formatter(
+        self, log_formatter: Callable[[Response], Any] | None, name: str
+    ) -> Callable[[Response], Any] | None:
+        if self._should_limit_slices_fetched():
+            return (
+                (
+                    lambda response: format_http_message(
+                        response,
+                        f"Stream '{name}' request",
+                        f"Request performed in order to extract records for stream '{name}'",
+                        name,
+                    )
+                )
+                if not log_formatter
+                else log_formatter
+            )
+        return None
+
+    def _should_limit_slices_fetched(self) -> bool:
+        """
+        Returns True if the number of slices fetched should be limited, False otherwise.
+        This is used to limit the number of slices fetched during tests.
+        """
+        return bool(self._limit_slices_fetched or self._emit_connector_builder_messages)
 
     @staticmethod
     def _query_properties_in_request_parameters(
@@ -3420,12 +3444,15 @@ class ModelToComponentFactory:
         transformations: List[RecordTransformation],
         **kwargs: Any,
     ) -> AsyncRetriever:
-        def _get_download_retriever() -> SimpleRetrieverTestReadDecorator | SimpleRetriever:
+        def _get_download_retriever() -> SimpleRetriever:
+            # We create a record selector for the download retriever
+            # with no schema normalization and no transformations, neither record filter
+            # as all this occurs in the record_selector of the AsyncRetriever
             record_selector = RecordSelector(
                 extractor=download_extractor,
                 name=name,
                 record_filter=None,
-                transformations=transformations,
+                transformations=[],
                 schema_normalization=TypeTransformer(TransformConfig.NoTransform),
                 config=config,
                 parameters={},
@@ -3440,19 +3467,6 @@ class ModelToComponentFactory:
                 if model.download_paginator
                 else NoPagination(parameters={})
             )
-            maximum_number_of_slices = self._limit_slices_fetched or 5
-
-            if self._limit_slices_fetched or self._emit_connector_builder_messages:
-                return SimpleRetrieverTestReadDecorator(
-                    requester=download_requester,
-                    record_selector=record_selector,
-                    primary_key=None,
-                    name=job_download_components_name,
-                    paginator=paginator,
-                    config=config,
-                    parameters={},
-                    maximum_number_of_slices=maximum_number_of_slices,
-                )
 
             return SimpleRetriever(
                 requester=download_requester,
@@ -3498,7 +3512,17 @@ class ModelToComponentFactory:
             transformations=transformations,
             client_side_incremental_sync=client_side_incremental_sync,
         )
+
         stream_slicer = stream_slicer or SinglePartitionRouter(parameters={})
+        if self._should_limit_slices_fetched():
+            stream_slicer = cast(
+                StreamSlicer,
+                StreamSlicerTestReadDecorator(
+                    wrapped_slicer=stream_slicer,
+                    maximum_number_of_slices=self._limit_slices_fetched or 5,
+                ),
+            )
+
         creation_requester = self._create_component_from_model(
             model=model.creation_requester,
             decoder=decoder,
@@ -3754,6 +3778,7 @@ class ModelToComponentFactory:
             field_path=field_path,  # type: ignore[arg-type] # field_path can be str and InterpolatedString
             value=interpolated_value,
             value_type=ModelToComponentFactory._json_schema_type_name_to_type(model.value_type),
+            create_or_update=model.create_or_update,
             parameters=model.parameters or {},
         )
 
@@ -3800,15 +3825,23 @@ class ModelToComponentFactory:
 
         return StreamConfig(
             configs_pointer=model_configs_pointer,
+            default_values=model.default_values,
             parameters=model.parameters or {},
         )
 
     def create_config_components_resolver(
         self, model: ConfigComponentsResolverModel, config: Config
     ) -> Any:
-        stream_config = self._create_component_from_model(
-            model.stream_config, config=config, parameters=model.parameters or {}
+        model_stream_configs = (
+            model.stream_config if isinstance(model.stream_config, list) else [model.stream_config]
         )
+
+        stream_configs = [
+            self._create_component_from_model(
+                stream_config, config=config, parameters=model.parameters or {}
+            )
+            for stream_config in model_stream_configs
+        ]
 
         components_mapping = [
             self._create_component_from_model(
@@ -3822,7 +3855,7 @@ class ModelToComponentFactory:
         ]
 
         return ConfigComponentsResolver(
-            stream_config=stream_config,
+            stream_configs=stream_configs,
             config=config,
             components_mapping=components_mapping,
             parameters=model.parameters or {},

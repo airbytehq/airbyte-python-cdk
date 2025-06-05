@@ -103,6 +103,7 @@ class CsvParser(Parser):
     # TODO: migrate implementation to re-use file-base classes
     encoding: Optional[str] = "utf-8"
     delimiter: Optional[str] = ","
+    set_empty_cell_to_none: Optional[bool] = False
 
     def _get_delimiter(self) -> Optional[str]:
         """
@@ -121,6 +122,8 @@ class CsvParser(Parser):
         text_data = TextIOWrapper(data, encoding=self.encoding)  # type: ignore
         reader = csv.DictReader(text_data, delimiter=self._get_delimiter() or ",")
         for row in reader:
+            if self.set_empty_cell_to_none:
+                row = {k: (None if v == "" else v) for k, v in row.items()}
             yield row
 
 

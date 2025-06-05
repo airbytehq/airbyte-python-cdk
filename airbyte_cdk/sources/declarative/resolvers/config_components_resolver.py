@@ -4,10 +4,13 @@
 
 from copy import deepcopy
 from dataclasses import InitVar, dataclass, field
-from typing import Any, Dict, Iterable, List, Mapping, Union
+from itertools import product
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
 import dpath
+import yaml
 from typing_extensions import deprecated
+from yaml.parser import ParserError
 
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.resolvers.components_resolver import (
@@ -28,6 +31,7 @@ class StreamConfig:
 
     configs_pointer: List[Union[InterpolatedString, str]]
     parameters: InitVar[Mapping[str, Any]]
+    default_values: Optional[List[Any]] = None
 
     def __post_init__(self, parameters: Mapping[str, Any]) -> None:
         self.configs_pointer = [
@@ -48,7 +52,7 @@ class ConfigComponentsResolver(ComponentsResolver):
         parameters (InitVar[Mapping[str, Any]]): Additional parameters for interpolation.
     """
 
-    stream_config: StreamConfig
+    stream_configs: List[StreamConfig]
     config: Config
     components_mapping: List[ComponentMappingDefinition]
     parameters: InitVar[Mapping[str, Any]]
@@ -82,6 +86,7 @@ class ConfigComponentsResolver(ComponentsResolver):
                         field_path=field_path,
                         value=interpolated_value,
                         value_type=component_mapping.value_type,
+                        create_or_update=component_mapping.create_or_update,
                         parameters=parameters,
                     )
                 )
@@ -90,18 +95,45 @@ class ConfigComponentsResolver(ComponentsResolver):
                     f"Expected a string or InterpolatedString for value in mapping: {component_mapping}"
                 )
 
+    @staticmethod
+    def _merge_combination(combo: Iterable[Tuple[int, Any]]) -> Dict[str, Any]:
+        """Collapse a combination of ``(idx, elem)`` into one config dict."""
+        result: Dict[str, Any] = {}
+        for config_index, (elem_index, elem) in enumerate(combo):
+            if isinstance(elem, dict):
+                result.update(elem)
+            else:
+                # keep non-dict values under an artificial name
+                result.setdefault(f"source_config_{config_index}", (elem_index, elem))
+        return result
+
     @property
-    def _stream_config(self) -> Iterable[Mapping[str, Any]]:
-        path = [
-            node.eval(self.config) if not isinstance(node, str) else node
-            for node in self.stream_config.configs_pointer
+    def _stream_config(self) -> List[Dict[str, Any]]:
+        """
+        Build every unique stream-configuration combination defined by
+        each ``StreamConfig`` and any ``default_values``.
+        """
+        all_indexed_streams = []
+        for stream_config in self.stream_configs:
+            path = [
+                node.eval(self.config) if not isinstance(node, str) else node
+                for node in stream_config.configs_pointer
+            ]
+            stream_configs_raw = dpath.get(dict(self.config), path, default=[])
+            stream_configs = (
+                list(stream_configs_raw)
+                if isinstance(stream_configs_raw, list)
+                else [stream_configs_raw]
+            )
+
+            if stream_config.default_values:
+                stream_configs.extend(stream_config.default_values)
+
+            all_indexed_streams.append([(i, item) for i, item in enumerate(stream_configs)])
+        return [
+            self._merge_combination(combo)  # type: ignore[arg-type]
+            for combo in product(*all_indexed_streams)
         ]
-        stream_config = dpath.get(dict(self.config), path, default=[])
-
-        if not isinstance(stream_config, list):
-            stream_config = [stream_config]
-
-        return stream_config
 
     def resolve_components(
         self, stream_template_config: Dict[str, Any]
@@ -130,7 +162,27 @@ class ConfigComponentsResolver(ComponentsResolver):
                 )
 
                 path = [path.eval(self.config, **kwargs) for path in resolved_component.field_path]
+                parsed_value = self._parse_yaml_if_possible(value)
+                updated = dpath.set(updated_config, path, parsed_value)
 
-                dpath.set(updated_config, path, value)
+                if parsed_value and not updated and resolved_component.create_or_update:
+                    dpath.new(updated_config, path, parsed_value)
 
             yield updated_config
+
+    @staticmethod
+    def _parse_yaml_if_possible(value: Any) -> Any:
+        """
+        Try to turn value into a Python object by YAML-parsing it.
+
+        * If value is a `str` and can be parsed by `yaml.safe_load`,
+          return the parsed result.
+        * If parsing fails (`yaml.parser.ParserError`) – or value is not
+          a string at all – return the original value unchanged.
+        """
+        if isinstance(value, str):
+            try:
+                return yaml.safe_load(value)
+            except ParserError:  # "{{ record[0] in ['cohortActiveUsers'] }}"   # not valid YAML
+                return value
+        return value
