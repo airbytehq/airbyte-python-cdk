@@ -1,7 +1,7 @@
 #
 # Copyright (c) 2024 Airbyte, Inc., all rights reserved.
 #
-
+import logging
 
 from copy import deepcopy
 from dataclasses import InitVar, dataclass, field
@@ -45,6 +45,8 @@ AIRBYTE_DATA_TYPES: Mapping[str, MutableMapping[str, Any]] = {
     "object": {"type": ["null", "object"]},
 }
 
+
+logger = logging.getLogger("airbyte")
 
 @deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)
 @dataclass(frozen=True)
@@ -136,6 +138,8 @@ class DynamicSchemaLoader(SchemaLoader):
         properties = {}
         retrieved_record = next(self.retriever.read_records({}), None)  # type: ignore[call-overload] # read_records return Iterable data type
 
+        logger.info(f"Retrieved record: {retrieved_record}")
+
         raw_schema = (
             self._extract_data(
                 retrieved_record,  # type: ignore[arg-type] # Expected that retrieved_record will be only Mapping[str, Any]
@@ -145,6 +149,8 @@ class DynamicSchemaLoader(SchemaLoader):
             else []
         )
 
+        logger.info(f"Raw schema: {raw_schema}")
+
         for property_definition in raw_schema:
             key = self._get_key(property_definition, self.schema_type_identifier.key_pointer)
             value = self._get_type(
@@ -152,6 +158,8 @@ class DynamicSchemaLoader(SchemaLoader):
                 self.schema_type_identifier.type_pointer,
             )
             properties[key] = value
+
+        logger.info(f"Properties: {properties}")
 
         filtered_transformed_properties = self._transform(self._filter(properties))
 
@@ -177,7 +185,7 @@ class DynamicSchemaLoader(SchemaLoader):
         self,
         properties: Mapping[str, Any],
     ) -> Mapping[str, Any]:
-        if not self.schema_filter:
+        if self.schema_filter is None:
             return properties
 
         filtered_properties: MutableMapping[str, Any] = {}

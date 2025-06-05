@@ -4027,7 +4027,9 @@ definitions:
         description: A list of potentially nested fields indicating the full path where value will be added or updated.
         type: array
         items:
-          type: string
+          type:
+            - string
+            - number
         interpolation_context:
           - config
           - components_values
