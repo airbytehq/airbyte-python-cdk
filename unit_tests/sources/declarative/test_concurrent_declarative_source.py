@@ -30,6 +30,7 @@ from airbyte_cdk.models import (
     StreamDescriptor,
     SyncMode,
 )
+from airbyte_cdk.sources.declarative.async_job.job_tracker import ConcurrentJobLimitReached
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
@@ -1837,6 +1838,24 @@ def test_async_incremental_stream_uses_concurrent_cursor_with_state():
     assert isinstance(async_job_partition_router, AsyncJobPartitionRouter)
     assert isinstance(async_job_partition_router.stream_slicer, ConcurrentCursor)
     assert async_job_partition_router.stream_slicer._concurrent_state == expected_state
+
+
+def test_max_concurrent_async_job_count_is_passed_to_job_tracker():
+    limit = 5
+    manifest_with_max_concurrent_async_job_count = copy.deepcopy(_MANIFEST)
+    manifest_with_max_concurrent_async_job_count["max_concurrent_async_job_count"] = str(limit)
+    source = ConcurrentDeclarativeSource(
+        source_config=manifest_with_max_concurrent_async_job_count,
+        config=_CONFIG,
+        catalog=_CATALOG,
+        state={},
+    )
+    source_job_tracker = source._constructor._job_tracker
+    assert source_job_tracker._limit == limit
+
+    [source_job_tracker.try_to_get_intent() for i in range(limit)]
+    with pytest.raises(ConcurrentJobLimitReached):
+        source_job_tracker.try_to_get_intent()
 
 
 def test_stream_using_is_client_side_incremental_has_cursor_state():
