@@ -127,7 +127,9 @@ class JinjaInterpolation(Interpolation):
             evaluated = ast.literal_eval(result)  # type: ignore # literal_eval is able to handle None
         except (ValueError, SyntaxError):
             return result
-        if (not valid_types and not isinstance(evaluated, complex)) or (valid_types and isinstance(evaluated, valid_types)):
+        if (not valid_types and not isinstance(evaluated, complex)) or (
+            valid_types and isinstance(evaluated, valid_types)
+        ):
             return evaluated
         return result
 
