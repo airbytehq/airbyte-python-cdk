@@ -27,6 +27,7 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_sta
     AbstractStreamStateConverter,
 )
 from airbyte_cdk.sources.types import Record, StreamSlice, StreamState
+import gc
 
 logger = logging.getLogger("airbyte")
 
@@ -59,8 +60,8 @@ class ConcurrentPerPartitionCursor(Cursor):
     CurrentPerPartitionCursor expects the state of the ConcurrentCursor to follow the format {cursor_field: cursor_value}.
     """
 
-    DEFAULT_MAX_PARTITIONS_NUMBER = 25_000
-    SWITCH_TO_GLOBAL_LIMIT = 10_000
+    DEFAULT_MAX_PARTITIONS_NUMBER = 250
+    SWITCH_TO_GLOBAL_LIMIT = 100
     _NO_STATE: Mapping[str, Any] = {}
     _NO_CURSOR_STATE: Mapping[str, Any] = {}
     _GLOBAL_STATE_KEY = "state"
@@ -179,6 +180,16 @@ class ConcurrentPerPartitionCursor(Cursor):
 
             self._emit_state_message()
 
+            gc.collect()
+            alive = [o for o in gc.get_objects() if isinstance(o, ConcurrentCursor)]
+            print(f"ConcurrentCursor {len(alive)=}")
+
+            alive = [o for o in gc.get_objects() if isinstance(o, threading.Semaphore)]
+            print(f"Semaphores {len(alive)=}")
+
+            alive = [o for o in gc.get_objects() if isinstance(o, dict)]
+            print(f"Dictionaries {len(alive)=}")
+
     def _check_and_update_parent_state(self) -> None:
         last_closed_state = None
 
@@ -295,20 +306,18 @@ class ConcurrentPerPartitionCursor(Cursor):
             ):
                 self._partition_parent_state_map[partition_key] = (deepcopy(parent_state), seq)
 
-        try:
-            for cursor_slice, is_last_slice, _ in iterate_with_last_flag_and_state(
-                cursor.stream_slices(),
-                lambda: None,
-            ):
-                self._semaphore_per_partition[partition_key].release()
-                if is_last_slice:
-                    self._partitions_done_generating_stream_slices.add(partition_key)
-                yield StreamSlice(
-                    partition=partition, cursor_slice=cursor_slice, extra_fields=partition.extra_fields
-                )
-        finally:
-            del cursor
-            del partition
+        # try:
+        for cursor_slice, is_last_slice, _ in iterate_with_last_flag_and_state(
+            cursor.stream_slices(),
+            lambda: None,
+        ):
+            self._semaphore_per_partition[partition_key].release()
+            if is_last_slice:
+                self._partitions_done_generating_stream_slices.add(partition_key)
+            yield StreamSlice(
+                partition=partition, cursor_slice=cursor_slice, extra_fields=partition.extra_fields
+            )
+
 
     def _ensure_partition_limit(self) -> None:
         """
