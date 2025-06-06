@@ -24,6 +24,8 @@ class ConnectorTestScenario(BaseModel):
     acceptance test configuration file.
     """
 
+    # Allows the class to be hashable, which PyTest will require
+    # when we use to parameterize tests.
     model_config = ConfigDict(frozen=True)
 
     class AcceptanceTestExpectRecords(BaseModel):
