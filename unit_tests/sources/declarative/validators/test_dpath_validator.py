@@ -1,3 +1,5 @@
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+
 from unittest import TestCase
 
 import pytest
@@ -23,7 +25,12 @@ class MockValidationStrategy(ValidationStrategy):
 class TestDpathValidator(TestCase):
     def test_given_valid_path_and_input_validate_is_successful(self):
         strategy = MockValidationStrategy()
-        validator = DpathValidator(field_path=["user", "profile", "email"], strategy=strategy)
+        validator = DpathValidator(
+            field_path=["user", "profile", "email"],
+            strategy=strategy,
+            config={},
+            condition="",
+        )
 
         test_data = {"user": {"profile": {"email": "test@example.com", "name": "Test User"}}}
 
@@ -34,7 +41,12 @@ class TestDpathValidator(TestCase):
 
     def test_given_invalid_path_when_validate_then_raise_key_error(self):
         strategy = MockValidationStrategy()
-        validator = DpathValidator(field_path=["user", "profile", "phone"], strategy=strategy)
+        validator = DpathValidator(
+            field_path=["user", "profile", "phone"],
+            strategy=strategy,
+            config={},
+            condition="",
+        )
 
         test_data = {"user": {"profile": {"email": "test@example.com"}}}
 
@@ -47,7 +59,12 @@ class TestDpathValidator(TestCase):
     def test_given_strategy_fails_when_validate_then_raise_value_error(self):
         error_message = "Invalid email format"
         strategy = MockValidationStrategy(should_fail=True, error_message=error_message)
-        validator = DpathValidator(field_path=["user", "email"], strategy=strategy)
+        validator = DpathValidator(
+            field_path=["user", "email"],
+            strategy=strategy,
+            config={},
+            condition="",
+        )
 
         test_data = {"user": {"email": "invalid-email"}}
 
@@ -59,7 +76,12 @@ class TestDpathValidator(TestCase):
 
     def test_given_empty_path_list_when_validate_then_validate_raises_exception(self):
         strategy = MockValidationStrategy()
-        validator = DpathValidator(field_path=[], strategy=strategy)
+        validator = DpathValidator(
+            field_path=[],
+            strategy=strategy,
+            config={},
+            condition="",
+        )
         test_data = {"key": "value"}
 
         with pytest.raises(ValueError):
@@ -67,7 +89,12 @@ class TestDpathValidator(TestCase):
 
     def test_given_empty_input_data_when_validate_then_validate_raises_exception(self):
         strategy = MockValidationStrategy()
-        validator = DpathValidator(field_path=["data", "field"], strategy=strategy)
+        validator = DpathValidator(
+            field_path=["data", "field"],
+            strategy=strategy,
+            config={},
+            condition="",
+        )
 
         test_data = {}
 
@@ -76,7 +103,12 @@ class TestDpathValidator(TestCase):
 
     def test_path_with_wildcard_when_validate_then_validate_is_successful(self):
         strategy = MockValidationStrategy()
-        validator = DpathValidator(field_path=["users", "*", "email"], strategy=strategy)
+        validator = DpathValidator(
+            field_path=["users", "*", "email"],
+            strategy=strategy,
+            config={},
+            condition="",
+        )
 
         test_data = {
             "users": {
@@ -90,3 +122,16 @@ class TestDpathValidator(TestCase):
         assert strategy.validate_called
         assert strategy.validated_value in ["user1@example.com", "user2@example.com"]
         self.assertIn(strategy.validated_value, ["user1@example.com", "user2@example.com"])
+
+    def test_given_condition_is_false_when_validate_then_validate_is_not_called(self):
+        strategy = MockValidationStrategy()
+        validator = DpathValidator(
+            field_path=["user", "profile", "email"],
+            strategy=strategy,
+            config={"test": "test"},
+            condition="{{ not config.get('test') }}",
+        )
+
+        validator.validate({"user": {"profile": {"email": "test@example.com"}}})
+
+        assert not strategy.validate_called

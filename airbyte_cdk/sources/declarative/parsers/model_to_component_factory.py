@@ -869,20 +869,26 @@ class ModelToComponentFactory:
 
     def create_dpath_validator(self, model: DpathValidatorModel, config: Config) -> DpathValidator:
         strategy = self._create_component_from_model(model.validation_strategy, config)
+        condition = model.condition or ""
 
         return DpathValidator(
             field_path=model.field_path,
             strategy=strategy,
+            config=config,
+            condition=condition,
         )
 
     def create_predicate_validator(
         self, model: PredicateValidatorModel, config: Config
     ) -> PredicateValidator:
         strategy = self._create_component_from_model(model.validation_strategy, config)
+        condition = model.condition or ""
 
         return PredicateValidator(
             value=model.value,
             strategy=strategy,
+            config=config,
+            condition=condition,
         )
 
     @staticmethod

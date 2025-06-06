@@ -4276,6 +4276,16 @@ definitions:
         description: The condition that the specified config value will be evaluated against
         anyOf:
           - "$ref": "#/definitions/ValidateAdheresToSchema"
+      condition:
+        title: Condition
+        description: The condition which will determine if the validation strategy will be applied.
+        type: string
+        interpolation_context:
+          - config
+        default: ""
+        examples:
+          - "{{ config.get('dimensions', False) }}"
+          - "{{ config.get('custom_reports', [{}])[0].get('dimensions', [])|length > 0 }}"
   PredicateValidator:
     title: Predicate Validator
     description: Validator that applies a validation strategy to a specified value.
@@ -4310,6 +4320,16 @@ definitions:
         description: The validation strategy to apply to the value.
         anyOf:
           - "$ref": "#/definitions/ValidateAdheresToSchema"
+      condition:
+        title: Condition
+        description: The condition which will determine if the validation strategy will be applied.
+        type: string
+        interpolation_context:
+          - config
+        default: ""
+        examples:
+          - "{{ config.get('dimensions', False) }}"
+          - "{{ config.get('custom_reports', [{}])[0].get('dimensions', [])|length > 0 }}"
   ValidateAdheresToSchema:
     title: Validate Adheres To Schema
     description: Validates that a user-provided schema adheres to a specified JSON schema.

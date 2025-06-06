@@ -1,3 +1,5 @@
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+
 from unittest import TestCase
 
 import pytest
@@ -24,7 +26,7 @@ class TestPredicateValidator(TestCase):
     def test_given_valid_input_validate_is_successful(self):
         strategy = MockValidationStrategy()
         test_value = "test@example.com"
-        validator = PredicateValidator(value=test_value, strategy=strategy)
+        validator = PredicateValidator(value=test_value, strategy=strategy, config={}, condition="")
 
         validator.validate()
 
@@ -35,7 +37,7 @@ class TestPredicateValidator(TestCase):
         error_message = "Invalid email format"
         strategy = MockValidationStrategy(should_fail=True, error_message=error_message)
         test_value = "invalid-email"
-        validator = PredicateValidator(value=test_value, strategy=strategy)
+        validator = PredicateValidator(value=test_value, strategy=strategy, config={}, condition="")
 
         with pytest.raises(ValueError) as context:
             validator.validate()
@@ -47,9 +49,22 @@ class TestPredicateValidator(TestCase):
     def test_given_complex_object_when_validate_then_successful(self):
         strategy = MockValidationStrategy()
         test_value = {"user": {"email": "test@example.com", "name": "Test User"}}
-        validator = PredicateValidator(value=test_value, strategy=strategy)
+        validator = PredicateValidator(value=test_value, strategy=strategy, config={}, condition="")
 
         validator.validate()
 
         assert strategy.validate_called
         assert strategy.validated_value == test_value
+
+    def test_given_condition_is_false_when_validate_then_validate_is_not_called(self):
+        strategy = MockValidationStrategy()
+        validator = PredicateValidator(
+            value="test",
+            strategy=strategy,
+            config={"test": "test"},
+            condition="{{ not config.get('test') }}",
+        )
+
+        validator.validate()
+
+        assert not strategy.validate_called

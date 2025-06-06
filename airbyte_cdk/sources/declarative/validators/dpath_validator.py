@@ -7,9 +7,11 @@ from typing import Any, List, Union
 
 import dpath.util
 
+from airbyte_cdk.sources.declarative.interpolation.interpolated_boolean import InterpolatedBoolean
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.validators.validation_strategy import ValidationStrategy
 from airbyte_cdk.sources.declarative.validators.validator import Validator
+from airbyte_cdk.sources.types import Config
 
 
 @dataclass
@@ -21,8 +23,12 @@ class DpathValidator(Validator):
 
     field_path: List[str]
     strategy: ValidationStrategy
+    config: Config
+    condition: str
 
     def __post_init__(self) -> None:
+        self._interpolated_condition = InterpolatedBoolean(condition=self.condition, parameters={})
+
         self._field_path = [
             InterpolatedString.create(path, parameters={}) for path in self.field_path
         ]
@@ -39,6 +45,9 @@ class DpathValidator(Validator):
         :param input_data: Dictionary containing the data to validate
         :raises ValueError: If the path doesn't exist or validation fails
         """
+        if self.condition and not self._interpolated_condition.eval(self.config):
+            return
+
         path = [path.eval({}) for path in self._field_path]
 
         if len(path) == 0:
