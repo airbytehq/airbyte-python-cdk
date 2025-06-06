@@ -164,12 +164,13 @@ def build_connector_image(
         ConnectorImageBuildError: If the image build or tag operation fails.
     """
     connector_kebab_name = connector_name
+    connector_dockerfile_dir = connector_directory / "build" / "docker"
 
     if dockerfile_override:
         dockerfile_path = dockerfile_override
     else:
-        dockerfile_path = connector_directory / "build" / "docker" / "Dockerfile"
-        dockerignore_path = connector_directory / "build" / "docker" / "Dockerfile.dockerignore"
+        dockerfile_path = connector_dockerfile_dir / "Dockerfile"
+        dockerignore_path = connector_dockerfile_dir / "Dockerfile.dockerignore"
         try:
             dockerfile_text, dockerignore_text = get_dockerfile_templates(
                 metadata=metadata,
@@ -192,6 +193,8 @@ def build_connector_image(
                     ),
                 ) from e
 
+        # ensure the directory exists
+        connector_dockerfile_dir.mkdir(parents=True, exist_ok=True)
         dockerfile_path.write_text(dockerfile_text)
         dockerignore_path.write_text(dockerignore_text)
 
