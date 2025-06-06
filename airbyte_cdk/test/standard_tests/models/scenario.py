@@ -9,11 +9,17 @@ up iteration cycles.
 
 from __future__ import annotations
 
+import json
+import tempfile
+from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import yaml
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 
 class ConnectorTestScenario(BaseModel):
@@ -83,3 +89,17 @@ class ConnectorTestScenario(BaseModel):
             return f"'{self.config_path.name}' Test Scenario"
 
         return f"'{hash(self)}' Test Scenario"
+
+    @contextmanager
+    def with_temp_config_file(self) -> Generator[Path, None, None]:
+        """Yield a temporary JSON file path containing the config dict and delete it on exit."""
+        config = self.get_config_dict(empty_if_missing=True)
+        _, path_str = tempfile.mkstemp(prefix="config-", suffix=".json", text=True)
+        path = Path(path_str)
+        try:
+            path.write_text(json.dumps(config))
+            yield path
+        finally:
+            # attempt cleanup, ignore errors
+            with suppress(OSError):
+                path.unlink()

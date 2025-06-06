@@ -7,11 +7,13 @@ import abc
 import importlib
 import inspect
 import os
+import shutil
 import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
+import pytest
 import yaml
 from boltons.typeutils import classproperty
 
@@ -19,6 +21,7 @@ from airbyte_cdk.models import (
     AirbyteMessage,
     Type,
 )
+from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.test import entrypoint_wrapper
 from airbyte_cdk.test.standard_tests._job_runner import IConnector, run_test_job
 from airbyte_cdk.test.standard_tests.models import (
@@ -28,6 +31,7 @@ from airbyte_cdk.utils.connector_paths import (
     ACCEPTANCE_TEST_CONFIG,
     find_connector_root,
 )
+from airbyte_cdk.utils.docker import build_connector_image, run_docker_command
 
 
 class ConnectorTestSuiteBase(abc.ABC):
@@ -179,3 +183,73 @@ class ConnectorTestSuiteBase(abc.ABC):
                 test.configured_catalog_path = connector_root / test.configured_catalog_path
 
         return test_scenarios
+
+    @pytest.mark.skipif(
+        shutil.which("docker") is None,
+        reason="docker CLI not found in PATH, skipping docker image tests",
+    )
+    def test_docker_image_build_and_spec(
+        self,
+    ) -> None:
+        """Run `docker_image` acceptance tests."""
+        tag = "dev-latest"
+        connector_dir = self.get_connector_root_dir()
+        metadata = MetadataFile.from_file(connector_dir / "metadata.yaml")
+        build_connector_image(
+            connector_name=connector_dir.name,
+            connector_directory=connector_dir,
+            metadata=metadata,
+            tag=tag,
+            no_verify=False,
+        )
+        run_docker_command(
+            [
+                "docker",
+                "run",
+                "--rm",
+                f"{metadata.data.dockerRepository}:{tag}",
+                "spec",
+            ],
+        )
+
+    @pytest.mark.skipif(
+        shutil.which("docker") is None,
+        reason="docker CLI not found in PATH, skipping docker image tests",
+    )
+    def test_docker_image_build_and_check(
+        self,
+        scenario: ConnectorTestScenario,
+    ) -> None:
+        """Run `docker_image` acceptance tests.
+
+        This test builds the connector image and runs the `check` command inside the container.
+
+        Note:
+          - It is expected for docker image caches to be reused between test runs.
+          - In the rare case that image caches need to be cleared, please clear
+            the local docker image cache using `docker image prune -a` command.
+        """
+        tag = "dev-latest"
+        connector_dir = self.get_connector_root_dir()
+        metadata = MetadataFile.from_file(connector_dir / "metadata.yaml")
+        build_connector_image(
+            connector_name=connector_dir.name,
+            connector_directory=connector_dir,
+            metadata=metadata,
+            tag=tag,
+            no_verify=False,
+        )
+        container_config_path = "/secrets/config.json"
+        with scenario.with_temp_config_file() as temp_config_file:
+            run_docker_command(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "-v",
+                    f"{temp_config_file}:{container_config_path}",
+                    f"{metadata.data.dockerRepository}:{tag}",
+                    "check",
+                    f"--config={container_config_path}",
+                ],
+            )
