@@ -210,6 +210,7 @@ def test_given_list_of_transformations_when_transform_config_then_config_is_tran
 
 
 def test_given_valid_config_value_when_validating_then_no_exception_is_raised() -> None:
+    input_config = {"test_field": {"field_to_validate": "test"}}
     spec = component_spec(
         connection_specification={},
         parameters={},
@@ -233,14 +234,16 @@ def test_given_valid_config_value_when_validating_then_no_exception_is_raised() 
                         },
                     }
                 ),
+                config=input_config,
+                condition="",
             )
         ],
     )
-    input_config = {"test_field": {"field_to_validate": "test"}}
     spec.validate_config(input_config)
 
 
 def test_given_invalid_config_value_when_validating_then_exception_is_raised() -> None:
+    input_config = {"test_field": {"field_to_validate": 123}}
     spec = component_spec(
         connection_specification={},
         parameters={},
@@ -263,10 +266,11 @@ def test_given_invalid_config_value_when_validating_then_exception_is_raised() -
                         },
                     }
                 ),
+                config=input_config,
+                condition="",
             )
         ],
     )
-    input_config = {"test_field": {"field_to_validate": 123}}
 
     with pytest.raises(Exception):
         spec.validate_config(input_config)
