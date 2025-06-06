@@ -5,7 +5,7 @@ from typing import Any, List, Mapping, Optional
 from airbyte_cdk import AbstractSource
 from airbyte_cdk.models import AirbyteStateMessage, ConfiguredAirbyteCatalog, SyncMode
 from airbyte_cdk.test.catalog_builder import CatalogBuilder
-from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput, read
+from airbyte_cdk.test.entrypoint_wrapper import TestOutputMessageRepository, read
 
 
 def catalog(stream_name: str, sync_mode: SyncMode) -> ConfiguredAirbyteCatalog:
@@ -20,7 +20,7 @@ def read_records(
     sync_mode: SyncMode,
     state: Optional[List[AirbyteStateMessage]] = None,
     expecting_exception: bool = False,
-) -> EntrypointOutput:
+) -> TestOutputMessageRepository:
     """Read records from a stream."""
     _catalog = catalog(stream_name, sync_mode)
     return read(source, config, _catalog, state, expecting_exception)

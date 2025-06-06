@@ -8,7 +8,7 @@ from datetime import timedelta
 from typing import Any, Callable, Iterator, List, Mapping, MutableMapping, Optional, Tuple
 
 from airbyte_cdk.models import AirbyteMessage, AirbyteStateMessage, ConfiguredAirbyteCatalog
-from airbyte_cdk.sources import AbstractSource
+from airbyte_cdk.sources.abstract_source import AbstractSource
 from airbyte_cdk.sources.concurrent_source.concurrent_source import ConcurrentSource
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.streams import Stream

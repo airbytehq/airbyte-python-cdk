@@ -19,7 +19,7 @@ from airbyte_cdk.models import (
     ConfiguredAirbyteCatalogSerializer,
     SyncMode,
 )
-from airbyte_cdk.sources import AbstractSource
+from airbyte_cdk.sources.abstract_source import AbstractSource
 from airbyte_cdk.sources.file_based.stream.concurrent.cursor import (
     AbstractConcurrentFileBasedCursor,
 )

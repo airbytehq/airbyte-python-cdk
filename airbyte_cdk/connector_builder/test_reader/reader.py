@@ -399,9 +399,7 @@ class TestReader:
         # the generator can raise an exception
         # iterate over the generated messages. if next raise an exception, catch it and yield it as an AirbyteLogMessage
         try:
-            yield from AirbyteEntrypoint(source).read(
-                source.spec(self.logger), config, configured_catalog, state
-            )
+            yield from source.read(source.spec(self.logger), config, configured_catalog, state)
         except AirbyteTracedException as traced_exception:
             # Look for this message which indicates that it is the "final exception" raised by AbstractSource.
             # If it matches, don't yield this as we don't need to show this in the Builder.

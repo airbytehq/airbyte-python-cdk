@@ -110,6 +110,7 @@ class NoopMessageRepository(MessageRepository):
 
 
 class InMemoryMessageRepository(MessageRepository):
+
     def __init__(self, log_level: Level = Level.INFO) -> None:
         self._message_queue: Deque[AirbyteMessage] = deque()
         self._log_level = log_level

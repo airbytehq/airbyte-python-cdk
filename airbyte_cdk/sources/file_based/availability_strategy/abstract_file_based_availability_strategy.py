@@ -8,7 +8,6 @@ import logging
 from abc import abstractmethod
 from typing import TYPE_CHECKING, Optional, Tuple
 
-from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.streams.availability_strategy import AvailabilityStrategy
 from airbyte_cdk.sources.streams.concurrent.availability_strategy import (
     AbstractAvailabilityStrategy,
@@ -20,6 +19,7 @@ from airbyte_cdk.sources.streams.core import Stream
 
 if TYPE_CHECKING:
     from airbyte_cdk.sources.file_based.stream import AbstractFileBasedStream
+    from airbyte_cdk.sources.source import Source
 
 
 class AbstractFileBasedAvailabilityStrategy(AvailabilityStrategy):

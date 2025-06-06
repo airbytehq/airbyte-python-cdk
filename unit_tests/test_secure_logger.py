@@ -18,7 +18,7 @@ from airbyte_cdk.models import (
     ConnectorSpecification,
     Type,
 )
-from airbyte_cdk.sources import Source
+from airbyte_cdk.sources.source import Source
 
 SECRET_PROPERTY = "api_token"
 ANOTHER_SECRET_PROPERTY = "another_api_token"

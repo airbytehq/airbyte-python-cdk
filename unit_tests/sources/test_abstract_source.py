@@ -49,7 +49,7 @@ from airbyte_cdk.models import (
     Type,
 )
 from airbyte_cdk.models import Type as MessageType
-from airbyte_cdk.sources import AbstractSource
+from airbyte_cdk.sources.abstract_source import AbstractSource
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.streams import IncrementalMixin, Stream
 from airbyte_cdk.sources.utils.record_helper import stream_data_to_airbyte_message

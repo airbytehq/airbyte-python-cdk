@@ -39,7 +39,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         This test is designed to validate the connector's ability to establish a connection
         and return its status with the expected message type.
         """
-        result: entrypoint_wrapper.EntrypointOutput = run_test_job(
+        result: entrypoint_wrapper.TestOutputMessageRepository = run_test_job(
             self.create_connector(scenario),
             "check",
             test_scenario=scenario,
@@ -154,7 +154,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         )
         # Set expected status to "failed" to ensure the test fails if the connector.
         scenario.status = "failed"
-        result: entrypoint_wrapper.EntrypointOutput = run_test_job(
+        result: entrypoint_wrapper.TestOutputMessageRepository = run_test_job(
             self.create_connector(scenario),
             "read",
             test_scenario=scenario,

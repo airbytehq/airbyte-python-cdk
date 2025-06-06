@@ -19,15 +19,18 @@ import logging
 import re
 import tempfile
 import traceback
+from collections.abc import Callable
 from io import StringIO
 from pathlib import Path
 from typing import Any, List, Mapping, Optional, Union
 
 import orjson
-from pydantic import ValidationError as V2ValidationError
+from requests_cache import Iterable
 from serpyco_rs import SchemaValidationError
+from typing_extensions import deprecated
+from ulid import T
 
-from airbyte_cdk.entrypoint import AirbyteEntrypoint
+from airbyte_cdk.connector_builder.models import LogMessage
 from airbyte_cdk.exception_handler import assemble_uncaught_exception
 from airbyte_cdk.logger import AirbyteLogFormatter
 from airbyte_cdk.models import (
@@ -43,28 +46,66 @@ from airbyte_cdk.models import (
     TraceType,
     Type,
 )
-from airbyte_cdk.sources import Source
+from airbyte_cdk.models.airbyte_protocol import AirbyteMessage
+from airbyte_cdk.sources.message.repository import (
+    InMemoryMessageRepository,
+    MessageRepository,
+    _is_severe_enough,
+)
+from airbyte_cdk.sources.source import Source
+from airbyte_cdk.utils.airbyte_secrets_utils import filter_secrets
 from airbyte_cdk.utils.cli_arg_parse import ConnectorCLIArgs, parse_cli_args
 
 
-class EntrypointOutput:
-    def __init__(self, messages: List[str], uncaught_exception: Optional[BaseException] = None):
-        try:
-            self._messages = [self._parse_message(message) for message in messages]
-        except V2ValidationError as exception:
-            raise ValueError("All messages are expected to be AirbyteMessage") from exception
+class TestOutputMessageRepository(MessageRepository):
+    """An implementation of MessageRepository used for testing.
 
-        if uncaught_exception:
-            self._messages.append(
-                assemble_uncaught_exception(
-                    type(uncaught_exception), uncaught_exception
-                ).as_airbyte_message()
+    It captures both the messages emitted by the source and the logs printed to stdout.
+
+    This class replaces `EntrypointOutput`.
+
+    Warning: OOM errors may occur if the source generates a large number of messages.
+    TODO: Optimize this to switch to a disk-side buffer if available memory is at risk of being
+    overrun.
+    """
+
+    def __init__(self, log_level: Level = Level.INFO) -> None:
+        self._log_level = log_level
+        self._messages: list[AirbyteMessage] = []
+        self._ignored_logs: list[LogMessage] = []
+        self._consumed_to_marker = 0
+
+    def emit_message(self, message: AirbyteMessage) -> None:
+        self._messages.append(message)
+
+    def log_message(self, level: Level, message_provider: Callable[[], LogMessage]) -> None:
+        if _is_severe_enough(self._log_level, level):
+            self.emit_message(
+                AirbyteMessage(
+                    type=Type.LOG,
+                    log=AirbyteLogMessage(
+                        level=level, message=filter_secrets(json.dumps(message_provider()))
+                    ),
+                )
             )
+        else:
+            self._ignored_logs.append(message_provider())
+
+    def consume_queue(self) -> Iterable[AirbyteMessage]:
+        """Consume the message queue and return all messages.
+
+        This method primarily exists to support the `MessageRepository` interface.
+        Note: Callers can more easily consume the queue by reading from `messages` directly.
+
+        To avoid race conditions, we first get the high-water mark and then return to that point.
+        """
+        self._consumed_to_marker = len(self._messages)
+        return self._messages[: self._consumed_to_marker]
 
     @staticmethod
     def _parse_message(message: str) -> AirbyteMessage:
         try:
-            return AirbyteMessageSerializer.load(orjson.loads(message))
+            return AirbyteMessage.from_json(message)
         except (orjson.JSONDecodeError, SchemaValidationError):
             # The platform assumes that logs that are not of AirbyteMessage format are log messages
             return AirbyteMessage(
@@ -131,7 +172,8 @@ class EntrypointOutput:
         )
         return list(status_messages)
 
-    def _get_message_by_types(self, message_types: List[Type]) -> List[AirbyteMessage]:
+    def _get_message_by_types(self, message_types: list[Type]) -> list[AirbyteMessage]:
+        """Return all messages of the given types."""
         return [message for message in self._messages if message.type in message_types]
 
     def _get_trace_message_by_trace_type(self, trace_type: TraceType) -> List[AirbyteMessage]:
@@ -157,9 +199,38 @@ class EntrypointOutput:
         return not self.is_in_logs(pattern)
 
 
+@deprecated("Please use `TestOutputMessageRepository` instead.")
+class EntrypointOutput(TestOutputMessageRepository):
+    """A class that captures the output of the entrypoint.
+
+    It captures both the messages emitted by the source and the logs printed to stdout.
+    """
+
+    def __init__(
+        self,
+        messages: list[str] | None = None,
+        uncaught_exception: BaseException | None = None,
+    ) -> None:
+        super().__init__()
+        for msg in messages or []:
+            self.emit_message(self._parse_message(msg))
+
+        self._uncaught_exception = uncaught_exception
+        if uncaught_exception:
+            self.emit_message(
+                assemble_uncaught_exception(
+                    type(uncaught_exception), uncaught_exception
+                ).as_airbyte_message()
+            )
+
+    @property
+    def uncaught_exception(self) -> BaseException | None:
+        return self._uncaught_exception
+
+
 def _run_command(
-    source: Source, args: List[str], expecting_exception: bool = False
-) -> EntrypointOutput:
+    source: Source, args: list[str], expecting_exception: bool = False
+) -> TestOutputMessageRepository:
     log_capture_buffer = StringIO()
     stream_handler = logging.StreamHandler(log_capture_buffer)
     stream_handler.setLevel(logging.INFO)
@@ -167,32 +238,29 @@ def _run_command(
     parent_logger = logging.getLogger("")
     parent_logger.addHandler(stream_handler)
 
-    parsed_args: ConnectorCLIArgs = parse_cli_args(args)
-
-    source_entrypoint = AirbyteEntrypoint(source)
-    messages = []
-    uncaught_exception = None
+    message_repository = TestOutputMessageRepository()
     try:
-        for message in source_entrypoint.run(parsed_args):
-            messages.append(message)
+        source.launch_with_cli_args(
+            args,
+            logger=parent_logger,
+            message_repository=message_repository,
+        )
     except Exception as exception:
         if not expecting_exception:
             print("Printing unexpected error from entrypoint_wrapper")
             print("".join(traceback.format_exception(None, exception, exception.__traceback__)))
         uncaught_exception = exception
 
-    captured_logs = log_capture_buffer.getvalue().split("\n")[:-1]
-
     parent_logger.removeHandler(stream_handler)
 
-    return EntrypointOutput(messages + captured_logs, uncaught_exception)
+    return message_repository
 
 
 def discover(
     source: Source,
     config: Mapping[str, Any],
     expecting_exception: bool = False,
-) -> EntrypointOutput:
+) -> TestOutputMessageRepository:
     """
     config must be json serializable
     :param expecting_exception: By default if there is an uncaught exception, the exception will be printed out. If this is expected, please
@@ -214,7 +282,7 @@ def read(
     catalog: ConfiguredAirbyteCatalog,
     state: Optional[List[AirbyteStateMessage]] = None,
     expecting_exception: bool = False,
-) -> EntrypointOutput:
+) -> TestOutputMessageRepository:
     """
     config and state must be json serializable
 

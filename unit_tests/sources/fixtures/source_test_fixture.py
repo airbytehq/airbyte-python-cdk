@@ -18,7 +18,7 @@ from airbyte_cdk.models import (
     DestinationSyncMode,
     SyncMode,
 )
-from airbyte_cdk.sources import AbstractSource
+from airbyte_cdk.sources.abstract_source import AbstractSource
 from airbyte_cdk.sources.streams import Stream
 from airbyte_cdk.sources.streams.http import HttpStream
 from airbyte_cdk.sources.streams.http.requests_native_auth import Oauth2Authenticator

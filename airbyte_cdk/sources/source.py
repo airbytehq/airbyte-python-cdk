@@ -7,7 +7,7 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, Generic, Iterable, List, Mapping, Optional, TypeVar
 
-from airbyte_cdk.connector import BaseConnector, DefaultConnectorMixin, TConfig
+from airbyte_cdk.connector import BaseConnector, TConfig
 from airbyte_cdk.models import (
     AirbyteCatalog,
     AirbyteMessage,
@@ -53,7 +53,6 @@ class BaseSource(BaseConnector[TConfig], ABC, Generic[TConfig, TState, TCatalog]
 
 
 class Source(
-    DefaultConnectorMixin,
     BaseSource[Mapping[str, Any], List[AirbyteStateMessage], ConfiguredAirbyteCatalog],
     ABC,
 ):

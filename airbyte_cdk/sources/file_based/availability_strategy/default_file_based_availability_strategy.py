@@ -9,7 +9,6 @@ import traceback
 from typing import TYPE_CHECKING, Optional, Tuple
 
 from airbyte_cdk import AirbyteTracedException
-from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.file_based.availability_strategy import (
     AbstractFileBasedAvailabilityStrategy,
 )
@@ -18,12 +17,15 @@ from airbyte_cdk.sources.file_based.exceptions import (
     CustomFileBasedException,
     FileBasedSourceError,
 )
-from airbyte_cdk.sources.file_based.file_based_stream_reader import AbstractFileBasedStreamReader
-from airbyte_cdk.sources.file_based.remote_file import RemoteFile
 from airbyte_cdk.sources.file_based.schema_helpers import conforms_to_schema
 
 if TYPE_CHECKING:
+    from airbyte_cdk.sources.file_based.file_based_stream_reader import (
+        AbstractFileBasedStreamReader,
+    )
+    from airbyte_cdk.sources.file_based.remote_file import RemoteFile
     from airbyte_cdk.sources.file_based.stream import AbstractFileBasedStream
+    from airbyte_cdk.sources.source import Source
 
 
 class DefaultFileBasedAvailabilityStrategy(AbstractFileBasedAvailabilityStrategy):

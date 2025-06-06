@@ -1,8 +1,11 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+
+from __future__ import annotations
+
 import json
-from collections.abc import Callable, Mapping
 from dataclasses import InitVar, dataclass
 from typing import (
+    TYPE_CHECKING,
     Annotated,
     Any,
     Dict,
@@ -13,9 +16,56 @@ from typing import (
 )
 
 import orjson
-from airbyte_protocol_dataclasses.models import *  # noqa: F403  # Allow '*'
+from airbyte_protocol_dataclasses.models import (
+    AdvancedAuth,
+    AirbyteAnalyticsTraceMessage,
+    AirbyteCatalog,
+    AirbyteConnectionStatus,
+    AirbyteControlConnectorConfigMessage,
+    AirbyteControlMessage,
+    AirbyteErrorTraceMessage,
+    AirbyteEstimateTraceMessage,
+    AirbyteGlobalState,
+    AirbyteLogMessage,
+    AirbyteMessage,
+    AirbyteProtocol,
+    AirbyteRecordMessage,
+    AirbyteRecordMessageFileReference,
+    AirbyteStateBlob,
+    AirbyteStateMessage,
+    AirbyteStateStats,
+    AirbyteStateType,
+    AirbyteStream,
+    AirbyteStreamState,
+    AirbyteStreamStatus,
+    AirbyteStreamStatusReason,
+    AirbyteStreamStatusReasonType,
+    AirbyteStreamStatusTraceMessage,
+    AirbyteTraceMessage,
+    AuthFlowType,
+    ConfiguredAirbyteCatalog,
+    ConfiguredAirbyteStream,
+    ConnectorSpecification,
+    DestinationSyncMode,
+    EstimateType,
+    FailureType,
+    Level,
+    OAuthConfigSpecification,
+    OauthConnectorInputSpecification,
+    OrchestratorType,
+    State,
+    Status,
+    StreamDescriptor,
+    SyncMode,
+    TraceType,
+    Type,
+)
+from boltons.typeutils import classproperty
 from serpyco_rs import CustomType, Serializer
 from serpyco_rs.metadata import Alias
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
 
 
 @dataclass
@@ -60,18 +110,23 @@ class AirbyteStateBlob:
 T = TypeVar("T", bound="SerDeMixin")
 
 
-class SerDeMixin:
-    # allow subclasses to override their resolver if they need one
-    _type_resolver: Callable[[type], CustomType[Any, Any] | None] | None = None
+def _custom_state_resolver(t: type) -> CustomType[AirbyteStateBlob, dict[str, Any]] | None:
+    class AirbyteStateBlobType(CustomType[AirbyteStateBlob, dict[str, Any]]):
+        def serialize(self, value: AirbyteStateBlob) -> dict[str, Any]:
+            # cant use orjson.dumps() directly because private attributes are excluded, e.g. "__ab_full_refresh_sync_complete"
+            return {k: v for k, v in value.__dict__.items()}
 
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-        # build a Serializer *once* for each subclass
-        cls._serializer = Serializer(
-            cls,
-            omit_none=True,
-            custom_type_resolver=cls._type_resolver,
-        )
+        def deserialize(self, value: dict[str, Any]) -> AirbyteStateBlob:
+            return AirbyteStateBlob(value)
+
+        def get_json_schema(self) -> dict[str, Any]:
+            return {"type": "object"}
+
+    return AirbyteStateBlobType() if t is AirbyteStateBlob else None
+
+
+class SerDeMixin:
+    _serializer: Serializer[Any]
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the object to a dictionary.
@@ -130,29 +185,18 @@ class SerDeMixin:
         return cls.from_dict(dict_value)
 
 
-def _custom_state_resolver(t: type) -> CustomType[AirbyteStateBlob, dict[str, Any]] | None:
-    class AirbyteStateBlobType(CustomType[AirbyteStateBlob, dict[str, Any]]):
-        def serialize(self, value: AirbyteStateBlob) -> dict[str, Any]:
-            # cant use orjson.dumps() directly because private attributes are excluded, e.g. "__ab_full_refresh_sync_complete"
-            return {k: v for k, v in value.__dict__.items()}
-
-        def deserialize(self, value: dict[str, Any]) -> AirbyteStateBlob:
-            return AirbyteStateBlob(value)
-
-        def get_json_schema(self) -> dict[str, Any]:
-            return {"type": "object"}
-
-    return AirbyteStateBlobType() if t is AirbyteStateBlob else None
-
-
 # The following dataclasses have been redeclared to include the new version of AirbyteStateBlob
 @dataclass
-class AirbyteStreamState(SerDeMixin):
+class AirbyteStreamState(AirbyteStreamState, SerDeMixin):
     stream_descriptor: StreamDescriptor  # type: ignore [name-defined]
     stream_state: Optional[AirbyteStateBlob] = None
 
-    # override the resolver for AirbyteStreamState to use the custom one
-    _type_resolver = _custom_state_resolver
+
+AirbyteStreamState._serializer = Serializer(
+    AirbyteStreamState,
+    omit_none=True,
+    custom_type_resolver=_custom_state_resolver,
+)
 
 
 @dataclass
@@ -160,13 +204,16 @@ class AirbyteGlobalState(SerDeMixin):
     stream_states: List[AirbyteStreamState]
     shared_state: Optional[AirbyteStateBlob] = None
 
-    # override the resolver for AirbyteStreamState to use the custom one
-    _type_resolver = _custom_state_resolver
 
+AirbyteGlobalState._serializer = Serializer(
+    AirbyteGlobalState,
+    omit_none=True,
+    custom_type_resolver=_custom_state_resolver,
+)
 
 @dataclass
 class AirbyteStateMessage(SerDeMixin):
-    type: Optional[AirbyteStateType] = None  # type: ignore [name-defined]
+    type: AirbyteStateType | None = None  # type: ignore [name-defined]
     stream: Optional[AirbyteStreamState] = None
     global_: Annotated[AirbyteGlobalState | None, Alias("global")] = (
         None  # "global" is a reserved keyword in python ⇒ Alias is used for (de-)serialization
@@ -175,8 +222,12 @@ class AirbyteStateMessage(SerDeMixin):
     sourceStats: Optional[AirbyteStateStats] = None  # type: ignore [name-defined]
     destinationStats: Optional[AirbyteStateStats] = None  # type: ignore [name-defined]
 
-    # override the resolver for AirbyteStreamState to use the custom one
-    _type_resolver = _custom_state_resolver
+
+AirbyteStateMessage._serializer = Serializer(
+    AirbyteStateMessage,
+    omit_none=True,
+    custom_type_resolver=_custom_state_resolver,
+)
 
 
 @dataclass
@@ -191,18 +242,49 @@ class AirbyteMessage(SerDeMixin):
     trace: Optional[AirbyteTraceMessage] = None  # type: ignore [name-defined]
     control: Optional[AirbyteControlMessage] = None  # type: ignore [name-defined]
 
-    # override the resolver for AirbyteStreamState to use the custom one
-    _type_resolver = _custom_state_resolver
 
-
-# These don't need the custom resolver:
-class ConnectorSpecification(ConnectorSpecification, SerDeMixin):
-    pass
+AirbyteMessage._serializer = Serializer(
+    AirbyteMessage,
+    omit_none=True,
+    custom_type_resolver=_custom_state_resolver,
+)
 
 
 class ConfiguredAirbyteCatalog(ConfiguredAirbyteCatalog, SerDeMixin):
     pass
 
 
-class AirbyteStream(AirbyteStream, SerDeMixin):
+ConfiguredAirbyteCatalog._serializer = Serializer(
+    ConfiguredAirbyteCatalog,
+    omit_none=True,
+    custom_type_resolver=_custom_state_resolver,
+)
+
+
+class ConfiguredAirbyteStream(ConfiguredAirbyteStream, SerDeMixin):
     pass
+
+
+ConfiguredAirbyteStream._serializer = Serializer(
+    ConfiguredAirbyteStream,
+    omit_none=True,
+    custom_type_resolver=_custom_state_resolver,
+)
+
+
+class ConnectorSpecification(ConnectorSpecification, SerDeMixin):
+    pass
+
+
+ConnectorSpecification._serializer = Serializer(
+    ConnectorSpecification,
+    omit_none=True,
+)
+
+# Deprecated Serializer Classes. Declared here for legacy compatibility:
+AirbyteStreamStateSerializer = AirbyteStreamState._serializer  # type: ignore
+AirbyteStateMessageSerializer = AirbyteStateMessage._serializer  # type: ignore
+AirbyteMessageSerializer = AirbyteMessage._serializer  # type: ignore
+ConfiguredAirbyteCatalogSerializer = ConfiguredAirbyteCatalog._serializer  # type: ignore
+ConfiguredAirbyteStreamSerializer = ConfiguredAirbyteStream._serializer  # type: ignore
+ConnectorSpecificationSerializer = ConnectorSpecification._serializer  # type: ignore

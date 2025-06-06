@@ -19,7 +19,7 @@ from airbyte_cdk.models import (
     SyncMode,
     Type,
 )
-from airbyte_cdk.sources import AbstractSource, Source
+from airbyte_cdk.sources.abstract_source import AbstractSource, Source
 from airbyte_cdk.sources.connector_state_manager import ConnectorStateManager
 from airbyte_cdk.sources.message import MessageRepository
 from airbyte_cdk.sources.source import ExperimentalClassWarning

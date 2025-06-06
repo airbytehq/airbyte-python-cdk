@@ -14,7 +14,7 @@ from typing import Any, Mapping
 import pytest
 import yaml
 
-from airbyte_cdk import Connector
+from airbyte_cdk.connector import BaseConnector as Connector
 from airbyte_cdk.models import AirbyteConnectionStatus
 
 logger = logging.getLogger("airbyte")

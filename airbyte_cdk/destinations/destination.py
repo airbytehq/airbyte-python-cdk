@@ -7,12 +7,11 @@ import io
 import logging
 import sys
 from abc import ABC, abstractmethod
-from multiprocessing import Value
 from typing import Any, Iterable, List, Mapping
 
 import orjson
 
-from airbyte_cdk.connector import Connector
+from airbyte_cdk.connector import BaseConnector
 from airbyte_cdk.exception_handler import init_uncaught_exception_handler
 from airbyte_cdk.models import (
     AirbyteMessage,
@@ -28,7 +27,7 @@ from airbyte_cdk.utils.traced_exception import AirbyteTracedException
 logger = logging.getLogger("airbyte")
 
 
-class Destination(Connector, ABC):
+class Destination(BaseConnector, ABC):
     VALID_CMDS = {"spec", "check", "write"}
 
     @abstractmethod
@@ -109,10 +108,12 @@ class Destination(Connector, ABC):
 
     def run(self, args: List[str]) -> None:
         init_uncaught_exception_handler(logger)
-        parsed_args: ConnectorCLIArgs = parse_cli_args(
-            args,
-            with_write=True,
-            with_read=False,
+        parsed_args = ConnectorCLIArgs.from_namespace(
+            parse_cli_args(
+                args,
+                with_write=True,
+                with_read=False,
+            )
         )
         output_messages = self.run_cmd(parsed_args)
         for message in output_messages:

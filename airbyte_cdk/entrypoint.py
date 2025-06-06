@@ -7,7 +7,6 @@ import importlib
 import ipaddress
 import json
 import logging
-import os.path
 import socket
 import sys
 import tempfile
@@ -34,8 +33,8 @@ from airbyte_cdk.models import (
     Status,
     Type,
 )
-from airbyte_cdk.sources import Source
 from airbyte_cdk.sources.connector_state_manager import HashableStreamDescriptor
+from airbyte_cdk.sources.source import Source
 from airbyte_cdk.sources.utils.schema_helpers import check_config_against_spec_or_exit, split_config
 
 # from airbyte_cdk.utils import PrintBuffer, is_cloud_environment, message_utils  # add PrintBuffer back once fixed
@@ -52,6 +51,9 @@ CLOUD_DEPLOYMENT_MODE = "cloud"
 _HAS_LOGGED_FOR_SERIALIZATION_ERROR = False
 
 
+@deprecated(
+    "The `AirbyteEntrypoint` class is deprecated. Use `source.launch_with_cli_args()` instead."
+)
 class AirbyteEntrypoint(object):
     def __init__(self, source: Source):
         init_uncaught_exception_handler(logger)

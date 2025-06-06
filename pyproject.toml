@@ -199,7 +199,7 @@ log_cli_level = "INFO"
 log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
 log_cli_date_format = "%Y-%m-%d %H:%M:%S"
 filterwarnings = [
-    "ignore::airbyte_cdk.sources.source.ExperimentalClassWarning"
+    # "ignore::airbyte_cdk.sources.source.ExperimentalClassWarning"
 ]
 
 [tool.airbyte_ci]

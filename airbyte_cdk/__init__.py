@@ -48,12 +48,14 @@ API Reference
 # Once those issues are resolved, the below can be sorted with isort.
 import dunamai as _dunamai
 
+from airbyte_cdk.sources.abstract_source import AbstractSource
+from airbyte_cdk.sources.source import Source
+
+# from airbyte_cdk.destinations.destination import Destination
 from .config_observation import (
     create_connector_config_control_message,
     emit_configuration_as_airbyte_control_message,
 )
-from .connector import BaseConnector, Connector
-from .destinations import Destination
 from .entrypoint import AirbyteEntrypoint, launch
 from .logger import AirbyteLogFormatter, init_logger
 from .models import (
@@ -75,7 +77,6 @@ from .models import (
     SyncMode,
     Type,
 )
-from .sources import AbstractSource, Source
 from .sources.concurrent_source.concurrent_source import ConcurrentSource
 from .sources.concurrent_source.concurrent_source_adapter import ConcurrentSourceAdapter
 from .sources.config import BaseConfig
@@ -212,7 +213,6 @@ __all__ = [
     "AbstractSource",
     "BaseConfig",
     "BaseConnector",
-    "Connector",
     "Destination",
     "Source",
     "TState",

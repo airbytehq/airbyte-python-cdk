@@ -11,7 +11,8 @@ import requests
 from requests import HTTPError
 
 from airbyte_cdk.models import ConnectorSpecification, SyncMode
-from airbyte_cdk.sources import AbstractSource, Source
+from airbyte_cdk.sources.abstract_source import AbstractSource
+from airbyte_cdk.sources.source import Source
 from airbyte_cdk.sources.streams import CheckpointMixin, IncrementalMixin, Stream
 from airbyte_cdk.sources.streams.core import StreamData
 from airbyte_cdk.sources.streams.http import HttpStream

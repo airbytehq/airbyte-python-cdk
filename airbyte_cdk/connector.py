@@ -8,11 +8,12 @@ import logging
 import os
 import pkgutil
 from abc import ABC, abstractmethod
+from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any, Generic, Mapping, Optional, TypeVar
 
 import yaml
-from typing_extensions import Self
+from typing_extensions import Self, deprecated
 
 from airbyte_cdk.models import AirbyteConnectionStatus
 from airbyte_cdk.models.airbyte_protocol import AirbyteMessage, ConnectorSpecification, Type
@@ -32,6 +33,28 @@ def _write_config(config: Mapping[str, Any], config_path: str) -> None:
     Path(config_path).write_text(json.dumps(config))
 
 
+def _read_json_file(file_path: str) -> Any:
+    with open(file_path, "r") as file:
+        contents = file.read()
+
+    try:
+        return json.loads(contents)
+    except json.JSONDecodeError as error:
+        raise ValueError(
+            f"Could not read json file {file_path}: {error}. Please ensure that it is a valid JSON."
+        )
+
+
+def _read_config(config_path: str) -> MutableMapping[str, Any]:
+    config = _read_json_file(config_path)
+    if isinstance(config, MutableMapping):
+        return config
+    else:
+        raise ValueError(
+            f"The content of {config_path} is not an object and therefore is not a valid config. Please ensure the file represent a config."
+        )
+
+
 TConfig = TypeVar("TConfig", bound=Mapping[str, Any])
 
 
@@ -39,7 +62,6 @@ class BaseConnector(ABC, Generic[TConfig]):
     # configure whether the `check_config_against_spec_or_exit()` needs to be called
     check_config_against_spec: bool = True
 
-    @abstractmethod
     @classmethod
     def to_typed_config(
         cls,
@@ -47,6 +69,18 @@ class BaseConnector(ABC, Generic[TConfig]):
     ) -> TConfig:
         """Return a typed config object from a config dictionary."""
         ...
+
+    @staticmethod
+    def read_config(config_path: str) -> MutableMapping[str, Any]:
+        return _read_config(config_path)
+
+    @staticmethod
+    def _read_json_file(file_path: str) -> Any:
+        return _read_json_file(file_path)
+
+    @staticmethod
+    def write_config(config: TConfig, config_path: str) -> None:
+        _write_config(config, config_path)
 
     @classmethod
     def configure(cls, config: Mapping[str, Any], temp_dir: str) -> TConfig:
@@ -91,7 +125,6 @@ class BaseConnector(ABC, Generic[TConfig]):
         to the Stripe API.
         """
 
-    @abstractmethod
     @classmethod
     def create_with_cli_args(
         cls,

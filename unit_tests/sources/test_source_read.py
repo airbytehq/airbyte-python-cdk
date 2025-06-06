@@ -22,7 +22,7 @@ from airbyte_cdk.models import (
     TraceType,
 )
 from airbyte_cdk.models import Type as MessageType
-from airbyte_cdk.sources import AbstractSource
+from airbyte_cdk.sources.abstract_source import AbstractSource
 from airbyte_cdk.sources.concurrent_source.concurrent_source import ConcurrentSource
 from airbyte_cdk.sources.concurrent_source.concurrent_source_adapter import ConcurrentSourceAdapter
 from airbyte_cdk.sources.message import InMemoryMessageRepository

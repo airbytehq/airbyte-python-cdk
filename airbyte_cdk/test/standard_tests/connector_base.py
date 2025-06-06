@@ -112,7 +112,7 @@ class ConnectorTestSuiteBase(abc.ABC):
         scenario: ConnectorTestScenario,
     ) -> None:
         """Run `connection` acceptance tests."""
-        result: entrypoint_wrapper.EntrypointOutput = run_test_job(
+        result: entrypoint_wrapper.TestOutputMessageRepository = run_test_job(
             self.create_connector(scenario),
             "check",
             test_scenario=scenario,

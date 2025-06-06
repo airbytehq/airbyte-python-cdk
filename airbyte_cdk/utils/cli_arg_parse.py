@@ -26,47 +26,13 @@ def _read_json_file(
         )
 
 
-@dataclass(kw_only=True)
-class ConnectorCLIArgs:
-    command: str
-    debug: bool
-    config: str | None = None
-    state: str | None = None
-    catalog: str | None = None
-    manifest_path: str | None = None
-    components_path: str | None = None
-
-    def get_config_dict(
-        self,
-        *,
-        allow_missing: bool = False,
-    ) -> MutableMapping[str, Any]:
-        """Read the config file and return its contents as a dictionary.
-
-        If allow_missing is True, return an empty dictionary when the config file is not provided.
-        """
-        if self.config is None:
-            if not allow_missing:
-                raise ValueError("Config file path is required.")
-
-            return {}
-
-        config = _read_json_file(self.config)
-        if isinstance(config, MutableMapping):
-            return config
-        else:
-            raise ValueError(
-                f"The content of {self.config} is not an object and therefore is not a valid config. Please ensure the file represent a config."
-            )
-
-
 def parse_cli_args(
     args: list[str],
     *,
     with_read: bool = True,
     with_discover: bool = True,
     with_write: bool = False,
-) -> ConnectorCLIArgs:
+) -> argparse.Namespace:
     """Return the parsed CLI arguments for the connector.
 
     The caller can validate the arguments and use them as needed. This function allows all possible
@@ -180,13 +146,61 @@ def parse_cli_args(
             "--catalog", type=str, required=True, help="path to the configured catalog JSON file"
         )
 
-    parsed_args: argparse.Namespace = main_parser.parse_args(args)
-    return ConnectorCLIArgs(
-        command=parsed_args.command,
-        debug=parsed_args.debug,
-        config=parsed_args.config,
-        state=parsed_args.state,
-        catalog=parsed_args.catalog,
-        manifest_path=parsed_args.manifest_path,
-        components_path=parsed_args.components_path,
-    )
+    return main_parser.parse_args(args)
+
+
+@dataclass(kw_only=True)
+class ConnectorCLIArgs:
+    """Strongly typed dataclass to hold CLI arguments for the connector.
+
+    This class can be used as a type-safe alternative to argparse.Namespace.
+    """
+
+    command: str
+    debug: bool | None = None
+    config: str | None = None
+    state: str | None = None
+    catalog: str | None = None
+    manifest_path: str | None = None
+    components_path: str | None = None
+
+    def get_config_dict(
+        self,
+        *,
+        allow_missing: bool = False,
+    ) -> MutableMapping[str, Any]:
+        """Read the config file and return its contents as a dictionary.
+
+        If allow_missing is True, return an empty dictionary when the config file is not provided.
+        """
+        if self.config is None:
+            if not allow_missing:
+                raise ValueError("Config file path is required.")
+
+            return {}
+
+        config = _read_json_file(self.config)
+        if isinstance(config, MutableMapping):
+            return config
+        else:
+            raise ValueError(
+                f"The content of {self.config} is not an object and therefore is not a valid config. Please ensure the file represent a config."
+            )
+
+    @classmethod
+    def from_namespace(
+        cls,
+        parsed_args: argparse.Namespace,
+    ) -> "ConnectorCLIArgs":
+        """Create a ConnectorCLIArgs instance from an argparse Namespace."""
+        return cls(
+            command=parsed_args.command,
+            debug=parsed_args.debug if "debug" in parsed_args else None,
+            config=parsed_args.config if "config" in parsed_args else None,
+            state=parsed_args.state if "state" in parsed_args else None,
+            catalog=parsed_args.catalog if "catalog" in parsed_args else None,
+            manifest_path=parsed_args.manifest_path if "manifest_path" in parsed_args else None,
+            components_path=parsed_args.components_path
+            if "components_path" in parsed_args
+            else None,
+        )

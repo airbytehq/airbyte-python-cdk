@@ -25,7 +25,8 @@ from airbyte_cdk.models import (
     SyncMode,
     Type,
 )
-from airbyte_cdk.sources import AbstractSource, Source
+from airbyte_cdk.sources.abstract_source import AbstractSource
+from airbyte_cdk.sources.source import Source
 from airbyte_cdk.sources.streams.core import Stream
 from airbyte_cdk.sources.streams.http.http import HttpStream
 from airbyte_cdk.sources.utils.transform import TransformConfig, TypeTransformer
