@@ -202,7 +202,7 @@ class ConnectorTestSuiteBase(abc.ABC):
             tag=tag,
             no_verify=False,
         )
-        run_docker_command(
+        _ = run_docker_command(
             [
                 "docker",
                 "run",
@@ -210,6 +210,8 @@ class ConnectorTestSuiteBase(abc.ABC):
                 f"{metadata.data.dockerRepository}:{tag}",
                 "spec",
             ],
+            check=True,  # Raise an error if the command fails
+            capture_output=False,
         )
 
     @pytest.mark.skipif(
@@ -241,7 +243,7 @@ class ConnectorTestSuiteBase(abc.ABC):
         )
         container_config_path = "/secrets/config.json"
         with scenario.with_temp_config_file() as temp_config_file:
-            run_docker_command(
+            _ = run_docker_command(
                 [
                     "docker",
                     "run",
@@ -252,4 +254,6 @@ class ConnectorTestSuiteBase(abc.ABC):
                     "check",
                     f"--config={container_config_path}",
                 ],
+                check=True,  # Raise an error if the command fails
+                capture_output=False,
             )
