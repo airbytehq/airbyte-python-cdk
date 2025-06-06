@@ -163,13 +163,24 @@ class ConnectorTestSuiteBase(abc.ABC):
             ):
                 continue
 
-            test_scenarios.extend(
-                [
-                    ConnectorTestScenario.model_validate(test)
-                    for test in all_tests_config["acceptance_tests"][category]["tests"]
-                    if "config_path" in test and "iam_role" not in test["config_path"]
-                ]
-            )
+            for test in all_tests_config["acceptance_tests"][category]["tests"]:
+                scenario = ConnectorTestScenario.model_validate(test)
+
+                if "config_path" in test and "iam_role" in test["config_path"]:
+                    # We skip iam_role tests for now, as they are not supported in the test suite.
+                    continue
+
+                if scenario.expect_exception:
+                    # For now, we skip tests that are expected to fail.
+                    # This is because they create false-positives in the test suite
+                    # if they fail later than expected.
+                    continue
+
+                if scenario.config_path in [s.config_path for s in test_scenarios]:
+                    # Skip duplicate scenarios based on config_path
+                    continue
+
+                test_scenarios.append(scenario)
 
         connector_root = cls.get_connector_root_dir().absolute()
         for test in test_scenarios:
