@@ -175,12 +175,6 @@ class ConnectorTestSuiteBase(abc.ABC):
 
                 scenario = ConnectorTestScenario.model_validate(test)
 
-                if scenario.expect_exception:
-                    # For now, we skip tests that are expected to fail.
-                    # This is because they create false-positives in the test suite
-                    # if they fail later than expected.
-                    continue
-
                 if scenario.config_path and scenario.config_path in [s.config_path for s in test_scenarios]:
                     # Skip duplicate scenarios based on config_path
                     continue
