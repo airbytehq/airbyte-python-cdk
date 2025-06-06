@@ -43,6 +43,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             self.create_connector(scenario),
             "check",
             test_scenario=scenario,
+            connector_root=self.get_connector_root_dir(),
         )
         conn_status_messages: list[AirbyteMessage] = [
             msg for msg in result._messages if msg.type == Type.CONNECTION_STATUS
@@ -61,6 +62,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         run_test_job(
             self.create_connector(scenario),
             "discover",
+            connector_root=self.get_connector_root_dir(),
             test_scenario=scenario,
         )
 
@@ -80,6 +82,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             verb="spec",
             test_scenario=None,
             connector=self.create_connector(scenario=None),
+            connector_root=self.get_connector_root_dir(),
         )
         # If an error occurs, it will be raised above.
 
@@ -102,10 +105,11 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         discover_result = run_test_job(
             self.create_connector(scenario),
             "discover",
-            test_scenario=scenario,
+            connector_root=self.get_connector_root_dir(),
+            test_scenario=scenario.without_expecting_failure(),
         )
-        if scenario.expect_exception:
-            assert discover_result.errors, "Expected exception but got none."
+        if scenario.expect_exception and discover_result.errors:
+            # Failed as expected; we're done.
             return
 
         configured_catalog = ConfiguredAirbyteCatalog(
@@ -122,6 +126,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             self.create_connector(scenario),
             "read",
             test_scenario=scenario,
+            connector_root=self.get_connector_root_dir(),
             catalog=configured_catalog,
         )
 
@@ -149,15 +154,14 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
                     ),
                     sync_mode="INVALID",  # type: ignore [reportArgumentType]
                     destination_sync_mode="INVALID",  # type: ignore [reportArgumentType]
-                )
-            ]
+                ),
+            ],
         )
-        # Set expected status to "failed" to ensure the test fails if the connector.
-        scenario.status = "failed"
         result: entrypoint_wrapper.EntrypointOutput = run_test_job(
             self.create_connector(scenario),
             "read",
-            test_scenario=scenario,
+            connector_root=self.get_connector_root_dir(),
+            test_scenario=scenario.with_expecting_failure(),  # Expect failure due to bad catalog
             catalog=asdict(invalid_configured_catalog),
         )
         assert result.errors, "Expected errors but got none."

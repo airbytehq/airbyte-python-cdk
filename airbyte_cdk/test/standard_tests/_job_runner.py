@@ -58,6 +58,7 @@ def run_test_job(
     connector: IConnector | type[IConnector] | Callable[[], IConnector],
     verb: Literal["spec", "read", "check", "discover"],
     *,
+    connector_root: Path,
     test_scenario: ConnectorTestScenario | None = None,
     catalog: ConfiguredAirbyteCatalog | dict[str, Any] | None = None,
 ) -> entrypoint_wrapper.EntrypointOutput:
@@ -84,7 +85,10 @@ def run_test_job(
         )
 
     args: list[str] = [verb]
-    config_dict = test_scenario.get_config_dict(empty_if_missing=True)
+    config_dict = test_scenario.get_config_dict(
+        empty_if_missing=True,
+        connector_root=connector_root,
+    )
     if config_dict and verb != "spec":
         # Write the config to a temp json file and pass the path to the file as an argument.
         config_path = (

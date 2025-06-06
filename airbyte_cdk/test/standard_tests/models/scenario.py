@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class ConnectorTestScenario(BaseModel):
@@ -23,6 +23,8 @@ class ConnectorTestScenario(BaseModel):
     that can be run against a connector. It is used to deserialize and validate the
     acceptance test configuration file.
     """
+
+    model_config = ConfigDict(frozen=True)
 
     class AcceptanceTestExpectRecords(BaseModel):
         path: Path
@@ -46,6 +48,7 @@ class ConnectorTestScenario(BaseModel):
     def get_config_dict(
         self,
         *,
+        connector_root: Path,
         empty_if_missing: bool,
     ) -> dict[str, Any]:
         """Return the config dictionary.
@@ -61,7 +64,15 @@ class ConnectorTestScenario(BaseModel):
             return self.config_dict
 
         if self.config_path is not None:
-            return cast(dict[str, Any], yaml.safe_load(self.config_path.read_text()))
+            config_path = self.config_path
+            if not config_path.is_absolute():
+                # We usually receive a relative path here. Let's resolve it.
+                config_path = (connector_root / self.config_path).resolve().absolute()
+
+            return cast(
+                dict[str, Any],
+                yaml.safe_load(config_path.read_text()),
+            )
 
         if empty_if_missing:
             return {}
@@ -83,3 +94,29 @@ class ConnectorTestScenario(BaseModel):
             return f"'{self.config_path.name}' Test Scenario"
 
         return f"'{hash(self)}' Test Scenario"
+
+    def without_expecting_failure(self) -> ConnectorTestScenario:
+        """Return a copy of the scenario that does not expect failure.
+
+        This is useful when you need to run multiple steps and you
+        want to defer failure expectation for one or more steps.
+        """
+        if self.status != "failed":
+            return self
+
+        return ConnectorTestScenario(
+            **self.model_dump(exclude={"status"}),
+        )
+
+    def with_expecting_failure(self) -> ConnectorTestScenario:
+        """Return a copy of the scenario that expects failure.
+
+        This is useful when deriving new scenarios from existing ones.
+        """
+        if self.status == "failed":
+            return self
+
+        return ConnectorTestScenario(
+            **self.model_dump(exclude={"status"}),
+            status="failed",
+        )

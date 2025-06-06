@@ -78,7 +78,12 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
         config = {
             "__injected_manifest": manifest_dict,
         }
-        config.update(scenario.get_config_dict(empty_if_missing=True))
+        config.update(
+            scenario.get_config_dict(
+                empty_if_missing=True,
+                connector_root=cls.get_connector_root_dir(),
+            ),
+        )
 
         if cls.components_py_path and cls.components_py_path.exists():
             os.environ["AIRBYTE_ENABLE_UNSAFE_CODE"] = "true"
