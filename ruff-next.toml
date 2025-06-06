@@ -1,0 +1,29 @@
+# Ruff configuration (extended for development guidance)
+#
+# To use these in your IDE, add this snippet to `.vscode/settings.json`
+# in this repo:
+#
+# ```jsonc
+# {
+#     // ...
+#     "ruff.configuration": "ruff-next.toml",
+# }
+target-version = "py310"
+line-length = 100
+
+[lint]
+# These will block CI if they fail.
+select = [
+  "I",
+]
+
+# These can't pass yet, but we can enabled them in the IDE for guidance.
+extend-select = [
+  "E",
+  "W",
+  "C",
+  "F",
+  "N",
+  "D",
+  "TC",
+]

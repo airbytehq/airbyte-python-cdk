@@ -1,6 +1,22 @@
-# Ruff configuration moved from pyproject.toml
+# Ruff configuration (default for CI checks)
 target-version = "py310"
 line-length = 100
 
-[lint]
-select = ["I"]
+[lint]  # NOTE: When updating rules here, please also update the `ruff-next.toml` file.
+
+# The following will block CI if they fail:
+select = [
+  "I",
+]
+
+# These can't pass yet, so we disable them for now.
+# See ruff-next.toml for a config that includes these rules.
+# extend-select = [
+#   "E",
+#   "W",
+#   "C",
+#   "F",
+#   "N",
+#   "D",
+#   "TC",
+# ]
