@@ -1,3 +1,5 @@
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+
 from unittest import TestCase
 
 import pytest
@@ -90,3 +92,13 @@ class TestDpathValidator(TestCase):
         assert strategy.validate_called
         assert strategy.validated_value in ["user1@example.com", "user2@example.com"]
         self.assertIn(strategy.validated_value, ["user1@example.com", "user2@example.com"])
+
+    def test_given_no_values_when_validate_then_validate_is_not_called(self):
+        strategy = MockValidationStrategy()
+        validator = DpathValidator(field_path=["users", "*", "email"], strategy=strategy)
+
+        validator.validate({"users": {}})
+        validator.validate(None)
+        validator.validate({"users": [{"name": "Octavia"}]})
+
+        assert not strategy.validate_called
