@@ -258,13 +258,12 @@ def build_connector_image(
     if not no_verify:
         if verify_connector_image(base_tag):
             click.echo(f"Build completed successfully: {base_tag}")
-            sys.exit(0)
-        else:
-            click.echo(f"Built image failed verification: {base_tag}", err=True)
-            sys.exit(1)
+            return
+
+        click.echo(f"Built image failed verification: {base_tag}", err=True)
+        sys.exit(1)
     else:
         click.echo(f"Build completed successfully (without verification): {base_tag}")
-        sys.exit(0)
 
 
 def _download_dockerfile_defs(
