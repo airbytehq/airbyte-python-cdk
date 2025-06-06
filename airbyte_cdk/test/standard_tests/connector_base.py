@@ -175,7 +175,9 @@ class ConnectorTestSuiteBase(abc.ABC):
 
                 scenario = ConnectorTestScenario.model_validate(test)
 
-                if scenario.config_path and scenario.config_path in [s.config_path for s in test_scenarios]:
+                if scenario.config_path and scenario.config_path in [
+                    s.config_path for s in test_scenarios
+                ]:
                     # Skip duplicate scenarios based on config_path
                     continue
 
