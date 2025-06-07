@@ -47,7 +47,7 @@ class ConnectorTestScenario(BaseModel):
     timeout_seconds: int | None = None
     expect_records: AcceptanceTestExpectRecords | None = None
     file_types: AcceptanceTestFileTypes | None = None
-    status: Literal["succeed", "failed"] | None = None
+    status: Literal["succeed", "failed", "exception"] | None = None
 
     def get_config_dict(
         self,
@@ -76,7 +76,7 @@ class ConnectorTestScenario(BaseModel):
 
     @property
     def expect_exception(self) -> bool:
-        return self.status and self.status == "failed" or False
+        return (self.status and self.status in {"failed", "exception"}) or False
 
     @property
     def instance_name(self) -> str:
