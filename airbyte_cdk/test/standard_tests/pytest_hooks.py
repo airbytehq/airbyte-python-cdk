@@ -16,9 +16,24 @@ pytest_plugins = [
 import pytest
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Add --connector-image to pytest's CLI."""
+    parser.addoption(
+        "--connector-image",
+        action="store",
+        default=None,
+        help="Use this pre-built connector Docker image instead of building one.",
+    )
+
+
+@pytest.fixture
+def connector_image_override(request: pytest.FixtureRequest) -> str | None:
+    """Return the value of --connector-image, or None if not set."""
+    return request.config.getoption("--connector-image")
+
+
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
-    """
-    A helper for pytest_generate_tests hook.
+    """A helper for pytest_generate_tests hook.
 
     If a test method (in a class subclassed from our base class)
     declares an argument 'scenario', this function retrieves the

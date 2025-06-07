@@ -188,26 +188,32 @@ class ConnectorTestSuiteBase(abc.ABC):
         shutil.which("docker") is None,
         reason="docker CLI not found in PATH, skipping docker image tests",
     )
+    @pytest.mark.image_tests
     def test_docker_image_build_and_spec(
         self,
+        connector_image_override: str | None,
     ) -> None:
         """Run `docker_image` acceptance tests."""
-        tag = "dev-latest"
         connector_dir = self.get_connector_root_dir()
         metadata = MetadataFile.from_file(connector_dir / "metadata.yaml")
-        build_connector_image(
-            connector_name=connector_dir.name,
-            connector_directory=connector_dir,
-            metadata=metadata,
-            tag=tag,
-            no_verify=False,
-        )
+
+        connector_image: str | None = connector_image_override
+        if not connector_image:
+            tag = "dev-latest"
+            connector_image = build_connector_image(
+                connector_name=connector_dir.name,
+                connector_directory=connector_dir,
+                metadata=metadata,
+                tag=tag,
+                no_verify=False,
+            )
+
         _ = run_docker_command(
             [
                 "docker",
                 "run",
                 "--rm",
-                f"{metadata.data.dockerRepository}:{tag}",
+                connector_image,
                 "spec",
             ],
             check=True,  # Raise an error if the command fails
@@ -218,9 +224,11 @@ class ConnectorTestSuiteBase(abc.ABC):
         shutil.which("docker") is None,
         reason="docker CLI not found in PATH, skipping docker image tests",
     )
+    @pytest.mark.image_tests
     def test_docker_image_build_and_check(
         self,
         scenario: ConnectorTestScenario,
+        connector_image_override: str | None,
     ) -> None:
         """Run `docker_image` acceptance tests.
 
@@ -231,16 +239,23 @@ class ConnectorTestSuiteBase(abc.ABC):
           - In the rare case that image caches need to be cleared, please clear
             the local docker image cache using `docker image prune -a` command.
         """
+        if scenario.expect_exception:
+            pytest.skip("Skipping test_docker_image_build_and_check (expected to fail).")
+
         tag = "dev-latest"
         connector_dir = self.get_connector_root_dir()
         metadata = MetadataFile.from_file(connector_dir / "metadata.yaml")
-        build_connector_image(
-            connector_name=connector_dir.name,
-            connector_directory=connector_dir,
-            metadata=metadata,
-            tag=tag,
-            no_verify=False,
-        )
+        connector_image: str | None = connector_image_override
+        if not connector_image:
+            tag = "dev-latest"
+            connector_image = build_connector_image(
+                connector_name=connector_dir.name,
+                connector_directory=connector_dir,
+                metadata=metadata,
+                tag=tag,
+                no_verify=False,
+            )
+
         container_config_path = "/secrets/config.json"
         with scenario.with_temp_config_file() as temp_config_file:
             _ = run_docker_command(
@@ -250,7 +265,7 @@ class ConnectorTestSuiteBase(abc.ABC):
                     "--rm",
                     "-v",
                     f"{temp_config_file}:{container_config_path}",
-                    f"{metadata.data.dockerRepository}:{tag}",
+                    connector_image,
                     "check",
                     f"--config={container_config_path}",
                 ],

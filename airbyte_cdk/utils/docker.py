@@ -137,12 +137,13 @@ def _tag_image(
 def build_connector_image(
     connector_name: str,
     connector_directory: Path,
+    *,
     metadata: MetadataFile,
     tag: str,
     primary_arch: ArchEnum = ArchEnum.ARM64,  # Assume MacBook M series by default
     no_verify: bool = False,
     dockerfile_override: Path | None = None,
-) -> None:
+) -> str:
     """Build a connector Docker image.
 
     This command builds a Docker image for a connector, using either
@@ -257,13 +258,14 @@ def build_connector_image(
     )
     if not no_verify:
         if verify_connector_image(base_tag):
-            click.echo(f"Build completed successfully: {base_tag}")
-            return
+            click.echo(f"Build and verification completed successfully: {base_tag}")
+            return base_tag
 
         click.echo(f"Built image failed verification: {base_tag}", err=True)
         sys.exit(1)
-    else:
-        click.echo(f"Build completed successfully (without verification): {base_tag}")
+
+    click.echo(f"Build completed successfully: {base_tag}")
+    return base_tag
 
 
 def _download_dockerfile_defs(
