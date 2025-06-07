@@ -9,11 +9,17 @@ up iteration cycles.
 
 from __future__ import annotations
 
+import json
+import tempfile
+from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import yaml
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 
 class ConnectorTestScenario(BaseModel):
@@ -41,7 +47,7 @@ class ConnectorTestScenario(BaseModel):
     timeout_seconds: int | None = None
     expect_records: AcceptanceTestExpectRecords | None = None
     file_types: AcceptanceTestFileTypes | None = None
-    status: Literal["succeed", "failed"] | None = None
+    status: Literal["succeed", "failed", "exception"] | None = None
 
     def get_config_dict(
         self,
@@ -70,7 +76,7 @@ class ConnectorTestScenario(BaseModel):
 
     @property
     def expect_exception(self) -> bool:
-        return self.status and self.status == "failed" or False
+        return (self.status and self.status in {"failed", "exception"}) or False
 
     @property
     def instance_name(self) -> str:
@@ -83,3 +89,19 @@ class ConnectorTestScenario(BaseModel):
             return f"'{self.config_path.name}' Test Scenario"
 
         return f"'{hash(self)}' Test Scenario"
+
+    @contextmanager
+    def with_temp_config_file(self) -> Generator[Path, None, None]:
+        """Yield a temporary JSON file path containing the config dict and delete it on exit."""
+        config = self.get_config_dict(empty_if_missing=True)
+        _, path_str = tempfile.mkstemp(prefix="config-", suffix=".json", text=True)
+        path = Path(path_str)
+        try:
+            path.write_text(json.dumps(config))
+            # Allow the file to be read by other processes
+            path.chmod(path.stat().st_mode | 0o444)
+            yield path
+        finally:
+            # attempt cleanup, ignore errors
+            with suppress(OSError):
+                path.unlink()

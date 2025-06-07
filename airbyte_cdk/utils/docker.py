@@ -137,12 +137,13 @@ def _tag_image(
 def build_connector_image(
     connector_name: str,
     connector_directory: Path,
+    *,
     metadata: MetadataFile,
     tag: str,
     primary_arch: ArchEnum = ArchEnum.ARM64,  # Assume MacBook M series by default
     no_verify: bool = False,
     dockerfile_override: Path | None = None,
-) -> None:
+) -> str:
     """Build a connector Docker image.
 
     This command builds a Docker image for a connector, using either
@@ -164,12 +165,13 @@ def build_connector_image(
         ConnectorImageBuildError: If the image build or tag operation fails.
     """
     connector_kebab_name = connector_name
+    connector_dockerfile_dir = connector_directory / "build" / "docker"
 
     if dockerfile_override:
         dockerfile_path = dockerfile_override
     else:
-        dockerfile_path = connector_directory / "build" / "docker" / "Dockerfile"
-        dockerignore_path = connector_directory / "build" / "docker" / "Dockerfile.dockerignore"
+        dockerfile_path = connector_dockerfile_dir / "Dockerfile"
+        dockerignore_path = connector_dockerfile_dir / "Dockerfile.dockerignore"
         try:
             dockerfile_text, dockerignore_text = get_dockerfile_templates(
                 metadata=metadata,
@@ -192,6 +194,8 @@ def build_connector_image(
                     ),
                 ) from e
 
+        # ensure the directory exists
+        connector_dockerfile_dir.mkdir(parents=True, exist_ok=True)
         dockerfile_path.write_text(dockerfile_text)
         dockerignore_path.write_text(dockerignore_text)
 
@@ -254,14 +258,14 @@ def build_connector_image(
     )
     if not no_verify:
         if verify_connector_image(base_tag):
-            click.echo(f"Build completed successfully: {base_tag}")
-            sys.exit(0)
-        else:
-            click.echo(f"Built image failed verification: {base_tag}", err=True)
-            sys.exit(1)
-    else:
-        click.echo(f"Build completed successfully (without verification): {base_tag}")
-        sys.exit(0)
+            click.echo(f"Build and verification completed successfully: {base_tag}")
+            return base_tag
+
+        click.echo(f"Built image failed verification: {base_tag}", err=True)
+        sys.exit(1)
+
+    click.echo(f"Build completed successfully: {base_tag}")
+    return base_tag
 
 
 def _download_dockerfile_defs(

@@ -10,6 +10,7 @@ from pathlib import Path
 
 import rich_click as click
 
+from airbyte_cdk.cli.airbyte_cdk._connector import run_connector_tests
 from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.utils.connector_paths import resolve_connector_name_and_directory
 from airbyte_cdk.utils.docker import (
@@ -86,6 +87,81 @@ def build(
             err=True,
         )
         sys.exit(1)
+
+
+@image_cli_group.command("test")
+@click.argument(
+    "connector",
+    required=False,
+    type=str,
+    metavar="[CONNECTOR]",
+)
+@click.option(
+    "--image",
+    help="Image to test, instead of building a new one.",
+)
+def image_test(  # "image test" command
+    connector: str | None = None,
+    *,
+    image: str | None = None,
+) -> None:
+    """Test a connector Docker image.
+
+    [CONNECTOR] can be a connector name (e.g. 'source-pokeapi'), a path to a connector directory, or omitted to use the current working directory.
+    If a string containing '/' is provided, it is treated as a path. Otherwise, it is treated as a connector name.
+
+    If an image is provided, it will be used for testing instead of building a new one.
+
+    Note: You should run `airbyte-cdk secrets fetch` before running this command to ensure
+    that the secrets are available for the connector tests.
+    """
+    if not verify_docker_installation():
+        click.echo(
+            "Docker is not installed or not running. Please install Docker and try again.", err=True
+        )
+        sys.exit(1)
+
+    connector_name, connector_directory = resolve_connector_name_and_directory(connector)
+
+    # Select only tests with the 'image_tests' mark
+    pytest_args = ["-m", "image_tests"]
+    if not image:
+        metadata_file_path: Path = connector_directory / "metadata.yaml"
+        try:
+            metadata = MetadataFile.from_file(metadata_file_path)
+        except (FileNotFoundError, ValueError) as e:
+            click.echo(
+                f"Error loading metadata file '{metadata_file_path}': {e!s}",
+                err=True,
+            )
+            sys.exit(1)
+
+        tag = "dev-latest"
+        image = f"{metadata.data.dockerRepository}:{tag}"
+        click.echo(f"Building Image for Connector: {image}")
+        try:
+            image = build_connector_image(
+                connector_directory=connector_directory,
+                connector_name=connector_name,
+                metadata=metadata,
+                tag=tag,
+                no_verify=True,
+            )
+        except ConnectorImageBuildError as e:
+            click.echo(
+                f"Error building connector image: {e!s}",
+                err=True,
+            )
+            sys.exit(1)
+
+    pytest_args.extend(["--connector-image", image])
+
+    click.echo(f"Testing Connector Image: {image}")
+    run_connector_tests(
+        connector_name=connector_name,
+        connector_directory=connector_directory,
+        extra_pytest_args=pytest_args,
+    )
 
 
 __all__ = [
