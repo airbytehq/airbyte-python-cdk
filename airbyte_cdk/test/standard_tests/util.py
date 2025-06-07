@@ -67,7 +67,7 @@ def create_connector_test_suite(
         )
 
     subclass_overrides: dict[str, Any] = {
-        "get_connector_root_dir": lambda: connector_directory,
+        "get_connector_root_dir": classmethod(lambda cls: connector_directory),
     }
 
     TestSuiteAuto = type(
