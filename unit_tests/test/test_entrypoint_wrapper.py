@@ -32,7 +32,7 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.sources.abstract_source import AbstractSource
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput, discover, read
-from airbyte_cdk.test.standard_tests.models.scenario import ExpectedOutcome
+from airbyte_cdk.test.models.scenario import ExpectedOutcome
 from airbyte_cdk.test.state_builder import StateBuilder
 
 

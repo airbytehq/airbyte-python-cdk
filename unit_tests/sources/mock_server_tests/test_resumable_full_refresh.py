@@ -27,7 +27,7 @@ from airbyte_cdk.test.mock_http.response_builder import (
     create_record_builder,
     create_response_builder,
 )
-from airbyte_cdk.test.standard_tests.models.scenario import ExpectedOutcome
+from airbyte_cdk.test.models.scenario import ExpectedOutcome
 from airbyte_cdk.test.state_builder import StateBuilder
 from unit_tests.sources.mock_server_tests.mock_source_fixture import SourceFixture
 from unit_tests.sources.mock_server_tests.test_helpers import (

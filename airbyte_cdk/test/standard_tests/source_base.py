@@ -2,6 +2,7 @@
 """Base class for source test suites."""
 
 from dataclasses import asdict
+from typing import TYPE_CHECKING
 
 from airbyte_cdk.models import (
     AirbyteMessage,
@@ -12,14 +13,16 @@ from airbyte_cdk.models import (
     SyncMode,
     Type,
 )
-from airbyte_cdk.test import entrypoint_wrapper
+from airbyte_cdk.test.models import (
+    ConnectorTestScenario,
+)
 from airbyte_cdk.test.standard_tests._job_runner import run_test_job
 from airbyte_cdk.test.standard_tests.connector_base import (
     ConnectorTestSuiteBase,
 )
-from airbyte_cdk.test.standard_tests.models import (
-    ConnectorTestScenario,
-)
+
+if TYPE_CHECKING:
+    from airbyte_cdk.test import entrypoint_wrapper
 
 
 class SourceTestSuiteBase(ConnectorTestSuiteBase):

@@ -9,45 +9,13 @@ up iteration cycles.
 
 from __future__ import annotations
 
-from enum import Enum, auto
 from pathlib import Path  # noqa: TC003  # Pydantic needs this (don't move to 'if typing' block)
 from typing import Any, Literal, cast
 
 import yaml
 from pydantic import BaseModel, ConfigDict
 
-
-class ExpectedOutcome(Enum):
-    """Enum to represent the expected outcome of a test scenario.
-
-    Class supports comparisons to a boolean or None.
-    """
-
-    EXPECT_EXCEPTION = auto()
-    EXPECT_SUCCESS = auto()
-    ALLOW_ANY = auto()
-
-    @classmethod
-    def from_status_str(cls, status: str | None) -> ExpectedOutcome:
-        """Convert a status string to an ExpectedOutcome."""
-        if status is None:
-            return ExpectedOutcome.ALLOW_ANY
-
-        try:
-            return {
-                "succeed": ExpectedOutcome.EXPECT_SUCCESS,
-                "failed": ExpectedOutcome.EXPECT_EXCEPTION,
-            }[status]
-        except KeyError as ex:
-            raise ValueError(f"Invalid status '{status}'. Expected 'succeed' or 'failed'.") from ex
-
-    def expect_exception(self) -> bool:
-        """Return whether the expectation is that an exception should be raised."""
-        return self == ExpectedOutcome.EXPECT_EXCEPTION
-
-    def expect_success(self) -> bool:
-        """Return whether the expectation is that the test should succeed without exceptions."""
-        return self == ExpectedOutcome.EXPECT_SUCCESS
+from airbyte_cdk.test.models.outcome import ExpectedOutcome
 
 
 class ConnectorTestScenario(BaseModel):

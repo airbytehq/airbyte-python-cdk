@@ -16,7 +16,7 @@ from airbyte_cdk.models import (
     Status,
 )
 from airbyte_cdk.test import entrypoint_wrapper
-from airbyte_cdk.test.standard_tests.models import (
+from airbyte_cdk.test.models import (
     ConnectorTestScenario,
 )
 

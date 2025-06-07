@@ -17,7 +17,7 @@ from airbyte_cdk.test.entrypoint_wrapper import discover as entrypoint_discover
 from airbyte_cdk.test.entrypoint_wrapper import read as entrypoint_read
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.test.mock_http.response_builder import find_binary_response, find_template
-from airbyte_cdk.test.standard_tests.models.scenario import ExpectedOutcome
+from airbyte_cdk.test.models.scenario import ExpectedOutcome
 from airbyte_cdk.test.state_builder import StateBuilder
 
 

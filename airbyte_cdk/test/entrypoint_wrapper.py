@@ -44,7 +44,7 @@ from airbyte_cdk.models import (
     Type,
 )
 from airbyte_cdk.sources import Source
-from airbyte_cdk.test.standard_tests.models.scenario import ExpectedOutcome
+from airbyte_cdk.test.models.scenario import ExpectedOutcome
 
 
 class EntrypointOutput:
