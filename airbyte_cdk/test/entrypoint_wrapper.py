@@ -24,7 +24,6 @@ from pathlib import Path
 from typing import Any, List, Mapping, Optional, Union
 
 import orjson
-from langsmith import expect
 from pydantic import ValidationError as V2ValidationError
 from serpyco_rs import SchemaValidationError
 
