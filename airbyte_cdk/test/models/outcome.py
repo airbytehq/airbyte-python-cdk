@@ -36,6 +36,18 @@ class ExpectedOutcome(Enum):
         except KeyError as ex:
             raise ValueError(f"Invalid status '{status}'. Expected 'succeed' or 'failed'.") from ex
 
+    @classmethod
+    def from_expecting_exception_bool(cls, expecting_exception: bool | None) -> ExpectedOutcome:
+        """Convert a boolean indicating whether an exception is expected to an ExpectedOutcome."""
+        if expecting_exception is None:
+            return ExpectedOutcome.ALLOW_ANY
+
+        return (
+            ExpectedOutcome.EXPECT_EXCEPTION
+            if expecting_exception
+            else ExpectedOutcome.EXPECT_SUCCESS
+        )
+
     def expect_exception(self) -> bool:
         """Return whether the expectation is that an exception should be raised."""
         return self == ExpectedOutcome.EXPECT_EXCEPTION

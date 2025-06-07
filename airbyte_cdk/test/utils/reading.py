@@ -20,8 +20,16 @@ def read_records(
     stream_name: str,
     sync_mode: SyncMode,
     state: Optional[List[AirbyteStateMessage]] = None,
-    expected_outcome: ExpectedOutcome = ExpectedOutcome.EXPECT_SUCCESS,
+    *,
+    expecting_exception: bool | None = None,  # Deprecated, use expected_outcome instead.
+    expected_outcome: ExpectedOutcome | None = None,
 ) -> EntrypointOutput:
     """Read records from a stream."""
+    if expecting_exception is not None and expected_outcome is not None:
+        raise ValueError("Cannot set both expecting_exception and expected_outcome.")
+
+    if expected_outcome is None:
+        expected_outcome = ExpectedOutcome.from_expecting_exception_bool(expecting_exception)
+
     _catalog = catalog(stream_name, sync_mode)
     return read(source, config, _catalog, state, expected_outcome=expected_outcome)
