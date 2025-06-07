@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, List, Mapping, Optional, Union
 
 import orjson
+from langsmith import expect
 from pydantic import ValidationError as V2ValidationError
 from serpyco_rs import SchemaValidationError
 
@@ -44,6 +45,7 @@ from airbyte_cdk.models import (
     Type,
 )
 from airbyte_cdk.sources import Source
+from airbyte_cdk.test.standard_tests.models.scenario import ExpectedOutcome
 
 
 class EntrypointOutput:
@@ -157,7 +159,9 @@ class EntrypointOutput:
 
 
 def _run_command(
-    source: Source, args: List[str], expecting_exception: bool = False
+    source: Source,
+    args: list[str],
+    expected_outcome: ExpectedOutcome,
 ) -> EntrypointOutput:
     log_capture_buffer = StringIO()
     stream_handler = logging.StreamHandler(log_capture_buffer)
@@ -175,27 +179,29 @@ def _run_command(
         for message in source_entrypoint.run(parsed_args):
             messages.append(message)
     except Exception as exception:
-        if not expecting_exception:
+        if expected_outcome.expect_success():
             print("Printing unexpected error from entrypoint_wrapper")
             print("".join(traceback.format_exception(None, exception, exception.__traceback__)))
+
         uncaught_exception = exception
 
     captured_logs = log_capture_buffer.getvalue().split("\n")[:-1]
 
     parent_logger.removeHandler(stream_handler)
 
-    return EntrypointOutput(messages + captured_logs, uncaught_exception)
+    return EntrypointOutput(messages + captured_logs, uncaught_exception=uncaught_exception)
 
 
 def discover(
     source: Source,
     config: Mapping[str, Any],
-    expecting_exception: bool = False,
+    *,
+    expected_outcome: ExpectedOutcome = ExpectedOutcome.EXPECT_SUCCESS,
 ) -> EntrypointOutput:
     """
     config must be json serializable
-    :param expecting_exception: By default if there is an uncaught exception, the exception will be printed out. If this is expected, please
-        provide expecting_exception=True so that the test output logs are cleaner
+    :param expected_outcome: By default if there is an uncaught exception, the exception will be printed out. If this is expected, please
+        provide `expected_outcome=ExpectedOutcome.EXPECT_FAILURE` so that the test output logs are cleaner
     """
 
     with tempfile.TemporaryDirectory() as tmp_directory:
@@ -203,7 +209,9 @@ def discover(
         config_file = make_file(tmp_directory_path / "config.json", config)
 
         return _run_command(
-            source, ["discover", "--config", config_file, "--debug"], expecting_exception
+            source,
+            ["discover", "--config", config_file, "--debug"],
+            expected_outcome=expected_outcome,
         )
 
 
@@ -212,13 +220,14 @@ def read(
     config: Mapping[str, Any],
     catalog: ConfiguredAirbyteCatalog,
     state: Optional[List[AirbyteStateMessage]] = None,
-    expecting_exception: bool = False,
+    *,
+    expected_outcome: ExpectedOutcome = ExpectedOutcome.EXPECT_SUCCESS,
 ) -> EntrypointOutput:
     """
     config and state must be json serializable
 
-    :param expecting_exception: By default if there is an uncaught exception, the exception will be printed out. If this is expected, please
-        provide expecting_exception=True so that the test output logs are cleaner
+    :param expected_outcome: By default if there is an uncaught exception, the exception will be printed out. If this is expected, please
+        provide `expected_outcome=ExpectedOutcome.EXPECT_FAILURE` so that the test output logs are cleaner.
     """
     with tempfile.TemporaryDirectory() as tmp_directory:
         tmp_directory_path = Path(tmp_directory)
@@ -245,7 +254,7 @@ def read(
                 ]
             )
 
-        return _run_command(source, args, expecting_exception)
+        return _run_command(source, args, expected_outcome=expected_outcome)
 
 
 def make_file(

@@ -6,6 +6,7 @@ from airbyte_cdk import AbstractSource
 from airbyte_cdk.models import AirbyteStateMessage, ConfiguredAirbyteCatalog, SyncMode
 from airbyte_cdk.test.catalog_builder import CatalogBuilder
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput, read
+from airbyte_cdk.test.standard_tests.models.scenario import ExpectedOutcome
 
 
 def catalog(stream_name: str, sync_mode: SyncMode) -> ConfiguredAirbyteCatalog:
@@ -19,8 +20,8 @@ def read_records(
     stream_name: str,
     sync_mode: SyncMode,
     state: Optional[List[AirbyteStateMessage]] = None,
-    expecting_exception: bool = False,
+    expected_outcome: ExpectedOutcome = ExpectedOutcome.EXPECT_SUCCESS,
 ) -> EntrypointOutput:
     """Read records from a stream."""
     _catalog = catalog(stream_name, sync_mode)
-    return read(source, config, _catalog, state, expecting_exception)
+    return read(source, config, _catalog, state, expected_outcome=expected_outcome)

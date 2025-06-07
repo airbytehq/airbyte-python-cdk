@@ -106,9 +106,9 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             self.create_connector(scenario),
             "discover",
             connector_root=self.get_connector_root_dir(),
-            test_scenario=scenario.without_expecting_failure(),
+            test_scenario=scenario.without_expected_outcome(),
         )
-        if scenario.expect_exception and discover_result.errors:
+        if scenario.expected_outcome.expect_exception() and discover_result.errors:
             # Failed as expected; we're done.
             return
 

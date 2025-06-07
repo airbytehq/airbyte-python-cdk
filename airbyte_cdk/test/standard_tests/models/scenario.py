@@ -9,11 +9,45 @@ up iteration cycles.
 
 from __future__ import annotations
 
-from pathlib import Path
+from enum import Enum, auto
+from pathlib import Path  # noqa: TC003  # Pydantic needs this (don't move to 'if typing' block)
 from typing import Any, Literal, cast
 
 import yaml
 from pydantic import BaseModel, ConfigDict
+
+
+class ExpectedOutcome(Enum):
+    """Enum to represent the expected outcome of a test scenario.
+
+    Class supports comparisons to a boolean or None.
+    """
+
+    EXPECT_EXCEPTION = auto()
+    EXPECT_SUCCESS = auto()
+    ALLOW_ANY = auto()
+
+    @classmethod
+    def from_status_str(cls, status: str | None) -> ExpectedOutcome:
+        """Convert a status string to an ExpectedOutcome."""
+        if status is None:
+            return ExpectedOutcome.ALLOW_ANY
+
+        try:
+            return {
+                "succeed": ExpectedOutcome.EXPECT_SUCCESS,
+                "failed": ExpectedOutcome.EXPECT_EXCEPTION,
+            }[status]
+        except KeyError as ex:
+            raise ValueError(f"Invalid status '{status}'. Expected 'succeed' or 'failed'.") from ex
+
+    def expect_exception(self) -> bool:
+        """Return whether the expectation is that an exception should be raised."""
+        return self == ExpectedOutcome.EXPECT_EXCEPTION
+
+    def expect_success(self) -> bool:
+        """Return whether the expectation is that the test should succeed without exceptions."""
+        return self == ExpectedOutcome.EXPECT_SUCCESS
 
 
 class ConnectorTestScenario(BaseModel):
@@ -82,8 +116,13 @@ class ConnectorTestScenario(BaseModel):
         raise ValueError("No config dictionary or path provided.")
 
     @property
-    def expect_exception(self) -> bool:
-        return self.status and self.status == "failed" or False
+    def expected_outcome(self) -> ExpectedOutcome:
+        """Whether the test scenario expects an exception to be raised.
+
+        Returns True if the scenario expects an exception, False if it does not,
+        and None if there is no set expectation.
+        """
+        return ExpectedOutcome.from_status_str(self.status)
 
     @property
     def instance_name(self) -> str:
@@ -97,15 +136,11 @@ class ConnectorTestScenario(BaseModel):
 
         return f"'{hash(self)}' Test Scenario"
 
-    def without_expecting_failure(self) -> ConnectorTestScenario:
-        """Return a copy of the scenario that does not expect failure.
+    def without_expected_outcome(self) -> ConnectorTestScenario:
+        """Return a copy of the scenario that does not expect failure or success.
 
-        This is useful when you need to run multiple steps and you
-        want to defer failure expectation for one or more steps.
+        This is useful when running multiple steps, to defer the expectations to a later step.
         """
-        if self.status != "failed":
-            return self
-
         return ConnectorTestScenario(
             **self.model_dump(exclude={"status"}),
         )
@@ -121,4 +156,17 @@ class ConnectorTestScenario(BaseModel):
         return ConnectorTestScenario(
             **self.model_dump(exclude={"status"}),
             status="failed",
+        )
+
+    def with_expecting_success(self) -> ConnectorTestScenario:
+        """Return a copy of the scenario that expects success.
+
+        This is useful when deriving new scenarios from existing ones.
+        """
+        if self.status == "succeed":
+            return self
+
+        return ConnectorTestScenario(
+            **self.model_dump(exclude={"status"}),
+            status="succeed",
         )
