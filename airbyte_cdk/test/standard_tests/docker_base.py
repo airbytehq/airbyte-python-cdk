@@ -170,7 +170,8 @@ class DockerConnectorTestSuite:
                     f"{temp_config_file}:{container_config_path}",
                     connector_image,
                     "check",
-                    f"--config={container_config_path}",
+                    "--config",
+                    container_config_path,
                 ],
                 check=True,  # Raise an error if the command fails
                 capture_output=False,
