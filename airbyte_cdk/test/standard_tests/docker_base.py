@@ -6,6 +6,7 @@ from __future__ import annotations
 import inspect
 import shutil
 import sys
+import warnings
 from pathlib import Path
 
 import pytest
@@ -57,11 +58,23 @@ class DockerConnectorTestSuite:
         parametrization of fixtures with arguments from the test class itself.
         """
         categories = ["connection", "spec"]
-        all_tests_config = yaml.safe_load(cls.acceptance_test_config_path.read_text())
+        try:
+            acceptance_test_config_path = cls.acceptance_test_config_path
+        except FileNotFoundError as e:
+            # Destinations sometimes do not have an acceptance tests file.
+            warnings.warn(
+                f"Acceptance test config file not found: {e!s}. "
+                "No scenarios will be loaded.",
+                category=UserWarning,
+                stacklevel=0,
+            )
+            return []
+
+        all_tests_config = yaml.safe_load(acceptance_test_config_path.read_text())
         if "acceptance_tests" not in all_tests_config:
             raise ValueError(
-                f"Acceptance tests config not found in {cls.acceptance_test_config_path}."
-                f" Found only: {str(all_tests_config)}."
+                f"Acceptance tests config not found in {acceptance_test_config_path}. "
+                f"Found only: {all_tests_config!s}."
             )
 
         test_scenarios: list[ConnectorTestScenario] = []
