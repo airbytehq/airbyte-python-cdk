@@ -98,6 +98,8 @@ class ConnectorTestScenario(BaseModel):
         path = Path(path_str)
         try:
             path.write_text(json.dumps(config))
+            # Allow the file to be read by other processes
+            path.chmod(path.stat().st_mode | 0o444)
             yield path
         finally:
             # attempt cleanup, ignore errors
