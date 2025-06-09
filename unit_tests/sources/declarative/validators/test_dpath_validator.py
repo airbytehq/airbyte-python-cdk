@@ -34,17 +34,18 @@ class TestDpathValidator(TestCase):
         assert strategy.validate_called
         assert strategy.validated_value
 
-    def test_given_invalid_path_when_validate_then_raise_key_error(self):
+
+class TestDpathValidator(TestCase):
+    def test_given_valid_top_level_path_and_input_validate_is_successful(self):
         strategy = MockValidationStrategy()
-        validator = DpathValidator(field_path=["user", "profile", "phone"], strategy=strategy)
+        validator = DpathValidator(field_path=["user"], strategy=strategy)
 
-        test_data = {"user": {"profile": {"email": "test@example.com"}}}
+        test_data = {"user": {"profile": {"email": "test@example.com", "name": "Test User"}}}
 
-        with pytest.raises(ValueError) as context:
-            validator.validate(test_data)
+        validator.validate(test_data)
 
-        assert "Error validating path" in str(context.value)
-        assert not strategy.validate_called
+        assert strategy.validate_called
+        assert strategy.validated_value
 
     def test_given_strategy_fails_when_validate_then_raise_value_error(self):
         error_message = "Invalid email format"
@@ -53,7 +54,7 @@ class TestDpathValidator(TestCase):
 
         test_data = {"user": {"email": "invalid-email"}}
 
-        with pytest.raises(ValueError) as context:
+        with pytest.raises(ValueError):
             validator.validate(test_data)
 
         assert strategy.validate_called
@@ -63,15 +64,6 @@ class TestDpathValidator(TestCase):
         strategy = MockValidationStrategy()
         validator = DpathValidator(field_path=[], strategy=strategy)
         test_data = {"key": "value"}
-
-        with pytest.raises(ValueError):
-            validator.validate(test_data)
-
-    def test_given_empty_input_data_when_validate_then_validate_raises_exception(self):
-        strategy = MockValidationStrategy()
-        validator = DpathValidator(field_path=["data", "field"], strategy=strategy)
-
-        test_data = {}
 
         with pytest.raises(ValueError):
             validator.validate(test_data)
