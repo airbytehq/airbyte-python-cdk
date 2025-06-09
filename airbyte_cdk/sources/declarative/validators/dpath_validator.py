@@ -2,14 +2,17 @@
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
 #
 
+import logging
 from dataclasses import dataclass
-from typing import Any, List, Union
+from typing import Any, List
 
 import dpath.util
 
 from airbyte_cdk.sources.declarative.interpolation.interpolated_string import InterpolatedString
 from airbyte_cdk.sources.declarative.validators.validation_strategy import ValidationStrategy
 from airbyte_cdk.sources.declarative.validators.validator import Validator
+
+logger = logging.getLogger("airbyte")
 
 
 @dataclass
@@ -47,17 +50,16 @@ class DpathValidator(Validator):
         if "*" in path:
             try:
                 values = dpath.values(input_data, path)
-                if not values:
-                    return
                 for value in values:
                     self.strategy.validate(value)
             except KeyError as e:
-                raise ValueError(f"Error validating path '{self.field_path}': {e}")
+                logger.warning(f"Error validating path. Key not found: {e}")
+                return
+
         else:
             try:
                 value = dpath.get(input_data, path)
-                if not value:
-                    return
                 self.strategy.validate(value)
             except KeyError as e:
-                raise ValueError(f"Error validating path '{self.field_path}': {e}")
+                logger.warning(f"Error validating path. Key not found: {e}")
+                return
