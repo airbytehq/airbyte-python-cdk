@@ -189,6 +189,14 @@ def test_migrate_a_valid_legacy_state_to_per_partition():
             },
             id="test_should_not_migrate_if_the_partitioned_state_key_is_not_the_cursor_field",
         ),
+        pytest.param(
+            {"last_changed": "2022-12-27T08:34:39+00:00"},
+            id="test_should_not_migrate_if_the_partitioned_state_is_not_in_correct_format",
+        ),
+        pytest.param(
+            {},
+            id="test_should_not_migrate_if_not_state_is_passed",
+        ),
     ],
 )
 def test_should_not_migrate(input_state):
@@ -277,7 +285,7 @@ def _migrator_with_multiple_parent_streams():
             CustomPartitionRouter,
             True,
             ValueError,
-            "LegacyToPerPartitionStateMigrations can only be applied on a DeclarativeStream with a SimpleRetriever. Got <class 'unittest.mock.MagicMock'>",
+            "LegacyToPerPartitionStateMigrations can only be applied on a DeclarativeStream with a SimpleRetriever or AsyncRetriever. Got <class 'unittest.mock.MagicMock'>",
         ),
         (
             SimpleRetriever,

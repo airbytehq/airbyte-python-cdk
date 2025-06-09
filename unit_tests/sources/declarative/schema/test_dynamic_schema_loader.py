@@ -68,6 +68,10 @@ _MANIFEST = {
                     },
                     "paginator": {"type": "NoPagination"},
                 },
+                "schema_filter": {
+                    "type": "RecordFilter",
+                    "condition": "{{ 'filtered_field' not in record }}",
+                },
                 "schema_transformations": [
                     {
                         "type": "AddFields",
@@ -390,6 +394,7 @@ def test_dynamic_schema_loader_with_type_conditions():
                 body=json.dumps(
                     {
                         "fields": [
+                            {"name": "filtered_field", "type": "string"},
                             {"name": "Id", "type": "integer"},
                             {"name": "FirstName", "type": "string"},
                             {"name": "Description", "type": "singleLineText"},

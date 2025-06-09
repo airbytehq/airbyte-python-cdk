@@ -9,7 +9,7 @@ import json
 import logging
 from dataclasses import dataclass
 from io import BufferedIOBase, TextIOWrapper
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 import orjson
 import requests
@@ -103,6 +103,7 @@ class CsvParser(Parser):
     # TODO: migrate implementation to re-use file-base classes
     encoding: Optional[str] = "utf-8"
     delimiter: Optional[str] = ","
+    set_values_to_none: Optional[List[str]] = None
 
     def _get_delimiter(self) -> Optional[str]:
         """
@@ -121,6 +122,8 @@ class CsvParser(Parser):
         text_data = TextIOWrapper(data, encoding=self.encoding)  # type: ignore
         reader = csv.DictReader(text_data, delimiter=self._get_delimiter() or ",")
         for row in reader:
+            if self.set_values_to_none:
+                row = {k: (None if v in self.set_values_to_none else v) for k, v in row.items()}
             yield row
 
 

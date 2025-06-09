@@ -56,18 +56,60 @@ list_stream:
     cursor_field: TimePeriod
     cursor_datetime_formats:
       - "%Y-%m-%dT%H:%M:%S%z"
+  state_migrations:
+    - type: LegacyToPerPartitionStateMigration
   retriever:
     type: AsyncRetriever
     name: "{{ parameters['name'] }}"
     decoder:
       $ref: "#/decoder"
     partition_router:
-      type: ListPartitionRouter
-      values: "{{config['repos']}}"
-      cursor_field: a_key
-      request_option:
-        inject_into: header
-        field_name: a_key
+      type: SubstreamPartitionRouter
+      parent_stream_configs:
+        - type: ParentStreamConfig
+          parent_key: Id
+          partition_field: account_id
+          stream:
+            type: DeclarativeStream
+            name: lists_parent
+            schema_loader:
+              type: JsonFileSchemaLoader
+              file_path: "./source_sendgrid/schemas/{{ parameters.name }}.json"
+            retriever:
+              type: SimpleRetriever
+              name: "{{ parameters['name'] }}"
+              decoder:
+                $ref: "#/decoder"
+              partition_router:
+                type: ListPartitionRouter
+                values: "{{config['repos']}}"
+                cursor_field: a_key
+                request_option:
+                  inject_into: header
+                  field_name: a_key
+              paginator:
+                type: DefaultPaginator
+                page_size_option:
+                  inject_into: request_parameter
+                  field_name: page_size
+                page_token_option:
+                  inject_into: path
+                  type: RequestPath
+                pagination_strategy:
+                  type: "CursorPagination"
+                  cursor_value: "{{ response._metadata.next }}"
+                  page_size: 10
+              requester:
+                $ref: "#/requester"
+                path: "{{ next_page_token['next_page_url'] }}"
+              record_selector:
+                $ref: "#/selector"
+            $parameters:
+              name: "lists_parent"
+              primary_key: "id"
+              extractor:
+                $ref: "#/extractor"
+                field_path: [ "{{ parameters['name'] }}" ]
     status_mapping:
       failed:
         - Error

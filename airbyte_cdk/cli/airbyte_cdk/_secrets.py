@@ -49,7 +49,12 @@ from airbyte_cdk.utils.connector_paths import (
     resolve_connector_name_and_directory,
 )
 
-AIRBYTE_INTERNAL_GCP_PROJECT = "dataline-integration-testing"
+GCP_PROJECT_ID: str = os.environ.get("GCP_PROJECT_ID", "") or "dataline-integration-testing"
+# We put the `or` outside the `get()` because we want the `GCP_PROJECT_ID`
+# env var to be ignored if it contains an empty string, such as in CI where the
+# workflow might set it to a value that is itself actually missing or unset.
+"""The GCP project ID to use for fetching integration test secrets."""
+
 CONNECTOR_LABEL = "connector"
 GLOBAL_MASK_KEYS_URL = "https://connectors.airbyte.com/files/registries/v0/specs_secrets_mask.yaml"
 
@@ -83,8 +88,11 @@ def secrets_cli_group() -> None:
 @click.option(
     "--gcp-project-id",
     type=str,
-    default=AIRBYTE_INTERNAL_GCP_PROJECT,
-    help=f"GCP project ID. Defaults to '{AIRBYTE_INTERNAL_GCP_PROJECT}'.",
+    default=GCP_PROJECT_ID,
+    help=(
+        "GCP project ID for retrieving integration tests credentials. "
+        "Defaults to the value of the `GCP_PROJECT_ID` environment variable, if set."
+    ),
 )
 @click.option(
     "--print-ci-secrets-masks",
@@ -95,7 +103,7 @@ def secrets_cli_group() -> None:
 )
 def fetch(
     connector: str | Path | None = None,
-    gcp_project_id: str = AIRBYTE_INTERNAL_GCP_PROJECT,
+    gcp_project_id: str = GCP_PROJECT_ID,
     print_ci_secrets_masks: bool = False,
 ) -> None:
     """Fetch secrets for a connector from Google Secret Manager.
@@ -192,31 +200,33 @@ def fetch(
 
 
 @secrets_cli_group.command("list")
-@click.option(
-    "--connector-name",
+@click.argument(
+    "connector",
+    required=False,
     type=str,
-    help="Name of the connector to fetch secrets for. Ignored if --connector-directory is provided.",
-)
-@click.option(
-    "--connector-directory",
-    type=click.Path(exists=True, file_okay=False, path_type=Path),
-    help="Path to the connector directory.",
+    metavar="[CONNECTOR]",
 )
 @click.option(
     "--gcp-project-id",
     type=str,
-    default=AIRBYTE_INTERNAL_GCP_PROJECT,
-    help=f"GCP project ID. Defaults to '{AIRBYTE_INTERNAL_GCP_PROJECT}'.",
+    default=GCP_PROJECT_ID,
+    help=(
+        "GCP project ID for retrieving integration tests credentials. "
+        "Defaults to the value of the `GCP_PROJECT_ID` environment variable, if set."
+    ),
 )
 def list_(
-    connector_name: str | None = None,
-    connector_directory: Path | None = None,
-    gcp_project_id: str = AIRBYTE_INTERNAL_GCP_PROJECT,
+    connector: str | Path | None = None,
+    *,
+    gcp_project_id: str = GCP_PROJECT_ID,
 ) -> None:
     """List secrets for a connector from Google Secret Manager.
 
     This command fetches secrets for a connector from Google Secret Manager and prints
     them as a table.
+
+    [CONNECTOR] can be a connector name (e.g. 'source-pokeapi'), a path to a connector directory, or omitted to use the current working directory.
+    If a string containing '/' is provided, it is treated as a path. Otherwise, it is treated as a connector name.
 
     If no connector name or directory is provided, we will look within the current working
     directory. If the current working directory is not a connector directory (e.g. starting
@@ -224,9 +234,7 @@ def list_(
     """
     click.echo("Scanning secrets...", err=True)
 
-    connector_name = connector_name or resolve_connector_name(
-        connector_directory=connector_directory or Path().resolve().absolute(),
-    )
+    connector_name, _ = resolve_connector_name_and_directory(connector)
     secrets: list[Secret] = _fetch_secret_handles(  # type: ignore
         connector_name=connector_name,
         gcp_project_id=gcp_project_id,
@@ -303,7 +311,7 @@ def _get_secret_url(secret_name: str, gcp_project_id: str) -> str:
 
 def _fetch_secret_handles(
     connector_name: str,
-    gcp_project_id: str = AIRBYTE_INTERNAL_GCP_PROJECT,
+    gcp_project_id: str = GCP_PROJECT_ID,
 ) -> list["Secret"]:  # type: ignore
     """Fetch secrets from Google Secret Manager."""
     if not secretmanager:

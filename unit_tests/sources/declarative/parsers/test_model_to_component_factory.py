@@ -151,15 +151,12 @@ from airbyte_cdk.sources.declarative.requesters.request_options import (
 )
 from airbyte_cdk.sources.declarative.requesters.request_path import RequestPath
 from airbyte_cdk.sources.declarative.requesters.requester import HttpMethod
-from airbyte_cdk.sources.declarative.retrievers import (
-    AsyncRetriever,
-    SimpleRetriever,
-    SimpleRetrieverTestReadDecorator,
-)
+from airbyte_cdk.sources.declarative.retrievers import AsyncRetriever, SimpleRetriever
 from airbyte_cdk.sources.declarative.schema import InlineSchemaLoader, JsonFileSchemaLoader
 from airbyte_cdk.sources.declarative.schema.composite_schema_loader import CompositeSchemaLoader
 from airbyte_cdk.sources.declarative.schema.schema_loader import SchemaLoader
 from airbyte_cdk.sources.declarative.spec import Spec
+from airbyte_cdk.sources.declarative.stream_slicers import StreamSlicerTestReadDecorator
 from airbyte_cdk.sources.declarative.transformations import AddFields, RemoveFields
 from airbyte_cdk.sources.declarative.transformations.add_fields import AddedFieldDefinition
 from airbyte_cdk.sources.declarative.yaml_declarative_source import YamlDeclarativeSource
@@ -944,8 +941,23 @@ list_stream:
     assert list_stream_slicer._cursor_field.string == "a_key"
 
 
+@pytest.mark.parametrize(
+    "use_legacy_state",
+    [
+        False,
+        True,
+    ],
+    ids=[
+        "running_with_newest_state",
+        "running_with_legacy_state",
+    ],
+)
 @freezegun.freeze_time("2025-05-14")
-def test_stream_with_incremental_and_async_retriever_with_partition_router():
+def test_stream_with_incremental_and_async_retriever_with_partition_router(use_legacy_state):
+    """
+    This test is to check the behavior of the stream with async retriever and partition router
+    when the state is in the legacy format or the newest format.
+    """
     content = read_yaml_file(
         "resources/stream_with_incremental_and_aync_retriever_with_partition_router.yaml"
     )
@@ -956,26 +968,34 @@ def test_stream_with_incremental_and_async_retriever_with_partition_router():
     )
     cursor_time_period_value = "2025-05-06T12:00:00+0000"
     cursor_field_key = "TimePeriod"
-    parent_user_id = "102023653"
-    per_partition_key = {
-        "account_id": 999999999,
-        "parent_slice": {"parent_slice": {}, "user_id": parent_user_id},
-    }
+    account_id = 999999999
+    per_partition_key = {"account_id": account_id}
+
+    legacy_stream_state = {account_id: {cursor_field_key: cursor_time_period_value}}
+    states = [
+        {"partition": per_partition_key, "cursor": {cursor_field_key: cursor_time_period_value}}
+    ]
+
     stream_state = {
         "use_global_cursor": False,
-        "states": [
-            {"partition": per_partition_key, "cursor": {cursor_field_key: cursor_time_period_value}}
-        ],
-        "state": {cursor_field_key: "2025-05-12T12:00:00+0000"},
-        "lookback_window": 46,
+        "states": states,
+        "lookback_window": 0,
     }
+    if not use_legacy_state:
+        # to check it keeps other data in the newest state format
+        stream_state["state"] = {cursor_field_key: "2025-05-12T12:00:00+0000"}
+        stream_state["lookback_window"] = 46
+        stream_state["use_global_cursor"] = False
+        per_partition_key["parent_slice"] = {"parent_slice": {}, "user_id": "102023653"}
+
+    state_to_test = legacy_stream_state if use_legacy_state else stream_state
     connector_state_manager = ConnectorStateManager(
         state=[
             AirbyteStateMessage(
                 type=AirbyteStateType.STREAM,
                 stream=AirbyteStreamState(
                     stream_descriptor=StreamDescriptor(name="lists"),
-                    stream_state=AirbyteStateBlob(stream_state),
+                    stream_state=AirbyteStateBlob(state_to_test),
                 ),
             )
         ]
@@ -2692,6 +2712,13 @@ def test_simple_retriever_emit_log_messages():
             "path": "/v1/api",
         },
     }
+    request = requests.PreparedRequest()
+    request.headers = {"header": "value"}
+    request.url = "http://byrde.enterprises.com/casinos"
+
+    response = requests.Response()
+    response.request = request
+    response.status_code = 200
 
     connector_builder_factory = ModelToComponentFactory(emit_connector_builder_messages=True)
     retriever = connector_builder_factory.create_component(
@@ -2704,8 +2731,13 @@ def test_simple_retriever_emit_log_messages():
         transformations=[],
     )
 
-    assert isinstance(retriever, SimpleRetrieverTestReadDecorator)
+    assert isinstance(retriever, SimpleRetriever)
     assert connector_builder_factory._message_repository._log_level == Level.DEBUG
+    assert retriever.log_formatter is not None
+    assert retriever.log_formatter(response) == connector_builder_factory._get_log_formatter(
+        None, retriever.name
+    )(response)
+    assert isinstance(retriever.stream_slicer, StreamSlicerTestReadDecorator)
 
 
 def test_create_page_increment():
@@ -3055,7 +3087,8 @@ def test_use_request_options_provider_for_datetime_based_cursor():
     assert retriever.name == "Test"
 
     assert isinstance(retriever.cursor, DatetimeBasedCursor)
-    assert isinstance(retriever.stream_slicer, DatetimeBasedCursor)
+    assert isinstance(retriever.stream_slicer, StreamSlicerTestReadDecorator)
+    assert isinstance(retriever.stream_slicer.wrapped_slicer, DatetimeBasedCursor)
 
     assert isinstance(retriever.request_option_provider, DatetimeBasedRequestOptionsProvider)
     assert (
@@ -3143,7 +3176,8 @@ def test_do_not_separate_request_options_provider_for_non_datetime_based_cursor(
     assert retriever.name == "Test"
 
     assert isinstance(retriever.cursor, PerPartitionCursor)
-    assert isinstance(retriever.stream_slicer, PerPartitionCursor)
+    assert isinstance(retriever.stream_slicer, StreamSlicerTestReadDecorator)
+    assert isinstance(retriever.stream_slicer.wrapped_slicer, PerPartitionCursor)
 
     assert isinstance(retriever.request_option_provider, PerPartitionCursor)
     assert isinstance(retriever.request_option_provider._cursor_factory, CursorFactory)
@@ -3184,7 +3218,8 @@ def test_use_default_request_options_provider():
     assert retriever.primary_key == "id"
     assert retriever.name == "Test"
 
-    assert isinstance(retriever.stream_slicer, SinglePartitionRouter)
+    assert isinstance(retriever.stream_slicer, StreamSlicerTestReadDecorator)
+    assert isinstance(retriever.stream_slicer.wrapped_slicer, SinglePartitionRouter)
     assert isinstance(retriever.request_option_provider, DefaultRequestOptionsProvider)
 
 
@@ -3793,13 +3828,29 @@ def test_create_async_retriever():
         },
     }
 
+    transformations = [
+        AddFields(
+            fields=[
+                AddedFieldDefinition(
+                    path=["field1"],
+                    value=InterpolatedString(
+                        string="static_value", default="static_value", parameters={}
+                    ),
+                    value_type=None,
+                    parameters={},
+                )
+            ],
+            parameters={},
+        )
+    ]
+
     component = factory.create_component(
         model_type=AsyncRetrieverModel,
         component_definition=definition,
         name="test_stream",
         primary_key="id",
         stream_slicer=None,
-        transformations=[],
+        transformations=transformations,
         config=config,
     )
 
@@ -3828,6 +3879,16 @@ def test_create_async_retriever():
     assert isinstance(selector, RecordSelector)
     assert isinstance(extractor, DpathExtractor)
     assert extractor.field_path == ["data"]
+
+    # Validate the transformations are just passed to the async retriever record_selector but not the download retriever record_selector
+    assert selector.transformations == transformations
+    download_retriever_record_selector: RecordSelector = (
+        job_repository.download_retriever.record_selector
+    )  # type: ignore
+    assert download_retriever_record_selector.transformations != transformations
+    assert not download_retriever_record_selector.transformations
+    assert download_retriever_record_selector.record_filter is None
+    assert download_retriever_record_selector.schema_normalization._config.name == "NoTransform"
 
 
 def test_api_budget():

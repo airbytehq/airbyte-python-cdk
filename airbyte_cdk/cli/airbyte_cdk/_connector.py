@@ -39,6 +39,7 @@ poetry run airbyte-cdk connector --help
 """
 
 import os
+import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -161,15 +162,22 @@ def test(
         pytest_args.append("--collect-only")
 
     pytest_args.append(str(test_file_path))
+
+    test_results_dir = connector_directory / "build" / "test-results"
+    test_results_dir.mkdir(parents=True, exist_ok=True)
+    junit_xml_path = test_results_dir / "standard-tests-junit.xml"
+    pytest_args.extend(["--junitxml", str(junit_xml_path)])
+
     click.echo(f"Running tests from connector directory: {connector_directory}...")
     click.echo(f"Test file: {test_file_path}")
     click.echo(f"Collect only: {collect_only}")
     click.echo(f"Pytest args: {pytest_args}")
     click.echo("Invoking Pytest...")
-    pytest.main(
+    exit_code = pytest.main(
         pytest_args,
         plugins=[],
     )
+    sys.exit(exit_code)
 
 
 __all__ = [

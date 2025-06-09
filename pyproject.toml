@@ -124,15 +124,15 @@ dev = ["pytest"]
 airbyte-cdk = "airbyte_cdk.cli.airbyte_cdk:cli"
 source-declarative-manifest = "airbyte_cdk.cli.source_declarative_manifest:run"
 
-[tool.isort]
-skip = ["__init__.py"]  # TODO: Remove after this is fixed: https://github.com/airbytehq/airbyte-python-cdk/issues/12
-
 # Ruff configuration moved to ruff.toml
 
 [tool.poe.tasks]
 # Installation
-install = { shell = "poetry install --all-extras" }
-lock = { shell = "poetry lock" }
+install = { shell = "poetry install --all-extras", help = "Install all dependencies." }
+lock = { shell = "poetry lock", help = "Lock all dependencies." }
+
+# Pre-commit tasks
+pre-commit = {cmd = "poetry run pre-commit run --all-files", help = "Run all pre-commit hooks on all files."}
 
 # Build tasks
 assemble = {cmd = "bin/generate-component-manifest-dagger.sh", help = "Generate component manifest files."}
@@ -140,47 +140,44 @@ build-package = {cmd = "poetry build", help = "Build the python package: source 
 build = {sequence = ["assemble", "build-package"], help = "Run all tasks to build the package."}
 
 # Format check tasks
+format-check = {sequence = ["_format-check-ruff", "_format-check-prettier"], help = "Check formatting for all file types via Ruff and Prettier.", ignore_fail = "return_non_zero"}
 _format-check-ruff = {cmd = "poetry run ruff format --check .", help = "Check formatting with Ruff."}
 _format-check-prettier = {cmd = "npx prettier . --check", help = "Check formatting with prettier."}
-format-check = {sequence = ["_format-check-ruff", "_format-check-prettier"], help = "Check formatting for all file types.", ignore_fail = "return_non_zero"}
 
 # Format fix tasks
+format-fix = {sequence = ["_format-fix-ruff", "_format-fix-prettier"], help = "Format all file types via Ruff and Prettier.", ignore_fail = "return_non_zero"}
 _format-fix-ruff = {cmd = "poetry run ruff format .", help = "Format with Ruff."}
 _format-fix-prettier = {cmd = "npx prettier . --write", help = "Format with prettier."}
-format-fix = {sequence = ["_format-fix-ruff", "_format-fix-prettier"], help = "Format all file types.", ignore_fail = "return_non_zero"}
 
 # Linting/Typing check tasks
-_lint-ruff = {cmd = "poetry run ruff check .", help = "Lint with Ruff."}
+lint = {cmd = "poetry run ruff check .", help = "Lint with Ruff."}
 type-check = {cmd = "poetry run mypy airbyte_cdk", help = "Type check modified files with mypy."}
-lint = {sequence = ["_lint-ruff", "type-check"], help = "Lint all code. Includes type checking.", ignore_fail = "return_non_zero"}
-
-# Lockfile check task
-check-lockfile = {cmd = "poetry check", help = "Check the poetry lock file."}
 
 # Linting/Typing fix tasks
-lint-fix = { cmd = "poetry run ruff check --fix .", help = "Auto-fix any lint issues that Ruff can automatically resolve (excluding 'unsafe' fixes)." }
-lint-fix-unsafe = { cmd = "poetry run ruff check --fix --unsafe-fixes .", help = "Lint-fix modified files, including 'unsafe' fixes. It is recommended to first commit any pending changes and then always manually review any unsafe changes applied." }
+lint-fix = { cmd = "poetry run ruff check --fix .", help = "Auto-fix any lint issues that Ruff can automatically resolve (excluding 'unsafe' fixes) with Ruff." }
+lint-fix-unsafe = { cmd = "poetry run ruff check --fix --unsafe-fixes .", help = "Lint-fix modified files, including 'unsafe' fixes with Ruff. It is recommended to first commit any pending changes and then always manually review any unsafe changes applied." }
 
 # ruff fix everything (ignoring non-Python fixes)
 ruff-fix = { sequence = ["lint-fix", "_format-fix-ruff"],  help = "Lint-fix and format-fix all code." }
 
-# Combined Check and Fix tasks
+# Lockfile check task
+_check-lockfile = {cmd = "poetry check", help = "Check the poetry lock file."}
 
-check-all = {sequence = ["lint", "format-check", "type-check", "check-lockfile"], help = "Lint, format, and type-check modified files.", ignore_fail = "return_non_zero"}
+# Combined Check and Fix tasks
+check-all = {sequence = ["lint", "format-check", "type-check", "_check-lockfile"], help = "Lint, format, and type-check modified files.", ignore_fail = "return_non_zero"}
 fix-all = {sequence = ["format-fix", "lint-fix"], help = "Lint-fix and format-fix modified files, ignoring unsafe fixes.", ignore_fail = "return_non_zero"}
 fix-and-check = {sequence = ["fix-all", "check-all"], help = "Lint-fix and format-fix, then re-check to see if any issues remain.", ignore_fail = "return_non_zero"}
 
 # PyTest tasks
-
 pytest = {cmd = "poetry run coverage run -m pytest --durations=10", help = "Run all pytest tests."}
-pytest-fast = {cmd = "poetry run coverage run -m pytest --durations=5 --exitfirst -m 'not flaky and not slow and not requires_creds'", help = "Run pytest tests, failing fast and excluding slow tests."}
+pytest-fast = {cmd = "poetry run coverage run -m pytest unit_tests --durations=5 --exitfirst -m 'not flaky and not slow and not requires_creds'", help = "Run pytest tests, failing fast and excluding slow tests."}
 unit-test-with-cov = {cmd = "poetry run pytest -s unit_tests --cov=airbyte_cdk --cov-report=term --cov-config ./pyproject.toml", help = "Run unit tests and create a coverage report."}
 
 # Combined check tasks (other)
 
 # TODO: find a version of the modified mypy check that works both locally and in CI.
-check-local = {sequence = ["lint", "type-check", "check-lockfile", "unit-test-with-cov"], help = "Lint all code, type-check modified files, and run unit tests."}
-check-ci = {sequence = ["check-lockfile", "build", "lint", "unit-test-with-cov"], help = "Build the package, lint and run unit tests. Does not include type-checking."}
+check-local = {sequence = ["lint", "type-check", "_check-lockfile", "unit-test-with-cov"], help = "Lint all code, type-check modified files, and run unit tests."}
+check-ci = {sequence = ["_check-lockfile", "build", "lint", "unit-test-with-cov"], help = "Build the package, lint and run unit tests. Does not include type-checking."}
 
 # Build and check
 pre-push = {sequence = ["build", "check-local"], help = "Run all build and check tasks."}
@@ -196,14 +193,8 @@ ignore = [
   "W002"  # Duplicate files. (TODO: Fix the few duplicate files, mostly `__init__.py` files that have only copyright text.)
 ]
 
-[tool.pytest.ini_options]
-log_cli = true
-log_cli_level = "INFO"
-log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
-log_cli_date_format = "%Y-%m-%d %H:%M:%S"
-filterwarnings = [
-    "ignore::airbyte_cdk.sources.source.ExperimentalClassWarning"
-]
+# [tool.pytest.ini_options]
+# NOTE: PyTest options moved to dedicated `pytest.ini`
 
 [tool.airbyte_ci]
 python_versions = ["3.10", "3.11"]

@@ -1,3 +1,7 @@
+# Build and test results
+build
+test-results
+
 # Node artifacts
 node_modules
 

@@ -2321,6 +2321,12 @@ definitions:
           - "$ref": "#/definitions/SimpleRetriever"
           - "$ref": "#/definitions/AsyncRetriever"
           - "$ref": "#/definitions/CustomRetriever"
+      schema_filter:
+        title: Schema Filter
+        description: Responsible for filtering fields to be added to json schema.
+        anyOf:
+          - "$ref": "#/definitions/RecordFilter"
+          - "$ref": "#/definitions/CustomRecordFilter"
       schema_transformations:
         title: Schema Transformations
         description: A list of transformations to be applied to the schema.
@@ -3629,6 +3635,10 @@ definitions:
       delimiter:
         type: string
         default: ","
+      set_values_to_none:
+        type: array
+        items:
+          type: string
   AsyncJobStatusMap:
     description: Matches the api job status to Async Job Status.
     type: object
@@ -3808,6 +3818,61 @@ definitions:
         title: Advanced Auth
         description: Advanced specification for configuring the authentication flow.
         "$ref": "#/definitions/AuthFlow"
+      config_normalization_rules:
+        title: Config Normalization Rules
+        type: object
+        additionalProperties: false
+        properties:
+          config_migrations:
+            title: Config Migrations
+            description: The discrete migrations that will be applied on the incoming config. Each migration will be applied in the order they are defined.
+            type: array
+            items:
+              "$ref": "#/definitions/ConfigMigration"
+            default: []
+          transformations:
+            title: Transformations
+            description: The list of transformations that will be applied on the incoming config at the start of each sync. The transformations will be applied in the order they are defined.
+            type: array
+            items:
+              anyOf:
+                - "$ref": "#/definitions/ConfigRemapField"
+                - "$ref": "#/definitions/ConfigAddFields"
+                - "$ref": "#/definitions/ConfigRemoveFields"
+            default: []
+          validations:
+            title: Validations
+            description: The list of validations that will be performed on the incoming config at the start of each sync.
+            type: array
+            items:
+              anyOf:
+                - "$ref": "#/definitions/DpathValidator"
+                - "$ref": "#/definitions/PredicateValidator"
+            default: []
+  ConfigMigration:
+    title: Config Migration
+    description: A config migration that will be applied on the incoming config at the start of a sync.
+    type: object
+    required:
+      - type
+      - transformations
+    properties:
+      type:
+        type: string
+        enum: [ConfigMigration]
+      description:
+        type: string
+        description: The description/purpose of the config migration.
+      transformations:
+        title: Transformations
+        description: The list of transformations that will attempt to be applied on an incoming unmigrated config. The transformations will be applied in the order they are defined.
+        type: array
+        items:
+          anyOf:
+            - "$ref": "#/definitions/ConfigRemapField"
+            - "$ref": "#/definitions/ConfigAddFields"
+            - "$ref": "#/definitions/ConfigRemoveFields"
+        default: []
   SubstreamPartitionRouter:
     title: Substream Partition Router
     description: Partition router that is used to retrieve records that have been partitioned according to records from the specified parent streams. An example of a parent stream is automobile brands and the substream would be the various car models associated with each branch.
@@ -3999,6 +4064,11 @@ definitions:
         title: Value Type
         description: The expected data type of the value. If omitted, the type will be inferred from the value provided.
         "$ref": "#/definitions/ValueType"
+      create_or_update:
+        title: Create or Update
+        description: Determines whether to create a new path if it doesn't exist (true) or only update existing paths (false). When set to true, the resolver will create new paths in the stream template if they don't exist. When false (default), it will only update existing paths.
+        type: boolean
+        default: false
       $parameters:
         type: object
         additionalProperties: true
@@ -4051,6 +4121,12 @@ definitions:
           - ["data"]
           - ["data", "streams"]
           - ["data", "{{ parameters.name }}"]
+      default_values:
+        title: Default Values
+        description: A list of default values, each matching the structure expected from the parsed component value.
+        type: array
+        items:
+          type: object
       $parameters:
         type: object
         additionalProperties: true
@@ -4063,7 +4139,11 @@ definitions:
         type: string
         enum: [ConfigComponentsResolver]
       stream_config:
-        "$ref": "#/definitions/StreamConfig"
+        anyOf:
+          - type: array
+            items:
+              "$ref": "#/definitions/StreamConfig"
+          - "$ref": "#/definitions/StreamConfig"
       components_mapping:
         type: array
         items:
@@ -4092,7 +4172,9 @@ definitions:
       stream_template:
         title: Stream Template
         description: Reference to the stream template.
-        "$ref": "#/definitions/DeclarativeStream"
+        anyOf:
+          - "$ref": "#/definitions/DeclarativeStream"
+          - "$ref": "#/definitions/StateDelegatingStream"
       components_resolver:
         title: Components Resolver
         description: Component resolve and populates stream templates with components values.
@@ -4171,6 +4253,224 @@ definitions:
         description: The GraphQL query to be executed
         default: {}
     additionalProperties: true
+  DpathValidator:
+    title: Dpath Validator
+    description: Validator that extracts the value located at a given field path.
+    type: object
+    required:
+      - type
+      - field_path
+      - validation_strategy
+    properties:
+      type:
+        type: string
+        enum: [DpathValidator]
+      field_path:
+        title: Field Path
+        description: List of potentially nested fields describing the full path of the field to validate. Use "*" to validate all values from an array.
+        type: array
+        items:
+          type: string
+        interpolation_context:
+          - config
+        examples:
+          - ["data"]
+          - ["data", "records"]
+          - ["data", "{{ parameters.name }}"]
+          - ["data", "*", "record"]
+      validation_strategy:
+        title: Validation Strategy
+        description: The condition that the specified config value will be evaluated against
+        anyOf:
+          - "$ref": "#/definitions/ValidateAdheresToSchema"
+  PredicateValidator:
+    title: Predicate Validator
+    description: Validator that applies a validation strategy to a specified value.
+    type: object
+    required:
+      - type
+      - value
+      - validation_strategy
+    properties:
+      type:
+        type: string
+        enum: [PredicateValidator]
+      value:
+        title: Value
+        description: The value to be validated. Can be a literal value or interpolated from configuration.
+        type:
+          - string
+          - number
+          - object
+          - array
+          - boolean
+          - "null"
+        interpolation_context:
+          - config
+        examples:
+          - "test-value"
+          - "{{ config['api_version'] }}"
+          - "{{ config['tenant_id'] }}"
+          - 123
+      validation_strategy:
+        title: Validation Strategy
+        description: The validation strategy to apply to the value.
+        anyOf:
+          - "$ref": "#/definitions/ValidateAdheresToSchema"
+  ValidateAdheresToSchema:
+    title: Validate Adheres To Schema
+    description: Validates that a user-provided schema adheres to a specified JSON schema.
+    type: object
+    required:
+      - type
+      - base_schema
+    properties:
+      type:
+        type: string
+        enum: [ValidateAdheresToSchema]
+      base_schema:
+        title: Base JSON Schema
+        description: The base JSON schema against which the user-provided schema will be validated.
+        type:
+          - string
+          - object
+        interpolation_context:
+          - config
+        examples:
+          - "{{ config['report_validation_schema'] }}"
+          - |
+            '{
+              "$schema": "http://json-schema.org/draft-07/schema#",
+              "title": "Person",
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "The person's name"
+                },
+                "age": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "The person's age"
+                }
+              },
+              "required": ["name", "age"]
+            }'
+          - $schema: "http://json-schema.org/draft-07/schema#"
+            title: Person
+            type: object
+            properties:
+              name:
+                type: string
+                description: "The person's name"
+              age:
+                type: integer
+                minimum: 0
+                description: "The person's age"
+            required:
+              - name
+              - age
+  ConfigRemapField:
+    title: Remap Field
+    description: Transformation that remaps a field's value to another value based on a static map.
+    type: object
+    required:
+      - type
+      - map
+      - field_path
+    properties:
+      type:
+        type: string
+        enum: [ConfigRemapField]
+      map:
+        title: Value Mapping
+        description: A mapping of original values to new values. When a field value matches a key in this map, it will be replaced with the corresponding value.
+        interpolation_context:
+          - config
+        type:
+          - object
+          - string
+        additionalProperties: true
+        examples:
+          - pending: "in_progress"
+            done: "completed"
+            cancelled: "terminated"
+          - "{{ config['status_mapping'] }}"
+      field_path:
+        title: Field Path
+        description: The path to the field whose value should be remapped. Specified as a list of path components to navigate through nested objects.
+        interpolation_context:
+          - config
+        type: array
+        items:
+          type: string
+        examples:
+          - ["status"]
+          - ["data", "status"]
+          - ["data", "{{ config.name }}", "status"]
+          - ["data", "*", "status"]
+  ConfigAddFields:
+    title: Config Add Fields
+    description: Transformation that adds fields to a config. The path of the added field can be nested.
+    type: object
+    required:
+      - type
+      - fields
+    properties:
+      type:
+        type: string
+        enum: [ConfigAddFields]
+      fields:
+        title: Fields
+        description: A list of transformations (path and corresponding value) that will be added to the config.
+        type: array
+        items:
+          "$ref": "#/definitions/AddedFieldDefinition"
+      condition:
+        description: Fields will be added if expression is evaluated to True.
+        type: string
+        default: ""
+        interpolation_context:
+          - config
+          - property
+        examples:
+          - "{{ config['environemnt'] == 'sandbox' }}"
+          - "{{ property is integer }}"
+          - "{{ property|length > 5 }}"
+          - "{{ property == 'some_string_to_match' }}"
+  ConfigRemoveFields:
+    title: Config Remove Fields
+    description: Transformation that removes a field from the config.
+    type: object
+    required:
+      - type
+      - field_pointers
+    properties:
+      type:
+        type: string
+        enum: [ConfigRemoveFields]
+      field_pointers:
+        title: Field Pointers
+        description: A list of field pointers to be removed from the config.
+        type: array
+        items:
+          items:
+            type: string
+        examples:
+          - ["tags"]
+          - [["content", "html"], ["content", "plain_text"]]
+      condition:
+        description: Fields will be removed if expression is evaluated to True.
+        type: string
+        default: ""
+        interpolation_context:
+          - config
+          - property
+        examples:
+          - "{{ config['environemnt'] == 'sandbox' }}"
+          - "{{ property is integer }}"
+          - "{{ property|length > 5 }}"
+          - "{{ property == 'some_string_to_match' }}"
 interpolation:
   variables:
     - title: config

@@ -15,8 +15,12 @@ from airbyte_cdk.sources.declarative.transformations.config_transformations.add_
 def test_given_valid_static_value_fields_added():
     transformation = AddFields(
         fields=[
-            AddedFieldDefinition(path=["new_field"], value="static_value"),
-            AddedFieldDefinition(path=["another_field"], value="another_value"),
+            AddedFieldDefinition(
+                path=["new_field"], value="static_value", value_type=None, parameters={}
+            ),
+            AddedFieldDefinition(
+                path=["another_field"], value="another_value", value_type=None, parameters={}
+            ),
         ]
     )
     config = {}
@@ -32,7 +36,12 @@ def test_given_valid_static_value_fields_added():
 def test_given_valid_nested_fields_static_value_added():
     transformation = AddFields(
         fields=[
-            AddedFieldDefinition(path=["parent", "child", "grandchild"], value="nested_value"),
+            AddedFieldDefinition(
+                path=["parent", "child", "grandchild"],
+                value="nested_value",
+                value_type=None,
+                parameters={},
+            ),
         ]
     )
     config = {}
@@ -45,8 +54,15 @@ def test_given_valid_nested_fields_static_value_added():
 def test_given_valid_interpolated_input_field_added():
     transformation = AddFields(
         fields=[
-            AddedFieldDefinition(path=["derived_field"], value="{{ config.original_field }}"),
-            AddedFieldDefinition(path=["expression_result"], value="{{ 2 * 3 }}"),
+            AddedFieldDefinition(
+                path=["derived_field"],
+                value="{{ config.original_field }}",
+                value_type=None,
+                parameters={},
+            ),
+            AddedFieldDefinition(
+                path=["expression_result"], value="{{ 2 * 3 }}", value_type=None, parameters={}
+            ),
         ]
     )
     config = {"original_field": "original_value"}
@@ -62,16 +78,24 @@ def test_given_valid_interpolated_input_field_added():
 
 def test_given_invalid_field_raises_exception():
     with pytest.raises(ValueError):
-        AddFields(fields=[AddedFieldDefinition(path=[], value="value")])
+        AddFields(
+            fields=[AddedFieldDefinition(path=[], value="value", value_type=None, parameters={})]
+        )
 
     with pytest.raises(ValueError):
-        AddFields(fields=[AddedFieldDefinition(path=["valid_path"], value=123)])
+        AddFields(
+            fields=[
+                AddedFieldDefinition(path=["valid_path"], value=123, value_type=None, parameters={})
+            ]
+        )
 
 
 def test_given_field_already_exists_value_is_overwritten():
     transformation = AddFields(
         fields=[
-            AddedFieldDefinition(path=["existing_field"], value="new_value"),
+            AddedFieldDefinition(
+                path=["existing_field"], value="new_value", value_type=None, parameters={}
+            ),
         ]
     )
     config = {"existing_field": "existing_value"}
@@ -84,7 +108,9 @@ def test_given_field_already_exists_value_is_overwritten():
 def test_with_condition_only_adds_fields_when_condition_is_met():
     transformation = AddFields(
         fields=[
-            AddedFieldDefinition(path=["conditional_field"], value="added_value"),
+            AddedFieldDefinition(
+                path=["conditional_field"], value="added_value", value_type=None, parameters={}
+            ),
         ],
         condition="{{ config.flag == true }}",
     )

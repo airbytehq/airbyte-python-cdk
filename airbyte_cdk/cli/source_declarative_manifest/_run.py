@@ -16,15 +16,17 @@ source-declarative-manifest spec
 
 from __future__ import annotations
 
+import argparse
 import json
 import pkgutil
 import sys
 import traceback
-from collections.abc import Mapping
+from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any, cast
 
 import orjson
+import yaml
 
 from airbyte_cdk.entrypoint import AirbyteEntrypoint, launch
 from airbyte_cdk.models import (
@@ -54,8 +56,9 @@ class SourceLocalYaml(YamlDeclarativeSource):
     def __init__(
         self,
         catalog: ConfiguredAirbyteCatalog | None,
-        config: Mapping[str, Any] | None,
+        config: MutableMapping[str, Any] | None,
         state: TState,
+        config_path: str | None = None,
         **kwargs: Any,
     ) -> None:
         """
@@ -74,6 +77,7 @@ class SourceLocalYaml(YamlDeclarativeSource):
             config=config,
             state=state,  # type: ignore [arg-type]
             path_to_yaml="manifest.yaml",
+            config_path=config_path,
         )
 
 
@@ -91,8 +95,14 @@ def handle_command(args: list[str]) -> None:
 
 def _get_local_yaml_source(args: list[str]) -> SourceLocalYaml:
     try:
-        config, catalog, state = _parse_inputs_into_config_catalog_state(args)
-        return SourceLocalYaml(config=config, catalog=catalog, state=state)
+        parsed_args = AirbyteEntrypoint.parse_args(args)
+        config, catalog, state = _parse_inputs_into_config_catalog_state(parsed_args)
+        return SourceLocalYaml(
+            config=config,
+            catalog=catalog,
+            state=state,
+            config_path=parsed_args.config if hasattr(parsed_args, "config") else None,
+        )
     except Exception as error:
         print(
             orjson.dumps(
@@ -162,14 +172,30 @@ def create_declarative_source(
     connector builder.
     """
     try:
-        config: Mapping[str, Any] | None
+        config: MutableMapping[str, Any] | None
         catalog: ConfiguredAirbyteCatalog | None
         state: list[AirbyteStateMessage]
-        config, catalog, state = _parse_inputs_into_config_catalog_state(args)
-        if config is None or "__injected_declarative_manifest" not in config:
+
+        parsed_args = AirbyteEntrypoint.parse_args(args)
+        config, catalog, state = _parse_inputs_into_config_catalog_state(parsed_args)
+
+        if config is None:
             raise ValueError(
                 "Invalid config: `__injected_declarative_manifest` should be provided at the root "
-                f"of the config but config only has keys: {list(config.keys() if config else [])}"
+                "of the config or using the --manifest-path argument."
+            )
+
+        # If a manifest_path is provided in the args, inject it into the config
+        if hasattr(parsed_args, "manifest_path") and parsed_args.manifest_path:
+            injected_manifest = _parse_manifest_from_file(parsed_args.manifest_path)
+            if injected_manifest:
+                config["__injected_declarative_manifest"] = injected_manifest
+
+        if "__injected_declarative_manifest" not in config:
+            raise ValueError(
+                "Invalid config: `__injected_declarative_manifest` should be provided at the root "
+                "of the config or using the --manifest-path argument. "
+                f"Config only has keys: {list(config.keys() if config else [])}"
             )
         if not isinstance(config["__injected_declarative_manifest"], dict):
             raise ValueError(
@@ -177,11 +203,15 @@ def create_declarative_source(
                 f"but got type: {type(config['__injected_declarative_manifest'])}"
             )
 
+        if hasattr(parsed_args, "components_path") and parsed_args.components_path:
+            _register_components_from_file(parsed_args.components_path)
+
         return ConcurrentDeclarativeSource(
             config=config,
             catalog=catalog,
             state=state,
             source_config=cast(dict[str, Any], config["__injected_declarative_manifest"]),
+            config_path=parsed_args.config if hasattr(parsed_args, "config") else None,
         )
     except Exception as error:
         print(
@@ -205,13 +235,12 @@ def create_declarative_source(
 
 
 def _parse_inputs_into_config_catalog_state(
-    args: list[str],
+    parsed_args: argparse.Namespace,
 ) -> tuple[
-    Mapping[str, Any] | None,
+    MutableMapping[str, Any] | None,
     ConfiguredAirbyteCatalog | None,
     list[AirbyteStateMessage],
 ]:
-    parsed_args = AirbyteEntrypoint.parse_args(args)
     config = (
         ConcurrentDeclarativeSource.read_config(parsed_args.config)
         if hasattr(parsed_args, "config")
@@ -229,6 +258,44 @@ def _parse_inputs_into_config_catalog_state(
     )
 
     return config, catalog, state
+
+
+def _parse_manifest_from_file(filepath: str) -> dict[str, Any] | None:
+    """Extract and parse a manifest file specified in the args."""
+    try:
+        with open(filepath, "r", encoding="utf-8") as manifest_file:
+            manifest_content = yaml.safe_load(manifest_file)
+            if manifest_content is None:
+                raise ValueError(f"Manifest file at {filepath} is empty")
+            if not isinstance(manifest_content, dict):
+                raise ValueError(f"Manifest must be a dictionary, got {type(manifest_content)}")
+            return manifest_content
+    except Exception as error:
+        raise ValueError(f"Failed to load manifest file from {filepath}: {error}")
+
+
+def _register_components_from_file(filepath: str) -> None:
+    """Load and register components from a Python file specified in the args."""
+    import importlib.util
+    import sys
+
+    components_path = Path(filepath)
+
+    module_name = "components"
+    sdm_module_name = "source_declarative_manifest.components"
+
+    # Create module spec
+    spec = importlib.util.spec_from_file_location(module_name, components_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load module from {components_path}")
+
+    # Create module and execute code, registering the module before executing its code
+    # To avoid issues with dataclasses that look up the module
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    sys.modules[sdm_module_name] = module
+
+    spec.loader.exec_module(module)
 
 
 def run() -> None:

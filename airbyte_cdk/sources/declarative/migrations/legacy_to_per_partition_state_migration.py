@@ -78,16 +78,20 @@ class LegacyToPerPartitionStateMigration(StateMigration):
           "<cursor_field>" : "<cursor_value>"
         }
         """
-        if stream_state:
-            for key, value in stream_state.items():
-                if isinstance(value, dict):
-                    keys = list(value.keys())
-                    if len(keys) != 1:
-                        # The input partitioned state should only have one key
-                        return False
-                    if keys[0] != self._cursor_field:
-                        # Unexpected key. Found {keys[0]}. Expected {self._cursor.cursor_field}
-                        return False
+        if not stream_state:
+            return False
+        for key, value in stream_state.items():
+            # it is expected the internal value to be a dictionary according to docstring
+            if not isinstance(value, dict):
+                return False
+            keys = list(value.keys())
+            if len(keys) != 1:
+                # The input partitioned state should only have one key
+                return False
+            if keys[0] != self._cursor_field:
+                # Unexpected key. Found {keys[0]}. Expected {self._cursor.cursor_field}
+                return False
+
         return True
 
     def migrate(self, stream_state: Mapping[str, Any]) -> Mapping[str, Any]:
