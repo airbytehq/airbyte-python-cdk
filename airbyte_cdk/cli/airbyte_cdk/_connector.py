@@ -94,7 +94,7 @@ TestSuite = create_connector_test_suite(
 
 @click.group(
     name="connector",
-    help=__doc__.replace("\n", "\n\n"),  # Render docstring as help text (markdown)
+    help=__doc__.replace("\n", "\n\n"),  # Render docstring as help text (markdown) # type: ignore
 )
 def connector_cli_group() -> None:
     """Connector related commands."""
@@ -114,10 +114,21 @@ def connector_cli_group() -> None:
     default=False,
     help="Only collect tests, do not run them.",
 )
+@click.option(
+    "--use-docker-image",
+    # is_flag=True,
+    default=False,
+    type=str,
+    help="Run tests via docker.",
+    callback=lambda ctx, param, value: (
+        "true" if value is True else (value if isinstance(value, str) else False)
+    ),
+)
 def test(
     connector: str | Path | None = None,
     *,
     collect_only: bool = False,
+    use_docker_image: str | bool = False,
 ) -> None:
     """Run connector tests.
 
@@ -128,12 +139,20 @@ def test(
 
     If no connector name or directory is provided, we will look within the current working
     directory. If the current working directory is not a connector directory (e.g. starting
-    with 'source-') and no connector name or path is provided, the process will fail.
+    with 'source-' or 'destination-') and no connector name or path is provided, the process
+    will fail.
     """
+    if isinstance(
+        use_docker_image,
+        str,
+    ) and use_docker_image.lower() in {"true", "false"}:
+        use_docker_image = bool(use_docker_image)
+
     if pytest is None:
         raise ImportError(
             "pytest is not installed. Please install pytest to run the connector tests."
         )
+
     click.echo("Connector test command executed.")
     connector_name, connector_directory = resolve_connector_name_and_directory(connector)
 
@@ -158,8 +177,18 @@ def test(
     test_file_path.parent.mkdir(parents=True, exist_ok=True)
     test_file_path.write_text(file_text)
 
+    pytest_args.append("-p airbyte_cdk.test.standard_tests.pytest_hooks")
+
     if collect_only:
         pytest_args.append("--collect-only")
+
+    if use_docker_image:
+        click.echo(f"Using Docker-based test runner...")
+        pytest_args.append("--use-docker-image")
+        if isinstance(use_docker_image, str):
+            pytest_args.append(
+                use_docker_image,
+            )
 
     pytest_args.append(str(test_file_path))
 

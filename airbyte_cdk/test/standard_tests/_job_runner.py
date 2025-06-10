@@ -4,25 +4,28 @@
 import logging
 import tempfile
 import uuid
+from abc import abstractmethod
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Literal
 
 import orjson
 from typing_extensions import Protocol, runtime_checkable
 
 from airbyte_cdk.models import (
     ConfiguredAirbyteCatalog,
+    ConnectorSpecification,
     Status,
 )
-from airbyte_cdk.test import entrypoint_wrapper
+from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput, _run_command
 from airbyte_cdk.test.standard_tests.models import (
     ConnectorTestScenario,
 )
 
 
 def _errors_to_str(
-    entrypoint_output: entrypoint_wrapper.EntrypointOutput,
+    entrypoint_output: EntrypointOutput,
 ) -> str:
     """Convert errors from entrypoint output to a string."""
     if not entrypoint_output.errors:
@@ -50,8 +53,10 @@ class IConnector(Protocol):
     directly on the connector (which doesn't yet exist).
     """
 
-    def spec(self, logger: logging.Logger) -> Any:
+    @abstractmethod
+    def spec(self, logger: logging.Logger) -> ConnectorSpecification:
         """Connectors should have a `spec` method."""
+        ...
 
 
 def run_test_job(
@@ -60,7 +65,7 @@ def run_test_job(
     *,
     test_scenario: ConnectorTestScenario | None = None,
     catalog: ConfiguredAirbyteCatalog | dict[str, Any] | None = None,
-) -> entrypoint_wrapper.EntrypointOutput:
+) -> EntrypointOutput:
     """Run a test scenario from provided CLI args and return the result."""
     # Use default (empty) scenario if not provided:
     test_scenario = test_scenario or ConnectorTestScenario()
@@ -115,7 +120,7 @@ def run_test_job(
     # This is a bit of a hack because the source needs the catalog early.
     # Because it *also* can fail, we have to redundantly wrap it in a try/except block.
 
-    result: entrypoint_wrapper.EntrypointOutput = entrypoint_wrapper._run_command(  # noqa: SLF001  # Non-public API
+    result: EntrypointOutput = _run_command(  # noqa: SLF001  # Non-public API
         source=connector_obj,  # type: ignore [arg-type]
         args=args,
         expecting_exception=test_scenario.expect_exception,

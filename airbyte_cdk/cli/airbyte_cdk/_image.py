@@ -50,6 +50,10 @@ def build(
 ) -> None:
     """Build a connector Docker image.
 
+    This command builds a Docker image for a connector, using either
+    the connector's Dockerfile or a base image specified in the metadata.
+    The image is built for both AMD64 and ARM64 architectures.
+
     [CONNECTOR] can be a connector name (e.g. 'source-pokeapi'), a path to a connector directory, or omitted to use the current working directory.
     If a string containing '/' is provided, it is treated as a path. Otherwise, it is treated as a connector name.
     """
