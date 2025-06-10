@@ -306,7 +306,6 @@ class ConcurrentPerPartitionCursor(Cursor):
             ):
                 self._partition_parent_state_map[partition_key] = (deepcopy(parent_state), seq)
 
-        # try:
         for cursor_slice, is_last_slice, _ in iterate_with_last_flag_and_state(
             cursor.stream_slices(),
             lambda: None,
@@ -348,7 +347,7 @@ class ConcurrentPerPartitionCursor(Cursor):
                         oldest_partition = self._cursor_per_partition.pop(
                             partition_key
                         )  # Remove the oldest partition
-                        logger.warning(
+                        logger.debug(
                             f"The maximum number of partitions has been reached. Dropping the oldest finished partition: {oldest_partition}. Over limit: {self._number_of_partitions - self.DEFAULT_MAX_PARTITIONS_NUMBER}."
                         )
                         break
