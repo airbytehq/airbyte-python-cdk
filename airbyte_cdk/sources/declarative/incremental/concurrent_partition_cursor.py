@@ -295,20 +295,16 @@ class ConcurrentPerPartitionCursor(Cursor):
             ):
                 self._partition_parent_state_map[partition_key] = (deepcopy(parent_state), seq)
 
-        try:
-            for cursor_slice, is_last_slice, _ in iterate_with_last_flag_and_state(
-                cursor.stream_slices(),
-                lambda: None,
-            ):
-                self._semaphore_per_partition[partition_key].release()
-                if is_last_slice:
-                    self._partitions_done_generating_stream_slices.add(partition_key)
-                yield StreamSlice(
-                    partition=partition, cursor_slice=cursor_slice, extra_fields=partition.extra_fields
-                )
-        finally:
-            del cursor
-            del partition
+        for cursor_slice, is_last_slice, _ in iterate_with_last_flag_and_state(
+            cursor.stream_slices(),
+            lambda: None,
+        ):
+            self._semaphore_per_partition[partition_key].release()
+            if is_last_slice:
+                self._partitions_done_generating_stream_slices.add(partition_key)
+            yield StreamSlice(
+                partition=partition, cursor_slice=cursor_slice, extra_fields=partition.extra_fields
+            )
 
     def _ensure_partition_limit(self) -> None:
         """
@@ -496,10 +492,11 @@ class ConcurrentPerPartitionCursor(Cursor):
     def _create_cursor(
         self, cursor_state: Any, runtime_lookback_window: int = 0
     ) -> ConcurrentCursor:
-        return self._cursor_factory.create(
+        cursor = self._cursor_factory.create(
             stream_state=deepcopy(cursor_state),
             runtime_lookback_window=timedelta(seconds=runtime_lookback_window),
         )
+        return cursor
 
     def should_be_synced(self, record: Record) -> bool:
         return self._get_cursor(record).should_be_synced(record)
@@ -514,7 +511,8 @@ class ConcurrentPerPartitionCursor(Cursor):
             raise ValueError(
                 "Invalid state as stream slices that are emitted should refer to an existing cursor"
             )
-        return self._cursor_per_partition[partition_key]
+        cursor = self._cursor_per_partition[partition_key]
+        return cursor
 
     def limit_reached(self) -> bool:
         return self._number_of_partitions > self.SWITCH_TO_GLOBAL_LIMIT
