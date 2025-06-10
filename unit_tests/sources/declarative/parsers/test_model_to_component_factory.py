@@ -59,6 +59,7 @@ from airbyte_cdk.sources.declarative.models import (
     CompositeErrorHandler as CompositeErrorHandlerModel,
 )
 from airbyte_cdk.sources.declarative.models import ConcurrencyLevel as ConcurrencyLevelModel
+from airbyte_cdk.sources.declarative.models import ConditionalStreams as ConditionalStreamsModel
 from airbyte_cdk.sources.declarative.models import CustomErrorHandler as CustomErrorHandlerModel
 from airbyte_cdk.sources.declarative.models import (
     CustomPartitionRouter as CustomPartitionRouterModel,
@@ -4801,3 +4802,109 @@ def test_create_stream_with_multiple_schema_loaders():
     assert len(schema_loader.schema_loaders) == 2
     assert isinstance(schema_loader.schema_loaders[0], InlineSchemaLoader)
     assert isinstance(schema_loader.schema_loaders[1], InlineSchemaLoader)
+
+
+def test_conditional_streams():
+    content = """
+    lists_stream:
+      type: DeclarativeStream
+      name: lists
+      primary_key: id
+      retriever:
+        paginator:
+        type: "DefaultPaginator"
+        page_size_option:
+          type: RequestOption
+          inject_into: request_parameter
+          field_name: page_size
+        page_token_option:
+          type: RequestPath
+        pagination_strategy:
+          type: "CursorPagination"
+          cursor_value: "{{ response._metadata.next }}"
+          page_size: 10
+        requester:
+          url_base: "https://testing.com"
+          path: "/api/v1/lists"
+          authenticator:
+            type: "BearerAuthenticator"
+            api_token: "{{ config.apikey }}"
+          request_parameters:
+            page_size: 10
+          record_selector:
+          extractor:
+            field_path: ["result"]
+      schema_loader:
+        type: JsonFileSchemaLoader
+        file_path: "./source_test/schemas/lists.yaml"
+    conditions_stream:
+      type: DeclarativeStream
+      name: sometimes
+      primary_key: id
+      retriever:
+        paginator:
+          type: "DefaultPaginator"
+          page_size_option:
+            type: RequestOption
+            inject_into: request_parameter
+            field_name: page_size
+          page_token_option:
+            type: RequestPath
+          pagination_strategy:
+            type: "CursorPagination"
+            cursor_value: "{{ response._metadata.next }}"
+            page_size: 10
+        requester:
+          type: HttpRequester
+          url_base: "https://testing.com"
+          path: "/api/v1/sometimes"
+          authenticator:
+            type: "BearerAuthenticator"
+            api_token: "{{ config.apikey }}"
+          request_parameters:
+            page_size: 10
+        record_selector:
+          type: RecordSelector
+          extractor:
+            type: DpathExtractor
+            field_path: ["result"]
+      schema_loader:
+        type: JsonFileSchemaLoader
+        file_path: "./source_test/schemas/sometimes.yaml"
+    streams:
+      - "#/lists_stream"
+      - type: ConditionalStreams
+        condition: "{{ config['is_sandbox'] }}"
+        streams:
+          - "#/conditions_stream"
+    """
+    parsed_manifest = YamlDeclarativeSource._parse(content)
+    resolved_manifest = resolver.preprocess_manifest(parsed_manifest)
+    resolved_manifest["type"] = "DeclarativeSource"
+    stream_manifest = transformer.propagate_types_and_parameters(
+        "", resolved_manifest["conditions_stream"], {}
+    )
+
+    conditional_streams_manifest = resolved_manifest["streams"][1]
+    conditional_streams_manifest["streams"] = [stream_manifest]
+
+    sandbox_config = {
+        **input_config,
+        "is_sandbox": True,
+    }
+
+    streams = factory.create_component(
+        model_type=ConditionalStreamsModel,
+        component_definition=conditional_streams_manifest,
+        config=sandbox_config,
+    )
+
+    assert len(streams) == 1
+    conditional_stream = streams[0]
+    assert isinstance(conditional_stream, DeclarativeStream)
+    assert conditional_stream.name == "sometimes"
+    assert conditional_stream.primary_key == "id"
+
+    assert isinstance(conditional_stream.retriever, SimpleRetriever)
+    assert conditional_stream.retriever.name == "sometimes"
+    assert conditional_stream.retriever.primary_key == "id"

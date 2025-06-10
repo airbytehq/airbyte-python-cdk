@@ -8,7 +8,7 @@ import pkgutil
 from copy import deepcopy
 from importlib import metadata
 from types import ModuleType
-from typing import Any, Dict, Iterator, List, Mapping, MutableMapping, Optional, Set
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Set
 
 import orjson
 import yaml
@@ -35,6 +35,9 @@ from airbyte_cdk.models.airbyte_protocol_serializers import AirbyteMessageSerial
 from airbyte_cdk.sources.declarative.checks import COMPONENTS_CHECKER_TYPE_MAPPING
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ConditionalStreams as ConditionalStreamsModel,
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DeclarativeStream as DeclarativeStreamModel,
 )
@@ -306,20 +309,37 @@ class ManifestDeclarativeSource(DeclarativeSource):
         if api_budget_model:
             self._constructor.set_api_budget(api_budget_model, config)
 
-        source_streams = [
-            self._constructor.create_component(
-                (
-                    StateDelegatingStreamModel
-                    if stream_config.get("type") == StateDelegatingStreamModel.__name__
-                    else DeclarativeStreamModel
-                ),
-                stream_config,
-                config,
-                emit_connector_builder_messages=self._emit_connector_builder_messages,
-            )
-            for stream_config in self._initialize_cache_for_parent_streams(deepcopy(stream_configs))
-        ]
-
+        source_streams = []
+        for stream_config in self._initialize_cache_for_parent_streams(deepcopy(stream_configs)):
+            match stream_config.get("type"):
+                case StateDelegatingStreamModel.__name__:
+                    source_streams.append(
+                        self._constructor.create_component(
+                            StateDelegatingStreamModel,
+                            stream_config,
+                            config,
+                            emit_connector_builder_messages=self._emit_connector_builder_messages,
+                        )
+                    )
+                case ConditionalStreamsModel.__name__:
+                    # ConditionalStreamsModel returns a list of DeclarativeStreams so it must be extended
+                    source_streams.extend(
+                        self._constructor.create_component(
+                            ConditionalStreamsModel,
+                            stream_config,
+                            config,
+                            emit_connector_builder_messages=self._emit_connector_builder_messages,
+                        )
+                    )
+                case DeclarativeStreamModel.__name__:
+                    source_streams.append(
+                        self._constructor.create_component(
+                            DeclarativeStreamModel,
+                            stream_config,
+                            config,
+                            emit_connector_builder_messages=self._emit_connector_builder_messages,
+                        )
+                    )
         return source_streams
 
     @staticmethod
@@ -363,17 +383,26 @@ class ManifestDeclarativeSource(DeclarativeSource):
                             update_with_cache_parent_configs(router["parent_stream_configs"])
 
         for stream_config in stream_configs:
-            if stream_config["name"] in parent_streams:
-                if stream_config["type"] == "StateDelegatingStream":
-                    stream_config["full_refresh_stream"]["retriever"]["requester"]["use_cache"] = (
-                        True
-                    )
-                    stream_config["incremental_stream"]["retriever"]["requester"]["use_cache"] = (
-                        True
-                    )
-                else:
-                    stream_config["retriever"]["requester"]["use_cache"] = True
+            current_stream_configs = []
+            if stream_config.get("type") == ConditionalStreamsModel.__name__:
+                current_stream_configs = [
+                    conditional_stream_config
+                    for conditional_stream_config in stream_config.get("streams") or []
+                    if conditional_stream_config["name"] in parent_streams
+                ]
+            elif stream_config["name"] in parent_streams:
+                current_stream_configs = [stream_config]
 
+            for current_stream_config in current_stream_configs:
+                if current_stream_config["type"] == "StateDelegatingStream":
+                    current_stream_config["full_refresh_stream"]["retriever"]["requester"][
+                        "use_cache"
+                    ] = True
+                    current_stream_config["incremental_stream"]["retriever"]["requester"][
+                        "use_cache"
+                    ] = True
+                else:
+                    current_stream_config["retriever"]["requester"]["use_cache"] = True
         return stream_configs
 
     def spec(self, logger: logging.Logger) -> ConnectorSpecification:

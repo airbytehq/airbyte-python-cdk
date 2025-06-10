@@ -105,7 +105,7 @@ from airbyte_cdk.sources.declarative.incremental import (
     PerPartitionWithGlobalCursor,
     ResumableFullRefreshCursor,
 )
-from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
+from airbyte_cdk.sources.declarative.interpolation import InterpolatedBoolean, InterpolatedString
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
 from airbyte_cdk.sources.declarative.migrations.legacy_to_per_partition_state_migration import (
     LegacyToPerPartitionStateMigration,
@@ -155,6 +155,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConcurrencyLevel as ConcurrencyLevelModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ConditionalStreams as ConditionalStreamsModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConfigAddFields as ConfigAddFieldsModel,
@@ -656,6 +659,7 @@ class ModelToComponentFactory:
             CheckDynamicStreamModel: self.create_check_dynamic_stream,
             CompositeErrorHandlerModel: self.create_composite_error_handler,
             ConcurrencyLevelModel: self.create_concurrency_level,
+            ConditionalStreamsModel: self.create_conditional_streams,
             ConfigMigrationModel: self.create_config_migration,
             ConfigAddFieldsModel: self.create_config_add_fields,
             ConfigRemapFieldModel: self.create_config_remap_field,
@@ -1617,6 +1621,22 @@ class ModelToComponentFactory:
             connector_state_converter=connector_state_converter,
             cursor_field=cursor_field,
             use_global_cursor=use_global_cursor,
+        )
+
+    def create_conditional_streams(
+        self, model: ConditionalStreamsModel, config: Config, **kwargs: Any
+    ) -> List[DeclarativeStream]:
+        condition = InterpolatedBoolean(
+            condition=model.condition, parameters=model.parameters or {}
+        )
+        should_include_streams = condition.eval(config=config)
+        return (
+            [
+                self._create_component_from_model(stream, config=config, **kwargs)
+                for stream in model.streams
+            ]
+            if should_include_streams
+            else []
         )
 
     @staticmethod
@@ -3150,12 +3170,12 @@ class ModelToComponentFactory:
             This is needed because the URL is not set until the requester is created.
             """
 
-            _url = (
+            _url: str = (
                 model.requester.url
                 if hasattr(model.requester, "url") and model.requester.url is not None
                 else requester.get_url()
             )
-            _url_base = (
+            _url_base: str = (
                 model.requester.url_base
                 if hasattr(model.requester, "url_base") and model.requester.url_base is not None
                 else requester.get_url_base()
