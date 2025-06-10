@@ -335,7 +335,7 @@ class ConcurrentPerPartitionCursor(Cursor):
                         oldest_partition = self._cursor_per_partition.pop(
                             partition_key
                         )  # Remove the oldest partition
-                        logger.warning(
+                        logger.debug(
                             f"The maximum number of partitions has been reached. Dropping the oldest finished partition: {oldest_partition}. Over limit: {self._number_of_partitions - self.DEFAULT_MAX_PARTITIONS_NUMBER}."
                         )
                         break
