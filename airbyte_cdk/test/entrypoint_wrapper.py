@@ -162,7 +162,7 @@ def _run_command(
     args: List[str],
     expecting_exception: bool | None = None,  # Deprecated, use `expected_outcome` instead.
     *,
-    expected_outcome: ExpectedOutcome | None = None
+    expected_outcome: ExpectedOutcome | None = None,
 ) -> EntrypointOutput:
     """Internal function to run a command with the AirbyteEntrypoint.
 
@@ -171,7 +171,9 @@ def _run_command(
     Note: The `expecting_exception` arg is now deprecated in favor of the tri-state
     `expected_outcome` arg. The old argument is supported (for now) for backwards compatibility.
     """
-    expected_outcome = expected_outcome or ExpectedOutcome.from_expecting_exception_bool(expecting_exception)
+    expected_outcome = expected_outcome or ExpectedOutcome.from_expecting_exception_bool(
+        expecting_exception
+    )
     log_capture_buffer = StringIO()
     stream_handler = logging.StreamHandler(log_capture_buffer)
     stream_handler.setLevel(logging.INFO)
