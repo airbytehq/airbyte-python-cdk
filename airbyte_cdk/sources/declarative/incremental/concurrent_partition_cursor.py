@@ -27,7 +27,6 @@ from airbyte_cdk.sources.streams.concurrent.state_converters.abstract_stream_sta
     AbstractStreamStateConverter,
 )
 from airbyte_cdk.sources.types import Record, StreamSlice, StreamState
-import gc
 
 logger = logging.getLogger("airbyte")
 
@@ -60,8 +59,8 @@ class ConcurrentPerPartitionCursor(Cursor):
     CurrentPerPartitionCursor expects the state of the ConcurrentCursor to follow the format {cursor_field: cursor_value}.
     """
 
-    DEFAULT_MAX_PARTITIONS_NUMBER = 250
-    SWITCH_TO_GLOBAL_LIMIT = 100
+    DEFAULT_MAX_PARTITIONS_NUMBER = 25_000
+    SWITCH_TO_GLOBAL_LIMIT = 10_000
     _NO_STATE: Mapping[str, Any] = {}
     _NO_CURSOR_STATE: Mapping[str, Any] = {}
     _GLOBAL_STATE_KEY = "state"
@@ -179,16 +178,6 @@ class ConcurrentPerPartitionCursor(Cursor):
             self._check_and_update_parent_state()
 
             self._emit_state_message()
-
-            gc.collect()
-            alive = [o for o in gc.get_objects() if isinstance(o, ConcurrentCursor)]
-            print(f"ConcurrentCursor {len(alive)=}")
-
-            alive = [o for o in gc.get_objects() if isinstance(o, threading.Semaphore)]
-            print(f"Semaphores {len(alive)=}")
-
-            alive = [o for o in gc.get_objects() if isinstance(o, dict)]
-            print(f"Dictionaries {len(alive)=}")
 
     def _check_and_update_parent_state(self) -> None:
         last_closed_state = None
