@@ -6,5 +6,12 @@
 from .exceptions import UserDefinedBackoffException
 from .http import HttpStream, HttpSubStream
 from .http_client import HttpClient
+from .proxy_config import ProxyConfig
 
-__all__ = ["HttpClient", "HttpStream", "HttpSubStream", "UserDefinedBackoffException"]
+__all__ = [
+    "HttpClient",
+    "HttpStream",
+    "HttpSubStream",
+    "ProxyConfig",
+    "UserDefinedBackoffException",
+]
