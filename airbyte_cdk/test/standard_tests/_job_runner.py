@@ -16,7 +16,7 @@ from airbyte_cdk.models import (
     Status,
 )
 from airbyte_cdk.test import entrypoint_wrapper
-from airbyte_cdk.test.standard_tests.models import (
+from airbyte_cdk.test.models import (
     ConnectorTestScenario,
 )
 
@@ -58,6 +58,7 @@ def run_test_job(
     connector: IConnector | type[IConnector] | Callable[[], IConnector],
     verb: Literal["spec", "read", "check", "discover"],
     *,
+    connector_root: Path,
     test_scenario: ConnectorTestScenario | None = None,
     catalog: ConfiguredAirbyteCatalog | dict[str, Any] | None = None,
 ) -> entrypoint_wrapper.EntrypointOutput:
@@ -84,7 +85,10 @@ def run_test_job(
         )
 
     args: list[str] = [verb]
-    config_dict = test_scenario.get_config_dict(empty_if_missing=True)
+    config_dict = test_scenario.get_config_dict(
+        empty_if_missing=True,
+        connector_root=connector_root,
+    )
     if config_dict and verb != "spec":
         # Write the config to a temp json file and pass the path to the file as an argument.
         config_path = (
@@ -118,9 +122,9 @@ def run_test_job(
     result: entrypoint_wrapper.EntrypointOutput = entrypoint_wrapper._run_command(  # noqa: SLF001  # Non-public API
         source=connector_obj,  # type: ignore [arg-type]
         args=args,
-        expecting_exception=test_scenario.expect_exception,
+        expected_outcome=test_scenario.expected_outcome,
     )
-    if result.errors and not test_scenario.expect_exception:
+    if result.errors and test_scenario.expected_outcome.expect_success():
         raise AssertionError(
             f"Expected no errors but got {len(result.errors)}: \n" + _errors_to_str(result)
         )
@@ -135,7 +139,7 @@ def run_test_job(
             + "\n".join([str(msg) for msg in result.connection_status_messages])
             + _errors_to_str(result)
         )
-        if test_scenario.expect_exception:
+        if test_scenario.expected_outcome.expect_exception():
             conn_status = result.connection_status_messages[0].connectionStatus
             assert conn_status, (
                 "Expected CONNECTION_STATUS message to be present. Got: \n"
@@ -149,14 +153,15 @@ def run_test_job(
         return result
 
     # For all other verbs, we assert check that an exception is raised (or not).
-    if test_scenario.expect_exception:
+    if test_scenario.expected_outcome.expect_exception():
         if not result.errors:
             raise AssertionError("Expected exception but got none.")
 
         return result
 
-    assert not result.errors, (
-        f"Expected no errors but got {len(result.errors)}: \n" + _errors_to_str(result)
-    )
+    if test_scenario.expected_outcome.expect_success():
+        assert not result.errors, (
+            f"Expected no errors but got {len(result.errors)}: \n" + _errors_to_str(result)
+        )
 
     return result

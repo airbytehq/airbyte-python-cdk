@@ -9,11 +9,13 @@ up iteration cycles.
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path  # noqa: TC003  # Pydantic needs this (don't move to 'if typing' block)
 from typing import Any, Literal, cast
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
+
+from airbyte_cdk.test.models.outcome import ExpectedOutcome
 
 
 class ConnectorTestScenario(BaseModel):
@@ -23,6 +25,10 @@ class ConnectorTestScenario(BaseModel):
     that can be run against a connector. It is used to deserialize and validate the
     acceptance test configuration file.
     """
+
+    # Allows the class to be hashable, which PyTest will require
+    # when we use to parameterize tests.
+    model_config = ConfigDict(frozen=True)
 
     class AcceptanceTestExpectRecords(BaseModel):
         path: Path
@@ -46,6 +52,7 @@ class ConnectorTestScenario(BaseModel):
     def get_config_dict(
         self,
         *,
+        connector_root: Path,
         empty_if_missing: bool,
     ) -> dict[str, Any]:
         """Return the config dictionary.
@@ -61,7 +68,15 @@ class ConnectorTestScenario(BaseModel):
             return self.config_dict
 
         if self.config_path is not None:
-            return cast(dict[str, Any], yaml.safe_load(self.config_path.read_text()))
+            config_path = self.config_path
+            if not config_path.is_absolute():
+                # We usually receive a relative path here. Let's resolve it.
+                config_path = (connector_root / self.config_path).resolve().absolute()
+
+            return cast(
+                dict[str, Any],
+                yaml.safe_load(config_path.read_text()),
+            )
 
         if empty_if_missing:
             return {}
@@ -69,8 +84,13 @@ class ConnectorTestScenario(BaseModel):
         raise ValueError("No config dictionary or path provided.")
 
     @property
-    def expect_exception(self) -> bool:
-        return self.status and self.status == "failed" or False
+    def expected_outcome(self) -> ExpectedOutcome:
+        """Whether the test scenario expects an exception to be raised.
+
+        Returns True if the scenario expects an exception, False if it does not,
+        and None if there is no set expectation.
+        """
+        return ExpectedOutcome.from_status_str(self.status)
 
     @property
     def instance_name(self) -> str:
@@ -83,3 +103,38 @@ class ConnectorTestScenario(BaseModel):
             return f"'{self.config_path.name}' Test Scenario"
 
         return f"'{hash(self)}' Test Scenario"
+
+    def without_expected_outcome(self) -> ConnectorTestScenario:
+        """Return a copy of the scenario that does not expect failure or success.
+
+        This is useful when running multiple steps, to defer the expectations to a later step.
+        """
+        return ConnectorTestScenario(
+            **self.model_dump(exclude={"status"}),
+        )
+
+    def with_expecting_failure(self) -> ConnectorTestScenario:
+        """Return a copy of the scenario that expects failure.
+
+        This is useful when deriving new scenarios from existing ones.
+        """
+        if self.status == "failed":
+            return self
+
+        return ConnectorTestScenario(
+            **self.model_dump(exclude={"status"}),
+            status="failed",
+        )
+
+    def with_expecting_success(self) -> ConnectorTestScenario:
+        """Return a copy of the scenario that expects success.
+
+        This is useful when deriving new scenarios from existing ones.
+        """
+        if self.status == "succeed":
+            return self
+
+        return ConnectorTestScenario(
+            **self.model_dump(exclude={"status"}),
+            status="succeed",
+        )

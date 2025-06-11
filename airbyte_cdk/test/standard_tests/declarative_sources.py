@@ -9,8 +9,8 @@ from boltons.typeutils import classproperty
 from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
     ConcurrentDeclarativeSource,
 )
+from airbyte_cdk.test.models import ConnectorTestScenario
 from airbyte_cdk.test.standard_tests._job_runner import IConnector
-from airbyte_cdk.test.standard_tests.models import ConnectorTestScenario
 from airbyte_cdk.test.standard_tests.source_base import SourceTestSuiteBase
 from airbyte_cdk.utils.connector_paths import MANIFEST_YAML
 
@@ -78,7 +78,12 @@ class DeclarativeSourceTestSuite(SourceTestSuiteBase):
         config = {
             "__injected_manifest": manifest_dict,
         }
-        config.update(scenario.get_config_dict(empty_if_missing=True))
+        config.update(
+            scenario.get_config_dict(
+                empty_if_missing=True,
+                connector_root=cls.get_connector_root_dir(),
+            ),
+        )
 
         if cls.components_py_path and cls.components_py_path.exists():
             os.environ["AIRBYTE_ENABLE_UNSAFE_CODE"] = "true"

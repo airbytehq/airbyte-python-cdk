@@ -20,10 +20,10 @@ from airbyte_cdk.models import (
     Type,
 )
 from airbyte_cdk.test import entrypoint_wrapper
-from airbyte_cdk.test.standard_tests._job_runner import IConnector, run_test_job
-from airbyte_cdk.test.standard_tests.models import (
+from airbyte_cdk.test.models import (
     ConnectorTestScenario,
 )
+from airbyte_cdk.test.standard_tests._job_runner import IConnector, run_test_job
 from airbyte_cdk.utils.connector_paths import (
     ACCEPTANCE_TEST_CONFIG,
     find_connector_root,
@@ -116,6 +116,7 @@ class ConnectorTestSuiteBase(abc.ABC):
             self.create_connector(scenario),
             "check",
             test_scenario=scenario,
+            connector_root=self.get_connector_root_dir(),
         )
         conn_status_messages: list[AirbyteMessage] = [
             msg for msg in result._messages if msg.type == Type.CONNECTION_STATUS
@@ -163,19 +164,23 @@ class ConnectorTestSuiteBase(abc.ABC):
             ):
                 continue
 
-            test_scenarios.extend(
-                [
-                    ConnectorTestScenario.model_validate(test)
-                    for test in all_tests_config["acceptance_tests"][category]["tests"]
-                    if "config_path" in test and "iam_role" not in test["config_path"]
-                ]
-            )
+            for test in all_tests_config["acceptance_tests"][category]["tests"]:
+                if "config_path" not in test:
+                    # Skip tests without a config_path
+                    continue
 
-        connector_root = cls.get_connector_root_dir().absolute()
-        for test in test_scenarios:
-            if test.config_path:
-                test.config_path = connector_root / test.config_path
-            if test.configured_catalog_path:
-                test.configured_catalog_path = connector_root / test.configured_catalog_path
+                if "iam_role" in test["config_path"]:
+                    # We skip iam_role tests for now, as they are not supported in the test suite.
+                    continue
+
+                scenario = ConnectorTestScenario.model_validate(test)
+
+                if scenario.config_path and scenario.config_path in [
+                    s.config_path for s in test_scenarios
+                ]:
+                    # Skip duplicate scenarios based on config_path
+                    continue
+
+                test_scenarios.append(scenario)
 
         return test_scenarios
