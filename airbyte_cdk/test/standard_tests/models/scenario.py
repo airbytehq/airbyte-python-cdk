@@ -99,6 +99,7 @@ class ConnectorTestScenario(BaseModel):
             suffix=".json",
             mode="w",
             delete=False,  # Don't fail if cannot delete the file on exit
+            encoding="utf-8",
         ) as temp_file:
             temp_file.write(json.dumps(config))
             temp_file.flush()
