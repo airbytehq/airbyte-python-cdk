@@ -140,6 +140,12 @@ jobs:
         with:
           poetry-version: "2.0.1"
 
+      - name: Install Airbyte CDK
+        if: steps.no_changes.outputs.status != 'cancelled'
+        run: |
+          cd airbyte-python-cdk
+          poetry install --all-extras
+
       # Create initial pending status for test report
       - name: Create Pending Test Report Status
         if: steps.no_changes.outputs.status != 'cancelled'
@@ -164,7 +170,7 @@ jobs:
           GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
         run: |
-          airbyte-cdk connector test ${{matrix.connector}}
+          poetry run airbyte-cdk connector test ${{matrix.connector}}
 
       # Update the test report status with results
       - name: Update Test Report Status
