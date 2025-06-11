@@ -159,9 +159,19 @@ class EntrypointOutput:
 
 def _run_command(
     source: Source,
-    args: list[str],
-    expected_outcome: ExpectedOutcome,
+    args: List[str],
+    expecting_exception: bool | None = None,  # Deprecated, use `expected_outcome` instead.
+    *,
+    expected_outcome: ExpectedOutcome | None = None
 ) -> EntrypointOutput:
+    """Internal function to run a command with the AirbyteEntrypoint.
+
+    Note: Even though this function is private, some connectors do call it directly.
+
+    Note: The `expecting_exception` arg is now deprecated in favor of the tri-state
+    `expected_outcome` arg. The old argument is supported (for now) for backwards compatibility.
+    """
+    expected_outcome = expected_outcome or ExpectedOutcome.from_expecting_exception_bool(expecting_exception)
     log_capture_buffer = StringIO()
     stream_handler = logging.StreamHandler(log_capture_buffer)
     stream_handler.setLevel(logging.INFO)
@@ -194,8 +204,9 @@ def _run_command(
 def discover(
     source: Source,
     config: Mapping[str, Any],
+    expecting_exception: bool | None = None,  # Deprecated, use `expected_outcome` instead.
     *,
-    expected_outcome: ExpectedOutcome = ExpectedOutcome.EXPECT_SUCCESS,
+    expected_outcome: ExpectedOutcome | None = None,
 ) -> EntrypointOutput:
     """
     config must be json serializable
@@ -210,6 +221,7 @@ def discover(
         return _run_command(
             source,
             ["discover", "--config", config_file, "--debug"],
+            expecting_exception=expecting_exception,  # Deprecated, but still supported.
             expected_outcome=expected_outcome,
         )
 
@@ -219,8 +231,9 @@ def read(
     config: Mapping[str, Any],
     catalog: ConfiguredAirbyteCatalog,
     state: Optional[List[AirbyteStateMessage]] = None,
+    expecting_exception: bool | None = None,  # Deprecated, use `expected_outcome` instead.
     *,
-    expected_outcome: ExpectedOutcome = ExpectedOutcome.EXPECT_SUCCESS,
+    expected_outcome: ExpectedOutcome | None = None,
 ) -> EntrypointOutput:
     """
     config and state must be json serializable
@@ -253,7 +266,12 @@ def read(
                 ]
             )
 
-        return _run_command(source, args, expected_outcome=expected_outcome)
+        return _run_command(
+            source,
+            args,
+            expecting_exception=expecting_exception,  # Deprecated, but still supported.
+            expected_outcome=expected_outcome,
+        )
 
 
 def make_file(
