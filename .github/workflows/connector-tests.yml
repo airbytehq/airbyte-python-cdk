@@ -90,6 +90,8 @@ jobs:
           #       add `--use-local-cdk` support for manifest connectors.
           - connector: source-amplitude
             cdk_extra: n/a
+          - connector: source-intercom
+            cdk_extra: n/a
           - connector: source-pokeapi
             cdk_extra: n/a
 
@@ -129,6 +131,15 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Set up `uv`
+        uses: astral-sh/setup-uv@v6.1.0
+
+      - name: Set up Poetry
+        uses: Gr1N/setup-poetry@v9
+        with:
+          poetry-version: "2.0.1"
+
       # Create initial pending status for test report
       - name: Create Pending Test Report Status
         if: steps.no_changes.outputs.status != 'cancelled'
@@ -148,52 +159,16 @@ jobs:
       - name: Test Connector
         if: steps.no_changes.outputs.status != 'cancelled'
         timeout-minutes: 90
+        working-directory: airbyte/airbyte-integrations/connectors/${{ matrix.connector }}
         env:
           GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
         run: |
-          cd airbyte
-          make tools.airbyte-ci.install
-          airbyte-ci \
-          --ci-report-bucket-name=airbyte-ci-reports-multi \
-          connectors \
-          --name ${{matrix.connector}} \
-          --use-local-cdk \
-          test \
-          --fail-fast \
-          --skip-step qa_checks \
-          --skip-step connector_live_tests
-
-      - name: Evaluate Test
-        id: evaluate_output
-        if: always() && steps.no_changes.outputs.status != 'cancelled'
-        run: |
-          # save job output json file as ci step output
-          json_output_file=$(find airbyte/airbyte-ci/connectors/pipelines/pipeline_reports -name 'output.json' -print -quit)
-          job_output=$(cat ${json_output_file})
-          success=$(echo ${job_output} | jq -r '.success')
-          failed_step=$(echo ${job_output} | jq -r '.failed_steps | select(length > 0) | .[0] // "None"')
-          run_duration=$(echo ${job_output} | jq -r '.run_duration')
-          html_report_url=$(echo ${job_output} | jq -r '.html_report_url')
-          echo "## Job Output for ${{matrix.connector}}" >> $GITHUB_STEP_SUMMARY
-          echo "- [HTML Report](${html_report_url})" >> $GITHUB_STEP_SUMMARY
-          echo "- Success: ${success}" >> $GITHUB_STEP_SUMMARY
-          echo "- Test Duration: $(printf "%.0f" ${run_duration})s" >> $GITHUB_STEP_SUMMARY
-          if [ "${success}" != "true" ]; then
-            echo "- Failed Step: ${failed_step}" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo -e "\n[Download Job Output](${{steps.upload_job_output.outputs.artifact-url}})" >> $GITHUB_STEP_SUMMARY
-          if [ "${success}" != "true" ]; then
-            echo "::error::Test failed for connector '${{ matrix.connector }}' on step '${failed_step}'. "
-            exit 1
-          fi
-          echo "See the execution report for details: ${html_report_url}"
-          echo "success=${success}" >> $GITHUB_OUTPUT
-          echo "html_report_url=${html_report_url}" >> $GITHUB_OUTPUT
+          airbyte-cdk connector test ${{matrix.connector}}
 
       # Update the test report status with results
       - name: Update Test Report Status
-        if: always() && steps.no_changes.outputs.status != 'cancelled' && steps.evaluate_output.outcome == 'success'
+        if: always() && steps.no_changes.outputs.status != 'cancelled'
         env:
           GH_TOKEN: ${{ secrets.GH_PAT_MAINTENANCE_OCTAVIA }}
         run: |
@@ -203,32 +178,7 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             repos/${{ github.repository }}/statuses/$HEAD_SHA \
-            -f state="${{ steps.evaluate_output.outputs.success == 'true' && 'success' || 'failure' }}" \
+            -f state="${{ job.status }}" \
             -f target_url="${{ steps.evaluate_output.outputs.html_report_url }}" \
             -f description="Click Details to view the test report" \
             -f context="${{ matrix.connector }} Test Report"
-
-      # Create failure status if report generation failed
-      - name: Create Report Generation Failed Status
-        if: always() && steps.no_changes.outputs.status != 'cancelled' && steps.evaluate_output.outcome != 'success'
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT_MAINTENANCE_OCTAVIA }}
-        run: |
-          HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
-          gh api \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            repos/${{ github.repository }}/statuses/$HEAD_SHA \
-            -f state="failure" \
-            -f description="Failed to run connector tests." \
-            -f context="${{ matrix.connector }} Test Report"
-
-      # Upload the job output to the artifacts
-      - name: Upload Job Output
-        id: upload_job_output
-        if: always() && steps.no_changes.outputs.status != 'cancelled'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{matrix.connector}}-job-output
-          path: airbyte/airbyte-ci/connectors/pipelines/pipeline_reports
