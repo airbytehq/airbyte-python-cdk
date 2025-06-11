@@ -94,13 +94,19 @@ class ConnectorTestScenario(BaseModel):
     def with_temp_config_file(self) -> Generator[Path, None, None]:
         """Yield a temporary JSON file path containing the config dict and delete it on exit."""
         config = self.get_config_dict(empty_if_missing=True)
-        with tempfile.NamedTemporaryFile(prefix="config-", suffix=".json", mode="w", delete=False) as temp_file:
+        with tempfile.NamedTemporaryFile(
+            prefix="config-",
+            suffix=".json",
+            mode="w",
+            delete=False,  # Don't fail if cannot delete the file on exit
+        ) as temp_file:
             temp_file.write(json.dumps(config))
             temp_file.flush()
             # Allow the file to be read by other processes
             temp_path = Path(temp_file.name)
             temp_path.chmod(temp_path.stat().st_mode | 0o444)
             yield temp_path
-        # attempt cleanup, ignore errors
-        with suppress(OSError):
-            temp_path.unlink()
+
+            # attempt cleanup, ignore errors
+            with suppress(OSError):
+                temp_path.unlink()
