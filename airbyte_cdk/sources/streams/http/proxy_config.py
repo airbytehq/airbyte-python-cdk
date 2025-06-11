@@ -6,7 +6,7 @@ import os
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, Mapping, Optional, Tuple
 
 import requests
 from requests.auth import HTTPProxyAuth
@@ -89,7 +89,7 @@ class ProxyConfig:
         return temp_path
 
     @classmethod
-    def from_config(cls, config: Dict) -> Optional["ProxyConfig"]:
+    def from_config(cls, config: Mapping[str, Any]) -> Optional["ProxyConfig"]:
         """Create ProxyConfig from connector configuration."""
         proxy_section = config.get("proxy", {})
 
