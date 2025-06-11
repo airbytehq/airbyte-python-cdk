@@ -107,6 +107,6 @@ class ConnectorTestScenario(BaseModel):
             temp_path.chmod(temp_path.stat().st_mode | 0o444)
             yield temp_path
 
-            # attempt cleanup, ignore errors
-            with suppress(OSError):
-                temp_path.unlink()
+        # attempt cleanup, ignore errors
+        with suppress(OSError):
+            temp_path.unlink()
