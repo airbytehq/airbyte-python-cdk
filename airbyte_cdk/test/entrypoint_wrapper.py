@@ -172,7 +172,7 @@ def _run_command(
     `expected_outcome` arg. The old argument is supported (for now) for backwards compatibility.
     """
     expected_outcome = expected_outcome or ExpectedOutcome.from_expecting_exception_bool(
-        expecting_exception
+        expecting_exception,
     )
     log_capture_buffer = StringIO()
     stream_handler = logging.StreamHandler(log_capture_buffer)

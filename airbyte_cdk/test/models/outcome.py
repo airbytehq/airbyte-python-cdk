@@ -40,7 +40,8 @@ class ExpectedOutcome(Enum):
     def from_expecting_exception_bool(cls, expecting_exception: bool | None) -> ExpectedOutcome:
         """Convert a boolean indicating whether an exception is expected to an ExpectedOutcome."""
         if expecting_exception is None:
-            return ExpectedOutcome.ALLOW_ANY
+            # Align with legacy behavior where default would be 'False' (no exception expected)
+            return ExpectedOutcome.EXPECT_SUCCESS
 
         return (
             ExpectedOutcome.EXPECT_EXCEPTION
