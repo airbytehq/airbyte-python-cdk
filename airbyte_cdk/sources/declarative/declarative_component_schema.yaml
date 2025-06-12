@@ -25,6 +25,7 @@ properties:
     type: array
     items:
       anyOf:
+        - "$ref": "#/definitions/ConditionalStreams"
         - "$ref": "#/definitions/DeclarativeStream"
         - "$ref": "#/definitions/StateDelegatingStream"
   dynamic_streams:
@@ -421,6 +422,36 @@ definitions:
         examples:
           - 20
           - 100
+      $parameters:
+        type: object
+        additionalProperties: true
+  ConditionalStreams:
+    title: Conditional Streams
+    description: Streams that are only available while performing a connector operation when the condition is met.
+    type: object
+    required:
+      - type
+      - streams
+      - condition
+    properties:
+      type:
+        type: string
+        enum: [ConditionalStreams]
+      condition:
+        title: Condition
+        description: Condition that will be evaluated to determine if a set of streams should be available.
+        type: string
+        interpolation_context:
+          - config
+          - parameters
+        examples:
+          - "{{ config['is_sandbox'] }}"
+      streams:
+        title: Streams
+        description: Streams that will be used during an operation based on the condition.
+        type: array
+        items:
+          "$ref": "#/definitions/DeclarativeStream"
       $parameters:
         type: object
         additionalProperties: true

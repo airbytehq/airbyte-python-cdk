@@ -3150,12 +3150,12 @@ class ModelToComponentFactory:
             This is needed because the URL is not set until the requester is created.
             """
 
-            _url = (
+            _url: str = (
                 model.requester.url
                 if hasattr(model.requester, "url") and model.requester.url is not None
                 else requester.get_url()
             )
-            _url_base = (
+            _url_base: str = (
                 model.requester.url_base
                 if hasattr(model.requester, "url_base") and model.requester.url_base is not None
                 else requester.get_url_base()

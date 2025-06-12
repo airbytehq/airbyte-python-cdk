@@ -8,7 +8,7 @@ import pkgutil
 from copy import deepcopy
 from importlib import metadata
 from types import ModuleType
-from typing import Any, Dict, Iterator, List, Mapping, MutableMapping, Optional, Set
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Set
 
 import orjson
 import yaml
@@ -35,6 +35,10 @@ from airbyte_cdk.models.airbyte_protocol_serializers import AirbyteMessageSerial
 from airbyte_cdk.sources.declarative.checks import COMPONENTS_CHECKER_TYPE_MAPPING
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
 from airbyte_cdk.sources.declarative.declarative_source import DeclarativeSource
+from airbyte_cdk.sources.declarative.interpolation import InterpolatedBoolean
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ConditionalStreams as ConditionalStreamsModel,
+)
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     DeclarativeStream as DeclarativeStreamModel,
 )
@@ -300,7 +304,9 @@ class ManifestDeclarativeSource(DeclarativeSource):
             }
         )
 
-        stream_configs = self._stream_configs(self._source_config) + self.dynamic_streams
+        stream_configs = (
+            self._stream_configs(self._source_config, config=config) + self.dynamic_streams
+        )
 
         api_budget_model = self._source_config.get("api_budget")
         if api_budget_model:
@@ -319,7 +325,6 @@ class ManifestDeclarativeSource(DeclarativeSource):
             )
             for stream_config in self._initialize_cache_for_parent_streams(deepcopy(stream_configs))
         ]
-
         return source_streams
 
     @staticmethod
@@ -373,7 +378,6 @@ class ManifestDeclarativeSource(DeclarativeSource):
                     )
                 else:
                     stream_config["retriever"]["requester"]["use_cache"] = True
-
         return stream_configs
 
     def spec(self, logger: logging.Logger) -> ConnectorSpecification:
@@ -477,12 +481,27 @@ class ManifestDeclarativeSource(DeclarativeSource):
             # No exception
             return parsed_version
 
-    def _stream_configs(self, manifest: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    def _stream_configs(
+        self, manifest: Mapping[str, Any], config: Mapping[str, Any]
+    ) -> List[Dict[str, Any]]:
         # This has a warning flag for static, but after we finish part 4 we'll replace manifest with self._source_config
-        stream_configs: List[Dict[str, Any]] = manifest.get("streams", [])
-        for s in stream_configs:
-            if "type" not in s:
-                s["type"] = "DeclarativeStream"
+        stream_configs = []
+        for current_stream_config in manifest.get("streams", []):
+            if (
+                "type" in current_stream_config
+                and current_stream_config["type"] == "ConditionalStreams"
+            ):
+                interpolated_boolean = InterpolatedBoolean(
+                    condition=current_stream_config.get("condition"),
+                    parameters={},
+                )
+
+                if interpolated_boolean.eval(config=config):
+                    stream_configs.extend(current_stream_config.get("streams", []))
+            else:
+                if "type" not in current_stream_config:
+                    current_stream_config["type"] = "DeclarativeStream"
+                stream_configs.append(current_stream_config)
         return stream_configs
 
     def _dynamic_stream_configs(
