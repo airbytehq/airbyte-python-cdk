@@ -113,15 +113,15 @@ class DockerConnectorTestSuite:
         connector_image_override: str | None,
     ) -> None:
         """Run `docker_image` acceptance tests."""
-        connector_dir = self.get_connector_root_dir()
-        metadata = MetadataFile.from_file(connector_dir / "metadata.yaml")
+        connector_root = self.get_connector_root_dir()
+        metadata = MetadataFile.from_file(connector_root / "metadata.yaml")
 
         connector_image: str | None = connector_image_override
         if not connector_image:
             tag = "dev-latest"
             connector_image = build_connector_image(
-                connector_name=connector_dir.name,
-                connector_directory=connector_dir,
+                connector_name=connector_root.name,
+                connector_directory=connector_root,
                 metadata=metadata,
                 tag=tag,
                 no_verify=False,
@@ -162,21 +162,23 @@ class DockerConnectorTestSuite:
             pytest.skip("Skipping test_docker_image_build_and_check (expected to fail).")
 
         tag = "dev-latest"
-        connector_dir = self.get_connector_root_dir()
-        metadata = MetadataFile.from_file(connector_dir / "metadata.yaml")
+        connector_root = self.get_connector_root_dir()
+        metadata = MetadataFile.from_file(connector_root / "metadata.yaml")
         connector_image: str | None = connector_image_override
         if not connector_image:
             tag = "dev-latest"
             connector_image = build_connector_image(
-                connector_name=connector_dir.name,
-                connector_directory=connector_dir,
+                connector_name=connector_root.name,
+                connector_directory=connector_root,
                 metadata=metadata,
                 tag=tag,
                 no_verify=False,
             )
 
         container_config_path = "/secrets/config.json"
-        with scenario.with_temp_config_file() as temp_config_file:
+        with scenario.with_temp_config_file(
+            connector_root=connector_root,
+        ) as temp_config_file:
             _ = run_docker_command(
                 [
                     "docker",
