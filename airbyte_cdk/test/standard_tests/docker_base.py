@@ -14,9 +14,7 @@ import yaml
 from boltons.typeutils import classproperty
 
 from airbyte_cdk.models.connector_metadata import MetadataFile
-from airbyte_cdk.test.standard_tests.models import (
-    ConnectorTestScenario,
-)
+from airbyte_cdk.test.models import ConnectorTestScenario
 from airbyte_cdk.utils.connector_paths import (
     ACCEPTANCE_TEST_CONFIG,
     find_connector_root,
