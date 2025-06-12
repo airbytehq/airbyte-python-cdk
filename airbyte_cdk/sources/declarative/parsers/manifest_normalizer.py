@@ -169,8 +169,14 @@ class ManifestNormalizer:
         """
 
         stream_name = stream["name"]
+
         # copy the value of the SCHEMA_TAG to the SCHEMAS_TAG with the stream name as key
         schema = stream.get(SCHEMA_LOADER_TAG, {}).get(SCHEMA_TAG)
+
+        # if the schema is not found, do nothing
+        if not schema:
+            return
+        
         if not SCHEMAS_TAG in self._normalized_manifest.keys():
             self._normalized_manifest[SCHEMAS_TAG] = {}
         # add stream schema to the SCHEMAS_TAG
@@ -198,7 +204,9 @@ class ManifestNormalizer:
         stream_name = stream["name"]
         if SCHEMAS_TAG in self._normalized_manifest.keys():
             if stream_name in self._normalized_manifest[SCHEMAS_TAG]:
-                stream[SCHEMA_LOADER_TAG][SCHEMA_TAG] = self._create_schema_ref(stream_name)
+                if SCHEMA_LOADER_TAG in stream.keys():
+                    if SCHEMA_TAG in stream[SCHEMA_LOADER_TAG].keys():
+                        stream[SCHEMA_LOADER_TAG][SCHEMA_TAG] = self._create_schema_ref(stream_name)
 
     def _replace_duplicates_with_refs(self, duplicates: DuplicatesType) -> None:
         """
