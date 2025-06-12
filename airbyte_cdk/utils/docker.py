@@ -7,8 +7,10 @@ import logging
 import os
 import subprocess
 import sys
+from contextlib import ExitStack
 from dataclasses import dataclass
 from enum import Enum
+from io import TextIOWrapper
 from pathlib import Path
 
 import click
@@ -90,6 +92,7 @@ def _build_image(
         run_docker_command(
             docker_args,
             check=True,
+            capture_stderr=True,
         )
     except subprocess.CalledProcessError as e:
         raise ConnectorImageBuildError(
@@ -126,6 +129,7 @@ def _tag_image(
             run_docker_command(
                 docker_args,
                 check=True,
+                capture_stderr=True,
             )
         except subprocess.CalledProcessError as e:
             raise ConnectorImageBuildError(
@@ -368,7 +372,8 @@ def run_docker_command(
     cmd: list[str],
     *,
     check: bool = True,
-    capture_output: bool = False,
+    capture_stdout: bool | Path = False,
+    capture_stderr: bool | Path = False,
 ) -> subprocess.CompletedProcess[str]:
     """Run a Docker command as a subprocess.
 
@@ -376,23 +381,46 @@ def run_docker_command(
         cmd: The command to run as a list of strings.
         check: If True, raises an exception if the command fails. If False, the caller is
             responsible for checking the return code.
-        capture_output: If True, captures stdout and stderr and returns to the caller.
-            If False, the output is printed to the console.
+        capture_stdout: How to process stdout.
+        capture_stderr: If True, captures stderr in memory and returns to the caller.
+            If a Path is provided, the output is written to the specified file.
+
+    For stdout and stderr process:
+    - If False (the default), stdout is not captured.
+    - If True, output is captured in memory and returned within the `CompletedProcess` object.
+    - If a Path is provided, the output is written to the specified file. (Recommended for large syncs.)
 
     Raises:
         subprocess.CalledProcessError: If the command fails and check is True.
     """
     print(f"Running command: {' '.join(cmd)}")
 
-    process = subprocess.run(
-        cmd,
-        text=True,
-        check=check,
-        # If capture_output=True, stderr and stdout are captured and returned to caller:
-        capture_output=capture_output,
-        env={**os.environ, "DOCKER_BUILDKIT": "1"},
-    )
-    return process
+    with ExitStack() as stack:
+        # Shared context manager to handle file closing, if needed.
+        stderr: TextIOWrapper | int | None
+        stdout: TextIOWrapper | int | None
+
+        # If capture_stderr or capture_stdout is a Path, we open the file in write mode.
+        # If it's a boolean, we set it to either subprocess.PIPE or None.
+        if isinstance(capture_stderr, Path):
+            stderr = stack.enter_context(capture_stderr.open("w", encoding="utf-8"))
+        elif isinstance(capture_stderr, bool):
+            stderr = subprocess.PIPE if capture_stderr is True else None
+
+        if isinstance(capture_stdout, Path):
+            stdout = stack.enter_context(capture_stdout.open("w", encoding="utf-8"))
+        elif isinstance(capture_stdout, bool):
+            stdout = subprocess.PIPE if capture_stdout is True else None
+
+        completed_process: subprocess.CompletedProcess[str] = subprocess.run(
+            cmd,
+            env={**os.environ, "DOCKER_BUILDKIT": "1"},
+            text=True,
+            check=check,
+            stderr=stderr,
+            stdout=stdout,
+        )
+        return completed_process
 
 
 def verify_docker_installation() -> bool:
@@ -423,7 +451,8 @@ def verify_connector_image(
         result = run_docker_command(
             cmd,
             check=True,
-            capture_output=True,
+            capture_stderr=True,
+            capture_stdout=True,
         )
         # check that the output is valid JSON
         if result.stdout:
