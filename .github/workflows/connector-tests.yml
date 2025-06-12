@@ -162,15 +162,24 @@ jobs:
             -f description="Running connector tests..." \
             -f context="${{ matrix.connector }} Test Report"
 
-      - name: Test Connector
+      - name: Fetch Connector Secrets
         if: steps.no_changes.outputs.status != 'cancelled'
         timeout-minutes: 90
-        working-directory: airbyte/airbyte-integrations/connectors/${{ matrix.connector }}
+        working-directory: airbyte-python-cdk
         env:
           GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
         run: |
-          poetry run airbyte-cdk connector test ${{matrix.connector}}
+          poetry run airbyte-cdk secrets fetch ${{ matrix.connector }}
+
+      - name: Test Connector
+        if: steps.no_changes.outputs.status != 'cancelled'
+        working-directory: airbyte-python-cdk
+        env:
+          GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
+          POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
+        run: |
+          poetry run airbyte-cdk connector test ${{ matrix.connector }}
 
       # Update the test report status with results
       - name: Update Test Report Status
