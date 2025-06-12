@@ -14,16 +14,21 @@ from airbyte_cdk.models import (
     AirbyteMessage,
     Type,
 )
+from airbyte_cdk.test import entrypoint_wrapper
+from airbyte_cdk.test.models import (
+    ConnectorTestScenario,
+)
 from airbyte_cdk.test.standard_tests._job_runner import IConnector, run_test_job
 from airbyte_cdk.test.standard_tests.docker_base import DockerConnectorTestSuite
+from airbyte_cdk.utils.connector_paths import (
+    ACCEPTANCE_TEST_CONFIG,
+    find_connector_root,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from airbyte_cdk.test import entrypoint_wrapper
-    from airbyte_cdk.test.standard_tests.models import (
-        ConnectorTestScenario,
-    )
 
 
 class ConnectorTestSuiteBase(DockerConnectorTestSuite):
@@ -105,6 +110,7 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
             self.create_connector(scenario),
             "check",
             test_scenario=scenario,
+            connector_root=self.get_connector_root_dir(),
         )
         conn_status_messages: list[AirbyteMessage] = [
             msg for msg in result._messages if msg.type == Type.CONNECTION_STATUS

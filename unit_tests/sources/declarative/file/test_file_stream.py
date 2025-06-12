@@ -17,6 +17,7 @@ from airbyte_cdk.test.entrypoint_wrapper import discover as entrypoint_discover
 from airbyte_cdk.test.entrypoint_wrapper import read as entrypoint_read
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 from airbyte_cdk.test.mock_http.response_builder import find_binary_response, find_template
+from airbyte_cdk.test.models.scenario import ExpectedOutcome
 from airbyte_cdk.test.state_builder import StateBuilder
 
 
@@ -53,8 +54,9 @@ def read(
     config_builder: ConfigBuilder,
     catalog: ConfiguredAirbyteCatalog,
     state_builder: Optional[StateBuilder] = None,
-    expecting_exception: bool = False,
     yaml_file: Optional[str] = None,
+    *,
+    expected_outcome: ExpectedOutcome = ExpectedOutcome.EXPECT_SUCCESS,
 ) -> EntrypointOutput:
     config = config_builder.build()
     state = state_builder.build() if state_builder else StateBuilder().build()
@@ -63,14 +65,19 @@ def read(
         config,
         catalog,
         state,
-        expecting_exception,
+        expected_outcome=expected_outcome,
     )
 
 
-def discover(config_builder: ConfigBuilder, expecting_exception: bool = False) -> EntrypointOutput:
+def discover(
+    config_builder: ConfigBuilder,
+    expected_outcome: ExpectedOutcome = ExpectedOutcome.EXPECT_SUCCESS,
+) -> EntrypointOutput:
     config = config_builder.build()
     return entrypoint_discover(
-        _source(CatalogBuilder().build(), config), config, expecting_exception
+        _source(CatalogBuilder().build(), config),
+        config,
+        expected_outcome=expected_outcome,
     )
 
 

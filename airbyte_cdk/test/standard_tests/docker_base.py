@@ -63,18 +63,17 @@ class DockerConnectorTestSuite:
         except FileNotFoundError as e:
             # Destinations sometimes do not have an acceptance tests file.
             warnings.warn(
-                f"Acceptance test config file not found: {e!s}. "
-                "No scenarios will be loaded.",
+                f"Acceptance test config file not found: {e!s}. No scenarios will be loaded.",
                 category=UserWarning,
                 stacklevel=0,
             )
             return []
 
-        all_tests_config = yaml.safe_load(acceptance_test_config_path.read_text())
+        all_tests_config = yaml.safe_load(cls.acceptance_test_config_path.read_text())
         if "acceptance_tests" not in all_tests_config:
             raise ValueError(
-                f"Acceptance tests config not found in {acceptance_test_config_path}. "
-                f"Found only: {all_tests_config!s}."
+                f"Acceptance tests config not found in {cls.acceptance_test_config_path}."
+                f" Found only: {str(all_tests_config)}."
             )
 
         test_scenarios: list[ConnectorTestScenario] = []
@@ -85,18 +84,24 @@ class DockerConnectorTestSuite:
             ):
                 continue
 
-            test_scenarios.extend([
-                ConnectorTestScenario.model_validate(test)
-                for test in all_tests_config["acceptance_tests"][category]["tests"]
-                if "config_path" in test and "iam_role" not in test["config_path"]
-            ])
+            for test in all_tests_config["acceptance_tests"][category]["tests"]:
+                if "config_path" not in test:
+                    # Skip tests without a config_path
+                    continue
 
-        connector_root = cls.get_connector_root_dir().absolute()
-        for test in test_scenarios:
-            if test.config_path:
-                test.config_path = connector_root / test.config_path
-            if test.configured_catalog_path:
-                test.configured_catalog_path = connector_root / test.configured_catalog_path
+                if "iam_role" in test["config_path"]:
+                    # We skip iam_role tests for now, as they are not supported in the test suite.
+                    continue
+
+                scenario = ConnectorTestScenario.model_validate(test)
+
+                if scenario.config_path and scenario.config_path in [
+                    s.config_path for s in test_scenarios
+                ]:
+                    # Skip duplicate scenarios based on config_path
+                    continue
+
+                test_scenarios.append(scenario)
 
         return test_scenarios
 
