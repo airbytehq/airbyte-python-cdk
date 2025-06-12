@@ -1303,6 +1303,153 @@ class TestManifestDeclarativeSource:
             == "This is a sample source connector that is very valid."
         )
 
+    @pytest.mark.parametrize(
+        "field_to_remove,expected_error",
+        [
+            pytest.param("condition", ValidationError, id="test_no_condition_raises_error"),
+            pytest.param("streams", ValidationError, id="test_no_streams_raises_error"),
+        ],
+    )
+    def test_conditional_streams_invalid_manifest(self, field_to_remove, expected_error):
+        manifest = {
+            "version": "3.8.2",
+            "definitions": {},
+            "description": "This is a sample source connector that is very valid.",
+            "streams": [
+                {
+                    "type": "DeclarativeStream",
+                    "$parameters": {
+                        "name": "students",
+                        "primary_key": "id",
+                        "url_base": "https://api.yasogamihighschool.com",
+                    },
+                    "schema_loader": {
+                        "name": "{{ parameters.stream_name }}",
+                        "file_path": "./source_yasogami_high_school/schemas/{{ parameters.name }}.yaml",
+                    },
+                    "retriever": {
+                        "paginator": {
+                            "type": "DefaultPaginator",
+                            "page_size": 10,
+                            "page_size_option": {
+                                "type": "RequestOption",
+                                "inject_into": "request_parameter",
+                                "field_name": "page_size",
+                            },
+                            "page_token_option": {"type": "RequestPath"},
+                            "pagination_strategy": {
+                                "type": "CursorPagination",
+                                "cursor_value": "{{ response._metadata.next }}",
+                                "page_size": 10,
+                            },
+                        },
+                        "requester": {
+                            "path": "/v1/students",
+                            "authenticator": {
+                                "type": "BearerAuthenticator",
+                                "api_token": "{{ config.apikey }}",
+                            },
+                            "request_parameters": {"page_size": "{{ 10 }}"},
+                        },
+                        "record_selector": {"extractor": {"field_path": ["result"]}},
+                    },
+                },
+                {
+                    "type": "ConditionalStreams",
+                    "condition": "{{ config['is_sandbox'] }}",
+                    "streams": [
+                        {
+                            "type": "DeclarativeStream",
+                            "$parameters": {
+                                "name": "classrooms",
+                                "primary_key": "id",
+                                "url_base": "https://api.yasogamihighschool.com",
+                            },
+                            "schema_loader": {
+                                "name": "{{ parameters.stream_name }}",
+                                "file_path": "./source_yasogami_high_school/schemas/{{ parameters.name }}.yaml",
+                            },
+                            "retriever": {
+                                "paginator": {
+                                    "type": "DefaultPaginator",
+                                    "page_size": 10,
+                                    "page_size_option": {
+                                        "type": "RequestOption",
+                                        "inject_into": "request_parameter",
+                                        "field_name": "page_size",
+                                    },
+                                    "page_token_option": {"type": "RequestPath"},
+                                    "pagination_strategy": {
+                                        "type": "CursorPagination",
+                                        "cursor_value": "{{ response._metadata.next }}",
+                                        "page_size": 10,
+                                    },
+                                },
+                                "requester": {
+                                    "path": "/v1/classrooms",
+                                    "authenticator": {
+                                        "type": "BearerAuthenticator",
+                                        "api_token": "{{ config.apikey }}",
+                                    },
+                                    "request_parameters": {"page_size": "{{ 10 }}"},
+                                },
+                                "record_selector": {"extractor": {"field_path": ["result"]}},
+                            },
+                        },
+                        {
+                            "type": "DeclarativeStream",
+                            "$parameters": {
+                                "name": "clubs",
+                                "primary_key": "id",
+                                "url_base": "https://api.yasogamihighschool.com",
+                            },
+                            "schema_loader": {
+                                "name": "{{ parameters.stream_name }}",
+                                "file_path": "./source_yasogami_high_school/schemas/{{ parameters.name }}.yaml",
+                            },
+                            "retriever": {
+                                "paginator": {
+                                    "type": "DefaultPaginator",
+                                    "page_size": 10,
+                                    "page_size_option": {
+                                        "type": "RequestOption",
+                                        "inject_into": "request_parameter",
+                                        "field_name": "page_size",
+                                    },
+                                    "page_token_option": {"type": "RequestPath"},
+                                    "pagination_strategy": {
+                                        "type": "CursorPagination",
+                                        "cursor_value": "{{ response._metadata.next }}",
+                                        "page_size": 10,
+                                    },
+                                },
+                                "requester": {
+                                    "path": "/v1/clubs",
+                                    "authenticator": {
+                                        "type": "BearerAuthenticator",
+                                        "api_token": "{{ config.apikey }}",
+                                    },
+                                    "request_parameters": {"page_size": "{{ 10 }}"},
+                                },
+                                "record_selector": {"extractor": {"field_path": ["result"]}},
+                            },
+                        },
+                    ],
+                },
+            ],
+            "check": {"type": "CheckStream", "stream_names": ["students"]},
+        }
+
+        assert "unit_tests" in sys.modules
+        assert "unit_tests.sources" in sys.modules
+        assert "unit_tests.sources.declarative" in sys.modules
+        assert "unit_tests.sources.declarative.external_component" in sys.modules
+
+        del manifest["streams"][1][field_to_remove]
+
+        with pytest.raises(ValidationError):
+            ManifestDeclarativeSource(source_config=manifest)
+
 
 def request_log_message(request: dict) -> AirbyteMessage:
     return AirbyteMessage(

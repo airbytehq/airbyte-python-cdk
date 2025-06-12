@@ -105,7 +105,7 @@ from airbyte_cdk.sources.declarative.incremental import (
     PerPartitionWithGlobalCursor,
     ResumableFullRefreshCursor,
 )
-from airbyte_cdk.sources.declarative.interpolation import InterpolatedBoolean, InterpolatedString
+from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.interpolation.interpolated_mapping import InterpolatedMapping
 from airbyte_cdk.sources.declarative.migrations.legacy_to_per_partition_state_migration import (
     LegacyToPerPartitionStateMigration,
@@ -155,9 +155,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConcurrencyLevel as ConcurrencyLevelModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    ConditionalStreams as ConditionalStreamsModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConfigAddFields as ConfigAddFieldsModel,

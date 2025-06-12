@@ -59,7 +59,6 @@ from airbyte_cdk.sources.declarative.models import (
     CompositeErrorHandler as CompositeErrorHandlerModel,
 )
 from airbyte_cdk.sources.declarative.models import ConcurrencyLevel as ConcurrencyLevelModel
-from airbyte_cdk.sources.declarative.models import ConditionalStreams as ConditionalStreamsModel
 from airbyte_cdk.sources.declarative.models import CustomErrorHandler as CustomErrorHandlerModel
 from airbyte_cdk.sources.declarative.models import (
     CustomPartitionRouter as CustomPartitionRouterModel,
