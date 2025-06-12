@@ -158,7 +158,7 @@ class DockerConnectorTestSuite:
           - In the rare case that image caches need to be cleared, please clear
             the local docker image cache using `docker image prune -a` command.
         """
-        if scenario.expect_exception:
+        if scenario.expected_outcome.expect_exception():
             pytest.skip("Skipping test_docker_image_build_and_check (expected to fail).")
 
         tag = "dev-latest"
