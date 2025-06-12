@@ -11,6 +11,7 @@ import warnings
 from dataclasses import asdict
 from pathlib import Path
 from subprocess import CompletedProcess, SubprocessError
+from typing import Literal
 
 import orjson
 import pytest

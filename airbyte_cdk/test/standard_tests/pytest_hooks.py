@@ -13,7 +13,7 @@ pytest_plugins = [
 ```
 """
 
-from typing import Literal
+from typing import Literal, cast
 
 import pytest
 
@@ -21,7 +21,7 @@ import pytest
 @pytest.fixture
 def connector_image_override(request: pytest.FixtureRequest) -> str | None:
     """Return the value of --connector-image, or None if not set."""
-    return request.config.getoption("--connector-image")
+    return cast(str | None, request.config.getoption("--connector-image"))
 
 
 @pytest.fixture
@@ -41,14 +41,14 @@ def read_from_streams(
     - `--read-from-streams=false`: Do not read from any streams.
     - `--read-from-streams=none`: Do not read from any streams.
     """
-    input_val: str | bool | None = request.config.getoption(
+    input_val: str = request.config.getoption(
         "--read-from-streams",
-        default="suggested",  # type: ignore
+        default="default",  # type: ignore
     )  # type: ignore
 
     if isinstance(input_val, str):
         if input_val.lower() == "false":
-            return False
+            return "none"
         if input_val.lower() in ["true", "suggested", "default"]:
             # Default to 'default' (suggested) streams if the input is 'true', 'suggested', or
             # 'default'.
@@ -64,7 +64,7 @@ def read_from_streams(
         return input_val.split(",")
 
     # Else, probably a bool; return it as is.
-    return input_val or False
+    return input_val or "none"
 
 
 @pytest.fixture
@@ -82,7 +82,13 @@ def read_scenarios(
     - `--read-scenarios=scenario1,scenario2`: Read the specified scenarios only.
 
     """
-    input_val = request.config.getoption("--read-scenarios", default="default")
+    input_val = cast(
+        str,
+        request.config.getoption(
+            "--read-scenarios",
+            default="default",  # type: ignore
+        ),
+    )
 
     if input_val.lower() == "default":
         # Default config scenario is always 'config.json'.
