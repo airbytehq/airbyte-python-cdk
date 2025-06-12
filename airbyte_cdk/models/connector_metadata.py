@@ -47,6 +47,11 @@ class ConnectorMetadata(BaseModel):
         description="List of tags for the connector",
     )
 
+    suggestedStreams: list[str] | None = Field(
+        None,
+        description="List of suggested streams for the connector",
+    )
+
     @property
     def language(self) -> ConnectorLanguage:
         """Get the connector language."""
