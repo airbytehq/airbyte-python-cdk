@@ -147,16 +147,18 @@ class JinjaInterpolation(Interpolation):
             # It can be returned as is
             return s
 
+    @staticmethod
     @cache
-    def _find_undeclared_variables(self, s: Optional[str]) -> Set[str]:
+    def _find_undeclared_variables(s: Optional[str]) -> Set[str]:
         """
         Find undeclared variables and cache them
         """
         ast = _ENVIRONMENT.parse(s)  # type: ignore # parse is able to handle None
         return meta.find_undeclared_variables(ast)
 
+    @staticmethod
     @cache
-    def _compile(self, s: str) -> Template:
+    def _compile(s: str) -> Template:
         """
         We must cache the Jinja Template ourselves because we're using `from_string` instead of a template loader
         """
