@@ -47,7 +47,7 @@ class ConnectorTestScenario(BaseModel):
     config_path: Path | None = None
     config_dict: dict[str, Any] | None = None
 
-    id: str | None = None
+    _id: str | None = None  # Used to override the default ID generation
 
     configured_catalog_path: Path | None = None
     timeout_seconds: int | None = None
@@ -99,16 +99,21 @@ class ConnectorTestScenario(BaseModel):
         return ExpectedOutcome.from_status_str(self.status)
 
     @property
-    def instance_name(self) -> str:
-        return self.config_path.stem if self.config_path else "Unnamed Scenario"
+    def id(self) -> str:
+        """Return a unique identifier for the test scenario.
+
+        This is used by PyTest to identify the test scenario.
+        """
+        if self._id:
+            return self._id
+
+        if self.config_path:
+            return self.config_path.stem
+
+        return str(hash(self))
 
     def __str__(self) -> str:
-        if self.id:
-            return f"'{self.id}' Test Scenario"
-        if self.config_path:
-            return f"'{self.config_path.name}' Test Scenario"
-
-        return f"'{hash(self)}' Test Scenario"
+        return f"'{self.id}' Test Scenario"
 
     @contextmanager
     def with_temp_config_file(

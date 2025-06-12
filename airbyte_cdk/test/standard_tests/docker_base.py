@@ -6,15 +6,30 @@ from __future__ import annotations
 import inspect
 import shutil
 import sys
+import tempfile
 import warnings
+from dataclasses import asdict
 from pathlib import Path
+from subprocess import CompletedProcess, SubprocessError
 
+import orjson
 import pytest
 import yaml
 from boltons.typeutils import classproperty
 
+from airbyte_cdk.models import (
+    AirbyteCatalog,
+    ConfiguredAirbyteCatalog,
+    ConfiguredAirbyteStream,
+    DestinationSyncMode,
+)
+from airbyte_cdk.models.airbyte_protocol_serializers import (
+    AirbyteCatalogSerializer,
+    AirbyteStreamSerializer,
+)
 from airbyte_cdk.models.connector_metadata import MetadataFile
 from airbyte_cdk.test.models import ConnectorTestScenario
+from airbyte_cdk.test.utils.reading import catalog
 from airbyte_cdk.utils.connector_paths import (
     ACCEPTANCE_TEST_CONFIG,
     find_connector_root,
@@ -127,17 +142,23 @@ class DockerConnectorTestSuite:
                 no_verify=False,
             )
 
-        _ = run_docker_command(
-            [
-                "docker",
-                "run",
-                "--rm",
-                connector_image,
-                "spec",
-            ],
-            check=True,  # Raise an error if the command fails
-            capture_output=False,
-        )
+        try:
+            result: CompletedProcess[str] = run_docker_command(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    connector_image,
+                    "spec",
+                ],
+                check=True,  # Raise an error if the command fails
+                capture_stderr=True,
+                capture_stdout=True,
+            )
+        except SubprocessError as ex:
+            raise AssertionError(
+                f"Failed to run `spec` command in docker image {connector_image!r}. Error: {ex!s}"
+            ) from None
 
     @pytest.mark.skipif(
         shutil.which("docker") is None,
@@ -192,5 +213,166 @@ class DockerConnectorTestSuite:
                     container_config_path,
                 ],
                 check=True,  # Raise an error if the command fails
-                capture_output=False,
+                capture_stderr=True,
+                capture_stdout=True,
             )
+
+    @pytest.mark.skipif(
+        shutil.which("docker") is None,
+        reason="docker CLI not found in PATH, skipping docker image tests",
+    )
+    @pytest.mark.image_tests
+    def test_docker_image_build_and_read(
+        self,
+        scenario: ConnectorTestScenario,
+        connector_image_override: str | None,
+        read_from_streams: Literal["all", "none", "default"] | list[str],
+        read_scenarios: Literal["all", "none", "default"] | list[str],
+    ) -> None:
+        """Read from the connector's Docker image.
+
+        This test builds the connector image and runs the `read` command inside the container.
+
+        Note:
+          - It is expected for docker image caches to be reused between test runs.
+          - In the rare case that image caches need to be cleared, please clear
+            the local docker image cache using `docker image prune -a` command.
+          - If the --connector-image arg is provided, it will be used instead of building the image.
+        """
+        if scenario.expected_outcome.expect_exception():
+            pytest.skip("Skipping (expected to fail).")
+
+        if read_from_streams == "none":
+            pytest.skip("Skipping read test (`--read-from-streams=false`).")
+
+        if read_scenarios == "none":
+            pytest.skip("Skipping (`--read-scenarios=none`).")
+
+        default_scenario_ids = ["config", "valid_config", "default"]
+        if read_scenarios == "all":
+            pass
+        elif read_scenarios == "default":
+            if scenario.id not in default_scenario_ids:
+                pytest.skip(
+                    f"Skipping read test for scenario '{scenario.id}' "
+                    f"(not in default scenarios list '{default_scenario_ids}')."
+                )
+        elif scenario.id not in read_scenarios:
+            # pytest.skip(
+            raise ValueError(
+                f"Skipping read test for scenario '{scenario.id}' "
+                f"(not in --read-scenarios={read_scenarios})."
+            )
+
+        tag = "dev-latest"
+        connector_root = self.get_connector_root_dir()
+        connector_name = connector_root.name
+        metadata = MetadataFile.from_file(connector_root / "metadata.yaml")
+        connector_image: str | None = connector_image_override
+        if not connector_image:
+            tag = "dev-latest"
+            connector_image = build_connector_image(
+                connector_name=connector_name,
+                connector_directory=connector_root,
+                metadata=metadata,
+                tag=tag,
+                no_verify=False,
+            )
+
+        container_config_path = "/secrets/config.json"
+        container_catalog_path = "/secrets/catalog.json"
+
+        discovered_catalog_path = Path(
+            tempfile.mktemp(prefix=f"{connector_name}-discovered-catalog-", suffix=".json")
+        )
+        configured_catalog_path = Path(
+            tempfile.mktemp(prefix=f"{connector_name}-configured-catalog-", suffix=".json")
+        )
+        with scenario.with_temp_config_file(
+            connector_root=connector_root,
+        ) as temp_config_file:
+            discover_result = run_docker_command(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "-v",
+                    f"{temp_config_file}:{container_config_path}",
+                    connector_image,
+                    "discover",
+                    "--config",
+                    container_config_path,
+                ],
+                check=True,  # Raise an error if the command fails
+                capture_stderr=True,
+                capture_stdout=True,
+            )
+            try:
+                discovered_catalog: AirbyteCatalog = AirbyteCatalogSerializer.load(
+                    orjson.loads(discover_result.stdout)["catalog"],
+                )
+            except Exception as ex:
+                raise AssertionError(
+                    f"Failed to load discovered catalog from {discover_result.stdout}. "
+                    f"Error: {ex!s}"
+                ) from None
+            if not discovered_catalog.streams:
+                raise ValueError(
+                    f"Discovered catalog for connector '{connector_name}' is empty. "
+                    "Please check the connector's discover implementation."
+                )
+
+            streams_list = [stream.name for stream in discovered_catalog.streams]
+            if read_from_streams == "default" and metadata.data.suggestedStreams:
+                # set `streams_list` to be the intersection of discovered and suggested streams.
+                streams_list = list(set(streams_list) & set(metadata.data.suggestedStreams))
+
+            if isinstance(read_from_streams, list):
+                # If `read_from_streams` is a list, we filter the discovered streams.
+                streams_list = list(set(streams_list) & set(read_from_streams))
+
+            configured_catalog: ConfiguredAirbyteCatalog = ConfiguredAirbyteCatalog(
+                streams=[
+                    ConfiguredAirbyteStream(
+                        stream=stream,
+                        sync_mode=stream.supported_sync_modes[0],
+                        destination_sync_mode=DestinationSyncMode.append,
+                    )
+                    for stream in discovered_catalog.streams
+                    if stream.name in streams_list
+                ]
+            )
+            configured_catalog_path.write_text(
+                orjson.dumps(asdict(configured_catalog)).decode("utf-8")
+            )
+            read_result: CompletedProcess[str] = run_docker_command(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "-v",
+                    f"{temp_config_file}:{container_config_path}",
+                    "-v",
+                    f"{configured_catalog_path}:{container_catalog_path}",
+                    connector_image,
+                    "read",
+                    "--config",
+                    container_config_path,
+                    "--catalog",
+                    container_catalog_path,
+                ],
+                check=False,
+                capture_stderr=True,
+                capture_stdout=True,
+            )
+            if read_result.returncode != 0:
+                raise AssertionError(
+                    f"Failed to run `read` command in docker image {connector_image!r}. "
+                    "\n-----------------"
+                    f"EXIT CODE: {read_result.returncode}\n"
+                    "STDERR:\n"
+                    f"{read_result.stderr}\n"
+                    f"STDOUT:\n"
+                    f"{read_result.stdout}\n"
+                    "\n-----------------"
+                ) from None

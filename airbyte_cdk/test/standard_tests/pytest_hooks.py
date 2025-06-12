@@ -13,7 +13,93 @@ pytest_plugins = [
 ```
 """
 
+from typing import Literal
+
 import pytest
+
+
+@pytest.fixture
+def connector_image_override(request: pytest.FixtureRequest) -> str | None:
+    """Return the value of --connector-image, or None if not set."""
+    return request.config.getoption("--connector-image")
+
+
+@pytest.fixture
+def read_from_streams(
+    request: pytest.FixtureRequest,
+) -> Literal["all", "none", "default"] | list[str]:
+    """Specify if the test should read from streams.
+
+    The input can be one of the following:
+    - [Omitted] - Default to False, meaning no streams will be read.
+    - `--read-from-streams`: Read from all suggested streams.
+    - `--read-from-streams=true`: Read from all suggested streams.
+    - `--read-from-streams=suggested`: Read from all suggested streams.
+    - `--read-from-streams=default`: Read from all suggested streams.
+    - `--read-from-streams=all`: Read from all streams.
+    - `--read-from-streams=stream1,stream2`: Read from the specified streams only.
+    - `--read-from-streams=false`: Do not read from any streams.
+    - `--read-from-streams=none`: Do not read from any streams.
+    """
+    input_val: str | bool | None = request.config.getoption(
+        "--read-from-streams",
+        default="suggested",  # type: ignore
+    )  # type: ignore
+
+    if isinstance(input_val, str):
+        if input_val.lower() == "false":
+            return False
+        if input_val.lower() in ["true", "suggested", "default"]:
+            # Default to 'default' (suggested) streams if the input is 'true', 'suggested', or
+            # 'default'.
+            # This is the default behavior if the option is not set.
+            return "default"
+        if input_val.lower() == "all":
+            # This will sometimes fail if the account doesn't have permissions
+            # to premium or restricted stream data.
+            return "all"
+
+        # If the input is a comma-separated list, split it into a list.
+        # This will return a one-element list if the input is a single stream name.
+        return input_val.split(",")
+
+    # Else, probably a bool; return it as is.
+    return input_val or False
+
+
+@pytest.fixture
+def read_scenarios(
+    request: pytest.FixtureRequest,
+) -> list[str] | Literal["all", "default"]:
+    """Return the value of `--read-scenarios`.
+
+    This argument is ignored if `--read-from-streams` is False or not set.
+
+    The input can be one of the following:
+    - [Omitted] - Default to 'config.json', meaning the default scenario will be read.
+    - `--read-scenarios=all`: Read all scenarios.
+    - `--read-scenarios=none`: Read no scenarios. (Overrides `--read-from-streams`, if set.)
+    - `--read-scenarios=scenario1,scenario2`: Read the specified scenarios only.
+
+    """
+    input_val = request.config.getoption("--read-scenarios", default="default")
+
+    if input_val.lower() == "default":
+        # Default config scenario is always 'config.json'.
+        return "default"
+
+    if input_val.lower() == "none":
+        # Default config scenario is always 'config.json'.
+        return []
+
+    return (
+        [
+            scenario_name.strip().lower().removesuffix(".json")
+            for scenario_name in input_val.split(",")
+        ]
+        if input_val
+        else []
+    )
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -24,12 +110,18 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=None,
         help="Use this pre-built connector Docker image instead of building one.",
     )
-
-
-@pytest.fixture
-def connector_image_override(request: pytest.FixtureRequest) -> str | None:
-    """Return the value of --connector-image, or None if not set."""
-    return request.config.getoption("--connector-image")
+    parser.addoption(
+        "--read-from-streams",
+        action="store",
+        default=None,
+        help=read_from_streams.__doc__,
+    )
+    parser.addoption(
+        "--read-scenarios",
+        action="store",
+        default="default",
+        help=read_scenarios.__doc__,
+    )
 
 
 def pytest_generate_tests(metafunc: pytest.Metafunc) -> None:
