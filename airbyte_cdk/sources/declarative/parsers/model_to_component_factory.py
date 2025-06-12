@@ -659,7 +659,6 @@ class ModelToComponentFactory:
             CheckDynamicStreamModel: self.create_check_dynamic_stream,
             CompositeErrorHandlerModel: self.create_composite_error_handler,
             ConcurrencyLevelModel: self.create_concurrency_level,
-            ConditionalStreamsModel: self.create_conditional_streams,
             ConfigMigrationModel: self.create_config_migration,
             ConfigAddFieldsModel: self.create_config_add_fields,
             ConfigRemapFieldModel: self.create_config_remap_field,
@@ -1621,22 +1620,6 @@ class ModelToComponentFactory:
             connector_state_converter=connector_state_converter,
             cursor_field=cursor_field,
             use_global_cursor=use_global_cursor,
-        )
-
-    def create_conditional_streams(
-        self, model: ConditionalStreamsModel, config: Config, **kwargs: Any
-    ) -> List[DeclarativeStream]:
-        condition = InterpolatedBoolean(
-            condition=model.condition, parameters=model.parameters or {}
-        )
-        should_include_streams = condition.eval(config=config)
-        return (
-            [
-                self._create_component_from_model(stream, config=config, **kwargs)
-                for stream in model.streams
-            ]
-            if should_include_streams
-            else []
         )
 
     @staticmethod
