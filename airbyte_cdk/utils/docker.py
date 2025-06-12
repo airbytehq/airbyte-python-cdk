@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
+import platform
 import subprocess
 import sys
 from contextlib import ExitStack
@@ -58,11 +58,13 @@ def _build_image(
     """Build a Docker image for the specified architecture.
 
     Returns the tag of the built image.
+    We use buildx to ensure we can build multi-platform images.
 
     Raises: ConnectorImageBuildError if the build fails.
     """
     docker_args: list[str] = [
         "docker",
+        "buildx",
         "build",
         "--platform",
         f"linux/{arch.value}",
@@ -144,7 +146,6 @@ def build_connector_image(
     *,
     metadata: MetadataFile,
     tag: str,
-    primary_arch: ArchEnum = ArchEnum.ARM64,  # Assume MacBook M series by default
     no_verify: bool = False,
     dockerfile_override: Path | None = None,
 ) -> str:
@@ -159,15 +160,19 @@ def build_connector_image(
         connector_directory: The directory containing the connector code.
         metadata: The metadata of the connector.
         tag: The tag to apply to the built image.
-        primary_arch: The primary architecture for the build (default: arm64). This
-            architecture will be used for the same-named tag. Both AMD64 and ARM64
-            images will be built, with the suffixes '-amd64' and '-arm64'.
         no_verify: If True, skip verification of the built image.
 
     Raises:
         ValueError: If the connector build options are not defined in metadata.yaml.
         ConnectorImageBuildError: If the image build or tag operation fails.
     """
+    # Detect primary architecture based on the machine type.
+    primary_arch: ArchEnum = (
+        ArchEnum.ARM64
+        if platform.machine().lower().startswith(("arm", "aarch"))
+        else ArchEnum.AMD64
+    )
+
     connector_kebab_name = connector_name
     connector_dockerfile_dir = connector_directory / "build" / "docker"
 
@@ -414,7 +419,6 @@ def run_docker_command(
 
         completed_process: subprocess.CompletedProcess[str] = subprocess.run(
             cmd,
-            env={**os.environ, "DOCKER_BUILDKIT": "1"},
             text=True,
             check=check,
             stderr=stderr,
