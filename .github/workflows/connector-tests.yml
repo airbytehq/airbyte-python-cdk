@@ -86,9 +86,7 @@ jobs:
             cdk_extra: n/a
 
     name: "Check: '${{matrix.connector}}'"
-    if: >
-      needs.cdk_changes.outputs['src'] == 'true' &&
-      (matrix.cdk_extra != 'n/a' || needs.cdk_changes.outputs[matrix.cdk_extra] == 'true')
+    if: needs.cdk_changes.outputs['src'] == 'true'
     permissions:
       checks: write
       contents: write # Required for creating commit statuses
