@@ -228,7 +228,6 @@ def build_connector_image(
     }
 
     base_tag = f"{metadata.data.dockerRepository}:{tag}"
-    arch_images: list[str] = []
 
     if metadata.data.language == ConnectorLanguage.JAVA:
         # This assumes that the repo root ('airbyte') is three levels above the
@@ -245,12 +244,18 @@ def build_connector_image(
             check=True,
         )
 
-    for arch in [ArchEnum.AMD64, ArchEnum.ARM64]:
+    # Always build for AMD64, and optionally for ARM64 if needed locally.
+    architectures = [ArchEnum.AMD64]
+    if primary_arch == ArchEnum.ARM64:
+        architectures += [ArchEnum.ARM64]
+
+    built_images: list[str] = []
+    for arch in architectures:
         docker_tag = f"{base_tag}-{arch.value}"
         docker_tag_parts = docker_tag.split("/")
         if len(docker_tag_parts) > 2:
             docker_tag = "/".join(docker_tag_parts[-1:])
-        arch_images.append(
+        built_images.append(
             _build_image(
                 context_dir=connector_directory,
                 dockerfile=dockerfile_path,
