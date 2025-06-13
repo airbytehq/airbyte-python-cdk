@@ -4186,6 +4186,46 @@ definitions:
       - type
       - stream_config
       - components_mapping
+  StreamParametersDefinition:
+    title: Stream Parameters Definition
+    description: (This component is experimental. Use at your own risk.) Represents a stream parameters definition to set up dynamic streams from defined values in manifest.
+    type: object
+    required:
+      - type
+      - lisf_of_parameters_for_stream
+    properties:
+      type:
+        type: string
+        enum: [StreamParametersDefinition]
+      lisf_of_parameters_for_stream:
+        title: Stream Parameters
+        description: A list of object of parameters for stream, each object in the list represents params for one stream.
+        type: array
+        items:
+          type: object
+        examples:
+          - [{"name": "test stream", "$parameters": {"entity": "test entity"}, "primary_key": "test key"}]
+  ParametrizedComponentsResolver:
+    type: object
+    title: Parametrized Components Resolver
+    description: (This component is experimental. Use at your own risk.) Resolves and populates dynamic streams from defined parametrized values in manifest.
+    properties:
+      type:
+        type: string
+        enum: [ParametrizedComponentsResolver]
+      stream_parameters:
+        "$ref": "#/definitions/StreamParametersDefinition"
+      components_mapping:
+        type: array
+        items:
+          "$ref": "#/definitions/ComponentMappingDefinition"
+      $parameters:
+        type: object
+        additionalProperties: true
+    required:
+      - type
+      - stream_parameters
+      - components_mapping
   DynamicDeclarativeStream:
     type: object
     description: (This component is experimental. Use at your own risk.) A component that described how will be created declarative streams based on stream template.
@@ -4212,6 +4252,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/HttpComponentsResolver"
           - "$ref": "#/definitions/ConfigComponentsResolver"
+          - "$ref": "#/definitions/ParametrizedComponentsResolver"
     required:
       - type
       - stream_template

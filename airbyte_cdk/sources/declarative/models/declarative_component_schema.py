@@ -1512,6 +1512,31 @@ class ConfigComponentsResolver(BaseModel):
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
 
+class StreamParametersDefinition(BaseModel):
+    type: Literal["StreamParametersDefinition"]
+    lisf_of_parameters_for_stream: List[Dict[str, Any]] = Field(
+        ...,
+        description="A list of object of parameters for stream, each object in the list represents params for one stream.",
+        examples=[
+            [
+                {
+                    "name": "test stream",
+                    "$parameters": {"entity": "test entity"},
+                    "primary_key": "test key",
+                }
+            ]
+        ],
+        title="Stream Parameters",
+    )
+
+
+class ParametrizedComponentsResolver(BaseModel):
+    type: Literal["ParametrizedComponentsResolver"]
+    stream_parameters: Union[List[StreamParametersDefinition], StreamParametersDefinition]
+    components_mapping: List[ComponentMappingDefinition]
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
 class RequestBodyPlainText(BaseModel):
     type: Literal["RequestBodyPlainText"]
     value: str
@@ -2943,7 +2968,9 @@ class DynamicDeclarativeStream(BaseModel):
     stream_template: Union[DeclarativeStream, StateDelegatingStream] = Field(
         ..., description="Reference to the stream template.", title="Stream Template"
     )
-    components_resolver: Union[HttpComponentsResolver, ConfigComponentsResolver] = Field(
+    components_resolver: Union[
+        HttpComponentsResolver, ConfigComponentsResolver, ParametrizedComponentsResolver
+    ] = Field(
         ...,
         description="Component resolve and populates stream templates with components values.",
         title="Components Resolver",
