@@ -289,7 +289,7 @@ class DockerConnectorTestSuite:
             ) as temp_config_file,
             tempfile.TemporaryDirectory(
                 prefix=f"{connector_name}-test",
-                delete=False,
+                ignore_cleanup_errors=True,
             ) as temp_dir_str,
         ):
             temp_dir = Path(temp_dir_str)
