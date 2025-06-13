@@ -85,7 +85,7 @@ jobs:
           - connector: source-pokeapi
             cdk_extra: n/a
 
-    name: "${{ needs.cdk_changes.outputs[matrix.cdk_extra] == 'false' && 'Skipped Check' || 'Check' }}: '${{matrix.connector}}"
+    name: "${{ needs.cdk_changes.outputs[matrix.cdk_extra] == 'false' && 'Skipped Check' || 'Check' }}: ${{matrix.connector}}"
     if: needs.cdk_changes.outputs['src'] == 'true'
     permissions:
       checks: write
