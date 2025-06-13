@@ -120,18 +120,22 @@ jobs:
           path: airbyte
 
       - name: Set up Python
+        if: steps.no_changes.outputs.status != 'cancelled'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Set up `uv`
+        if: steps.no_changes.outputs.status != 'cancelled'
         uses: astral-sh/setup-uv@v6.1.0
 
       - name: Set up `poe`
+        if: steps.no_changes.outputs.status != 'cancelled'
         run: |
           uv tool install poethepoet
 
       - name: Set up Poetry
+        if: steps.no_changes.outputs.status != 'cancelled'
         uses: Gr1N/setup-poetry@v9
         with:
           poetry-version: "2.0.1"
@@ -180,7 +184,8 @@ jobs:
         if: env.CONNECTOR_LANGUAGE == 'python'
         working-directory: airbyte/airbyte-integrations/connectors/${{ matrix.connector }}
         run: |
-          poe use-cdk-branch-active
+          echo "Using CDK ref ${{ github.event.pull_request.head.sha || github.sha }}"
+          poe use-cdk-branch ${{ github.event.pull_request.head.sha || github.sha }}
           poetry install --all-extras
 
       - name: Run Unit Tests [Python Connectors]
