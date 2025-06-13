@@ -76,14 +76,16 @@ jobs:
             cdk_extra: file-based
           - connector: destination-motherduck
             cdk_extra: sql
-          - connector: source-zendesk-support
-            cdk_extra: n/a
           - connector: source-amplitude
             cdk_extra: n/a
           - connector: source-intercom
             cdk_extra: n/a
           - connector: source-pokeapi
             cdk_extra: n/a
+
+          # CDK Tests cannot build the Connector object (constructor args not optional).
+          # - connector: source-zendesk-support
+          #   cdk_extra: n/a
 
     name: "${{ needs.cdk_changes.outputs[matrix.cdk_extra] == 'false' && 'Skipped Check' || 'Check' }}: ${{matrix.connector}}"
     if: needs.cdk_changes.outputs['src'] == 'true'
@@ -195,15 +197,6 @@ jobs:
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
         run: |
           poetry run airbyte-cdk connector test ${{ matrix.connector }}
-
-      - name: Test Connector using Dev CDK [Python Connectors]
-        if: env.CONNECTOR_LANGUAGE == 'python'
-        working-directory: airbyte/airbyte-integrations/connectors/${{ matrix.connector }}
-        env:
-          GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
-          POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
-        run: |
-          poetry run airbyte-cdk connector test
 
       - name: Container Build and Test [All Connectors]
         if: steps.no_changes.outputs.status != 'cancelled'
