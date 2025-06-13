@@ -1514,7 +1514,7 @@ class ConfigComponentsResolver(BaseModel):
 
 class StreamParametersDefinition(BaseModel):
     type: Literal["StreamParametersDefinition"]
-    lisf_of_parameters_for_stream: List[Dict[str, Any]] = Field(
+    list_of_parameters_for_stream: List[Dict[str, Any]] = Field(
         ...,
         description="A list of object of parameters for stream, each object in the list represents params for one stream.",
         examples=[

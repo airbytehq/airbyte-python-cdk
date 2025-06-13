@@ -29,7 +29,7 @@ class StreamParametersDefinition:
     Represents a stream parameters definition to set up dynamic streams from defined values in manifest.
     """
 
-    lisf_of_parameters_for_stream: List[Dict[str, Any]]
+    list_of_parameters_for_stream: List[Dict[str, Any]]
 
 
 @deprecated("This class is experimental. Use at your own risk.", category=ExperimentalClassWarning)
@@ -87,7 +87,7 @@ class ParametrizedComponentsResolver(ComponentsResolver):
     ) -> Iterable[Dict[str, Any]]:
         kwargs = {"stream_template_config": stream_template_config}
 
-        for components_values in self.stream_parameters.lisf_of_parameters_for_stream:
+        for components_values in self.stream_parameters.list_of_parameters_for_stream:
             updated_config = deepcopy(stream_template_config)
             kwargs["components_values"] = components_values  # type: ignore[assignment] # component_values will always be of type Mapping[str, Any]
             for resolved_component in self._resolved_components:

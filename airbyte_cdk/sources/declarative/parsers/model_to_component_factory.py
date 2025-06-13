@@ -3871,7 +3871,7 @@ class ModelToComponentFactory:
         self, model: ParametrizedComponentsResolverModel, config: Config
     ) -> ParametrizedComponentsResolver:
         stream_parameters = StreamParametersDefinition(
-            lisf_of_parameters_for_stream=model.stream_parameters.lisf_of_parameters_for_stream
+            list_of_parameters_for_stream=model.stream_parameters.list_of_parameters_for_stream
         )
         components_mapping = [
             self._create_component_from_model(

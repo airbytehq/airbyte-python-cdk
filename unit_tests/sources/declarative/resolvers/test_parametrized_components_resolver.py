@@ -57,7 +57,7 @@ MANIFEST = {
                 "type": "ParametrizedComponentsResolver",
                 "stream_parameters": {
                     "type": "StreamParametersDefinition",
-                    "lisf_of_parameters_for_stream": [
+                    "list_of_parameters_for_stream": [
                         {
                             "parameters": {"object_name": "Customers"},
                             "name": "Customers",

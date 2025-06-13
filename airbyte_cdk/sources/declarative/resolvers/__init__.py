@@ -27,7 +27,7 @@ from airbyte_cdk.sources.declarative.resolvers.config_components_resolver import
 from airbyte_cdk.sources.declarative.resolvers.http_components_resolver import (
     HttpComponentsResolver,
 )
-from airbyte_cdk.sources.declarative.resolvers.paramertized_components_resolver import (
+from airbyte_cdk.sources.declarative.resolvers.parametrized_components_resolver import (
     ParametrizedComponentsResolver,
     StreamParametersDefinition,
 )

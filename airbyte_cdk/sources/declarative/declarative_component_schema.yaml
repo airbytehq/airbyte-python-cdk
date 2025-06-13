@@ -4192,12 +4192,12 @@ definitions:
     type: object
     required:
       - type
-      - lisf_of_parameters_for_stream
+      - list_of_parameters_for_stream
     properties:
       type:
         type: string
         enum: [StreamParametersDefinition]
-      lisf_of_parameters_for_stream:
+      list_of_parameters_for_stream:
         title: Stream Parameters
         description: A list of object of parameters for stream, each object in the list represents params for one stream.
         type: array
