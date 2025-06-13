@@ -1,15 +1,15 @@
 import json
 from unittest.mock import MagicMock
 
-from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
-    ConcurrentDeclarativeSource,
-)
 from airbyte_cdk.models import (
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteStream,
     DestinationSyncMode,
-    Type,
     SyncMode,
+    Type,
+)
+from airbyte_cdk.sources.declarative.concurrent_declarative_source import (
+    ConcurrentDeclarativeSource,
 )
 from airbyte_cdk.test.mock_http import HttpMocker, HttpRequest, HttpResponse
 
