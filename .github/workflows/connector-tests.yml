@@ -171,7 +171,7 @@ jobs:
         if: steps.no_changes.outputs.status != 'cancelled'
         working-directory: airbyte/airbyte-integrations/connectors/${{ matrix.connector }}
         run: |
-          poe use-cdk-dev
+          poe use-cdk-branch-active
 
       - name: Test Connector
         if: steps.no_changes.outputs.status != 'cancelled'
