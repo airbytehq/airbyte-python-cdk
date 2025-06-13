@@ -3870,17 +3870,9 @@ class ModelToComponentFactory:
     def create_parametrized_components_resolver(
         self, model: ParametrizedComponentsResolverModel, config: Config
     ) -> ParametrizedComponentsResolver:
-        updated_stream_parameters = []
-        for stream_parameters in model.stream_parameters.lisf_of_parameters_for_stream:
-            try:
-                stream_parameters = self._create_component_from_model(
-                    stream_parameters, config=config, parameters=model.parameters or {}
-                )
-            except ValueError as ex:  # when an object doesn't have a type, we leave it as is
-                pass
-            updated_stream_parameters.append(stream_parameters)
-
-        model.stream_parameters.lisf_of_parameters_for_stream = updated_stream_parameters
+        stream_parameters = StreamParametersDefinition(
+            lisf_of_parameters_for_stream=model.stream_parameters.lisf_of_parameters_for_stream
+        )
         components_mapping = [
             self._create_component_from_model(
                 model=components_mapping_definition_model,
@@ -3892,7 +3884,7 @@ class ModelToComponentFactory:
             for components_mapping_definition_model in model.components_mapping
         ]
         return ParametrizedComponentsResolver(
-            stream_parameters=model.stream_parameters,
+            stream_parameters=stream_parameters,
             config=config,
             components_mapping=components_mapping,
             parameters=model.parameters or {},
