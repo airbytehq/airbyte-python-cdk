@@ -4,6 +4,8 @@
 from dataclasses import asdict
 from typing import TYPE_CHECKING
 
+import pytest
+
 from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteStream,
@@ -59,6 +61,13 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         scenario: ConnectorTestScenario,
     ) -> None:
         """Standard test for `discover`."""
+        if scenario.expected_outcome.expect_exception():
+            # If the scenario expects an exception, we can't ensure it specifically would fail
+            # in discover, because some discover implementations do not need to make a connection.
+            # We skip this test in that case.
+            pytest.skip("Skipping discover test for scenario that expects an exception.")
+            return
+
         run_test_job(
             self.create_connector(scenario),
             "discover",
