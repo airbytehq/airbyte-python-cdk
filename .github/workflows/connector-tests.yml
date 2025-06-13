@@ -142,9 +142,9 @@ jobs:
         run: |
           # Get the language of the connector from the metadata file
           CONNECTOR_LANGUAGE=$(poe -qq get-language)
-          echo "language=$CONNECTOR_LANGUAGE" | tee -a $GITHUB_ENV
+          echo "CONNECTOR_LANGUAGE=$CONNECTOR_LANGUAGE" | tee -a $GITHUB_ENV
 
-      - name: Install Airbyte CDK
+      - name: Install CDK with Poetry
         if: steps.no_changes.outputs.status != 'cancelled'
         run: |
           cd airbyte-python-cdk
