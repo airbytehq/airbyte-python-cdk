@@ -78,9 +78,10 @@ def _build_image(
     if build_args:
         for key, value in build_args.items():
             if value is not None:
-                docker_args.append(f"--build-arg={key}={value}")
+                docker_args.extend(["--build-arg", f"{key}={value}"])
             else:
-                docker_args.append(f"--build-arg={key}")
+                docker_args.extend(["--build-arg", key])
+
     docker_args.extend(
         [
             "-t",
