@@ -112,9 +112,7 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
             test_scenario=scenario,
             connector_root=self.get_connector_root_dir(),
         )
-        conn_status_messages: list[AirbyteMessage] = [
-            msg for msg in result._messages if msg.type == Type.CONNECTION_STATUS
-        ]  # noqa: SLF001  # Non-public API
-        assert len(conn_status_messages) == 1, (
-            f"Expected exactly one CONNECTION_STATUS message. Got: {result._messages}"
+        assert len(result.connection_status_messages) == 1, (
+            f"Expected exactly one CONNECTION_STATUS message. "
+            "Got: {result.connection_status_messages!s}"
         )

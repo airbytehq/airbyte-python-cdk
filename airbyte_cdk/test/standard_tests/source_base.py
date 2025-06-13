@@ -48,13 +48,10 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             test_scenario=scenario,
             connector_root=self.get_connector_root_dir(),
         )
-        conn_status_messages: list[AirbyteMessage] = [
-            msg for msg in result._messages if msg.type == Type.CONNECTION_STATUS
-        ]  # noqa: SLF001  # Non-public API
-        num_status_messages = len(conn_status_messages)
+        num_status_messages = len(result.connection_status_messages)
         assert num_status_messages == 1, (
             f"Expected exactly one CONNECTION_STATUS message. Got {num_status_messages}: \n"
-            + "\n".join([str(m) for m in result._messages])
+            + "\n".join([str(m) for m in result.get_message_iterator()])
         )
 
     def test_discover(
