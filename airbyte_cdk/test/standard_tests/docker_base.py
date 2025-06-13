@@ -30,6 +30,7 @@ from airbyte_cdk.models.airbyte_protocol_serializers import (
     AirbyteStreamSerializer,
 )
 from airbyte_cdk.models.connector_metadata import MetadataFile
+from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.test.models import ConnectorTestScenario
 from airbyte_cdk.test.utils.reading import catalog
 from airbyte_cdk.utils.connector_paths import (
@@ -310,10 +311,11 @@ class DockerConnectorTestSuite:
                 capture_stderr=True,
                 capture_stdout=True,
             )
+            parsed_output = EntrypointOutput(messages=discover_result.stdout.splitlines())
             try:
-                discovered_catalog: AirbyteCatalog = AirbyteCatalogSerializer.load(
-                    orjson.loads(discover_result.stdout)["catalog"],
-                )
+                catalog_message = parsed_output.catalog  # Get catalog message
+                assert catalog_message.catalog is not None, "Catalog message missing catalog."
+                discovered_catalog: AirbyteCatalog = parsed_output.catalog.catalog
             except Exception as ex:
                 raise AssertionError(
                     f"Failed to load discovered catalog from {discover_result.stdout}. "
