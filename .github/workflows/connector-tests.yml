@@ -72,22 +72,12 @@ jobs:
             cdk_extra: n/a
           - connector: source-shopify
             cdk_extra: n/a
-          # Chargebee is being flaky:
-          # - connector: source-chargebee
-          #   cdk_extra: n/a
-          # This one is behind in CDK updates and can't be used as tests until it is updated:
-          # - connector: destination-pinecone
-          #   cdk_extra: vector-db-based
           - connector: source-google-drive
             cdk_extra: file-based
           - connector: destination-motherduck
             cdk_extra: sql
-          # ZenDesk currently failing (as of 2024-12-02)
-          # TODO: Re-enable once fixed
-          # - connector: source-zendesk-support
-          #   cdk_extra: n/a
-          # TODO: These are manifest connectors and won't work as expected until we
-          #       add `--use-local-cdk` support for manifest connectors.
+          - connector: source-zendesk-support
+            cdk_extra: n/a
           - connector: source-amplitude
             cdk_extra: n/a
           - connector: source-intercom
@@ -95,7 +85,10 @@ jobs:
           - connector: source-pokeapi
             cdk_extra: n/a
 
-    name: "Check: '${{matrix.connector}}' (skip=${{needs.cdk_changes.outputs['src'] == 'false' || needs.cdk_changes.outputs[matrix.cdk_extra] == 'false'}})"
+    name: "Check: '${{matrix.connector}}'"
+    if: >
+      needs.cdk_changes.outputs['src'] == 'true' &&
+      (matrix.cdk_extra != 'n/a' || needs.cdk_changes.outputs[matrix.cdk_extra] == 'true')
     permissions:
       checks: write
       contents: write # Required for creating commit statuses
@@ -135,6 +128,10 @@ jobs:
       - name: Set up `uv`
         uses: astral-sh/setup-uv@v6.1.0
 
+      - name: Set up `poe`
+        run: |
+          uv tool install poethepoet
+
       - name: Set up Poetry
         uses: Gr1N/setup-poetry@v9
         with:
@@ -171,6 +168,12 @@ jobs:
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
         run: |
           poetry run airbyte-cdk secrets fetch ${{ matrix.connector }}
+
+      - name: Bump to Dev CDK
+        if: steps.no_changes.outputs.status != 'cancelled'
+        working-directory: airbyte/airbyte-integrations/connectors/${{ matrix.connector }}
+        run: |
+          poe use-cdk-dev
 
       - name: Test Connector
         if: steps.no_changes.outputs.status != 'cancelled'
