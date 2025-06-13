@@ -130,8 +130,8 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             catalog=configured_catalog,
         )
 
-        if not result.records:
-            raise AssertionError("Expected records but got none.")  # noqa: TRY003
+        if scenario.expected_outcome.expect_success() and not result.records:
+            raise AssertionError("Expected records but got none.")
 
     def test_fail_read_with_bad_catalog(
         self,
