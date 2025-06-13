@@ -70,8 +70,6 @@ jobs:
         include:
           - connector: source-hardcoded-records
             cdk_extra: n/a
-          - connector: source-shopify
-            cdk_extra: n/a
           - connector: source-google-drive
             cdk_extra: file-based
           - connector: destination-motherduck
@@ -82,6 +80,13 @@ jobs:
             cdk_extra: n/a
           - connector: source-pokeapi
             cdk_extra: n/a
+
+          # Skipped connectors:
+
+          # Skipping Shopify, because it is too slow and because of this issue:
+          # - https://github.com/airbytehq/airbyte-internal-issues/issues/13379
+          # - connector: source-shopify
+          #   cdk_extra: n/a
 
           # CDK Tests cannot build the Connector object (constructor args not optional).
           # - connector: source-zendesk-support
