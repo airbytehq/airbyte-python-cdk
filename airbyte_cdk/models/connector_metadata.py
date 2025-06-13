@@ -42,6 +42,7 @@ class SuggestedStreams(BaseModel):
         description="List of suggested streams for the connector",
     )
 
+
 class ConnectorMetadata(BaseModel):
     """Connector metadata from metadata.yaml."""
 
