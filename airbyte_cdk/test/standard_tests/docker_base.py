@@ -283,15 +283,13 @@ class DockerConnectorTestSuite:
         container_config_path = "/secrets/config.json"
         container_catalog_path = "/secrets/catalog.json"
 
-        discovered_catalog_path = Path(
-            tempfile.mktemp(prefix=f"{connector_name}-discovered-catalog-", suffix=".json")
-        )
-        configured_catalog_path = Path(
-            tempfile.mktemp(prefix=f"{connector_name}-configured-catalog-", suffix=".json")
-        )
-        with scenario.with_temp_config_file(
-            connector_root=connector_root,
-        ) as temp_config_file:
+        with (
+            scenario.with_temp_config_file(
+                connector_root=connector_root,
+            ) as temp_config_file,
+            tempfile.TemporaryDirectory(delete=False) as temp_dir_str,
+        ):
+            temp_dir = Path(temp_dir_str)
             discover_result = run_docker_command(
                 [
                     "docker",
@@ -326,7 +324,7 @@ class DockerConnectorTestSuite:
             streams_list = [stream.name for stream in discovered_catalog.streams]
             if read_from_streams == "default" and metadata.data.suggestedStreams:
                 # set `streams_list` to be the intersection of discovered and suggested streams.
-                streams_list = list(set(streams_list) & set(metadata.data.suggestedStreams))
+                streams_list = list(set(streams_list) & set(metadata.data.suggestedStreams.streams))
 
             if isinstance(read_from_streams, list):
                 # If `read_from_streams` is a list, we filter the discovered streams.
@@ -343,6 +341,7 @@ class DockerConnectorTestSuite:
                     if stream.name in streams_list
                 ]
             )
+            configured_catalog_path = temp_dir / "catalog.json"
             configured_catalog_path.write_text(
                 orjson.dumps(asdict(configured_catalog)).decode("utf-8")
             )
