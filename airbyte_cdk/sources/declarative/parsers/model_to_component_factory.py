@@ -163,9 +163,6 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     ConfigComponentsResolver as ConfigComponentsResolverModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
-    ParametrizedComponentsResolver as ParametrizedComponentsResolverModel,
-)
-from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ConfigMigration as ConfigMigrationModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -355,6 +352,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     PageIncrement as PageIncrementModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ParametrizedComponentsResolver as ParametrizedComponentsResolverModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ParentStreamConfig as ParentStreamConfigModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -507,9 +507,9 @@ from airbyte_cdk.sources.declarative.resolvers import (
     ComponentMappingDefinition,
     ConfigComponentsResolver,
     HttpComponentsResolver,
+    ParametrizedComponentsResolver,
     StreamConfig,
     StreamParametersDefinition,
-    ParametrizedComponentsResolver,
 )
 from airbyte_cdk.sources.declarative.retrievers import (
     AsyncRetriever,

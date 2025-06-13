@@ -3,7 +3,7 @@
 #
 
 from copy import deepcopy
-from dataclasses import InitVar, dataclass, field, Field
+from dataclasses import Field, InitVar, dataclass, field
 from itertools import product
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
 
