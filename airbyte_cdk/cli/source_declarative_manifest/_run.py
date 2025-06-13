@@ -4,14 +4,6 @@
 This file was originally imported from the dedicated connector directory, under the
 `airbyte` monorepo.
 
-Usage:
-
-```
-pipx install airbyte-cdk
-source-declarative-manifest --help
-source-declarative-manifest spec
-...
-```
 """
 
 from __future__ import annotations
@@ -90,6 +82,7 @@ def handle_command(args: list[str]) -> None:
     if _is_local_manifest_command(args):
         handle_local_manifest_command(args)
     else:
+        print("Remote is local is remote baby")
         handle_remote_manifest_command(args)
 
 
