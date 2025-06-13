@@ -287,7 +287,10 @@ class DockerConnectorTestSuite:
             scenario.with_temp_config_file(
                 connector_root=connector_root,
             ) as temp_config_file,
-            tempfile.TemporaryDirectory(delete=False) as temp_dir_str,
+            tempfile.TemporaryDirectory(
+                prefix=f"{connector_name}-test",
+                delete=False,
+            ) as temp_dir_str,
         ):
             temp_dir = Path(temp_dir_str)
             discover_result = run_docker_command(
