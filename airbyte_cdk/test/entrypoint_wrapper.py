@@ -319,7 +319,7 @@ def _run_command(
     parsed_args = AirbyteEntrypoint.parse_args(args)
 
     source_entrypoint = AirbyteEntrypoint(source)
-    messages = []
+    messages: list[str] = []
     uncaught_exception = None
     try:
         for message in source_entrypoint.run(parsed_args):
@@ -334,8 +334,10 @@ def _run_command(
     captured_logs = log_capture_buffer.getvalue().split("\n")[:-1]
 
     parent_logger.removeHandler(stream_handler)
-
-    return EntrypointOutput(messages + captured_logs, uncaught_exception=uncaught_exception)
+    return EntrypointOutput(
+        messages=messages + captured_logs,
+        uncaught_exception=uncaught_exception,
+    )
 
 
 def discover(
