@@ -38,6 +38,7 @@ from airbyte_cdk.models import (
     AirbyteMessageSerializer,
     AirbyteStateMessage,
     AirbyteStateMessageSerializer,
+    AirbyteStreamState,
     AirbyteStreamStatus,
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteCatalogSerializer,
@@ -45,7 +46,6 @@ from airbyte_cdk.models import (
     TraceType,
     Type,
 )
-from airbyte_cdk.models.airbyte_protocol import AirbyteMessage, AirbyteStreamState
 from airbyte_cdk.sources import Source
 from airbyte_cdk.test.models.scenario import ExpectedOutcome
 
