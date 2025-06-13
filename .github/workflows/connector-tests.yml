@@ -118,6 +118,7 @@ jobs:
           repository: airbytehq/airbyte
           ref: master
           path: airbyte
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -134,6 +135,13 @@ jobs:
         uses: Gr1N/setup-poetry@v9
         with:
           poetry-version: "2.0.1"
+
+      - name: Get Connector Language
+        working-directory: airbyte/airbyte-integrations/connectors/${{ matrix.connector }}
+        run: |
+          # Get the language of the connector from the metadata file
+          CONNECTOR_LANGUAGE=$(poe -qq get-language)
+          echo "language=$CONNECTOR_LANGUAGE" | tee -a $GITHUB_ENV
 
       - name: Install Airbyte CDK
         if: steps.no_changes.outputs.status != 'cancelled'
@@ -167,20 +175,54 @@ jobs:
         run: |
           poetry run airbyte-cdk secrets fetch ${{ matrix.connector }}
 
-      - name: Bump to Dev CDK
-        if: steps.no_changes.outputs.status != 'cancelled'
+      - name: Bump to Dev Branch CDK [Python Connectors]
+        if: env.CONNECTOR_LANGUAGE == 'python'
         working-directory: airbyte/airbyte-integrations/connectors/${{ matrix.connector }}
         run: |
           poe use-cdk-branch-active
+          poe install
 
-      - name: Test Connector
-        if: steps.no_changes.outputs.status != 'cancelled'
+      - name: Run Unit Tests [Python Connectors]
+        if: env.CONNECTOR_LANGUAGE == 'python'
+        working-directory: airbyte/airbyte-integrations/connectors/${{ matrix.connector }}
+        run: |
+          poe test-unit-tests
+
+      - name: Run FAST Standard Tests [Python Connectors]
+        if: env.CONNECTOR_LANGUAGE == 'python'
+        working-directory: airbyte/airbyte-integrations/connectors/${{ matrix.connector }}
+        env:
+          GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
+          POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
+        run: |
+          poetry run airbyte-cdk connector test
+
+      - name: Test Connector using Dev CDK [Python Connectors]
+        if: env.CONNECTOR_LANGUAGE == 'python'
+        working-directory: airbyte/airbyte-integrations/connectors/${{ matrix.connector }}
+        env:
+          GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
+          POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
+        run: |
+          poetry run airbyte-cdk connector test
+
+      - name: Test Connector [Manifest-Only Connectors]
+        if: env.CONNECTOR_LANGUAGE == 'manifest-only'
         working-directory: airbyte-python-cdk
         env:
           GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
         run: |
           poetry run airbyte-cdk connector test ${{ matrix.connector }}
+
+      - name: Container Build and Test [All Connectors]
+        if: steps.no_changes.outputs.status != 'cancelled'
+        working-directory: airbyte-python-cdk
+        env:
+          GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
+          POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
+        run: |
+          poetry run airbyte-cdk image test ${{ matrix.connector }}
 
       # Update the test report status with results
       - name: Update Test Report Status
