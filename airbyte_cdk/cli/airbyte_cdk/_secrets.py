@@ -99,12 +99,12 @@ def secrets_cli_group() -> None:
     help="Print GitHub CI mask for secrets.",
     type=bool,
     is_flag=True,
-    default=False,
+    default=None,
 )
 def fetch(
     connector: str | Path | None = None,
     gcp_project_id: str = GCP_PROJECT_ID,
-    print_ci_secrets_masks: bool = False,
+    print_ci_secrets_masks: bool | None = None,
 ) -> None:
     """Fetch secrets for a connector from Google Secret Manager.
 
@@ -181,22 +181,23 @@ def fetch(
         if secret_count == 0:
             raise exceptions[0]
 
-    if not print_ci_secrets_masks:
-        return
-
-    if not os.environ.get("CI", None):
+    if print_ci_secrets_masks and "CI" not in os.environ:
         click.echo(
             "The `--print-ci-secrets-masks` option is only available in CI environments. "
             "The `CI` env var is either not set or not set to a truthy value. "
             "Skipping printing secret masks.",
             err=True,
         )
-        return
+        print_ci_secrets_masks = False
+    elif print_ci_secrets_masks is None:
+        # If not explicitly set, we check if we are in a CI environment
+        # and set to True if so.
+        print_ci_secrets_masks = os.environ.get("CI", "") != ""
 
-    # Else print the CI mask
-    _print_ci_secrets_masks(
-        secrets_dir=secrets_dir,
-    )
+    if print_ci_secrets_masks:
+        _print_ci_secrets_masks(
+            secrets_dir=secrets_dir,
+        )
 
 
 @secrets_cli_group.command("list")

@@ -4,6 +4,8 @@
 from dataclasses import asdict
 from typing import TYPE_CHECKING
 
+import pytest
+
 from airbyte_cdk.models import (
     AirbyteMessage,
     AirbyteStream,
@@ -48,13 +50,10 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             test_scenario=scenario,
             connector_root=self.get_connector_root_dir(),
         )
-        conn_status_messages: list[AirbyteMessage] = [
-            msg for msg in result._messages if msg.type == Type.CONNECTION_STATUS
-        ]  # noqa: SLF001  # Non-public API
-        num_status_messages = len(conn_status_messages)
+        num_status_messages = len(result.connection_status_messages)
         assert num_status_messages == 1, (
             f"Expected exactly one CONNECTION_STATUS message. Got {num_status_messages}: \n"
-            + "\n".join([str(m) for m in result._messages])
+            + "\n".join([str(m) for m in result.get_message_iterator()])
         )
 
     def test_discover(
@@ -62,6 +61,13 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
         scenario: ConnectorTestScenario,
     ) -> None:
         """Standard test for `discover`."""
+        if scenario.expected_outcome.expect_exception():
+            # If the scenario expects an exception, we can't ensure it specifically would fail
+            # in discover, because some discover implementations do not need to make a connection.
+            # We skip this test in that case.
+            pytest.skip("Skipping discover test for scenario that expects an exception.")
+            return
+
         run_test_job(
             self.create_connector(scenario),
             "discover",
@@ -133,8 +139,8 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             catalog=configured_catalog,
         )
 
-        if not result.records:
-            raise AssertionError("Expected records but got none.")  # noqa: TRY003
+        if scenario.expected_outcome.expect_success() and not result.records:
+            raise AssertionError("Expected records but got none.")
 
     def test_fail_read_with_bad_catalog(
         self,

@@ -27,10 +27,8 @@ Available test suites base classes:
 
 '''
 
-from airbyte_cdk.test.standard_tests.connector_base import (
-    ConnectorTestScenario,
-    ConnectorTestSuiteBase,
-)
+from airbyte_cdk.test.models.scenario import ConnectorTestScenario
+from airbyte_cdk.test.standard_tests.connector_base import ConnectorTestSuiteBase
 from airbyte_cdk.test.standard_tests.declarative_sources import (
     DeclarativeSourceTestSuite,
 )
