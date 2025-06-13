@@ -19,9 +19,11 @@ import logging
 import re
 import tempfile
 import traceback
+from collections import deque
+from collections.abc import Generator, Mapping
 from io import StringIO
 from pathlib import Path
-from typing import Any, List, Mapping, Optional, Union
+from typing import Any, List, Literal, Optional, Union, final, overload
 
 import orjson
 from pydantic import ValidationError as V2ValidationError
@@ -43,18 +45,47 @@ from airbyte_cdk.models import (
     TraceType,
     Type,
 )
+from airbyte_cdk.models.airbyte_protocol import AirbyteMessage, AirbyteStreamState
 from airbyte_cdk.sources import Source
 from airbyte_cdk.test.models.scenario import ExpectedOutcome
 
 
 class EntrypointOutput:
-    def __init__(self, messages: List[str], uncaught_exception: Optional[BaseException] = None):
-        try:
-            self._messages = [self._parse_message(message) for message in messages]
-        except V2ValidationError as exception:
-            raise ValueError("All messages are expected to be AirbyteMessage") from exception
+    """A class to encapsulate the output of an Airbyte connector's execution.
+
+    This class can be initialized with a list of messages or a file containing messages.
+    It provides methods to access different types of messages produced during the execution
+    of an Airbyte connector, including both successful messages and error messages.
+
+    When working with records and state messages, it provides both a list and an iterator
+    implementation. Lists are easier to work with, but generators are better suited to handle
+    large volumes of messages without overflowing the available memory.
+    """
+
+    def __init__(
+        self,
+        messages: list[str] | None = None,
+        uncaught_exception: Optional[BaseException] = None,
+        *,
+        message_file: Path | None = None,
+    ) -> None:
+        if messages is None and message_file is None:
+            raise ValueError("Either messages or message_file must be provided")
+        if messages is not None and message_file is not None:
+            raise ValueError("Only one of messages or message_file can be provided")
+
+        self._messages: list[AirbyteMessage] | None = []
+        self._message_file: Path | None = message_file
+        if messages:
+            try:
+                self._messages = [self._parse_message(message) for message in messages]
+            except V2ValidationError as exception:
+                raise ValueError("All messages are expected to be AirbyteMessage") from exception
 
         if uncaught_exception:
+            if self._messages is None:
+                self._messages = []
+
             self._messages.append(
                 assemble_uncaught_exception(
                     type(uncaught_exception), uncaught_exception
@@ -72,12 +103,39 @@ class EntrypointOutput:
             )
 
     @property
-    def records_and_state_messages(self) -> List[AirbyteMessage]:
-        return self._get_message_by_types([Type.RECORD, Type.STATE])
+    def records_and_state_messages(
+        self,
+    ) -> list[AirbyteMessage]:
+        return self._get_message_by_types(
+            message_types=[Type.RECORD, Type.STATE],
+            safe_iterator=False,
+        )
+
+    def records_and_state_messages_iterator(
+        self,
+    ) -> Generator[AirbyteMessage, None, None]:
+        """Returns a generator that yields record and state messages one by one.
+
+        Use this instead of `records_and_state_messages` when the volume of messages could be large
+        enough to overload available memory.
+        """
+        return self._get_message_by_types(
+            message_types=[Type.RECORD, Type.STATE],
+            safe_iterator=True,
+        )
 
     @property
     def records(self) -> List[AirbyteMessage]:
         return self._get_message_by_types([Type.RECORD])
+
+    @property
+    def records_iterator(self) -> Generator[AirbyteMessage, None, None]:
+        """Returns a generator that yields record messages one by one.
+
+        Use this instead of `records` when the volume of records could be large
+        enough to overload available memory.
+        """
+        return self._get_message_by_types([Type.RECORD], safe_iterator=True)
 
     @property
     def state_messages(self) -> List[AirbyteMessage]:
@@ -92,11 +150,21 @@ class EntrypointOutput:
         return self._get_message_by_types([Type.CONNECTION_STATUS])
 
     @property
-    def most_recent_state(self) -> Any:
-        state_messages = self._get_message_by_types([Type.STATE])
-        if not state_messages:
-            raise ValueError("Can't provide most recent state as there are no state messages")
-        return state_messages[-1].state.stream  # type: ignore[union-attr] # state has `stream`
+    def most_recent_state(self) -> AirbyteStreamState | None:
+        state_message_iterator = self._get_message_by_types(
+            [Type.STATE],
+            safe_iterator=True,
+        )
+        # Use a deque with maxlen=1 to efficiently get the last state message
+        double_ended_queue = deque(state_message_iterator, maxlen=1)
+        try:
+            final_state_message: AirbyteMessage = double_ended_queue.pop()
+        except IndexError:
+            raise ValueError(
+                "Can't provide most recent state as there are no state messages."
+            ) from None
+
+        return final_state_message.state.stream  # type: ignore[union-attr] # state has `stream`
 
     @property
     def logs(self) -> List[AirbyteMessage]:
@@ -131,13 +199,80 @@ class EntrypointOutput:
         )
         return list(status_messages)
 
-    def _get_message_by_types(self, message_types: List[Type]) -> List[AirbyteMessage]:
-        return [message for message in self._messages if message.type in message_types]
+    def _read_all_messages(self) -> Generator[AirbyteMessage, None, None]:
+        """Creates a generator which yields messages one by one.
+
+        This will iterate over all messages in the output file (if provided) or the messages
+        provided during initialization. File results are provided first, followed by any
+        messages that were passed in directly.
+        """
+        if self._message_file:
+            try:
+                with open(self._message_file, "r", encoding="utf-8") as file:
+                    for line in file:
+                        if not line.strip():
+                            # Skip empty lines
+                            continue
+
+                        yield self._parse_message(line.strip())
+            except FileNotFoundError:
+                raise ValueError(f"Message file {self._message_file} not found")
+
+        if self._messages is not None:
+            yield from self._messages
+
+    # Overloads to provide proper type hints for different usages of `_get_message_by_types`.
+
+    @overload
+    def _get_message_by_types(
+        self,
+        message_types: list[Type],
+    ) -> list[AirbyteMessage]: ...
+
+    @overload
+    def _get_message_by_types(
+        self,
+        message_types: list[Type],
+        *,
+        safe_iterator: Literal[False],
+    ) -> list[AirbyteMessage]: ...
+
+    @overload
+    def _get_message_by_types(
+        self,
+        message_types: list[Type],
+        *,
+        safe_iterator: Literal[True],
+    ) -> Generator[AirbyteMessage, None, None]: ...
+
+    def _get_message_by_types(
+        self,
+        message_types: list[Type],
+        *,
+        safe_iterator: bool = True,
+    ) -> list[AirbyteMessage] | Generator[AirbyteMessage, None, None]:
+        """Get messages of specific types.
+
+        If `safe_iterator` is True, returns a generator that yields messages one by one.
+        If `safe_iterator` is False, returns a list of messages.
+
+        Use `safe_iterator=True` when the volume of messages could overload the available
+        memory.
+        """
+        message_generator = self._read_all_messages()
+
+        if safe_iterator:
+            return (message for message in message_generator if message.type in message_types)
+
+        return [message for message in message_generator if message.type in message_types]
 
     def _get_trace_message_by_trace_type(self, trace_type: TraceType) -> List[AirbyteMessage]:
         return [
             message
-            for message in self._get_message_by_types([Type.TRACE])
+            for message in self._get_message_by_types(
+                [Type.TRACE],
+                safe_iterator=True,
+            )
             if message.trace.type == trace_type  # type: ignore[union-attr] # trace has `type`
         ]
 
