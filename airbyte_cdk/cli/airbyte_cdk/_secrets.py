@@ -62,11 +62,15 @@ logger = logging.getLogger("airbyte-cdk.cli.secrets")
 
 try:
     from google.cloud import secretmanager_v1 as secretmanager
-    from google.cloud.secretmanager_v1 import Secret
+    from google.cloud.secretmanager_v1 import (
+        Secret,
+        SecretManagerServiceClient,
+    )
 except ImportError:
     # If the package is not installed, we will raise an error in the CLI command.
     secretmanager = None  # type: ignore
     Secret = None  # type: ignore
+    SecretManagerServiceClient = None  # type: ignore
 
 
 @click.group(
@@ -409,29 +413,31 @@ def _get_secret_filepath(
 
     return secrets_dir / "config.json"  # Default filename
 
-
-def _get_gsm_secrets_client() -> "secretmanager.SecretManagerServiceClient":  # type: ignore
-    """Get the Google Secret Manager client."""
-    if not secretmanager:
+def _get_gsm_secrets_client() -> "SecretManagerServiceClient":
+    """Initialize GSM client via env var or default credentials (including OIDC/WIF)."""
+    if not secretmanager or not SecretManagerServiceClient:
         raise ImportError(
-            "google-cloud-secret-manager package is required for Secret Manager integration. "
-            "Install it with 'pip install airbyte-cdk[dev]' "
-            "or 'pip install google-cloud-secret-manager'."
+            "Missing google-cloud-secret-manager. Install 'pip install google-cloud-secret-manager'"
         )
 
-    credentials_json = os.environ.get("GCP_GSM_CREDENTIALS")
-    if not credentials_json:
+    creds_json: str | None = os.environ.get("GCP_GSM_CREDENTIALS", None)
+    if creds_json:
+        creds_dict = json.loads(creds_json)
+        try:
+            return SecretManagerServiceClient.from_service_account_info(creds_dict)
+        except Exception as e:
+            raise ValueError(
+                "Invalid GCP_GSM_CREDENTIALS. Ensure it is a valid JSON string."
+            ) from e
+    # Fallback: use Application Default Credentials (supports WIF/OIDC)
+    try:
+        return SecretManagerServiceClient()
+    except Exception as e:
         raise ValueError(
-            "No Google Cloud credentials found. "
-            "Please set the `GCP_GSM_CREDENTIALS` environment variable."
-        )
+            "Unable to obtain GCP credentials. Set the `GCP_GSM_CREDENTIALS` env var or configure "
+            "default credentials."
+        ) from e
 
-    return cast(
-        "secretmanager.SecretManagerServiceClient",
-        secretmanager.SecretManagerServiceClient.from_service_account_info(
-            json.loads(credentials_json)
-        ),
-    )
 
 
 def _print_ci_secrets_masks(
