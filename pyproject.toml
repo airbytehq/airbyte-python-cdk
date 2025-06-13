@@ -225,6 +225,7 @@ DEP001 = [
 # DEP002: Project should not contain unused dependencies.
 # https://deptry.com/rules-violations/#missing-dependencies-dep002
 DEP002 = [
+  "setuptools",  # Incorrectly used without declaring in some connectors (e.g. source-shopify)
   "cryptography",  # Constrained as transitive dependency due to a bug in newer versions
   "google-cloud-secret-manager",  # Deptry can't detect that `google.cloud.secretmanager_v1` uses this package
 
