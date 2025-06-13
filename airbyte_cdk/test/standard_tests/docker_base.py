@@ -131,14 +131,14 @@ class DockerConnectorTestSuite:
         connector_image_override: str | None,
     ) -> None:
         """Run `docker_image` acceptance tests."""
-        connector_root = self.get_connector_root_dir()
+        connector_root = self.get_connector_root_dir().absolute()
         metadata = MetadataFile.from_file(connector_root / "metadata.yaml")
 
         connector_image: str | None = connector_image_override
         if not connector_image:
             tag = "dev-latest"
             connector_image = build_connector_image(
-                connector_name=connector_root.name,
+                connector_name=connector_root.absolute().name,
                 connector_directory=connector_root,
                 metadata=metadata,
                 tag=tag,
@@ -192,7 +192,7 @@ class DockerConnectorTestSuite:
         if not connector_image:
             tag = "dev-latest"
             connector_image = build_connector_image(
-                connector_name=connector_root.name,
+                connector_name=connector_root.absolute().name,
                 connector_directory=connector_root,
                 metadata=metadata,
                 tag=tag,
@@ -269,7 +269,7 @@ class DockerConnectorTestSuite:
 
         tag = "dev-latest"
         connector_root = self.get_connector_root_dir()
-        connector_name = connector_root.name
+        connector_name = connector_root.absolute().name
         metadata = MetadataFile.from_file(connector_root / "metadata.yaml")
         connector_image: str | None = connector_image_override
         if not connector_image:

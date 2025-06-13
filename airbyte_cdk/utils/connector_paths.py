@@ -181,11 +181,11 @@ def find_connector_root(from_paths: list[Path]) -> Path:
         # Check if the manifest file exists in the current directory
         for parent in [path, *path.parents]:
             if (parent / METADATA_YAML).exists():
-                return parent
+                return parent.absolute()
             if (parent / MANIFEST_YAML).exists():
-                return parent
+                return parent.absolute()
             if (parent / ACCEPTANCE_TEST_CONFIG).exists():
-                return parent
+                return parent.absolute()
             if parent.name == "airbyte_cdk":
                 break
 
