@@ -154,22 +154,6 @@ jobs:
           cd airbyte-python-cdk
           poetry install --all-extras
 
-      # Create initial pending status for test report
-      - name: Create Pending Test Report Status
-        if: steps.no_changes.outputs.status != 'cancelled'
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT_MAINTENANCE_OCTAVIA }}
-        run: |
-          HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
-          gh api \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            repos/${{ github.repository }}/statuses/$HEAD_SHA \
-            -f state="pending" \
-            -f description="Running connector tests..." \
-            -f context="${{ matrix.connector }} Test Report"
-
       - name: Fetch Connector Secrets
         if: steps.no_changes.outputs.status != 'cancelled'
         timeout-minutes: 90
@@ -229,20 +213,3 @@ jobs:
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
         run: |
           poetry run airbyte-cdk image test ${{ matrix.connector }}
-
-      # Update the test report status with results
-      - name: Update Test Report Status
-        if: always() && steps.no_changes.outputs.status != 'cancelled'
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT_MAINTENANCE_OCTAVIA }}
-        run: |
-          HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
-          gh api \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            repos/${{ github.repository }}/statuses/$HEAD_SHA \
-            -f state="${{ job.status }}" \
-            -f target_url="${{ steps.evaluate_output.outputs.html_report_url }}" \
-            -f description="Click Details to view the test report" \
-            -f context="${{ matrix.connector }} Test Report"
