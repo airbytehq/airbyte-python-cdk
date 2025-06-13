@@ -173,6 +173,12 @@ def build_connector_image(
         if platform.machine().lower().startswith(("arm", "aarch"))
         else ArchEnum.AMD64
     )
+    if not connector_name:
+        raise ValueError("Connector name must be provided.")
+    if not connector_directory:
+        raise ValueError("Connector directory must be provided.")
+    if not connector_directory.exists():
+        raise ValueError(f"Connector directory does not exist: {connector_directory}")
 
     connector_kebab_name = connector_name
     connector_dockerfile_dir = connector_directory / "build" / "docker"
