@@ -181,7 +181,7 @@ jobs:
         working-directory: airbyte/airbyte-integrations/connectors/${{ matrix.connector }}
         run: |
           poe use-cdk-branch-active
-          poe install
+          poetry install --all-extras
 
       - name: Run Unit Tests [Python Connectors]
         if: env.CONNECTOR_LANGUAGE == 'python'
@@ -198,6 +198,15 @@ jobs:
         run: |
           poetry run airbyte-cdk connector test
 
+      - name: Run FAST Standard Tests [Manifest-Only Connectors]
+        if: env.CONNECTOR_LANGUAGE == 'manifest-only'
+        working-directory: airbyte-python-cdk
+        env:
+          GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
+          POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
+        run: |
+          poetry run airbyte-cdk connector test ${{ matrix.connector }}
+
       - name: Test Connector using Dev CDK [Python Connectors]
         if: env.CONNECTOR_LANGUAGE == 'python'
         working-directory: airbyte/airbyte-integrations/connectors/${{ matrix.connector }}
@@ -206,15 +215,6 @@ jobs:
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
         run: |
           poetry run airbyte-cdk connector test
-
-      - name: Test Connector [Manifest-Only Connectors]
-        if: env.CONNECTOR_LANGUAGE == 'manifest-only'
-        working-directory: airbyte-python-cdk
-        env:
-          GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
-          POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
-        run: |
-          poetry run airbyte-cdk connector test ${{ matrix.connector }}
 
       - name: Container Build and Test [All Connectors]
         if: steps.no_changes.outputs.status != 'cancelled'
