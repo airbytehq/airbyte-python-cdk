@@ -23,6 +23,7 @@ from airbyte_cdk.models import (
     ConfiguredAirbyteCatalog,
     ConfiguredAirbyteStream,
     DestinationSyncMode,
+    SyncMode,
 )
 from airbyte_cdk.models.airbyte_protocol_serializers import (
     AirbyteCatalogSerializer,
@@ -337,7 +338,11 @@ class DockerConnectorTestSuite:
                 streams=[
                     ConfiguredAirbyteStream(
                         stream=stream,
-                        sync_mode=stream.supported_sync_modes[0],
+                        sync_mode=(
+                            stream.supported_sync_modes[0]
+                            if stream.supported_sync_modes
+                            else SyncMode.full_refresh
+                        ),
                         destination_sync_mode=DestinationSyncMode.append,
                     )
                     for stream in discovered_catalog.streams
