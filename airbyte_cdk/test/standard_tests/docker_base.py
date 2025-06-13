@@ -79,7 +79,7 @@ class DockerConnectorTestSuite:
             warnings.warn(
                 f"Acceptance test config file not found: {e!s}. No scenarios will be loaded.",
                 category=UserWarning,
-                stacklevel=0,
+                stacklevel=1,
             )
             return []
 
