@@ -3,11 +3,10 @@
 #
 
 from copy import deepcopy
-from dataclasses import Field, InitVar, dataclass, field
-from itertools import product
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple, Union
+from dataclasses import InitVar, dataclass, field
+from typing import Any, Dict, Iterable, List, Mapping
 
-import dpath
+import dpath.util as dpath_util
 import yaml
 from typing_extensions import deprecated
 from yaml.parser import ParserError
@@ -99,10 +98,10 @@ class ParametrizedComponentsResolver(ComponentsResolver):
                 )
                 path = [path.eval(self.config, **kwargs) for path in resolved_component.field_path]
                 parsed_value = self._parse_yaml_if_possible(value)
-                updated = dpath.set(updated_config, path, parsed_value)
+                updated = dpath_util.set(updated_config, path, parsed_value)
 
                 if parsed_value and not updated and resolved_component.create_or_update:
-                    dpath.new(updated_config, path, parsed_value)
+                    dpath_util.new(updated_config, path, parsed_value)
 
             yield updated_config
 
