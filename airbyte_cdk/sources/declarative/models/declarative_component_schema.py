@@ -1532,7 +1532,7 @@ class StreamParametersDefinition(BaseModel):
 
 class ParametrizedComponentsResolver(BaseModel):
     type: Literal["ParametrizedComponentsResolver"]
-    stream_parameters: Union[List[StreamParametersDefinition], StreamParametersDefinition]
+    stream_parameters: StreamParametersDefinition
     components_mapping: List[ComponentMappingDefinition]
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
