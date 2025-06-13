@@ -140,11 +140,47 @@ class ManifestNormalizer:
             self._prepare_definitions()
             # replace duplicates with references, if any
             self._handle_duplicates(self._collect_duplicates())
+            # replace parent streams with $refs
+            # self._replace_parent_streams_with_refs()
             # clean dangling fields after resolving $refs
             self._clean_dangling_fields()
         except Exception as e:
             raise ManifestNormalizationException(str(e))
-    
+
+    def _replace_parent_streams_with_refs(self) -> None:
+        """
+        For each stream in the manifest, if it has a retriever.partition_router with parent_stream_configs,
+        replace any 'stream' fields in those configs that are dicts and deeply equal to another stream object
+        with a $ref to the correct stream index.
+        """
+        import copy
+
+        streams = self._normalized_manifest.get(STREAMS_TAG, [])
+        # Use deep copy for comparison to avoid mutation issues
+        stream_copies = [copy.deepcopy(s) for s in streams]
+
+        for idx, stream in enumerate(streams):
+            retriever = stream.get("retriever")
+            if not retriever:
+                continue
+            partition_router = retriever.get("partition_router")
+            routers = partition_router if isinstance(partition_router, list) else [partition_router] if partition_router else []
+            for router in routers:
+                if not isinstance(router, dict):
+                    continue
+                if router.get("type") != "SubstreamPartitionRouter":
+                    continue
+                parent_stream_configs = router.get("parent_stream_configs", [])
+                for parent_config in parent_stream_configs:
+                    if not isinstance(parent_config, dict):
+                        continue
+                    stream_ref = parent_config.get("stream")
+                    # Only replace if it's a dict and matches any stream in the manifest
+                    for other_idx, other_stream in enumerate(stream_copies):
+                        if stream_ref is not None and isinstance(stream_ref, dict) and stream_ref == other_stream:
+                            parent_config["stream"] = {"$ref": f"#/streams/{other_idx}"}
+                            break
+
     def _clean_dangling_fields(self) -> None:
         """
         Clean the manifest by removing unused definitions and schemas.

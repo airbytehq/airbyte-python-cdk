@@ -202,3 +202,163 @@ def test_clean_dangling_fields_removes_empty_sections() -> None:
     normalizer = ManifestNormalizer(manifest, schema)
     normalizer._clean_dangling_fields()
     assert normalizer._normalized_manifest == expected
+
+
+def test_replace_parent_streams_with_refs_replaces_with_ref():
+    """
+    If a parent_stream_config's stream field matches another stream object, it should be replaced with a $ref to the correct index.
+    """
+    stream_a = {"name": "A", "type": "DeclarativeStream", "retriever": {}}
+    stream_b = {"name": "B", "type": "DeclarativeStream", "retriever": {}}
+    manifest = {
+        "streams": [
+            stream_a,
+            stream_b,
+            {
+                "name": "C",
+                "type": "DeclarativeStream",
+                "retriever": {
+                    "partition_router": {
+                        "type": "SubstreamPartitionRouter",
+                        "parent_stream_configs": [
+                            {"stream": stream_a.copy(), "type": "ParentStreamConfig", "parent_key": "id", "partition_field": "aid"},
+                            {"stream": stream_b.copy(), "type": "ParentStreamConfig", "parent_key": "id", "partition_field": "bid"},
+                        ]
+                    }
+                }
+            },
+        ]
+    }
+    expected = {
+        "streams": [
+            stream_a,
+            stream_b, 
+            {
+                "name": "C",
+                "type": "DeclarativeStream",
+                "retriever": {
+                    "partition_router": {
+                        "type": "SubstreamPartitionRouter",
+                        "parent_stream_configs": [
+                            {"stream": {"$ref": "#/streams/0"}, "type": "ParentStreamConfig", "parent_key": "id", "partition_field": "aid"},
+                            {"stream": {"$ref": "#/streams/1"}, "type": "ParentStreamConfig", "parent_key": "id", "partition_field": "bid"},
+                        ]
+                    }
+                }
+            },
+        ]
+    }
+    schema = _get_declarative_component_schema()
+    normalizer = ManifestNormalizer(manifest, schema)
+    normalizer._replace_parent_streams_with_refs()
+    assert normalizer._normalized_manifest == expected
+
+
+def test_replace_parent_streams_with_refs_no_match():
+    """
+    If a parent_stream_config's stream field does not match any stream object, it should not be replaced.
+    """
+    stream_a = {"name": "A", "type": "DeclarativeStream", "retriever": {}}
+    unrelated_stream = {"name": "X", "type": "DeclarativeStream", "retriever": {"foo": 1}}
+    manifest = {
+        "streams": [
+            stream_a,
+            {
+                "name": "C",
+                "type": "DeclarativeStream",
+                "retriever": {
+                    "partition_router": {
+                        "type": "SubstreamPartitionRouter",
+                        "parent_stream_configs": [
+                            {"stream": unrelated_stream.copy(), "type": "ParentStreamConfig", "parent_key": "id", "partition_field": "aid"},
+                        ]
+                    }
+                }
+            },
+        ]
+    }
+    expected = {
+        "streams": [
+            stream_a,
+            {
+                "name": "C",
+                "type": "DeclarativeStream",
+                "retriever": {
+                    "partition_router": {
+                        "type": "SubstreamPartitionRouter",
+                        "parent_stream_configs": [
+                            {"stream": unrelated_stream.copy(), "type": "ParentStreamConfig", "parent_key": "id", "partition_field": "aid"},
+                        ]
+                    }
+                }
+            },
+        ]
+    }
+    schema = _get_declarative_component_schema()
+    normalizer = ManifestNormalizer(manifest, schema)
+    normalizer._replace_parent_streams_with_refs()
+    assert normalizer._normalized_manifest == expected
+
+
+def test_replace_parent_streams_with_refs_handles_multiple_partition_routers():
+    """
+    If there are multiple partition_routers (as a list), all should be checked.
+    """
+    stream_a = {"name": "A", "type": "DeclarativeStream", "retriever": {}}
+    stream_b = {"name": "B", "type": "DeclarativeStream", "retriever": {}}
+    manifest = {
+        "streams": [
+            stream_a,
+            stream_b,
+            {
+                "name": "C",
+                "type": "DeclarativeStream",
+                "retriever": {
+                    "partition_router": [
+                        {
+                            "type": "SubstreamPartitionRouter",
+                            "parent_stream_configs": [
+                                {"stream": stream_a.copy(), "type": "ParentStreamConfig", "parent_key": "id", "partition_field": "aid"},
+                            ]
+                        },
+                        {
+                            "type": "SubstreamPartitionRouter",
+                            "parent_stream_configs": [
+                                {"stream": stream_b.copy(), "type": "ParentStreamConfig", "parent_key": "id", "partition_field": "bid"},
+                            ]
+                        }
+                    ]
+                }
+            },
+        ]
+    }
+    expected = {
+        "streams": [
+            stream_a,
+            stream_b,
+            {
+                "name": "C",
+                "type": "DeclarativeStream",
+                "retriever": {
+                    "partition_router": [
+                        {
+                            "type": "SubstreamPartitionRouter",
+                            "parent_stream_configs": [
+                                {"stream": {"$ref": "#/streams/0"}, "type": "ParentStreamConfig", "parent_key": "id", "partition_field": "aid"},
+                            ]
+                        },
+                        {
+                            "type": "SubstreamPartitionRouter",
+                            "parent_stream_configs": [
+                                {"stream": {"$ref": "#/streams/1"}, "type": "ParentStreamConfig", "parent_key": "id", "partition_field": "bid"},
+                            ]
+                        }
+                    ]
+                }
+            },
+        ]
+    }
+    schema = _get_declarative_component_schema()
+    normalizer = ManifestNormalizer(manifest, schema)
+    normalizer._replace_parent_streams_with_refs()
+    assert normalizer._normalized_manifest == expected
