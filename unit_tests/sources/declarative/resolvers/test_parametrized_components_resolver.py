@@ -173,7 +173,7 @@ def test_dynamic_streams_with_parametrized_components_resolver():
         ]
 
     assert len(records) == 3
-    assert [record.record.data for record in records] == [
+    assert [dict(sorted(record.record.data.items())) for record in records] == [
         {"field1": "Customers info", "field2": "Related to customers field"},
         {"field1": "Refunds info", "field2": "Related to refunds field"},
         {"field1": "Orders info", "field2": "Related to orders field"},
