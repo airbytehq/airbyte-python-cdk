@@ -143,41 +143,31 @@ def manifest_with_multiple_url_base() -> Dict[str, Any]:
                 "type": "object",
                 "$schema": "http://json-schema.org/draft-07/schema#",
                 "additionalProperties": True,
-                "properties": {
-                    "a": 1
-                },
+                "properties": {"a": 1},
             },
             "B": {
                 "type": "object",
                 "$schema": "http://json-schema.org/draft-07/schema#",
                 "additionalProperties": True,
-                "properties": {
-                    "b": 2
-                },
+                "properties": {"b": 2},
             },
             "C": {
                 "type": "object",
                 "$schema": "http://json-schema.org/draft-07/schema#",
                 "additionalProperties": True,
-                "properties": {
-                    "c": 3
-                },
+                "properties": {"c": 3},
             },
             "D": {
                 "type": "object",
                 "$schema": "http://json-schema.org/draft-07/schema#",
                 "additionalProperties": True,
-                "properties": {
-                    "d": 4
-                },
+                "properties": {"d": 4},
             },
             "E": {
                 "type": "object",
                 "$schema": "http://json-schema.org/draft-07/schema#",
                 "additionalProperties": True,
-                "properties": {
-                    "e": 5
-                },
+                "properties": {"e": 5},
             },
         },
     }
@@ -212,9 +202,7 @@ def expected_manifest_with_multiple_url_base_normalized() -> Dict[str, Any]:
                         "type": "object",
                         "$schema": "http://json-schema.org/draft-07/schema#",
                         "additionalProperties": True,
-                        "properties": {
-                            "a": 1
-                        },
+                        "properties": {"a": 1},
                     },
                 },
             },
@@ -241,9 +229,7 @@ def expected_manifest_with_multiple_url_base_normalized() -> Dict[str, Any]:
                         "type": "object",
                         "$schema": "http://json-schema.org/draft-07/schema#",
                         "additionalProperties": True,
-                        "properties": {
-                            "b": 2
-                        },
+                        "properties": {"b": 2},
                     },
                 },
             },
@@ -270,9 +256,7 @@ def expected_manifest_with_multiple_url_base_normalized() -> Dict[str, Any]:
                         "type": "object",
                         "$schema": "http://json-schema.org/draft-07/schema#",
                         "additionalProperties": True,
-                        "properties": {
-                            "c": 3
-                        },
+                        "properties": {"c": 3},
                     },
                 },
             },
@@ -299,9 +283,7 @@ def expected_manifest_with_multiple_url_base_normalized() -> Dict[str, Any]:
                         "type": "object",
                         "$schema": "http://json-schema.org/draft-07/schema#",
                         "additionalProperties": True,
-                        "properties": {
-                            "d": 4
-                        },
+                        "properties": {"d": 4},
                     },
                 },
             },
@@ -328,10 +310,8 @@ def expected_manifest_with_multiple_url_base_normalized() -> Dict[str, Any]:
                         "type": "object",
                         "$schema": "http://json-schema.org/draft-07/schema#",
                         "additionalProperties": True,
-                        "properties": {
-                            "e": 5
-                        }
-                    }
+                        "properties": {"e": 5},
+                    },
                 },
             },
         ],

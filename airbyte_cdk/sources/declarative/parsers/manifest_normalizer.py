@@ -164,7 +164,13 @@ class ManifestNormalizer:
             if not retriever:
                 continue
             partition_router = retriever.get("partition_router")
-            routers = partition_router if isinstance(partition_router, list) else [partition_router] if partition_router else []
+            routers = (
+                partition_router
+                if isinstance(partition_router, list)
+                else [partition_router]
+                if partition_router
+                else []
+            )
             for router in routers:
                 if not isinstance(router, dict):
                     continue
@@ -177,7 +183,11 @@ class ManifestNormalizer:
                     stream_ref = parent_config.get("stream")
                     # Only replace if it's a dict and matches any stream in the manifest
                     for other_idx, other_stream in enumerate(stream_copies):
-                        if stream_ref is not None and isinstance(stream_ref, dict) and stream_ref == other_stream:
+                        if (
+                            stream_ref is not None
+                            and isinstance(stream_ref, dict)
+                            and stream_ref == other_stream
+                        ):
                             parent_config["stream"] = {"$ref": f"#/streams/{other_idx}"}
                             break
 
@@ -186,17 +196,18 @@ class ManifestNormalizer:
         Clean the manifest by removing unused definitions and schemas.
         This method removes any definitions or schemas that are not referenced by any $ref in the manifest.
         """
+
         def find_all_refs(obj: Dict[str, Any], refs: List[str]) -> None:
             """
             Recursively find all $ref paths in the object.
-            
+
             Args:
                 obj: The object to search through
                 refs: List to store found reference paths
             """
             if not isinstance(obj, dict):
                 return
-                
+
             for key, value in obj.items():
                 if key == "$ref" and isinstance(value, str):
                     # Remove the leading #/ from the ref path
@@ -211,7 +222,7 @@ class ManifestNormalizer:
         def clean_section(section: Dict[str, Any], section_path: str) -> None:
             """
             Clean a section by removing unreferenced fields.
-            
+
             Args:
                 section: The section to clean
                 section_path: The path to this section in the manifest

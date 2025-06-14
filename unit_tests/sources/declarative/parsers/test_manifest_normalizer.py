@@ -55,31 +55,25 @@ def test_clean_dangling_fields_removes_unreferenced_definitions() -> None:
     manifest = {
         "definitions": {
             "referenced": {"type": "object", "properties": {"a": 1}},
-            "unreferenced": {"type": "object", "properties": {"b": 2}}
+            "unreferenced": {"type": "object", "properties": {"b": 2}},
         },
         "streams": [
             {
                 "name": "stream1",
                 "type": "object",
-                "properties": {
-                    "def": {"$ref": "#/definitions/referenced"}
-                }
+                "properties": {"def": {"$ref": "#/definitions/referenced"}},
             }
-        ]
+        ],
     }
     expected = {
-        "definitions": {
-            "referenced": {"type": "object", "properties": {"a": 1}}
-        },
+        "definitions": {"referenced": {"type": "object", "properties": {"a": 1}}},
         "streams": [
             {
                 "name": "stream1",
                 "type": "object",
-                "properties": {
-                    "def": {"$ref": "#/definitions/referenced"}
-                }
+                "properties": {"def": {"$ref": "#/definitions/referenced"}},
             }
-        ]
+        ],
     }
     schema = _get_declarative_component_schema()
     normalizer = ManifestNormalizer(manifest, schema)
@@ -94,29 +88,17 @@ def test_clean_dangling_fields_removes_unreferenced_schemas() -> None:
     manifest = {
         "schemas": {
             "referenced": {"type": "object", "properties": {"a": 1}},
-            "unreferenced": {"type": "object", "properties": {"b": 2}}
+            "unreferenced": {"type": "object", "properties": {"b": 2}},
         },
         "streams": [
-            {
-                "name": "stream1",
-                "schema_loader": {
-                    "schema": {"$ref": "#/schemas/referenced"}
-                }
-            }
-        ]
+            {"name": "stream1", "schema_loader": {"schema": {"$ref": "#/schemas/referenced"}}}
+        ],
     }
     expected = {
-        "schemas": {
-            "referenced": {"type": "object", "properties": {"a": 1}}
-        },
+        "schemas": {"referenced": {"type": "object", "properties": {"a": 1}}},
         "streams": [
-            {
-                "name": "stream1",
-                "schema_loader": {
-                    "schema": {"$ref": "#/schemas/referenced"}
-                }
-            }
-        ]
+            {"name": "stream1", "schema_loader": {"schema": {"$ref": "#/schemas/referenced"}}}
+        ],
     }
     schema = _get_declarative_component_schema()
     normalizer = ManifestNormalizer(manifest, schema)
@@ -130,39 +112,27 @@ def test_clean_dangling_fields_keeps_parent_paths() -> None:
     """
     manifest = {
         "definitions": {
-            "parent": {
-                "child": {
-                    "grandchild": {"type": "object", "properties": {"a": 1}}
-                }
-            }
+            "parent": {"child": {"grandchild": {"type": "object", "properties": {"a": 1}}}}
         },
         "streams": [
             {
                 "name": "stream1",
                 "type": "object",
-                "properties": {
-                    "def": {"$ref": "#/definitions/parent/child/grandchild"}
-                }
+                "properties": {"def": {"$ref": "#/definitions/parent/child/grandchild"}},
             }
-        ]
+        ],
     }
     expected = {
         "definitions": {
-            "parent": {
-                "child": {
-                    "grandchild": {"type": "object", "properties": {"a": 1}}
-                }
-            }
+            "parent": {"child": {"grandchild": {"type": "object", "properties": {"a": 1}}}}
         },
         "streams": [
             {
                 "name": "stream1",
                 "type": "object",
-                "properties": {
-                    "def": {"$ref": "#/definitions/parent/child/grandchild"}
-                }
+                "properties": {"def": {"$ref": "#/definitions/parent/child/grandchild"}},
             }
-        ]
+        ],
     }
     schema = _get_declarative_component_schema()
     normalizer = ManifestNormalizer(manifest, schema)
@@ -175,29 +145,11 @@ def test_clean_dangling_fields_removes_empty_sections() -> None:
     Test that empty sections are removed after cleaning.
     """
     manifest = {
-        "definitions": {
-            "unreferenced": {"type": "object", "properties": {"b": 2}}
-        },
-        "schemas": {
-            "unreferenced": {"type": "object", "properties": {"b": 2}}
-        },
-        "streams": [
-            {
-                "name": "stream1",
-                "type": "object",
-                "properties": {}
-            }
-        ]
+        "definitions": {"unreferenced": {"type": "object", "properties": {"b": 2}}},
+        "schemas": {"unreferenced": {"type": "object", "properties": {"b": 2}}},
+        "streams": [{"name": "stream1", "type": "object", "properties": {}}],
     }
-    expected = {
-        "streams": [
-            {
-                "name": "stream1",
-                "type": "object",
-                "properties": {}
-            }
-        ]
-    }
+    expected = {"streams": [{"name": "stream1", "type": "object", "properties": {}}]}
     schema = _get_declarative_component_schema()
     normalizer = ManifestNormalizer(manifest, schema)
     normalizer._clean_dangling_fields()
@@ -221,18 +173,28 @@ def test_replace_parent_streams_with_refs_replaces_with_ref():
                     "partition_router": {
                         "type": "SubstreamPartitionRouter",
                         "parent_stream_configs": [
-                            {"stream": stream_a.copy(), "type": "ParentStreamConfig", "parent_key": "id", "partition_field": "aid"},
-                            {"stream": stream_b.copy(), "type": "ParentStreamConfig", "parent_key": "id", "partition_field": "bid"},
-                        ]
+                            {
+                                "stream": stream_a.copy(),
+                                "type": "ParentStreamConfig",
+                                "parent_key": "id",
+                                "partition_field": "aid",
+                            },
+                            {
+                                "stream": stream_b.copy(),
+                                "type": "ParentStreamConfig",
+                                "parent_key": "id",
+                                "partition_field": "bid",
+                            },
+                        ],
                     }
-                }
+                },
             },
         ]
     }
     expected = {
         "streams": [
             stream_a,
-            stream_b, 
+            stream_b,
             {
                 "name": "C",
                 "type": "DeclarativeStream",
@@ -240,11 +202,21 @@ def test_replace_parent_streams_with_refs_replaces_with_ref():
                     "partition_router": {
                         "type": "SubstreamPartitionRouter",
                         "parent_stream_configs": [
-                            {"stream": {"$ref": "#/streams/0"}, "type": "ParentStreamConfig", "parent_key": "id", "partition_field": "aid"},
-                            {"stream": {"$ref": "#/streams/1"}, "type": "ParentStreamConfig", "parent_key": "id", "partition_field": "bid"},
-                        ]
+                            {
+                                "stream": {"$ref": "#/streams/0"},
+                                "type": "ParentStreamConfig",
+                                "parent_key": "id",
+                                "partition_field": "aid",
+                            },
+                            {
+                                "stream": {"$ref": "#/streams/1"},
+                                "type": "ParentStreamConfig",
+                                "parent_key": "id",
+                                "partition_field": "bid",
+                            },
+                        ],
                     }
-                }
+                },
             },
         ]
     }
@@ -270,10 +242,15 @@ def test_replace_parent_streams_with_refs_no_match():
                     "partition_router": {
                         "type": "SubstreamPartitionRouter",
                         "parent_stream_configs": [
-                            {"stream": unrelated_stream.copy(), "type": "ParentStreamConfig", "parent_key": "id", "partition_field": "aid"},
-                        ]
+                            {
+                                "stream": unrelated_stream.copy(),
+                                "type": "ParentStreamConfig",
+                                "parent_key": "id",
+                                "partition_field": "aid",
+                            },
+                        ],
                     }
-                }
+                },
             },
         ]
     }
@@ -287,10 +264,15 @@ def test_replace_parent_streams_with_refs_no_match():
                     "partition_router": {
                         "type": "SubstreamPartitionRouter",
                         "parent_stream_configs": [
-                            {"stream": unrelated_stream.copy(), "type": "ParentStreamConfig", "parent_key": "id", "partition_field": "aid"},
-                        ]
+                            {
+                                "stream": unrelated_stream.copy(),
+                                "type": "ParentStreamConfig",
+                                "parent_key": "id",
+                                "partition_field": "aid",
+                            },
+                        ],
                     }
-                }
+                },
             },
         ]
     }
@@ -318,17 +300,27 @@ def test_replace_parent_streams_with_refs_handles_multiple_partition_routers():
                         {
                             "type": "SubstreamPartitionRouter",
                             "parent_stream_configs": [
-                                {"stream": stream_a.copy(), "type": "ParentStreamConfig", "parent_key": "id", "partition_field": "aid"},
-                            ]
+                                {
+                                    "stream": stream_a.copy(),
+                                    "type": "ParentStreamConfig",
+                                    "parent_key": "id",
+                                    "partition_field": "aid",
+                                },
+                            ],
                         },
                         {
                             "type": "SubstreamPartitionRouter",
                             "parent_stream_configs": [
-                                {"stream": stream_b.copy(), "type": "ParentStreamConfig", "parent_key": "id", "partition_field": "bid"},
-                            ]
-                        }
+                                {
+                                    "stream": stream_b.copy(),
+                                    "type": "ParentStreamConfig",
+                                    "parent_key": "id",
+                                    "partition_field": "bid",
+                                },
+                            ],
+                        },
                     ]
-                }
+                },
             },
         ]
     }
@@ -344,17 +336,27 @@ def test_replace_parent_streams_with_refs_handles_multiple_partition_routers():
                         {
                             "type": "SubstreamPartitionRouter",
                             "parent_stream_configs": [
-                                {"stream": {"$ref": "#/streams/0"}, "type": "ParentStreamConfig", "parent_key": "id", "partition_field": "aid"},
-                            ]
+                                {
+                                    "stream": {"$ref": "#/streams/0"},
+                                    "type": "ParentStreamConfig",
+                                    "parent_key": "id",
+                                    "partition_field": "aid",
+                                },
+                            ],
                         },
                         {
                             "type": "SubstreamPartitionRouter",
                             "parent_stream_configs": [
-                                {"stream": {"$ref": "#/streams/1"}, "type": "ParentStreamConfig", "parent_key": "id", "partition_field": "bid"},
-                            ]
-                        }
+                                {
+                                    "stream": {"$ref": "#/streams/1"},
+                                    "type": "ParentStreamConfig",
+                                    "parent_key": "id",
+                                    "partition_field": "bid",
+                                },
+                            ],
+                        },
                     ]
-                }
+                },
             },
         ]
     }
