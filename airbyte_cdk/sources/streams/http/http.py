@@ -34,6 +34,7 @@ from airbyte_cdk.sources.streams.http.error_handlers.response_models import (
     ResponseAction,
 )
 from airbyte_cdk.sources.streams.http.http_client import HttpClient
+from airbyte_cdk.sources.streams.http.proxy_config import ProxyConfig
 from airbyte_cdk.sources.types import Record, StreamSlice
 from airbyte_cdk.sources.utils.types import JsonType
 
@@ -52,7 +53,10 @@ class HttpStream(Stream, CheckpointMixin, ABC):
     )
 
     def __init__(
-        self, authenticator: Optional[AuthBase] = None, api_budget: Optional[APIBudget] = None
+        self,
+        authenticator: Optional[AuthBase] = None,
+        api_budget: Optional[APIBudget] = None,
+        proxy_config: Optional[ProxyConfig] = None,
     ):
         self._exit_on_rate_limit: bool = False
         self._http_client = HttpClient(
@@ -64,6 +68,7 @@ class HttpStream(Stream, CheckpointMixin, ABC):
             use_cache=self.use_cache,
             backoff_strategy=self.get_backoff_strategy(),
             message_repository=InMemoryMessageRepository(),
+            proxy_config=proxy_config,
         )
 
         # There are three conditions that dictate if RFR should automatically be applied to a stream

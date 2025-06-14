@@ -40,6 +40,7 @@ from airbyte_cdk.sources.streams.http.exceptions import (
     RequestBodyException,
     UserDefinedBackoffException,
 )
+from airbyte_cdk.sources.streams.http.proxy_config import ProxyConfig
 from airbyte_cdk.sources.streams.http.rate_limiting import (
     http_client_default_backoff_handler,
     rate_limit_default_backoff_handler,
@@ -91,9 +92,11 @@ class HttpClient:
         error_message_parser: Optional[ErrorMessageParser] = None,
         disable_retries: bool = False,
         message_repository: Optional[MessageRepository] = None,
+        proxy_config: Optional[ProxyConfig] = None,
     ):
         self._name = name
         self._api_budget: APIBudget = api_budget or APIBudget(policies=[])
+        self._proxy_config = proxy_config
         if session:
             self._session = session
         else:
@@ -105,6 +108,10 @@ class HttpClient:
                     pool_connections=MAX_CONNECTION_POOL_SIZE, pool_maxsize=MAX_CONNECTION_POOL_SIZE
                 ),
             )
+
+        if self._proxy_config:
+            self._session = self._proxy_config.configure_session(self._session)
+
         if isinstance(authenticator, AuthBase):
             self._session.auth = authenticator
         self._logger = logger

@@ -26,6 +26,7 @@ from airbyte_cdk.sources.message import MessageRepository, NoopMessageRepository
 from airbyte_cdk.sources.streams.call_rate import APIBudget
 from airbyte_cdk.sources.streams.http import HttpClient
 from airbyte_cdk.sources.streams.http.error_handlers import ErrorHandler
+from airbyte_cdk.sources.streams.http.proxy_config import ProxyConfig
 from airbyte_cdk.sources.types import Config, EmptyString, StreamSlice, StreamState
 from airbyte_cdk.utils.mapping_helpers import (
     combine_mappings,
@@ -104,6 +105,8 @@ class HttpRequester(Requester):
         else:
             backoff_strategies = None
 
+        proxy_config = ProxyConfig.from_config(self.config)
+
         self._http_client = HttpClient(
             name=self.name,
             logger=self.logger,
@@ -114,6 +117,7 @@ class HttpRequester(Requester):
             backoff_strategy=backoff_strategies,
             disable_retries=self.disable_retries,
             message_repository=self.message_repository,
+            proxy_config=proxy_config,
         )
 
     @property
