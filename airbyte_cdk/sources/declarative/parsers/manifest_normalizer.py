@@ -141,7 +141,7 @@ class ManifestNormalizer:
             # replace duplicates with references, if any
             self._handle_duplicates(self._collect_duplicates())
             # replace parent streams with $refs
-            # self._replace_parent_streams_with_refs()
+            self._replace_parent_streams_with_refs()
             # clean dangling fields after resolving $refs
             self._clean_dangling_fields()
         except Exception as e:
