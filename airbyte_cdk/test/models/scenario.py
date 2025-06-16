@@ -9,13 +9,19 @@ up iteration cycles.
 
 from __future__ import annotations
 
+import json
+import tempfile
+from contextlib import contextmanager, suppress
 from pathlib import Path  # noqa: TC003  # Pydantic needs this (don't move to 'if typing' block)
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import yaml
 from pydantic import BaseModel, ConfigDict
 
 from airbyte_cdk.test.models.outcome import ExpectedOutcome
+
+if TYPE_CHECKING:
+    from collections.abc import Generator
 
 
 class ConnectorTestScenario(BaseModel):
@@ -41,13 +47,13 @@ class ConnectorTestScenario(BaseModel):
     config_path: Path | None = None
     config_dict: dict[str, Any] | None = None
 
-    id: str | None = None
+    _id: str | None = None  # Used to override the default ID generation
 
     configured_catalog_path: Path | None = None
     timeout_seconds: int | None = None
     expect_records: AcceptanceTestExpectRecords | None = None
     file_types: AcceptanceTestFileTypes | None = None
-    status: Literal["succeed", "failed"] | None = None
+    status: Literal["succeed", "failed", "exception"] | None = None
 
     def get_config_dict(
         self,
@@ -93,16 +99,49 @@ class ConnectorTestScenario(BaseModel):
         return ExpectedOutcome.from_status_str(self.status)
 
     @property
-    def instance_name(self) -> str:
-        return self.config_path.stem if self.config_path else "Unnamed Scenario"
+    def id(self) -> str:
+        """Return a unique identifier for the test scenario.
+
+        This is used by PyTest to identify the test scenario.
+        """
+        if self._id:
+            return self._id
+
+        if self.config_path:
+            return self.config_path.stem
+
+        return str(hash(self))
 
     def __str__(self) -> str:
-        if self.id:
-            return f"'{self.id}' Test Scenario"
-        if self.config_path:
-            return f"'{self.config_path.name}' Test Scenario"
+        return f"'{self.id}' Test Scenario"
 
-        return f"'{hash(self)}' Test Scenario"
+    @contextmanager
+    def with_temp_config_file(
+        self,
+        connector_root: Path,
+    ) -> Generator[Path, None, None]:
+        """Yield a temporary JSON file path containing the config dict and delete it on exit."""
+        config = self.get_config_dict(
+            empty_if_missing=True,
+            connector_root=connector_root,
+        )
+        with tempfile.NamedTemporaryFile(
+            prefix="config-",
+            suffix=".json",
+            mode="w",
+            delete=False,  # Don't fail if cannot delete the file on exit
+            encoding="utf-8",
+        ) as temp_file:
+            temp_file.write(json.dumps(config))
+            temp_file.flush()
+            # Allow the file to be read by other processes
+            temp_path = Path(temp_file.name)
+            temp_path.chmod(temp_path.stat().st_mode | 0o444)
+            yield temp_path
+
+        # attempt cleanup, ignore errors
+        with suppress(OSError):
+            temp_path.unlink()
 
     def without_expected_outcome(self) -> ConnectorTestScenario:
         """Return a copy of the scenario that does not expect failure or success.

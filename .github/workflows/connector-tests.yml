@@ -72,28 +72,23 @@ jobs:
             cdk_extra: n/a
           - connector: source-shopify
             cdk_extra: n/a
-          # Chargebee is being flaky:
-          # - connector: source-chargebee
-          #   cdk_extra: n/a
-          # This one is behind in CDK updates and can't be used as tests until it is updated:
-          # - connector: destination-pinecone
-          #   cdk_extra: vector-db-based
           - connector: source-google-drive
             cdk_extra: file-based
           - connector: destination-motherduck
             cdk_extra: sql
-          # ZenDesk currently failing (as of 2024-12-02)
-          # TODO: Re-enable once fixed
-          # - connector: source-zendesk-support
-          #   cdk_extra: n/a
-          # TODO: These are manifest connectors and won't work as expected until we
-          #       add `--use-local-cdk` support for manifest connectors.
           - connector: source-amplitude
+            cdk_extra: n/a
+          - connector: source-intercom
             cdk_extra: n/a
           - connector: source-pokeapi
             cdk_extra: n/a
 
-    name: "Check: '${{matrix.connector}}' (skip=${{needs.cdk_changes.outputs['src'] == 'false' || needs.cdk_changes.outputs[matrix.cdk_extra] == 'false'}})"
+          # CDK Tests cannot build the Connector object (constructor args not optional).
+          # - connector: source-zendesk-support
+          #   cdk_extra: n/a
+
+    name: "${{ needs.cdk_changes.outputs[matrix.cdk_extra] == 'false' && 'Skipped Check' || 'Check' }}: ${{matrix.connector}}"
+    if: needs.cdk_changes.outputs['src'] == 'true'
     permissions:
       checks: write
       contents: write # Required for creating commit statuses
@@ -125,110 +120,89 @@ jobs:
           repository: airbytehq/airbyte
           ref: master
           path: airbyte
+
       - name: Set up Python
+        if: steps.no_changes.outputs.status != 'cancelled'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      # Create initial pending status for test report
-      - name: Create Pending Test Report Status
-        if: steps.no_changes.outputs.status != 'cancelled'
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT_MAINTENANCE_OCTAVIA }}
-        run: |
-          HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
-          gh api \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            repos/${{ github.repository }}/statuses/$HEAD_SHA \
-            -f state="pending" \
-            -f description="Running connector tests..." \
-            -f context="${{ matrix.connector }} Test Report"
 
-      - name: Test Connector
+      - name: Set up `uv`
+        if: steps.no_changes.outputs.status != 'cancelled'
+        uses: astral-sh/setup-uv@v6.1.0
+
+      - name: Set up `poe`
+        if: steps.no_changes.outputs.status != 'cancelled'
+        run: |
+          uv tool install poethepoet
+
+      - name: Set up Poetry
+        if: steps.no_changes.outputs.status != 'cancelled'
+        uses: Gr1N/setup-poetry@v9
+        with:
+          poetry-version: "2.0.1"
+
+      - name: Get Connector Language
+        if: steps.no_changes.outputs.status != 'cancelled'
+        working-directory: airbyte/airbyte-integrations/connectors/${{ matrix.connector }}
+        run: |
+          # Get the language of the connector from the metadata file
+          CONNECTOR_LANGUAGE=$(poe -qq get-language)
+          echo "CONNECTOR_LANGUAGE=$CONNECTOR_LANGUAGE" | tee -a $GITHUB_ENV
+
+      - name: Install CDK with Poetry
+        if: steps.no_changes.outputs.status != 'cancelled'
+        run: |
+          cd airbyte-python-cdk
+          poetry install --all-extras
+
+      - name: Fetch Connector Secrets
         if: steps.no_changes.outputs.status != 'cancelled'
         timeout-minutes: 90
+        working-directory: airbyte-python-cdk
         env:
           GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
           POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
         run: |
-          cd airbyte
-          make tools.airbyte-ci.install
-          airbyte-ci \
-          --ci-report-bucket-name=airbyte-ci-reports-multi \
-          connectors \
-          --name ${{matrix.connector}} \
-          --use-local-cdk \
-          test \
-          --fail-fast \
-          --skip-step qa_checks \
-          --skip-step connector_live_tests
+          poetry run airbyte-cdk secrets fetch ${{ matrix.connector }}
 
-      - name: Evaluate Test
-        id: evaluate_output
-        if: always() && steps.no_changes.outputs.status != 'cancelled'
+      - name: Bump to Dev Branch CDK [Python Connectors]
+        if: env.CONNECTOR_LANGUAGE == 'python'
+        working-directory: airbyte/airbyte-integrations/connectors/${{ matrix.connector }}
         run: |
-          # save job output json file as ci step output
-          json_output_file=$(find airbyte/airbyte-ci/connectors/pipelines/pipeline_reports -name 'output.json' -print -quit)
-          job_output=$(cat ${json_output_file})
-          success=$(echo ${job_output} | jq -r '.success')
-          failed_step=$(echo ${job_output} | jq -r '.failed_steps | select(length > 0) | .[0] // "None"')
-          run_duration=$(echo ${job_output} | jq -r '.run_duration')
-          html_report_url=$(echo ${job_output} | jq -r '.html_report_url')
-          echo "## Job Output for ${{matrix.connector}}" >> $GITHUB_STEP_SUMMARY
-          echo "- [HTML Report](${html_report_url})" >> $GITHUB_STEP_SUMMARY
-          echo "- Success: ${success}" >> $GITHUB_STEP_SUMMARY
-          echo "- Test Duration: $(printf "%.0f" ${run_duration})s" >> $GITHUB_STEP_SUMMARY
-          if [ "${success}" != "true" ]; then
-            echo "- Failed Step: ${failed_step}" >> $GITHUB_STEP_SUMMARY
-          fi
-          echo -e "\n[Download Job Output](${{steps.upload_job_output.outputs.artifact-url}})" >> $GITHUB_STEP_SUMMARY
-          if [ "${success}" != "true" ]; then
-            echo "::error::Test failed for connector '${{ matrix.connector }}' on step '${failed_step}'. "
-            exit 1
-          fi
-          echo "See the execution report for details: ${html_report_url}"
-          echo "success=${success}" >> $GITHUB_OUTPUT
-          echo "html_report_url=${html_report_url}" >> $GITHUB_OUTPUT
+          echo "Using CDK ref ${{ github.event.pull_request.head.sha || github.sha }}"
+          poe use-cdk-branch ${{ github.event.pull_request.head.sha || github.sha }}
+          poetry install --all-extras
 
-      # Update the test report status with results
-      - name: Update Test Report Status
-        if: always() && steps.no_changes.outputs.status != 'cancelled' && steps.evaluate_output.outcome == 'success'
+      - name: Run Unit Tests [Python Connectors]
+        if: env.CONNECTOR_LANGUAGE == 'python'
+        working-directory: airbyte/airbyte-integrations/connectors/${{ matrix.connector }}
+        run: |
+          poe test-unit-tests
+
+      - name: Run FAST Standard Tests [Python Connectors]
+        if: env.CONNECTOR_LANGUAGE == 'python'
+        working-directory: airbyte/airbyte-integrations/connectors/${{ matrix.connector }}
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT_MAINTENANCE_OCTAVIA }}
+          GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
+          POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
         run: |
-          HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
-          gh api \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            repos/${{ github.repository }}/statuses/$HEAD_SHA \
-            -f state="${{ steps.evaluate_output.outputs.success == 'true' && 'success' || 'failure' }}" \
-            -f target_url="${{ steps.evaluate_output.outputs.html_report_url }}" \
-            -f description="Click Details to view the test report" \
-            -f context="${{ matrix.connector }} Test Report"
+          poetry run airbyte-cdk connector test
 
-      # Create failure status if report generation failed
-      - name: Create Report Generation Failed Status
-        if: always() && steps.no_changes.outputs.status != 'cancelled' && steps.evaluate_output.outcome != 'success'
+      - name: Run FAST Standard Tests [Manifest-Only Connectors]
+        if: env.CONNECTOR_LANGUAGE == 'manifest-only'
+        working-directory: airbyte-python-cdk
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT_MAINTENANCE_OCTAVIA }}
+          GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
+          POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
         run: |
-          HEAD_SHA="${{ github.event.pull_request.head.sha || github.sha }}"
-          gh api \
-            --method POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            repos/${{ github.repository }}/statuses/$HEAD_SHA \
-            -f state="failure" \
-            -f description="Failed to run connector tests." \
-            -f context="${{ matrix.connector }} Test Report"
+          poetry run airbyte-cdk connector test ${{ matrix.connector }}
 
-      # Upload the job output to the artifacts
-      - name: Upload Job Output
-        id: upload_job_output
-        if: always() && steps.no_changes.outputs.status != 'cancelled'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{matrix.connector}}-job-output
-          path: airbyte/airbyte-ci/connectors/pipelines/pipeline_reports
+      - name: Container Build and Test [All Connectors]
+        if: steps.no_changes.outputs.status != 'cancelled'
+        working-directory: airbyte-python-cdk
+        env:
+          GCP_GSM_CREDENTIALS: ${{ secrets.GCP_GSM_CREDENTIALS }}
+          POETRY_DYNAMIC_VERSIONING_BYPASS: "0.0.0"
+        run: |
+          poetry run airbyte-cdk image test ${{ matrix.connector }}
