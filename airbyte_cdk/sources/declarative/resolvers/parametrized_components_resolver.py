@@ -6,7 +6,7 @@ from copy import deepcopy
 from dataclasses import InitVar, dataclass, field
 from typing import Any, Dict, Iterable, List, Mapping
 
-import dpath.util as dpath_util
+import dpath
 import yaml
 from typing_extensions import deprecated
 from yaml.parser import ParserError
@@ -98,10 +98,12 @@ class ParametrizedComponentsResolver(ComponentsResolver):
                 )
                 path = [path.eval(self.config, **kwargs) for path in resolved_component.field_path]
                 parsed_value = self._parse_yaml_if_possible(value)
-                updated = dpath_util.set(updated_config, path, parsed_value)
+                # https://github.com/dpath-maintainers/dpath-python/blob/master/dpath/__init__.py#L136
+                # dpath.set returns the number of changed elements, 0 when no elements changed
+                updated = dpath.set(updated_config, path, parsed_value)
 
                 if parsed_value and not updated and resolved_component.create_or_update:
-                    dpath_util.new(updated_config, path, parsed_value)
+                    dpath.new(updated_config, path, parsed_value)
 
             yield updated_config
 
