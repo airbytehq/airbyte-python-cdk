@@ -3193,7 +3193,10 @@ class ModelToComponentFactory:
 
             query_properties_definitions = []
             for key, request_parameter in model.requester.request_parameters.items():  # type: ignore # request_parameters is already validated to be a Mapping using _query_properties_in_request_parameters()
-                if isinstance(request_parameter, QueryPropertiesModel):
+                if (
+                    isinstance(request_parameter, dict)
+                    and request_parameter.get("type") == "QueryProperties"
+                ):
                     query_properties_key = key
                     query_properties_definitions.append(request_parameter)
 
@@ -3203,8 +3206,10 @@ class ModelToComponentFactory:
                 )
 
             if len(query_properties_definitions) == 1:
-                query_properties = self._create_component_from_model(
-                    model=query_properties_definitions[0], config=config
+                query_properties = self.create_component(
+                    model_type=QueryPropertiesModel,
+                    component_definition=query_properties_definitions[0],
+                    config=config,
                 )
         elif (
             hasattr(model.requester, "fetch_properties_from_endpoint")
@@ -3363,7 +3368,10 @@ class ModelToComponentFactory:
         request_parameters = requester.request_parameters
         if request_parameters and isinstance(request_parameters, Mapping):
             for request_parameter in request_parameters.values():
-                if isinstance(request_parameter, QueryPropertiesModel):
+                if (
+                    isinstance(request_parameter, dict)
+                    and request_parameter.get("type") == "QueryProperties"
+                ):
                     return True
         return False
 
