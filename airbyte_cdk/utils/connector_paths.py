@@ -69,6 +69,9 @@ def resolve_airbyte_repo_root(
 
     current_dir = from_dir.resolve().absolute()
     while current_dir != current_dir.parent:  # abort when we reach file system root
+        if _is_airbyte_repo_root(current_dir):
+            return current_dir
+
         found_dir = _find_in_adjacent_dirs(current_dir)
         if found_dir:
             return found_dir
