@@ -1499,7 +1499,14 @@ def run_incremental_parent_state_test(
                 # Fetch the first page of votes for comment 10 of post 1 (vote without cursor field)
                 (
                     f"https://api.example.com/community/posts/1/comments/10/votes?per_page=100&start_time={INITIAL_STATE_PARTITION_10_CURSOR}",
-                    {"votes": [{"id": 100, "comment_id": 10,}],},
+                    {
+                        "votes": [
+                            {
+                                "id": 100,
+                                "comment_id": 10,
+                            }
+                        ],
+                    },
                 ),
                 # Fetch the first page of votes for comment 11 of post 1
                 (
@@ -1660,7 +1667,14 @@ def run_incremental_parent_state_test(
                 # Fetch the first page of votes for comment 10 of post 1 (vote without cursor field)
                 (
                     f"https://api.example.com/community/posts/1/comments/10/votes?per_page=100&start_time={INITIAL_STATE_PARTITION_10_CURSOR}",
-                    {"votes": [{"id": 100, "comment_id": 10,}],},
+                    {
+                        "votes": [
+                            {
+                                "id": 100,
+                                "comment_id": 10,
+                            }
+                        ],
+                    },
                 ),
                 # Fetch the first page of votes for comment 11 of post 1 (vote without cursor field)
                 (
@@ -1707,7 +1721,11 @@ def run_incremental_parent_state_test(
             # Expected records
             [
                 {"comment_id": 10, "comment_updated_at": COMMENT_10_UPDATED_AT, "id": 100},
-                {"comment_id": 11, "comment_updated_at": COMMENT_11_UPDATED_AT, "id": 111,},
+                {
+                    "comment_id": 11,
+                    "comment_updated_at": COMMENT_11_UPDATED_AT,
+                    "id": 111,
+                },
             ],
             # Number of intermediate states - 6 as number of parent partitions
             2,
