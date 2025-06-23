@@ -32,9 +32,12 @@ class ExpectedOutcome(Enum):
             return {
                 "succeed": ExpectedOutcome.EXPECT_SUCCESS,
                 "failed": ExpectedOutcome.EXPECT_EXCEPTION,
+                "exception": ExpectedOutcome.EXPECT_EXCEPTION,  # same as 'failed'
             }[status]
         except KeyError as ex:
-            raise ValueError(f"Invalid status '{status}'. Expected 'succeed' or 'failed'.") from ex
+            raise ValueError(
+                f"Invalid status '{status}'. Expected 'succeed', 'failed', or 'exception'.",
+            ) from ex
 
     @classmethod
     def from_expecting_exception_bool(cls, expecting_exception: bool | None) -> ExpectedOutcome:
