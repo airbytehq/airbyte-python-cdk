@@ -74,6 +74,8 @@ jobs:
             cdk_extra: n/a
           - connector: source-google-drive
             cdk_extra: file-based
+          - connector: source-google-ads
+            cdk_extra: n/a
           - connector: destination-motherduck
             cdk_extra: sql
           - connector: source-amplitude
