@@ -306,14 +306,6 @@ jobs:
             cd oss/airbyte-connector-builder-server
             python -m pip install --no-cache-dir pip-tools
             pip-compile --upgrade
-      - name: Authenticate as GitHub App for PR creation
-        uses: actions/create-github-app-token@v2
-        id: get-pr-token
-        with:
-          owner: "airbytehq"
-          repositories: "airbyte-platform-internal"
-          app-id: ${{ secrets.OCTAVIA_BOT_APP_ID }}
-          private-key: ${{ secrets.OCTAVIA_BOT_PRIVATE_KEY }}
       - name: Create Pull Request
         id: create-pull-request
         uses: peter-evans/create-pull-request@v7
