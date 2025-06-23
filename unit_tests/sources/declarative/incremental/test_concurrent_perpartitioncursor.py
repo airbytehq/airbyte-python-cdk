@@ -1514,39 +1514,12 @@ def run_incremental_parent_state_test(
                     f"?per_page=100&start_time={INITIAL_STATE_PARTITION_11_CURSOR}",
                     {"votes": [{"id": 111, "comment_id": 11, "created_at": VOTE_111_CREATED_AT}]},
                 ),
-                # Fetch the first page of votes for comment 12 of post 1
-                (
-                    f"https://api.example.com/community/posts/1/comments/12/votes?per_page=100&start_time={LOOKBACK_DATE}",
-                    {"votes": []},
-                ),
-                # Fetch the first page of comments for post 2
-                (
-                    "https://api.example.com/community/posts/2/comments?per_page=100",
-                    {
-                        "comments": [{"id": 20, "post_id": 2, "updated_at": COMMENT_20_UPDATED_AT}],
-                        "next_page": "https://api.example.com/community/posts/2/comments?per_page=100&page=2",
-                    },
-                ),
                 # Requests with intermediate states
-                # Fetch votes for comment 10 of post 1
-                (
-                    f"https://api.example.com/community/posts/1/comments/10/votes?per_page=100&start_time={VOTE_100_CREATED_AT}",
-                    {
-                        "votes": [{"id": 100, "comment_id": 10, "created_at": VOTE_100_CREATED_AT}],
-                    },
-                ),
                 # Fetch votes for comment 11 of post 1
                 (
                     f"https://api.example.com/community/posts/1/comments/11/votes?per_page=100&start_time={VOTE_111_CREATED_AT}",
                     {
                         "votes": [{"id": 111, "comment_id": 11, "created_at": VOTE_111_CREATED_AT}],
-                    },
-                ),
-                # Fetch votes for comment 12 of post 1
-                (
-                    f"https://api.example.com/community/posts/1/comments/12/votes?per_page=100&start_time={VOTE_111_CREATED_AT}",
-                    {
-                        "votes": [],
                     },
                 ),
             ],
@@ -1681,41 +1654,6 @@ def run_incremental_parent_state_test(
                     f"https://api.example.com/community/posts/1/comments/11/votes"
                     f"?per_page=100&start_time={INITIAL_STATE_PARTITION_11_CURSOR}",
                     {"votes": [{"id": 111, "comment_id": 11}]},
-                ),
-                # Fetch the first page of votes for comment 12 of post 1
-                (
-                    f"https://api.example.com/community/posts/1/comments/12/votes?per_page=100&start_time={LOOKBACK_DATE}",
-                    {"votes": []},
-                ),
-                # Fetch the first page of comments for post 2
-                (
-                    "https://api.example.com/community/posts/2/comments?per_page=100",
-                    {
-                        "comments": [{"id": 20, "post_id": 2, "updated_at": COMMENT_20_UPDATED_AT}],
-                        "next_page": "https://api.example.com/community/posts/2/comments?per_page=100&page=2",
-                    },
-                ),
-                # Requests with intermediate states
-                # Fetch votes for comment 10 of post 1
-                (
-                    f"https://api.example.com/community/posts/1/comments/10/votes?per_page=100&start_time={VOTE_100_CREATED_AT}",
-                    {
-                        "votes": [{"id": 100, "comment_id": 10, "created_at": VOTE_100_CREATED_AT}],
-                    },
-                ),
-                # Fetch votes for comment 11 of post 1
-                (
-                    f"https://api.example.com/community/posts/1/comments/11/votes?per_page=100&start_time={VOTE_111_CREATED_AT}",
-                    {
-                        "votes": [{"id": 111, "comment_id": 11, "created_at": VOTE_111_CREATED_AT}],
-                    },
-                ),
-                # Fetch votes for comment 12 of post 1
-                (
-                    f"https://api.example.com/community/posts/1/comments/12/votes?per_page=100&start_time={VOTE_111_CREATED_AT}",
-                    {
-                        "votes": [],
-                    },
                 ),
             ],
             # Expected records
