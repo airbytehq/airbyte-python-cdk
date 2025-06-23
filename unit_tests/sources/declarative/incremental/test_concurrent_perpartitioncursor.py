@@ -1552,17 +1552,13 @@ def run_incremental_parent_state_test(
             ],
             # Expected records
             [
-                {
-                    "comment_id": 10, 
-                    "comment_updated_at": COMMENT_10_UPDATED_AT,
-                    "id": 100
-                },
+                {"comment_id": 10, "comment_updated_at": COMMENT_10_UPDATED_AT, "id": 100},
                 {
                     "comment_id": 11,
                     "comment_updated_at": COMMENT_11_UPDATED_AT,
                     "created_at": "2024-01-13T00:00:00Z",
-                    "id": 111
-                }
+                    "id": 111,
+                },
             ],
             # Number of intermediate states - 6 as number of parent partitions
             2,
