@@ -32,6 +32,7 @@ from airbyte_cdk.models import (
 )
 from airbyte_cdk.sources.abstract_source import AbstractSource
 from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput, discover, read
+from airbyte_cdk.test.models.scenario import ExpectedOutcome
 from airbyte_cdk.test.state_builder import StateBuilder
 
 
@@ -229,7 +230,7 @@ class EntrypointWrapperDiscoverTest(TestCase):
     @patch("airbyte_cdk.test.entrypoint_wrapper.AirbyteEntrypoint")
     def test_given_expected_exception_when_discover_then_do_not_print(self, entrypoint, print_mock):
         entrypoint.return_value.run.side_effect = ValueError("This error should not be printed")
-        discover(self._a_source, _A_CONFIG, expecting_exception=True)
+        discover(self._a_source, _A_CONFIG, expected_outcome=ExpectedOutcome.EXPECT_EXCEPTION)
         assert print_mock.call_count == 0
 
     @patch("airbyte_cdk.test.entrypoint_wrapper.AirbyteEntrypoint")
@@ -380,7 +381,13 @@ class EntrypointWrapperReadTest(TestCase):
     @patch("airbyte_cdk.test.entrypoint_wrapper.AirbyteEntrypoint")
     def test_given_expected_exception_when_read_then_do_not_print(self, entrypoint, print_mock):
         entrypoint.return_value.run.side_effect = ValueError("This error should not be printed")
-        read(self._a_source, _A_CONFIG, _A_CATALOG, _A_STATE, expecting_exception=True)
+        read(
+            self._a_source,
+            _A_CONFIG,
+            _A_CATALOG,
+            _A_STATE,
+            expected_outcome=ExpectedOutcome.EXPECT_EXCEPTION,
+        )
         assert print_mock.call_count == 0
 
     @patch("airbyte_cdk.test.entrypoint_wrapper.AirbyteEntrypoint")

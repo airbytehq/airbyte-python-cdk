@@ -1385,7 +1385,7 @@ class CsvDecoder(BaseModel):
     type: Literal["CsvDecoder"]
     encoding: Optional[str] = "utf-8"
     delimiter: Optional[str] = ","
-    set_empty_cell_to_none: Optional[bool] = False
+    set_values_to_none: Optional[List[str]] = None
 
 
 class AsyncJobStatusMap(BaseModel):
@@ -1508,6 +1508,31 @@ class StreamConfig(BaseModel):
 class ConfigComponentsResolver(BaseModel):
     type: Literal["ConfigComponentsResolver"]
     stream_config: Union[List[StreamConfig], StreamConfig]
+    components_mapping: List[ComponentMappingDefinition]
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class StreamParametersDefinition(BaseModel):
+    type: Literal["StreamParametersDefinition"]
+    list_of_parameters_for_stream: List[Dict[str, Any]] = Field(
+        ...,
+        description="A list of object of parameters for stream, each object in the list represents params for one stream.",
+        examples=[
+            [
+                {
+                    "name": "test stream",
+                    "$parameters": {"entity": "test entity"},
+                    "primary_key": "test key",
+                }
+            ]
+        ],
+        title="Stream Parameters",
+    )
+
+
+class ParametrizedComponentsResolver(BaseModel):
+    type: Literal["ParametrizedComponentsResolver"]
+    stream_parameters: StreamParametersDefinition
     components_mapping: List[ComponentMappingDefinition]
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -2175,7 +2200,7 @@ class DeclarativeSource1(BaseModel):
 
     type: Literal["DeclarativeSource"]
     check: Union[CheckStream, CheckDynamicStream]
-    streams: List[Union[DeclarativeStream, StateDelegatingStream]]
+    streams: List[Union[ConditionalStreams, DeclarativeStream, StateDelegatingStream]]
     dynamic_streams: Optional[List[DynamicDeclarativeStream]] = None
     version: str = Field(
         ...,
@@ -2208,7 +2233,9 @@ class DeclarativeSource2(BaseModel):
 
     type: Literal["DeclarativeSource"]
     check: Union[CheckStream, CheckDynamicStream]
-    streams: Optional[List[Union[DeclarativeStream, StateDelegatingStream]]] = None
+    streams: Optional[List[Union[ConditionalStreams, DeclarativeStream, StateDelegatingStream]]] = (
+        None
+    )
     dynamic_streams: List[DynamicDeclarativeStream]
     version: str = Field(
         ...,
@@ -2283,6 +2310,22 @@ class SelectiveAuthenticator(BaseModel):
             }
         ],
         title="Authenticators",
+    )
+    parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
+
+
+class ConditionalStreams(BaseModel):
+    type: Literal["ConditionalStreams"]
+    condition: str = Field(
+        ...,
+        description="Condition that will be evaluated to determine if a set of streams should be available.",
+        examples=["{{ config['is_sandbox'] }}"],
+        title="Condition",
+    )
+    streams: List[DeclarativeStream] = Field(
+        ...,
+        description="Streams that will be used during an operation based on the condition.",
+        title="Streams",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -2930,7 +2973,9 @@ class DynamicDeclarativeStream(BaseModel):
     stream_template: Union[DeclarativeStream, StateDelegatingStream] = Field(
         ..., description="Reference to the stream template.", title="Stream Template"
     )
-    components_resolver: Union[HttpComponentsResolver, ConfigComponentsResolver] = Field(
+    components_resolver: Union[
+        HttpComponentsResolver, ConfigComponentsResolver, ParametrizedComponentsResolver
+    ] = Field(
         ...,
         description="Component resolve and populates stream templates with components values.",
         title="Components Resolver",
@@ -2943,6 +2988,7 @@ CompositeErrorHandler.update_forward_refs()
 DeclarativeSource1.update_forward_refs()
 DeclarativeSource2.update_forward_refs()
 SelectiveAuthenticator.update_forward_refs()
+ConditionalStreams.update_forward_refs()
 FileUploader.update_forward_refs()
 DeclarativeStream.update_forward_refs()
 SessionTokenAuthenticator.update_forward_refs()

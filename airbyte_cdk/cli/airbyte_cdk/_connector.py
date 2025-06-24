@@ -101,7 +101,7 @@ def connector_cli_group() -> None:
     pass
 
 
-@connector_cli_group.command()
+@connector_cli_group.command("test")
 @click.argument(
     "connector",
     required=False,
@@ -114,10 +114,18 @@ def connector_cli_group() -> None:
     default=False,
     help="Only collect tests, do not run them.",
 )
-def test(
+@click.option(
+    "--pytest-arg",
+    "pytest_args",  # ← map --pytest-arg into pytest_args
+    type=str,
+    multiple=True,
+    help="Additional argument(s) to pass to pytest. Can be specified multiple times.",
+)
+def connector_test(
     connector: str | Path | None = None,
     *,
     collect_only: bool = False,
+    pytest_args: list[str] | None = None,
 ) -> None:
     """Run connector tests.
 
@@ -130,19 +138,36 @@ def test(
     directory. If the current working directory is not a connector directory (e.g. starting
     with 'source-') and no connector name or path is provided, the process will fail.
     """
+    click.echo("Connector test command executed.")
+    connector_name, connector_directory = resolve_connector_name_and_directory(connector)
+
+    pytest_args = pytest_args or []
+    if collect_only:
+        pytest_args.append("--collect-only")
+
+    run_connector_tests(
+        connector_name=connector_name,
+        connector_directory=connector_directory,
+        extra_pytest_args=pytest_args,
+    )
+
+
+def run_connector_tests(
+    connector_name: str,
+    connector_directory: Path,
+    extra_pytest_args: list[str],
+) -> None:
     if pytest is None:
         raise ImportError(
             "pytest is not installed. Please install pytest to run the connector tests."
         )
-    click.echo("Connector test command executed.")
-    connector_name, connector_directory = resolve_connector_name_and_directory(connector)
 
     connector_test_suite = create_connector_test_suite(
         connector_name=connector_name if not connector_directory else None,
         connector_directory=connector_directory,
     )
 
-    pytest_args: list[str] = []
+    pytest_args: list[str] = ["-p", "airbyte_cdk.test.standard_tests.pytest_hooks"]
     if connector_directory:
         pytest_args.append(f"--rootdir={connector_directory}")
         os.chdir(str(connector_directory))
@@ -158,13 +183,18 @@ def test(
     test_file_path.parent.mkdir(parents=True, exist_ok=True)
     test_file_path.write_text(file_text)
 
-    if collect_only:
-        pytest_args.append("--collect-only")
+    if extra_pytest_args:
+        pytest_args.extend(extra_pytest_args)
 
     pytest_args.append(str(test_file_path))
+
+    test_results_dir = connector_directory / "build" / "test-results"
+    test_results_dir.mkdir(parents=True, exist_ok=True)
+    junit_xml_path = test_results_dir / "standard-tests-junit.xml"
+    pytest_args.extend(["--junitxml", str(junit_xml_path)])
+
     click.echo(f"Running tests from connector directory: {connector_directory}...")
     click.echo(f"Test file: {test_file_path}")
-    click.echo(f"Collect only: {collect_only}")
     click.echo(f"Pytest args: {pytest_args}")
     click.echo("Invoking Pytest...")
     exit_code = pytest.main(

@@ -10,7 +10,7 @@ from airbyte_cdk.test.standard_tests.connector_base import ConnectorTestSuiteBas
 from airbyte_cdk.test.standard_tests.declarative_sources import (
     DeclarativeSourceTestSuite,
 )
-from airbyte_cdk.test.standard_tests.destination_base import DestinationTestSuiteBase
+from airbyte_cdk.test.standard_tests.docker_base import DockerConnectorTestSuite
 from airbyte_cdk.test.standard_tests.source_base import SourceTestSuiteBase
 from airbyte_cdk.utils.connector_paths import (
     METADATA_YAML,
@@ -18,11 +18,12 @@ from airbyte_cdk.utils.connector_paths import (
 )
 
 TEST_CLASS_MAPPING: dict[
-    Literal["python", "manifest-only", "declarative"], type[ConnectorTestSuiteBase]
+    Literal["python", "manifest-only", "java"],
+    type[DockerConnectorTestSuite],
 ] = {
     "python": SourceTestSuiteBase,
     "manifest-only": DeclarativeSourceTestSuite,
-    # "declarative": DeclarativeSourceTestSuite,
+    "java": DockerConnectorTestSuite,
 }
 
 
@@ -67,7 +68,7 @@ def create_connector_test_suite(
         )
 
     subclass_overrides: dict[str, Any] = {
-        "get_connector_root_dir": lambda: connector_directory,
+        "get_connector_root_dir": classmethod(lambda cls: connector_directory),
     }
 
     TestSuiteAuto = type(

@@ -352,6 +352,9 @@ from airbyte_cdk.sources.declarative.models.declarative_component_schema import 
     PageIncrement as PageIncrementModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
+    ParametrizedComponentsResolver as ParametrizedComponentsResolverModel,
+)
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
     ParentStreamConfig as ParentStreamConfigModel,
 )
 from airbyte_cdk.sources.declarative.models.declarative_component_schema import (
@@ -507,7 +510,9 @@ from airbyte_cdk.sources.declarative.resolvers import (
     ComponentMappingDefinition,
     ConfigComponentsResolver,
     HttpComponentsResolver,
+    ParametrizedComponentsResolver,
     StreamConfig,
+    StreamParametersDefinition,
 )
 from airbyte_cdk.sources.declarative.retrievers import (
     AsyncRetriever,
@@ -743,6 +748,7 @@ class ModelToComponentFactory:
             AsyncRetrieverModel: self.create_async_retriever,
             HttpComponentsResolverModel: self.create_http_components_resolver,
             ConfigComponentsResolverModel: self.create_config_components_resolver,
+            ParametrizedComponentsResolverModel: self.create_parametrized_components_resolver,
             StreamConfigModel: self.create_stream_config,
             ComponentMappingDefinitionModel: self.create_components_mapping_definition,
             ZipfileDecoderModel: self.create_zipfile_decoder,
@@ -2662,7 +2668,7 @@ class ModelToComponentFactory:
             return CsvParser(
                 encoding=model.encoding,
                 delimiter=model.delimiter,
-                set_empty_cell_to_none=model.set_empty_cell_to_none,
+                set_values_to_none=model.set_values_to_none,
             )
         elif isinstance(model, GzipDecoderModel):
             return GzipParser(
@@ -3161,12 +3167,12 @@ class ModelToComponentFactory:
             This is needed because the URL is not set until the requester is created.
             """
 
-            _url = (
+            _url: str = (
                 model.requester.url
                 if hasattr(model.requester, "url") and model.requester.url is not None
                 else requester.get_url()
             )
-            _url_base = (
+            _url_base: str = (
                 model.requester.url_base
                 if hasattr(model.requester, "url_base") and model.requester.url_base is not None
                 else requester.get_url_base()
@@ -3867,6 +3873,29 @@ class ModelToComponentFactory:
 
         return ConfigComponentsResolver(
             stream_configs=stream_configs,
+            config=config,
+            components_mapping=components_mapping,
+            parameters=model.parameters or {},
+        )
+
+    def create_parametrized_components_resolver(
+        self, model: ParametrizedComponentsResolverModel, config: Config
+    ) -> ParametrizedComponentsResolver:
+        stream_parameters = StreamParametersDefinition(
+            list_of_parameters_for_stream=model.stream_parameters.list_of_parameters_for_stream
+        )
+        components_mapping = [
+            self._create_component_from_model(
+                model=components_mapping_definition_model,
+                value_type=ModelToComponentFactory._json_schema_type_name_to_type(
+                    components_mapping_definition_model.value_type
+                ),
+                config=config,
+            )
+            for components_mapping_definition_model in model.components_mapping
+        ]
+        return ParametrizedComponentsResolver(
+            stream_parameters=stream_parameters,
             config=config,
             components_mapping=components_mapping,
             parameters=model.parameters or {},

@@ -25,6 +25,7 @@ properties:
     type: array
     items:
       anyOf:
+        - "$ref": "#/definitions/ConditionalStreams"
         - "$ref": "#/definitions/DeclarativeStream"
         - "$ref": "#/definitions/StateDelegatingStream"
   dynamic_streams:
@@ -296,12 +297,12 @@ definitions:
             - "$ref": "#/definitions/ApiKeyAuthenticator"
             - "$ref": "#/definitions/BasicHttpAuthenticator"
             - "$ref": "#/definitions/BearerAuthenticator"
-            - "$ref": "#/definitions/CustomAuthenticator"
             - "$ref": "#/definitions/OAuthAuthenticator"
             - "$ref": "#/definitions/JwtAuthenticator"
             - "$ref": "#/definitions/SessionTokenAuthenticator"
-            - "$ref": "#/definitions/NoAuth"
             - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
+            - "$ref": "#/definitions/CustomAuthenticator"
+            - "$ref": "#/definitions/NoAuth"
         examples:
           - authenticators:
               token: "#/definitions/ApiKeyAuthenticator"
@@ -421,6 +422,36 @@ definitions:
         examples:
           - 20
           - 100
+      $parameters:
+        type: object
+        additionalProperties: true
+  ConditionalStreams:
+    title: Conditional Streams
+    description: Streams that are only available while performing a connector operation when the condition is met.
+    type: object
+    required:
+      - type
+      - streams
+      - condition
+    properties:
+      type:
+        type: string
+        enum: [ConditionalStreams]
+      condition:
+        title: Condition
+        description: Condition that will be evaluated to determine if a set of streams should be available.
+        type: string
+        interpolation_context:
+          - config
+          - parameters
+        examples:
+          - "{{ config['is_sandbox'] }}"
+      streams:
+        title: Streams
+        description: Streams that will be used during an operation based on the condition.
+        type: array
+        items:
+          "$ref": "#/definitions/DeclarativeStream"
       $parameters:
         type: object
         additionalProperties: true
@@ -907,6 +938,49 @@ definitions:
         examples:
           - "created_at"
           - "{{ config['record_cursor'] }}"
+      cursor_datetime_formats:
+        title: Cursor Datetime Formats
+        description: The possible formats for the cursor field, in order of preference. The first format that matches the cursor field value will be used to parse it. If not provided, the `datetime_format` will be used.
+        type: array
+        items:
+          type: string
+          examples:
+            - "%Y-%m-%dT%H:%M:%S.%f%z"
+            - "%Y-%m-%d"
+            - "%s"
+      start_datetime:
+        title: Start Datetime
+        description: The datetime that determines the earliest record that should be synced.
+        anyOf:
+          - "$ref": "#/definitions/MinMaxDatetime"
+          - type: string
+            title: Interpolated Value
+        interpolation_context:
+          - config
+        examples:
+          - "2020-01-1T00:00:00Z"
+          - "{{ config['start_time'] }}"
+      start_time_option:
+        title: Inject Start Time Into Outgoing HTTP Request
+        description: Optionally configures how the start datetime will be sent in requests to the source API.
+        "$ref": "#/definitions/RequestOption"
+      end_datetime:
+        title: End Datetime
+        description: The datetime that determines the last record that should be synced. If not provided, `{{ now_utc() }}` will be used.
+        anyOf:
+          - "$ref": "#/definitions/MinMaxDatetime"
+          - type: string
+            title: Interpolated Value
+        interpolation_context:
+          - config
+        examples:
+          - "2021-01-1T00:00:00Z"
+          - "{{ now_utc() }}"
+          - "{{ day_delta(-1) }}"
+      end_time_option:
+        title: Inject End Time Into Outgoing HTTP Request
+        description: Optionally configures how the end datetime will be sent in requests to the source API.
+        "$ref": "#/definitions/RequestOption"
       datetime_format:
         title: Outgoing Datetime Format
         description: |
@@ -948,27 +1022,6 @@ definitions:
           - "%s"
           - "%ms"
           - "%s_as_float"
-      start_datetime:
-        title: Start Datetime
-        description: The datetime that determines the earliest record that should be synced.
-        anyOf:
-          - type: string
-          - "$ref": "#/definitions/MinMaxDatetime"
-        interpolation_context:
-          - config
-        examples:
-          - "2020-01-1T00:00:00Z"
-          - "{{ config['start_time'] }}"
-      cursor_datetime_formats:
-        title: Cursor Datetime Formats
-        description: The possible formats for the cursor field, in order of preference. The first format that matches the cursor field value will be used to parse it. If not provided, the `datetime_format` will be used.
-        type: array
-        items:
-          type: string
-          examples:
-            - "%Y-%m-%dT%H:%M:%S.%f%z"
-            - "%Y-%m-%d"
-            - "%s"
       cursor_granularity:
         title: Cursor Granularity
         description:
@@ -977,22 +1030,6 @@ definitions:
         type: string
         examples:
           - "PT1S"
-      end_datetime:
-        title: End Datetime
-        description: The datetime that determines the last record that should be synced. If not provided, `{{ now_utc() }}` will be used.
-        anyOf:
-          - type: string
-          - "$ref": "#/definitions/MinMaxDatetime"
-        interpolation_context:
-          - config
-        examples:
-          - "2021-01-1T00:00:00Z"
-          - "{{ now_utc() }}"
-          - "{{ day_delta(-1) }}"
-      end_time_option:
-        title: Inject End Time Into Outgoing HTTP Request
-        description: Optionally configures how the end datetime will be sent in requests to the source API.
-        "$ref": "#/definitions/RequestOption"
       is_data_feed:
         title: Whether the target API is formatted as a data feed
         description: A data feed API is an API that does not allow filtering and paginates the content from the most recent to the least recent. Given this, the CDK needs to know when to stop paginating and this field will generate a stop condition for pagination.
@@ -1032,10 +1069,6 @@ definitions:
         type: string
         examples:
           - "starting_time"
-      start_time_option:
-        title: Inject Start Time Into Outgoing HTTP Request
-        description: Optionally configures how the start datetime will be sent in requests to the source API.
-        "$ref": "#/definitions/RequestOption"
       step:
         title: Step
         description: The size of the time window (ISO8601 duration). Given this field is provided, `cursor_granularity` needs to be provided as well.
@@ -1429,14 +1462,15 @@ definitions:
           - "$ref": "#/definitions/InlineSchemaLoader"
           - "$ref": "#/definitions/DynamicSchemaLoader"
           - "$ref": "#/definitions/JsonFileSchemaLoader"
-          - "$ref": "#/definitions/CustomSchemaLoader"
-          - type: array
+          - title: Multiple Schema Loaders
+            type: array
             items:
               anyOf:
                 - "$ref": "#/definitions/InlineSchemaLoader"
                 - "$ref": "#/definitions/DynamicSchemaLoader"
                 - "$ref": "#/definitions/JsonFileSchemaLoader"
                 - "$ref": "#/definitions/CustomSchemaLoader"
+          - "$ref": "#/definitions/CustomSchemaLoader"
       # TODO we have move the transformation to the RecordSelector level in the code but kept this here for
       # compatibility reason. We should eventually move this to align with the code.
       transformations:
@@ -1446,13 +1480,13 @@ definitions:
         items:
           anyOf:
             - "$ref": "#/definitions/AddFields"
-            - "$ref": "#/definitions/CustomTransformation"
             - "$ref": "#/definitions/RemoveFields"
             - "$ref": "#/definitions/KeysToLower"
             - "$ref": "#/definitions/KeysToSnakeCase"
             - "$ref": "#/definitions/FlattenFields"
             - "$ref": "#/definitions/DpathFlattenFields"
             - "$ref": "#/definitions/KeysReplace"
+            - "$ref": "#/definitions/CustomTransformation"
       state_migrations:
         title: State Migrations
         description: Array of state migrations to be applied on the input state
@@ -1689,10 +1723,10 @@ definitions:
         items:
           anyOf:
             - "$ref": "#/definitions/ConstantBackoffStrategy"
-            - "$ref": "#/definitions/CustomBackoffStrategy"
             - "$ref": "#/definitions/ExponentialBackoffStrategy"
             - "$ref": "#/definitions/WaitTimeFromHeader"
             - "$ref": "#/definitions/WaitUntilTimeFromHeader"
+            - "$ref": "#/definitions/CustomBackoffStrategy"
       max_retries:
         title: Max Retry Count
         description: The maximum number of time to retry a retryable request before giving up and failing.
@@ -2315,9 +2349,9 @@ definitions:
         title: Retriever
         description: Component used to coordinate how records are extracted across stream slices and request pages.
         anyOf:
+          - "$ref": "#/definitions/SimpleRetriever"
           - "$ref": "#/definitions/AsyncRetriever"
           - "$ref": "#/definitions/CustomRetriever"
-          - "$ref": "#/definitions/SimpleRetriever"
       schema_filter:
         title: Schema Filter
         description: Responsible for filtering fields to be added to json schema.
@@ -2331,13 +2365,13 @@ definitions:
         items:
           anyOf:
             - "$ref": "#/definitions/AddFields"
-            - "$ref": "#/definitions/CustomTransformation"
             - "$ref": "#/definitions/RemoveFields"
             - "$ref": "#/definitions/KeysToLower"
             - "$ref": "#/definitions/KeysToSnakeCase"
             - "$ref": "#/definitions/FlattenFields"
             - "$ref": "#/definitions/DpathFlattenFields"
             - "$ref": "#/definitions/KeysReplace"
+            - "$ref": "#/definitions/CustomTransformation"
       schema_type_identifier:
         "$ref": "#/definitions/SchemaTypeIdentifier"
       $parameters:
@@ -2359,6 +2393,8 @@ definitions:
         type: object
         additionalProperties: true
   JsonFileSchemaLoader:
+    deprecated: true
+    deprecation_message: "Use `InlineSchemaLoader` instead."
     title: Json File Schema Loader
     description: Loads the schema from a json file.
     type: object
@@ -3630,9 +3666,10 @@ definitions:
       delimiter:
         type: string
         default: ","
-      set_empty_cell_to_none:
-        type: boolean
-        default: false
+      set_values_to_none:
+        type: array
+        items:
+          type: string
   AsyncJobStatusMap:
     description: Matches the api job status to Async Job Status.
     type: object
@@ -3760,7 +3797,7 @@ definitions:
                 - "$ref": "#/definitions/GroupingPartitionRouter"
                 - "$ref": "#/definitions/CustomPartitionRouter"
       decoder:
-        title: Decoder
+        title: HTTP Response Format
         description: Component decoding the response so records can be extracted.
         anyOf:
           - "$ref": "#/definitions/CsvDecoder"
@@ -3772,7 +3809,7 @@ definitions:
           - "$ref": "#/definitions/ZipfileDecoder"
           - "$ref": "#/definitions/CustomDecoder"
       download_decoder:
-        title: Download Decoder
+        title: Download HTTP Response Format
         description: Component decoding the download response so records can be extracted.
         anyOf:
           - "$ref": "#/definitions/CsvDecoder"
@@ -3957,9 +3994,9 @@ definitions:
         title: Underlying Partition Router
         description: The partition router whose output will be grouped. This can be any valid partition router component.
         anyOf:
-          - "$ref": "#/definitions/CustomPartitionRouter"
           - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/SubstreamPartitionRouter"
+          - "$ref": "#/definitions/CustomPartitionRouter"
       deduplicate:
         title: Deduplicate Partitions
         description: If true, ensures that partitions are unique within each group by removing duplicates based on the partition key.
@@ -4068,6 +4105,7 @@ definitions:
         additionalProperties: true
   HttpComponentsResolver:
     type: object
+    title: Http Components Resolver
     description: (This component is experimental. Use at your own risk.) Component resolve and populates stream templates with components fetched via an HTTP retriever.
     properties:
       type:
@@ -4077,9 +4115,9 @@ definitions:
         title: Retriever
         description: Component used to coordinate how records are extracted across stream slices and request pages.
         anyOf:
+          - "$ref": "#/definitions/SimpleRetriever"
           - "$ref": "#/definitions/AsyncRetriever"
           - "$ref": "#/definitions/CustomRetriever"
-          - "$ref": "#/definitions/SimpleRetriever"
       components_mapping:
         type: array
         items:
@@ -4125,6 +4163,7 @@ definitions:
         additionalProperties: true
   ConfigComponentsResolver:
     type: object
+    title: Config Components Resolver
     description: (This component is experimental. Use at your own risk.) Resolves and populates stream templates with components fetched from the source config.
     properties:
       type:
@@ -4146,6 +4185,46 @@ definitions:
     required:
       - type
       - stream_config
+      - components_mapping
+  StreamParametersDefinition:
+    title: Stream Parameters Definition
+    description: (This component is experimental. Use at your own risk.) Represents a stream parameters definition to set up dynamic streams from defined values in manifest.
+    type: object
+    required:
+      - type
+      - list_of_parameters_for_stream
+    properties:
+      type:
+        type: string
+        enum: [StreamParametersDefinition]
+      list_of_parameters_for_stream:
+        title: Stream Parameters
+        description: A list of object of parameters for stream, each object in the list represents params for one stream.
+        type: array
+        items:
+          type: object
+        examples:
+          - [{"name": "test stream", "$parameters": {"entity": "test entity"}, "primary_key": "test key"}]
+  ParametrizedComponentsResolver:
+    type: object
+    title: Parametrized Components Resolver
+    description: (This component is experimental. Use at your own risk.) Resolves and populates dynamic streams from defined parametrized values in manifest.
+    properties:
+      type:
+        type: string
+        enum: [ParametrizedComponentsResolver]
+      stream_parameters:
+        "$ref": "#/definitions/StreamParametersDefinition"
+      components_mapping:
+        type: array
+        items:
+          "$ref": "#/definitions/ComponentMappingDefinition"
+      $parameters:
+        type: object
+        additionalProperties: true
+    required:
+      - type
+      - stream_parameters
       - components_mapping
   DynamicDeclarativeStream:
     type: object
@@ -4173,6 +4252,7 @@ definitions:
         anyOf:
           - "$ref": "#/definitions/HttpComponentsResolver"
           - "$ref": "#/definitions/ConfigComponentsResolver"
+          - "$ref": "#/definitions/ParametrizedComponentsResolver"
     required:
       - type
       - stream_template

@@ -3,16 +3,11 @@
 
 from __future__ import annotations
 
-import abc
 import importlib
-import inspect
 import os
-import sys
-from collections.abc import Callable
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
-import yaml
 from boltons.typeutils import classproperty
 
 from airbyte_cdk.models import (
@@ -20,18 +15,24 @@ from airbyte_cdk.models import (
     Type,
 )
 from airbyte_cdk.test import entrypoint_wrapper
-from airbyte_cdk.test.standard_tests._job_runner import IConnector, run_test_job
-from airbyte_cdk.test.standard_tests.models import (
+from airbyte_cdk.test.models import (
     ConnectorTestScenario,
 )
+from airbyte_cdk.test.standard_tests._job_runner import IConnector, run_test_job
+from airbyte_cdk.test.standard_tests.docker_base import DockerConnectorTestSuite
 from airbyte_cdk.utils.connector_paths import (
     ACCEPTANCE_TEST_CONFIG,
     find_connector_root,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
-class ConnectorTestSuiteBase(abc.ABC):
-    """Base class for connector test suites."""
+    from airbyte_cdk.test import entrypoint_wrapper
+
+
+class ConnectorTestSuiteBase(DockerConnectorTestSuite):
+    """Base class for Python connector test suites."""
 
     connector: type[IConnector] | Callable[[], IConnector] | None  # type: ignore [reportRedeclaration]
     """The connector class or a factory function that returns an scenario of IConnector."""
@@ -80,13 +81,6 @@ class ConnectorTestSuiteBase(abc.ABC):
             return cast(type[IConnector], getattr(module, matching_class_name))
 
     @classmethod
-    def get_test_class_dir(cls) -> Path:
-        """Get the file path that contains the class."""
-        module = sys.modules[cls.__module__]
-        # Get the directory containing the test file
-        return Path(inspect.getfile(module)).parent
-
-    @classmethod
     def create_connector(
         cls,
         scenario: ConnectorTestScenario | None,
@@ -116,66 +110,9 @@ class ConnectorTestSuiteBase(abc.ABC):
             self.create_connector(scenario),
             "check",
             test_scenario=scenario,
+            connector_root=self.get_connector_root_dir(),
         )
-        conn_status_messages: list[AirbyteMessage] = [
-            msg for msg in result._messages if msg.type == Type.CONNECTION_STATUS
-        ]  # noqa: SLF001  # Non-public API
-        assert len(conn_status_messages) == 1, (
-            f"Expected exactly one CONNECTION_STATUS message. Got: {result._messages}"
+        assert len(result.connection_status_messages) == 1, (
+            f"Expected exactly one CONNECTION_STATUS message. "
+            "Got: {result.connection_status_messages!s}"
         )
-
-    @classmethod
-    def get_connector_root_dir(cls) -> Path:
-        """Get the root directory of the connector."""
-        return find_connector_root([cls.get_test_class_dir(), Path.cwd()])
-
-    @classproperty
-    def acceptance_test_config_path(cls) -> Path:
-        """Get the path to the acceptance test config file."""
-        result = cls.get_connector_root_dir() / ACCEPTANCE_TEST_CONFIG
-        if result.exists():
-            return result
-
-        raise FileNotFoundError(f"Acceptance test config file not found at: {str(result)}")
-
-    @classmethod
-    def get_scenarios(
-        cls,
-    ) -> list[ConnectorTestScenario]:
-        """Get acceptance tests for a given category.
-
-        This has to be a separate function because pytest does not allow
-        parametrization of fixtures with arguments from the test class itself.
-        """
-        categories = ["connection", "spec"]
-        all_tests_config = yaml.safe_load(cls.acceptance_test_config_path.read_text())
-        if "acceptance_tests" not in all_tests_config:
-            raise ValueError(
-                f"Acceptance tests config not found in {cls.acceptance_test_config_path}."
-                f" Found only: {str(all_tests_config)}."
-            )
-
-        test_scenarios: list[ConnectorTestScenario] = []
-        for category in categories:
-            if (
-                category not in all_tests_config["acceptance_tests"]
-                or "tests" not in all_tests_config["acceptance_tests"][category]
-            ):
-                continue
-
-            test_scenarios.extend(
-                [
-                    ConnectorTestScenario.model_validate(test)
-                    for test in all_tests_config["acceptance_tests"][category]["tests"]
-                    if "config_path" in test and "iam_role" not in test["config_path"]
-                ]
-            )
-
-        connector_root = cls.get_connector_root_dir().absolute()
-        for test in test_scenarios:
-            if test.config_path:
-                test.config_path = connector_root / test.config_path
-            if test.configured_catalog_path:
-                test.configured_catalog_path = connector_root / test.configured_catalog_path
-
-        return test_scenarios

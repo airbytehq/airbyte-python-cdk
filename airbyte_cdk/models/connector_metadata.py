@@ -34,6 +34,15 @@ class ConnectorBuildOptions(BaseModel):
     )
 
 
+class SuggestedStreams(BaseModel):
+    """Suggested streams from metadata.yaml."""
+
+    streams: list[str] = Field(
+        default=[],
+        description="List of suggested streams for the connector",
+    )
+
+
 class ConnectorMetadata(BaseModel):
     """Connector metadata from metadata.yaml."""
 
@@ -45,6 +54,11 @@ class ConnectorMetadata(BaseModel):
     tags: list[str] = Field(
         default=[],
         description="List of tags for the connector",
+    )
+
+    suggestedStreams: SuggestedStreams | None = Field(
+        default=None,
+        description="Suggested streams for the connector",
     )
 
     @property
