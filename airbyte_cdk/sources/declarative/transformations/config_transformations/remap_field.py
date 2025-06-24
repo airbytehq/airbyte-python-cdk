@@ -59,7 +59,7 @@ class ConfigRemapField(ConfigTransformation):
 
         field_name = path_components[-1]
 
-        mapping = self._map.eval(config=self.config)
+        mapping = self._map.eval(config=self.config or config)
 
         if field_name in current and current[field_name] in mapping:
             current[field_name] = mapping[current[field_name]]
