@@ -1559,6 +1559,10 @@ class RequestBodyGraphQlQuery(BaseModel):
     query: Dict[str, Any] = Field(..., description="The GraphQL query to be executed")
 
 
+class ValidateInLineCondition(BaseModel):
+    type: Literal["ValidateInLineCondition"]
+
+
 class ValidateAdheresToSchema(BaseModel):
     type: Literal["ValidateAdheresToSchema"]
     base_schema: Union[str, Dict[str, Any]] = Field(
@@ -2030,7 +2034,7 @@ class DpathValidator(BaseModel):
         ],
         title="Field Path",
     )
-    validation_strategy: ValidateAdheresToSchema = Field(
+    validation_strategy: Union[ValidateAdheresToSchema, ValidateInLineCondition] = Field(
         ...,
         description="The condition that the specified config value will be evaluated against",
         title="Validation Strategy",
@@ -2046,11 +2050,12 @@ class PredicateValidator(BaseModel):
             "test-value",
             "{{ config['api_version'] }}",
             "{{ config['tenant_id'] }}",
+            "{{ config['start_date'] < now_utc() }}",
             123,
         ],
         title="Value",
     )
-    validation_strategy: ValidateAdheresToSchema = Field(
+    validation_strategy: Union[ValidateAdheresToSchema, ValidateInLineCondition] = Field(
         ...,
         description="The validation strategy to apply to the value.",
         title="Validation Strategy",

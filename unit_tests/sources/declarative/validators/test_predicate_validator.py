@@ -1,3 +1,5 @@
+# Copyright (c) 2025 Airbyte, Inc., all rights reserved.
+
 from unittest import TestCase
 
 import pytest
@@ -26,7 +28,7 @@ class TestPredicateValidator(TestCase):
         test_value = "test@example.com"
         validator = PredicateValidator(value=test_value, strategy=strategy)
 
-        validator.validate()
+        validator.validate(input_data={})
 
         assert strategy.validate_called
         assert strategy.validated_value == test_value
@@ -38,7 +40,7 @@ class TestPredicateValidator(TestCase):
         validator = PredicateValidator(value=test_value, strategy=strategy)
 
         with pytest.raises(ValueError) as context:
-            validator.validate()
+            validator.validate(input_data={})
 
         assert error_message in str(context.value)
         assert strategy.validate_called
@@ -49,7 +51,7 @@ class TestPredicateValidator(TestCase):
         test_value = {"user": {"email": "test@example.com", "name": "Test User"}}
         validator = PredicateValidator(value=test_value, strategy=strategy)
 
-        validator.validate()
+        validator.validate(input_data={})
 
         assert strategy.validate_called
         assert strategy.validated_value == test_value
