@@ -3650,6 +3650,7 @@ definitions:
           - "$ref": "#/definitions/GzipDecoder"
           - "$ref": "#/definitions/JsonDecoder"
           - "$ref": "#/definitions/JsonlDecoder"
+          - "$ref": "#/definitions/XmlDecoder"
   CsvDecoder:
     title: CSV
     description: "Select 'CSV' for response data that is formatted as CSV (comma-separated values). Can specify an encoding (default: 'utf-8') and a delimiter (default: ',')."
