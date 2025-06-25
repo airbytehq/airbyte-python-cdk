@@ -2663,8 +2663,8 @@ def test_given_transformations_config_is_transformed():
 
     config = source.configure(input_config, "/fake/temp/dir")
 
-    assert config == source._config
-    assert source._config == {"planet": "Coruscant", "population": 3_000_000_000_000}
+    assert config != input_config
+    assert config == {"planet": "Coruscant", "population": 3_000_000_000_000}
 
 
 def test_given_valid_config_streams_validates_config_and_does_not_raise():
