@@ -4204,7 +4204,13 @@ definitions:
         items:
           type: object
         examples:
-          - [{"name": "test stream", "$parameters": {"entity": "test entity"}, "primary_key": "test key"}]
+          - [
+              {
+                "name": "test stream",
+                "$parameters": { "entity": "test entity" },
+                "primary_key": "test key",
+              },
+            ]
   ParametrizedComponentsResolver:
     type: object
     title: Parametrized Components Resolver
@@ -4355,6 +4361,7 @@ definitions:
         description: The condition that the specified config value will be evaluated against
         anyOf:
           - "$ref": "#/definitions/ValidateAdheresToSchema"
+          - "$ref": "#/definitions/CustomValidationStrategy"
   PredicateValidator:
     title: Predicate Validator
     description: Validator that applies a validation strategy to a specified value.
@@ -4389,6 +4396,7 @@ definitions:
         description: The validation strategy to apply to the value.
         anyOf:
           - "$ref": "#/definitions/ValidateAdheresToSchema"
+          - "$ref": "#/definitions/CustomValidationStrategy"
   ValidateAdheresToSchema:
     title: Validate Adheres To Schema
     description: Validates that a user-provided schema adheres to a specified JSON schema.
@@ -4442,6 +4450,25 @@ definitions:
             required:
               - name
               - age
+  CustomValidationStrategy:
+    title: Custom Validation Strategy
+    description: Custom validation strategy that allows for custom validation logic.
+    type: object
+    additionalProperties: true
+    required:
+      - type
+      - class_name
+    properties:
+      type:
+        type: string
+        enum: [CustomValidationStrategy]
+      class_name:
+        title: Class Name
+        description: Fully-qualified name of the class that will be implementing the custom validation strategy. Has to be a sub class of ValidationStrategy. The format is `source_<name>.<package>.<class_name>`.
+        type: string
+        additionalProperties: true
+        examples:
+          - "source_declarative_manifest.components.MyCustomValidationStrategy"
   ConfigRemapField:
     title: Remap Field
     description: Transformation that remaps a field's value to another value based on a static map.
