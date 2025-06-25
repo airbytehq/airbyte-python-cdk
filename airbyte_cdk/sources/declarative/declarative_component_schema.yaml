@@ -4396,6 +4396,7 @@ definitions:
         description: The validation strategy to apply to the value.
         anyOf:
           - "$ref": "#/definitions/ValidateAdheresToSchema"
+          - "$ref": "#/definitions/CustomValidationStrategy"
   ValidateAdheresToSchema:
     title: Validate Adheres To Schema
     description: Validates that a user-provided schema adheres to a specified JSON schema.
@@ -4463,7 +4464,7 @@ definitions:
         enum: [CustomValidationStrategy]
       class_name:
         title: Class Name
-        description: Fully-qualified name of the class that will be implementing the custom decoding. Has to be a sub class of Decoder. The format is `source_<name>.<package>.<class_name>`.
+        description: Fully-qualified name of the class that will be implementing the custom validation strategy. Has to be a sub class of ValidationStrategy. The format is `source_<name>.<package>.<class_name>`.
         type: string
         additionalProperties: true
         examples:
