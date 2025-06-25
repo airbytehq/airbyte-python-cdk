@@ -153,11 +153,13 @@ class ManifestNormalizer:
         replace any 'stream' fields in those configs that are dicts and deeply equal to another stream object
         with a $ref to the correct stream index.
         """
-        import copy
-
         streams = self._normalized_manifest.get(STREAMS_TAG, [])
-        # Use deep copy for comparison to avoid mutation issues
-        stream_copies = [copy.deepcopy(s) for s in streams]
+        
+        # Build a hash-to-index mapping for O(1) lookups
+        stream_hash_to_index = {}
+        for idx, stream in enumerate(streams):
+            stream_hash = self._hash_object(stream)
+            stream_hash_to_index[stream_hash] = idx
 
         for idx, stream in enumerate(streams):
             retriever = stream.get("retriever")
@@ -182,14 +184,10 @@ class ManifestNormalizer:
                         continue
                     stream_ref = parent_config.get("stream")
                     # Only replace if it's a dict and matches any stream in the manifest
-                    for other_idx, other_stream in enumerate(stream_copies):
-                        if (
-                            stream_ref is not None
-                            and isinstance(stream_ref, dict)
-                            and stream_ref == other_stream
-                        ):
-                            parent_config["stream"] = {"$ref": f"#/streams/{other_idx}"}
-                            break
+                    if stream_ref is not None and isinstance(stream_ref, dict):
+                        stream_ref_hash = self._hash_object(stream_ref)
+                        if stream_ref_hash in stream_hash_to_index:
+                            parent_config["stream"] = {"$ref": f"#/streams/{stream_hash_to_index[stream_ref_hash]}"}
 
     def _clean_dangling_fields(self) -> None:
         """
