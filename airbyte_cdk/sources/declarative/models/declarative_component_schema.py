@@ -1586,6 +1586,19 @@ class ValidateAdheresToSchema(BaseModel):
     )
 
 
+class CustomValidationStrategy(BaseModel):
+    class Config:
+        extra = Extra.allow
+
+    type: Literal["CustomValidationStrategy"]
+    class_name: str = Field(
+        ...,
+        description="Fully-qualified name of the class that will be implementing the custom decoding. Has to be a sub class of Decoder. The format is `source_<name>.<package>.<class_name>`.",
+        examples=["source_declarative_manifest.components.MyCustomValidationStrategy"],
+        title="Class Name",
+    )
+
+
 class ConfigRemapField(BaseModel):
     type: Literal["ConfigRemapField"]
     map: Union[Dict[str, Any], str] = Field(
@@ -1767,30 +1780,23 @@ class DatetimeBasedCursor(BaseModel):
         examples=["created_at", "{{ config['record_cursor'] }}"],
         title="Cursor Field",
     )
-    datetime_format: str = Field(
-        ...,
-        description="The datetime format used to format the datetime values that are sent in outgoing requests to the API. Use placeholders starting with \"%\" to describe the format the API is using. The following placeholders are available:\n  * **%s**: Epoch unix timestamp - `1686218963`\n  * **%s_as_float**: Epoch unix timestamp in seconds as float with microsecond precision - `1686218963.123456`\n  * **%ms**: Epoch unix timestamp (milliseconds) - `1686218963123`\n  * **%a**: Weekday (abbreviated) - `Sun`\n  * **%A**: Weekday (full) - `Sunday`\n  * **%w**: Weekday (decimal) - `0` (Sunday), `6` (Saturday)\n  * **%d**: Day of the month (zero-padded) - `01`, `02`, ..., `31`\n  * **%b**: Month (abbreviated) - `Jan`\n  * **%B**: Month (full) - `January`\n  * **%m**: Month (zero-padded) - `01`, `02`, ..., `12`\n  * **%y**: Year (without century, zero-padded) - `00`, `01`, ..., `99`\n  * **%Y**: Year (with century) - `0001`, `0002`, ..., `9999`\n  * **%H**: Hour (24-hour, zero-padded) - `00`, `01`, ..., `23`\n  * **%I**: Hour (12-hour, zero-padded) - `01`, `02`, ..., `12`\n  * **%p**: AM/PM indicator\n  * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`\n  * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`\n  * **%f**: Microsecond (zero-padded to 6 digits) - `000000`\n  * **%_ms**: Millisecond (zero-padded to 3 digits) - `000`\n  * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`\n  * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`\n  * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`\n  * **%U**: Week number of the year (starting Sunday) - `00`, ..., `53`\n  * **%W**: Week number of the year (starting Monday) - `00`, ..., `53`\n  * **%c**: Date and time - `Tue Aug 16 21:30:00 1988`\n  * **%x**: Date standard format - `08/16/1988`\n  * **%X**: Time standard format - `21:30:00`\n  * **%%**: Literal '%' character\n\n  Some placeholders depend on the locale of the underlying system - in most cases this locale is configured as en/US. For more information see the [Python documentation](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes).\n",
-        examples=["%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%d", "%s", "%ms", "%s_as_float"],
-        title="Outgoing Datetime Format",
-    )
-    start_datetime: Union[str, MinMaxDatetime] = Field(
-        ...,
-        description="The datetime that determines the earliest record that should be synced.",
-        examples=["2020-01-1T00:00:00Z", "{{ config['start_time'] }}"],
-        title="Start Datetime",
-    )
     cursor_datetime_formats: Optional[List[str]] = Field(
         None,
         description="The possible formats for the cursor field, in order of preference. The first format that matches the cursor field value will be used to parse it. If not provided, the `datetime_format` will be used.",
         title="Cursor Datetime Formats",
     )
-    cursor_granularity: Optional[str] = Field(
-        None,
-        description="Smallest increment the datetime_format has (ISO 8601 duration) that is used to ensure the start of a slice does not overlap with the end of the previous one, e.g. for %Y-%m-%d the granularity should be P1D, for %Y-%m-%dT%H:%M:%SZ the granularity should be PT1S. Given this field is provided, `step` needs to be provided as well.",
-        examples=["PT1S"],
-        title="Cursor Granularity",
+    start_datetime: Union[MinMaxDatetime, str] = Field(
+        ...,
+        description="The datetime that determines the earliest record that should be synced.",
+        examples=["2020-01-1T00:00:00Z", "{{ config['start_time'] }}"],
+        title="Start Datetime",
     )
-    end_datetime: Optional[Union[str, MinMaxDatetime]] = Field(
+    start_time_option: Optional[RequestOption] = Field(
+        None,
+        description="Optionally configures how the start datetime will be sent in requests to the source API.",
+        title="Inject Start Time Into Outgoing HTTP Request",
+    )
+    end_datetime: Optional[Union[MinMaxDatetime, str]] = Field(
         None,
         description="The datetime that determines the last record that should be synced. If not provided, `{{ now_utc() }}` will be used.",
         examples=["2021-01-1T00:00:00Z", "{{ now_utc() }}", "{{ day_delta(-1) }}"],
@@ -1800,6 +1806,18 @@ class DatetimeBasedCursor(BaseModel):
         None,
         description="Optionally configures how the end datetime will be sent in requests to the source API.",
         title="Inject End Time Into Outgoing HTTP Request",
+    )
+    datetime_format: str = Field(
+        ...,
+        description="The datetime format used to format the datetime values that are sent in outgoing requests to the API. Use placeholders starting with \"%\" to describe the format the API is using. The following placeholders are available:\n  * **%s**: Epoch unix timestamp - `1686218963`\n  * **%s_as_float**: Epoch unix timestamp in seconds as float with microsecond precision - `1686218963.123456`\n  * **%ms**: Epoch unix timestamp (milliseconds) - `1686218963123`\n  * **%a**: Weekday (abbreviated) - `Sun`\n  * **%A**: Weekday (full) - `Sunday`\n  * **%w**: Weekday (decimal) - `0` (Sunday), `6` (Saturday)\n  * **%d**: Day of the month (zero-padded) - `01`, `02`, ..., `31`\n  * **%b**: Month (abbreviated) - `Jan`\n  * **%B**: Month (full) - `January`\n  * **%m**: Month (zero-padded) - `01`, `02`, ..., `12`\n  * **%y**: Year (without century, zero-padded) - `00`, `01`, ..., `99`\n  * **%Y**: Year (with century) - `0001`, `0002`, ..., `9999`\n  * **%H**: Hour (24-hour, zero-padded) - `00`, `01`, ..., `23`\n  * **%I**: Hour (12-hour, zero-padded) - `01`, `02`, ..., `12`\n  * **%p**: AM/PM indicator\n  * **%M**: Minute (zero-padded) - `00`, `01`, ..., `59`\n  * **%S**: Second (zero-padded) - `00`, `01`, ..., `59`\n  * **%f**: Microsecond (zero-padded to 6 digits) - `000000`\n  * **%_ms**: Millisecond (zero-padded to 3 digits) - `000`\n  * **%z**: UTC offset - `(empty)`, `+0000`, `-04:00`\n  * **%Z**: Time zone name - `(empty)`, `UTC`, `GMT`\n  * **%j**: Day of the year (zero-padded) - `001`, `002`, ..., `366`\n  * **%U**: Week number of the year (starting Sunday) - `00`, ..., `53`\n  * **%W**: Week number of the year (starting Monday) - `00`, ..., `53`\n  * **%c**: Date and time - `Tue Aug 16 21:30:00 1988`\n  * **%x**: Date standard format - `08/16/1988`\n  * **%X**: Time standard format - `21:30:00`\n  * **%%**: Literal '%' character\n\n  Some placeholders depend on the locale of the underlying system - in most cases this locale is configured as en/US. For more information see the [Python documentation](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes).\n",
+        examples=["%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%d", "%s", "%ms", "%s_as_float"],
+        title="Outgoing Datetime Format",
+    )
+    cursor_granularity: Optional[str] = Field(
+        None,
+        description="Smallest increment the datetime_format has (ISO 8601 duration) that is used to ensure the start of a slice does not overlap with the end of the previous one, e.g. for %Y-%m-%d the granularity should be P1D, for %Y-%m-%dT%H:%M:%SZ the granularity should be PT1S. Given this field is provided, `step` needs to be provided as well.",
+        examples=["PT1S"],
+        title="Cursor Granularity",
     )
     is_data_feed: Optional[bool] = Field(
         None,
@@ -1838,11 +1856,6 @@ class DatetimeBasedCursor(BaseModel):
         description="Name of the partition end time field.",
         examples=["starting_time"],
         title="Partition Field Start",
-    )
-    start_time_option: Optional[RequestOption] = Field(
-        None,
-        description="Optionally configures how the start datetime will be sent in requests to the source API.",
-        title="Inject Start Time Into Outgoing HTTP Request",
     )
     step: Optional[str] = Field(
         None,
@@ -1908,10 +1921,10 @@ class DefaultErrorHandler(BaseModel):
         List[
             Union[
                 ConstantBackoffStrategy,
-                CustomBackoffStrategy,
                 ExponentialBackoffStrategy,
                 WaitTimeFromHeader,
                 WaitUntilTimeFromHeader,
+                CustomBackoffStrategy,
             ]
         ]
     ] = Field(
@@ -2030,7 +2043,7 @@ class DpathValidator(BaseModel):
         ],
         title="Field Path",
     )
-    validation_strategy: ValidateAdheresToSchema = Field(
+    validation_strategy: Union[ValidateAdheresToSchema, CustomValidationStrategy] = Field(
         ...,
         description="The condition that the specified config value will be evaluated against",
         title="Validation Strategy",
@@ -2285,12 +2298,12 @@ class SelectiveAuthenticator(BaseModel):
             ApiKeyAuthenticator,
             BasicHttpAuthenticator,
             BearerAuthenticator,
-            CustomAuthenticator,
             OAuthAuthenticator,
             JwtAuthenticator,
             SessionTokenAuthenticator,
-            NoAuth,
             LegacySessionTokenAuthenticator,
+            CustomAuthenticator,
+            NoAuth,
         ],
     ] = Field(
         ...,
@@ -2374,7 +2387,6 @@ class DeclarativeStream(BaseModel):
             InlineSchemaLoader,
             DynamicSchemaLoader,
             JsonFileSchemaLoader,
-            CustomSchemaLoader,
             List[
                 Union[
                     InlineSchemaLoader,
@@ -2383,6 +2395,7 @@ class DeclarativeStream(BaseModel):
                     CustomSchemaLoader,
                 ]
             ],
+            CustomSchemaLoader,
         ]
     ] = Field(
         None,
@@ -2393,13 +2406,13 @@ class DeclarativeStream(BaseModel):
         List[
             Union[
                 AddFields,
-                CustomTransformation,
                 RemoveFields,
                 KeysToLower,
                 KeysToSnakeCase,
                 FlattenFields,
                 DpathFlattenFields,
                 KeysReplace,
+                CustomTransformation,
             ]
         ]
     ] = Field(
@@ -2631,7 +2644,7 @@ class HttpRequester(BaseModelWithDeprecations):
 
 class DynamicSchemaLoader(BaseModel):
     type: Literal["DynamicSchemaLoader"]
-    retriever: Union[AsyncRetriever, CustomRetriever, SimpleRetriever] = Field(
+    retriever: Union[SimpleRetriever, AsyncRetriever, CustomRetriever] = Field(
         ...,
         description="Component used to coordinate how records are extracted across stream slices and request pages.",
         title="Retriever",
@@ -2645,13 +2658,13 @@ class DynamicSchemaLoader(BaseModel):
         List[
             Union[
                 AddFields,
-                CustomTransformation,
                 RemoveFields,
                 KeysToLower,
                 KeysToSnakeCase,
                 FlattenFields,
                 DpathFlattenFields,
                 KeysReplace,
+                CustomTransformation,
             ]
         ]
     ] = Field(
@@ -2895,7 +2908,7 @@ class AsyncRetriever(BaseModel):
     ] = Field(
         None,
         description="Component decoding the response so records can be extracted.",
-        title="Decoder",
+        title="HTTP Response Format",
     )
     download_decoder: Optional[
         Union[
@@ -2911,7 +2924,7 @@ class AsyncRetriever(BaseModel):
     ] = Field(
         None,
         description="Component decoding the download response so records can be extracted.",
-        title="Download Decoder",
+        title="Download HTTP Response Format",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
 
@@ -2935,7 +2948,7 @@ class GroupingPartitionRouter(BaseModel):
         title="Group Size",
     )
     underlying_partition_router: Union[
-        CustomPartitionRouter, ListPartitionRouter, SubstreamPartitionRouter
+        ListPartitionRouter, SubstreamPartitionRouter, CustomPartitionRouter
     ] = Field(
         ...,
         description="The partition router whose output will be grouped. This can be any valid partition router component.",
@@ -2951,7 +2964,7 @@ class GroupingPartitionRouter(BaseModel):
 
 class HttpComponentsResolver(BaseModel):
     type: Literal["HttpComponentsResolver"]
-    retriever: Union[AsyncRetriever, CustomRetriever, SimpleRetriever] = Field(
+    retriever: Union[SimpleRetriever, AsyncRetriever, CustomRetriever] = Field(
         ...,
         description="Component used to coordinate how records are extracted across stream slices and request pages.",
         title="Retriever",
