@@ -238,8 +238,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         self._spec_component.transform_config(mutable_config)
         return mutable_config
 
-    def configure(self, config: Mapping[str, Any], temp_dir: str
-    ) -> Mapping[str, Any]:
+    def configure(self, config: Mapping[str, Any], temp_dir: str) -> Mapping[str, Any]:
         config = self._config or config
         return super().configure(config, temp_dir)
 
