@@ -154,7 +154,7 @@ class ManifestNormalizer:
         with a $ref to the correct stream index.
         """
         streams = self._normalized_manifest.get(STREAMS_TAG, [])
-        
+
         # Build a hash-to-index mapping for O(1) lookups
         stream_hash_to_index = {}
         for idx, stream in enumerate(streams):
@@ -187,7 +187,9 @@ class ManifestNormalizer:
                     if stream_ref is not None and isinstance(stream_ref, dict):
                         stream_ref_hash = self._hash_object(stream_ref)
                         if stream_ref_hash in stream_hash_to_index:
-                            parent_config["stream"] = {"$ref": f"#/streams/{stream_hash_to_index[stream_ref_hash]}"}
+                            parent_config["stream"] = {
+                                "$ref": f"#/streams/{stream_hash_to_index[stream_ref_hash]}"
+                            }
 
     def _clean_dangling_fields(self) -> None:
         """
