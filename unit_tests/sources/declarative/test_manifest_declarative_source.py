@@ -2594,7 +2594,7 @@ def test_given_already_migrated_config_no_control_message_is_emitted(migration_m
 
 
 def test_given_transformations_config_is_transformed():
-    input_config = {"planet": "Coruscant"}
+    input_config = {"planet": "CRSC"}
 
     manifest = {
         "version": "0.34.2",
@@ -2630,10 +2630,25 @@ def test_given_transformations_config_is_transformed():
             "config_normalization_rules": {
                 "transformations": [
                     {
+                        "type": "ConfigAddFields",
+                        "fields": [
+                            {
+                                "type": "AddedFieldDefinition",
+                                "path": ["population"],
+                                "value": "{{ config['planet'] }}",
+                            }
+                        ],
+                    },
+                    {
                         "type": "ConfigRemapField",
                         "map": {"CRSC": "Coruscant"},
                         "field_path": ["planet"],
-                    }
+                    },
+                    {
+                        "type": "ConfigRemapField",
+                        "map": {"CRSC": 3_000_000_000_000},
+                        "field_path": ["population"],
+                    },
                 ],
             },
         },
@@ -2644,7 +2659,12 @@ def test_given_transformations_config_is_transformed():
         config=input_config,
     )
 
-    assert source._config == {"planet": "Coruscant"}
+    source.write_config = Mock(return_value=None)
+
+    config = source.configure(input_config, "/fake/temp/dir")
+
+    assert config == source._config
+    assert source._config == {"planet": "Coruscant", "population": 3_000_000_000_000}
 
 
 def test_given_valid_config_streams_validates_config_and_does_not_raise():
