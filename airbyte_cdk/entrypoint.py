@@ -263,6 +263,8 @@ class AirbyteEntrypoint(object):
         self.set_up_secret_filter(config, source_spec.connectionSpecification)
         if self.source.check_config_against_spec:
             self.validate_connection(source_spec, config)
+        if hasattr(self.source, "config") and self.source.config is not None:
+            config = self.source.config
         catalog = self.source.discover(self.logger, config)
 
         yield from self._emit_queued_messages(self.source)

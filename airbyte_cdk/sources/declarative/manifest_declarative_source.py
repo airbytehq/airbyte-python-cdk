@@ -24,6 +24,7 @@ from airbyte_cdk.manifest_migrations.migration_handler import (
     ManifestMigrationHandler,
 )
 from airbyte_cdk.models import (
+    AirbyteCatalog,
     AirbyteConnectionStatus,
     AirbyteMessage,
     AirbyteStateMessage,
@@ -152,7 +153,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         self._spec_component: Optional[Spec] = (
             self._constructor.create_component(SpecModel, spec, dict()) if spec else None
         )
-        self._config = self._migrate_and_transform_config(config_path, config) or {}
+        self.config = self._migrate_and_transform_config(config_path, config) or {}
 
     @property
     def resolved_manifest(self) -> Mapping[str, Any]:
@@ -268,7 +269,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
     def dynamic_streams(self) -> List[Dict[str, Any]]:
         return self._dynamic_stream_configs(
             manifest=self._source_config,
-            config=self._config,
+            config=self.config,
             with_dynamic_stream_name=True,
         )
 
@@ -401,7 +402,11 @@ class ManifestDeclarativeSource(DeclarativeSource):
 
     def check(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteConnectionStatus:
         self._configure_logger_level(logger)
-        return super().check(logger, config)
+        return super().check(logger, self.config)
+
+    def discover(self, logger: logging.Logger, config: Mapping[str, Any]) -> AirbyteCatalog:
+        self._configure_logger_level(logger)
+        return super().discover(logger, self.config)
 
     def read(
         self,
@@ -411,7 +416,7 @@ class ManifestDeclarativeSource(DeclarativeSource):
         state: Optional[List[AirbyteStateMessage]] = None,
     ) -> Iterator[AirbyteMessage]:
         self._configure_logger_level(logger)
-        yield from super().read(logger, config, catalog, state)
+        yield from super().read(logger, self.config, catalog, state)
 
     def _configure_logger_level(self, logger: logging.Logger) -> None:
         """
