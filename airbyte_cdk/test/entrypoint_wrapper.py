@@ -306,7 +306,9 @@ class EntrypointOutput:
             messages = completed_process.stdout.splitlines()
             instance = cls(messages=messages)
         else:
-            instance = cls()
+            raise ValueError(
+                "Either stdout_file should be provided or completed_process.stdout should not be None"
+            )
 
         return instance
 
