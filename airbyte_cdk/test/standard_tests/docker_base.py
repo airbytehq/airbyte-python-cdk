@@ -318,8 +318,7 @@ class DockerConnectorTestSuite:
                 discovered_catalog: AirbyteCatalog = parsed_output.catalog.catalog
             except Exception as ex:
                 raise AssertionError(
-                    f"Failed to load discovered catalog from discover command output. "
-                    f"Error: {ex!s}"
+                    f"Failed to load discovered catalog from discover command output. Error: {ex!s}"
                 ) from None
             if not discovered_catalog.streams:
                 raise ValueError(
@@ -377,7 +376,11 @@ class DockerConnectorTestSuite:
             )
             if read_result.returncode != 0:
                 error_messages = (
-                    [f"Error message: {error.trace.error.message}" for error in read_result.errors if error.trace and error.trace.error]
+                    [
+                        f"Error message: {error.trace.error.message}"
+                        for error in read_result.errors
+                        if error.trace and error.trace.error
+                    ]
                     if read_result.errors
                     else ["No error messages found"]
                 )
