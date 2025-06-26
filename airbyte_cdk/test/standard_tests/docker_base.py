@@ -375,18 +375,12 @@ class DockerConnectorTestSuite:
                 capture_stdout=True,
             )
             if read_result.errors:
-                error_messages = [
-                    f"Error message: {error.trace.error.message}"
-                    for error in read_result.errors
-                    if error.trace and error.trace.error
-                ]
-                if not error_messages:
-                    error_messages = ["No structured error messages found"]
+                error_message = read_result.get_error_message()
 
                 raise AssertionError(
                     f"Failed to run `read` command in docker image {connector_image!r}. "
                     "\n-----------------"
                     "ERROR MESSAGES:\n"
-                    f"{chr(10).join(error_messages)}\n"
+                    f"{error_message}\n"
                     "\n-----------------"
                 ) from None
