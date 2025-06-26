@@ -145,6 +145,20 @@ _MANIFEST_WITH_STREAM_CONFIGS_LIST["dynamic_streams"][0]["components_resolver"][
     STREAM_CONFIG
 ]
 
+# Manifest with component definition with value that is fails when trying
+# to parse yaml in _parse_yaml_if_possible but generally contains valid string
+_MANIFEST_WITH_SCANNER_ERROR = deepcopy(_MANIFEST)
+_MANIFEST_WITH_SCANNER_ERROR["dynamic_streams"][0]["components_resolver"][
+    "components_mapping"
+].append(
+    {
+        "type": "ComponentMappingDefinition",
+        "create_or_update": True,
+        "field_path": ["retriever", "requester", "$parameters", "cursor_format"],
+        "value": "{{ '%Y-%m-%d' if components_values['name'] == 'default_item' else '%Y-%m-%dT%H:%M:%S' }}",
+    }
+)
+
 
 @pytest.mark.parametrize(
     "manifest, config, expected_exception, expected_stream_names",
@@ -157,6 +171,7 @@ _MANIFEST_WITH_STREAM_CONFIGS_LIST["dynamic_streams"][0]["components_resolver"][
             None,
         ),
         (_MANIFEST_WITH_STREAM_CONFIGS_LIST, _CONFIG, None, ["item_1", "item_2", "default_item"]),
+        (_MANIFEST_WITH_SCANNER_ERROR, _CONFIG, None, ["item_1", "item_2", "default_item"]),
     ],
 )
 def test_dynamic_streams_read_with_config_components_resolver(

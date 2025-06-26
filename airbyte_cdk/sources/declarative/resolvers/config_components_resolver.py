@@ -11,6 +11,7 @@ import dpath
 import yaml
 from typing_extensions import deprecated
 from yaml.parser import ParserError
+from yaml.scanner import ScannerError
 
 from airbyte_cdk.sources.declarative.interpolation import InterpolatedString
 from airbyte_cdk.sources.declarative.resolvers.components_resolver import (
@@ -185,4 +186,8 @@ class ConfigComponentsResolver(ComponentsResolver):
                 return yaml.safe_load(value)
             except ParserError:  # "{{ record[0] in ['cohortActiveUsers'] }}"   # not valid YAML
                 return value
+            except ScannerError as e:  # "%Y-%m-%d'   # not valid yaml
+                if "expected alphabetic or numeric character, but found '%'" in str(e):
+                    return value
+                raise e
         return value
