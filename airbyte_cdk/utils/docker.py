@@ -436,9 +436,9 @@ def run_docker_command(
 
         stdout_temp_file.close()
 
-        return EntrypointOutput(
+        return EntrypointOutput.from_completed_process(
+            completed_process,
             message_file=stdout_path,
-            completed_process=completed_process,
         )
 
 
@@ -485,9 +485,7 @@ def verify_connector_image(
             logger.error("No spec messages found in output.")
             return False
     except subprocess.CalledProcessError as e:
-        logger.error(
-            f"Image verification failed: {result.stderr if 'result' in locals() else e.stderr}"
-        )
+        logger.error(f"Image verification failed: {e.stderr}")
         return False
 
     return True
