@@ -43,6 +43,14 @@ pip install -e .
 - --manifest-path: The relative path to the local YAML manifest to inject into SDM.
 - --components-path: The relative path to the custom components to mount, if they exist.
 
+| Option              | spec | check    | discover | read     |
+| ------------------- | ---- | -------- | -------- | -------- |
+| `--config`          | ❌   | required | required | required |
+| `--catalog`         | ❌   | ❌       | required | required |
+| `--state`           | ❌   | ❌       | ❌       | optional |
+| `--manifest-path`   | ❌   | required | required | required |
+| `--components-path` | ❌   | optional | optional | optional |
+
 ### Examples
 
 Here are some basic examples of how to run source-declarative-manifest commands locally.
