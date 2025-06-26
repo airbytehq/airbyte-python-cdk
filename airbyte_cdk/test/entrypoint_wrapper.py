@@ -77,7 +77,6 @@ class EntrypointOutput:
 
         self._messages: list[AirbyteMessage] | None = None
         self._message_file: Path | None = message_file
-        self._completed_process: Optional[subprocess.CompletedProcess[str]] = None
         if messages:
             try:
                 self._messages = [self._parse_message(message) for message in messages]
@@ -309,7 +308,6 @@ class EntrypointOutput:
         else:
             instance = cls()
 
-        instance._completed_process = completed_process
         return instance
 
 
