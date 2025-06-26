@@ -7,6 +7,7 @@ import logging
 import platform
 import subprocess
 import sys
+import tempfile
 from contextlib import ExitStack
 from dataclasses import dataclass
 from enum import Enum
@@ -17,6 +18,7 @@ import click
 import requests
 
 from airbyte_cdk.models.connector_metadata import ConnectorLanguage, MetadataFile
+from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.utils.connector_paths import resolve_airbyte_repo_root
 
 
@@ -391,21 +393,19 @@ def run_docker_command(
     check: bool = True,
     capture_stdout: bool | Path = False,
     capture_stderr: bool | Path = False,
-) -> subprocess.CompletedProcess[str]:
+) -> EntrypointOutput:
     """Run a Docker command as a subprocess.
 
     Args:
         cmd: The command to run as a list of strings.
         check: If True, raises an exception if the command fails. If False, the caller is
             responsible for checking the return code.
-        capture_stdout: How to process stdout.
+        capture_stdout: How to process stdout. Always stored to disk for memory efficiency.
         capture_stderr: If True, captures stderr in memory and returns to the caller.
             If a Path is provided, the output is written to the specified file.
 
-    For stdout and stderr process:
-    - If False (the default), stdout is not captured.
-    - If True, output is captured in memory and returned within the `CompletedProcess` object.
-    - If a Path is provided, the output is written to the specified file. (Recommended for large syncs.)
+    Returns:
+        EntrypointOutput: An object containing parsed Airbyte protocol messages and process info.
 
     Raises:
         subprocess.CalledProcessError: If the command fails and check is True.
@@ -413,30 +413,33 @@ def run_docker_command(
     print(f"Running command: {' '.join(cmd)}")
 
     with ExitStack() as stack:
-        # Shared context manager to handle file closing, if needed.
-        stderr: TextIOWrapper | int | None
-        stdout: TextIOWrapper | int | None
+        stdout_temp_file = stack.enter_context(
+            tempfile.NamedTemporaryFile(mode="w", delete=False, encoding="utf-8")
+        )
+        stdout_path = Path(stdout_temp_file.name)
 
-        # If capture_stderr or capture_stdout is a Path, we open the file in write mode.
-        # If it's a boolean, we set it to either subprocess.PIPE or None.
+        stderr: TextIOWrapper | int | None
         if isinstance(capture_stderr, Path):
             stderr = stack.enter_context(capture_stderr.open("w", encoding="utf-8"))
         elif isinstance(capture_stderr, bool):
             stderr = subprocess.PIPE if capture_stderr is True else None
-
-        if isinstance(capture_stdout, Path):
-            stdout = stack.enter_context(capture_stdout.open("w", encoding="utf-8"))
-        elif isinstance(capture_stdout, bool):
-            stdout = subprocess.PIPE if capture_stdout is True else None
+        else:
+            stderr = None
 
         completed_process: subprocess.CompletedProcess[str] = subprocess.run(
             cmd,
             text=True,
             check=check,
             stderr=stderr,
-            stdout=stdout,
+            stdout=stdout_temp_file,
         )
-        return completed_process
+
+        stdout_temp_file.close()
+
+        return EntrypointOutput(
+            message_file=stdout_path,
+            completed_process=completed_process,
+        )
 
 
 def verify_docker_installation() -> bool:
@@ -471,27 +474,20 @@ def verify_connector_image(
             capture_stdout=True,
         )
         # check that the output is valid JSON
-        if result.stdout:
-            found_spec_output = False
-            for line in result.stdout.split("\n"):
-                if line.strip():
-                    try:
-                        # Check if the line is a valid JSON object
-                        msg = json.loads(line)
-                        if isinstance(msg, dict) and "type" in msg and msg["type"] == "SPEC":
-                            found_spec_output = True
-
-                    except json.JSONDecodeError as e:
-                        logger.warning(f"Invalid JSON output from spec command: {e}: {line}")
-
-            if not found_spec_output:
-                logger.error("No valid JSON output found for spec command.")
+        spec_messages = result.spec_messages
+        if spec_messages:
+            if len(spec_messages) > 0:
+                logger.info("Found valid SPEC message in output.")
+            else:
+                logger.error("No valid SPEC message found in output.")
                 return False
         else:
-            logger.error("No output from spec command.")
+            logger.error("No spec messages found in output.")
             return False
     except subprocess.CalledProcessError as e:
-        logger.error(f"Image verification failed: {e.stderr}")
+        logger.error(
+            f"Image verification failed: {result.stderr if 'result' in locals() else e.stderr}"
+        )
         return False
 
     return True

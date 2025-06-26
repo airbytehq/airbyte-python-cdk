@@ -10,7 +10,7 @@ import tempfile
 import warnings
 from dataclasses import asdict
 from pathlib import Path
-from subprocess import CompletedProcess, SubprocessError
+from subprocess import SubprocessError
 from typing import Literal
 
 import orjson
@@ -146,7 +146,7 @@ class DockerConnectorTestSuite:
             )
 
         try:
-            result: CompletedProcess[str] = run_docker_command(
+            result: EntrypointOutput = run_docker_command(
                 [
                     "docker",
                     "run",
@@ -203,7 +203,7 @@ class DockerConnectorTestSuite:
         with scenario.with_temp_config_file(
             connector_root=connector_root,
         ) as temp_config_file:
-            _ = run_docker_command(
+            result: EntrypointOutput = run_docker_command(
                 [
                     "docker",
                     "run",
@@ -295,7 +295,7 @@ class DockerConnectorTestSuite:
             ) as temp_dir_str,
         ):
             temp_dir = Path(temp_dir_str)
-            discover_result = run_docker_command(
+            discover_result: EntrypointOutput = run_docker_command(
                 [
                     "docker",
                     "run",
@@ -311,14 +311,14 @@ class DockerConnectorTestSuite:
                 capture_stderr=True,
                 capture_stdout=True,
             )
-            parsed_output = EntrypointOutput(messages=discover_result.stdout.splitlines())
+            parsed_output = discover_result
             try:
                 catalog_message = parsed_output.catalog  # Get catalog message
                 assert catalog_message.catalog is not None, "Catalog message missing catalog."
                 discovered_catalog: AirbyteCatalog = parsed_output.catalog.catalog
             except Exception as ex:
                 raise AssertionError(
-                    f"Failed to load discovered catalog from {discover_result.stdout}. "
+                    f"Failed to load discovered catalog from discover command output. "
                     f"Error: {ex!s}"
                 ) from None
             if not discovered_catalog.streams:
@@ -355,7 +355,7 @@ class DockerConnectorTestSuite:
             configured_catalog_path.write_text(
                 orjson.dumps(asdict(configured_catalog)).decode("utf-8")
             )
-            read_result: CompletedProcess[str] = run_docker_command(
+            read_result: EntrypointOutput = run_docker_command(
                 [
                     "docker",
                     "run",
@@ -376,13 +376,18 @@ class DockerConnectorTestSuite:
                 capture_stdout=True,
             )
             if read_result.returncode != 0:
+                error_messages = (
+                    [f"Error message: {error.trace.error.message}" for error in read_result.errors if error.trace and error.trace.error]
+                    if read_result.errors
+                    else ["No error messages found"]
+                )
                 raise AssertionError(
                     f"Failed to run `read` command in docker image {connector_image!r}. "
                     "\n-----------------"
                     f"EXIT CODE: {read_result.returncode}\n"
                     "STDERR:\n"
                     f"{read_result.stderr}\n"
-                    f"STDOUT:\n"
-                    f"{read_result.stdout}\n"
+                    "ERROR MESSAGES:\n"
+                    f"{chr(10).join(error_messages)}\n"
                     "\n-----------------"
                 ) from None

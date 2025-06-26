@@ -17,6 +17,7 @@ than that, there are integrations point that are annoying to integrate with usin
 import json
 import logging
 import re
+import subprocess
 import tempfile
 import traceback
 from collections import deque
@@ -68,6 +69,7 @@ class EntrypointOutput:
         uncaught_exception: Optional[BaseException] = None,
         *,
         message_file: Path | None = None,
+        completed_process: Optional[subprocess.CompletedProcess[str]] = None,
     ) -> None:
         if messages is None and message_file is None:
             raise ValueError("Either messages or message_file must be provided")
@@ -76,6 +78,7 @@ class EntrypointOutput:
 
         self._messages: list[AirbyteMessage] | None = None
         self._message_file: Path | None = message_file
+        self._completed_process: Optional[subprocess.CompletedProcess[str]] = completed_process
         if messages:
             try:
                 self._messages = [self._parse_message(message) for message in messages]
@@ -290,6 +293,16 @@ class EntrypointOutput:
     def is_not_in_logs(self, pattern: str) -> bool:
         """Check if no log message matches the case-insensitive pattern."""
         return not self.is_in_logs(pattern)
+
+    @property
+    def returncode(self) -> int | None:
+        """Return the exit code of the process, if available."""
+        return self._completed_process.returncode if self._completed_process else None
+
+    @property
+    def stderr(self) -> str | None:
+        """Return the stderr output of the process, if available."""
+        return self._completed_process.stderr if self._completed_process else None
 
 
 def _run_command(
