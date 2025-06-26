@@ -301,7 +301,14 @@ class EntrypointOutput:
         stdout_file: Path | None = None,
     ) -> "EntrypointOutput":
         """Create EntrypointOutput from a completed subprocess with optional stdout file."""
-        instance = cls(message_file=stdout_file)
+        if stdout_file is not None:
+            instance = cls(message_file=stdout_file)
+        elif completed_process.stdout:
+            messages = completed_process.stdout.splitlines()
+            instance = cls(messages=messages)
+        else:
+            instance = cls()
+
         instance._completed_process = completed_process
         return instance
 
