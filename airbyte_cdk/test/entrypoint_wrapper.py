@@ -298,10 +298,10 @@ class EntrypointOutput:
         cls,
         completed_process: subprocess.CompletedProcess[str],
         *,
-        message_file: Path | None = None,
+        stdout_file: Path | None = None,
     ) -> "EntrypointOutput":
-        """Create EntrypointOutput from a completed subprocess with optional message file."""
-        instance = cls(message_file=message_file)
+        """Create EntrypointOutput from a completed subprocess with optional stdout file."""
+        instance = cls(message_file=stdout_file)
         instance._completed_process = completed_process
         return instance
 

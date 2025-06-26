@@ -438,7 +438,7 @@ def run_docker_command(
 
         return EntrypointOutput.from_completed_process(
             completed_process,
-            message_file=stdout_path,
+            stdout_file=stdout_path,
         )
 
 
