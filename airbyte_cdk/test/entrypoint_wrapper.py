@@ -373,6 +373,7 @@ def read(
     expecting_exception: bool | None = None,  # Deprecated, use `expected_outcome` instead.
     *,
     expected_outcome: ExpectedOutcome | None = None,
+    debug: bool = False,
 ) -> EntrypointOutput:
     """
     config and state must be json serializable
@@ -394,6 +395,8 @@ def read(
             "--catalog",
             catalog_file,
         ]
+        if debug:
+            args.append("--debug")
         if state is not None:
             args.extend(
                 [
