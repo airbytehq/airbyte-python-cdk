@@ -9,6 +9,7 @@ import yaml
 from click.testing import CliRunner
 
 from airbyte_cdk.cli.airbyte_cdk._manifest import manifest_cli_group
+from airbyte_cdk.sources.declarative.parsers.manifest_normalizer import ManifestNormalizer
 
 
 class TestManifestValidateCommand:
@@ -373,6 +374,126 @@ class TestManifestMigrateCommand:
         assert "does not contain a valid YAML dictionary" in result.output
 
 
+class TestManifestNormalizeCommand:
+    """Test cases for the manifest normalize command."""
+
+    def test_normalize_valid_manifest_no_changes(self, tmp_path: Path) -> None:
+        """Test normalize command with a manifest that doesn't need normalization."""
+        manifest_content = {
+            "version": "0.29.0",
+            "type": "DeclarativeSource",
+            "check": {"type": "CheckStream", "stream_names": ["users"]},
+            "streams": [
+                {
+                    "type": "DeclarativeStream",
+                    "name": "users",
+                    "primary_key": [],
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url_base": "https://api.example.com",
+                            "path": "/users",
+                        },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                    },
+                }
+            ],
+        }
+
+        manifest_file = tmp_path / "manifest.yaml"
+        with open(manifest_file, "w") as f:
+            yaml.dump(manifest_content, f)
+
+        runner = CliRunner()
+        result = runner.invoke(
+            manifest_cli_group, ["normalize", "--manifest-path", str(manifest_file)]
+        )
+
+        assert result.exit_code == 0
+        assert "✅ Manifest" in result.output
+        assert "is already normalized" in result.output
+
+    def test_normalize_manifest_dry_run(self, tmp_path: Path) -> None:
+        """Test normalize command with dry-run flag."""
+        manifest_content = {
+            "version": "0.29.0",
+            "type": "DeclarativeSource",
+            "check": {"type": "CheckStream", "stream_names": ["users"]},
+            "streams": [
+                {
+                    "type": "DeclarativeStream",
+                    "name": "users",
+                    "primary_key": [],
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url_base": "https://api.example.com",
+                            "path": "/users",
+                        },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                    },
+                }
+            ],
+        }
+
+        manifest_file = tmp_path / "manifest.yaml"
+        with open(manifest_file, "w") as f:
+            yaml.dump(manifest_content, f)
+
+        runner = CliRunner()
+        result = runner.invoke(
+            manifest_cli_group, ["normalize", "--manifest-path", str(manifest_file), "--dry-run"]
+        )
+
+        assert result.exit_code == 0
+        assert ("🔍 Dry run" in result.output) or ("is already normalized" in result.output)
+
+    def test_normalize_manifest_file_not_found(self) -> None:
+        """Test normalize command with non-existent manifest file."""
+        runner = CliRunner()
+        result = runner.invoke(
+            manifest_cli_group, ["normalize", "--manifest-path", "nonexistent.yaml"]
+        )
+
+        assert result.exit_code == 2
+        assert "--manifest-path" in result.output
+        assert "does not exist" in result.output
+
+    def test_normalize_invalid_yaml(self, tmp_path: Path) -> None:
+        """Test normalize command with invalid YAML file."""
+        manifest_file = tmp_path / "invalid.yaml"
+        manifest_file.write_text("invalid: yaml: content: [")
+
+        runner = CliRunner()
+        result = runner.invoke(
+            manifest_cli_group, ["normalize", "--manifest-path", str(manifest_file)]
+        )
+
+        assert result.exit_code == 3
+        assert "❌ Error: Invalid YAML" in result.output
+
+    def test_normalize_non_dict_yaml(self, tmp_path: Path) -> None:
+        """Test normalize command with YAML that's not a dictionary."""
+        manifest_file = tmp_path / "list.yaml"
+        manifest_file.write_text("- item1\n- item2")
+
+        runner = CliRunner()
+        result = runner.invoke(
+            manifest_cli_group, ["normalize", "--manifest-path", str(manifest_file)]
+        )
+
+        assert result.exit_code == 3
+        assert "does not contain a valid YAML dictionary" in result.output
+
+
 class TestManifestCliHelp:
     """Test cases for CLI help text and command structure."""
 
@@ -385,6 +506,7 @@ class TestManifestCliHelp:
         assert "Manifest related commands" in result.output
         assert "validate" in result.output
         assert "migrate" in result.output
+        assert "normalize" in result.output
 
     def test_validate_command_help(self) -> None:
         """Test that the validate command shows help with exit codes."""
@@ -407,3 +529,13 @@ class TestManifestCliHelp:
         assert "Apply migrations" in result.output
         assert "--dry-run" in result.output
         assert "--manifest-path" in result.output
+
+    def test_normalize_command_help(self) -> None:
+        """Test that normalize command help text is displayed correctly."""
+        runner = CliRunner()
+        result = runner.invoke(manifest_cli_group, ["normalize", "--help"])
+
+        assert result.exit_code == 0
+        assert "Normalize a manifest file by removing duplicated definitions" in result.output
+        assert "--manifest-path" in result.output
+        assert "--dry-run" in result.output
