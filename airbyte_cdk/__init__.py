@@ -129,6 +129,8 @@ from .sources.declarative.schema import JsonFileSchemaLoader
 from .sources.declarative.transformations.add_fields import AddedFieldDefinition, AddFields
 from .sources.declarative.transformations.transformation import RecordTransformation
 from .sources.declarative.types import FieldPointer
+# Once those issues are resolved, the below can be sorted with isort.
+# ruff: noqa: I001  # keep manual ordering to prevent circular-import issues
 from .sources.declarative.validators import DpathValidator, PredicateValidator, ValidateAdheresToSchema, ValidationStrategy, Validator
 from .sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from .sources.message import InMemoryMessageRepository, MessageRepository
