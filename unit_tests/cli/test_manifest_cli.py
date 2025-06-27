@@ -202,7 +202,7 @@ class TestManifestMigrateCommand:
     """Test cases for the manifest migrate command."""
 
     def test_migrate_manifest_needs_migration(self, tmp_path: Path) -> None:
-        """Test migrate command with manifest that needs migration."""
+        """Test migrate command with manifest that needs migration (default stdout behavior)."""
         manifest_content = {
             "version": "0.1.0",
             "type": "DeclarativeSource",
@@ -238,16 +238,17 @@ class TestManifestMigrateCommand:
         )
 
         assert result.exit_code == 0
-        assert "✅ Successfully migrated" in result.output
-        assert "to the latest version" in result.output
+        assert "version:" in result.output
+        assert "type: DeclarativeSource" in result.output
+        assert "applied_migrations:" in result.output
 
         with open(manifest_file, "r") as f:
-            migrated_content = yaml.safe_load(f)
+            unchanged_content = yaml.safe_load(f)
 
-        assert migrated_content["version"] != "0.1.0"
+        assert unchanged_content == manifest_content
 
     def test_migrate_manifest_already_up_to_date(self, tmp_path: Path) -> None:
-        """Test migrate command with manifest that gets migrated to latest version."""
+        """Test migrate command with manifest that gets migrated to latest version (default stdout behavior)."""
         manifest_content = {
             "version": "0.29.0",
             "type": "DeclarativeSource",
@@ -283,11 +284,12 @@ class TestManifestMigrateCommand:
         )
 
         assert result.exit_code == 0
-        assert "✅ Successfully migrated" in result.output
-        assert "to the latest version" in result.output
+        assert "version:" in result.output
+        assert "type: DeclarativeSource" in result.output
+        assert "applied_migrations:" in result.output
 
-    def test_migrate_manifest_dry_run(self, tmp_path: Path) -> None:
-        """Test migrate command with dry-run flag."""
+    def test_migrate_manifest_stdout_output(self, tmp_path: Path) -> None:
+        """Test migrate command outputs to stdout by default."""
         manifest_content = {
             "version": "0.1.0",
             "type": "DeclarativeSource",
@@ -321,17 +323,142 @@ class TestManifestMigrateCommand:
 
         runner = CliRunner()
         result = runner.invoke(
-            manifest_cli_group, ["migrate", "--manifest-path", str(manifest_file), "--dry-run"]
+            manifest_cli_group, ["migrate", "--manifest-path", str(manifest_file)]
         )
 
         assert result.exit_code == 0
-        assert "🔍 Dry run" in result.output
-        assert "changes that would be made" in result.output
+        assert "version:" in result.output
+        assert "type: DeclarativeSource" in result.output
 
         with open(manifest_file, "r") as f:
             unchanged_content = yaml.safe_load(f)
 
         assert unchanged_content == original_content
+
+    def test_migrate_manifest_in_place(self, tmp_path: Path) -> None:
+        """Test migrate command with --in-place flag."""
+        manifest_content = {
+            "version": "0.1.0",
+            "type": "DeclarativeSource",
+            "check": {"type": "CheckStream", "stream_names": ["users"]},
+            "streams": [
+                {
+                    "type": "DeclarativeStream",
+                    "name": "users",
+                    "primary_key": [],
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url_base": "https://api.example.com",
+                            "path": "/users",
+                        },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                    },
+                }
+            ],
+        }
+
+        manifest_file = tmp_path / "manifest.yaml"
+        with open(manifest_file, "w") as f:
+            yaml.dump(manifest_content, f)
+
+        runner = CliRunner()
+        result = runner.invoke(
+            manifest_cli_group, ["migrate", "--manifest-path", str(manifest_file), "--in-place"]
+        )
+
+        assert result.exit_code == 0
+        assert "Successfully migrated" in result.output
+
+        with open(manifest_file, "r") as f:
+            modified_content = yaml.safe_load(f)
+
+        assert modified_content != manifest_content
+        assert modified_content["version"] != "0.1.0"
+
+    def test_migrate_manifest_exit_non_zero(self, tmp_path: Path) -> None:
+        """Test migrate command with --exit-non-zero flag."""
+        manifest_content = {
+            "version": "0.1.0",
+            "type": "DeclarativeSource",
+            "check": {"type": "CheckStream", "stream_names": ["users"]},
+            "streams": [
+                {
+                    "type": "DeclarativeStream",
+                    "name": "users",
+                    "primary_key": [],
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url_base": "https://api.example.com",
+                            "path": "/users",
+                        },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                    },
+                }
+            ],
+        }
+
+        manifest_file = tmp_path / "manifest.yaml"
+        with open(manifest_file, "w") as f:
+            yaml.dump(manifest_content, f)
+
+        runner = CliRunner()
+        result = runner.invoke(
+            manifest_cli_group,
+            ["migrate", "--manifest-path", str(manifest_file), "--exit-non-zero"],
+        )
+
+        assert result.exit_code == 1
+        assert "version:" in result.output
+
+    def test_migrate_manifest_quiet(self, tmp_path: Path) -> None:
+        """Test migrate command with --quiet flag."""
+        manifest_content = {
+            "version": "0.1.0",
+            "type": "DeclarativeSource",
+            "check": {"type": "CheckStream", "stream_names": ["users"]},
+            "streams": [
+                {
+                    "type": "DeclarativeStream",
+                    "name": "users",
+                    "primary_key": [],
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url_base": "https://api.example.com",
+                            "path": "/users",
+                        },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                    },
+                }
+            ],
+        }
+
+        manifest_file = tmp_path / "manifest.yaml"
+        with open(manifest_file, "w") as f:
+            yaml.dump(manifest_content, f)
+
+        runner = CliRunner()
+        result = runner.invoke(
+            manifest_cli_group, ["migrate", "--manifest-path", str(manifest_file), "--quiet"]
+        )
+
+        assert result.exit_code == 1
+        assert "version:" in result.output
+        assert "Successfully migrated" not in result.output
 
     def test_migrate_manifest_file_not_found(self, tmp_path: Path) -> None:
         """Test migrate command with non-existent manifest file (exit code 2 from Click)."""
@@ -417,8 +544,8 @@ class TestManifestNormalizeCommand:
         assert "✅ Manifest" in result.output
         assert "is already normalized" in result.output
 
-    def test_normalize_manifest_dry_run(self, tmp_path: Path) -> None:
-        """Test normalize command with dry-run flag."""
+    def test_normalize_manifest_stdout_output(self, tmp_path: Path) -> None:
+        """Test normalize command outputs to stdout by default."""
         manifest_content = {
             "version": "0.29.0",
             "type": "DeclarativeSource",
@@ -450,11 +577,91 @@ class TestManifestNormalizeCommand:
 
         runner = CliRunner()
         result = runner.invoke(
-            manifest_cli_group, ["normalize", "--manifest-path", str(manifest_file), "--dry-run"]
+            manifest_cli_group, ["normalize", "--manifest-path", str(manifest_file)]
         )
 
         assert result.exit_code == 0
-        assert ("🔍 Dry run" in result.output) or ("is already normalized" in result.output)
+        assert ("is already normalized" in result.output) or ("version:" in result.output)
+
+    def test_normalize_manifest_in_place(self, tmp_path: Path) -> None:
+        """Test normalize command with --in-place flag."""
+        manifest_content = {
+            "version": "0.29.0",
+            "type": "DeclarativeSource",
+            "check": {"type": "CheckStream", "stream_names": ["users"]},
+            "streams": [
+                {
+                    "type": "DeclarativeStream",
+                    "name": "users",
+                    "primary_key": [],
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url_base": "https://api.example.com",
+                            "path": "/users",
+                        },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                    },
+                }
+            ],
+        }
+
+        manifest_file = tmp_path / "manifest.yaml"
+        with open(manifest_file, "w") as f:
+            yaml.dump(manifest_content, f)
+
+        runner = CliRunner()
+        result = runner.invoke(
+            manifest_cli_group, ["normalize", "--manifest-path", str(manifest_file), "--in-place"]
+        )
+
+        assert result.exit_code == 0
+        assert ("is already normalized" in result.output) or (
+            "Successfully normalized" in result.output
+        )
+
+    def test_normalize_manifest_quiet(self, tmp_path: Path) -> None:
+        """Test normalize command with --quiet flag."""
+        manifest_content = {
+            "version": "0.29.0",
+            "type": "DeclarativeSource",
+            "check": {"type": "CheckStream", "stream_names": ["users"]},
+            "streams": [
+                {
+                    "type": "DeclarativeStream",
+                    "name": "users",
+                    "primary_key": [],
+                    "retriever": {
+                        "type": "SimpleRetriever",
+                        "requester": {
+                            "type": "HttpRequester",
+                            "url_base": "https://api.example.com",
+                            "path": "/users",
+                        },
+                        "record_selector": {
+                            "type": "RecordSelector",
+                            "extractor": {"type": "DpathExtractor", "field_path": []},
+                        },
+                    },
+                }
+            ],
+        }
+
+        manifest_file = tmp_path / "manifest.yaml"
+        with open(manifest_file, "w") as f:
+            yaml.dump(manifest_content, f)
+
+        runner = CliRunner()
+        result = runner.invoke(
+            manifest_cli_group, ["normalize", "--manifest-path", str(manifest_file), "--quiet"]
+        )
+
+        assert result.exit_code == 0
+        assert "Successfully normalized" not in result.output
 
     def test_normalize_manifest_file_not_found(self) -> None:
         """Test normalize command with non-existent manifest file."""
@@ -527,7 +734,9 @@ class TestManifestCliHelp:
 
         assert result.exit_code == 0
         assert "Apply migrations" in result.output
-        assert "--dry-run" in result.output
+        assert "--in-place" in result.output
+        assert "--exit-non-zero" in result.output
+        assert "--quiet" in result.output
         assert "--manifest-path" in result.output
 
     def test_normalize_command_help(self) -> None:
@@ -537,5 +746,7 @@ class TestManifestCliHelp:
 
         assert result.exit_code == 0
         assert "Normalize a manifest file by removing duplicated definitions" in result.output
+        assert "--in-place" in result.output
+        assert "--exit-non-zero" in result.output
+        assert "--quiet" in result.output
         assert "--manifest-path" in result.output
-        assert "--dry-run" in result.output

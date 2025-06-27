@@ -152,15 +152,27 @@ def validate_manifest(manifest_path: Path, strict: bool) -> None:
     help="Path to the manifest file to migrate (default: manifest.yaml)",
 )
 @click.option(
-    "--dry-run",
+    "--in-place",
     is_flag=True,
-    help="Show what changes would be made without actually modifying the file",
+    help="Modify the file in place instead of printing to stdout",
 )
-def migrate_manifest(manifest_path: Path, dry_run: bool) -> None:
+@click.option(
+    "--exit-non-zero",
+    is_flag=True,
+    help="Return non-zero exit code if the file is modified",
+)
+@click.option(
+    "--quiet",
+    is_flag=True,
+    help="Suppress output and return non-zero exit code if modified",
+)
+def migrate_manifest(manifest_path: Path, in_place: bool, exit_non_zero: bool, quiet: bool) -> None:
     """Apply migrations to make a manifest file compatible with the latest version.
 
     This command applies all necessary migrations to update the manifest file
     to be compatible with the latest CDK version.
+
+    By default, the migrated manifest is printed to stdout. Use --in-place to modify the file directly.
     """
     try:
         original_manifest = yaml.safe_load(manifest_path.read_text())
@@ -175,40 +187,47 @@ def migrate_manifest(manifest_path: Path, dry_run: bool) -> None:
         migration_handler = ManifestMigrationHandler(original_manifest)
         migrated_manifest = migration_handler.apply_migrations()
 
-        if migrated_manifest == original_manifest:
-            click.echo(f"✅ Manifest {manifest_path} is already up to date - no migrations needed.")
-            return
+        if quiet:
+            exit_non_zero = True
 
-        if dry_run:
-            click.echo(f"🔍 Dry run - changes that would be made to {manifest_path}:")
-            click.echo(
-                "   Migrations would be applied to update the manifest to the latest version."
-            )
-            click.echo("   Run without --dry-run to apply the changes.")
+        file_modified = migrated_manifest != original_manifest
+
+        if not file_modified:
+            if not quiet:
+                click.echo(
+                    f"✅ Manifest {manifest_path} is already up to date - no migrations needed."
+                )
             return
 
         current_cdk_version = metadata.version("airbyte_cdk")
         migrated_manifest["version"] = current_cdk_version
 
-        manifest_path.write_text(
-            yaml.dump(migrated_manifest, default_flow_style=False, sort_keys=False)
-        )
+        migrated_yaml = yaml.dump(migrated_manifest, default_flow_style=False, sort_keys=False)
 
-        click.echo(
-            f"✅ Successfully migrated {manifest_path} to the latest version ({current_cdk_version})."
-        )
+        if in_place:
+            manifest_path.write_text(migrated_yaml)
+            if not quiet:
+                click.echo(
+                    f"✅ Successfully migrated {manifest_path} to the latest version ({current_cdk_version})."
+                )
+        else:
+            click.echo(migrated_yaml, nl=False)
 
-        try:
-            schema = _get_declarative_component_schema()
-            validate(migrated_manifest, schema)
-            click.echo(f"✅ Migrated manifest {manifest_path} passes validation.")
-        except ValidationError as e:
-            click.echo(
-                f"⚠️  Warning: Migrated manifest {manifest_path} still has validation issues:",
-                err=True,
-            )
-            click.echo(f"   {e.message}", err=True)
-            click.echo("   Manual fixes may be required.", err=True)
+        if exit_non_zero and file_modified:
+            sys.exit(1)
+
+        if in_place and not quiet:
+            try:
+                schema = _get_declarative_component_schema()
+                validate(migrated_manifest, schema)
+                click.echo(f"✅ Migrated manifest {manifest_path} passes validation.")
+            except ValidationError as e:
+                click.echo(
+                    f"⚠️  Warning: Migrated manifest {manifest_path} still has validation issues:",
+                    err=True,
+                )
+                click.echo(f"   {e.message}", err=True)
+                click.echo("   Manual fixes may be required.", err=True)
 
     except FileNotFoundError:
         click.echo(f"❌ Error: Manifest file {manifest_path} not found", err=True)
@@ -229,15 +248,29 @@ def migrate_manifest(manifest_path: Path, dry_run: bool) -> None:
     help="Path to the manifest file to normalize (default: manifest.yaml)",
 )
 @click.option(
-    "--dry-run",
+    "--in-place",
     is_flag=True,
-    help="Show what changes would be made without actually modifying the file",
+    help="Modify the file in place instead of printing to stdout",
 )
-def normalize_manifest(manifest_path: Path, dry_run: bool) -> None:
+@click.option(
+    "--exit-non-zero",
+    is_flag=True,
+    help="Return non-zero exit code if the file is modified",
+)
+@click.option(
+    "--quiet",
+    is_flag=True,
+    help="Suppress output and return non-zero exit code if modified",
+)
+def normalize_manifest(
+    manifest_path: Path, in_place: bool, exit_non_zero: bool, quiet: bool
+) -> None:
     """Normalize a manifest file by removing duplicated definitions and replacing them with references.
 
     This command normalizes the manifest file by deduplicating elements and
     creating references to shared components, making the manifest more maintainable.
+
+    By default, the normalized manifest is printed to stdout. Use --in-place to modify the file directly.
     """
     try:
         original_manifest = yaml.safe_load(manifest_path.read_text())
@@ -253,32 +286,41 @@ def normalize_manifest(manifest_path: Path, dry_run: bool) -> None:
         normalizer = ManifestNormalizer(original_manifest, schema)
         normalized_manifest = normalizer.normalize()
 
-        if normalized_manifest == original_manifest:
-            click.echo(f"✅ Manifest {manifest_path} is already normalized - no changes needed.")
+        if quiet:
+            exit_non_zero = True
+
+        file_modified = normalized_manifest != original_manifest
+
+        if not file_modified:
+            if not quiet:
+                click.echo(
+                    f"✅ Manifest {manifest_path} is already normalized - no changes needed."
+                )
             return
 
-        if dry_run:
-            click.echo(f"🔍 Dry run - changes that would be made to {manifest_path}:")
-            click.echo("   Duplicated definitions would be removed and replaced with references.")
-            click.echo("   Run without --dry-run to apply the changes.")
-            return
+        normalized_yaml = yaml.dump(normalized_manifest, default_flow_style=False, sort_keys=False)
 
-        manifest_path.write_text(
-            yaml.dump(normalized_manifest, default_flow_style=False, sort_keys=False)
-        )
+        if in_place:
+            manifest_path.write_text(normalized_yaml)
+            if not quiet:
+                click.echo(f"✅ Successfully normalized {manifest_path}.")
+        else:
+            click.echo(normalized_yaml, nl=False)
 
-        click.echo(f"✅ Successfully normalized {manifest_path}.")
+        if exit_non_zero and file_modified:
+            sys.exit(1)
 
-        try:
-            validate(normalized_manifest, schema)
-            click.echo(f"✅ Normalized manifest {manifest_path} passes validation.")
-        except ValidationError as e:
-            click.echo(
-                f"⚠️  Warning: Normalized manifest {manifest_path} has validation issues:",
-                err=True,
-            )
-            click.echo(f"   {e.message}", err=True)
-            click.echo("   Manual fixes may be required.", err=True)
+        if in_place and not quiet:
+            try:
+                validate(normalized_manifest, schema)
+                click.echo(f"✅ Normalized manifest {manifest_path} passes validation.")
+            except ValidationError as e:
+                click.echo(
+                    f"⚠️  Warning: Normalized manifest {manifest_path} has validation issues:",
+                    err=True,
+                )
+                click.echo(f"   {e.message}", err=True)
+                click.echo("   Manual fixes may be required.", err=True)
 
     except FileNotFoundError:
         click.echo(f"❌ Error: Manifest file {manifest_path} not found", err=True)
