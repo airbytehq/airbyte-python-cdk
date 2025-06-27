@@ -17,6 +17,7 @@ than that, there are integrations point that are annoying to integrate with usin
 import json
 import logging
 import re
+import subprocess
 import tempfile
 import traceback
 from collections import deque
@@ -290,6 +291,42 @@ class EntrypointOutput:
     def is_not_in_logs(self, pattern: str) -> bool:
         """Check if no log message matches the case-insensitive pattern."""
         return not self.is_in_logs(pattern)
+
+    def get_error_message(self) -> str:
+        """Extract a formatted error message from error traces."""
+        if not self.errors:
+            return "No error messages found"
+
+        error_messages = [
+            f"Error message: {error.trace.error.message}"
+            for error in self.errors
+            if error.trace and error.trace.error
+        ]
+
+        if not error_messages:
+            return "No structured error messages found"
+
+        return "\n".join(error_messages)
+
+    @classmethod
+    def from_completed_process(
+        cls,
+        completed_process: subprocess.CompletedProcess[str],
+        *,
+        stdout_file: Path | None = None,
+    ) -> "EntrypointOutput":
+        """Create EntrypointOutput from a completed subprocess with optional stdout file."""
+        if stdout_file is not None:
+            instance = cls(message_file=stdout_file)
+        elif completed_process.stdout:
+            messages = completed_process.stdout.splitlines()
+            instance = cls(messages=messages)
+        else:
+            raise ValueError(
+                "Either stdout_file should be provided or completed_process.stdout should not be None"
+            )
+
+        return instance
 
 
 def _run_command(
