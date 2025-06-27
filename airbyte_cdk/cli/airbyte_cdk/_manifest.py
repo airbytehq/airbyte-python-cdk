@@ -43,11 +43,11 @@ def validate_manifest(manifest_path: Path) -> None:
 
     This command validates the manifest file and checks version compatibility.
     If validation fails, it will suggest running the migrate command if needed.
-    
+
     Exit codes:
     \\b
     0: Manifest is valid and up to date
-    1: Manifest is valid but needs migration, or general errors  
+    1: Manifest is valid but needs migration, or general errors
     2: Manifest has validation errors that are fixable via migration
     3: Manifest has validation errors that are NOT fixable via migration
     """
@@ -74,7 +74,7 @@ def validate_manifest(manifest_path: Path) -> None:
 
         migration_handler = ManifestMigrationHandler(copy.deepcopy(manifest_dict))
         migrated_manifest = migration_handler.apply_migrations()
-        
+
         migration_available = migrated_manifest != manifest_dict
 
         if original_is_valid:
@@ -96,7 +96,10 @@ def validate_manifest(manifest_path: Path) -> None:
                 validate(migrated_manifest, schema)
                 click.echo(f"❌ Validation failed for {manifest_path}:", err=True)
                 click.echo(f"   {validation_error.message}", err=True)
-                click.echo("✅ Issues are fixable via migration. Run 'airbyte-cdk manifest migrate' to fix these issues.", err=True)
+                click.echo(
+                    "✅ Issues are fixable via migration. Run 'airbyte-cdk manifest migrate' to fix these issues.",
+                    err=True,
+                )
                 sys.exit(2)  # Fixable issues
             except ValidationError:
                 click.echo(f"❌ Validation failed for {manifest_path}:", err=True)
