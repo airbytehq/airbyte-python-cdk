@@ -53,7 +53,7 @@ python-dateutil = "^2.9.0"
 python-ulid = "^3.0.0"
 PyYAML = "^6.0.1"
 rapidfuzz = "^3.10.1" # TODO: Remove if unused
-requests = "*"
+requests = "^2.32.4"
 requests_cache = "*"
 rich = "*"  # Use whichever version meets other constraints
 rich-click = "^1.8.8"
@@ -63,12 +63,13 @@ wcmatch = "10.0"
 avro = { version = ">=1.11.2,<1.13.0", optional = true }  # TODO: Move into dev dependencies if only used in tests
 cohere = { version = "4.21", optional = true }
 fastavro = { version = "~1.8.0", optional = true }
-langchain = { version = "0.1.16", optional = true }
-langchain_core = { version = "0.1.42", optional = true }
+langchain = { version = "^0.3.0", optional = true }
+langchain_core = { version = "^0.3.0", optional = true }
+langchain-community = { version = "^0.3.26", optional = true }
 markdown = { version = "*", optional = true }  # TODO: Remove if unused
 openai = { version = "0.27.9", extras = ["embeddings"], optional = true }  # Used indirectly by langchain library
 pdf2image = { version = "1.16.3", optional = true }
-"pdfminer.six" = { version = "20221105", optional = true }  # Used indirectly by unstructured library
+"pdfminer.six" = "^20250506"  # Used indirectly by unstructured library
 pyarrow = { version = "^19.0.0", optional = true }
 pytesseract = { version = "0.3.10", optional = true }  # Used indirectly by unstructured library
 python-calamine = { version = "0.2.3", optional = true }  # TODO: Remove if unused
@@ -78,7 +79,7 @@ nltk = { version = "3.9.1", optional = true }
 # This will ensure that even when you run poetry install or pip install, the compatible version of numpy will always be chosen.
 # airbyte-ci will try to install latest version when --use-local-cdk is used, resulting in the conflict.
 numpy = "<2"
-unstructured = { version = "0.10.27", extras = ["docx", "pptx"], optional = true }
+filetype = { version = "*", optional = true }
 "unstructured.pytesseract" = { version = ">=0.3.12", optional = true }
 pyjwt = "^2.8.0"
 cryptography = ">=44.0.0,<45.0.0"  # Constrained as transitive dependency due to a bug in newer versions
@@ -91,6 +92,10 @@ xmltodict = ">=0.13,<0.15"
 anyascii = "^0.3.2"
 whenever = "^0.6.16"
 setuptools = "^80.9.0"  # Some connectors depend on this as an undeclared transitive dependency (e.g. source-shopify)
+urllib3 = "^2.5.0"
+protobuf = "^5.29.5"
+pi-heif = "^0.22.0"
+unstructured = {version = ">=0.16.20", extras = ["docx", "pdf", "pptx"]}
 
 [tool.poetry.group.dev.dependencies]
 freezegun = "*"
@@ -114,9 +119,11 @@ types-pyyaml = "^6.0.12.20240917"
 types-cachetools = "^5.5.0.20240820"
 deptry = "^0.23.0"
 
+
+
 [tool.poetry.extras]
-file-based = ["avro", "fastavro", "pyarrow", "unstructured", "pdf2image", "pdfminer.six", "unstructured.pytesseract", "pytesseract", "markdown", "python-calamine", "python-snappy"]
-vector-db-based = ["langchain", "openai", "cohere", "tiktoken"]
+file-based = ["avro", "fastavro", "pyarrow", "unstructured", "filetype", "pdf2image", "pdfminer.six", "unstructured.pytesseract", "pytesseract", "markdown", "python-calamine", "python-snappy"]
+vector-db-based = ["langchain", "langchain-community", "openai", "cohere", "tiktoken"]
 sql = ["sqlalchemy"]
 dev = ["pytest"]
 

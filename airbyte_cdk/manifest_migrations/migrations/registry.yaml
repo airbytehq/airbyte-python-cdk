@@ -4,7 +4,7 @@
 
 manifest_migrations:
   - version: "*"
-    migrations: 
+    migrations:
       - name: http_requester_url_base_to_url
         order: 1
         description: |

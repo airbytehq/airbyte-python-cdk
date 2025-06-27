@@ -140,7 +140,9 @@ class CohereEmbedder(Embedder):
         super().__init__()
         # Client is set internally
         self.embeddings = CohereEmbeddings(
-            cohere_api_key=config.cohere_key, model="embed-english-light-v2.0"
+            cohere_api_key=config.cohere_key,
+            model="embed-english-light-v2.0",
+            user_agent="airbyte-cdk",
         )  # type: ignore
 
     def check(self) -> Optional[str]:

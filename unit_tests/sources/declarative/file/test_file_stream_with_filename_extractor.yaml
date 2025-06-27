@@ -154,15 +154,14 @@ definitions:
         http_method: GET
         authenticator:
           type: SelectiveAuthenticator
-          authenticator_selection_path: [ "credentials", "credentials" ]
+          authenticator_selection_path: ["credentials", "credentials"]
           authenticators:
             oauth2.0: "#/definitions/bearer_authenticator"
             api_token: "#/definitions/basic_authenticator"
       download_target_extractor:
         type: DpathExtractor
-        field_path: [ "content_url" ]
+        field_path: ["content_url"]
       filename_extractor: "{{ record.id }}/{{ record.file_name }}/"
-
 
 streams:
   - $ref: "#/definitions/articles_stream"

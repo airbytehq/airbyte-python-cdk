@@ -127,7 +127,13 @@ class HttpClient:
         Override if needed. Return the name of cache file
         Note that if the environment variable REQUEST_CACHE_PATH is not set, the cache will be in-memory only.
         """
-        return f"{self._name}.sqlite"
+        import os
+        import threading
+
+        # Include thread ID and process ID to ensure uniqueness in concurrent scenarios
+        thread_id = threading.current_thread().ident or 0
+        process_id = os.getpid()
+        return f"{self._name}_{process_id}_{thread_id}.sqlite"
 
     def _request_session(self) -> requests.Session:
         """
