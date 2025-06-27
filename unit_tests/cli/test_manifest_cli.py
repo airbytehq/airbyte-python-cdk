@@ -15,7 +15,7 @@ class TestManifestValidateCommand:
     """Test cases for the manifest validate command."""
 
     def test_validate_valid_manifest_up_to_date(self, tmp_path: Path) -> None:
-        """Test validate command with a valid, up-to-date manifest (exit code 1 - needs migration)."""
+        """Test validate command with a valid manifest that needs migration (exit code 0 without --strict, 1 with --strict)."""
         manifest_content = {
             "version": "0.29.0",
             "type": "DeclarativeSource",
@@ -46,16 +46,23 @@ class TestManifestValidateCommand:
             yaml.dump(manifest_content, f)
 
         runner = CliRunner()
+        
         result = runner.invoke(
             manifest_cli_group, ["validate", "--manifest-path", str(manifest_file)]
         )
+        assert result.exit_code == 0
+        assert "✅ Manifest" in result.output
+        assert "is valid and up to date" in result.output
 
-        assert result.exit_code == 1
-        assert "⚠️" in result.output
-        assert "could benefit from migration" in result.output
+        result_strict = runner.invoke(
+            manifest_cli_group, ["validate", "--manifest-path", str(manifest_file), "--strict"]
+        )
+        assert result_strict.exit_code == 1
+        assert "⚠️" in result_strict.output
+        assert "could benefit from migration" in result_strict.output
 
     def test_validate_manifest_needs_migration(self, tmp_path: Path) -> None:
-        """Test validate command with manifest that needs migration (exit code 1)."""
+        """Test validate command with manifest that needs migration (exit code 0 without --strict, 1 with --strict)."""
         manifest_content = {
             "version": "0.1.0",
             "type": "DeclarativeSource",
@@ -86,16 +93,23 @@ class TestManifestValidateCommand:
             yaml.dump(manifest_content, f)
 
         runner = CliRunner()
+        
         result = runner.invoke(
             manifest_cli_group, ["validate", "--manifest-path", str(manifest_file)]
         )
+        assert result.exit_code == 0
+        assert "✅ Manifest" in result.output
+        assert "is valid and up to date" in result.output
 
-        assert result.exit_code == 1
-        assert "⚠️" in result.output
-        assert "could benefit from migration" in result.output
+        result_strict = runner.invoke(
+            manifest_cli_group, ["validate", "--manifest-path", str(manifest_file), "--strict"]
+        )
+        assert result_strict.exit_code == 1
+        assert "⚠️" in result_strict.output
+        assert "could benefit from migration" in result_strict.output
 
     def test_validate_manifest_unfixable_validation_errors(self, tmp_path: Path) -> None:
-        """Test validate command with unfixable validation errors (exit code 3)."""
+        """Test validate command with unfixable validation errors (exit code 2)."""
         manifest_content = {
             "version": "0.29.0",
             "type": "DeclarativeSource",
@@ -129,12 +143,12 @@ class TestManifestValidateCommand:
             manifest_cli_group, ["validate", "--manifest-path", str(manifest_file)]
         )
 
-        assert result.exit_code == 3
+        assert result.exit_code == 2
         assert "❌ Validation failed" in result.output
         assert "'check' is a required property" in result.output
 
     def test_validate_manifest_file_not_found(self, tmp_path: Path) -> None:
-        """Test validate command with non-existent manifest file (exit code 2)."""
+        """Test validate command with non-existent manifest file (exit code 2 from Click)."""
         runner = CliRunner()
         result = runner.invoke(
             manifest_cli_group, ["validate", "--manifest-path", str(tmp_path / "nonexistent.yaml")]
@@ -145,7 +159,7 @@ class TestManifestValidateCommand:
         assert "does not exist" in result.output
 
     def test_validate_manifest_invalid_yaml(self, tmp_path: Path) -> None:
-        """Test validate command with invalid YAML (exit code 1)."""
+        """Test validate command with invalid YAML (exit code 3)."""
         manifest_file = tmp_path / "manifest.yaml"
         with open(manifest_file, "w") as f:
             f.write("invalid: yaml: content: [")
@@ -155,11 +169,21 @@ class TestManifestValidateCommand:
             manifest_cli_group, ["validate", "--manifest-path", str(manifest_file)]
         )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 3
         assert "❌ Error: Invalid YAML" in result.output
 
+    def test_validate_manifest_strict_flag_help(self, tmp_path: Path) -> None:
+        """Test that the --strict flag appears in help text."""
+        runner = CliRunner()
+        result = runner.invoke(manifest_cli_group, ["validate", "--help"])
+
+        assert result.exit_code == 0
+        assert "--strict" in result.output
+        assert "Enable strict mode" in result.output
+
+
     def test_validate_manifest_not_dict(self, tmp_path: Path) -> None:
-        """Test validate command with YAML that's not a dictionary (exit code 1)."""
+        """Test validate command with YAML that's not a dictionary (exit code 3)."""
         manifest_file = tmp_path / "manifest.yaml"
         with open(manifest_file, "w") as f:
             yaml.dump(["not", "a", "dict"], f)
@@ -169,7 +193,7 @@ class TestManifestValidateCommand:
             manifest_cli_group, ["validate", "--manifest-path", str(manifest_file)]
         )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 3
         assert "❌ Error: Manifest file" in result.output
         assert "does not contain a valid YAML dictionary" in result.output
 
@@ -310,7 +334,7 @@ class TestManifestMigrateCommand:
         assert unchanged_content == original_content
 
     def test_migrate_manifest_file_not_found(self, tmp_path: Path) -> None:
-        """Test migrate command with non-existent manifest file (exit code 2)."""
+        """Test migrate command with non-existent manifest file (exit code 2 from Click)."""
         runner = CliRunner()
         result = runner.invoke(
             manifest_cli_group, ["migrate", "--manifest-path", str(tmp_path / "nonexistent.yaml")]
@@ -321,7 +345,7 @@ class TestManifestMigrateCommand:
         assert "does not exist" in result.output
 
     def test_migrate_manifest_invalid_yaml(self, tmp_path: Path) -> None:
-        """Test migrate command with invalid YAML (exit code 1)."""
+        """Test migrate command with invalid YAML (exit code 3)."""
         manifest_file = tmp_path / "manifest.yaml"
         with open(manifest_file, "w") as f:
             f.write("invalid: yaml: content: [")
@@ -331,11 +355,11 @@ class TestManifestMigrateCommand:
             manifest_cli_group, ["migrate", "--manifest-path", str(manifest_file)]
         )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 3
         assert "❌ Error: Invalid YAML" in result.output
 
     def test_migrate_manifest_not_dict(self, tmp_path: Path) -> None:
-        """Test migrate command with YAML that's not a dictionary (exit code 1)."""
+        """Test migrate command with YAML that's not a dictionary (exit code 3)."""
         manifest_file = tmp_path / "manifest.yaml"
         with open(manifest_file, "w") as f:
             yaml.dump(["not", "a", "dict"], f)
@@ -345,7 +369,7 @@ class TestManifestMigrateCommand:
             manifest_cli_group, ["migrate", "--manifest-path", str(manifest_file)]
         )
 
-        assert result.exit_code == 1
+        assert result.exit_code == 3
         assert "❌ Error: Manifest file" in result.output
         assert "does not contain a valid YAML dictionary" in result.output
 
@@ -370,10 +394,10 @@ class TestManifestCliHelp:
 
         assert result.exit_code == 0
         assert "codes:" in result.output
-        assert "0: Manifest is valid and up to date" in result.output
-        assert "1: Manifest is valid but needs" in result.output
-        assert "2: Manifest has validation errors that are" in result.output
-        assert "3: Manifest has validation errors that are NOT fixable" in result.output
+        assert "0:" in result.output and "valid and up to date" in result.output
+        assert "1:" in result.output and "fixable via migration" in result.output
+        assert "2:" in result.output and "NOT fixable via migration" in result.output
+        assert "3:" in result.output and "General errors" in result.output
 
     def test_migrate_command_help(self) -> None:
         """Test that the migrate command shows help correctly."""

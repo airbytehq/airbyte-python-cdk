@@ -38,7 +38,12 @@ def manifest_cli_group() -> None:
     default="manifest.yaml",
     help="Path to the manifest file to validate (default: manifest.yaml)",
 )
-def validate_manifest(manifest_path: Path) -> None:
+@click.option(
+    "--strict",
+    is_flag=True,
+    help="Enable strict mode: fail if migration is available even for valid manifests",
+)
+def validate_manifest(manifest_path: Path, strict: bool) -> None:
     """Validate a manifest file against the declarative component schema.
 
     This command validates the manifest file and checks version compatibility.
@@ -47,20 +52,19 @@ def validate_manifest(manifest_path: Path) -> None:
     Exit codes:
     \\b
     0: Manifest is valid and up to date
-    1: Manifest is valid but needs migration, or general errors
-    2: Manifest has validation errors that are fixable via migration
-    3: Manifest has validation errors that are NOT fixable via migration
+    1: Manifest has issues that are fixable via migration
+    2: Manifest has validation errors that are NOT fixable via migration
+    3: General errors (file not found, invalid YAML, etc.)
     """
     try:
-        with open(manifest_path, "r") as f:
-            manifest_dict = yaml.safe_load(f)
+        manifest_dict = yaml.safe_load(manifest_path.read_text())
 
         if not isinstance(manifest_dict, dict):
             click.echo(
                 f"❌ Error: Manifest file {manifest_path} does not contain a valid YAML dictionary",
                 err=True,
             )
-            sys.exit(1)
+            sys.exit(3)
 
         schema = _get_declarative_component_schema()
 
@@ -77,8 +81,15 @@ def validate_manifest(manifest_path: Path) -> None:
 
         migration_available = migrated_manifest != manifest_dict
 
-        if original_is_valid:
-            if migration_available:
+        if original_is_valid and not migration_available:
+            click.echo(f"✅ Manifest {manifest_path} is valid and up to date.")
+            return
+        
+        if original_is_valid and migration_available:
+            if not strict:
+                click.echo(f"✅ Manifest {manifest_path} is valid and up to date.")
+                return
+            else:
                 click.echo(
                     f"⚠️  Manifest {manifest_path} is valid but could benefit from migration to the latest version.",
                     err=True,
@@ -86,10 +97,7 @@ def validate_manifest(manifest_path: Path) -> None:
                 click.echo(
                     "Run 'airbyte-cdk manifest migrate' to apply available migrations.", err=True
                 )
-                sys.exit(1)
-            else:
-                click.echo(f"✅ Manifest {manifest_path} is valid and up to date.")
-                return
+                sys.exit(1)  # Fixable via migration
 
         if migration_available:
             try:
@@ -101,27 +109,27 @@ def validate_manifest(manifest_path: Path) -> None:
                     "✅ Issues are fixable via migration. Run 'airbyte-cdk manifest migrate' to fix these issues.",
                     err=True,
                 )
-                sys.exit(2)  # Fixable issues
+                sys.exit(1)  # Fixable via migration
             except ValidationError:
                 click.echo(f"❌ Validation failed for {manifest_path}:", err=True)
                 if validation_error:
                     click.echo(f"   {validation_error.message}", err=True)
-                sys.exit(3)  # Non-fixable issues
+                sys.exit(2)  # Non-fixable issues
         else:
             click.echo(f"❌ Validation failed for {manifest_path}:", err=True)
             if validation_error:
                 click.echo(f"   {validation_error.message}", err=True)
-            sys.exit(3)  # Non-fixable issues
+            sys.exit(2)  # Non-fixable issues
 
     except FileNotFoundError:
         click.echo(f"❌ Error: Manifest file {manifest_path} not found", err=True)
-        sys.exit(1)
+        sys.exit(3)
     except yaml.YAMLError as e:
         click.echo(f"❌ Error: Invalid YAML in {manifest_path}: {e}", err=True)
-        sys.exit(1)
+        sys.exit(3)
     except Exception as e:
         click.echo(f"❌ Unexpected error validating {manifest_path}: {e}", err=True)
-        sys.exit(1)
+        sys.exit(3)
 
 
 @manifest_cli_group.command("migrate")
@@ -143,15 +151,14 @@ def migrate_manifest(manifest_path: Path, dry_run: bool) -> None:
     to be compatible with the latest CDK version.
     """
     try:
-        with open(manifest_path, "r") as f:
-            original_manifest = yaml.safe_load(f)
+        original_manifest = yaml.safe_load(manifest_path.read_text())
 
         if not isinstance(original_manifest, dict):
             click.echo(
                 f"❌ Error: Manifest file {manifest_path} does not contain a valid YAML dictionary",
                 err=True,
             )
-            sys.exit(1)
+            sys.exit(3)
 
         migration_handler = ManifestMigrationHandler(original_manifest)
         migrated_manifest = migration_handler.apply_migrations()
@@ -171,8 +178,7 @@ def migrate_manifest(manifest_path: Path, dry_run: bool) -> None:
         current_cdk_version = metadata.version("airbyte_cdk")
         migrated_manifest["version"] = current_cdk_version
 
-        with open(manifest_path, "w") as f:
-            yaml.dump(migrated_manifest, f, default_flow_style=False, sort_keys=False)
+        manifest_path.write_text(yaml.dump(migrated_manifest, default_flow_style=False, sort_keys=False))
 
         click.echo(
             f"✅ Successfully migrated {manifest_path} to the latest version ({current_cdk_version})."
@@ -192,10 +198,10 @@ def migrate_manifest(manifest_path: Path, dry_run: bool) -> None:
 
     except FileNotFoundError:
         click.echo(f"❌ Error: Manifest file {manifest_path} not found", err=True)
-        sys.exit(1)
+        sys.exit(3)
     except yaml.YAMLError as e:
         click.echo(f"❌ Error: Invalid YAML in {manifest_path}: {e}", err=True)
-        sys.exit(1)
+        sys.exit(3)
     except Exception as e:
         click.echo(f"❌ Unexpected error migrating {manifest_path}: {e}", err=True)
         sys.exit(1)
