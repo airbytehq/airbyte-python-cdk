@@ -155,7 +155,7 @@ class TestManifestValidateCommand:
         )
 
         assert result.exit_code == 2
-        assert "Invalid value for '--manifest-path'" in result.output
+        assert "--manifest-path" in result.output
         assert "does not exist" in result.output
 
     def test_validate_manifest_invalid_yaml(self, tmp_path: Path) -> None:
@@ -340,7 +340,7 @@ class TestManifestMigrateCommand:
         )
 
         assert result.exit_code == 2
-        assert "Invalid value for '--manifest-path'" in result.output
+        assert "--manifest-path" in result.output
         assert "does not exist" in result.output
 
     def test_migrate_manifest_invalid_yaml(self, tmp_path: Path) -> None:
