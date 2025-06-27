@@ -3121,15 +3121,12 @@ definitions:
       type:
         type: string
         enum: [ParentStreamConfig]
-      lazy_read_pointer:
-        title: Lazy Read Pointer
-        description: If set, this will enable lazy reading, using the initial read of parent records to extract child records.
-        type: array
-        default: []
-        items:
-          type: string
-        interpolation_context:
-          - config
+      stream:
+        title: Parent Stream
+        description: Reference to the parent stream.
+        anyOf:
+          - "$ref": "#/definitions/DeclarativeStream"
+          - "$ref": "#/definitions/StateDelegatingStream"
       parent_key:
         title: Parent Key
         description: The primary key of records from the parent stream that will be used during the retrieval of records for the current substream. This parent identifier field is typically a characteristic of the child records being extracted from the source API.
@@ -3137,12 +3134,6 @@ definitions:
         examples:
           - "id"
           - "{{ config['parent_record_id'] }}"
-      stream:
-        title: Parent Stream
-        description: Reference to the parent stream.
-        anyOf:
-          - "$ref": "#/definitions/DeclarativeStream"
-          - "$ref": "#/definitions/StateDelegatingStream"
       partition_field:
         title: Current Parent Key Value Identifier
         description: While iterating over parent records during a sync, the parent_key value can be referenced by using this field.
@@ -3159,6 +3150,15 @@ definitions:
         description: Indicates whether the parent stream should be read incrementally based on updates in the child stream.
         type: boolean
         default: false
+      lazy_read_pointer:
+        title: Lazy Read Pointer
+        description: If set, this will enable lazy reading, using the initial read of parent records to extract child records.
+        type: array
+        default: []
+        items:
+          type: string
+        interpolation_context:
+          - config
       extra_fields:
         title: Extra Fields
         description: Array of field paths to include as additional fields in the stream slice. Each path is an array of strings representing keys to access fields in the respective parent record. Accessible via `stream_slice.extra_fields`. Missing fields are set to `None`.
@@ -3593,17 +3593,17 @@ definitions:
       partition_router:
         title: Partition Router
         description: PartitionRouter component that describes how to partition the stream, enabling incremental syncs and checkpointing.
-        default: []
         anyOf:
-          - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/SubstreamPartitionRouter"
+          - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/GroupingPartitionRouter"
           - "$ref": "#/definitions/CustomPartitionRouter"
           - type: array
+            title: Multiple Partition Routers
             items:
               anyOf:
-                - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/SubstreamPartitionRouter"
+                - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/GroupingPartitionRouter"
                 - "$ref": "#/definitions/CustomPartitionRouter"
       $parameters:
