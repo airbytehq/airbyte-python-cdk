@@ -95,7 +95,8 @@ def validate_manifest(manifest_path: Path) -> None:
             try:
                 validate(migrated_manifest, schema)
                 click.echo(f"❌ Validation failed for {manifest_path}:", err=True)
-                click.echo(f"   {validation_error.message}", err=True)
+                if validation_error:
+                    click.echo(f"   {validation_error.message}", err=True)
                 click.echo(
                     "✅ Issues are fixable via migration. Run 'airbyte-cdk manifest migrate' to fix these issues.",
                     err=True,
@@ -103,11 +104,13 @@ def validate_manifest(manifest_path: Path) -> None:
                 sys.exit(2)  # Fixable issues
             except ValidationError:
                 click.echo(f"❌ Validation failed for {manifest_path}:", err=True)
-                click.echo(f"   {validation_error.message}", err=True)
+                if validation_error:
+                    click.echo(f"   {validation_error.message}", err=True)
                 sys.exit(3)  # Non-fixable issues
         else:
             click.echo(f"❌ Validation failed for {manifest_path}:", err=True)
-            click.echo(f"   {validation_error.message}", err=True)
+            if validation_error:
+                click.echo(f"   {validation_error.message}", err=True)
             sys.exit(3)  # Non-fixable issues
 
     except FileNotFoundError:
