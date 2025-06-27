@@ -39,9 +39,8 @@ The Airbyte CDK provides two command-line interfaces (CLIs) for interacting with
 - `airbyte-cdk`: This is the main CLI for the Airbyte CDK. It provides commands for building
   and testing connectors, as well as other utilities. See the `airbyte_cdk.cli.airbyte_cdk` module
   for more details.
-- `source-declarative-manifest` (`airbyte_cdk.cli.source_declarative_manifest`): This command allows
-  you to run declarative manifests directly. See the `airbyte_cdk.cli.source_declarative_manifest`
-  module for more details.
+- `source-declarative-manifest`: This command allows you to run declarative manifests directly.
+  See the `airbyte_cdk.cli.source_declarative_manifest` module for more details.
 
 ---
 
