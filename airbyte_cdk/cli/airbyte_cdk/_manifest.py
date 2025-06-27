@@ -55,10 +55,14 @@ def validate_manifest(manifest_path: Path, strict: bool) -> None:
     If validation fails, it will suggest running the migrate command if needed.
 
     Exit codes:
+
     \\b
     0: Manifest is valid and up to date
+    \\b
     1: Manifest has issues that are fixable via migration
+    \\b
     2: Manifest has validation errors that are NOT fixable via migration
+    \\b
     3: General errors (file not found, invalid YAML, etc.)
     """
     try:

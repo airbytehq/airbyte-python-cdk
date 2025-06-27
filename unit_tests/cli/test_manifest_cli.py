@@ -395,7 +395,7 @@ class TestManifestCliHelp:
         assert "codes:" in result.output
         assert "0:" in result.output and "valid and up to date" in result.output
         assert "1:" in result.output and "fixable via migration" in result.output
-        assert "2:" in result.output and "NOT fixable via migration" in result.output
+        assert "2:" in result.output and "validation errors" in result.output
         assert "3:" in result.output and "General errors" in result.output
 
     def test_migrate_command_help(self) -> None:
