@@ -46,7 +46,7 @@ class TestManifestValidateCommand:
             yaml.dump(manifest_content, f)
 
         runner = CliRunner()
-        
+
         result = runner.invoke(
             manifest_cli_group, ["validate", "--manifest-path", str(manifest_file)]
         )
@@ -93,7 +93,7 @@ class TestManifestValidateCommand:
             yaml.dump(manifest_content, f)
 
         runner = CliRunner()
-        
+
         result = runner.invoke(
             manifest_cli_group, ["validate", "--manifest-path", str(manifest_file)]
         )
@@ -181,7 +181,6 @@ class TestManifestValidateCommand:
         assert "--strict" in result.output
         assert "Enable strict mode" in result.output
 
-
     def test_validate_manifest_not_dict(self, tmp_path: Path) -> None:
         """Test validate command with YAML that's not a dictionary (exit code 3)."""
         manifest_file = tmp_path / "manifest.yaml"
@@ -243,7 +242,7 @@ class TestManifestMigrateCommand:
 
         with open(manifest_file, "r") as f:
             migrated_content = yaml.safe_load(f)
-        
+
         assert migrated_content["version"] != "0.1.0"
 
     def test_migrate_manifest_already_up_to_date(self, tmp_path: Path) -> None:
@@ -330,7 +329,7 @@ class TestManifestMigrateCommand:
 
         with open(manifest_file, "r") as f:
             unchanged_content = yaml.safe_load(f)
-        
+
         assert unchanged_content == original_content
 
     def test_migrate_manifest_file_not_found(self, tmp_path: Path) -> None:

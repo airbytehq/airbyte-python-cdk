@@ -89,7 +89,7 @@ def validate_manifest(manifest_path: Path, strict: bool) -> None:
         if original_is_valid and not migration_available:
             click.echo(f"✅ Manifest {manifest_path} is valid and up to date.")
             return
-        
+
         if original_is_valid and migration_available:
             if not strict:
                 click.echo(f"✅ Manifest {manifest_path} is valid and up to date.")
@@ -183,7 +183,9 @@ def migrate_manifest(manifest_path: Path, dry_run: bool) -> None:
         current_cdk_version = metadata.version("airbyte_cdk")
         migrated_manifest["version"] = current_cdk_version
 
-        manifest_path.write_text(yaml.dump(migrated_manifest, default_flow_style=False, sort_keys=False))
+        manifest_path.write_text(
+            yaml.dump(migrated_manifest, default_flow_style=False, sort_keys=False)
+        )
 
         click.echo(
             f"✅ Successfully migrated {manifest_path} to the latest version ({current_cdk_version})."
