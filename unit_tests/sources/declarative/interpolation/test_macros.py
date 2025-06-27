@@ -19,6 +19,7 @@ from airbyte_cdk.sources.declarative.interpolation.macros import macros
         ("test_day_delta", "day_delta", True),
         ("test_format_datetime", "format_datetime", True),
         ("test_duration", "duration", True),
+        ("test_camel_case_to_snake_case", "camel_case_to_snake_case", True),
         ("test_not_a_macro", "thisisnotavalidmacro", False),
     ],
 )
@@ -272,5 +273,5 @@ def test_sanitize_url(test_name, input_value, expected_output):
         ),
     ],
 )
-def test_camel_cate_to_snake_case(value, expected_value):
-    assert macros["camel_cate_to_snake_case"](value) == expected_value
+def test_camel_case_to_snake_case(value, expected_value):
+    assert macros["camel_case_to_snake_case"](value) == expected_value
