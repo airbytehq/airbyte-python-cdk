@@ -197,12 +197,12 @@ def sanitize_url(value: str) -> str:
 
 def camel_case_to_snake_case(value: str) -> str:
     """
-    Converts CamelCase strings to snake_case format
+     Converts CamelCase strings to snake_case format
 
-    Usage:
-   `"{{ camel_case_to_snake_case('CamelCase') }}"`
-    :param value: string to convert from CamelCase to snake_case
-    :return: snake_case formatted string
+     Usage:
+    `"{{ camel_case_to_snake_case('CamelCase') }}"`
+     :param value: string to convert from CamelCase to snake_case
+     :return: snake_case formatted string
     """
     return re.sub(r"(?<!^)(?=[A-Z])", "_", value).lower()
 
