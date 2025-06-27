@@ -249,3 +249,28 @@ def test_sanitize_url(test_name, input_value, expected_output):
     sanitize_url = macros["sanitize_url"]
     actual_output = sanitize_url(input_value)
     assert actual_output == expected_output
+
+
+@pytest.mark.parametrize(
+    "value, expected_value",
+    [
+        (
+            "CamelCase",
+            "camel_case",
+        ),
+        (
+            "snake_case",
+            "snake_case",
+        ),
+        (
+            "CamelCasesnake_case",
+            "camel_casesnake_case",
+        ),
+        (
+            "CamelCase_snake_case",
+            "camel_case_snake_case",
+        ),
+    ],
+)
+def test_camel_cate_to_snake_case(value, expected_value):
+    assert macros["camel_cate_to_snake_case"](value) == expected_value
