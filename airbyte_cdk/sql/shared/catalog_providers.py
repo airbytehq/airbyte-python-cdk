@@ -121,9 +121,13 @@ class CatalogProvider:
         stream_name: str,
     ) -> list[str]:
         """Return the primary keys for the given stream."""
-        pks = self.get_configured_stream_info(stream_name).primary_key
+        configured_stream = self.get_configured_stream_info(stream_name)
+        pks = configured_stream.primary_key
+
         if not pks:
-            return []
+            pks = configured_stream.stream.source_defined_primary_key
+            if not pks:
+                return []
 
         normalized_pks: list[list[str]] = [
             [LowerCaseNormalizer.normalize(c) for c in pk] for pk in pks
