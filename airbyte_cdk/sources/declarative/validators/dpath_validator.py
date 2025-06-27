@@ -53,7 +53,7 @@ class DpathValidator(Validator):
                 for value in values:
                     self.strategy.validate(value)
             except KeyError as e:
-                logger.warning(f"Error validating path. Key not found: {e}")
+                logger.info(f"Validation skipped. Key not found: {e}")
                 return
 
         else:
@@ -61,5 +61,5 @@ class DpathValidator(Validator):
                 value = dpath.get(input_data, path)
                 self.strategy.validate(value)
             except KeyError as e:
-                logger.warning(f"Error validating path. Key not found: {e}")
+                logger.info(f"Validation skipped. Key not found: {e}")
                 return
