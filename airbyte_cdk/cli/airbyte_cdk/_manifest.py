@@ -5,6 +5,7 @@ This module provides a command line interface (CLI) for validating and migrating
 Airbyte CDK manifests.
 """
 
+import copy
 import sys
 from importlib import metadata
 from pathlib import Path
@@ -42,6 +43,13 @@ def validate_manifest(manifest_path: Path) -> None:
 
     This command validates the manifest file and checks version compatibility.
     If validation fails, it will suggest running the migrate command if needed.
+    
+    Exit codes:
+    \\b
+    0: Manifest is valid and up to date
+    1: Manifest is valid but needs migration, or general errors  
+    2: Manifest has validation errors that are fixable via migration
+    3: Manifest has validation errors that are NOT fixable via migration
     """
     try:
         with open(manifest_path, "r") as f:
@@ -56,36 +64,54 @@ def validate_manifest(manifest_path: Path) -> None:
 
         schema = _get_declarative_component_schema()
 
-        validate(manifest_dict, schema)
+        validation_error = None
+        try:
+            validate(manifest_dict, schema)
+            original_is_valid = True
+        except ValidationError as e:
+            original_is_valid = False
+            validation_error = e
 
-        migration_handler = ManifestMigrationHandler(manifest_dict)
+        migration_handler = ManifestMigrationHandler(copy.deepcopy(manifest_dict))
         migrated_manifest = migration_handler.apply_migrations()
+        
+        migration_available = migrated_manifest != manifest_dict
 
-        if migrated_manifest != manifest_dict:
-            click.echo(
-                f"⚠️  Manifest {manifest_path} is valid but could benefit from migration to the latest version.",
-                err=True,
-            )
-            click.echo(
-                "Run 'airbyte-cdk manifest migrate' to apply available migrations.", err=True
-            )
-            sys.exit(1)
+        if original_is_valid:
+            if migration_available:
+                click.echo(
+                    f"⚠️  Manifest {manifest_path} is valid but could benefit from migration to the latest version.",
+                    err=True,
+                )
+                click.echo(
+                    "Run 'airbyte-cdk manifest migrate' to apply available migrations.", err=True
+                )
+                sys.exit(1)
+            else:
+                click.echo(f"✅ Manifest {manifest_path} is valid and up to date.")
+                return
 
-        click.echo(f"✅ Manifest {manifest_path} is valid and up to date.")
+        if migration_available:
+            try:
+                validate(migrated_manifest, schema)
+                click.echo(f"❌ Validation failed for {manifest_path}:", err=True)
+                click.echo(f"   {validation_error.message}", err=True)
+                click.echo("✅ Issues are fixable via migration. Run 'airbyte-cdk manifest migrate' to fix these issues.", err=True)
+                sys.exit(2)  # Fixable issues
+            except ValidationError:
+                click.echo(f"❌ Validation failed for {manifest_path}:", err=True)
+                click.echo(f"   {validation_error.message}", err=True)
+                sys.exit(3)  # Non-fixable issues
+        else:
+            click.echo(f"❌ Validation failed for {manifest_path}:", err=True)
+            click.echo(f"   {validation_error.message}", err=True)
+            sys.exit(3)  # Non-fixable issues
 
     except FileNotFoundError:
         click.echo(f"❌ Error: Manifest file {manifest_path} not found", err=True)
         sys.exit(1)
     except yaml.YAMLError as e:
         click.echo(f"❌ Error: Invalid YAML in {manifest_path}: {e}", err=True)
-        sys.exit(1)
-    except ValidationError as e:
-        click.echo(f"❌ Validation failed for {manifest_path}:", err=True)
-        click.echo(f"   {e.message}", err=True)
-        click.echo(
-            "Run 'airbyte-cdk manifest migrate' to apply available migrations that might fix this issue.",
-            err=True,
-        )
         sys.exit(1)
     except Exception as e:
         click.echo(f"❌ Unexpected error validating {manifest_path}: {e}", err=True)
