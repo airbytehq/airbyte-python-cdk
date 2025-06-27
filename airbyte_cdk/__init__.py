@@ -129,7 +129,6 @@ from .sources.declarative.schema import JsonFileSchemaLoader
 from .sources.declarative.transformations.add_fields import AddedFieldDefinition, AddFields
 from .sources.declarative.transformations.transformation import RecordTransformation
 from .sources.declarative.types import FieldPointer
-from .sources.declarative.validators import DpathValidator, PredicateValidator, ValidateAdheresToSchema, ValidationStrategy, Validator
 from .sources.declarative.yaml_declarative_source import YamlDeclarativeSource
 from .sources.message import InMemoryMessageRepository, MessageRepository
 from .sources.source import TState
@@ -340,12 +339,6 @@ __all__ = [
     "Record",
     "Source",
     "StreamSlice",
-    # Validators
-    "Validator",
-    "DpathValidator",
-    "PredicateValidator",
-    "ValidationStrategy",
-    "ValidateAdheresToSchema",
 ]
 
 __version__: str
