@@ -2809,7 +2809,7 @@ class SimpleRetriever(BaseModel):
         ]
     ] = Field(
         None,
-        description="PartitionRouter component that describes how to partition the stream, enabling incremental syncs and checkpointing.",
+        description="Used to iteratively execute requests over a set of values, such as a parent stream's records or a list of constant values.",
         title="Partition Router",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
