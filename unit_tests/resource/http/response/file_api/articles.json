@@ -1,37 +1,35 @@
 {
-    "count": 7,
-    "next_page": null,
-    "end_time": 1741736037,
-    "articles": [
-      {
-        "id": 12138789487375,
-        "url": "https://d3v-airbyte.zendesk.com/api/v2/help_center/en-us/articles/12138789487375.json",
-        "html_url": "https://d3v-airbyte.zendesk.com/hc/en-us/articles/12138789487375-This-is-an-article-with-an-attachment",
-        "author_id": 360786799676,
-        "comments_disabled": false,
-        "draft": true,
-        "promoted": false,
-        "position": 0,
-        "vote_sum": 0,
-        "vote_count": 0,
-        "section_id": 7253394947215,
-        "created_at": "2025-03-11T23:33:57Z",
-        "updated_at": "2025-03-11T23:33:57Z",
-        "name": "This is an article with an attachment!",
-        "title": "This is an article with an attachment!",
-        "source_locale": "en-us",
-        "locale": "en-us",
-        "outdated": false,
-        "outdated_locales": [],
-        "edited_at": "2025-03-11T23:33:57Z",
-        "user_segment_id": 7253375826191,
-        "permission_group_id": 7253379449487,
-        "content_tag_ids": [],
-        "label_names": [],
-        "body": "<p>Here be some text<img src=\"https://d3v-airbyte.zendesk.com/hc/article_attachments/12138758717583\" alt=\"some_image.webp\"></p>",
-        "user_segment_ids": [
-          7253375826191
-        ]
-      }
-    ]
-  }
+  "count": 7,
+  "next_page": null,
+  "end_time": 1741736037,
+  "articles": [
+    {
+      "id": 12138789487375,
+      "url": "https://d3v-airbyte.zendesk.com/api/v2/help_center/en-us/articles/12138789487375.json",
+      "html_url": "https://d3v-airbyte.zendesk.com/hc/en-us/articles/12138789487375-This-is-an-article-with-an-attachment",
+      "author_id": 360786799676,
+      "comments_disabled": false,
+      "draft": true,
+      "promoted": false,
+      "position": 0,
+      "vote_sum": 0,
+      "vote_count": 0,
+      "section_id": 7253394947215,
+      "created_at": "2025-03-11T23:33:57Z",
+      "updated_at": "2025-03-11T23:33:57Z",
+      "name": "This is an article with an attachment!",
+      "title": "This is an article with an attachment!",
+      "source_locale": "en-us",
+      "locale": "en-us",
+      "outdated": false,
+      "outdated_locales": [],
+      "edited_at": "2025-03-11T23:33:57Z",
+      "user_segment_id": 7253375826191,
+      "permission_group_id": 7253379449487,
+      "content_tag_ids": [],
+      "label_names": [],
+      "body": "<p>Here be some text<img src=\"https://d3v-airbyte.zendesk.com/hc/article_attachments/12138758717583\" alt=\"some_image.webp\"></p>",
+      "user_segment_ids": [7253375826191]
+    }
+  ]
+}
