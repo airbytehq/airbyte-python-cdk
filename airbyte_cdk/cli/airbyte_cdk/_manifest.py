@@ -21,6 +21,11 @@ from airbyte_cdk.sources.declarative.manifest_declarative_source import (
     _get_declarative_component_schema,
 )
 
+EXIT_SUCCESS = 0
+EXIT_FIXABLE_VIA_MIGRATION = 1
+EXIT_NON_FIXABLE_ISSUES = 2
+EXIT_GENERAL_ERROR = 3
+
 
 @click.group(
     name="manifest",
@@ -64,7 +69,7 @@ def validate_manifest(manifest_path: Path, strict: bool) -> None:
                 f"❌ Error: Manifest file {manifest_path} does not contain a valid YAML dictionary",
                 err=True,
             )
-            sys.exit(3)
+            sys.exit(EXIT_GENERAL_ERROR)
 
         schema = _get_declarative_component_schema()
 
@@ -97,7 +102,7 @@ def validate_manifest(manifest_path: Path, strict: bool) -> None:
                 click.echo(
                     "Run 'airbyte-cdk manifest migrate' to apply available migrations.", err=True
                 )
-                sys.exit(1)  # Fixable via migration
+                sys.exit(EXIT_FIXABLE_VIA_MIGRATION)
 
         if migration_available:
             try:
@@ -109,27 +114,27 @@ def validate_manifest(manifest_path: Path, strict: bool) -> None:
                     "✅ Issues are fixable via migration. Run 'airbyte-cdk manifest migrate' to fix these issues.",
                     err=True,
                 )
-                sys.exit(1)  # Fixable via migration
+                sys.exit(EXIT_FIXABLE_VIA_MIGRATION)
             except ValidationError:
                 click.echo(f"❌ Validation failed for {manifest_path}:", err=True)
                 if validation_error:
                     click.echo(f"   {validation_error.message}", err=True)
-                sys.exit(2)  # Non-fixable issues
+                sys.exit(EXIT_NON_FIXABLE_ISSUES)
         else:
             click.echo(f"❌ Validation failed for {manifest_path}:", err=True)
             if validation_error:
                 click.echo(f"   {validation_error.message}", err=True)
-            sys.exit(2)  # Non-fixable issues
+            sys.exit(EXIT_NON_FIXABLE_ISSUES)
 
     except FileNotFoundError:
         click.echo(f"❌ Error: Manifest file {manifest_path} not found", err=True)
-        sys.exit(3)
+        sys.exit(EXIT_GENERAL_ERROR)
     except yaml.YAMLError as e:
         click.echo(f"❌ Error: Invalid YAML in {manifest_path}: {e}", err=True)
-        sys.exit(3)
+        sys.exit(EXIT_GENERAL_ERROR)
     except Exception as e:
         click.echo(f"❌ Unexpected error validating {manifest_path}: {e}", err=True)
-        sys.exit(3)
+        sys.exit(EXIT_GENERAL_ERROR)
 
 
 @manifest_cli_group.command("migrate")
@@ -158,7 +163,7 @@ def migrate_manifest(manifest_path: Path, dry_run: bool) -> None:
                 f"❌ Error: Manifest file {manifest_path} does not contain a valid YAML dictionary",
                 err=True,
             )
-            sys.exit(3)
+            sys.exit(EXIT_GENERAL_ERROR)
 
         migration_handler = ManifestMigrationHandler(original_manifest)
         migrated_manifest = migration_handler.apply_migrations()
@@ -198,13 +203,13 @@ def migrate_manifest(manifest_path: Path, dry_run: bool) -> None:
 
     except FileNotFoundError:
         click.echo(f"❌ Error: Manifest file {manifest_path} not found", err=True)
-        sys.exit(3)
+        sys.exit(EXIT_GENERAL_ERROR)
     except yaml.YAMLError as e:
         click.echo(f"❌ Error: Invalid YAML in {manifest_path}: {e}", err=True)
-        sys.exit(3)
+        sys.exit(EXIT_GENERAL_ERROR)
     except Exception as e:
         click.echo(f"❌ Unexpected error migrating {manifest_path}: {e}", err=True)
-        sys.exit(1)
+        sys.exit(EXIT_FIXABLE_VIA_MIGRATION)
 
 
 __all__ = [
