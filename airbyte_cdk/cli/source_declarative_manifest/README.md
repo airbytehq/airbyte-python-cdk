@@ -54,7 +54,7 @@ pip install -e .
 ### Examples
 
 Here are some basic examples of how to run source-declarative-manifest commands locally.
-Note that the paths are relative. These example assume the user is currently at the root level of a connector dir:
+Note that the paths are relative. These examples assume the user is currently at the root level of a connector dir:
 
 ```bash
 source-declarative-manifest check --config secrets/config.json --manifest-path manifest.yaml
