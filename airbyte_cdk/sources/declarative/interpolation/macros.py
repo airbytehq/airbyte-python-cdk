@@ -196,7 +196,7 @@ def sanitize_url(value: str) -> str:
 
 
 def camel_cate_to_snake_case(value: str) -> str:
-    return re.sub(r'(?<!^)(?=[A-Z])', '_', value).lower()
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", value).lower()
 
 
 _macros_list = [
