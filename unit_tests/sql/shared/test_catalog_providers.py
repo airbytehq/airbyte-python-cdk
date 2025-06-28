@@ -12,11 +12,23 @@ class TestCatalogProvider:
     @pytest.mark.parametrize(
         "configured_primary_key,source_defined_primary_key,expected_result,test_description",
         [
-            (["configured_id"], ["source_id"], ["configured_id"], "uses configured when both set"),
-            ([], ["source_id"], ["source_id"], "falls back to source when configured empty"),
-            (None, ["source_id"], ["source_id"], "falls back to source when configured None"),
-            ([], [], [], "returns empty when both empty"),
-            (None, None, [], "returns empty when both None"),
+            (["configured_id"], ["source_id"], ["source_id"], "prioritizes source when both set"),
+            ([], ["source_id"], ["source_id"], "uses source when configured empty"),
+            (None, ["source_id"], ["source_id"], "uses source when configured None"),
+            (
+                ["configured_id"],
+                [],
+                ["configured_id"],
+                "falls back to configured when source empty",
+            ),
+            (
+                ["configured_id"],
+                None,
+                ["configured_id"],
+                "falls back to configured when source None",
+            ),
+            ([], [], None, "returns None when both empty"),
+            (None, None, None, "returns None when both None"),
             ([], ["id1", "id2"], ["id1", "id2"], "handles composite keys from source"),
         ],
     )
