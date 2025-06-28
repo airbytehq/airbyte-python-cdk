@@ -121,8 +121,8 @@ class CatalogProvider:
         stream_name: str,
     ) -> list[str]:
         """Return the primary keys for the given stream.
-        
-        We will use `primary_key` if it is set explicitly in the configured catalog, 
+
+        We will use `primary_key` if it is set explicitly in the configured catalog,
         otherwise we will fall back to `source_defined_primary_key`, if set.
         """
         configured_stream = self.get_configured_stream_info(stream_name)
