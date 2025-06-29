@@ -5,10 +5,11 @@
 import logging
 import traceback
 from dataclasses import InitVar, dataclass
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
 from airbyte_cdk import AbstractSource
 from airbyte_cdk.sources.declarative.checks.connection_checker import ConnectionChecker
+from airbyte_cdk.sources.declarative.models.declarative_component_schema import DeclarativeStream
 from airbyte_cdk.sources.streams.http.availability_strategy import HttpAvailabilityStrategy
 
 
@@ -25,13 +26,17 @@ class DynamicStreamCheckConfig:
 @dataclass
 class CheckStream(ConnectionChecker):
     """
-    Checks the connections by checking availability of one or many streams selected by the developer
+    Checks the connection by checking the availability of one or more streams specified by the developer.
 
     Attributes:
-        stream_name (List[str]): names of streams to check
+        stream_names (List[Union[str, DeclarativeStream]]):
+            Names of streams to check. Each item can be:
+            - a string (referencing a stream in the manifest's streams block)
+            - a dict (an inline DeclarativeStream definition from YAML)
+            - a DeclarativeStream Pydantic model (from parsed manifest)
     """
 
-    stream_names: List[str]
+    stream_names: List[Union[str, DeclarativeStream]]
     parameters: InitVar[Mapping[str, Any]]
     dynamic_streams_check_configs: Optional[List[DynamicStreamCheckConfig]] = None
 
@@ -49,37 +54,75 @@ class CheckStream(ConnectionChecker):
     def check_connection(
         self, source: AbstractSource, logger: logging.Logger, config: Mapping[str, Any]
     ) -> Tuple[bool, Any]:
-        """Checks the connection to the source and its streams."""
+        """
+        Checks the connection to the source and its streams.
+
+        Handles both:
+        - Referenced streams (by name)
+        - Inline check-only streams (as dicts or DeclarativeStream models)
+        """
         try:
             streams = source.streams(config=config)
-            if not streams:
-                return False, f"No streams to connect to from source {source}"
-        except Exception as error:
-            return self._log_error(logger, "discovering streams", error)
+            stream_name_to_stream = {s.name: s for s in streams}
 
-        stream_name_to_stream = {s.name: s for s in streams}
-        for stream_name in self.stream_names:
-            if stream_name not in stream_name_to_stream:
-                raise ValueError(
-                    f"{stream_name} is not part of the catalog. Expected one of {list(stream_name_to_stream.keys())}."
+            # Add inline check-only streams to the map
+            for stream_def in self.stream_names:
+                # Handle dicts (from YAML) and DeclarativeStream objects (from Pydantic)
+                if isinstance(stream_def, dict):
+                    if hasattr(source, "_instantiate_stream_from_dict"):
+                        stream_obj = source._instantiate_stream_from_dict(stream_def, config)
+                        stream_name_to_stream[stream_obj.name] = stream_obj
+                    else:
+                        raise NotImplementedError(
+                            f"Source {type(source)} does not support inline stream definitions for check-only streams."
+                        )
+                elif isinstance(stream_def, DeclarativeStream):
+                    # Convert the Pydantic model to dict before passing to the factory
+                    if hasattr(source, "_instantiate_stream_from_dict"):
+                        stream_obj = source._instantiate_stream_from_dict(stream_def.dict(), config)
+                        stream_name_to_stream[stream_obj.name] = stream_obj
+                    else:
+                        raise NotImplementedError(
+                            f"Source {type(source)} does not support inline stream definitions for check-only streams."
+                        )
+                # Optionally: warn if stream_def is an unexpected type
+                elif not isinstance(stream_def, str):
+                    logger.warning(f"Unexpected stream definition type: {type(stream_def)}")
+
+            # Now check availability
+            for stream_def in self.stream_names:
+                if isinstance(stream_def, dict):
+                    stream_name = stream_def.get("name")
+                elif hasattr(stream_def, "name"):  # DeclarativeStream object
+                    stream_name = stream_def.name
+                else:
+                    stream_name = stream_def  # string
+
+                if stream_name not in stream_name_to_stream:
+                    raise ValueError(
+                        f"{stream_name} is not part of the catalog or check-only streams. Expected one of {list(stream_name_to_stream.keys())}."
+                    )
+
+                stream_availability, message = self._check_stream_availability(
+                    stream_name_to_stream, stream_name, logger
+                )
+                if not stream_availability:
+                    return stream_availability, message
+
+            should_check_dynamic_streams = (
+                hasattr(source, "resolved_manifest")
+                and hasattr(source, "dynamic_streams")
+                and self.dynamic_streams_check_configs
+            )
+
+            if should_check_dynamic_streams:
+                return self._check_dynamic_streams_availability(
+                    source, stream_name_to_stream, logger
                 )
 
-            stream_availability, message = self._check_stream_availability(
-                stream_name_to_stream, stream_name, logger
-            )
-            if not stream_availability:
-                return stream_availability, message
-
-        should_check_dynamic_streams = (
-            hasattr(source, "resolved_manifest")
-            and hasattr(source, "dynamic_streams")
-            and self.dynamic_streams_check_configs
-        )
-
-        if should_check_dynamic_streams:
-            return self._check_dynamic_streams_availability(source, stream_name_to_stream, logger)
-
-        return True, None
+            return True, None
+        except Exception as error:
+            return self._log_error(logger, "discovering streams", error)
 
     def _check_stream_availability(
         self, stream_name_to_stream: Dict[str, Any], stream_name: str, logger: logging.Logger

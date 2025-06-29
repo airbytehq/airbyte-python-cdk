@@ -323,13 +323,27 @@ definitions:
         enum: [CheckStream]
       stream_names:
         title: Stream Names
-        description: Names of the streams to try reading from when running a check operation.
+        description: Names of the streams to try reading from when running a check operation. Each item can be a string (referencing a stream in the streams block) or an inline DeclarativeStream object (for check-only streams).
         type: array
         items:
-          type: string
+          anyOf:
+            - type: string
+            - $ref: "#/definitions/DeclarativeStream"
         examples:
           - ["users"]
           - ["users", "contacts"]
+          - name: "check_only_stream"
+            type: DeclarativeStream
+            retriever:
+              type: SimpleRetriever
+              requester:
+                type: HttpRequester
+                url_base: "https://api.example.com"
+              record_selector:
+                type: RecordSelector
+                extractor:
+                  type: DpathExtractor
+                  field_path: []
       dynamic_streams_check_configs:
         type: array
         items:
