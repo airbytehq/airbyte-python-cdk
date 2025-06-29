@@ -122,7 +122,9 @@ class CatalogProvider:
     ) -> list[str] | None:
         """Return the primary keys for the given stream.
 
-        We return `source_defined_primary_key` if set, or `primary_key` otherwise. If both are set, we assume they should not should differ, since Airbyte data integrity constraints do not permit overruling a source's pre-defined primary keys. If neither is set, we return `None`.
+        We return `source_defined_primary_key` if set, or `primary_key` otherwise. If both are set,
+        we assume they should not should differ, since Airbyte data integrity constraints do not
+        permit overruling a source's pre-defined primary keys. If neither is set, we return `None`.
         """
         configured_stream = self.get_configured_stream_info(stream_name)
         pks = configured_stream.stream.source_defined_primary_key or configured_stream.primary_key
