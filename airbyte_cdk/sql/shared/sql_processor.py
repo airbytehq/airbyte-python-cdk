@@ -666,9 +666,13 @@ class SqlProcessorBase(abc.ABC):
         """
         nl = "\n"
         columns = {self._quote_identifier(c) for c in self._get_sql_column_definitions(stream_name)}
-        pk_columns = {
-            self._quote_identifier(c) for c in self.catalog_provider.get_primary_keys(stream_name)
-        }
+        primary_keys = self.catalog_provider.get_primary_keys(stream_name)
+        if not primary_keys:
+            raise exc.AirbyteInternalError(
+                message="Cannot merge tables without primary keys. Primary keys are required for merge operations.",
+                context={"stream_name": stream_name},
+            )
+        pk_columns = {self._quote_identifier(c) for c in primary_keys}
         non_pk_columns = columns - pk_columns
         join_clause = f"{nl} AND ".join(f"tmp.{pk_col} = final.{pk_col}" for pk_col in pk_columns)
         set_clause = f"{nl}  , ".join(f"{col} = tmp.{col}" for col in non_pk_columns)
@@ -725,6 +729,11 @@ class SqlProcessorBase(abc.ABC):
         final_table = self._get_table_by_name(final_table_name)
         temp_table = self._get_table_by_name(temp_table_name)
         pk_columns = self.catalog_provider.get_primary_keys(stream_name)
+        if not pk_columns:
+            raise exc.AirbyteInternalError(
+                message="Cannot merge tables without primary keys. Primary keys are required for merge operations.",
+                context={"stream_name": stream_name},
+            )
 
         columns_to_update: set[str] = self._get_sql_column_definitions(
             stream_name=stream_name
