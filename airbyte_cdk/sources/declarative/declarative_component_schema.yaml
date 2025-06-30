@@ -4326,10 +4326,8 @@ definitions:
       - query
     properties:
       query:
-        type: object
-        additionalProperties: true
+        type: string
         description: The GraphQL query to be executed
-        default: {}
     additionalProperties: true
   DpathValidator:
     title: Dpath Validator
