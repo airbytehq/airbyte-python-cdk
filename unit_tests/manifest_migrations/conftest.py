@@ -741,7 +741,7 @@ def manifest_with_request_body_json_and_data_to_migrate_to_request_body() -> Dic
                             # this example holds the GraphQL query object.
                             "request_body_json": {
                                 "query": "query { {{ config['query_field'] }} { {{ config['query_value'] }} }}",
-                                "variables": {"arg1": "test"}
+                                "variables": {"arg1": "test"},
                             },
                         },
                         "record_selector": {
