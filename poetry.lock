@@ -5313,6 +5313,18 @@ files = [
 test = ["coverage", "pytest", "pytest-cov"]
 
 [[package]]
+name = "unidecode"
+version = "1.4.0"
+description = "ASCII transliterations of Unicode text"
+optional = false
+python-versions = ">=3.7"
+groups = ["main"]
+files = [
+    {file = "Unidecode-1.4.0-py3-none-any.whl", hash = "sha256:c3c7606c27503ad8d501270406e345ddb480a7b5f38827eafe4fa82a137f0021"},
+    {file = "Unidecode-1.4.0.tar.gz", hash = "sha256:ce35985008338b676573023acc382d62c264f307c8f7963733405add37ea2b23"},
+]
+
+[[package]]
 name = "unstructured"
 version = "0.10.27"
 description = "A library that prepares raw documents for downstream ML tasks."
@@ -5714,4 +5726,4 @@ vector-db-based = ["cohere", "langchain", "openai", "tiktoken"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.10,<3.13"
-content-hash = "5c976488d2ccb2f7a528f4a2ae5dfda9486ae0e5332fe6798c6632025d348ff1"
+content-hash = "17254db21ff134fb4dfe35389ffc9efd3002c5e03dff4415b604516436de434b"
