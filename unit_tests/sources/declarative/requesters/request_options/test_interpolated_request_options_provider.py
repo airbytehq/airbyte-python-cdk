@@ -239,10 +239,11 @@ def test_interpolated_request_json(test_name, input_request_json, expected_reque
             RequestBodyGraphQL(
                 type="RequestBodyGraphQL",
                 value=RequestBodyGraphQlQuery(
-                    query="query { {{ config['option'] }} }"
+                    query="query { {{ config['option'] }} }",
+                    variables={"startDate": "{{ stream_interval['start_date'] }}"},
                 ),
             ),
-            {"query": "query { OPTION }"},
+            {"query": "query { OPTION }", "variables": {"startDate": "2020-01-01"}},
         ),
     ],
 )

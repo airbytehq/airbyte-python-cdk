@@ -740,9 +740,8 @@ def manifest_with_request_body_json_and_data_to_migrate_to_request_body() -> Dic
                             # the `request_body_json` is expected to be migrated to the `request_body` key,
                             # this example holds the GraphQL query object.
                             "request_body_json": {
-                                "query": {
-                                    "query { {{ config['query_field'] }} { {{ config['query_value'] }} }}",
-                                }
+                                "query": "query { {{ config['query_field'] }} { {{ config['query_value'] }} }}",
+                                "variables": {"arg1": "test"}
                             },
                         },
                         "record_selector": {
@@ -975,6 +974,7 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                                 "type": "RequestBodyGraphQL",
                                 "value": {
                                     "query": "query { {{ config['query_field'] }} { {{ config['query_value'] }} }}",
+                                    "variables": {"arg1": "test"},
                                 },
                             },
                         },
@@ -1135,6 +1135,7 @@ def expected_manifest_with_migrated_to_request_body() -> Dict[str, Any]:
                             "type": "RequestBodyGraphQL",
                             "value": {
                                 "query": "query { {{ config['query_field'] }} { {{ config['query_value'] }} }}",
+                                "variables": {"arg1": "test"},
                             },
                         },
                     },
