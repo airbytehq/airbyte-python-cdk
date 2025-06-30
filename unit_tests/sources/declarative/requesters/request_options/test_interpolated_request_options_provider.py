@@ -239,10 +239,10 @@ def test_interpolated_request_json(test_name, input_request_json, expected_reque
             RequestBodyGraphQL(
                 type="RequestBodyGraphQL",
                 value=RequestBodyGraphQlQuery(
-                    query={"query_key": "{{ config['option'] }}", "query_key_2": "value"}
+                    query="query { {{ config['option'] }} }"
                 ),
             ),
-            {"query": {"query_key": "OPTION", "query_key_2": "value"}},
+            {"query": "query { OPTION }"},
         ),
     ],
 )
