@@ -2648,19 +2648,14 @@ class DynamicSchemaLoader(BaseModel):
 
 class ParentStreamConfig(BaseModel):
     type: Literal["ParentStreamConfig"]
-    lazy_read_pointer: Optional[List[str]] = Field(
-        [],
-        description="If set, this will enable lazy reading, using the initial read of parent records to extract child records.",
-        title="Lazy Read Pointer",
+    stream: Union[DeclarativeStream, StateDelegatingStream] = Field(
+        ..., description="Reference to the parent stream.", title="Parent Stream"
     )
     parent_key: str = Field(
         ...,
         description="The primary key of records from the parent stream that will be used during the retrieval of records for the current substream. This parent identifier field is typically a characteristic of the child records being extracted from the source API.",
         examples=["id", "{{ config['parent_record_id'] }}"],
         title="Parent Key",
-    )
-    stream: Union[DeclarativeStream, StateDelegatingStream] = Field(
-        ..., description="Reference to the parent stream.", title="Parent Stream"
     )
     partition_field: str = Field(
         ...,
@@ -2677,6 +2672,11 @@ class ParentStreamConfig(BaseModel):
         False,
         description="Indicates whether the parent stream should be read incrementally based on updates in the child stream.",
         title="Incremental Dependency",
+    )
+    lazy_read_pointer: Optional[List[str]] = Field(
+        [],
+        description="If set, this will enable lazy reading, using the initial read of parent records to extract child records.",
+        title="Lazy Read Pointer",
     )
     extra_fields: Optional[List[List[str]]] = Field(
         None,
@@ -2772,22 +2772,22 @@ class SimpleRetriever(BaseModel):
     )
     partition_router: Optional[
         Union[
-            ListPartitionRouter,
             SubstreamPartitionRouter,
+            ListPartitionRouter,
             GroupingPartitionRouter,
             CustomPartitionRouter,
             List[
                 Union[
-                    ListPartitionRouter,
                     SubstreamPartitionRouter,
+                    ListPartitionRouter,
                     GroupingPartitionRouter,
                     CustomPartitionRouter,
                 ]
             ],
         ]
     ] = Field(
-        [],
-        description="PartitionRouter component that describes how to partition the stream, enabling incremental syncs and checkpointing.",
+        None,
+        description="Used to iteratively execute requests over a set of values, such as a parent stream's records or a list of constant values.",
         title="Partition Router",
     )
     parameters: Optional[Dict[str, Any]] = Field(None, alias="$parameters")
