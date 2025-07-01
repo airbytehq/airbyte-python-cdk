@@ -571,9 +571,32 @@ def test_propagate_property_chunking():
     assert actual_component == expected_component
 
 
-def test_use_parent_parameters_configuration():
+@pytest.mark.parametrize(
+    "use_parent_parameters, expected_retriever_name, expected_requester_name, expected_requester_params_name",
+    [
+        pytest.param(
+            True,
+            "parent_priority",
+            "component_priority",
+            "parent_priority",
+            id="use_parent_parameters_true",
+        ),
+        pytest.param(
+            False,
+            "parent_priority",
+            "component_priority",
+            "component_priority",
+            id="use_parent_parameters_false",
+        ),
+    ],
+)
+def test_use_parent_parameters_configuration(
+    use_parent_parameters,
+    expected_retriever_name,
+    expected_requester_name,
+    expected_requester_params_name,
+):
     """Test that use_parent_parameters configuration controls parameter precedence."""
-    # Test with use_parent_parameters=True (parent parameters take precedence)
     component_with_parent_priority = {
         "type": "DeclarativeStream",
         "retriever": {
@@ -594,19 +617,19 @@ def test_use_parent_parameters_configuration():
         },
     }
 
-    expected_with_parent_priority = {
+    expected_component = {
         "type": "DeclarativeStream",
         "retriever": {
             "type": "SimpleRetriever",
-            "name": "parent_priority",  # Parent parameter takes precedence
+            "name": expected_retriever_name,
             "requester": {
                 "type": "HttpRequester",
-                "name": "component_priority",  # Explicit value is not overridden
+                "name": expected_requester_name,
                 "url_base": "https://coffee.example.io/v1/",
                 "http_method": "GET",
                 "primary_key": "id",
                 "$parameters": {
-                    "name": "parent_priority",  # Parent parameter propagated to nested component
+                    "name": expected_requester_params_name,
                 },
             },
             "$parameters": {
@@ -616,37 +639,10 @@ def test_use_parent_parameters_configuration():
     }
 
     transformer = ManifestComponentTransformer()
-    actual_with_parent_priority = transformer.propagate_types_and_parameters(
-        "", component_with_parent_priority, {}, use_parent_parameters=True
+    actual_component = transformer.propagate_types_and_parameters(
+        "", component_with_parent_priority, {}, use_parent_parameters=use_parent_parameters
     )
-    assert actual_with_parent_priority == expected_with_parent_priority
-
-    # Test with use_parent_parameters=False (component parameters take precedence)
-    expected_with_component_priority = {
-        "type": "DeclarativeStream",
-        "retriever": {
-            "type": "SimpleRetriever",
-            "name": "parent_priority",  # Parent parameter takes precedence at this level
-            "requester": {
-                "type": "HttpRequester",
-                "name": "component_priority",  # Component parameter takes precedence
-                "url_base": "https://coffee.example.io/v1/",
-                "http_method": "GET",
-                "primary_key": "id",
-                "$parameters": {
-                    "name": "component_priority",
-                },
-            },
-            "$parameters": {
-                "name": "parent_priority",
-            },
-        },
-    }
-
-    actual_with_component_priority = transformer.propagate_types_and_parameters(
-        "", component_with_parent_priority, {}, use_parent_parameters=False
-    )
-    assert actual_with_component_priority == expected_with_component_priority
+    assert actual_component == expected_component
 
 
 def test_use_parent_parameters_none_behavior():
