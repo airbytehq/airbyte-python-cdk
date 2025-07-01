@@ -4328,6 +4328,7 @@ definitions:
       query:
         type: string
         description: The GraphQL query to be executed
+        default: "query {\n    \n}"
     additionalProperties: true
   DpathValidator:
     title: Dpath Validator
