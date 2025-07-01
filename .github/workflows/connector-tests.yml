@@ -129,7 +129,7 @@ jobs:
 
       - name: Set up `uv`
         if: steps.no_changes.outputs.status != 'cancelled'
-        uses: astral-sh/setup-uv@v6.1.0
+        uses: astral-sh/setup-uv@v6.3.1
 
       - name: Set up `poe`
         if: steps.no_changes.outputs.status != 'cancelled'
