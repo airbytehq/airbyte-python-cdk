@@ -4235,6 +4235,11 @@ definitions:
           - "$ref": "#/definitions/HttpComponentsResolver"
           - "$ref": "#/definitions/ConfigComponentsResolver"
           - "$ref": "#/definitions/ParametrizedComponentsResolver"
+      use_parent_parameters:
+        title: Use Parent Parameters
+        description: Whether or not to prioritize parent parameters over component parameters when constructing dynamic streams. Defaults to true for backward compatibility.
+        type: boolean
+        default: true
     required:
       - type
       - stream_template
