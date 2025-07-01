@@ -2140,30 +2140,6 @@ definitions:
           - stream_interval
           - stream_partition
           - stream_slice
-        examples:
-          - type: RequestBodyJsonObject
-            value:
-              sort_order: "ASC"
-              sort_field: "CREATED_AT"
-          - type: RequestBodyJsonObject
-            value:
-              key: "{{ config['value'] }}"
-          - type: RequestBodyJsonObject
-            value:
-              sort:
-                field: "updated_at"
-                order: "ascending"
-          - type: RequestBodyPlainText
-            value: "plain_text_body"
-          - type: RequestBodyUrlEncodedForm
-            value:
-              param1: "value1"
-              param2: "{{ config['param2_value'] }}"
-          - type: RequestBodyGraphQL
-            value:
-              query:
-                param1: "value1"
-                param2: "{{ config['param2_value'] }}"
       error_handler:
         title: Error Handler
         description: Error handler component that defines how to handle errors.

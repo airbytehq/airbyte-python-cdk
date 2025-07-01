@@ -2595,34 +2595,6 @@ class HttpRequester(BaseModelWithDeprecations):
     ] = Field(
         None,
         description="Specifies how to populate the body of the request with a payload. Can contain nested objects.",
-        examples=[
-            {
-                "type": "RequestBodyJsonObject",
-                "value": {"sort_order": "ASC", "sort_field": "CREATED_AT"},
-            },
-            {
-                "type": "RequestBodyJsonObject",
-                "value": {"key": "{{ config['value'] }}"},
-            },
-            {
-                "type": "RequestBodyJsonObject",
-                "value": {"sort": {"field": "updated_at", "order": "ascending"}},
-            },
-            {"type": "RequestBodyPlainText", "value": "plain_text_body"},
-            {
-                "type": "RequestBodyUrlEncodedForm",
-                "value": {"param1": "value1", "param2": "{{ config['param2_value'] }}"},
-            },
-            {
-                "type": "RequestBodyGraphQL",
-                "value": {
-                    "query": {
-                        "param1": "value1",
-                        "param2": "{{ config['param2_value'] }}",
-                    }
-                },
-            },
-        ],
         title="Request Body",
     )
     error_handler: Optional[
