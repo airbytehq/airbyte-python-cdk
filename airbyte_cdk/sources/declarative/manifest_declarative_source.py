@@ -553,9 +553,13 @@ class ManifestDeclarativeSource(DeclarativeSource):
             for dynamic_stream in components_resolver.resolve_components(
                 stream_template_config=stream_template_config
             ):
+                # Get the use_parent_parameters configuration from the dynamic definition
+                # Default to True for backward compatibility, since connectors were already using it by default when this param was added
+                use_parent_parameters = dynamic_definition.get("use_parent_parameters", True)
+
                 dynamic_stream = {
                     **ManifestComponentTransformer().propagate_types_and_parameters(
-                        "", dynamic_stream, {}, use_parent_parameters=True
+                        "", dynamic_stream, {}, use_parent_parameters=use_parent_parameters
                     )
                 }
 

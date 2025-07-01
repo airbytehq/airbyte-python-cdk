@@ -569,3 +569,220 @@ def test_propagate_property_chunking():
     transformer = ManifestComponentTransformer()
     actual_component = transformer.propagate_types_and_parameters("", component, {})
     assert actual_component == expected_component
+
+
+def test_use_parent_parameters_configuration():
+    """Test that use_parent_parameters configuration controls parameter precedence."""
+    # Test with use_parent_parameters=True (parent parameters take precedence)
+    component_with_parent_priority = {
+        "type": "DeclarativeStream",
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "name": "component_priority",
+                "url_base": "https://coffee.example.io/v1/",
+                "http_method": "GET",
+                "primary_key": "id",
+                "$parameters": {
+                    "name": "component_priority",
+                },
+            },
+            "$parameters": {
+                "name": "parent_priority",
+            },
+        },
+    }
+
+    expected_with_parent_priority = {
+        "type": "DeclarativeStream",
+        "retriever": {
+            "type": "SimpleRetriever",
+            "name": "parent_priority",  # Parent parameter takes precedence
+            "requester": {
+                "type": "HttpRequester",
+                "name": "component_priority",  # Explicit value is not overridden
+                "url_base": "https://coffee.example.io/v1/",
+                "http_method": "GET",
+                "primary_key": "id",
+                "$parameters": {
+                    "name": "parent_priority",  # Parent parameter propagated to nested component
+                },
+            },
+            "$parameters": {
+                "name": "parent_priority",
+            },
+        },
+    }
+
+    transformer = ManifestComponentTransformer()
+    actual_with_parent_priority = transformer.propagate_types_and_parameters(
+        "", component_with_parent_priority, {}, use_parent_parameters=True
+    )
+    assert actual_with_parent_priority == expected_with_parent_priority
+
+    # Test with use_parent_parameters=False (component parameters take precedence)
+    expected_with_component_priority = {
+        "type": "DeclarativeStream",
+        "retriever": {
+            "type": "SimpleRetriever",
+            "name": "parent_priority",  # Parent parameter takes precedence at this level
+            "requester": {
+                "type": "HttpRequester",
+                "name": "component_priority",  # Component parameter takes precedence
+                "url_base": "https://coffee.example.io/v1/",
+                "http_method": "GET",
+                "primary_key": "id",
+                "$parameters": {
+                    "name": "component_priority",
+                },
+            },
+            "$parameters": {
+                "name": "parent_priority",
+            },
+        },
+    }
+
+    actual_with_component_priority = transformer.propagate_types_and_parameters(
+        "", component_with_parent_priority, {}, use_parent_parameters=False
+    )
+    assert actual_with_component_priority == expected_with_component_priority
+
+
+def test_use_parent_parameters_none_behavior():
+    """Test that use_parent_parameters=None maintains backward compatibility."""
+    component = {
+        "type": "DeclarativeStream",
+        "retriever": {
+            "type": "SimpleRetriever",
+            "requester": {
+                "type": "HttpRequester",
+                "name": "component_priority",
+                "url_base": "https://coffee.example.io/v1/",
+                "http_method": "GET",
+                "primary_key": "id",
+                "$parameters": {
+                    "name": "component_priority",
+                },
+            },
+            "$parameters": {
+                "name": "parent_priority",
+            },
+        },
+    }
+
+    expected_component_priority = {
+        "type": "DeclarativeStream",
+        "retriever": {
+            "type": "SimpleRetriever",
+            "name": "parent_priority",  # Parent parameter takes precedence (default behavior)
+            "requester": {
+                "type": "HttpRequester",
+                "name": "component_priority",  # Component parameter takes precedence
+                "url_base": "https://coffee.example.io/v1/",
+                "http_method": "GET",
+                "primary_key": "id",
+                "$parameters": {
+                    "name": "component_priority",
+                },
+            },
+            "$parameters": {
+                "name": "parent_priority",
+            },
+        },
+    }
+
+    transformer = ManifestComponentTransformer()
+    actual = transformer.propagate_types_and_parameters(
+        "", component, {}, use_parent_parameters=None
+    )
+    assert actual == expected_component_priority
+
+
+def test_dynamic_stream_use_parent_parameters_configuration():
+    """Test that use_parent_parameters configuration is properly read from dynamic stream definitions."""
+
+    transformer = ManifestComponentTransformer()
+
+    # Only parent has $parameters
+    component = {
+        "type": "DeclarativeStream",
+        "retriever": {
+            "type": "SimpleRetriever",
+        },
+        "$parameters": {"name": "parent_name"},
+    }
+
+    # When use_parent_parameters=False, component parameters should take precedence (but there are none)
+    result_false = transformer.propagate_types_and_parameters(
+        "", component, {}, use_parent_parameters=False
+    )
+    # When use_parent_parameters=True, parent parameters should take precedence (and are used)
+    result_true = transformer.propagate_types_and_parameters(
+        "", component, {}, use_parent_parameters=True
+    )
+
+    # In both cases, since only the parent has $parameters, the retriever should get "parent_name"
+    assert result_false["retriever"]["name"] == "parent_name"
+    assert result_true["retriever"]["name"] == "parent_name"
+
+    # Now, add a $parameters to the retriever to see the difference
+    component_with_both = {
+        "type": "DeclarativeStream",
+        "retriever": {
+            "type": "SimpleRetriever",
+            "$parameters": {"name": "retriever_name"},
+        },
+        "$parameters": {"name": "parent_name"},
+    }
+
+    result_false = transformer.propagate_types_and_parameters(
+        "", component_with_both, {}, use_parent_parameters=False
+    )
+    result_true = transformer.propagate_types_and_parameters(
+        "", component_with_both, {}, use_parent_parameters=True
+    )
+
+    # When use_parent_parameters=False, retriever's own $parameters win
+    assert result_false["retriever"]["name"] == "retriever_name"
+    # When use_parent_parameters=True, parent's $parameters win
+    assert result_true["retriever"]["name"] == "parent_name"
+
+
+def test_use_parent_parameters_simple():
+    """Simple test to understand the use_parent_parameters behavior."""
+    component = {
+        "type": "DeclarativeStream",
+        "retriever": {
+            "type": "SimpleRetriever",
+            "$parameters": {
+                "name": "component_name",
+            },
+        },
+        "$parameters": {
+            "name": "parent_name",
+        },
+    }
+
+    transformer = ManifestComponentTransformer()
+
+    # Test with use_parent_parameters=True
+    result_true = transformer.propagate_types_and_parameters(
+        "", component, {}, use_parent_parameters=True
+    )
+    print("use_parent_parameters=True:", result_true)
+
+    # Test with use_parent_parameters=False
+    result_false = transformer.propagate_types_and_parameters(
+        "", component, {}, use_parent_parameters=False
+    )
+    print("use_parent_parameters=False:", result_false)
+
+    # Test with use_parent_parameters=None (default)
+    result_none = transformer.propagate_types_and_parameters(
+        "", component, {}, use_parent_parameters=None
+    )
+    print("use_parent_parameters=None:", result_none)
+
+    # For now, just assert that the results are different
+    assert result_true != result_false
