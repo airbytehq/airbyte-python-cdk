@@ -1307,6 +1307,12 @@ class InjectInto(Enum):
 
 class RequestOption(BaseModel):
     type: Literal["RequestOption"]
+    inject_into: InjectInto = Field(
+        ...,
+        description="Configures where the descriptor should be set on the HTTP requests. Note that request parameters that are already encoded in the URL path will not be duplicated.",
+        examples=["request_parameter", "header", "body_data", "body_json"],
+        title="Inject Into",
+    )
     field_name: Optional[str] = Field(
         None,
         description="Configures which key should be used in the location that the descriptor is being injected into. We hope to eventually deprecate this field in favor of `field_path` for all request_options, but must currently maintain it for backwards compatibility in the Builder.",
@@ -1318,12 +1324,6 @@ class RequestOption(BaseModel):
         description="Configures a path to be used for nested structures in JSON body requests (e.g. GraphQL queries)",
         examples=[["data", "viewer", "id"]],
         title="Field Path",
-    )
-    inject_into: InjectInto = Field(
-        ...,
-        description="Configures where the descriptor should be set on the HTTP requests. Note that request parameters that are already encoded in the URL path will not be duplicated.",
-        examples=["request_parameter", "header", "body_data", "body_json"],
-        title="Inject Into",
     )
 
 
