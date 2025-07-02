@@ -91,6 +91,7 @@ xmltodict = ">=0.13,<0.15"
 anyascii = "^0.3.2"
 whenever = "^0.6.16"
 setuptools = "^80.9.0"  # Some connectors depend on this as an undeclared transitive dependency (e.g. source-shopify)
+dateparser = "^1.2.2"
 
 [tool.poetry.group.dev.dependencies]
 freezegun = "*"
