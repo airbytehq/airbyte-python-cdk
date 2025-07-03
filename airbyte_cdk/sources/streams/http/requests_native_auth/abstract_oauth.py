@@ -218,6 +218,8 @@ class AbstractOauth2Authenticator(AuthBase):
                 headers=self.build_refresh_request_headers(),
             )
 
+            response_json = None
+            json_exception = None
             try:
                 response_json = response.json()
             except Exception as e:
@@ -231,7 +233,7 @@ class AbstractOauth2Authenticator(AuthBase):
                     if access_key:
                         add_to_secrets(access_key)
             except ResponseKeysMaxRecurtionReached as e:
-                ## could not find the access token in the response, so do nothing
+                # could not find the access token in the response, so do nothing
                 pass
 
             # log the response even if the request failed for troubleshooting purposes
@@ -240,7 +242,7 @@ class AbstractOauth2Authenticator(AuthBase):
 
             if json_exception:
                 raise json_exception
-            
+
             return response_json
         except requests.exceptions.RequestException as e:
             if e.response is not None:
