@@ -61,7 +61,7 @@ class AirbyteEntrypointException(Exception):
     Example Usage:
         output = EntrypointOutput(...)
         if output.errors:
-            raise output.as_exception("An error occurred during the connector execution.")
+            raise output.as_exception()
     """
 
 
@@ -217,17 +217,16 @@ class EntrypointOutput:
         return result
 
     def as_exception(self) -> AirbyteEntrypointException:
-        """Convert the output to an exception with a custom message.
-
-        This is useful for raising an exception in tests or other scenarios where you want to
-        provide a specific error message.
-        """
+        """Convert the output to an exception."""
         return AirbyteEntrypointException(self.get_formatted_error_message())
 
     def raise_if_errors(
         self,
     ) -> None:
-        """Raise an exception if there are errors in the output."""
+        """Raise an exception if there are errors in the output.
+
+        Otherwise, do nothing.
+        """
         if not self.errors:
             return None
 
