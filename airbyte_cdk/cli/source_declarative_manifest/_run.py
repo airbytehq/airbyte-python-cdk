@@ -90,6 +90,7 @@ def handle_command(args: list[str]) -> None:
     if _is_local_manifest_command(args):
         handle_local_manifest_command(args)
     else:
+        print("This is not a local manifest command")
         handle_remote_manifest_command(args)
 
 
