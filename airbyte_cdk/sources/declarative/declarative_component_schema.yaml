@@ -1339,8 +1339,8 @@ definitions:
         examples:
           - "%Y-%m-%d %H:%M:%S.%f+00:00"
       refresh_token_updater:
-        title: Token Updater
-        description: When the token updater is defined, new refresh tokens, access tokens and the access token expiry date are written back from the authentication response to the config object. This is important if the refresh token can only used once.
+        title: Refresh Token Updater
+        description: When the refresh token updater is defined, new refresh tokens, access tokens and the access token expiry date are written back from the authentication response to the config object. This is important if the refresh token can only used once.
         properties:
           refresh_token_name:
             title: Refresh Token Property Name
@@ -1355,7 +1355,7 @@ definitions:
             type: array
             items:
               type: string
-            default: ["credentials", "access_token"]
+            default: ["access_token"]
             examples:
               - ["credentials", "access_token"]
               - ["access_token"]
@@ -1365,7 +1365,7 @@ definitions:
             type: array
             items:
               type: string
-            default: ["credentials", "refresh_token"]
+            default: ["refresh_token"]
             examples:
               - ["credentials", "refresh_token"]
               - ["refresh_token"]
@@ -1375,7 +1375,7 @@ definitions:
             type: array
             items:
               type: string
-            default: ["credentials", "token_expiry_date"]
+            default: ["token_expiry_date"]
             examples:
               - ["credentials", "token_expiry_date"]
           refresh_token_error_status_codes:
