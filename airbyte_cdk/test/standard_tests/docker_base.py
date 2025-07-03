@@ -163,7 +163,7 @@ class DockerConnectorTestSuite:
                 connector_image,
                 "spec",
             ],
-            check=True,
+            raise_if_errors=True,
         )
 
     @pytest.mark.skipif(
@@ -218,7 +218,7 @@ class DockerConnectorTestSuite:
                     "--config",
                     container_config_path,
                 ],
-                check=True,
+                raise_if_errors=True,
             )
 
     @pytest.mark.skipif(
@@ -311,7 +311,7 @@ class DockerConnectorTestSuite:
                     "--config",
                     container_config_path,
                 ],
-                check=True,
+                raise_if_errors=True,
             )
 
             catalog_message = discover_result.catalog  # Get catalog message
@@ -367,5 +367,5 @@ class DockerConnectorTestSuite:
                     "--catalog",
                     container_catalog_path,
                 ],
-                check=True,
+                raise_if_errors=True,
             )

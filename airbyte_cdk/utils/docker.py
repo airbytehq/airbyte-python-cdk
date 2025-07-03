@@ -448,7 +448,7 @@ def run_docker_command(
 def run_docker_airbyte_command(
     cmd: list[str],
     *,
-    check: bool = False,
+    raise_if_errors: bool = False,
 ) -> EntrypointOutput:
     """Run an Airbyte command inside a Docker container.
 
@@ -457,7 +457,7 @@ def run_docker_airbyte_command(
 
     Args:
         cmd: The command to run as a list of strings.
-        check: If True, raises an exception if the command fails. If False, the caller is
+        raise_if_errors: If True, raises an exception if the command fails. If False, the caller is
             responsible for checking the for errors.
 
     Returns:
@@ -483,7 +483,7 @@ def run_docker_airbyte_command(
             else None
         ),
     )
-    if check:
+    if raise_if_errors:
         # If check is True, we raise an exception if there are errors.
         # This will do nothing if there are no errors.
         result_output.raise_if_errors()
