@@ -2543,8 +2543,15 @@ class HttpRequester(BaseModelWithDeprecations):
     )
     fetch_properties_from_endpoint: Optional[PropertiesFromEndpoint] = Field(
         None,
+        deprecated=True,
+        deprecation_message="Use `query_properties` field instead.",
         description="Allows for retrieving a dynamic set of properties from an API endpoint which can be injected into outbound request using the stream_partition.extra_fields.",
         title="Fetch Properties from Endpoint",
+    )
+    query_properties: Optional[QueryProperties] = Field(
+        None,
+        description="For APIs that require explicit specification of the properties to query for, this component will take a static or dynamic set of properties (which can be optionally split into chunks) and allow them to be injected into an outbound request by accessing stream_partition.extra_fields.",
+        title="Query Properties",
     )
     request_parameters: Optional[Union[Dict[str, Union[str, QueryProperties]], str]] = Field(
         None,
