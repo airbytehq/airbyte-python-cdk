@@ -16,7 +16,7 @@ on:
       - opened
       - reopened
       # Toggle this line, uncommenting for testing:
-      - synchronize
+      # - synchronize
 
 jobs:
   welcome-contributor:
