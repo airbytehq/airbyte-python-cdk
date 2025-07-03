@@ -17,7 +17,6 @@ poe use-cdk-branch {{ .branch_name }}
 
 ### Helpful Resources
 
-- [CDK Documentation](https://airbytehq.github.io/airbyte-python-cdk/)
 - [CDK API Reference](https://airbytehq.github.io/airbyte-python-cdk/)
 
 ### PR Slash Commands
