@@ -59,7 +59,16 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
         try:
             module = importlib.import_module(expected_module_name)
         except ModuleNotFoundError as e:
-            raise ImportError(f"Could not import module '{expected_module_name}'.") from e
+            raise ImportError(
+                f"Could not import module '{expected_module_name}'. "
+                "Please ensure you are running from within the connector's virtual environment, "
+                "for instance by running `poetry run airbyte-cdk connector test` from the "
+                "connector directory. If the issue persists, check that the connector "
+                f"module matches the expected module name '{expected_module_name}' and that the "
+                f"connector class matches the expected class name '{expected_class_name}'. "
+                "Alternatively, you can run `airbyte-cdk image test` to run a subset of tests "
+                "against the connector's image."
+            ) from e
         finally:
             # Change back to the original working directory
             os.chdir(cwd_snapshot)
