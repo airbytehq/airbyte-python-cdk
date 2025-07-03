@@ -2801,6 +2801,7 @@ class ModelToComponentFactory:
                 ).eval(config),
                 scopes=model.scopes,
                 token_expiry_date_format=model.token_expiry_date_format,
+                token_expiry_is_time_of_expiration=bool(model.token_expiry_date_format),
                 message_repository=self._message_repository,
                 refresh_token_error_status_codes=model.refresh_token_updater.refresh_token_error_status_codes,
                 refresh_token_error_key=model.refresh_token_updater.refresh_token_error_key,
