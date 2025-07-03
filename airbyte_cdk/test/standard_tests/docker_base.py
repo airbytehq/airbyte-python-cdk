@@ -338,7 +338,9 @@ class DockerConnectorTestSuite:
 
             if scenario.empty_streams:
                 streams_to_exclude = {empty_stream.name for empty_stream in scenario.empty_streams}
-                streams_list = [stream for stream in streams_list if stream not in streams_to_exclude]
+                streams_list = [
+                    stream for stream in streams_list if stream not in streams_to_exclude
+                ]
 
             configured_catalog: ConfiguredAirbyteCatalog = ConfiguredAirbyteCatalog(
                 streams=[

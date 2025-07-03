@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 class EmptyStreamConfig(BaseModel):
     """Configuration for streams that should be excluded from tests."""
-    
+
     name: str
     bypass_reason: str
 
