@@ -233,7 +233,7 @@ class AbstractOauth2Authenticator(AuthBase):
             except ResponseKeysMaxRecurtionReached as e:
                 # could not find the access token in the response, so do nothing
                 pass
-            
+
             self._log_response(response)
 
             return response_json
