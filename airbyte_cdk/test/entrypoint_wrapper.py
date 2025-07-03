@@ -21,6 +21,7 @@ import tempfile
 import traceback
 from collections import deque
 from collections.abc import Generator, Mapping
+from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
 from typing import Any, List, Literal, Optional, Union, final, overload
