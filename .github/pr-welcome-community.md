@@ -30,8 +30,3 @@ As needed or by request, Airbyte Maintainers can execute the following slash com
 
 If you have any questions, feel free to ask in the PR comments or join our [Slack community](https://airbytehq.slack.com/).
 
-### Tips for Working with CI
-
-1. **Pre-Release Checks.** Please pay attention to these, as they contain standard checks on formatting, linting, and tests.
-2. **Connector CI Tests.** These test the CDK changes against real connectors to ensure compatibility.
-3. **Documentation.** If your changes affect the public API, please update the documentation accordingly.
