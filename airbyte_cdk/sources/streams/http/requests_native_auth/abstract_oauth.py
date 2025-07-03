@@ -225,10 +225,14 @@ class AbstractOauth2Authenticator(AuthBase):
 
             response_json = response.json()
 
-            # extract the access token and add to secrets to avoid logging the raw value
-            access_key = self._extract_access_token(response_json)
-            if access_key:
-                add_to_secrets(access_key)
+            try:
+                # extract the access token and add to secrets to avoid logging the raw value
+                access_key = self._extract_access_token(response_json)
+                if access_key:
+                    add_to_secrets(access_key)
+            except ResponseKeysMaxRecurtionReached as e:
+                # could not find the access token in the response, so do nothing
+                pass
             
             self._log_response(response)
 
