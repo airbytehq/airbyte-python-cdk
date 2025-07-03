@@ -4,8 +4,7 @@ name: Community PR Welcome Message
 # It includes CDK usage instructions and other helpful resources for testing changes
 #
 # MANUAL TESTING INSTRUCTIONS:
-# To manually test this workflow without a real fork PR, temporarily comment-out the fork condition in the
-# `if:` clause and uncomment the "synchronize" event type as a workflow trigger.
+# To manually test this workflow, temporarily uncomment the "synchronize" event type as a workflow trigger.
 # Then the workflow will run for all new commits.
 #
 # Before merging, remember to again comment-out the "synchronize" clause and uncomment the `if:` condition.
