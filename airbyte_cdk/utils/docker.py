@@ -17,6 +17,8 @@ import click
 import requests
 
 from airbyte_cdk.models.connector_metadata import ConnectorLanguage, MetadataFile
+from airbyte_cdk.sources.declarative import spec
+from airbyte_cdk.test.entrypoint_wrapper import EntrypointOutput
 from airbyte_cdk.utils.connector_paths import resolve_airbyte_repo_root
 
 
@@ -394,6 +396,10 @@ def run_docker_command(
 ) -> subprocess.CompletedProcess[str]:
     """Run a Docker command as a subprocess.
 
+    Note: When running Airbyte verbs such as `spec`, `discover`, `read`, etc.,
+    use `run_docker_airbyte_command` instead to get an `EntrypointOutput` object as
+    the return value and to better handle exceptions sent as messages.
+
     Args:
         cmd: The command to run as a list of strings.
         check: If True, raises an exception if the command fails. If False, the caller is
@@ -439,6 +445,52 @@ def run_docker_command(
         return completed_process
 
 
+def run_docker_airbyte_command(
+    cmd: list[str],
+    *,
+    check: bool = False,
+) -> EntrypointOutput:
+    """Run an Airbyte command inside a Docker container.
+
+    This wraps the `run_docker_command` function to process its results and
+    return an `EntrypointOutput` object.
+
+    Args:
+        cmd: The command to run as a list of strings.
+        check: If True, raises an exception if the command fails. If False, the caller is
+            responsible for checking the for errors.
+
+    Returns:
+        The output of the command as an `EntrypointOutput` object.
+    """
+    process_result = run_docker_command(
+        cmd,
+        capture_stdout=True,
+        capture_stderr=True,
+        check=False,  # We want to handle failures ourselves.
+    )
+    result_output = EntrypointOutput(
+        command=cmd,
+        messages=process_result.stdout.splitlines(),
+        uncaught_exception=(
+            subprocess.CalledProcessError(
+                cmd=cmd,
+                returncode=process_result.returncode,
+                output=process_result.stdout,
+                stderr=process_result.stderr,
+            )
+            if process_result.returncode != 0
+            else None
+        ),
+    )
+    if check:
+        # If check is True, we raise an exception if there are errors.
+        # This will do nothing if there are no errors.
+        result_output.raise_if_errors()
+
+    return result_output
+
+
 def verify_docker_installation() -> bool:
     """Verify Docker is installed and running."""
     try:
@@ -461,37 +513,24 @@ def verify_connector_image(
     """
     logger.info(f"Verifying image {image_name} with 'spec' command...")
 
-    cmd = ["docker", "run", "--rm", image_name, "spec"]
-
     try:
-        result = run_docker_command(
-            cmd,
-            check=True,
-            capture_stderr=True,
-            capture_stdout=True,
+        result = run_docker_airbyte_command(
+            ["docker", "run", "--rm", image_name, "spec"],
         )
-        # check that the output is valid JSON
-        if result.stdout:
-            found_spec_output = False
-            for line in result.stdout.split("\n"):
-                if line.strip():
-                    try:
-                        # Check if the line is a valid JSON object
-                        msg = json.loads(line)
-                        if isinstance(msg, dict) and "type" in msg and msg["type"] == "SPEC":
-                            found_spec_output = True
-
-                    except json.JSONDecodeError as e:
-                        logger.warning(f"Invalid JSON output from spec command: {e}: {line}")
-
-            if not found_spec_output:
-                logger.error("No valid JSON output found for spec command.")
-                return False
-        else:
-            logger.error("No output from spec command.")
+        if not result.errors:
+            logger.error(result.get_formatted_error_message())
             return False
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Image verification failed: {e.stderr}")
+
+        spec_messages = result.spec_messages
+        if not spec_messages:
+            logger.error(
+                "The container failed to produce valid output for the `spec` command.\nLog output:\n"
+                + str(result.logs)
+            )
+            return False
+
+    except Exception as ex:
+        logger.error(f"Unexpected error during image verification: {ex}")
         return False
 
     return True

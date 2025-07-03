@@ -50,6 +50,21 @@ from airbyte_cdk.sources import Source
 from airbyte_cdk.test.models.scenario import ExpectedOutcome
 
 
+@dataclass
+class AirbyteEntrypointException(Exception):
+    """Exception raised for errors in the AirbyteEntrypoint execution.
+
+    Used to provide details of an Airbyte connector execution failure in the output
+    captured in an `EntrypointOutput` object. Use `EntrypointOutput.as_exception()` to
+    convert it to an exception.
+
+    Example Usage:
+        output = EntrypointOutput(...)
+        if output.errors:
+            raise output.as_exception("An error occurred during the connector execution.")
+    """
+
+
 class EntrypointOutput:
     """A class to encapsulate the output of an Airbyte connector's execution.
 
@@ -67,6 +82,7 @@ class EntrypointOutput:
         messages: list[str] | None = None,
         uncaught_exception: Optional[BaseException] = None,
         *,
+        command: list[str] | None = None,
         message_file: Path | None = None,
     ) -> None:
         if messages is None and message_file is None:
@@ -74,6 +90,7 @@ class EntrypointOutput:
         if messages is not None and message_file is not None:
             raise ValueError("Only one of messages or message_file can be provided")
 
+        self._command = command
         self._messages: list[AirbyteMessage] | None = None
         self._message_file: Path | None = message_file
         if messages:
@@ -181,6 +198,40 @@ class EntrypointOutput:
     @property
     def errors(self) -> List[AirbyteMessage]:
         return self._get_trace_message_by_trace_type(TraceType.ERROR)
+
+    def get_formatted_error_message(self) -> str:
+        """Returns a human-readable error message with the contents.
+
+        If there are no errors, returns an empty string.
+        """
+        errors = self.errors
+        if not errors:
+            # If there are no errors, return an empty string.
+            return ""
+
+        result = "Failed to run airbyte command"
+        result += ": " + " ".join(self._command) if self._command else "."
+        result += "\n" + "\n".join(
+            [str(error.trace.error).replace("\\n", "\n") for error in errors if error.trace],
+        )
+        return result
+
+    def as_exception(self) -> AirbyteEntrypointException:
+        """Convert the output to an exception with a custom message.
+
+        This is useful for raising an exception in tests or other scenarios where you want to
+        provide a specific error message.
+        """
+        return AirbyteEntrypointException(self.get_formatted_error_message())
+
+    def raise_if_errors(
+        self,
+    ) -> None:
+        """Raise an exception if there are errors in the output."""
+        if not self.errors:
+            return None
+
+        raise self.as_exception()
 
     @property
     def catalog(self) -> AirbyteMessage:
