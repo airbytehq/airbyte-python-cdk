@@ -11,12 +11,12 @@ name: Community PR Welcome Message
 # Before merging, remember to again comment-out the "synchronize" clause and uncomment the `if:` condition.
 
 on:
-  pull_request_target:
+  pull_request:
     types:
       - opened
       - reopened
       # Toggle this line, uncommenting for testing:
-      # - synchronize
+      - synchronize
 
 jobs:
   welcome-contributor:
