@@ -24,6 +24,13 @@ if TYPE_CHECKING:
     from collections.abc import Generator
 
 
+class EmptyStreamConfig(BaseModel):
+    """Configuration for streams that should be excluded from tests."""
+    
+    name: str
+    bypass_reason: str
+
+
 class ConnectorTestScenario(BaseModel):
     """Acceptance test scenario, as a Pydantic model.
 
@@ -50,6 +57,7 @@ class ConnectorTestScenario(BaseModel):
     _id: str | None = None  # Used to override the default ID generation
 
     configured_catalog_path: Path | None = None
+    empty_streams: list[EmptyStreamConfig] | None = None
     timeout_seconds: int | None = None
     expect_records: AcceptanceTestExpectRecords | None = None
     file_types: AcceptanceTestFileTypes | None = None

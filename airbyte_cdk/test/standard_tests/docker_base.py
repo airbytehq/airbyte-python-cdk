@@ -73,7 +73,7 @@ class DockerConnectorTestSuite:
         This has to be a separate function because pytest does not allow
         parametrization of fixtures with arguments from the test class itself.
         """
-        categories = ["connection", "spec"]
+        categories = ["connection", "spec", "basic_read"]
         try:
             acceptance_test_config_path = cls.acceptance_test_config_path
         except FileNotFoundError as e:
@@ -335,6 +335,10 @@ class DockerConnectorTestSuite:
             if isinstance(read_from_streams, list):
                 # If `read_from_streams` is a list, we filter the discovered streams.
                 streams_list = list(set(streams_list) & set(read_from_streams))
+
+            if scenario.empty_streams:
+                streams_to_exclude = {empty_stream.name for empty_stream in scenario.empty_streams}
+                streams_list = [stream for stream in streams_list if stream not in streams_to_exclude]
 
             configured_catalog: ConfiguredAirbyteCatalog = ConfiguredAirbyteCatalog(
                 streams=[
