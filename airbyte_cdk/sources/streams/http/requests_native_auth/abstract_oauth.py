@@ -218,10 +218,14 @@ class AbstractOauth2Authenticator(AuthBase):
                 headers=self.build_refresh_request_headers(),
             )
             response_json = response.json()
-            # extract the access token and add to secrets to avoid logging the raw value
-            access_key = self._extract_access_token(response_json)
-            if access_key:
-                add_to_secrets(access_key)
+            try:
+                # extract the access token and add to secrets to avoid logging the raw value
+                access_key = self._extract_access_token(response_json)
+                if access_key:
+                    add_to_secrets(access_key)
+            except ResponseKeysMaxRecurtionReached as e:
+                ## Could not find the access token in the response, so do nothing
+                pass
             # log the response even if the request failed for troubleshooting purposes
             self._log_response(response)
             response.raise_for_status()
@@ -245,9 +249,7 @@ class AbstractOauth2Authenticator(AuthBase):
 
         This method attempts to extract the access token from the provided response data.
         If the access token is not found, it raises an exception indicating that the token
-        refresh API response was missing the access token. If the access token is found,
-        it adds the token to the list of secrets to ensure it is replaced before logging
-        the response.
+        refresh API response was missing the access token.
 
         Args:
             response_data (Mapping[str, Any]): The response data from which to extract the access token.
@@ -262,9 +264,6 @@ class AbstractOauth2Authenticator(AuthBase):
                 raise Exception(
                     f"Token refresh API response was missing access token {self.get_access_token_name()}"
                 )
-            # Add the access token to the list of secrets so it is replaced before logging the response
-            # An argument could be made to remove the prevous access key from the list of secrets, but unmasking values seems like a security incident waiting to happen...
-            add_to_secrets(access_key)
         except ResponseKeysMaxRecurtionReached as e:
             raise e
 
