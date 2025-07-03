@@ -217,10 +217,15 @@ class AbstractOauth2Authenticator(AuthBase):
                 data=self.build_refresh_request_body(),
                 headers=self.build_refresh_request_headers(),
             )
+            response_json = response.json()
+            # extract the access token and add to secrets to avoid logging the raw value
+            access_key = self._extract_access_token(response_json)
+            if access_key:
+                add_to_secrets(access_key)
             # log the response even if the request failed for troubleshooting purposes
             self._log_response(response)
             response.raise_for_status()
-            return response.json()
+            return response_json
         except requests.exceptions.RequestException as e:
             if e.response is not None:
                 if e.response.status_code == 429 or e.response.status_code >= 500:
