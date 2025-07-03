@@ -96,7 +96,7 @@ def _build_image(
     try:
         run_docker_command(
             docker_args,
-            check=True,
+            raise_if_errors=True,
             capture_stderr=True,
         )
     except subprocess.CalledProcessError as e:
@@ -133,7 +133,7 @@ def _tag_image(
         try:
             run_docker_command(
                 docker_args,
-                check=True,
+                raise_if_errors=True,
                 capture_stderr=True,
             )
         except subprocess.CalledProcessError as e:
@@ -390,7 +390,7 @@ def get_dockerfile_templates(
 def run_docker_command(
     cmd: list[str],
     *,
-    check: bool = True,
+    raise_if_errors: bool = True,
     capture_stdout: bool | Path = False,
     capture_stderr: bool | Path = False,
 ) -> subprocess.CompletedProcess[str]:
@@ -438,7 +438,7 @@ def run_docker_command(
         completed_process: subprocess.CompletedProcess[str] = subprocess.run(
             cmd,
             text=True,
-            check=check,
+            check=raise_if_errors,
             stderr=stderr,
             stdout=stdout,
         )
@@ -467,7 +467,7 @@ def run_docker_airbyte_command(
         cmd,
         capture_stdout=True,
         capture_stderr=True,
-        check=False,  # We want to handle failures ourselves.
+        raise_if_errors=False,  # We want to handle failures ourselves.
     )
     result_output = EntrypointOutput(
         command=cmd,
