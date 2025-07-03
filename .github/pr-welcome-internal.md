@@ -1,4 +1,4 @@
-## 👋 Greetings, CDK Contributor!
+## 👋 Greetings, Airbyte Team Member!
 
 Here are some helpful tips and reminders for your convenience.
 
