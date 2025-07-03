@@ -2140,30 +2140,6 @@ definitions:
           - stream_interval
           - stream_partition
           - stream_slice
-        examples:
-          - type: RequestBodyJsonObject
-            value:
-              sort_order: "ASC"
-              sort_field: "CREATED_AT"
-          - type: RequestBodyJsonObject
-            value:
-              key: "{{ config['value'] }}"
-          - type: RequestBodyJsonObject
-            value:
-              sort:
-                field: "updated_at"
-                order: "ascending"
-          - type: RequestBodyPlainText
-            value: "plain_text_body"
-          - type: RequestBodyUrlEncodedForm
-            value:
-              param1: "value1"
-              param2: "{{ config['param2_value'] }}"
-          - type: RequestBodyGraphQL
-            value:
-              query:
-                param1: "value1"
-                param2: "{{ config['param2_value'] }}"
       error_handler:
         title: Error Handler
         description: Error handler component that defines how to handle errors.
@@ -3145,15 +3121,12 @@ definitions:
       type:
         type: string
         enum: [ParentStreamConfig]
-      lazy_read_pointer:
-        title: Lazy Read Pointer
-        description: If set, this will enable lazy reading, using the initial read of parent records to extract child records.
-        type: array
-        default: []
-        items:
-          type: string
-        interpolation_context:
-          - config
+      stream:
+        title: Parent Stream
+        description: Reference to the parent stream.
+        anyOf:
+          - "$ref": "#/definitions/DeclarativeStream"
+          - "$ref": "#/definitions/StateDelegatingStream"
       parent_key:
         title: Parent Key
         description: The primary key of records from the parent stream that will be used during the retrieval of records for the current substream. This parent identifier field is typically a characteristic of the child records being extracted from the source API.
@@ -3161,12 +3134,6 @@ definitions:
         examples:
           - "id"
           - "{{ config['parent_record_id'] }}"
-      stream:
-        title: Parent Stream
-        description: Reference to the parent stream.
-        anyOf:
-          - "$ref": "#/definitions/DeclarativeStream"
-          - "$ref": "#/definitions/StateDelegatingStream"
       partition_field:
         title: Current Parent Key Value Identifier
         description: While iterating over parent records during a sync, the parent_key value can be referenced by using this field.
@@ -3183,6 +3150,15 @@ definitions:
         description: Indicates whether the parent stream should be read incrementally based on updates in the child stream.
         type: boolean
         default: false
+      lazy_read_pointer:
+        title: Lazy Read Pointer
+        description: If set, this will enable lazy reading, using the initial read of parent records to extract child records.
+        type: array
+        default: []
+        items:
+          type: string
+        interpolation_context:
+          - config
       extra_fields:
         title: Extra Fields
         description: Array of field paths to include as additional fields in the stream slice. Each path is an array of strings representing keys to access fields in the respective parent record. Accessible via `stream_slice.extra_fields`. Missing fields are set to `None`.
@@ -3616,18 +3592,18 @@ definitions:
         default: false
       partition_router:
         title: Partition Router
-        description: PartitionRouter component that describes how to partition the stream, enabling incremental syncs and checkpointing.
-        default: []
+        description: Used to iteratively execute requests over a set of values, such as a parent stream's records or a list of constant values.
         anyOf:
-          - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/SubstreamPartitionRouter"
+          - "$ref": "#/definitions/ListPartitionRouter"
           - "$ref": "#/definitions/GroupingPartitionRouter"
           - "$ref": "#/definitions/CustomPartitionRouter"
           - type: array
+            title: Multiple Partition Routers
             items:
               anyOf:
-                - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/SubstreamPartitionRouter"
+                - "$ref": "#/definitions/ListPartitionRouter"
                 - "$ref": "#/definitions/GroupingPartitionRouter"
                 - "$ref": "#/definitions/CustomPartitionRouter"
       $parameters:
@@ -4259,6 +4235,11 @@ definitions:
           - "$ref": "#/definitions/HttpComponentsResolver"
           - "$ref": "#/definitions/ConfigComponentsResolver"
           - "$ref": "#/definitions/ParametrizedComponentsResolver"
+      use_parent_parameters:
+        title: Use Parent Parameters
+        description: Whether or not to prioritize parent parameters over component parameters when constructing dynamic streams. Defaults to true for backward compatibility.
+        type: boolean
+        default: true
     required:
       - type
       - stream_template
@@ -4326,10 +4307,9 @@ definitions:
       - query
     properties:
       query:
-        type: object
-        additionalProperties: true
+        type: string
         description: The GraphQL query to be executed
-        default: {}
+        default: "query {\n    \n}"
     additionalProperties: true
   DpathValidator:
     title: Dpath Validator
