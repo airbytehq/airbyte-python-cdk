@@ -67,7 +67,7 @@ except ImportError:
 
 TEST_FILE_TEMPLATE = '''
 # Copyright (c) 2025 Airbyte, Inc., all rights reserved.
-"""FAST Airbyte Standard Tests for the {connector_name} source."""
+"""FAST Airbyte Standard Tests for the {connector_name} connector."""
 
 #from airbyte_cdk.test.standard_tests import {base_class_name}
 from airbyte_cdk.test.standard_tests.util import create_connector_test_suite
@@ -81,11 +81,13 @@ TestSuite = create_connector_test_suite(
     connector_directory=Path(),
 )
 
+# Uncomment the following lines to create a custom test suite class:
+#
 # class TestSuite({base_class_name}):
-#     """Test suite for the {connector_name} source.
-
-#     This class inherits from SourceTestSuiteBase and implements all of the tests in the suite.
-
+#     """Test suite for the `{connector_name}` connector.
+#
+#     This class inherits from `{base_class_name}` and implements all of the tests in the suite.
+#
 #     As long as the class name starts with "Test", pytest will automatically discover and run the
 #     tests in this class.
 #     """
