@@ -11,7 +11,7 @@ import warnings
 from dataclasses import asdict
 from pathlib import Path
 from subprocess import CompletedProcess, SubprocessError
-from typing import Literal
+from typing import Literal, cast
 
 import orjson
 import pytest
@@ -63,7 +63,7 @@ class DockerConnectorTestSuite:
     @classmethod
     def is_destination_connector(cls) -> bool:
         """Check if the connector is a destination."""
-        return cls.connector_name.startswith("destination-")
+        return cast(str, cls.connector_name).startswith("destination-")
 
     @classproperty
     def acceptance_test_config_path(cls) -> Path:
