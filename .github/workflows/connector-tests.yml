@@ -75,7 +75,8 @@ jobs:
           - connector: source-google-drive
             cdk_extra: file-based
           - connector: destination-motherduck
-            cdk_extra: sql
+            # For now, we mark as 'n/a' to always test this connector
+            cdk_extra: n/a  # change to 'sql' to test less often
           - connector: source-amplitude
             cdk_extra: n/a
           - connector: source-intercom
