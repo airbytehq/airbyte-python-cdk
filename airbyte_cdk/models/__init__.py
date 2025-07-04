@@ -57,6 +57,7 @@ from .airbyte_protocol_serializers import (
     ConfiguredAirbyteStreamSerializer,
     ConnectorSpecificationSerializer,
 )
+from .http_proxy_config import HttpProxyConfig
 from .well_known_types import (
     BinaryData,
     Boolean,
