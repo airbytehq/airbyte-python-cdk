@@ -2043,9 +2043,15 @@ definitions:
           - "$ref": "#/definitions/NoAuth"
           - "$ref": "#/definitions/LegacySessionTokenAuthenticator"
       fetch_properties_from_endpoint:
+        deprecated: true
+        deprecation_message: "Use `query_properties` field instead."
         title: Fetch Properties from Endpoint
         description: Allows for retrieving a dynamic set of properties from an API endpoint which can be injected into outbound request using the stream_partition.extra_fields.
         "$ref": "#/definitions/PropertiesFromEndpoint"
+      query_properties:
+        title: Query Properties
+        description: For APIs that require explicit specification of the properties to query for, this component will take a static or dynamic set of properties (which can be optionally split into chunks) and allow them to be injected into an outbound request by accessing stream_partition.extra_fields.
+        "$ref": "#/definitions/QueryProperties"
       request_parameters:
         title: Query Parameters
         description: Specifies the query parameters that should be set on an outgoing HTTP request given the inputs.

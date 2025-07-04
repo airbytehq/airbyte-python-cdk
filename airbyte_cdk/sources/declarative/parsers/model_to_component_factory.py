@@ -3220,6 +3220,7 @@ class ModelToComponentFactory:
             hasattr(model.requester, "fetch_properties_from_endpoint")
             and model.requester.fetch_properties_from_endpoint
         ):
+            # todo: Deprecate this condition once dependent connectors migrate to query_properties
             query_properties_definition = QueryPropertiesModel(
                 type="QueryProperties",
                 property_list=model.requester.fetch_properties_from_endpoint,
@@ -3229,6 +3230,11 @@ class ModelToComponentFactory:
 
             query_properties = self.create_query_properties(
                 model=query_properties_definition,
+                config=config,
+            )
+        elif hasattr(model.requester, "query_properties") and model.requester.query_properties:
+            query_properties = self.create_query_properties(
+                model=model.requester.query_properties,
                 config=config,
             )
 
