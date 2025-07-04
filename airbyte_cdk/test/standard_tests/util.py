@@ -38,7 +38,7 @@ def create_connector_test_suite(
         # By here, we know that connector_directory is not None
         # but connector_name is None. Set the connector_name.
         assert connector_directory is not None, "connector_directory should not be None here."
-        connector_name = connector_directory.name
+        connector_name = connector_directory.absolute().name
 
     metadata_yaml_path = connector_directory / METADATA_YAML
     if not metadata_yaml_path.exists():
