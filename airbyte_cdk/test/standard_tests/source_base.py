@@ -121,6 +121,10 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
             # Failed as expected; we're done.
             return
 
+        streams_to_exclude = set()
+        if scenario.empty_streams:
+            streams_to_exclude = {empty_stream.name for empty_stream in scenario.empty_streams}
+
         configured_catalog = ConfiguredAirbyteCatalog(
             streams=[
                 ConfiguredAirbyteStream(
@@ -129,6 +133,7 @@ class SourceTestSuiteBase(ConnectorTestSuiteBase):
                     destination_sync_mode=DestinationSyncMode.append_dedup,
                 )
                 for stream in discover_result.catalog.catalog.streams  # type: ignore [reportOptionalMemberAccess, union-attr]
+                if stream.name not in streams_to_exclude
             ]
         )
         result = run_test_job(
