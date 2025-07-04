@@ -119,11 +119,21 @@ class CatalogProvider:
     def get_primary_keys(
         self,
         stream_name: str,
-    ) -> list[str]:
-        """Return the primary keys for the given stream."""
-        pks = self.get_configured_stream_info(stream_name).primary_key
+    ) -> list[str] | None:
+        """Return the primary key column names for the given stream.
+
+        We return `source_defined_primary_key` if set, or `primary_key` otherwise. If both are set,
+        we assume they should not should differ, since Airbyte data integrity constraints do not
+        permit overruling a source's pre-defined primary keys. If neither is set, we return `None`.
+
+        Returns:
+            A list of column names that constitute the primary key, or None if no primary key is defined.
+        """
+        configured_stream = self.get_configured_stream_info(stream_name)
+        pks = configured_stream.stream.source_defined_primary_key or configured_stream.primary_key
+
         if not pks:
-            return []
+            return None
 
         normalized_pks: list[list[str]] = [
             [LowerCaseNormalizer.normalize(c) for c in pk] for pk in pks
