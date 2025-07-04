@@ -54,7 +54,7 @@ class HttpRequesterRequestBodyJsonDataToRequestBody(ManifestMigration):
         if isinstance(manifest[key], str):
             self._migrate_value(manifest, key, text_type)
         elif isinstance(manifest[key], dict):
-            if manifest[key].get(query_key) is not None:
+            if isinstance(manifest[key].get(query_key), str):
                 self._migrate_value(manifest, key, graph_ql_type)
             else:
                 self._migrate_value(manifest, key, json_object_type)
