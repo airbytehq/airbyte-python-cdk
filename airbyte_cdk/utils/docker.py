@@ -280,11 +280,14 @@ def build_connector_image(
         new_tags=[base_tag],
     )
     if not no_verify:
-        if verify_connector_image(base_tag):
+        success, error_message = verify_connector_image(base_tag)
+        if success:
             click.echo(f"Build and verification completed successfully: {base_tag}")
             return base_tag
 
-        click.echo(f"Built image failed verification: {base_tag}", err=True)
+        click.echo(
+            f"Built image failed verification: {base_tag}\nError was:{error_message}", err=True
+        )
         sys.exit(1)
 
     click.echo(f"Build completed successfully: {base_tag}")
@@ -502,7 +505,7 @@ def verify_docker_installation() -> bool:
 
 def verify_connector_image(
     image_name: str,
-) -> bool:
+) -> tuple[bool, str]:
     """Verify the built image by running the spec command.
 
     Args:
@@ -517,20 +520,23 @@ def verify_connector_image(
         result = run_docker_airbyte_command(
             ["docker", "run", "--rm", image_name, "spec"],
         )
-        if not result.errors:
-            logger.error(result.get_formatted_error_message())
-            return False
+        if result.errors:
+            err_msg = result.get_formatted_error_message()
+            logger.error(err_msg)
+            return False, err_msg
 
         spec_messages = result.spec_messages
         if not spec_messages:
-            logger.error(
+            err_msg = (
                 "The container failed to produce valid output for the `spec` command.\nLog output:\n"
                 + str(result.logs)
             )
-            return False
+            logger.error(err_msg)
+            return False, err_msg
 
     except Exception as ex:
-        logger.error(f"Unexpected error during image verification: {ex}")
-        return False
+        err_msg = f"Unexpected error during image verification: {ex}"
+        logger.error(err_msg)
+        return False, err_msg
 
-    return True
+    return True, ""
