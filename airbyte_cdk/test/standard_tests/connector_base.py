@@ -45,7 +45,7 @@ class ConnectorTestSuiteBase(DockerConnectorTestSuite):
         specific connector class to be tested.
         """
         connector_root = cls.get_connector_root_dir()
-        connector_name = connector_root.absolute().name
+        connector_name = cls.connector_name
 
         expected_module_name = connector_name.replace("-", "_").lower()
         expected_class_name = connector_name.replace("-", "_").title().replace("_", "")
