@@ -125,7 +125,7 @@ class CatalogProvider:
         We return `source_defined_primary_key` if set, or `primary_key` otherwise. If both are set,
         we assume they should not should differ, since Airbyte data integrity constraints do not
         permit overruling a source's pre-defined primary keys. If neither is set, we return `None`.
-        
+
         Returns:
             A list of column names that constitute the primary key, or None if no primary key is defined.
         """
